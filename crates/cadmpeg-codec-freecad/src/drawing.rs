@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
 
-use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord};
+use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, ValueRecord};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -54,7 +54,7 @@ pub(crate) fn transfer(
                     .filter(|property| !property.links.is_empty())
                     .map(|property| (property.name.clone(), property.links.clone()))
                     .collect(),
-                parameters: drawing_parameters(&owned),
+                parameters: drawing_parameters(&owned)?,
                 side_entries: owned
                     .iter()
                     .flat_map(|property| &property.side_entries)
@@ -173,29 +173,15 @@ fn classify(runtime_type: &str) -> DrawingKind {
 }
 
 fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
-    properties
-        .iter()
-        .find(|property| property.name == name)?
-        .values
-        .first()?
-        .attributes
-        .get("value")?
-        .parse()
-        .ok()
+    let property = unique_property(properties, name).ok().flatten()?;
+    let value = unique_value(property).ok().flatten()?;
+    scalar_value(value)
 }
 
 fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<[f64; 3]> {
-    let attributes = &properties
-        .iter()
-        .find(|property| property.name == name)?
-        .values
-        .first()?
-        .attributes;
-    Some([
-        attributes.get("valueX")?.parse().ok()?,
-        attributes.get("valueY")?.parse().ok()?,
-        attributes.get("valueZ")?.parse().ok()?,
-    ])
+    let property = unique_property(properties, name).ok().flatten()?;
+    let value = unique_value(property).ok().flatten()?;
+    vector_value(value)
 }
 
 fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkTarget> {
@@ -257,7 +243,9 @@ fn typed_property<'a>(
     Ok(Some(property))
 }
 
-fn drawing_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
+fn drawing_parameters(
+    properties: &[&PropertyRecord],
+) -> Result<BTreeMap<String, String>, CodecError> {
     const NAMES: &[&str] = &[
         "X",
         "Y",
@@ -272,18 +260,77 @@ fn drawing_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String
         "KeepLabel",
         "LockPosition",
     ];
-    properties
+    const NUMERIC_NAMES: &[&str] = &["X", "Y", "Scale", "Rotation"];
+    let mut parameters = BTreeMap::new();
+    for name in NAMES {
+        let Some(property) = unique_property(properties, name)? else {
+            continue;
+        };
+        let Some(value) = unique_value(property)? else {
+            return Err(CodecError::Malformed(format!(
+                "drawing property {name} has no root value"
+            )));
+        };
+        if *name == "Direction" {
+            if vector_value(value).is_none() {
+                return Err(CodecError::Malformed(format!(
+                    "drawing property {name} has an invalid vector value"
+                )));
+            }
+        } else if NUMERIC_NAMES.contains(name) && scalar_value(value).is_none() {
+            return Err(CodecError::Malformed(format!(
+                "drawing property {name} has an invalid scalar value"
+            )));
+        }
+        parameters.insert((*name).to_owned(), value.raw_xml.clone());
+    }
+    Ok(parameters)
+}
+
+fn unique_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
         .iter()
-        .filter(|property| NAMES.contains(&property.name.as_str()))
-        .map(|property| {
-            let value = property
-                .values
-                .first()
-                .map(|value| value.raw_xml.clone())
-                .unwrap_or_default();
-            (property.name.clone(), value)
-        })
-        .collect()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "drawing property {name} occurs more than once"
+        )));
+    }
+    Ok(Some(property))
+}
+
+fn unique_value(property: &PropertyRecord) -> Result<Option<&ValueRecord>, CodecError> {
+    match property.values.as_slice() {
+        [] => Ok(None),
+        [value] => Ok(Some(value)),
+        _ => Err(CodecError::Malformed(format!(
+            "drawing property {} has multiple root values",
+            property.id
+        ))),
+    }
+}
+
+fn scalar_value(value: &ValueRecord) -> Option<f64> {
+    value
+        .attributes
+        .get("value")
+        .or_else(|| value.attributes.get("Value"))
+        .and_then(|value| value.parse().ok())
+}
+
+fn vector_value(value: &ValueRecord) -> Option<[f64; 3]> {
+    Some([
+        value.attributes.get("valueX")?.parse().ok()?,
+        value.attributes.get("valueY")?.parse().ok()?,
+        value.attributes.get("valueZ")?.parse().ok()?,
+    ])
 }
 
 #[cfg(test)]

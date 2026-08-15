@@ -161,6 +161,42 @@ fn rejects_noncanonical_page_link_carriers() {
 }
 
 #[test]
+fn rejects_duplicate_drawing_carrier_properties_and_values() {
+    let documents = [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="3">
+ <Property name="X" type="App::PropertyDistance"><Float value="10"/><Float value="11"/></Property>
+ <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+ <Property name="Scale" type="App::PropertyFloat"><Float value="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="4">
+ <Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+ <Property name="X" type="App::PropertyDistance"><Float value="11"/></Property>
+ <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+ <Property name="Scale" type="App::PropertyFloat"><Float value="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="2">
+ <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>
+ <Property name="Scale" type="App::PropertyFloat"><Float value="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+    ];
+    for document in documents {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
 fn classifies_drawing_runtime_types_exactly() {
     assert_eq!(
         super::classify("TechDraw::DrawPage"),
