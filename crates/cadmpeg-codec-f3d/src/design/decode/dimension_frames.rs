@@ -74,10 +74,7 @@ pub fn decode_dimension_recipe_records(
         let Some(stream) = native_stream(&companion.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -143,7 +140,7 @@ pub fn decode_dimension_recipe_records(
             });
         }
     }
-    out.sort_by_key(|record| record.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -668,7 +665,7 @@ pub fn decode_dimension_locus_pairs(
         pair.governing_companion_record_index = governing_companion_record_index;
         out.push(pair);
     }
-    out.sort_by_key(|pair| pair.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -914,7 +911,7 @@ pub fn decode_dimension_null_locus_pairs(
         pair.governing_companion_record_index = governing_companion_record_index;
         out.push(pair);
     }
-    out.sort_by_key(|pair| pair.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1056,10 +1053,7 @@ pub fn decode_dimension_annotation_frames(
         .collect::<HashSet<_>>();
     let mut decoded_offsets = HashSet::new();
     for stream in streams {
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let geometry_indices = points
@@ -1159,7 +1153,7 @@ pub fn decode_dimension_annotation_frames(
             }
         }
     }
-    out.sort_by_key(|frame| frame.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1437,7 +1431,7 @@ pub fn decode_dimension_locus_groups(
             group
         }));
     }
-    out.sort_by_key(|group| group.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 

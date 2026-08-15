@@ -100,10 +100,7 @@ pub fn decode_body_bounds(
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -189,7 +186,7 @@ pub fn decode_body_bounds(
             minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
         });
     }
-    out.sort_by_key(|bounds| bounds.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -609,7 +606,7 @@ pub fn decode_design_body_bindings(
             });
         }
     }
-    out.sort_by_key(|binding| binding.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 

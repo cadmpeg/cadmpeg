@@ -15,6 +15,7 @@ pub(crate) struct RecordIndexEntry {
 }
 
 /// One completely framed `MetaStream` segment.
+#[derive(Clone)]
 pub(crate) struct MetaStream {
     pub(crate) types: Vec<SegmentType>,
     /// Live sibling records, in strictly increasing `BulkStream` order.

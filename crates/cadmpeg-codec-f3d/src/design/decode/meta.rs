@@ -36,8 +36,8 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
     {
-        let meta = crate::metastream::parse(scan.entry_bytes(&entry.name)?, &entry.name)?;
-        out.extend(meta.types.into_iter().map(|mut design_type| {
+        let meta = scan.parsed_metastream(&entry.name)?;
+        out.extend(meta.types.iter().cloned().map(|mut design_type| {
             design_type.id = ids::native_design_type_id(&entry.name, design_type.byte_offset);
             design_type
         }));
@@ -57,7 +57,8 @@ pub(crate) fn metadata_for_bulk_stream(
     if !scan.entries.iter().any(|entry| entry.name == meta_name) {
         return Ok(None);
     }
-    crate::metastream::parse(scan.entry_bytes(&meta_name)?, &meta_name).map(Some)
+    scan.parsed_metastream(&meta_name)
+        .map(|meta| Some((*meta).clone()))
 }
 
 /// One live Design record selected by the primary index and resolved through
