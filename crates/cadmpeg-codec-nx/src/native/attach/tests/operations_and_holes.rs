@@ -1195,6 +1195,24 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::NewBody
     );
 
+    let fallback_prior = FeatureId("fallback-prior-feature".into());
+    let mut fallback_history = BodyWriterHistory::default();
+    fallback_history.record_writer(None, None, std::slice::from_ref(&body), &fallback_prior);
+    assert_eq!(
+        super::new_body_boolean_op(&super::NewBodyEvidence {
+            has_complete_projection: true,
+            has_complete_primitive_construction: false,
+            outputs: std::slice::from_ref(&body),
+            outputs_are_proven: true,
+            body_reference_count: 0,
+            provisional_feature: Some(&provisional),
+            native_primary_body: None,
+            offset_store_primary_body: None,
+            history: &fallback_history,
+        }),
+        BooleanOp::Unresolved
+    );
+
     let prior = FeatureId("prior-feature".into());
     history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
     assert_eq!(

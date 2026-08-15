@@ -2958,7 +2958,7 @@ fn attach_feature_operations(
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
-        let block_outputs_are_proven = !outputs.is_empty();
+        let block_outputs_are_proven = !outputs.is_empty() || block_projection.is_some();
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
                 outputs.push(body.clone());
