@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """USAGE (this block is the complete surface — no need to read further):
 
-    report-diff.py [--limit N] [--top N] DIR_A [DIR_B]
+    report-diff.py [--limit N] [--top N] [--stems KIND] DIR_A [DIR_B]
 
     DIR_A alone   aggregate summary of DIR_A/*.report.json
     DIR_A DIR_B   per-file diff A -> B keyed by <stem>.report.json
     --limit N     max output lines, hard cap             (default: 100)
     --top N       max offenders/diff rows per list       (default: 10)
+    --stems KIND  machine-readable mode (needs DIR_B): print ONLY the full
+                  stem list, one per line, for piping into cadir-grep.py /
+                  cadmpeg query / decode loops. No cap, notes go to stderr.
+                  KIND: regressed | improved | unchanged | only-a | only-b
 
 Examples:
     python3 scripts/report-diff.py ~/side2/tmp/sldprt-l6/sweep-reports-v3/
     python3 scripts/report-diff.py ~/side2/tmp/sldprt-l6/current-reports-v3/ \\
         ~/side2/tmp/sldprt-l6/post-cone-reports-v1/
+    python3 scripts/report-diff.py --stems regressed sweep-v14/ sweep-v15/ |
+        while read s; do python3 scripts/cadir-grep.py --list arenas.features \\
+            "sweep-v15/$s.cadir.json"; done
 
 Each summary prints a `fingerprint:` of the content (stems + per-file status/
 loss counts) — identical fingerprints mean two dirs hold the same sweep.
@@ -135,6 +142,19 @@ def summarize(dirpath, records, skipped, out, offenders):
         out.emit(f"    {stem}: status={r['status']} blocking={r['blocking']} losses={r['losses']}")
 
 
+def classify(recs_a, recs_b):
+    """Bucket stems by A->B movement of score(). Same comparison diff() shows."""
+    buckets = {
+        "regressed": set(), "improved": set(), "unchanged": set(),
+        "only-a": set(recs_a) - set(recs_b), "only-b": set(recs_b) - set(recs_a),
+    }
+    for stem in set(recs_a) & set(recs_b):
+        a, b = score(recs_a[stem]), score(recs_b[stem])
+        key = "regressed" if b > a else ("improved" if b < a else "unchanged")
+        buckets[key].add(stem)
+    return buckets
+
+
 def diff(dir_a, recs_a, dir_b, recs_b, out, offenders):
     shared = sorted(set(recs_a) & set(recs_b))
     only_a, only_b = set(recs_a) - set(recs_b), set(recs_b) - set(recs_a)
@@ -183,7 +203,13 @@ def main():
     ap.add_argument("dir_b", nargs="?", help="second directory: diff A -> B instead of summarizing")
     ap.add_argument("--limit", type=int, default=100, help="max output lines (default 100)")
     ap.add_argument("--top", type=int, default=10, help="max offenders/diff rows per list (default 10)")
+    ap.add_argument("--stems", choices=["regressed", "improved", "unchanged", "only-a", "only-b"],
+                    help="print only the full stem list for this diff bucket (needs DIR_B)")
     args = ap.parse_args()
+
+    if args.stems and args.dir_b is None:
+        print("error: --stems needs two directories (it selects a diff bucket)", file=sys.stderr)
+        sys.exit(2)
 
     out = LineBudget(args.limit)
     recs_a, skipped_a = load_dir(args.dir_a)
@@ -191,6 +217,13 @@ def main():
         summarize(args.dir_a, recs_a, skipped_a, out, args.top)
     else:
         recs_b, skipped_b = load_dir(args.dir_b)
+        if args.stems:
+            for d, s in ((args.dir_a, skipped_a), (args.dir_b, skipped_b)):
+                if s:
+                    print(f"note: {s} unparseable files skipped in {d}", file=sys.stderr)
+            for stem in sorted(classify(recs_a, recs_b)[args.stems]):
+                print(stem)
+            return 0
         for d, s in ((args.dir_a, skipped_a), (args.dir_b, skipped_b)):
             if s:
                 out.emit(f"  note: {s} unparseable files skipped in {d}")
@@ -200,4 +233,9 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:  # e.g. piped into head; not an error
+        import os
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(141)
