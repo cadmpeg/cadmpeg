@@ -525,6 +525,104 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
 }
 
 #[test]
+fn profile_and_boolean_features_require_resolved_operation_inputs() {
+    let definition = |value| {
+        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+            .expect("profile or Boolean definition")
+    };
+
+    let sweep = definition(serde_json::json!({
+        "definition": "sweep",
+        "section": {
+            "kind": "profile",
+            "value": {"kind": "sketch", "value": "sketch:section"}
+        },
+        "path": {"kind": "edges", "value": ["edge:path"]},
+        "mode": {"mode": "solid", "op": "join"}
+    }));
+    assert!(!feature_definition_is_incomplete(&sweep));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "sweep",
+            "section": {
+                "kind": "profile",
+                "value": {"kind": "native", "value": "native:section"}
+            },
+            "path": {"kind": "edges", "value": ["edge:path"]},
+            "mode": {"mode": "solid", "op": "join"}
+        }),
+    )));
+
+    let chamfer = definition(serde_json::json!({
+        "definition": "chamfer",
+        "groups": [{
+            "edges": {"kind": "edges", "value": ["edge:1"]},
+            "spec": {"kind": "distance", "distance": 2.0}
+        }]
+    }));
+    assert!(!feature_definition_is_incomplete(&chamfer));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "chamfer",
+            "groups": [{
+                "edges": {"kind": "native", "value": "native:edges"},
+                "spec": {"kind": "distance", "distance": 2.0}
+            }]
+        }),
+    )));
+
+    let combine = definition(serde_json::json!({
+        "definition": "combine",
+        "target": {"kind": "bodies", "value": ["body:target"]},
+        "tools": {"kind": "bodies", "value": ["body:tool"]},
+        "op": "cut"
+    }));
+    assert!(!feature_definition_is_incomplete(&combine));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "combine",
+            "target": {"kind": "native", "value": "native:target"},
+            "tools": {"kind": "bodies", "value": ["body:tool"]},
+            "op": "cut"
+        }),
+    )));
+
+    let revolve = definition(serde_json::json!({
+        "definition": "revolve",
+        "construction": {
+            "profile": {"kind": "sketch", "value": "sketch:profile"},
+            "axis": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+            },
+            "extent": {
+                "kind": "one_sided",
+                "termination": {"kind": "angle", "angle": std::f64::consts::PI}
+            }
+        },
+        "op": "new_body"
+    }));
+    assert!(!feature_definition_is_incomplete(&revolve));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "revolve",
+            "construction": {
+                "profile": {"kind": "native", "value": "native:profile"},
+                "axis": {
+                    "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                    "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+                },
+                "extent": {
+                    "kind": "one_sided",
+                    "termination": {"kind": "angle", "angle": std::f64::consts::PI}
+                }
+            },
+            "op": "new_body"
+        }),
+    )));
+}
+
+#[test]
 fn datum_point_completeness_requires_a_resolved_construction_rule() {
     let definition = |construction: Option<serde_json::Value>| {
         let mut value = serde_json::json!({

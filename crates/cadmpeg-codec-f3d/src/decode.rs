@@ -458,6 +458,93 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
         }
+        FeatureDefinition::Revolve { construction, op } => {
+            let profile_is_resolved = construction
+                .profile
+                .as_ref()
+                .is_some_and(profile_ref_is_resolved);
+            let axis_is_resolved = construction
+                .axis
+                .as_ref()
+                .is_some_and(|axis| axis.direction.unit().is_some());
+            let revolve_termination_is_resolved =
+                |termination: &cadmpeg_ir::features::Termination| match termination {
+                    cadmpeg_ir::features::Termination::Angle { angle } => angle.0.is_finite(),
+                    termination => termination_is_resolved(termination),
+                };
+            let extent_is_resolved = construction.extent.as_ref().is_some_and(|extent| {
+                use cadmpeg_ir::features::RevolveExtent;
+
+                match extent {
+                    RevolveExtent::OneSided { termination }
+                    | RevolveExtent::Symmetric { termination } => {
+                        revolve_termination_is_resolved(termination)
+                    }
+                    RevolveExtent::TwoSided { first, second } => {
+                        revolve_termination_is_resolved(first)
+                            && revolve_termination_is_resolved(second)
+                    }
+                }
+            });
+
+            !profile_is_resolved
+                || !axis_is_resolved
+                || !extent_is_resolved
+                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
+        FeatureDefinition::Sweep {
+            section,
+            sections,
+            path,
+            mode,
+            orientation,
+            path_extent,
+            guide_rail,
+            ..
+        } => {
+            use cadmpeg_ir::features::{SweepMode, SweepOrientation, SweepSection};
+
+            let section_is_resolved = |section: &SweepSection| match section {
+                SweepSection::Unresolved(_) => false,
+                SweepSection::Profile(profile) => profile_ref_is_resolved(profile),
+                SweepSection::Generated(_) => true,
+            };
+            let mode_is_resolved = match mode {
+                SweepMode::Unresolved => false,
+                SweepMode::Solid { op } => *op != cadmpeg_ir::features::BooleanOp::Unresolved,
+                SweepMode::Surface => true,
+            };
+            let orientation_is_resolved = match orientation {
+                Some(SweepOrientation::Auxiliary { path, .. }) => loft_path_is_resolved(path),
+                Some(SweepOrientation::GuideSurface { faces }) => face_selection_is_resolved(faces),
+                Some(SweepOrientation::Binormal { direction }) => direction.unit().is_some(),
+                None
+                | Some(
+                    SweepOrientation::CorrectedFrenet
+                    | SweepOrientation::Fixed
+                    | SweepOrientation::Frenet,
+                ) => true,
+            };
+            let extent_is_resolved = |extent: &cadmpeg_ir::features::SweepPathExtent| {
+                extent.along_fraction.is_finite()
+                    && extent.against_fraction.is_finite()
+                    && (0.0..=1.0).contains(&extent.along_fraction)
+                    && (0.0..=1.0).contains(&extent.against_fraction)
+            };
+            let guide_is_resolved = guide_rail.as_ref().is_none_or(|guide| {
+                loft_path_is_resolved(&guide.path) && extent_is_resolved(&guide.extent)
+            });
+
+            !section_is_resolved(section)
+                || sections.iter().any(|section| !section_is_resolved(section))
+                || !path.as_ref().is_some_and(loft_path_is_resolved)
+                || !mode_is_resolved
+                || !orientation_is_resolved
+                || path_extent
+                    .as_ref()
+                    .is_some_and(|extent| !extent_is_resolved(extent))
+                || !guide_is_resolved
+        }
         FeatureDefinition::Hole {
             profile,
             face,
@@ -558,6 +645,16 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
+        }
+        FeatureDefinition::Chamfer { groups, .. } => {
+            groups.is_empty()
+                || groups.iter().any(|group| {
+                    !edge_selection_is_resolved(&group.edges)
+                        || matches!(
+                            group.spec,
+                            cadmpeg_ir::features::ChamferSpec::Unresolved { .. }
+                        )
+                })
         }
         FeatureDefinition::Fillet { groups } => {
             groups.is_empty()
@@ -687,6 +784,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                                 if !face_selection_is_resolved(selection)
                         )
                 })
+        }
+        FeatureDefinition::Combine {
+            target, tools, op, ..
+        } => {
+            !body_selection_is_resolved(target)
+                || !body_selection_is_resolved(tools)
+                || matches!(
+                    op,
+                    cadmpeg_ir::features::BooleanOp::Unresolved
+                        | cadmpeg_ir::features::BooleanOp::NewBody
+                )
         }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
