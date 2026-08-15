@@ -288,7 +288,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
 
     let roots = BTreeMap::from([(20, 20)]);
     assert_eq!(
-        super::delete_body_feature_definition(Some(20), &[], &roots, &BTreeMap::new()),
+        super::delete_body_feature_definition(Some(20), &roots, &BTreeMap::new()),
         Some(FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#20".to_string()],
@@ -298,7 +298,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
         })
     );
     assert_eq!(
-        super::delete_body_feature_definition(Some(72), &[], &roots, &BTreeMap::new()),
+        super::delete_body_feature_definition(Some(72), &roots, &BTreeMap::new()),
         Some(FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#72".to_string()],
@@ -308,34 +308,9 @@ fn nx_delete_body_requires_a_primary_body_field() {
         })
     );
     assert_eq!(
-        super::delete_body_feature_definition(None, &[], &roots, &BTreeMap::new()),
+        super::delete_body_feature_definition(None, &roots, &BTreeMap::new()),
         None
     );
-    assert_eq!(
-        super::delete_body_feature_definition(
-            None,
-            &[(72, "nx:om-data-blocks-4:block#72".to_string())],
-            &roots,
-            &BTreeMap::new(),
-        ),
-        Some(FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-4:block#72".to_string()],
-                native: "nx:om-object-index#72".to_string(),
-            },
-            mode: BodyRetentionMode::DeleteSelected,
-        })
-    );
-    assert!(super::delete_body_feature_definition(
-        None,
-        &[
-            (72, "nx:om-data-blocks-4:block#72".to_string()),
-            (73, "nx:om-data-blocks-4:block#73".to_string()),
-        ],
-        &roots,
-        &BTreeMap::new(),
-    )
-    .is_none());
 }
 
 #[test]

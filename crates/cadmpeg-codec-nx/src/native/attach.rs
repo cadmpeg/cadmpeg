@@ -3176,9 +3176,6 @@ fn attach_feature_operations(
             .then(|| {
                 delete_body_feature_definition(
                     body_references.get(label.id.as_str()).copied(),
-                    offset_store_bodies_by_operation
-                        .get(label.id.as_str())
-                        .map_or([].as_slice(), Vec::as_slice),
                     &body_alias_roots,
                     &bodies_by_object_index,
                 )
@@ -7335,32 +7332,23 @@ pub(crate) fn boolean_feature_definition(
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
     body_object_index: Option<u32>,
-    offset_store_bodies: &[(u32, String)],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
-    let bodies = match (body_object_index, offset_store_bodies) {
-        (Some(body), []) => {
-            let selection = feature_body_selection(
-                &[body],
-                body_alias_roots,
-                bodies_by_object_index,
-                format!("nx:om-object-index#{body}"),
-            )
-            .selection;
-            match selection {
-                BodySelection::Native(native) => BodySelection::Local {
-                    bodies: vec![format!("nx:om-body-object#{body}")],
-                    native,
-                },
-                selection => selection,
-            }
-        }
-        (None, [(object_index, data_block)]) => BodySelection::Local {
-            bodies: vec![data_block.clone()],
-            native: format!("nx:om-object-index#{object_index}"),
+    let body = body_object_index?;
+    let selection = feature_body_selection(
+        &[body],
+        body_alias_roots,
+        bodies_by_object_index,
+        format!("nx:om-object-index#{body}"),
+    )
+    .selection;
+    let bodies = match selection {
+        BodySelection::Native(native) => BodySelection::Local {
+            bodies: vec![format!("nx:om-body-object#{body}")],
+            native,
         },
-        _ => return None,
+        selection => selection,
     };
     Some(FeatureDefinition::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
