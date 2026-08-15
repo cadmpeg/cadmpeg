@@ -3,6 +3,83 @@
 
 use super::super::*;
 
+fn line_extrusion_parameter_record(
+    direction: [f64; 3],
+    directrix: [[f64; 3]; 2],
+) -> SurfaceParameterRecord {
+    let mut values = direction.into_iter().collect::<Vec<_>>();
+    values.extend(directrix.into_iter().flatten());
+    let slot = |value, offset| SurfaceParameterScalar {
+        value: Some(value),
+        raw: vec![0x18],
+        offset,
+        length: 1,
+    };
+    let direction_slots = direction
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| slot(value, index))
+        .collect::<Vec<_>>();
+    let directrix_slots = directrix
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(index, value)| slot(value, index + 6))
+        .collect::<Vec<_>>();
+    let scalar_tokens = direction_slots
+        .iter()
+        .chain(&directrix_slots)
+        .cloned()
+        .collect::<Vec<_>>();
+    SurfaceParameterRecord {
+        surface_id: 1,
+        body: vec![0; 12],
+        scalar_values: values,
+        scalar_tokens: scalar_tokens.clone(),
+        opaque_spans: vec![SurfaceParameterOpaqueSpan {
+            raw: vec![0x00, 0x0c, 0x9a],
+            offset: 3,
+            length: 3,
+        }],
+        scalar_frames: vec![
+            SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: direction_slots,
+            },
+            SurfaceParameterScalarFrame {
+                offset: 6,
+                slots: directrix_slots,
+            },
+        ],
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    }
+}
+
+#[test]
+fn positional_line_extrusion_requires_a_non_degenerate_plane_carrier() {
+    let valid = line_extrusion_parameter_record([0.0, 0.0, 1.0], [[0.0; 3], [1.0, 0.0, 0.0]]);
+    assert!(valid.line_extrusion_frame(0x2c).is_some());
+
+    let zero_direction = line_extrusion_parameter_record([0.0; 3], [[0.0; 3], [1.0, 0.0, 0.0]]);
+    assert!(zero_direction.line_extrusion_frame(0x2c).is_none());
+
+    let collapsed_directrix =
+        line_extrusion_parameter_record([0.0, 0.0, 1.0], [[0.0; 3], [0.0; 3]]);
+    assert!(collapsed_directrix.line_extrusion_frame(0x2c).is_none());
+
+    let parallel_directions =
+        line_extrusion_parameter_record([1.0, 0.0, 0.0], [[0.0; 3], [1.0, 0.0, 0.0]]);
+    assert!(parallel_directions.line_extrusion_frame(0x2c).is_none());
+}
+
 #[test]
 fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
     let valid = PositionalConeFrame {

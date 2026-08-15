@@ -563,6 +563,33 @@ pub struct LineExtrusionFrame {
     pub directrix: [[f64; 3]; 2],
 }
 
+impl LineExtrusionFrame {
+    fn is_valid(&self) -> bool {
+        let normalize = |vector: [f64; 3]| {
+            if !vector.into_iter().all(f64::is_finite) {
+                return None;
+            }
+            let magnitude = vector[0].hypot(vector[1]).hypot(vector[2]);
+            (magnitude.is_finite() && magnitude > 0.0)
+                .then(|| vector.map(|value| value / magnitude))
+        };
+        let directrix =
+            std::array::from_fn(|axis| self.directrix[1][axis] - self.directrix[0][axis]);
+        let Some(direction) = normalize(self.direction) else {
+            return false;
+        };
+        let Some(directrix) = normalize(directrix) else {
+            return false;
+        };
+        let normal = [
+            directrix[1] * direction[2] - directrix[2] * direction[1],
+            directrix[2] * direction[0] - directrix[0] * direction[2],
+            directrix[0] * direction[1] - directrix[1] * direction[0],
+        ];
+        normal.into_iter().any(|value| value != 0.0)
+    }
+}
+
 /// One positional cubic B-spline replay bound to a following tabulated-
 /// cylinder surface row.
 #[derive(Debug, Clone, PartialEq)]
@@ -1510,6 +1537,7 @@ impl SurfaceParameterRecord {
             direction: values[0..3].try_into().ok()?,
             directrix: [values[3..6].try_into().ok()?, values[6..9].try_into().ok()?],
         })
+        .filter(LineExtrusionFrame::is_valid)
     }
 }
 
