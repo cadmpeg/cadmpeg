@@ -1644,6 +1644,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         &std::collections::BTreeMap::new(),
     )
     .is_none());
+    let unresolved_primary =
+        std::collections::BTreeMap::from([(operations[0].clone(), Vec::<BodyId>::new())]);
+    assert!(super::hole_body_projection(
+        &ir,
+        std::slice::from_ref(&operations[0]),
+        &unresolved_primary,
+    )
+    .is_none());
     assert_eq!(
         simple_hole_diameters(
             &ir,

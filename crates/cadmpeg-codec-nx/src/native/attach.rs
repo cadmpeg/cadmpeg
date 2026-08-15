@@ -1201,6 +1201,15 @@ fn attach_feature_operations(
             .or_default()
             .push(use_);
     }
+    let body_reference_counts_by_operation =
+        body_references
+            .iter()
+            .fold(BTreeMap::<&str, usize>::new(), |mut counts, reference| {
+                *counts
+                    .entry(reference.operation_label.as_str())
+                    .or_default() += 1;
+                counts
+            });
     let body_writer_references_by_operation =
         crate::native::features::unique_feature_body_references(body_references);
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
@@ -1653,13 +1662,18 @@ fn attach_feature_operations(
             }
         }
     }
-    let explicit_simple_hole_outputs = simple_hole_templates
+    let explicit_hole_outputs = simple_hole_templates
         .iter()
         .filter_map(|template| {
-            let object_index = body_references.get(template.operation_label.as_str())?;
+            let operation = template.operation_label.as_str();
+            body_reference_counts_by_operation.get(operation)?;
             Some((
                 template.operation_label.clone(),
-                feature_body_outputs(*object_index, body_bindings, &bodies_by_object_index),
+                body_references
+                    .get(operation)
+                    .map_or_else(Vec::new, |object_index| {
+                        feature_body_outputs(*object_index, body_bindings, &bodies_by_object_index)
+                    }),
             ))
         })
         .collect::<BTreeMap<_, _>>();
@@ -1669,7 +1683,7 @@ fn attach_feature_operations(
         &operation_positions,
     )
     .unwrap_or_default();
-    let mut hole_outputs = explicit_simple_hole_outputs;
+    let mut hole_outputs = explicit_hole_outputs;
     let mut simple_hole_diameters = BTreeMap::new();
     if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
         hole_outputs.extend(projection.outputs);
@@ -6742,24 +6756,21 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
-/// connected solid when NX omits every operation-output relation.
+/// connected solid when NX omits every operation-output relation. An output
+/// entry with no body is an explicit unresolved relation and blocks fallback.
 fn hole_operations_by_body(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Option<BTreeMap<BodyId, Vec<String>>> {
-    let explicit = operations
+    let related = operations
         .iter()
-        .filter(|operation| {
-            outputs
-                .get(*operation)
-                .is_some_and(|bodies| !bodies.is_empty())
-        })
+        .filter(|operation| outputs.contains_key(*operation))
         .count();
-    if explicit != 0 && explicit != operations.len() {
+    if related != 0 && related != operations.len() {
         return None;
     }
-    if explicit == operations.len() {
+    if related == operations.len() {
         let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
         for operation in operations {
             let [body] = outputs.get(operation)?.as_slice() else {
