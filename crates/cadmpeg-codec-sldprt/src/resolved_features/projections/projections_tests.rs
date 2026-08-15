@@ -191,7 +191,9 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         ),
     ];
     let mut signature = [0; 12];
-    signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
+    // The explicit producer binding remains authoritative when a lane-local
+    // signature carries a different source identity.
+    signature[4..8].copy_from_slice(&99_u32.to_le_bytes());
     let selection = |parent: &str, offset| FeatureInputSurfaceSelection {
         id: format!("selection-{parent}"),
         parent: parent.into(),

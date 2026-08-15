@@ -1503,6 +1503,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         (
                             format!("{lane_key}:{}", selection.offset),
                             Some(selection.components.clone()),
+                            selection.producer_feature_refs.first().cloned(),
                         )
                     })
             })
@@ -1536,7 +1537,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             &cylinder_tokens,
                         )
                         .into_iter()
-                        .map(|(marker, components)| (format!("{lane_key}:{marker}"), components))
+                        .map(|(marker, components)| {
+                            (format!("{lane_key}:{marker}"), components, None)
+                        })
                         .collect::<Vec<_>>(),
                     )
                 })()
@@ -1545,7 +1548,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             .collect::<Vec<_>>();
         let mut native_references = references
             .iter()
-            .map(|(reference, _)| reference.clone())
+            .map(|(reference, _, _)| reference.clone())
             .collect::<Vec<_>>();
         native_references.sort();
         native_references.dedup();
@@ -1557,14 +1560,27 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         });
         let generated = references
             .iter()
-            .map(|(_, components)| {
+            .map(|(_, components, explicit_producer)| {
                 let components = components.as_ref()?;
-                let (component, producer) = component_path_feature(
-                    components,
-                    &history_features,
-                    native_feature.id.as_str(),
-                    ComponentPathEnd::Leading,
-                )?;
+                let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
+                    let producer = history_features
+                        .iter()
+                        .copied()
+                        .find(|candidate| candidate.id.as_str() == producer_ref)?;
+                    let component = components.first()?;
+                    component
+                        .local_id
+                        .is_some()
+                        .then_some((component, producer))
+                });
+                let (component, producer) = explicit.or_else(|| {
+                    component_path_feature(
+                        components,
+                        &history_features,
+                        native_feature.id.as_str(),
+                        ComponentPathEnd::Leading,
+                    )
+                })?;
                 Some((
                     feature_ids_by_native.get(producer.id.as_str())?.clone(),
                     component.local_id?.to_string(),
