@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    BodyId, EdgeId, FaceId, OccurrenceId, PmiId, PointId, ProductDefinitionId, VertexId,
+    BodyId, CurveId, EdgeId, FaceId, OccurrenceId, PmiId, PointId, ProductDefinitionId, VertexId,
 };
 use crate::transform::Transform;
 
@@ -39,6 +39,11 @@ pub enum PmiTarget {
     Point {
         /// Qualified point.
         point: PointId,
+    },
+    /// Geometric curve carrier.
+    Curve {
+        /// Qualified curve.
+        curve: CurveId,
     },
     /// Product prototype.
     Product {
@@ -316,6 +321,27 @@ mod tests {
                     common_group: None,
                     modifiers: Vec::new(),
                 }],
+            },
+        });
+        ir.finalize();
+
+        assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn curve_target_resolves_against_the_curve_arena() {
+        let mut ir = crate::examples::unit_cube();
+        let curve = ir.model.curves[0].id.clone();
+        ir.model.pmi.push(PmiAnnotation {
+            id: PmiId("synthetic:model:pmi#curve-target".into()),
+            name: Some("curve target".into()),
+            targets: vec![PmiTarget::Curve { curve }],
+            definition: PmiDefinition::Dimension {
+                dimension: DimensionKind::Size,
+                nominal: None,
+                lower_deviation: None,
+                upper_deviation: None,
+                limits_and_fits: None,
             },
         });
         ir.finalize();

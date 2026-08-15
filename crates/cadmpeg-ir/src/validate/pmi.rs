@@ -50,6 +50,12 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|item| item.id.as_str())
         .collect::<HashSet<_>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
     let products = ir
         .model
         .product_definitions
@@ -70,6 +76,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 PmiTarget::Edge { edge } => edges.contains(edge.as_str()),
                 PmiTarget::Vertex { vertex } => vertices.contains(vertex.as_str()),
                 PmiTarget::Point { point } => points.contains(point.as_str()),
+                PmiTarget::Curve { curve } => curves.contains(curve.as_str()),
                 PmiTarget::Product { product } => products.contains(product.as_str()),
                 PmiTarget::Occurrence { occurrence } => occurrences.contains(occurrence.as_str()),
                 PmiTarget::ShapeAspect { source_id } => !source_id.is_empty(),
