@@ -981,6 +981,153 @@ fn configuration_offset_plane_replaces_only_an_unresolved_face() {
 }
 
 #[test]
+fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
+        FeatureId, Length,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let plane_id = FeatureId("test:model:feature#plane".into());
+    let offset_id = FeatureId("test:model:feature#offset".into());
+    let neutral_feature = |id: FeatureId, ordinal, definition| NeutralFeature {
+        id,
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    let base_plane = neutral_feature(
+        plane_id.clone(),
+        0,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, -1.0),
+        },
+    );
+    let base_offset = neutral_feature(
+        offset_id.clone(),
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(plane_id.clone())),
+            distance: Length(12.0),
+        },
+    );
+    let unresolved_reference = || DatumPlaneReference::Face {
+        face: FaceSelection::Unresolved,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(1.0, 0.0, 0.0),
+        u_axis: Vector3::new(0.0, 0.0, -1.0),
+    };
+    let mut configured = neutral_feature(
+        offset_id.clone(),
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(unresolved_reference()),
+            distance: Length(12.0),
+        },
+    );
+
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut configured),
+        &[base_plane.clone(), base_offset.clone()],
+    );
+
+    assert_eq!(configured.dependencies, vec![plane_id.clone()]);
+    assert!(matches!(
+        configured.definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            ..
+        } if reference == plane_id
+    ));
+
+    let mut mismatched = neutral_feature(
+        offset_id,
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(12.0),
+        },
+    );
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut mismatched),
+        &[base_plane, base_offset],
+    );
+    assert!(matches!(
+        mismatched.definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                ..
+            }),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn scoped_offset_plane_inherits_a_matching_resolved_face_reference() {
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
+        FeatureId, Length,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let id = FeatureId("test:model:feature#face-offset".into());
+    let neutral_feature = |definition| NeutralFeature {
+        id: id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    let frame = |face| DatumPlaneReference::Face {
+        face,
+        origin: Point3::new(2.0, 3.0, 4.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let base = neutral_feature(FeatureDefinition::DatumOffsetPlane {
+        reference: Some(frame(FaceSelection::Faces(vec!["face#1".into()]))),
+        distance: Length(7.0),
+    });
+    let mut configured = neutral_feature(FeatureDefinition::DatumOffsetPlane {
+        reference: Some(frame(FaceSelection::Unresolved)),
+        distance: Length(7.0),
+    });
+
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut configured),
+        std::slice::from_ref(&base),
+    );
+
+    assert_eq!(configured.definition, base.definition);
+}
+
+#[test]
 fn configuration_numeric_override_inherits_parameter_dimension() {
     use cadmpeg_ir::features::{
         ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,

@@ -2499,6 +2499,7 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
+    crate::history::inherit_configuration_reference_plane_states(&mut ir);
     sync_active_configuration_resolutions(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
     let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
@@ -3354,6 +3355,7 @@ fn build_metadata_ir(
         &lanes,
         &mut annotations,
     );
+    crate::history::inherit_configuration_reference_plane_states(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
