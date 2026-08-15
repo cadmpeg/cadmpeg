@@ -51,6 +51,7 @@ struct BoundaryItem {
 #[derive(Debug)]
 enum BoundaryEdgeSelectionError {
     MissingEndpoints,
+    InvalidRange,
     Ambiguous,
     PcurveDisagreement,
 }
@@ -589,6 +590,34 @@ fn pcurves_agree(
             .all(|pair| close(pair[0].1, pair[1].0, tolerance))
 }
 
+fn edge_range_matches_curve(
+    edge: &Edge,
+    carrier_index: &ModelIndex<'_>,
+    start: Point3,
+    end: Point3,
+    tolerance: f64,
+) -> bool {
+    let Some(curve_id) = edge.curve.as_ref() else {
+        return false;
+    };
+    let Some(curve) = carrier_index.curves(&curve_id.0) else {
+        return false;
+    };
+    let Some(range) = edge.param_range else {
+        return false;
+    };
+    if !range.iter().all(|parameter| parameter.is_finite()) {
+        return false;
+    }
+    let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(&curve.geometry, range[0]) else {
+        return false;
+    };
+    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]) else {
+        return false;
+    };
+    close(evaluated_start, start, tolerance) && close(evaluated_end, end, tolerance)
+}
+
 fn select_boundary_edge(
     candidates: &[Edge],
     carrier_index: &ModelIndex<'_>,
@@ -598,16 +627,23 @@ fn select_boundary_edge(
     tolerance: f64,
     parameter_curves_authoritative: bool,
 ) -> Result<(Edge, Point3, Point3, bool), BoundaryEdgeSelectionError> {
+    let mut candidates_with_endpoints = 0;
     let candidates = candidates
         .iter()
         .filter_map(|edge| {
             let start = point_position(carrier_index, &edge.start)?;
             let end = point_position(carrier_index, &edge.end)?;
-            Some((edge, start, end))
+            candidates_with_endpoints += 1;
+            edge_range_matches_curve(edge, carrier_index, start, end, tolerance)
+                .then_some((edge, start, end))
         })
         .collect::<Vec<_>>();
     if candidates.is_empty() {
-        return Err(BoundaryEdgeSelectionError::MissingEndpoints);
+        return Err(if candidates_with_endpoints == 0 {
+            BoundaryEdgeSelectionError::MissingEndpoints
+        } else {
+            BoundaryEdgeSelectionError::InvalidRange
+        });
     }
     if pcurves.is_empty() {
         return if candidates.len() == 1 {
@@ -1110,6 +1146,14 @@ pub(super) fn project(
                         losses.push(entity_loss(
                             entry,
                             "boundary model-curve endpoints are missing",
+                        ));
+                        valid = false;
+                        break;
+                    }
+                    Err(BoundaryEdgeSelectionError::InvalidRange) => {
+                        losses.push(entity_loss(
+                            entry,
+                            "boundary model-curve edge range does not evaluate to its vertices",
                         ));
                         valid = false;
                         break;

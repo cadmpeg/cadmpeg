@@ -219,13 +219,21 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         },
         source_object: None,
     });
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
     let candidates = vec![
         Edge {
             id: EdgeId("wrong-occurrence".into()),
             curve: Some(curve_id.clone()),
             start: VertexId("wrong-start".into()),
             end: VertexId("wrong-end".into()),
-            param_range: Some([10.0, 11.0]),
+            param_range: Some([1.0, 2.0]),
             tolerance: None,
         },
         Edge {
@@ -290,6 +298,20 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         [0.0, 1.0],
     )];
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    assert!(!super::edge_range_matches_curve(
+        &candidates[0],
+        &index,
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(11.0, 0.0, 0.0),
+        EPS_BOUNDARY_ENDPOINT_MATCH,
+    ));
+    assert!(super::edge_range_matches_curve(
+        &candidates[1],
+        &index,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        EPS_BOUNDARY_ENDPOINT_MATCH,
+    ));
     let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
         &candidates,
         &index,
@@ -304,6 +326,28 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     assert_eq!(start, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(end, Point3::new(2.0, 0.0, 0.0));
     assert!(pcurves_agree);
+
+    let mut ambiguous_candidates = candidates.clone();
+    ambiguous_candidates.push(Edge {
+        id: EdgeId("duplicate-occurrence".into()),
+        curve: Some(CurveId("curve".into())),
+        start: VertexId("matching-start".into()),
+        end: VertexId("matching-end".into()),
+        param_range: Some([0.0, 2.0]),
+        tolerance: None,
+    });
+    assert!(matches!(
+        super::select_boundary_edge(
+            &ambiguous_candidates,
+            &index,
+            &surface_id,
+            &[],
+            Sense::Forward,
+            EPS_BOUNDARY_ENDPOINT_MATCH,
+            false,
+        ),
+        Err(super::BoundaryEdgeSelectionError::Ambiguous)
+    ));
 }
 
 #[test]

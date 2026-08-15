@@ -83,16 +83,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `6bb0de35f` supplied a formula and synthetic boundary tests, but no external evidence supports using one value for these five roles.
 
-### TP-09. A model-curve pointer has no resolved edge-ownership rule
-
-**Question.** How does a Type 141/142 model-curve pointer select a neutral edge when multiple edges use the same curve carrier?
-
-**Known.** `trimming.rs` retains all candidates and selects a unique Type 141/142 edge whose parameter-curve endpoints agree; a model-preferred boundary with multiple candidates is rejected as ambiguous. `brep.rs` selects a candidate whose declared range evaluates to the Type 186 vertex-list endpoints. `offsets.rs` uses the same curve-endpoint check for the source parameter range, and `csg.rs` rejects conflicting closed/open results. `composite.rs` retains every edge candidate and rejects conflicting parameter ranges or resolved endpoints. `Edge` permits repeated `CurveId` values with distinct vertices and parameter ranges. Type 141/142 carry curve entity pointers, not edge occurrence identities.
-
-**Need.** We need an ownership invariant or a source rule that makes the curve-to-edge relation unique, or a resolution path that verifies each candidate's range and endpoints. A wrong choice transfers the wrong range or endpoints to a boundary, B-rep, offset, composite, or sweep.
-
-**Note.** Candidate checks prevent silent transfer of a wrong range or endpoint, but they do not establish the source ownership rule. The codec now refuses conflicting composite candidates instead of selecting one by storage order.
-
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path
