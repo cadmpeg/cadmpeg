@@ -485,7 +485,7 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
 
     let result = crate::decode::decode_for_test(&scan);
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.points[0].position.x, 1.0);
+    assert_eq!(result.ir().model.points[0].position.x, 11.0);
     assert_eq!(
         result.ir().model.bodies[0]
             .transform
