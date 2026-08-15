@@ -29,6 +29,109 @@ use cadmpeg_ir::CadIr;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
+    let curve_id = CurveId("curve".into());
+    let surface_id = SurfaceId("surface".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let candidates = vec![
+        Edge {
+            id: EdgeId("wrong-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("wrong-start".into()),
+            end: VertexId("wrong-end".into()),
+            param_range: Some([10.0, 11.0]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("matching-occurrence".into()),
+            curve: Some(curve_id),
+            start: VertexId("matching-start".into()),
+            end: VertexId("matching-end".into()),
+            param_range: Some([0.0, 2.0]),
+            tolerance: None,
+        },
+    ];
+    ir.model.points.extend([
+        Point {
+            id: PointId("wrong-point-start".into()),
+            position: Point3::new(10.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("wrong-point-end".into()),
+            position: Point3::new(11.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-point-start".into()),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-point-end".into()),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: VertexId("wrong-start".into()),
+            point: PointId("wrong-point-start".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("wrong-end".into()),
+            point: PointId("wrong-point-end".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-start".into()),
+            point: PointId("matching-point-start".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-end".into()),
+            point: PointId("matching-point-end".into()),
+            tolerance: None,
+        },
+    ]);
+
+    let pcurves = vec![(
+        PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(2.0, 0.0),
+        },
+        [0.0, 1.0],
+    )];
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
+        &candidates,
+        &index,
+        &surface_id,
+        &pcurves,
+        Sense::Forward,
+        EPS_BOUNDARY_ENDPOINT_MATCH,
+        true,
+    )
+    .expect("unique pcurve-compatible edge");
+    assert_eq!(selected.id.0, "matching-occurrence");
+    assert_eq!(start, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(end, Point3::new(2.0, 0.0, 0.0));
+    assert!(pcurves_agree);
+}
+
 #[test]
 fn decode_commits_a_large_batch_of_trimmed_surfaces_without_quadratic_growth() {
     let trimmed_count = 1_000;

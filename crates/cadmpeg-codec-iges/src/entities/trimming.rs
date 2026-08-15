@@ -46,6 +46,13 @@ struct BoundaryItem {
     pcurves: Vec<(PcurveGeometry, [f64; 2])>,
 }
 
+#[derive(Debug)]
+enum BoundaryEdgeSelectionError {
+    MissingEndpoints,
+    Ambiguous,
+    PcurveDisagreement,
+}
+
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
     record.integer(index).and_then(|value| {
         let sequence = u32::try_from(value).ok()?;
@@ -181,6 +188,70 @@ fn pcurves_agree(
             .all(|pair| close(pair[0].1, pair[1].0, tolerance))
 }
 
+fn select_boundary_edge(
+    candidates: &[Edge],
+    carrier_index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    pcurves: &[(PcurveGeometry, [f64; 2])],
+    sense: Sense,
+    tolerance: f64,
+    parameter_curves_authoritative: bool,
+) -> Result<(Edge, Point3, Point3, bool), BoundaryEdgeSelectionError> {
+    let candidates = candidates
+        .iter()
+        .filter_map(|edge| {
+            let start = point_position(carrier_index, &edge.start)?;
+            let end = point_position(carrier_index, &edge.end)?;
+            Some((edge, start, end))
+        })
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return Err(BoundaryEdgeSelectionError::MissingEndpoints);
+    }
+    if pcurves.is_empty() {
+        return if candidates.len() == 1 {
+            let (edge, start, end) = candidates[0];
+            Ok((edge.clone(), start, end, true))
+        } else {
+            Err(BoundaryEdgeSelectionError::Ambiguous)
+        };
+    }
+
+    let agreeing = candidates
+        .iter()
+        .filter(|(_, start, end)| {
+            let (expected_start, expected_end) = if sense == Sense::Forward {
+                (*start, *end)
+            } else {
+                (*end, *start)
+            };
+            pcurves_agree(
+                carrier_index,
+                surface_id,
+                pcurves,
+                expected_start,
+                expected_end,
+                tolerance,
+            )
+        })
+        .collect::<Vec<_>>();
+    match agreeing.as_slice() {
+        [(edge, start, end)] => Ok(((*edge).clone(), *start, *end, true)),
+        [] if !parameter_curves_authoritative && candidates.len() == 1 => {
+            let (edge, start, end) = candidates[0];
+            Ok((edge.clone(), start, end, false))
+        }
+        [] => {
+            if parameter_curves_authoritative {
+                Err(BoundaryEdgeSelectionError::PcurveDisagreement)
+            } else {
+                Err(BoundaryEdgeSelectionError::Ambiguous)
+            }
+        }
+        _ => Err(BoundaryEdgeSelectionError::Ambiguous),
+    }
+}
+
 pub(super) struct TrimmingProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -208,10 +279,13 @@ pub(super) fn project(
     let mut boundaries = BTreeMap::new();
 
     let carrier_index = ModelIndex::new(ir);
-    let mut edges_by_curve = BTreeMap::new();
+    let mut edges_by_curve = BTreeMap::<CurveId, Vec<Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = &edge.curve {
-            edges_by_curve.entry(curve.clone()).or_insert(edge);
+            edges_by_curve
+                .entry(curve.clone())
+                .or_default()
+                .push(edge.clone());
         }
     }
     let mut staged = Vec::new();
@@ -563,22 +637,10 @@ pub(super) fn project(
             let mut items = Vec::with_capacity(boundary.segments.len());
             for segment in &boundary.segments {
                 let model_curve_id = CurveId(format!("iges:model:curve#D{}", segment.model_curve));
-                let Some(source_edge) = edges_by_curve.get(&model_curve_id).copied().cloned()
-                else {
+                let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
                     losses.push(entity_loss(
                         entry,
                         "boundary model curve has no bounded edge",
-                    ));
-                    valid = false;
-                    break;
-                };
-                let (Some(start), Some(end)) = (
-                    point_position(&carrier_index, &source_edge.start),
-                    point_position(&carrier_index, &source_edge.end),
-                ) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "boundary model-curve endpoints are missing",
                     ));
                     valid = false;
                     break;
@@ -609,31 +671,43 @@ pub(super) fn project(
                     }
                     None => Vec::new(),
                 };
-                if !pcurves.is_empty() {
-                    let (expected_start, expected_end) = if segment.sense == Sense::Forward {
-                        (start, end)
-                    } else {
-                        (end, start)
-                    };
-                    let agrees = pcurves_agree(
-                        &carrier_index,
-                        &surface_id,
-                        &pcurves,
-                        expected_start,
-                        expected_end,
-                        agreement_tolerance,
-                    );
-                    if !agrees {
-                        if segment.parameter_curves_authoritative {
-                            losses.push(entity_loss(
-                                entry,
-                                "curve-on-surface carriers disagree beyond the minimum resolution",
-                            ));
-                            valid = false;
-                            break;
-                        }
-                        pcurves.clear();
+                let (source_edge, start, end, pcurves_agree) = match select_boundary_edge(
+                    candidates,
+                    &carrier_index,
+                    &surface_id,
+                    &pcurves,
+                    segment.sense,
+                    agreement_tolerance,
+                    segment.parameter_curves_authoritative,
+                ) {
+                    Ok(selected) => selected,
+                    Err(BoundaryEdgeSelectionError::MissingEndpoints) => {
+                        losses.push(entity_loss(
+                            entry,
+                            "boundary model-curve endpoints are missing",
+                        ));
+                        valid = false;
+                        break;
                     }
+                    Err(BoundaryEdgeSelectionError::Ambiguous) => {
+                        losses.push(entity_loss(
+                            entry,
+                            "boundary model curve maps to multiple ambiguous edge occurrences",
+                        ));
+                        valid = false;
+                        break;
+                    }
+                    Err(BoundaryEdgeSelectionError::PcurveDisagreement) => {
+                        losses.push(entity_loss(
+                            entry,
+                            "curve-on-surface carriers disagree beyond the minimum resolution",
+                        ));
+                        valid = false;
+                        break;
+                    }
+                };
+                if !pcurves_agree {
+                    pcurves.clear();
                 }
                 items.push(BoundaryItem {
                     segment: segment.clone(),
