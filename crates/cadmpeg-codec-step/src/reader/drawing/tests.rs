@@ -322,8 +322,19 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .iter()
         .find(|drawing| drawing.parameters.get("name") == Some(&"Cyclic model".into()))
         .expect("cyclic drawing model");
-    assert!(!cyclic_model.relationships.contains_key("items"));
-    assert!(result.report().losses.iter().any(|loss| {
+    assert!(cyclic_model.relationships["items"]
+        .iter()
+        .any(|target| target.target.as_deref() == Some("step:data:mapped_item#21")));
+    let drawing_targets = &result
+        .ir()
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arenas["drawing_targets"];
+    assert!(drawing_targets
+        .iter()
+        .any(|record| record.id() == "step:data:mapped_item#21"));
+    assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
             && loss.message.contains("#21")
     }));

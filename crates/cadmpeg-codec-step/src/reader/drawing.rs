@@ -269,7 +269,10 @@ fn add_source_typed_targets(
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
-        if is_wrapper_record(record, exchange) || is_representation_context(record) {
+        if is_representation_context(record)
+            || (is_wrapper_record(record, exchange)
+                && !is_cyclic_wrapper(id, target_identities, exchange))
+        {
             continue;
         }
         let identity = opaque_record_id(record).0;
@@ -315,6 +318,25 @@ fn is_representation_context(record: &RawRecord) -> bool {
         .partials
         .iter()
         .any(|partial| partial.name == "REPRESENTATION_CONTEXT")
+}
+
+fn is_cyclic_wrapper(
+    id: u64,
+    target_identities: &BTreeMap<u64, BTreeSet<String>>,
+    exchange: &Exchange,
+) -> bool {
+    if target_identities.contains_key(&id) {
+        return false;
+    }
+    let mut identities = BTreeSet::new();
+    let mut active = BTreeSet::new();
+    collect_wrapper_targets(
+        id,
+        target_identities,
+        exchange,
+        &mut active,
+        &mut identities,
+    )
 }
 
 fn drawing_type(record: &RawRecord) -> Option<&'static str> {
