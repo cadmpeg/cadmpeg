@@ -232,6 +232,65 @@ pub fn decode_parameter_scopes(
     Ok(out)
 }
 
+/// Admit one envelope for every logical scope identity.
+///
+/// Some Design streams retain more than one complete envelope for one record
+/// index. A history-bound envelope is authoritative when exactly one
+/// candidate resolves to a unique ASM state transition; an unresolved group
+/// remains an error so a duplicate cannot be selected by byte order.
+pub(crate) fn admit_history_bound_scope_variants(
+    scopes: &mut Vec<DesignParameterScope>,
+    histories: &[crate::history_records::AsmHistory],
+) -> Result<(), CodecError> {
+    let mut groups = HashMap::<(String, u32), Vec<usize>>::new();
+    for (index, scope) in scopes.iter().enumerate() {
+        let stream = native_stream(&scope.id)
+            .unwrap_or(ids::DEFAULT_STREAM)
+            .to_owned();
+        groups
+            .entry((stream, scope.record_index))
+            .or_default()
+            .push(index);
+    }
+
+    let mut admitted = vec![true; scopes.len()];
+    for indices in groups.values().filter(|indices| indices.len() > 1) {
+        let history_bound = indices
+            .iter()
+            .copied()
+            .filter(|index| {
+                let scope = &scopes[*index];
+                let Some(state_id) = scope.history_state_id else {
+                    return false;
+                };
+                let Some(previous_state_id) =
+                    crate::history::effective_scope_previous_history_state_id(scope, histories)
+                else {
+                    return false;
+                };
+                crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+                    .is_some()
+            })
+            .collect::<Vec<_>>();
+        let [keep] = history_bound.as_slice() else {
+            return Err(CodecError::Malformed(
+                "Design scope record identity has unresolved duplicate envelopes".into(),
+            ));
+        };
+        for index in indices {
+            admitted[*index] = *index == *keep;
+        }
+    }
+
+    let retained = std::mem::take(scopes)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, scope)| admitted[index].then_some(scope))
+        .collect();
+    *scopes = retained;
+    Ok(())
+}
+
 pub(crate) fn exact_thread_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,

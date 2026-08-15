@@ -18,6 +18,7 @@ mod fixed_kind_operations;
 mod fixed_kind_tail;
 mod flange;
 mod hem;
+mod history_admission;
 mod mirror;
 mod named_empty_label;
 mod named_variable_tail;
