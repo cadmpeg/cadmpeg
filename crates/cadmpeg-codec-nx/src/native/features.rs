@@ -7456,19 +7456,14 @@ pub fn feature_operation_body_operands(
                 let id = format!("{store}:block#{}", member.member_index);
                 block_ids.contains(id.as_str()).then_some(id)
             });
-            let same_namespace_reference = references.iter().any(|reference| {
-                if reference.body_object_index != member.member_index {
-                    return false;
+            let same_namespace_reference = references.iter().any(|reference| match member_store {
+                Some(store) => {
+                    unique_stores
+                        .get(reference.operation_label.as_str())
+                        .copied()
+                        == Some(store)
                 }
-                match member_store {
-                    Some(store) => {
-                        unique_stores
-                            .get(reference.operation_label.as_str())
-                            .copied()
-                            == Some(store)
-                    }
-                    None => !input_operations.contains(reference.operation_label.as_str()),
-                }
+                None => !input_operations.contains(reference.operation_label.as_str()),
             });
             let segment_body_bindings = if member_store.is_none() {
                 bindings

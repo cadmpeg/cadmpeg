@@ -1154,6 +1154,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     ];
     let blocks = [
         block("nx:om-data-blocks-1:block#20", 1),
+        block("nx:om-data-blocks-1:block#30", 1),
         block("nx:om-data-blocks-2:block#20", 2),
     ];
     assert!(super::feature_operation_body_operands(
@@ -1178,12 +1179,34 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         &blocks,
         &bindings,
     );
-    assert_eq!(same_store.len(), 1);
+    assert_eq!(same_store.len(), 2);
     assert_eq!(
         same_store[0].operand_data_block.as_deref(),
         Some("nx:om-data-blocks-1:block#20")
     );
+    assert_eq!(
+        same_store[1].operand_data_block.as_deref(),
+        Some("nx:om-data-blocks-1:block#30")
+    );
     assert!(same_store[0].segment_body_bindings.is_empty());
+
+    let distinct_member = member(0, 30);
+    let distinct_member_operand = super::feature_operation_body_operands(
+        &[distinct_member],
+        &[FeatureBodyReferenceOccurrence {
+            operation_label: "same-store".to_string(),
+            ..references[0].clone()
+        }],
+        &same_store_inputs,
+        &blocks,
+        &bindings,
+    );
+    assert_eq!(distinct_member_operand.len(), 1);
+    assert_eq!(distinct_member_operand[0].operand_object_index, 30);
+    assert_eq!(
+        distinct_member_operand[0].operand_data_block.as_deref(),
+        Some("nx:om-data-blocks-1:block#30")
+    );
     assert!(super::feature_operation_body_operands(
         &members,
         &[FeatureBodyReferenceOccurrence {
@@ -1191,7 +1214,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
             ..references[0].clone()
         }],
         &same_store_inputs,
-        &blocks[1..],
+        &blocks[2..],
         &bindings,
     )
     .is_empty());
