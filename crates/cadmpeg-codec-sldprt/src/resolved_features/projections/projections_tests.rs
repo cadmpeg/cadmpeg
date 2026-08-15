@@ -494,6 +494,118 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
 }
 
 #[test]
+fn compact_surface_selection_binds_full_round_fillet_face_sets() {
+    let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        id: FeatureId(id.into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: Some(native_ref.into()),
+    };
+    let mut features = vec![
+        feature(
+            "producer",
+            "producer-native",
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        ),
+        feature(
+            "fillet",
+            "fillet-native",
+            FeatureDefinition::Fillet {
+                groups: vec![cadmpeg_ir::features::FilletGroup {
+                    edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                    radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+                    tangency_weight: None,
+                }],
+            },
+        ),
+    ];
+    let signature = [0x34, 0x80, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: [2u32, 4, 6]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, local_id)| FeatureInputSurfaceSelection {
+                id: format!("selection-{ordinal}"),
+                parent: "lane".into(),
+                ordinal: ordinal as u32,
+                offset: ordinal as u64,
+                selector: 0,
+                object_name_ref: "name".into(),
+                feature_ref: "fillet-native".into(),
+                producer_feature_refs: vec!["producer-native".into()],
+                terminal_feature_ref: Some("producer-native".into()),
+                components: vec![FeatureInputComponentPathEntry {
+                    instance: Some(0x8020),
+                    type_signature: signature,
+                    local_id: Some(local_id),
+                }],
+            })
+            .collect(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let mut lane_two = lane.clone();
+    lane_two.id = "lane-two".into();
+    for selection in &mut lane_two.surface_selections {
+        selection.parent = lane_two.id.clone();
+    }
+    project_compact_surface_selections(&mut features, &[], &[lane, lane_two]);
+
+    let FeatureDefinition::FullRoundFillet { groups } = &features[1].definition else {
+        panic!("expected full-round fillet");
+    };
+    let [group] = groups.as_slice() else {
+        panic!("expected one full-round group");
+    };
+    assert!(matches!(
+        &group.center_faces,
+        FaceSelection::Generated { faces, .. }
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
+                feature: FeatureId("producer".into()),
+                local_id: "2".into(),
+            }]
+    ));
+    assert!(matches!(
+        &group.side_one_faces,
+        cadmpeg_ir::features::FullRoundSideSelection::Explicit(FaceSelection::Generated {
+            faces,
+            ..
+        }) if faces[0].local_id == "4"
+    ));
+    assert!(matches!(
+        &group.side_two_faces,
+        cadmpeg_ir::features::FullRoundSideSelection::Explicit(FaceSelection::Generated {
+            faces,
+            ..
+        }) if faces[0].local_id == "6"
+    ));
+    assert_eq!(features[1].dependencies, [FeatureId("producer".into())]);
+}
+
+#[test]
 fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
         id: FeatureId(id.into()),

@@ -1713,6 +1713,28 @@ pub(crate) mod component_face_nested_reference_prefix {
     pub(crate) const MARKER_TAIL: usize = 100;
 }
 
+/// Byte offsets for the `component_face_compact_reference_prefix` record.
+///
+/// Spec §2. Record length 82 B.
+///
+/// ```text
+/// Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
+/// ```
+pub(crate) mod component_face_compact_reference_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 82;
+    /// Offset of `class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_TOKEN: usize = 0;
+    /// Offset of `record_version` (`u32`, little-endian). Spec §2.
+    pub(crate) const RECORD_VERSION: usize = 2;
+    /// Offset of `flags` (`bytes[2]`). Spec §2.
+    pub(crate) const FLAGS: usize = 6;
+    /// Offset of `component_marker` (`bytes[16]`). Spec §2.
+    pub(crate) const COMPONENT_MARKER: usize = 64;
+    /// Offset of `marker_tail` (`u16`, little-endian). Spec §2.
+    pub(crate) const MARKER_TAIL: usize = 80;
+}
+
 /// Byte offsets for the `temporary_axis_reference_nine_scalar` record.
 ///
 /// Spec §2. Record length 316 B.

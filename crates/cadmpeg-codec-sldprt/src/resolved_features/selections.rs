@@ -30,6 +30,7 @@ use std::{
 };
 
 use crate::layout::{
+    component_face_compact_reference_prefix as compact_face,
     component_face_nested_reference_prefix as nested_face,
     cosmetic_thread_component_edge_wrapper_prefix as component_edge,
     cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
@@ -575,6 +576,10 @@ pub(super) fn compact_surface_selections(
                     .chain(component_face_references)
                     .collect()
             }
+            NativeClassKind::Fillet if feature.input_class.as_deref() == Some("Fillet_c") => {
+                fillet_face_selection_candidates(lane, start, end)
+            }
+            NativeClassKind::Fillet => continue,
             NativeClassKind::MirrorPattern => (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                 .filter(|marker| {
@@ -608,7 +613,9 @@ pub(super) fn compact_surface_selections(
         };
         if !matches!(
             kind,
-            NativeClassKind::MirrorPattern | NativeClassKind::Operation(FeatureClass::SplitFace)
+            NativeClassKind::Fillet
+                | NativeClassKind::MirrorPattern
+                | NativeClassKind::Operation(FeatureClass::SplitFace)
         ) && candidates.len() != expected_count
         {
             continue;
@@ -640,6 +647,65 @@ pub(super) fn compact_surface_selections(
         }
     }
     result
+}
+
+fn fillet_face_selection_candidates(
+    lane: &FeatureInputLane,
+    start: usize,
+    end: usize,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    // A full-round Fillet_c carries center, first-side, and second-side face
+    // carriers in that order. Other role-03 counts are different fillet
+    // constructions and remain outside this projection.
+    let mut class_bodies = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moCompFace_c")
+        .filter_map(|class| {
+            let class_offset = usize::try_from(class.offset).ok()?;
+            if !(start..end).contains(&class_offset) {
+                return None;
+            }
+            let body = class_offset.checked_add(6 + class.name.len())?;
+            let token = View::u16_le_at(&lane.native_payload, body)?;
+            is_class_token(token).then_some((body, token))
+        })
+        .collect::<Vec<_>>();
+    class_bodies.sort_unstable();
+    class_bodies.dedup();
+
+    let mut candidates = Vec::new();
+    for (body, token) in class_bodies {
+        let token = token.to_le_bytes();
+        for offset in body..end.saturating_sub(6) {
+            let body_header = lane.native_payload.get(offset..offset + 6);
+            if offset != body
+                && (body_header.and_then(|header| header.get(..2)) != Some(token.as_slice())
+                    || body_header.and_then(|header| header.get(2..6)) != Some(&[2, 0, 0, 0]))
+            {
+                continue;
+            }
+            let Some((marker, components)) =
+                component_face_reference_at_for_full_round_fillet(&lane.native_payload, offset)
+            else {
+                continue;
+            };
+            let Some(selector) = lane.native_payload.get(marker - 8..marker - 4) else {
+                continue;
+            };
+            if !is_component_vector_selector_for_role(selector, 3) {
+                continue;
+            }
+            candidates.push((marker, components));
+        }
+    }
+    candidates.sort_by_key(|(offset, _)| *offset);
+    candidates.dedup();
+    if candidates.len() == 3 {
+        candidates
+    } else {
+        Vec::new()
+    }
 }
 
 fn planar_surface_selection_candidates(
@@ -1199,6 +1265,21 @@ pub(super) fn component_face_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    component_face_reference_at_impl(payload, body_offset, false)
+}
+
+fn component_face_reference_at_for_full_round_fillet(
+    payload: &[u8],
+    body_offset: usize,
+) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    component_face_reference_at_impl(payload, body_offset, true)
+}
+
+fn component_face_reference_at_impl(
+    payload: &[u8],
+    body_offset: usize,
+    include_compact_frame: bool,
+) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
     const NESTED_FACE_CLASS: &[u8] = b"moFaceRef_c";
     let token = View::u16_le_at(payload, body_offset)?;
     let flags = payload.get(body_offset + 6..body_offset + 8)?;
@@ -1223,13 +1304,32 @@ pub(super) fn component_face_reference_at(
         &[100]
     } else if nested_face_class {
         &[nested_face::COMPONENT_MARKER]
+    } else if include_compact_frame {
+        // The short compact face frame and the two established zero-flag
+        // frames share this carrier header. The vector grammar selects the
+        // complete frame at the chosen offset.
+        &[compact_face::COMPONENT_MARKER, 68, 92]
     } else {
         &[68, 92]
     };
-    marker_offsets.iter().find_map(|relative| {
-        let marker = body_offset.checked_add(*relative)?;
-        compact_surface_reference_at(payload, marker).map(|components| (marker, components))
-    })
+    if include_compact_frame {
+        let candidates = marker_offsets
+            .iter()
+            .filter_map(|relative| {
+                let marker = body_offset.checked_add(*relative)?;
+                compact_surface_reference_at(payload, marker).map(|components| (marker, components))
+            })
+            .collect::<Vec<_>>();
+        let [candidate] = candidates.as_slice() else {
+            return None;
+        };
+        Some(candidate.clone())
+    } else {
+        marker_offsets.iter().find_map(|relative| {
+            let marker = body_offset.checked_add(*relative)?;
+            compact_surface_reference_at(payload, marker).map(|components| (marker, components))
+        })
+    }
 }
 
 pub(super) fn component_face_reference_in_record(

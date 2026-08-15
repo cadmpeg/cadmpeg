@@ -752,6 +752,102 @@ fn component_face_reference_accepts_both_nested_body_flags() {
 }
 
 #[test]
+fn component_face_reference_accepts_compact_body_frame() {
+    let body_offset = 30;
+    let marker = body_offset + 64;
+    let count = 6u32;
+    let entry_count = count as usize - 1;
+    let mut payload = vec![0; marker + 18 + entry_count * 20];
+    payload[body_offset..body_offset + 2].copy_from_slice(&0x8080_u16.to_le_bytes());
+    payload[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
+    payload[marker - 12..marker - 8].copy_from_slice(&count.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0, 3, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    let signature = [0x34, 0x80, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0];
+    for index in 0..entry_count {
+        let entry = marker + 18 + index * 20;
+        payload[entry..entry + 4].copy_from_slice(&(0x8020_u32 + index as u32).to_le_bytes());
+        payload[entry + 4..entry + 16].copy_from_slice(&signature);
+        payload[entry + 16..entry + 20].copy_from_slice(&(index as u32 + 1).to_le_bytes());
+    }
+
+    let (actual_marker, components) =
+        component_face_reference_at_for_full_round_fillet(&payload, body_offset)
+            .expect("compact face reference");
+    assert_eq!(actual_marker, marker);
+    assert_eq!(components.len(), entry_count);
+    assert_eq!(
+        components.last().and_then(|component| component.local_id),
+        Some(5)
+    );
+}
+
+#[test]
+fn fillet_face_candidates_require_three_ordered_role_three_paths() {
+    let mut payload = vec![0; 700];
+    let signature = [0x34, 0x80, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0];
+    for (body, base) in [(18, 1u32), (220, 11), (420, 21)] {
+        let marker = body + 64;
+        payload[body..body + 2].copy_from_slice(&0x8080_u16.to_le_bytes());
+        payload[body + 2..body + 6].copy_from_slice(&2u32.to_le_bytes());
+        payload[marker - 12..marker - 8].copy_from_slice(&6u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 3, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        for index in 0..5 {
+            let entry = marker + 18 + index * 20;
+            payload[entry..entry + 4].copy_from_slice(&(0x8020_u32 + index as u32).to_le_bytes());
+            payload[entry + 4..entry + 16].copy_from_slice(&signature);
+            payload[entry + 16..entry + 20].copy_from_slice(&(base + index as u32).to_le_bytes());
+        }
+    }
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: "moCompFace_c".into(),
+            role: FeatureInputClassRole::Reference,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let candidates = fillet_face_selection_candidates(&lane, 0, 700);
+    assert_eq!(candidates.len(), 3);
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>(),
+        [82, 284, 484]
+    );
+    assert_eq!(
+        candidates[0]
+            .1
+            .iter()
+            .filter_map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5]
+    );
+
+    let mut incomplete = lane.clone();
+    incomplete.native_payload.truncate(403);
+    assert!(fillet_face_selection_candidates(&incomplete, 0, 403).is_empty());
+}
+
+#[test]
 fn sketch_surface_component_path_has_two_implicit_root_slots() {
     let marker = 12;
     let mut payload = Vec::new();

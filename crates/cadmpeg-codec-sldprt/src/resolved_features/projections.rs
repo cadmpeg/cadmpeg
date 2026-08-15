@@ -936,6 +936,78 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
+        let unresolved_full_round = matches!(
+            &feature.definition,
+            FeatureDefinition::Fillet { groups }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::FilletGroup {
+                        edges: EdgeSelection::Unresolved,
+                        radius: RadiusSpec::Unresolved { .. },
+                        ..
+                    }]
+                )
+        );
+        if unresolved_full_round {
+            let Some([center_faces, side_one_faces, side_two_faces]) =
+                full_round_fillet_selection_triple(feature_selections)
+            else {
+                continue;
+            };
+            let face_selections = [center_faces, side_one_faces, side_two_faces]
+                .into_iter()
+                .map(|selection| {
+                    let native = compact_surface_selection_value(&selection.components);
+                    let generated = selection
+                        .terminal_feature_ref
+                        .as_ref()
+                        .and_then(|producer| feature_ids_by_native.get(producer))
+                        .zip(selection.components.last())
+                        .and_then(|(producer, component)| Some((producer, component.local_id?)));
+                    let face = match generated {
+                        Some((producer, local_id)) => {
+                            if producer != &feature.id && !feature.dependencies.contains(producer) {
+                                feature.dependencies.push(producer.clone());
+                            }
+                            cadmpeg_ir::features::FaceSelection::Generated {
+                                faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                                    feature: producer.clone(),
+                                    local_id: local_id.to_string(),
+                                }],
+                                native,
+                            }
+                        }
+                        None => cadmpeg_ir::features::FaceSelection::Native(native),
+                    };
+                    for producer in selection
+                        .producer_feature_refs
+                        .iter()
+                        .filter_map(|producer| feature_ids_by_native.get(producer))
+                        .filter(|producer| *producer != &feature.id)
+                    {
+                        if !feature.dependencies.contains(producer) {
+                            feature.dependencies.push(producer.clone());
+                        }
+                    }
+                    face
+                })
+                .collect::<Vec<_>>();
+            let [center_faces, side_one_faces, side_two_faces] = face_selections.as_slice() else {
+                unreachable!("full-round candidate has three face selections")
+            };
+            feature.definition = FeatureDefinition::FullRoundFillet {
+                groups: vec![cadmpeg_ir::features::FullRoundFilletGroup {
+                    center_faces: center_faces.clone(),
+                    side_one_faces: cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                        side_one_faces.clone(),
+                    ),
+                    side_two_faces: cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                        side_two_faces.clone(),
+                    ),
+                }],
+            };
+            continue;
+        }
         if matches!(feature.definition, FeatureDefinition::DatumPlaneUnresolved)
             && feature_selections.len() == 2
         {
@@ -1224,6 +1296,36 @@ pub(crate) fn project_compact_surface_selections(
             u_axis,
         });
     }
+}
+
+fn full_round_fillet_selection_triple<'a>(
+    selections: &[&'a FeatureInputSurfaceSelection],
+) -> Option<[&'a FeatureInputSurfaceSelection; 3]> {
+    let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
+    for selection in selections {
+        by_lane
+            .entry(selection.parent.as_str())
+            .or_default()
+            .push(*selection);
+    }
+    let mut consensus: Option<[&'a FeatureInputSurfaceSelection; 3]> = None;
+    for mut lane_selections in by_lane.into_values() {
+        lane_selections.sort_unstable_by_key(|selection| selection.offset);
+        let [center, side_one, side_two] = lane_selections.as_slice() else {
+            return None;
+        };
+        if let Some([expected_center, expected_side_one, expected_side_two]) = consensus {
+            if !same_surface_selection_semantics(expected_center, center)
+                || !same_surface_selection_semantics(expected_side_one, side_one)
+                || !same_surface_selection_semantics(expected_side_two, side_two)
+            {
+                return None;
+            }
+        } else {
+            consensus = Some([*center, *side_one, *side_two]);
+        }
+    }
+    consensus
 }
 
 pub(crate) fn project_draft_operands(

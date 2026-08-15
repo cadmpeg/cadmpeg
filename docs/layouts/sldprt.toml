@@ -4989,6 +4989,56 @@ source = "spec"
 anchor = "zero marker tail at `+100..+101`"
 
 [[record]]
+name = "component_face_compact_reference_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
+kind = "byte"
+section = "2"
+anchor = "A compact full-round fillet face carrier uses the fixed zero-flag prefix with its component-path marker 64 bytes after the body start and a zero marker tail at `+80..+81`"
+size = 82
+endianness = "little"
+note = "Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail."
+
+[[record.field]]
+name = "class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "class token at `+0`"
+
+[[record.field]]
+name = "record_version"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "u32 `2` at `+2`"
+
+[[record.field]]
+name = "flags"
+offset = 6
+type = "bytes[2]"
+source = "spec"
+anchor = "fixed zero-flag prefix"
+
+[[record.gap]]
+offset = 8
+size = 56
+note = "Fixed carrier bytes before the component marker."
+
+[[record.field]]
+name = "component_marker"
+offset = 64
+type = "bytes[16]"
+source = "spec"
+anchor = "component-path marker 64 bytes after the body start"
+
+[[record.field]]
+name = "marker_tail"
+offset = 80
+type = "u16"
+source = "spec"
+anchor = "zero marker tail at `+80..+81`"
+
+[[record]]
 name = "temporary_axis_reference_nine_scalar"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs"
 kind = "byte"
