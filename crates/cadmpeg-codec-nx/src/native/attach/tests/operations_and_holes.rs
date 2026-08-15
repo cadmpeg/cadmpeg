@@ -388,7 +388,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 
     assert_eq!(
         super::trim_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#10".to_string()],
                 native: "nx:om-object-index#10".to_string(),
@@ -398,7 +398,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 native: "nx:om-object-indices#20".to_string(),
             },
             keep: BodyTrimSide::Unresolved,
-        })
+        }
     );
     let resolved = BTreeMap::from([
         (10, vec![BodyId("target".to_string())]),
@@ -406,7 +406,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     ]);
     assert_eq!(
         super::trim_body_feature_definition(10, &references, &roots, &resolved),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Resolved {
                 bodies: vec![BodyId("target".to_string())],
                 native: "nx:om-object-index#10".to_string(),
@@ -416,11 +416,18 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 native: "nx:om-object-indices#20".to_string(),
             },
             keep: BodyTrimSide::Unresolved,
-        })
+        }
     );
     assert_eq!(
         super::trim_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
-        None
+        FeatureDefinition::TrimBodies {
+            targets: BodySelection::Local {
+                bodies: vec!["nx:om-body-object#10".to_string()],
+                native: "nx:om-object-index#10".to_string(),
+            },
+            tools: BodySelection::Unresolved,
+            keep: BodyTrimSide::Unresolved,
+        }
     );
 
     let same_body = BTreeMap::from([(10, 10), (20, 10)]);
@@ -431,11 +438,11 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             &same_body,
             &BTreeMap::new(),
         ),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             ..
-        }) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+        } if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
     ));
 
     let mut mixed_operand = operands[0].clone();
@@ -449,11 +456,11 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             &roots,
             &BTreeMap::new(),
         ),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             ..
-        }) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+        } if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
     ));
 }
 

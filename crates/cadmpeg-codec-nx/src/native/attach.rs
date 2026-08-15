@@ -3073,7 +3073,7 @@ fn attach_feature_operations(
             .then(|| {
                 body_references
                     .get(label.id.as_str())
-                    .and_then(|primary| {
+                    .map(|primary| {
                         trim_body_feature_definition(
                             *primary,
                             operation_body_operands_by_operation
@@ -7490,50 +7490,61 @@ fn trim_body_feature_definition(
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
-    let tool_object_indices = operands
-        .iter()
-        .map(|operand| operand.operand_object_index)
-        .collect::<Vec<_>>();
-    (!tool_object_indices.is_empty()).then(|| {
-        let native_target = format!("nx:om-object-index#{target_object_index}");
-        let native_tools = format!(
-            "nx:om-object-indices#{}",
-            tool_object_indices
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(",")
-        );
-        if operands.iter().any(|operand| {
-            operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
-        }) {
-            return FeatureDefinition::TrimBodies {
-                targets: BodySelection::Native(native_target),
-                tools: BodySelection::Native(native_tools),
-                keep: BodyTrimSide::Unresolved,
-            };
-        }
-        let (targets, tools) = atomic_disjoint_body_selections(
-            feature_body_selection(
+) -> FeatureDefinition {
+    let native_target = format!("nx:om-object-index#{target_object_index}");
+    if operands.is_empty() {
+        return FeatureDefinition::TrimBodies {
+            targets: feature_body_selection(
                 &[target_object_index],
                 body_alias_roots,
                 bodies_by_object_index,
                 native_target,
-            ),
-            feature_body_selection(
-                &tool_object_indices,
-                body_alias_roots,
-                bodies_by_object_index,
-                native_tools,
-            ),
-        );
-        FeatureDefinition::TrimBodies {
-            targets,
-            tools,
+            )
+            .selection,
+            tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
-        }
-    })
+        };
+    }
+    let tool_object_indices = operands
+        .iter()
+        .map(|operand| operand.operand_object_index)
+        .collect::<Vec<_>>();
+    let native_tools = format!(
+        "nx:om-object-indices#{}",
+        tool_object_indices
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    if operands.iter().any(|operand| {
+        operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
+    }) {
+        return FeatureDefinition::TrimBodies {
+            targets: BodySelection::Native(native_target),
+            tools: BodySelection::Native(native_tools),
+            keep: BodyTrimSide::Unresolved,
+        };
+    }
+    let (targets, tools) = atomic_disjoint_body_selections(
+        feature_body_selection(
+            &[target_object_index],
+            body_alias_roots,
+            bodies_by_object_index,
+            native_target,
+        ),
+        feature_body_selection(
+            &tool_object_indices,
+            body_alias_roots,
+            bodies_by_object_index,
+            native_tools,
+        ),
+    );
+    FeatureDefinition::TrimBodies {
+        targets,
+        tools,
+        keep: BodyTrimSide::Unresolved,
+    }
 }
 
 fn feature_body_outputs(
