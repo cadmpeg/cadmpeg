@@ -29,6 +29,28 @@ use cadmpeg_ir::CadIr;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+use super::{mirror_flag_valid, standard_color, vertical_text_flag_valid};
+
+#[test]
+fn presentation_enumerations_match_the_iges_tables() {
+    for value in 0..=2 {
+        assert!(mirror_flag_valid(value));
+    }
+    assert!(!mirror_flag_valid(-1));
+    assert!(!mirror_flag_valid(3));
+
+    for value in 0..=1 {
+        assert!(vertical_text_flag_valid(value));
+    }
+    assert!(!vertical_text_flag_valid(-1));
+    assert!(!vertical_text_flag_valid(2));
+
+    assert!(standard_color(1).is_some());
+    assert!(standard_color(8).is_some());
+    assert!(standard_color(0).is_none());
+    assert!(standard_color(9).is_none());
+}
+
 #[test]
 fn decode_applies_standard_body_color_and_face_color_override() {
     let result = IgesCodec

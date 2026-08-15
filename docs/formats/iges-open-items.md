@@ -307,36 +307,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-01. Parameter defaults are honored at selected token indices only
-
-**Question.** Which parameter fields may be omitted, and what defaults do they receive?
-
-**Known.** `drawing.rs` applies defaults at selected token indices for several annotation and drawing records. The current defaults are documented in the codec but are not all derived from a source table.
-
-**Need.** We need the optionality and default for each affected field, with omitted and malformed tokens distinguished.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `c486ba66d` made the selected defaults explicit and added fixtures, but it did not establish the complete field table from independent evidence.
-
-### PS-02. The same text-box metric has two different bounds
-
-**Question.** What bounds apply to the Type 212/213 text-box metrics?
-
-**Known.** `drawing.rs` applies distinct bounds to the two record forms, including nonnegative checks for Type 312 dimensions. The current documentation records these bounds.
-
-**Need.** We need the field definitions and bounds for each form from the format source or independent producer output.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `8d2479c8b` changed the checks and the documentation together; the test fixtures do not establish that the bounds are format rules.
-
-### PS-04. Enumerated value tables exist only in the source
-
-**Question.** What are the complete enumerated tables for the supported drawing and presentation fields?
-
-**Known.** `drawing.rs` and `presentation.rs` contain the accepted values. The current tests exercise selected values and the documentation repeats the implementation tables.
-
-**Need.** We need the enumerated tables from the format source, including reserved and invalid values, and a rule for values outside each table.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `4c91d071e` made the source tables explicit but did not provide independent table evidence.
-
 ## 7. Write path
 
 ### WR-01. An unclassified loop is written as an inner loop

@@ -50,6 +50,14 @@ fn standard_color(number: i64) -> Option<Color> {
     Some(Color { r, g, b, a: 1.0 })
 }
 
+fn mirror_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=2)
+}
+
+fn vertical_text_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
+}
+
 fn source_sequence(id: &str) -> Option<u32> {
     let marker = id.rfind("#D").into_iter().chain(id.rfind(":D")).max()? + 2;
     let digits = id[marker..].bytes().take_while(u8::is_ascii_digit).count();
@@ -234,12 +242,10 @@ pub(super) fn project(
                 .number_or(4, std::f64::consts::FRAC_PI_2)
                 .is_some_and(f64::is_finite)
             && record.number_or(5, 0.0).is_some_and(f64::is_finite)
-            && record
-                .integer_or(6, 0)
-                .is_some_and(|value| matches!(value, 0..=2))
+            && record.integer_or(6, 0).is_some_and(mirror_flag_valid)
             && record
                 .integer_or(7, 0)
-                .is_some_and(|value| matches!(value, 0..=1))
+                .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
         if directory_valid && fields_valid {
             decoded.insert(entry.sequence);

@@ -31,7 +31,10 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
-use super::has_in_plane_component;
+use super::{
+    depth_clipping_valid, display_flag_valid, has_in_plane_component, standard_color_valid,
+    standard_line_font_valid,
+};
 
 #[test]
 fn view_up_component_test_is_scale_invariant() {
@@ -47,6 +50,33 @@ fn view_up_component_test_is_scale_invariant() {
         [1.0e200, 0.0, 0.0],
         [1.0e200, 0.0, 0.0]
     ));
+}
+
+#[test]
+fn drawing_enumerations_match_the_iges_tables() {
+    for value in 0..=3 {
+        assert!(depth_clipping_valid(value));
+    }
+    assert!(!depth_clipping_valid(-1));
+    assert!(!depth_clipping_valid(4));
+
+    for value in 0..=1 {
+        assert!(display_flag_valid(value));
+    }
+    assert!(!display_flag_valid(-1));
+    assert!(!display_flag_valid(2));
+
+    for value in 1..=5 {
+        assert!(standard_line_font_valid(value));
+    }
+    assert!(!standard_line_font_valid(0));
+    assert!(!standard_line_font_valid(6));
+
+    for value in 0..=8 {
+        assert!(standard_color_valid(value));
+    }
+    assert!(!standard_color_valid(-1));
+    assert!(!standard_color_valid(9));
 }
 
 #[test]

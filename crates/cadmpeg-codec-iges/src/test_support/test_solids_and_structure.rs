@@ -1680,6 +1680,45 @@ pub(crate) fn text_annotation_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn defaulted_new_general_note_file() -> Vec<u8> {
+    let mut fields = vec![String::from("213")];
+    fields.extend((0..11).map(|_| String::new()));
+    fields.push(String::from("1"));
+    fields.extend(
+        [
+            "0", // FIXVAR
+            "",  // CHRWID
+            "",  // CHRHGT
+            "",  // CSPACE
+            "",  // LSPACE
+            "",  // FONT
+            "",  // CHRANG
+            "",  // CCTEXT
+            "0", // NC
+            "",  // WT
+            "",  // HT
+            "",  // CHRSET
+            "",  // SL
+            "",  // A
+            "",  // M
+            "",  // VH
+            "",  // XS
+            "",  // YS
+            "",  // ZS
+            "",  // TEXT
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 213,
+        form: 0,
+        label: "DEFAULTS".into(),
+        status: "00000100",
+        parameters: fields.join(",") + ";",
+    }])
+}
+
 pub(crate) fn leader_forms_file() -> Vec<u8> {
     let entities = (1..=12)
         .map(|form| {

@@ -30,6 +30,11 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+use super::{
+    fill_pattern_valid, fixed_or_variable_valid, justification_valid, mirror_flag_valid,
+    vertical_text_flag_valid,
+};
+
 #[test]
 fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
     let result = IgesCodec
@@ -60,6 +65,63 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_applies_new_general_note_defaults_and_accepts_zero_metrics() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(defaulted_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    assert_eq!(annotation.fields()["kind"], "new_general_note");
+    assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 0);
+    assert!(annotation.fields()["strings"][0]["control_codes"].is_null());
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn drawing_and_presentation_enumerations_match_the_iges_tables() {
+    for value in 0..=3 {
+        assert!(justification_valid(value));
+    }
+    assert!(!justification_valid(-1));
+    assert!(!justification_valid(4));
+
+    for value in 0..=1 {
+        assert!(fixed_or_variable_valid(value));
+        assert!(vertical_text_flag_valid(value));
+    }
+    assert!(!fixed_or_variable_valid(-1));
+    assert!(!fixed_or_variable_valid(2));
+    assert!(!vertical_text_flag_valid(-1));
+    assert!(!vertical_text_flag_valid(2));
+
+    for value in 0..=2 {
+        assert!(mirror_flag_valid(value));
+    }
+    assert!(!mirror_flag_valid(-1));
+    assert!(!mirror_flag_valid(3));
+
+    for value in [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 26, 28, 29,
+        32, 34, 36, 38, 40, 41, 42, 46, 50, 60, 70, 72, 80, 82, 84, 86, 90, 92, 94, 110, 124, 134,
+        136, 140, 142, 152, 154, 156, 157, 158, 159, 172, 174, 178, 210, 220, 224, 226, 234, 236,
+        240, 244, 246, 252, 254, 256, 262, 264, 265, 266, 268,
+    ] {
+        assert!(fill_pattern_valid(value), "admitted fill pattern {value}");
+    }
+    for value in [
+        21, 23, 24, 25, 27, 30, 31, 33, 35, 37, 39, 43, 44, 45, 47, 48, 49, 51, 269,
+    ] {
+        assert!(!fill_pattern_valid(value), "reserved fill pattern {value}");
+    }
 }
 
 #[test]

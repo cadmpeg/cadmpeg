@@ -29,7 +29,23 @@ fn font_valid(value: i64, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
             .checked_neg()
             .and_then(|value| u32::try_from(value).ok())
             .and_then(|sequence| entries.get(&sequence).copied())
-            .is_some_and(|entry| entry.entity_type == 310)
+            .is_some_and(|entry| entry.entity_type == 310 && entry.form == 0)
+}
+
+fn justification_valid(value: i64) -> bool {
+    matches!(value, 0..=3)
+}
+
+fn fixed_or_variable_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
+}
+
+fn mirror_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=2)
+}
+
+fn vertical_text_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
 }
 
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
@@ -62,10 +78,10 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                 && record.number_or(start + 5, 0.0).is_some_and(f64::is_finite)
                 && record
                     .integer_or(start + 6, 0)
-                    .is_some_and(|value| matches!(value, 0..=2))
+                    .is_some_and(mirror_flag_valid)
                 && record
                     .integer_or(start + 7, 0)
-                    .is_some_and(|value| matches!(value, 0..=1))
+                    .is_some_and(vertical_text_flag_valid)
                 && (start + 8..=start + 10)
                     .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
@@ -78,66 +94,73 @@ fn new_general_note_valid(
     let Some(count) = record.count(12).filter(|count| *count > 0) else {
         return false;
     };
-    exact_parameter_count(record, 13 + count * 20, entries)
+    let parameter_end = trailing_pointer_groups(record, entries)
+        .map_or(record.tokens.len(), |groups| groups.token_start);
+    parameter_end <= 13 + count * 20
         && (1..=2).all(|index| {
             record
-                .number(index)
+                .number_or(index, 0.0)
                 .is_some_and(|value| value.is_finite() && value >= 0.0)
         })
-        && record
-            .integer(3)
-            .is_some_and(|value| matches!(value, 0..=3))
-        && (4..=11).all(|index| finite(record, index))
+        && record.integer_or(3, 0).is_some_and(justification_valid)
+        && (4..=11).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
         && (0..count).all(|index| {
             let start = 13 + index * 20;
-            let fixed = record.integer(start);
-            let character_width = record.number(start + 1);
-            let character_height = record.number(start + 2);
-            let spacing = record.number(start + 3);
-            let text = record.string(start + 19);
+            let fixed = record.integer_or(start, 0);
+            let character_width = record.number_or(start + 1, 0.0);
+            let character_height = record.number_or(start + 2, 0.0);
+            let spacing = record.number_or(start + 3, 0.0);
+            let text = record.string_or_empty(start + 19);
             let metrics_valid = character_width
                 .zip(character_height)
                 .zip(spacing)
                 .is_some_and(|((width, height), spacing)| {
                     width.is_finite()
-                        && width > 0.0
+                        && width >= 0.0
                         && height.is_finite()
-                        && height > 0.0
+                        && height >= 0.0
                         && spacing.is_finite()
                         && match fixed {
                             Some(0) => spacing >= -width,
                             Some(1) => spacing >= 0.0,
                             _ => false,
                         }
-                });
+                })
+                && fixed.is_some_and(fixed_or_variable_valid);
             metrics_valid
-                && finite(record, start + 4)
-                && record.integer(start + 5).is_some()
-                && record.number(start + 6).is_some_and(|value| {
+                && record.number_or(start + 4, 0.0).is_some_and(f64::is_finite)
+                && record.integer_or(start + 5, 0).is_some()
+                && record.number_or(start + 6, 0.0).is_some_and(|value| {
                     value.is_finite() && (0.0..=std::f64::consts::TAU).contains(&value)
                 })
-                && record.string(start + 7).is_some()
+                && record.string_or_empty(start + 7).is_some()
                 && record
-                    .integer(start + 8)
+                    .integer_or(start + 8, 0)
                     .and_then(|value| usize::try_from(value).ok())
                     .zip(text)
                     .is_some_and(|(declared, text)| declared == text.len())
                 && (start + 9..=start + 10).all(|field| {
                     record
-                        .number(field)
+                        .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
                 && record
-                    .integer(start + 11)
+                    .integer_or(start + 11, 1)
                     .is_some_and(|value| font_valid(value, entries))
-                && (start + 12..=start + 13).all(|field| finite(record, field))
                 && record
-                    .integer(start + 14)
-                    .is_some_and(|value| matches!(value, 0..=2))
+                    .number_or(start + 12, std::f64::consts::FRAC_PI_2)
+                    .is_some_and(f64::is_finite)
                 && record
-                    .integer(start + 15)
-                    .is_some_and(|value| matches!(value, 0..=1))
-                && (start + 16..=start + 18).all(|field| finite(record, field))
+                    .number_or(start + 13, 0.0)
+                    .is_some_and(f64::is_finite)
+                && record
+                    .integer_or(start + 14, 0)
+                    .is_some_and(mirror_flag_valid)
+                && record
+                    .integer_or(start + 15, 0)
+                    .is_some_and(vertical_text_flag_valid)
+                && (start + 16..=start + 18)
+                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
 }
 
