@@ -857,8 +857,8 @@ fn configuration_reference_plane_frame(
     }
 }
 
-/// Reuse a document-level datum reference when a scoped state retains the
-/// reference frame but omits only its face selector.
+/// Reuse a document-level datum reference when a scoped state omits the
+/// reference or retains its frame with only the face selector unresolved.
 pub(crate) fn inherit_configuration_reference_plane_semantics(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
@@ -881,30 +881,31 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
             continue;
         };
         let replacement = (|| {
-            let FeatureDefinition::DatumOffsetPlane {
-                reference:
-                    Some(DatumPlaneReference::Face {
-                        face: FaceSelection::Unresolved,
-                        origin,
-                        normal,
-                        u_axis,
-                    }),
-                ..
-            } = &feature.definition
-            else {
-                return None;
+            let state_frame = match &feature.definition {
+                FeatureDefinition::DatumOffsetPlane {
+                    reference: None, ..
+                } => None,
+                FeatureDefinition::DatumOffsetPlane {
+                    reference:
+                        Some(DatumPlaneReference::Face {
+                            face: FaceSelection::Unresolved,
+                            origin,
+                            normal,
+                            u_axis,
+                        }),
+                    ..
+                } if valid_plane_frame(*normal, *u_axis) => Some((*origin, *normal, *u_axis)),
+                _ => return None,
             };
-            if !valid_plane_frame(*normal, *u_axis) {
-                return None;
-            }
-            let state_frame = (*origin, *normal, *u_axis);
             let base_frame = configuration_reference_plane_frame(
                 base_reference,
                 &base_by_id,
                 &mut HashSet::new(),
             )?;
-            if !configuration_plane_frame_matches(state_frame, base_frame) {
-                return None;
+            if let Some(state_frame) = state_frame {
+                if !configuration_plane_frame_matches(state_frame, base_frame) {
+                    return None;
+                }
             }
             match base_reference {
                 DatumPlaneReference::Feature(_) => Some(base_reference.clone()),
