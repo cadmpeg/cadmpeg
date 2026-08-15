@@ -77,6 +77,8 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         row(31, crate::surface::SurfaceKind::Extrusion),
         row(32, crate::surface::SurfaceKind::Plane),
         row(33, crate::surface::SurfaceKind::Plane),
+        row(34, crate::surface::SurfaceKind::Extrusion),
+        row(35, crate::surface::SurfaceKind::Plane),
     ]);
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.extend([
@@ -101,6 +103,16 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 normal: Vector3::new(0.0, 0.0, -1.0),
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+            geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
     ]);

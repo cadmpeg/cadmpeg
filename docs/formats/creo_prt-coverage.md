@@ -70,7 +70,9 @@ fixtures, scores above L1 remain blocked.
   blind extrusion spans to generated feature surfaces and first additive linear
   or one-circle B-reps when the section transform agrees with the carrier
   direction. Complete NURBS-translation carriers provide the same span to
-  generated NURBS feature surfaces when their profile is supported.
+  generated NURBS feature surfaces when their profile is supported. Retained
+  unknown rows in the same plane or extrusion family do not invalidate this
+  proof; every materialized carrier and cap must still agree.
 - Named `Protrusion`, `Cut`, and `Extrude` operations use the same independent
   generated-cap, positional-cylinder, NURBS-translation, and rectilinear
   carrier proofs as schema-backed linear sweeps. A resolved proof transfers

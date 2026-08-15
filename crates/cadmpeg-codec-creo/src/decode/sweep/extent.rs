@@ -439,6 +439,10 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     [origin.x, origin.y, origin.z],
                     [normal.x, normal.y, normal.z],
                 )),
+                [Surface {
+                    geometry: SurfaceGeometry::Unknown { .. },
+                    ..
+                }] => {}
                 _ => return None,
             },
             crate::surface::SurfaceKind::Extrusion => match surfaces.as_slice() {
@@ -447,6 +451,10 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     geometry: SurfaceGeometry::Nurbs(nurbs),
                     ..
                 }] => carriers.push(nurbs_translation_span(nurbs)?),
+                [Surface {
+                    geometry: SurfaceGeometry::Unknown { .. },
+                    ..
+                }] => {}
                 _ => return None,
             },
             _ => unreachable!("surface family checked above"),
