@@ -14,6 +14,32 @@ use crate::psb::{self, compact_int};
 use crate::scalar;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_FRAME_UNIT: f64 = 1.0e-9;
+const EPS_FRAME_ORTHOGONAL: f64 = 1.0e-9;
+
+fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -> bool {
+    let norm = |vector: [f64; 3]| {
+        vector
+            .into_iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+            .sqrt()
+    };
+    let axis_norm = norm(axis);
+    let ref_norm = norm(ref_direction);
+    let dot = axis
+        .into_iter()
+        .zip(ref_direction)
+        .map(|(axis, reference)| axis * reference)
+        .sum::<f64>();
+    axis_norm.is_finite()
+        && ref_norm.is_finite()
+        && dot.is_finite()
+        && (axis_norm - 1.0).abs() <= EPS_FRAME_UNIT
+        && (ref_norm - 1.0).abs() <= EPS_FRAME_UNIT
+        && dot.abs() <= EPS_FRAME_ORTHOGONAL
+}
+
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceKind {
@@ -375,6 +401,7 @@ impl PositionalCylinderFrame {
             .chain(self.axis)
             .chain(self.ref_direction)
             .all(f64::is_finite)
+            && valid_orthonormal_frame_directions(self.axis, self.ref_direction)
             && self.radius.is_finite()
             && self.radius > 0.0
             && self
@@ -403,6 +430,7 @@ impl PositionalConeFrame {
             .chain(self.axis)
             .chain(self.ref_direction)
             .all(f64::is_finite)
+            && valid_orthonormal_frame_directions(self.axis, self.ref_direction)
             && valid_half_angle(self.half_angle)
     }
 }
@@ -429,6 +457,7 @@ impl PositionalTorusFrame {
             .chain(self.axis)
             .chain(self.ref_direction)
             .all(f64::is_finite)
+            && valid_orthonormal_frame_directions(self.axis, self.ref_direction)
             && self.major_radius.is_finite()
             && self.major_radius > 0.0
             && self.minor_radius.is_finite()

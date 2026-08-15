@@ -98,6 +98,14 @@ fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
     zero_angle.half_angle = 0.0;
     assert!(!zero_angle.is_valid());
 
+    let mut non_unit_axis = valid;
+    non_unit_axis.axis = [0.0, 2.0, 0.0];
+    assert!(!non_unit_axis.is_valid());
+
+    let mut non_orthogonal_reference = valid;
+    non_orthogonal_reference.ref_direction = [0.0, 1.0, 0.0];
+    assert!(!non_orthogonal_reference.is_valid());
+
     let mut right_angle = valid;
     right_angle.half_angle = std::f64::consts::FRAC_PI_2;
     assert!(!right_angle.is_valid());
@@ -122,6 +130,14 @@ fn positional_torus_frame_rejects_nonfinite_or_nonpositive_components() {
     nonpositive_major.major_radius = 0.0;
     assert!(!nonpositive_major.is_valid());
 
+    let mut non_unit_axis = valid;
+    non_unit_axis.axis = [0.0, 0.0, 2.0];
+    assert!(!non_unit_axis.is_valid());
+
+    let mut non_orthogonal_reference = valid;
+    non_orthogonal_reference.ref_direction = [0.0, 0.0, 1.0];
+    assert!(!non_orthogonal_reference.is_valid());
+
     let mut nonfinite_minor = valid;
     nonfinite_minor.minor_radius = f64::NAN;
     assert!(!nonfinite_minor.is_valid());
@@ -145,6 +161,14 @@ fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
     let mut nonfinite_radius = valid;
     nonfinite_radius.radius = f64::INFINITY;
     assert!(!nonfinite_radius.is_valid());
+
+    let mut non_unit_axis = valid;
+    non_unit_axis.axis = [0.0, 0.0, 2.0];
+    assert!(!non_unit_axis.is_valid());
+
+    let mut non_orthogonal_reference = valid;
+    non_orthogonal_reference.ref_direction = [0.0, 1.0, 1.0];
+    assert!(!non_orthogonal_reference.is_valid());
 
     let mut nonpositive_length = valid;
     nonpositive_length.length = Some(0.0);
