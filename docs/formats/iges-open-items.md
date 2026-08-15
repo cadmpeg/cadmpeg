@@ -562,11 +562,11 @@ from a conformant file.
 
 **Question.** What does FreeCAD acceptance prove about a generated file?
 
-**Known.** `scripts/verify-iges-freecad.py` imports each file and refuses an import that gives no object or whose shapes are null or invalid (`:37-50`). It counts solids and faces and asserts nothing about them. A file with the wrong units, a mirrored surface, an inverted solid (WR-03), or an unbounded face (WR-01) imports as a valid shape and passes.
+**Known.** `scripts/prepare-iges-freecad-golden.py` materializes the checked-in writer profile. `scripts/verify-iges-freecad.py` imports each file, refuses an import that gives no object or whose shapes are null or invalid, and can require a complete manifest of topology counts, bounding-box coordinates, and scalar measures with explicit tolerances. `scripts/iges-freecad-expectations.json` covers finite points, curves, trimmed surfaces, and B-rep solids; unbounded analytic surfaces use topology counts only.
 
-**Note.** The script is wired into no CI job and no test, and it needs a manual environment. No result artifact is committed, so no run is on record.
+**Note.** The gate is wired into no CI job and no repository test, and it needs a manual FreeCAD environment. A report path records each run, but no result artifact is committed.
 
-**Need.** The P0 gate above requires independent native-application acceptance. We need the acceptance criterion to compare geometry with the intended model and each run recorded.
+**Need.** Run the complete writable geometry profile with the manifest in an independent native environment and retain the report as a CI artifact or accepted evidence. Expand the manifest when the writable profile grows.
 
 ### EV-03. The fixture builders and the decoder share one author
 

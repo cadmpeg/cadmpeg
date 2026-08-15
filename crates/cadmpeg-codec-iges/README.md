@@ -57,6 +57,18 @@ occurrence-expansion records that are not regenerated. The bounded full-file
 gate is [`scripts/verify-iges-bounded.py`](../../scripts/verify-iges-bounded.py);
 the independent FreeCAD gate is
 [`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
+The reproducible FreeCAD geometry profile uses
+[`scripts/prepare-iges-freecad-golden.py`](../../scripts/prepare-iges-freecad-golden.py)
+and [`scripts/iges-freecad-expectations.json`](../../scripts/iges-freecad-expectations.json):
+
+```sh
+python3 scripts/prepare-iges-freecad-golden.py \
+  --output-dir "$HOME/side2/tmp/iges-l9/freecad"
+CADMPEG_IGES_INPUT_DIR="$HOME/side2/tmp/iges-l9/freecad" \
+CADMPEG_IGES_EXPECTATIONS=scripts/iges-freecad-expectations.json \
+CADMPEG_IGES_REPORT="$HOME/side2/tmp/iges-l9/freecad-report.json" \
+FreeCADCmd scripts/verify-iges-freecad.py
+```
 
 ## Data model
 
