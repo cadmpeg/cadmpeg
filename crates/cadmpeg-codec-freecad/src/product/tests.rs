@@ -238,6 +238,49 @@ fn selects_the_active_link_placement_carrier() {
 }
 
 #[test]
+fn accepts_axis_angle_placement_values() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="3" Pz="4" A="1.5707963267948966" Ox="0" Oy="0" Oz="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("axis-angle placement");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert_eq!(matrix[0][3], 2.0);
+    assert_eq!(matrix[1][3], 3.0);
+    assert_eq!(matrix[2][3], 4.0);
+    assert!((matrix[0][0]).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn rejects_ambiguous_link_placement_without_policy() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
@@ -316,6 +359,18 @@ fn rejects_duplicate_product_carriers() {
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
     ] {
         let error = FcstdCodec
             .decode(
@@ -324,6 +379,33 @@ fn rejects_duplicate_product_carriers() {
             )
             .expect_err("duplicate product carrier");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
+fn rejects_invalid_product_placement_values() {
+    for placement in [
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" A="1" Ox="0" Oy="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyString"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+{placement}
+</Properties></Object></ObjectData></Document>"#
+        );
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 

@@ -41,23 +41,20 @@ pub(crate) fn transfer(
             continue;
         }
         let (references, placements, offsets) = if grounded {
+            let placement = placement(&owned, "Placement")?;
             (
                 links(&owned, "ObjectToGround"),
-                placement(&owned, "Placement").into_iter().collect(),
+                placement.into_iter().collect(),
                 Vec::new(),
             )
         } else {
+            let placement1 = placement(&owned, "Placement1")?;
+            let offset1 = placement(&owned, "Offset1")?;
+            let placement2 = placement(&owned, "Placement2")?;
+            let offset2 = placement(&owned, "Offset2")?;
             let slots = [
-                (
-                    links(&owned, "Reference1"),
-                    placement(&owned, "Placement1"),
-                    placement(&owned, "Offset1"),
-                ),
-                (
-                    links(&owned, "Reference2"),
-                    placement(&owned, "Placement2"),
-                    placement(&owned, "Offset2"),
-                ),
+                (links(&owned, "Reference1"), placement1, offset1),
+                (links(&owned, "Reference2"), placement2, offset2),
             ]
             .into_iter()
             .filter(|(references, _, _)| !references.is_empty())
@@ -353,8 +350,14 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
         .unwrap_or_default()
 }
 
-fn placement(properties: &[&PropertyRecord], name: &str) -> Option<[[f64; 4]; 4]> {
-    crate::product::placement_matrix(properties.iter().find(|property| property.name == name)?)
+fn placement(
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    crate::product::placement_matrix(property)
 }
 
 #[cfg(test)]
@@ -542,6 +545,12 @@ pub(crate) mod tests {
 <ObjectData Count="1"><Object name="Joint"><Properties Count="2">
 <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
 <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="2">
+<Property name="ObjectToGround" type="App::PropertyLink"><Link value="Base"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
 </Properties></Object></ObjectData></Document>"#,
         ];
         for document in documents {

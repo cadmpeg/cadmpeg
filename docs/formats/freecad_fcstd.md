@@ -354,7 +354,13 @@ list by source order. When both `LinkPlacement` and `Placement` are present, `Li
 selects `LinkPlacement` and `LinkTransform=false` selects `Placement`; when only one carrier is
 present, that carrier supplies the local placement. Both carriers without a valid `LinkTransform`
 policy are ambiguous and are refused. Each named `LinkedObject`, `LinkPlacement`, `Placement`, and
-`LinkTransform` carrier occurs at most once in a product record.
+`LinkTransform` carrier occurs at most once in a product record. Each placement carrier has at most
+one `App::PropertyPlacement` property with at most one `PropertyPlacement` value. A value carries finite
+`Px`, `Py`, and `Pz` plus either finite
+quaternion components `Q0` through `Q3` or finite axis-angle components `Ox`, `Oy`, `Oz`, and `A`;
+when both representations are present, the quaternion components are authoritative.
+Missing components, non-finite components, duplicate values, invalid rotation norms, and zero
+quaternions are malformed.
 For nested links, `prototype_transform` records the linked placement chain selected by
 `LinkTransform`; the evaluated occurrence is container × local × prototype, each exactly once.
 The chain resolves each local product target through its unique product record. A local target with
@@ -390,6 +396,9 @@ has exactly one kind carrier: `ObjectToGround` or `JointType`. Both carriers are
 `JointType` property has exactly one selected `Integer`; its zero-based index selects the matching
 ordered `Enum` value when present, and an out-of-range index remains the numeric native family.
 Each named scalar joint parameter has at most one root value; duplicate values are invalid.
+Each connector-frame and connector-offset carrier is an `App::PropertyPlacement` property with at
+most one `PropertyPlacement` value and the same finite position and quaternion or axis-angle
+component rules as product placements.
 
 CADIR assembly joints resolve local connector objects to component ids while retaining exact
 object and persistent subelement paths. Fixed, revolute, slider, cylindrical, ball, distance,
@@ -682,8 +691,10 @@ subelement identity separately from the map mode. The persisted resolved `Placem
 `AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it
 is present and otherwise the offset; the decoder never multiplies both speculatively. Validation
 checks support identity, finite matrices, and this effective-frame rule. Each named attachment
-carrier occurs at most once. `MapMode` has at most one text value, and each placement carrier has
-at most one `PropertyPlacement` value. Duplicate carriers or values are malformed.
+carrier occurs at most once. `MapMode` has at most one text value, and each placement carrier is an
+`App::PropertyPlacement` property with at most one `PropertyPlacement` value containing finite
+position and quaternion or axis-angle components.
+Duplicate carriers or values are malformed.
 
 Native namespace version 12 adds one carrier-census record per exact-shape payload. Census records
 identify text versus binary framing, the declared topology version, recursive carrier-family

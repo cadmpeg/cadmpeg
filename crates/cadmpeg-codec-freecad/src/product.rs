@@ -41,6 +41,7 @@ pub(crate) fn transfer(
         let linked = unique_property(&owned, "LinkedObject")?;
         let prototype_link = singleton_link(linked, "LinkedObject")?;
         let placement = selected_placement(&owned)?;
+        let local_transform = placement.map(placement_matrix).transpose()?.flatten();
         let link_transform = unique_property(&owned, "LinkTransform")?
             .and_then(property_scalar)
             .and_then(parse_bool);
@@ -57,7 +58,7 @@ pub(crate) fn transfer(
             external_document: prototype_link.and_then(|link| link.document.clone()),
             external_document_attribute: prototype_link
                 .and_then(|link| link.document_attribute.clone()),
-            local_transform: placement.and_then(placement_matrix),
+            local_transform,
             placement_property: placement.map(|property| property.id.clone()),
             element_count: scalar(&owned, "ElementCount").and_then(|value| value.parse().ok()),
             link_transform,
@@ -172,7 +173,7 @@ pub(crate) fn transfer_neutral(
     let mut placements_by_object = HashMap::new();
     for (&owner, owned) in &properties_by_owner {
         if let Some(property) = selected_placement(owned)? {
-            if let Some(placement) = placement_matrix(property) {
+            if let Some(placement) = placement_matrix(property)? {
                 placements_by_object.insert(owner, placement);
             }
         }
@@ -528,7 +529,7 @@ fn parse_placement_list(
                 .map(|component| read_real(view, offset + component * width, width))
                 .collect::<Vec<_>>();
             placement_components(&values).ok_or_else(|| {
-                CodecError::Malformed("PlacementList contains a zero quaternion".into())
+                CodecError::Malformed("PlacementList contains an invalid placement value".into())
             })
         })
         .collect()
@@ -611,6 +612,9 @@ fn selected_placement<'a>(
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
     let link_placement = unique_property(properties, "LinkPlacement")?;
     let placement = unique_property(properties, "Placement")?;
+    for property in [link_placement, placement].into_iter().flatten() {
+        placement_matrix(property)?;
+    }
     match (link_placement, placement) {
         (Some(link_placement), Some(placement)) => {
             let use_link_placement = unique_property(properties, "LinkTransform")?
@@ -763,33 +767,117 @@ fn bool_list(properties: &[&PropertyRecord], name: &str) -> Vec<bool> {
         .collect()
 }
 
-pub(crate) fn placement_matrix(property: &PropertyRecord) -> Option<[[f64; 4]; 4]> {
-    let value = property
+pub(crate) fn placement_matrix(
+    property: &PropertyRecord,
+) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+    if property.type_name != "App::PropertyPlacement" {
+        return Err(CodecError::Malformed(format!(
+            "placement property {} has a non-placement runtime type",
+            property.id
+        )));
+    }
+    let values = property
         .values
         .iter()
-        .find(|value| value.tag == "PropertyPlacement")?;
-    let number = |name: &str, default: f64| {
+        .filter(|value| value.tag == "PropertyPlacement")
+        .collect::<Vec<_>>();
+    let value = match values.as_slice() {
+        [] => return Ok(None),
+        [value] => *value,
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "placement property {} has multiple placement values",
+                property.id
+            )))
+        }
+    };
+    let number = |name: &str| {
         value
             .attributes
             .get(name)
             .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
+            .filter(|value: &f64| value.is_finite())
     };
-    placement_components(&[
-        number("Px", 0.0),
-        number("Py", 0.0),
-        number("Pz", 0.0),
-        number("Q0", 0.0),
-        number("Q1", 0.0),
-        number("Q2", 0.0),
-        number("Q3", 1.0),
-    ])
+    let position = ["Px", "Py", "Pz"]
+        .into_iter()
+        .map(|name| {
+            number(name).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "placement property {} has an invalid {name} component",
+                    property.id
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let has_quaternion = ["Q0", "Q1", "Q2", "Q3"]
+        .into_iter()
+        .all(|name| value.attributes.contains_key(name));
+    let quaternion = if !has_quaternion && value.attributes.contains_key("A") {
+        let axis = ["Ox", "Oy", "Oz"]
+            .into_iter()
+            .map(|name| {
+                number(name).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "placement property {} has an invalid {name} axis component",
+                        property.id
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let angle = number("A").ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "placement property {} has an invalid A angle component",
+                property.id
+            ))
+        })?;
+        let axis_norm = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+        let (x, y, z) = if axis_norm.is_finite() && axis_norm > f64::EPSILON {
+            (
+                axis[0] / axis_norm,
+                axis[1] / axis_norm,
+                axis[2] / axis_norm,
+            )
+        } else if axis_norm == 0.0 {
+            (0.0, 0.0, 1.0)
+        } else {
+            return Err(CodecError::Malformed(format!(
+                "placement property {} has an invalid axis norm",
+                property.id
+            )));
+        };
+        let half_angle = angle / 2.0;
+        let scale = half_angle.sin();
+        vec![x * scale, y * scale, z * scale, half_angle.cos()]
+    } else {
+        ["Q0", "Q1", "Q2", "Q3"]
+            .into_iter()
+            .map(|name| {
+                number(name).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "placement property {} has an invalid {name} quaternion component",
+                        property.id
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let values = position.into_iter().chain(quaternion).collect::<Vec<_>>();
+    let matrix = placement_components(&values).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "placement property {} has an invalid rotation",
+            property.id
+        ))
+    })?;
+    Ok(Some(matrix))
 }
 
 fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
     let [px, py, pz, x, y, z, w] = *<&[f64; 7]>::try_from(values).ok()?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
     let norm = (x * x + y * y + z * z + w * w).sqrt();
-    if norm <= f64::EPSILON {
+    if !norm.is_finite() || norm <= f64::EPSILON {
         return None;
     }
     let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);

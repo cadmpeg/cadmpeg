@@ -71,19 +71,7 @@ fn placement_matrix(
     let Some(property) = property else {
         return Ok(None);
     };
-    let values = property
-        .values
-        .iter()
-        .filter(|value| value.tag == "PropertyPlacement")
-        .collect::<Vec<_>>();
-    match values.as_slice() {
-        [] => Ok(None),
-        [_] => Ok(crate::product::placement_matrix(property)),
-        _ => Err(CodecError::Malformed(format!(
-            "attachment property {} has multiple placement values",
-            property.id
-        ))),
-    }
+    crate::product::placement_matrix(property)
 }
 
 fn property_text(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
