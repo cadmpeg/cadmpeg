@@ -44,6 +44,110 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
 }
 
 #[test]
+fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
+    let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+    reference.input_class = Some("moRefPlane_c".into());
+    reference
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    reference.properties.insert("Normal".into(), "1,0,0".into());
+    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+    let mut offset = feature("sldprt:history:feature#0:1", None, 1);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .properties
+        .insert("Reference".into(), "missing".into());
+    offset
+        .properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "1,0,0".into());
+    offset.properties.insert("UAxis".into(), "0,0,1".into());
+    offset
+        .properties
+        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
+    offset
+        .properties
+        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
+    offset
+        .properties
+        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![reference, offset],
+    };
+
+    let projected = project_features(&[history]);
+    assert!(matches!(
+        &projected[1].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(bound)),
+            distance: Length(6.0),
+        } if bound == &projected[0].id
+    ));
+    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+}
+
+#[test]
+fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
+    let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+    reference.input_class = Some("moRefPlane_c".into());
+    reference
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    reference.properties.insert("Normal".into(), "1,0,0".into());
+    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+    let mut duplicate = reference.clone();
+    duplicate.id = "sldprt:history:feature#0:1".into();
+    duplicate.ordinal = 1;
+    let mut offset = feature("sldprt:history:feature#0:2", None, 2);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .properties
+        .insert("Reference".into(), "missing".into());
+    offset
+        .properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "1,0,0".into());
+    offset.properties.insert("UAxis".into(), "0,0,1".into());
+    offset
+        .properties
+        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
+    offset
+        .properties
+        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
+    offset
+        .properties
+        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![reference, duplicate, offset],
+    };
+
+    let projected = project_features(&[history]);
+    assert!(matches!(
+        &projected[2].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                ..
+            }),
+            distance: Length(6.0),
+        }
+    ));
+    assert!(projected[2].dependencies.is_empty());
+}
+
+#[test]
 fn coincident_plane_frame_does_not_infer_an_offset_reference() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
     reference.input_class = Some("moRefPlane_c".into());

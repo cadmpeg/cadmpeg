@@ -384,12 +384,22 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             .enumerate()
             .filter_map(|(index, feature)| {
                 let FeatureDefinition::DatumOffsetPlane {
-                    reference: None,
+                    reference,
                     distance,
                 } = &feature.definition
                 else {
                     return None;
                 };
+                let frame_reference_pending = matches!(
+                    reference,
+                    None | Some(DatumPlaneReference::Face {
+                        face: FaceSelection::Unresolved,
+                        ..
+                    })
+                );
+                if !frame_reference_pending {
+                    return None;
+                }
                 let (origin, normal, _) = stored_frame(feature)?;
                 if same_scalar(distance.0, 0.0) {
                     return None;
