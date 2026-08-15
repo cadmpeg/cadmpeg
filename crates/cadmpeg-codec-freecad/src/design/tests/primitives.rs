@@ -347,6 +347,38 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
 }
 
 #[test]
+fn retains_vendor_qualified_primitive_like_types_as_native_objects() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1">
+ <Object type="Part::VendorBox" name="VendorBox" id="1"/>
+</Objects>
+<ObjectData Count="1">
+ <Object name="VendorBox"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="20"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="30"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("vendor primitive-like object");
+    let objects = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    assert!(objects
+        .iter()
+        .any(|object| { object.type_name == "Part::VendorBox" && object.raw_xml.is_some() }));
+    assert!(result.ir().model.features.is_empty());
+}
+
+#[test]
 fn transfers_parametric_part_helix_and_spiral_construction() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">

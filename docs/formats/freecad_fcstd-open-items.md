@@ -219,23 +219,6 @@ refuse with an explicit loss. Do not source-order a cycle and silently discard i
 **Note.** Native retention and the blocking feature.cyclic-history loss are a safety improvement.
 They do not establish the neutral relation. Reopened after the history closure.
 
-### DP-06. Primitive runtime dispatch uses suffix matching
-
-**Question.** Which exact runtime names select the Part and PartDesign primitive families?
-
-**Known.** The specification requires exact runtime dispatch and excludes vendor-qualified
-variants. Native records retain unknown runtime types.
-
-**Conflict.** design.rs:5095-5108 classifies any Part or PartDesign name ending in Box, Cylinder,
-Cone, Sphere, Ellipsoid, Torus, Prism, or Wedge as a primitive. design.rs:3801-3861 repeats the
-suffix dispatch when constructing the neutral primitive.
-
-**Need.** Use the complete exact primitive registry. Keep a vendor-qualified or otherwise unknown
-runtime type native.
-
-**Note.** A type such as Part::VendorBox with the expected scalar fields enters the Box path and
-changes neutral semantics while decode succeeds.
-
 ### DP-07. Sketch geometry carrier tag and runtime name are not cross-checked
 
 **Question.** Must a Geometry element's declared runtime name agree with its sole eligible carrier

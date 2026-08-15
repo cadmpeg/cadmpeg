@@ -5094,19 +5094,41 @@ fn is_revolution(kind: &str) -> bool {
     )
 }
 fn is_primitive(kind: &str) -> bool {
-    [
-        "Box",
-        "Cylinder",
-        "Cone",
-        "Sphere",
-        "Ellipsoid",
-        "Torus",
-        "Prism",
-        "Wedge",
-    ]
-    .iter()
-    .any(|primitive| kind.ends_with(primitive))
-        && (kind.starts_with("Part::") || kind.starts_with("PartDesign::"))
+    matches!(
+        kind,
+        "Part::Box"
+            | "Part::Cylinder"
+            | "Part::Cone"
+            | "Part::Sphere"
+            | "Part::Ellipsoid"
+            | "Part::Torus"
+            | "Part::Prism"
+            | "Part::Wedge"
+            | "PartDesign::Box"
+            | "PartDesign::AdditiveBox"
+            | "PartDesign::SubtractiveBox"
+            | "PartDesign::Cylinder"
+            | "PartDesign::AdditiveCylinder"
+            | "PartDesign::SubtractiveCylinder"
+            | "PartDesign::Cone"
+            | "PartDesign::AdditiveCone"
+            | "PartDesign::SubtractiveCone"
+            | "PartDesign::Sphere"
+            | "PartDesign::AdditiveSphere"
+            | "PartDesign::SubtractiveSphere"
+            | "PartDesign::Ellipsoid"
+            | "PartDesign::AdditiveEllipsoid"
+            | "PartDesign::SubtractiveEllipsoid"
+            | "PartDesign::Torus"
+            | "PartDesign::AdditiveTorus"
+            | "PartDesign::SubtractiveTorus"
+            | "PartDesign::Prism"
+            | "PartDesign::AdditivePrism"
+            | "PartDesign::SubtractivePrism"
+            | "PartDesign::Wedge"
+            | "PartDesign::AdditiveWedge"
+            | "PartDesign::SubtractiveWedge"
+    )
 }
 fn is_part_construction_geometry(kind: &str) -> bool {
     matches!(
