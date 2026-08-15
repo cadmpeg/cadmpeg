@@ -4512,39 +4512,43 @@ fn blend_feature_definition(
                 radius: Length(radii[0]),
             },
         );
-    let face_blend = support_pairs
-        .iter()
-        .map(|supports| {
-            let [Some(first), Some(second)] = supports else {
-                return None;
-            };
-            (first.surface != second.surface)
-                .then_some([first.surface.clone(), second.surface.clone()])
+    let face_blend = matches!(family, NxBlendFamily::Face)
+        .then(|| {
+            support_pairs
+                .iter()
+                .map(|supports| {
+                    let [Some(first), Some(second)] = supports else {
+                        return None;
+                    };
+                    (first.surface != second.surface)
+                        .then_some([first.surface.clone(), second.surface.clone()])
+                })
+                .collect::<Option<Vec<_>>>()
+                .and_then(blend_support_bipartition)
+                .and_then(|(first, second)| {
+                    let (first_faces, _) = support_face_projection(
+                        ir,
+                        &first,
+                        format!("{}:blend-first-support-surfaces", body.0),
+                    );
+                    let (second_faces, _) = support_face_projection(
+                        ir,
+                        &second,
+                        format!("{}:blend-second-support-surfaces", body.0),
+                    );
+                    match (&first_faces, &second_faces) {
+                        (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
+                            Some(FeatureDefinition::FaceBlend {
+                                first_faces,
+                                second_faces,
+                                radius: radius.clone(),
+                            })
+                        }
+                        _ => None,
+                    }
+                })
         })
-        .collect::<Option<Vec<_>>>()
-        .and_then(blend_support_bipartition)
-        .and_then(|(first, second)| {
-            let (first_faces, _) = support_face_projection(
-                ir,
-                &first,
-                format!("{}:blend-first-support-surfaces", body.0),
-            );
-            let (second_faces, _) = support_face_projection(
-                ir,
-                &second,
-                format!("{}:blend-second-support-surfaces", body.0),
-            );
-            match (&first_faces, &second_faces) {
-                (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
-                    Some(FeatureDefinition::FaceBlend {
-                        first_faces,
-                        second_faces,
-                        radius: radius.clone(),
-                    })
-                }
-                _ => None,
-            }
-        });
+        .flatten();
     let unresolved = match family {
         NxBlendFamily::Edge => FeatureDefinition::Fillet {
             groups: vec![cadmpeg_ir::features::FilletGroup {

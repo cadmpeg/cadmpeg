@@ -1009,7 +1009,22 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         std::slice::from_ref(&output),
         super::NxBlendFamily::Edge,
     )
-    .expect("complete blend supports");
+    .expect("complete edge-blend supports");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Fillet { groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Constant { .. },
+                ..
+            }])
+    ));
+    let (definition, _) = super::blend_feature_definition(
+        &face_blend_ir,
+        std::slice::from_ref(&output),
+        super::NxBlendFamily::Face,
+    )
+    .expect("complete face-blend supports");
     assert!(matches!(
         definition,
         FeatureDefinition::FaceBlend {
