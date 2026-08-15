@@ -93,16 +93,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `8ddb25d46` added bounds handling and tests, but it did not establish whether the bounds are authoritative for the boundary use.
 
-### TP-04. The Type 140 offset sign uses a per-kind representative normal
-
-**Question.** Which normal determines the sign of a Type 140 offset indicator?
-
-**Known.** `surfaces.rs:206-225` uses the support surface's bounds midpoint when finite and otherwise `(0, 0)` as the representative parameter, then evaluates a normal. The current documentation states this rule.
-
-**Need.** We need the source rule for the offset sign and a representative point that is valid for bounded, unbounded, and varying-normal surfaces.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `23554c501` changed implementation, documentation, and fixtures together. No independent evidence establishes midpoint selection or the `(0, 0)` fallback.
-
 ### TP-06. Type 180 Form 1 requires a direct Type 186 operand
 
 **Question.** Does a Type 180 Form 1 Boolean tree accept a Type 186 solid directly, or through a complete operand subtree?

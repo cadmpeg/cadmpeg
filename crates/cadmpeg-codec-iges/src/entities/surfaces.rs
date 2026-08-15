@@ -182,18 +182,23 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
     }
 }
 
+fn offset_indicator_parameters(bounds: Option<[Option<f64>; 4]>) -> [f64; 2] {
+    bounds
+        .and_then(|bounds| match bounds {
+            [Some(u0), Some(u1), Some(v0), Some(v1)] => Some([u0.midpoint(u1), v0.midpoint(v1)]),
+            _ => None,
+        })
+        .unwrap_or([0.0, 0.0])
+}
+
 fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
     let parameters = ir
         .model
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.surface == *surface)
-        .and_then(|procedural| procedural.record_bounds)
-        .and_then(|bounds| match bounds {
-            [Some(u0), Some(u1), Some(v0), Some(v1)] => Some([u0.midpoint(u1), v0.midpoint(v1)]),
-            _ => None,
-        })
-        .unwrap_or([0.0, 0.0]);
+        .map(|procedural| offset_indicator_parameters(procedural.record_bounds));
+    let parameters = parameters.unwrap_or([0.0, 0.0]);
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let partials = cadmpeg_ir::eval::model_surface_partials_by_id(
         &index,

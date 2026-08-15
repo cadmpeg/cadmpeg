@@ -31,7 +31,20 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
-use super::angular_basis;
+use super::{angular_basis, offset_indicator_parameters};
+
+#[test]
+fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {
+    assert_eq!(
+        offset_indicator_parameters(Some([Some(-2.0), Some(6.0), Some(4.0), Some(8.0),])),
+        [2.0, 6.0]
+    );
+    assert_eq!(
+        offset_indicator_parameters(Some([Some(-2.0), Some(6.0), None, Some(8.0)])),
+        [0.0, 0.0]
+    );
+    assert_eq!(offset_indicator_parameters(None), [0.0, 0.0]);
+}
 
 #[test]
 fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
