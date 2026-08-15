@@ -300,8 +300,8 @@ coordinates.
 
 Sketch persistence has separate ordered `GeometryList` and `ConstraintList` values. The geometry
 list carries source entity order and the constraint list carries append order and geometry-position
-operands. The producer does not serialize a profile chain, a profile seed entity, an endpoint
-junction tolerance, or a junction tie-break. `ArcFitTolerance` is a separate precision property
+operands. The format has no profile chain, profile seed entity, endpoint-junction tolerance, or
+junction tie-break field. `ArcFitTolerance` is a separate precision property
 for fitting arcs of projected external geometry; it is not an endpoint-junction tolerance.
 
 An active coincident-loci constraint between two non-construction endpoints is authoritative. If an
