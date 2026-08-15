@@ -180,16 +180,6 @@ the same producer-source audit or an independent witness.
 
 **Note.** Reopened because the closure treats an unread suffix as opaque without establishing whether the known prefix remains admissible.
 
-### SW-02. Duplicate singleton metadata selection
-
-**Question.** Which metadata record owns a singleton property or setting when the file contains more than one?
-
-**Known.** `settings.rs:1295-1397` applies the last successfully read value and emits a duplicate warning. The specification now states the same rule, but the closure supplies no independent source authority for conflicting units, writer versions, or settings.
-
-**Need.** Establish the source precedence rule for duplicate singleton records and retain a typed ambiguity or resolution diagnostic for conflicting values.
-
-**Note.** Reopened as a promotion-to-spec gap. Reordering conflicting unit records changes coordinate scaling; reordering writer-version records changes version gates.
-
 ### SW-09. Ambiguous history producers
 
 **Question.** How is a history dependency represented when more than one record produces the same descendant UUID?

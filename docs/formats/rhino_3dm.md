@@ -246,9 +246,10 @@ skipped at the bounded end. Array and element readers that define major version
 only when the containing archive grammar defines a writer-band ceiling for that
 payload; this is a grammar admission rule, not a trailing-byte rule.
 
-Properties and settings are read in table order. A repeated singleton record
-replaces the preceding value; the last successfully read occurrence owns the
-field.
+The first outer properties table and the first outer settings table are read.
+Within those tables, a repeated singleton record replaces the preceding value;
+the last successfully read occurrence owns the field. A failed occurrence does
+not replace a previously read value.
 
 Stored Boolean fields use one byte. `0x00` is false and `0x01` is true. When
 the writer version is unavailable or predates openNURBS 6.0.2017-08-24, any
