@@ -43,15 +43,7 @@ pub(crate) fn parse(
         let owner_property = owning_property(node, properties);
         let new_layout = node.attribute("new").is_some_and(|value| value != "0");
         let data_node = if new_layout {
-            node.next_siblings()
-                .skip(1)
-                .find(roxmltree::Node::is_element)
-                .filter(|sibling| sibling.has_tag_name("StringHasher2"))
-                .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "StringHasher new=1 is not followed by StringHasher2".into(),
-                    )
-                })?
+            string_hasher_successor(node)?
         } else {
             node
         };
@@ -211,6 +203,29 @@ fn owning_property(node: roxmltree::Node<'_, '_>, properties: &[PropertyRecord])
         .iter()
         .find(|property| property.byte_start <= start && start < property.byte_end)
         .map(|property| property.id.clone())
+}
+
+fn string_hasher_successor<'a, 'input>(
+    node: roxmltree::Node<'a, 'input>,
+) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
+    let mut siblings = node.next_siblings().skip(1);
+    let Some(mut successor) = siblings.next() else {
+        return Err(CodecError::Malformed(
+            "StringHasher new=1 is not followed by StringHasher2".into(),
+        ));
+    };
+    while successor.is_text() && successor.text().is_some_and(|text| text.trim().is_empty()) {
+        successor = siblings.next().ok_or_else(|| {
+            CodecError::Malformed("StringHasher new=1 is not followed by StringHasher2".into())
+        })?;
+    }
+    if successor.is_element() && successor.has_tag_name("StringHasher2") {
+        Ok(successor)
+    } else {
+        Err(CodecError::Malformed(
+            "StringHasher new=1 is not followed by StringHasher2".into(),
+        ))
+    }
 }
 
 fn node_text_bytes(node: roxmltree::Node<'_, '_>) -> Vec<u8> {
@@ -914,6 +929,14 @@ Co 1001000 +2 0 *
                 &DecodeOptions::default(),
             )
             .expect_err("interleaved string table must fail");
+
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+
+    #[test]
+    fn rejects_interleaved_new_string_hasher_payload_when_parsed_directly() {
+        let document = br#"<Document><StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/></Document>"#;
+        let error = parse(document, &[], &[]).expect_err("interleaved string table must fail");
 
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }

@@ -23,7 +23,6 @@ These items have a Conflict part and need a decision.
 - AR-03. Typed geometry side-entry cardinality
 - GP-04. Topology-color shape-property association
 - GP-05. GUI provider and property duplicate selection
-- PT-01. `StringHasher2` association
 - PT-02. Element-map position to neutral-occurrence order
 - PT-03. Element-map carrier and owner selection
 - XT-01. Edge endpoint child selection
@@ -133,18 +132,6 @@ These items have a Conflict part and need a decision.
 **Note.** The selection paths and the disagreement are present in the code read; valid producer cardinality is still unknown.
 
 ## 3. Persistent topology identity
-
-### PT-01. `StringHasher2` association
-
-**Question.** Which `StringHasher2` element supplies the data for a `StringHasher new="1"` marker?
-
-**Known.** FreeCAD writes `StringHasher2` immediately after the compatibility marker and restores it directly after the marker.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/element_map.rs:45-54` skips the immediate sibling and searches all later element siblings. An interleaved element can make the marker claim a later table.
-
-**Need.** The decoder must require the direct successor that the grammar defines. A malformed association must not shift every later string-table index.
-
-**Note.** The official `StringHasher.cpp` source supports the direct-successor rule. Commit `1bf156d3c` added a test but the current implementation still searches later siblings, so the closure is reopened.
 
 ### PT-02. Element-map position to neutral-occurrence order
 
