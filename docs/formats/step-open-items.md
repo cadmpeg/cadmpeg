@@ -32,7 +32,8 @@ not define a Part 21 base URI.
 
 **Note.** Local fragment resolution is implemented. The base URI for a
 standalone input, URI normalization supplied by its transport, and the
-interpretation of application document-reference paths remain caller policy.
+interpretation of application document-reference paths need an explicit
+policy recorded as a CADIR decision.
 
 **Need.** We must know the rules to identify the external resource that a relative URI selects.
 
@@ -45,7 +46,8 @@ it does not define a transport, authentication mechanism, authorization scope,
 redirect policy, certificate policy, or registry protocol. A fragment-only
 UUID may require a registry service.
 
-**Note.** Resource retrieval and authentication are outside the codec contract.
+**Note.** Resource retrieval and authentication need an explicit policy
+recorded as a CADIR decision.
 
 **Need.** We must know the procedure to obtain the selected external resource.
 
@@ -59,8 +61,9 @@ resolution. It does not define a merge of two independent numeric DATA
 namespaces. The neutral IR currently has one document-wide identity universe.
 
 **Note.** A resource-qualified graph import needs an explicit identity,
-schema, unit, and trust policy. The reader retains unresolved external
-occurrences and does not invent a cross-resource merge.
+schema, unit, and trust policy recorded as a CADIR decision. The reader
+retains unresolved external occurrences and does not invent a cross-resource
+merge.
 
 **Need.** We must know the composition rule to resolve cross-resource identities and build one product graph.
 
@@ -72,8 +75,8 @@ occurrences and does not invent a cross-resource merge.
 keys, freshness, validators, content negotiation, or equivalence of two
 representations returned for one URI.
 
-**Note.** Cache identity is a transport and resource-policy decision. The
-codec does not cache or combine retrieved resources.
+**Note.** Cache identity is a transport and resource policy recorded as a
+CADIR decision. The codec does not cache or combine retrieved resources.
 
 **Need.** We must know the identity rule to reuse a retrieved resource without combining different resources.
 
@@ -88,9 +91,10 @@ schema and edition-specific document envelope. Part 21 has no required
 sidecar filename, XML root, content identifier, or association record that
 binds such a document to one Part 21 exchange.
 
-**Note.** Detecting an XML root string cannot establish the AP242 edition or
-the relationship to a Part 21 file. A schema and application-level
-association contract are required.
+**Note.** Detecting an XML root string does not establish the AP242 edition
+or the relationship to a Part 21 file. The BO-Model XML schema comes from the
+published AP242 downloads; the association rule comes from the CAx-IF
+recommended practices.
 
 **Need.** We must know the envelope to detect, parse, and associate the sidecar with its Part 21 exchange structure.
 
@@ -103,9 +107,9 @@ different representation systems. Part 21 identity numbers are local to its
 DATA graph. No Part 21 rule maps an XML object identity or XML value to a
 numeric Part 21 instance.
 
-**Note.** Sidecar composition needs a declared AP242 XML edition, identity
-linkage, precedence rule, and conflict policy. The STEP codec has no such
-contract.
+**Note.** Sidecar composition needs the declared AP242 XML edition from the
+published AP242 downloads, plus an identity linkage, precedence rule, and
+conflict policy recorded as a CADIR decision.
 
 **Need.** We must know the composition rule to build one product graph from the Part 21 exchange structure and its sidecar.
 
@@ -124,8 +128,9 @@ entity or value in a subsidiary member. The rule does not define how a
 subsidiary exchange graph is merged into the root graph.
 
 **Note.** The reader implements path resolution and root-member checks. It
-does not import subsidiary DATA graphs because the neutral IR has no
-resource-qualified identity universe or cross-file schema/unit merge policy.
+does not import subsidiary DATA graphs; a resource-qualified identity universe
+and a cross-file schema and unit merge policy need an explicit CADIR
+decision.
 
 **Need.** We must know the resolution rule to combine the contained resources into one product graph.
 
@@ -138,8 +143,10 @@ generic XML mapping rules. AP203, AP214, and AP242 still require the matching
 edition's EXPRESS schema and generated XML schema components. Part 21 syntax
 does not identify those XML namespaces or schema resources.
 
-**Note.** A generic XML parser cannot establish the AP schema, select the
-edition, or decode schema-specific XML constructs without those inputs.
+**Note.** A generic XML parser does not establish the AP schema, select the
+edition, or decode schema-specific XML constructs. Read the matching EXPRESS
+schema and its generated XML schema components from the published stepmod or
+stepcode repository and the AP242 downloads.
 
 **Need.** We must know the grammar to parse record boundaries, values, and references from Part 28 XML.
 
@@ -151,9 +158,10 @@ edition, or decode schema-specific XML constructs without those inputs.
 to XML elements, attributes, namespaces, and references. The mapping is
 schema-driven; it is not a second universal Part 21 record grammar.
 
-**Note.** Applying the mapping needs the exact AP schema, XML schema version,
-and a mapping implementation for every supported construct. No such Part 28
-input or IR adapter exists in this codec.
+**Note.** Applying the mapping needs the exact AP schema and XML schema
+version, both published, and a mapping implementation for every supported
+construct. Read ISO 10303-28, then author the Part 28 witness input and the
+IR adapter.
 
 **Need.** We must know the mapping to apply schema decoding to a Part 28 exchange structure.
 
@@ -165,7 +173,8 @@ input or IR adapter exists in this codec.
 layout is schema- and mapping-version dependent; the HDF5 signature alone
 does not identify AP203, AP214, or AP242.
 
-**Note.** The codec has no Part 26 mapping tables or HDF5 reader.
+**Note.** Derive the Part 26 mapping tables and the HDF5 reader from
+ISO/TS 10303-26.
 
 **Need.** We must know the layout to parse record boundaries, values, and references from Part 26 data.
 
@@ -178,7 +187,8 @@ entity identity to HDF5 datasets, datatypes, and links. It does not make every
 HDF5 dataset self-describing as an AP203, AP214, or AP242 instance graph.
 
 **Note.** Applying the mapping needs the exact Part 26 mapping version and AP
-schema. No such Part 26 input or IR adapter exists in this codec.
+schema from the published texts. Read ISO/TS 10303-26, then author the Part 26
+witness input and the IR adapter.
 
 **Need.** We must know the mapping to apply schema decoding to a Part 26 exchange structure.
 
@@ -198,9 +208,9 @@ indeterminate covers unavailable content, keys, certificates, or policy
 evidence.
 
 **Note.** Part 21 does not prescribe a trust store, revocation protocol,
-clock policy, or caller authorization policy. Verification therefore needs a
-caller-supplied CMS and trust-policy contract; structural CMS parsing alone
-cannot produce a valid/invalid result.
+clock policy, or authorization policy. Verification therefore needs an
+explicit trust policy recorded as a CADIR decision; structural CMS parsing
+alone does not produce a valid/invalid result.
 
 **Need.** We must know the conditions to report a signature verification result.
 
@@ -276,8 +286,8 @@ neutral entity.
 ### UD-02. User-defined type semantics
 
 **Known.** Part 21 does not assign semantics to a user-defined type name.
-The wrapped parameter remains a typed opaque value until the partners' schema
-is supplied. The reader preserves the type name, wrapped value, record span,
+The wrapped parameter remains a typed opaque value; the partners' agreed
+schema selects its type. The reader preserves the type name, wrapped value, record span,
 and links and does not select a neutral value type by name alone.
 
 **Question.** What value semantics does each user-defined `!` type name select?
@@ -348,7 +358,7 @@ scopes carriers by shell. The reader does not invent sharing between
 independent roots and does not make identity selection depend on source record
 order.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -364,7 +374,7 @@ non-seam oriented edge uses endpoint continuity only when one same-surface
 pcurve is selected, or when tied candidates have the same model-space locus;
 distinct unresolved candidates remain detached and produce a topology loss.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -379,7 +389,7 @@ the source records as opaque data and emits a `TopologyNotTransferred` error;
 it does not infer coordinates or create a partial body. Salvage applies only
 to independent sheet or wire members that are complete.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -398,7 +408,7 @@ traversal. This makes the inferred carrier independent of cyclic ring
 serialization and prevents a non-planar boundary from receiving a fabricated
 plane.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -417,7 +427,7 @@ otherwise unrecognized 2D carriers remain named opaque records and are not
 attached to a coedge. Topology that needs such a carrier records a
 machine-readable pcurve omission loss.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -444,7 +454,7 @@ partial that carries the three boundary parameters. The shell reader and
 implicit-plane reader use this same dispatch. The synthesized complex-face
 fixture covers the inherited-attribute form.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -460,7 +470,7 @@ override, uses the document fallback scale, and produces a geometry loss.
 Unscoped values use the document fallback scale. The resolved scales reach
 geometry, PMI, tessellation, topology, and validation consumers.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -477,7 +487,7 @@ geometry loss instead of selecting by source order.
 
 `step.md` §8 defines the length-unit invariant and selection rule.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -497,7 +507,7 @@ resulting factor into conversion-based-unit factors. The rule is covered by
 the parser-level `MILLI` and omitted-prefix regression cases in
 `reader/geometry.rs`.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -505,7 +515,7 @@ the parser-level `MILLI` and omitted-prefix regression cases in
 
 **Question.** What STEP rule establishes angular parameter unit repair?
 
-**Known.** A pcurve has no independent angular unit. Its coordinates use
+**Known.** A pcurve does not have its own angular unit. Its coordinates use
 the parameterization of its owning surface after the representation and
 record-specific unit scales have been applied. The reader does not generate
 degree/radian alternatives or rescale an angular axis from endpoint evidence.
@@ -513,7 +523,7 @@ If the declared coordinates do not form a usable topological carrier, the
 coedge remains without a pcurve and the machine-readable topology loss records
 that omission.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -531,7 +541,7 @@ axis mapped to equal destination endpoints, rejects the synthesized variant;
 the pcurve remains opaque rather than losing its locus. Coordinate bounds use
 33 samples over the declared interval, including both endpoints.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -547,7 +557,7 @@ therefore keeps its native parameterization. The reader does not infer a
 surface-wide affine map from trimmed pcurves. A bounded procedural pcurve may
 still receive a use-scoped endpoint calibration under PC-02.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -569,7 +579,7 @@ ownership. When no typed use retains the source identity, normal carrier
 retention removes the unowned neutral source carrier while preserving its raw
 STEP record as opaque data.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -585,7 +595,7 @@ the absolute directed span after that adjustment. Non-cyclic trims use the
 stored selects without adjustment. The same rule applies independently to
 the U and V axes of `RECTANGULAR_TRIMMED_SURFACE`.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -599,7 +609,7 @@ is within `1e-12` of parallel to X, it uses global +Y before projection. The
 STEP reader applies this rule locally, so a neutral stability helper cannot
 change STEP chart semantics.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -614,7 +624,7 @@ major direction and maps the source parameter with `v = u − π/2`. Numeric
 Cartesian selectors invert the canonical geometry directly. Replicas, nested
 trims, and spatial offsets inherit the phase.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -629,7 +639,7 @@ identity. Distinct root records retain distinct bodies when their root types
 differ, even when they share shell carriers. Body kind is therefore
 independent of instance-number order.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -644,7 +654,7 @@ splits into multiple connected components, because the extra component cannot
 retain the outer role in the current IR. Sheet and general roots still retain
 each valid connected component.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -667,7 +677,7 @@ an occurrence-owned shape representation or an explicit context-dependent
 placement. Without one, the occurrence keeps identity transform and reports
 `AssemblyPlacementsNotTransferred`.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -688,7 +698,7 @@ relationship endpoints are reversed. An endpoint pair that matches neither
 order, or matches both orders, leaves the occurrence placement unresolved and
 reports `AssemblyPlacementsNotTransferred`.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -703,7 +713,7 @@ that body unplaced and reports `AssemblyPlacementsNotTransferred`. Mappings
 owned by product occurrences use occurrence transforms and are not part of
 this rule.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -722,9 +732,9 @@ specific child definition view. When a presentation layer references the
 source `PRODUCT`, the reader emits all of that product's definition views, but
 the source rule for their order is not established.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
-**Note.** QA audit: reopened after reviewing closing commits `dd0761ab4` and `225b25fb6`. `dd0761ab4` changed `crates/cadmpeg-codec-step/src/reader/product.rs:72-88` to sort definitions by `RawRecord.span.start`; `step.md` §8 then states that byte order as “source-definition order.” The reordered test in `crates/cadmpeg-codec-step/src/reader/presentation/tests.rs:71-106` was authored with that implementation and proves only that the policy is applied. The presentation assignment carries a set of items, and no ordered source attribute tying a `PRODUCT` to its definitions was identified. If two otherwise equivalent definitions are reserialized with their DATA records swapped, the emitted `PresentationItem` order changes while the source relationships do not. Native-reference assertions do not establish the order or the rule that every definition view must be expanded. Keep this item open until independent format or producer evidence settles view identity and order.
+**Note.** QA audit: reopened after reviewing closing commits `dd0761ab4` and `225b25fb6`. `dd0761ab4` changed `crates/cadmpeg-codec-step/src/reader/product.rs:72-88` to sort definitions by `RawRecord.span.start`; `step.md` §8 then states that byte order as “source-definition order.” The reordered test in `crates/cadmpeg-codec-step/src/reader/presentation/tests.rs:71-106` was authored with that implementation and proves only that the policy is applied. The presentation assignment carries a set of items, and no ordered source attribute tying a `PRODUCT` to its definitions was identified. If two otherwise equivalent definitions are reserialized with their DATA records swapped, the emitted `PresentationItem` order changes while the source relationships do not. Native-reference assertions do not establish the order or the rule that every definition view must be expanded. Keep this item open until the ISO 10303 part text or an exporter-authored witness file settles view identity and order.
 
 ### PS-05. Mapped-item scope for occurrence placement
 
@@ -739,7 +749,7 @@ remains, the occurrence keeps identity placement and reports
 the complete parent-representation sequence inference are evaluated before
 this fallback.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -753,7 +763,7 @@ Area, volume, and centroid items are evaluated independently. An unsupported
 item reports a warning naming that item and does not suppress other items in
 the same representation. Repeated item references are evaluated once.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -776,7 +786,7 @@ using the first complex partial. A synthesized complex datum with an empty
 `COMMON_DATUM` partial retains identification `A` and its inherited
 `SHAPE_ASPECT` target.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -790,7 +800,7 @@ measure representation items from its item aggregate. A unique item named
 item supplies it. Multiple unnamed items remain ambiguous, produce a metadata
 warning, and do not select a source-order value.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -805,7 +815,7 @@ complex instances, so a non-leaf name that ends in `_TOLERANCE` remains an
 opaque source record instead of changing the leaf kind. The writer emits each
 supported leaf entity by its corresponding IR kind.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -820,7 +830,7 @@ a metadata loss is emitted, and every carrier remains a named opaque record
 with its source links. The reader never selects a carrier by traversal or
 serialization order.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -835,7 +845,7 @@ duplicate colors collapse to that value. Conflicting colors leave the scalar
 unset and emit a `MetadataNotTransferred` loss naming every contributing
 styled item. Source instance order never selects a scalar color.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -849,7 +859,7 @@ the opposite side, and `.BOTH.` applies to both sides. CADIR stores one neutral
 surface color, so the reader selects `.BOTH.` before `.POSITIVE.` before
 `.NEGATIVE.` independently of aggregate serialization order.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -863,7 +873,7 @@ surface color, so the reader selects `.BOTH.` before `.POSITIVE.` before
 advance the other two. The reader applies this rule and the regression covers
 the first two triangles of one strip.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -880,7 +890,7 @@ bytes produce a metadata loss.
 
 `step.md` §2 and §6 define the repertoire and its header selector.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -902,7 +912,7 @@ trivia and case-insensitive magic check as the parser. An incomplete leading
 comment is not a recognized exchange; the parser reports it as malformed when
 the input is forced to STEP.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -920,7 +930,7 @@ The lexer applies the same `standard_name` character class to
 enumerations and entity names. A name without its closing dot remains a lexical
 error.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -937,7 +947,7 @@ base64 content. The lexer finds the first token-boundary `ENDSEC;` after each
 `SIGNATURE;`; it does not search for the exchange terminator or merge adjacent
 signature sections.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -955,7 +965,7 @@ identifiers `1 0 10303 442 1 1 4`, `1 0 10303 442 3 1 4`, and
 edition. Leading and trailing whitespace around an identifier is ignored.
 Later identifiers remain metadata and do not change the selection.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -981,7 +991,7 @@ that resolves to a string is therefore a real name and does not trigger repair.
 The existing carrier table remains the scope of repair; other entity layouts
 are not shifted.
 
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
+**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
@@ -1008,9 +1018,9 @@ bindings separate. AP-05 and AP-06 settle independent styled-item conflicts
 and surface-side precedence; they do not settle this projection.
 
 **Need.** We need the context matching and precedence rule, a policy for
-preserving separate context bindings or reporting ambiguity, and an
-independent file with two valid context styles consumed by different
-presentation contexts.
+preserving separate context bindings or reporting ambiguity, and a witness
+file with two valid context styles consumed by different presentation
+contexts.
 
 QA audit: reopened after reviewing closing commit f3f7437dc. The closing commit records a conservative no-context transfer policy and a synthetic regression. It does not identify the source presentation context or establish a neutral representation-context projection.
 
@@ -1028,7 +1038,7 @@ as a tiebreak. The specification says source order does not select a scalar
 color, but it does not establish this alpha precedence or a complete rule for
 conflicting assignments within one style graph.
 
-**Need.** We need an independent file with two same-domain, equal-precedence colors on one styled item and a reordered copy, plus the source rule for conflicting assignments. The file must also cover same-rank colors with distinct transparency to establish whether alpha can rank colors.
+**Need.** We need a witness file with two same-domain, equal-precedence colors on one styled item and a reordered copy, plus the source rule for conflicting assignments. The file must also cover same-rank colors with distinct transparency to establish whether alpha can rank colors.
 
 **Note.** QA audit: reopened after reviewing closing commit `857867aaf`. The
 closing code removes first-candidate selection only for equal side rank and
@@ -1058,7 +1068,7 @@ fallback identity. The later implementation removes record-order selection by
 requiring one common scale, but that refusal rule does not establish the STEP
 document unit when contexts disagree or no context is linked.
 
-**Need.** We need the STEP document-level unit ownership rule and independent
+**Need.** We need the STEP document-level unit ownership rule and witness
 files with multiple global contexts, including conflicting and equivalent
 contexts, before selecting a fallback scale.
 
@@ -1106,7 +1116,7 @@ layer expands all applicable product views, but the drawing target path does
 not. No existing STEP item settles this projection.
 
 **Need.** We need the drawing-reference target entity and product-definition
-scope rule, plus an independent multi-view file that shows whether all views
+scope rule, plus a multi-view witness file that shows whether all views
 are targets, one view is authoritative, or the reference is ambiguous.
 
 QA audit: reopened after reviewing closing commit 4878c68ea. The closing commit preserves an ambiguous target and records a loss. This is safe refusal behavior, not evidence of which source identity a multi-view drawing reference owns.
@@ -1131,8 +1141,8 @@ not establish each curve's native parameter units. This item remains open.
 
 **Need.** We need a parameter-scale table that preserves the source
 parameterization and vector magnitudes for every supported directrix and
-surface wrapper, with source equations and independent producer files before
-this rule is settled.
+surface wrapper, derived from the ISO 10303-42 equations and checked against
+exporter-authored witness files, before this rule is settled.
 
 QA audit: reopened after reviewing closing commit cbbbe401b. The closing commit adds a parameter-scale table and synthetic scale tests, but directrix parameterization and unsupported curve families still rely on implementation assumptions.
 
@@ -1142,7 +1152,7 @@ QA audit: reopened after reviewing closing commit cbbbe401b. The closing commit 
 
 **Known.** crates/cadmpeg-codec-step/src/reader/product.rs:797-809 iterates every context-dependent relation and stores its transform with result.insert(usage, transform). A later relation replaces an earlier one. The iteration follows exchange.entities record order. No ambiguity loss records the replacement.
 
-**Need.** We need the uniqueness rule for occurrence placement relations, and an independent file with two valid relations for one usage, including a record-order permutation.
+**Need.** We need the uniqueness rule for occurrence placement relations, and a witness file with two valid relations for one usage, including a record-order permutation.
 
 **Note.** Reordering the same two relations can change the occurrence transform without changing the represented usage. The current code silently selects one candidate.
 
@@ -1157,9 +1167,9 @@ walks the property references and returns the first finite transparency. No
 conflict loss records distinct transparency values, and the specification
 defines alpha conversion but no precedence for multiple properties.
 
-**Need.** We need an independent style with two distinct transparency
-properties under one rendering record and a reordered copy, plus the source
-uniqueness or precedence rule.
+**Need.** We need a witness file with two distinct transparency properties
+under one rendering record and a reordered copy, plus the source uniqueness or
+precedence rule.
 
 **Note.** Reordering the property references can change appearance alpha while
 the color and both transparency properties remain valid. The existing
