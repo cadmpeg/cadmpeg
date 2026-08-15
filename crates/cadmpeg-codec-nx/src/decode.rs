@@ -113,9 +113,9 @@ pub(crate) use build::{
     classify_body_kinds, finalize_point_topology, ordered_curve_candidates,
     ordered_fixed_candidates, ordered_point_candidates, ordered_surface_candidates,
     prune_inactive_geometry, prune_inactive_topology, prune_unreferenced_unknown_carriers,
-    retain_live_annotations, retain_live_unknown_links, select_active_body,
-    select_terminal_feature_bodies, topology_body_node_ids, try_decode_geometry,
-    unmatched_delta_tombstone_counts, GeometryDecode,
+    retain_live_annotations, retain_live_unknown_links, rmfastload_selected_bodies,
+    rmfastload_stream_indices, select_active_body, select_terminal_feature_bodies,
+    topology_body_node_ids, try_decode_geometry, unmatched_delta_tombstone_counts, GeometryDecode,
 };
 
 mod support_uv;
@@ -400,8 +400,14 @@ fn build_metadata_ir(
         }
     }
     let parsed = crate::native::ParsedStreams::parse(scan);
-    let model =
-        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
+    let model = crate::native::NativeModel::extract(
+        ctx,
+        root,
+        &scan.container,
+        &scan.streams,
+        &parsed,
+        None,
+    );
     crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok((ir, annotations.build(), unknowns))

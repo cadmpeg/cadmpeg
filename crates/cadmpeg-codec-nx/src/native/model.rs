@@ -8,6 +8,8 @@
 use crate::container::Container;
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_ir::ids::BodyId;
+use std::collections::BTreeSet;
 
 #[allow(clippy::wildcard_imports)]
 use super::{
@@ -300,6 +302,98 @@ pub(crate) struct NativeModel {
     pub(crate) om: OmRecords,
 }
 
+/// The segment-history subset needed before geometry construction can decide
+/// which body images are current. The full native extraction reuses these
+/// inputs so history selection does not require a second container scan.
+pub(crate) struct SegmentLineage {
+    pub(crate) bindings: Vec<SegmentBodyBinding>,
+    pub(crate) labels: Vec<FeatureOperationLabel>,
+    pub(crate) references: Vec<FeatureBodyReference>,
+    pub(crate) data_blocks: Vec<DataBlock>,
+    pub(crate) inputs: Vec<FeatureInputBlock>,
+    pub(crate) body_data_block_uses: Vec<FeatureBodyDataBlockUse>,
+    pub(crate) body_reference_occurrences: Vec<FeatureBodyReferenceOccurrence>,
+    pub(crate) members: Vec<FeatureOperationBodyMember>,
+    pub(crate) operands: Vec<FeatureOperationBodyOperand>,
+    pub(crate) booleans: Vec<FeatureBooleanOperation>,
+    pub(crate) statuses: Vec<SegmentBodyLineageStatus>,
+}
+
+/// Extract the bounded feature-history inputs used by terminal body lineage.
+pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream]) -> SegmentLineage {
+    let bindings = segment_body_bindings(container, streams);
+    let labels = feature_operation_labels(container);
+    let references = feature_body_references(container);
+    let blocks = data_blocks(container);
+    let inputs = feature_input_blocks(container);
+    let body_data_block_uses = feature_body_data_block_uses(&references, &inputs, &blocks);
+    let body_reference_occurrences = feature_body_reference_occurrences(container);
+    let members = feature_operation_body_members(container);
+    let operands = feature_operation_body_operands(
+        &members,
+        &body_reference_occurrences,
+        &inputs,
+        &blocks,
+        &bindings,
+    );
+    let booleans = feature_boolean_operations(container);
+    let statuses = segment_body_lineage_statuses(
+        &labels,
+        &references,
+        &body_data_block_uses,
+        &blocks,
+        &booleans,
+        &operands,
+        &bindings,
+        &inputs,
+    )
+    .unwrap_or_default();
+    SegmentLineage {
+        bindings,
+        labels,
+        references,
+        data_blocks: blocks,
+        inputs,
+        body_data_block_uses,
+        body_reference_occurrences,
+        members,
+        operands,
+        booleans,
+        statuses,
+    }
+}
+
+/// Select emitted body images whose complete segment binding has a terminal
+/// status. The mapping must cover every emitted body image before selection is
+/// admitted; a partial mapping is not a body-selection proof.
+pub(crate) fn terminal_feature_body_ids(
+    emitted: &BTreeSet<BodyId>,
+    bindings: &[SegmentBodyBinding],
+    statuses: &[SegmentBodyLineageStatus],
+) -> Option<BTreeSet<BodyId>> {
+    if statuses.len() != bindings.len() {
+        return None;
+    }
+    let mut mapped = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+    for (binding, status) in bindings.iter().zip(statuses) {
+        let prefix = format!("nx:s{}:", binding.stream_ordinal);
+        let stream_bodies = emitted
+            .iter()
+            .filter(|body| body.0.starts_with(&prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        if stream_bodies.is_empty() {
+            continue;
+        }
+        mapped.extend(stream_bodies.iter().cloned());
+        if status.terminal {
+            selected.extend(stream_bodies);
+        }
+    }
+    (mapped == *emitted && !selected.is_empty()).then_some(selected)
+}
+
 impl NativeModel {
     pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
         parasolid_topology_attribute_fields_have_untransferred_values(
@@ -318,11 +412,24 @@ impl NativeModel {
         container: &Container,
         streams: &[Stream],
         parsed: &ParsedStreams,
+        precomputed_lineage: Option<SegmentLineage>,
     ) -> Self {
+        let SegmentLineage {
+            bindings: segment_body_bindings,
+            labels: feature_operation_labels,
+            references: feature_body_references,
+            data_blocks,
+            inputs: feature_input_blocks,
+            body_data_block_uses: feature_body_data_block_uses,
+            body_reference_occurrences: feature_body_reference_occurrences,
+            members: feature_operation_body_members,
+            operands: feature_operation_body_operands,
+            booleans: feature_boolean_operations,
+            statuses: segment_body_lineage_statuses,
+        } = precomputed_lineage.unwrap_or_else(|| extract_segment_lineage(container, streams));
         let segment_index_rows = segment_index_rows(container);
         let segment_om_links = segment_om_links(container);
         let segment_stream_links = segment_stream_links(container, streams);
-        let segment_body_bindings = segment_body_bindings(container, streams);
         let deltas_events = parasolid_deltas_events(streams);
         let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
         let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
@@ -383,7 +490,6 @@ impl NativeModel {
             &parasolid_attribute_class_uses,
         );
         let om_record_areas = om_record_areas(container);
-        let feature_operation_labels = feature_operation_labels(container);
         let feature_operation_records = feature_operation_records(container);
         let feature_operation_object_relations = feature_operation_object_relations(container);
         let feature_operation_common_frames = feature_operation_common_frames(container);
@@ -413,15 +519,6 @@ impl NativeModel {
                 &feature_hole_package_construction_group_lanes,
                 &feature_simple_hole_construction_groups,
             );
-        let feature_body_references = feature_body_references(container);
-        let data_blocks = data_blocks(container);
-        let feature_body_reference_occurrences = feature_body_reference_occurrences(container);
-        let feature_input_blocks = feature_input_blocks(container);
-        let feature_body_data_block_uses = feature_body_data_block_uses(
-            &feature_body_references,
-            &feature_input_blocks,
-            &data_blocks,
-        );
         let feature_body_segment_uses = feature_body_segment_uses(
             &feature_body_references,
             &feature_body_data_block_uses,
@@ -647,14 +744,6 @@ impl NativeModel {
         let feature_extrude_payload_headers = feature_extrude_payload_headers(container);
         let feature_operation_body_scalar_triples =
             feature_operation_body_scalar_triples(container);
-        let feature_operation_body_members = feature_operation_body_members(container);
-        let feature_operation_body_operands = feature_operation_body_operands(
-            &feature_operation_body_members,
-            &feature_body_reference_occurrences,
-            &feature_input_blocks,
-            &data_blocks,
-            &segment_body_bindings,
-        );
         let feature_operation_body_11_continuations =
             feature_operation_body_11_continuations(container);
         let feature_operation_body_reference_lanes =
@@ -751,18 +840,6 @@ impl NativeModel {
             &feature_datum_csys_constructions,
             &feature_datum_csys_payload_scalars,
         );
-        let feature_boolean_operations = feature_boolean_operations(container);
-        let segment_body_lineage_statuses = segment_body_lineage_statuses(
-            &feature_operation_labels,
-            &feature_body_references,
-            &feature_body_data_block_uses,
-            &data_blocks,
-            &feature_boolean_operations,
-            &feature_operation_body_operands,
-            &segment_body_bindings,
-            &feature_input_blocks,
-        )
-        .unwrap_or_default();
         let expression_declarations = expression_declarations(container);
         let data_block_object_frames = data_block_object_frames(container);
         let expressions = expressions(container);

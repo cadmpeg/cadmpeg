@@ -62,6 +62,23 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
 }
 
 #[test]
+fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
+    let first = BodyId("nx:s3:body#first".into());
+    let second = BodyId("nx:s8:body#second".into());
+    let body_node_ids = BTreeMap::from([
+        (first.clone(), BTreeSet::from([7, 8])),
+        (second, BTreeSet::from([8, 9])),
+    ]);
+
+    let selected = super::rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
+    assert_eq!(selected, BTreeSet::from([first]));
+    assert_eq!(
+        super::rmfastload_stream_indices(&selected),
+        Some(BTreeSet::from([3]))
+    );
+}
+
+#[test]
 fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let cone = SurfaceId("nx:test:cone".into());

@@ -28,7 +28,7 @@ mod substrate;
 mod toggle;
 pub(crate) mod vector;
 
-pub(crate) use model::NativeModel;
+pub(crate) use model::{extract_segment_lineage, terminal_feature_body_ids, NativeModel};
 pub(crate) use om::{evaluate_parameterized_expression, expression_parameter_names};
 pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
 

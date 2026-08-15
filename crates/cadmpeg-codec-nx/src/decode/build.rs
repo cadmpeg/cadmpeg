@@ -124,9 +124,73 @@ pub(crate) fn try_decode_geometry(
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
     let parsed = crate::native::ParsedStreams::parse(scan);
+    let rmfastload_ids = scan
+        .container
+        .rmfastload_object_id_table()
+        .map(|(_, table)| {
+            table
+                .object_ids
+                .into_iter()
+                .map(|object_id| object_id.value)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for (si, stream) in scan.streams.iter().enumerate() {
+        if stream.kind.is_parasolid() {
+            body_node_ids.extend(topology_body_node_ids(
+                si,
+                &parsed.stream(si).view_for_geometry().graph,
+            ));
+        }
+    }
+    let rmfastload_selected = rmfastload_selected_bodies(&body_node_ids, &rmfastload_ids);
+    let rmfastload_preselection = (body_node_ids.len() > 1
+        && !rmfastload_selected.is_empty()
+        && rmfastload_selected.len() < body_node_ids.len())
+    .then(|| {
+        rmfastload_stream_indices(&rmfastload_selected).map(|streams| {
+            (
+                rmfastload_selected.clone(),
+                streams,
+                "rmfastload_object_id_membership",
+            )
+        })
+    })
+    .flatten();
+    let terminal_lineage = (body_node_ids.len() > 1 && rmfastload_preselection.is_none())
+        .then(|| crate::native::extract_segment_lineage(&scan.container, &scan.streams));
+    let emitted_body_ids = body_node_ids.keys().cloned().collect::<BTreeSet<_>>();
+    let terminal_preselection = terminal_lineage
+        .as_ref()
+        .and_then(|lineage| {
+            crate::native::terminal_feature_body_ids(
+                &emitted_body_ids,
+                &lineage.bindings,
+                &lineage.statuses,
+            )
+        })
+        .filter(|selected| selected.len() < body_node_ids.len())
+        .and_then(|selected| {
+            rmfastload_stream_indices(&selected)
+                .map(|streams| (selected, streams, "terminal_feature_body_lineage"))
+        });
+    let preselection = rmfastload_preselection.or(terminal_preselection);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
+            continue;
+        }
+        if preselection
+            .as_ref()
+            .is_some_and(|(_, selected, _)| !selected.contains(&si))
+        {
+            let unknown = unknown_stream(si, stream);
+            let container_stream = annotations.stream("nx:container");
+            annotations
+                .note(&unknown.id, container_stream, stream.file_offset as u64)
+                .tag(stream.kind.label());
+            annotations.exactness(&unknown.id, Exactness::Derived);
+            unknowns.push(unknown);
             continue;
         }
         let view = parsed.stream(si).view_for_geometry();
@@ -134,7 +198,6 @@ pub(crate) fn try_decode_geometry(
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
         let graph = &view.graph;
-        body_node_ids.extend(topology_body_node_ids(si, graph));
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut curves_by_xmt = BTreeMap::new();
@@ -759,21 +822,25 @@ pub(crate) fn try_decode_geometry(
         "admit NX entities",
     )?;
 
-    let rmfastload_ids = scan
-        .container
-        .rmfastload_object_id_table()
-        .map(|(_, table)| {
-            table
-                .object_ids
-                .into_iter()
-                .map(|object_id| object_id.value)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
     // Extract once: body selection and annotation attachment both read it.
-    let model =
-        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
-    let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
+    let model = crate::native::NativeModel::extract(
+        ctx,
+        root,
+        &scan.container,
+        &scan.streams,
+        &parsed,
+        terminal_lineage,
+    );
+    let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
+        let selected_hits = selected
+            .iter()
+            .filter_map(|body| body_node_ids.get(body))
+            .map(BTreeSet::len)
+            .sum::<usize>();
+        apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
+    } else {
+        select_active_body(&mut ir, &body_node_ids, &rmfastload_ids)
+    };
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
@@ -1047,6 +1114,74 @@ pub(crate) fn topology_body_node_ids(
         .collect()
 }
 
+/// Return body images whose complete topology node sets are inside the active
+/// `RMFastLoad` membership set. This is the same admission predicate used after
+/// topology emission, applied to graph-only body identities before carrier
+/// construction.
+pub(crate) fn rmfastload_selected_bodies(
+    body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
+    rmfastload_ids: &[u32],
+) -> BTreeSet<BodyId> {
+    let active = rmfastload_ids.iter().copied().collect::<BTreeSet<_>>();
+    body_node_ids
+        .iter()
+        .filter(|(_, ids)| !ids.is_empty() && ids.is_subset(&active))
+        .map(|(body, _)| body.clone())
+        .collect()
+}
+
+/// Return the stream ordinals that can contain selected body images. A
+/// malformed body identity disables preselection rather than guessing a
+/// stream owner.
+pub(crate) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
+    selected
+        .iter()
+        .map(|body| body.0.strip_prefix("nx:s")?.split_once(':')?.0.parse().ok())
+        .collect()
+}
+
+fn apply_preselected_active_body_selection(
+    ir: &mut CadIr,
+    selected: &BTreeSet<BodyId>,
+    selector: &str,
+    selected_hits: Option<usize>,
+) -> bool {
+    if selected.is_empty() {
+        return false;
+    }
+    let emitted = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<BTreeSet<_>>();
+    if !selected.is_subset(&emitted) {
+        return false;
+    }
+    prune_inactive_topology(ir, selected);
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert("active_body_selector".to_string(), selector.to_string());
+        let (hit_attribute, count_attribute) = match selector {
+            "rmfastload_object_id_membership" => {
+                (Some("rmfastload_hits"), "rmfastload_active_body_count")
+            }
+            "terminal_feature_body_lineage" => (None, "feature_terminal_body_count"),
+            _ => (None, "active_body_count"),
+        };
+        if let (Some(attribute), Some(selected_hits)) = (hit_attribute, selected_hits) {
+            source
+                .attributes
+                .insert(attribute.to_string(), selected_hits.to_string());
+        }
+        source
+            .attributes
+            .insert(count_attribute.to_string(), selected.len().to_string());
+    }
+    true
+}
+
 pub(crate) fn select_active_body(
     ir: &mut CadIr,
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
@@ -1055,16 +1190,7 @@ pub(crate) fn select_active_body(
     if rmfastload_ids.is_empty() || ir.model.bodies.len() <= 1 {
         return false;
     }
-    let active: BTreeSet<_> = rmfastload_ids.iter().copied().collect();
-    let selected: BTreeSet<_> = ir
-        .model
-        .bodies
-        .iter()
-        .filter_map(|body| {
-            let ids = body_node_ids.get(&body.id)?;
-            (!ids.is_empty() && ids.is_subset(&active)).then(|| body.id.clone())
-        })
-        .collect();
+    let selected = rmfastload_selected_bodies(body_node_ids, rmfastload_ids);
     if selected.is_empty() {
         return false;
     }
@@ -1073,21 +1199,12 @@ pub(crate) fn select_active_body(
         .filter_map(|body| body_node_ids.get(body))
         .map(BTreeSet::len)
         .sum::<usize>();
-    prune_inactive_topology(ir, &selected);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            "active_body_selector".to_string(),
-            "rmfastload_object_id_membership".to_string(),
-        );
-        source
-            .attributes
-            .insert("rmfastload_hits".to_string(), selected_hits.to_string());
-        source.attributes.insert(
-            "rmfastload_active_body_count".to_string(),
-            selected.len().to_string(),
-        );
-    }
-    true
+    apply_preselected_active_body_selection(
+        ir,
+        &selected,
+        "rmfastload_object_id_membership",
+        Some(selected_hits),
+    )
 }
 
 pub(crate) fn select_terminal_feature_bodies(
@@ -1096,30 +1213,6 @@ pub(crate) fn select_terminal_feature_bodies(
 ) -> bool {
     if ir.model.bodies.len() <= 1 {
         return false;
-    }
-    let bindings = model.segments.segment_body_bindings.as_slice();
-    let statuses = model.segments.segment_body_lineage_statuses.as_slice();
-    if statuses.len() != bindings.len() {
-        return false;
-    }
-    let mut mapped = BTreeSet::new();
-    let mut selected = BTreeSet::new();
-    for (binding, status) in bindings.iter().zip(statuses) {
-        let prefix = format!("nx:s{}:", binding.stream_ordinal);
-        let stream_bodies = ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.id.0.starts_with(&prefix))
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>();
-        if stream_bodies.is_empty() {
-            continue;
-        }
-        mapped.extend(stream_bodies.iter().cloned());
-        if status.terminal {
-            selected.extend(stream_bodies);
-        }
     }
     let emitted = ir
         .model
@@ -1130,22 +1223,14 @@ pub(crate) fn select_terminal_feature_bodies(
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
-    if mapped != emitted || selected.is_empty() {
+    let Some(selected) = crate::native::terminal_feature_body_ids(
+        &emitted,
+        &model.segments.segment_body_bindings,
+        &model.segments.segment_body_lineage_statuses,
+    ) else {
         return false;
-    }
-
-    prune_inactive_topology(ir, &selected);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            "active_body_selector".to_string(),
-            "terminal_feature_body_lineage".to_string(),
-        );
-        source.attributes.insert(
-            "feature_terminal_body_count".to_string(),
-            selected.len().to_string(),
-        );
-    }
-    true
+    };
+    apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
 }
 
 pub(crate) fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {

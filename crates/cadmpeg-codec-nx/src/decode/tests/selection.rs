@@ -667,6 +667,21 @@ fn decode_retains_every_rmfastload_active_body() {
 }
 
 #[test]
+fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
+    let mut cur = Cursor::new(prt_with_two_bodies_and_rmfastload());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result
+        .ir()
+        .native_unknowns("nx")
+        .unwrap()
+        .iter()
+        .any(|unknown| unknown.id.0 == "nx:container:parasolid#1"));
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
     let file = prt_with_two_terminal_bodies();
     assert_eq!(extract_streams(&file).len(), 2);
