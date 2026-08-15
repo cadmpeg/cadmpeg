@@ -867,9 +867,169 @@ record typecodes:
 
 The five annotation and three pre-class NURBS records are complete bounded
 records. They are not split into legacy geometry children. A direct typecode
-outside this dispatch is skipped as one complete chunk. A reader that does not
-interpret one of the dispatched payloads keeps that outer chunk as the atomic
-record; it does not promote a partial child.
+outside this dispatch is skipped as one complete chunk. The containing direct
+chunk is the recovery boundary when a dispatched payload is malformed; a
+partial child is not promoted to a typed record.
+
+The annotation payloads start with an `i32` version:
+
+```text
+TCODE_TEXT_BLOCK, version 1 or 2:
+  i32 type flag
+  3 × 3 × f64 entity plane (origin, X axis, Y axis)
+  i32 byte count, byte count bytes user text
+  i32 flags
+  i32 by-object flag
+  i32 byte count, byte count bytes face name
+  i32 face weight
+  f64 text height
+  if version == 1: 2 × f64 extra values
+
+TCODE_ANNOTATION_LEADER, version 1:
+  i32 type flag
+  3 × 3 × f64 entity plane
+  i32 flags
+  i32 by-object flag
+  i32 point count
+  point count × 3 × f64 points
+
+TCODE_LINEAR_DIMENSION, version 1:
+  i32 annotation type
+  3 × 3 × f64 entity plane
+  11 × 3 × f64 definition points
+  i32 byte count, byte count bytes user text
+  i32 byte count, byte count bytes default text
+  i32 user-positioned-text flag
+  i32 flags
+  i32 by-object flag
+
+TCODE_ANGULAR_DIMENSION, version 1:
+  i32 annotation type
+  3 × 3 × f64 entity plane
+  f64 angle
+  f64 radius
+  4 × f64 extension distances
+  5 × 3 × f64 definition points
+  i32 byte count, byte count bytes user text
+  i32 byte count, byte count bytes default text
+  i32 user-positioned-text flag
+  i32 flags
+  i32 by-object flag
+
+TCODE_RADIAL_DIMENSION, version 1:
+  i32 annotation type
+  3 × 3 × f64 entity plane
+  5 × 3 × f64 definition points
+  i32 byte count, byte count bytes user text
+  i32 byte count, byte count bytes default text
+  i32 user-positioned-text flag
+  i32 flags
+  i32 by-object flag
+```
+
+The annotation byte-count strings are not NUL-terminated in the payload. Any
+following V1 attribute or material chunks remain inside the containing direct
+chunk and follow the object-specific fields.
+
+Each pre-class NURBS curve or surface record contains one
+`TCODE_RHINOIO_OBJECT_DATA` child. Its wire version is `100` or `101` after
+clearing bit `0x100`. The curve child stores:
+
+```text
+i32 wire version
+i32 dimension (at least 1)
+i32 rational form (0 or 1)
+i32 order (at least 2)
+i32 control-point count (at least order)
+i32 flag (0)
+(order + control-point count - 2) × f64 knots
+control-point count × (dimension + rational form) × f64 control values
+```
+
+The surface child stores the same wire version, dimension, rational form, and
+flag, followed by U order, V order, U control-point count, and V control-point
+count. It then stores the U knot vector, the V knot vector, and the U-major
+control lattice:
+
+```text
+i32 wire version
+i32 dimension (at least 1)
+i32 rational form (0 or 1)
+i32 U order (at least 2)
+i32 V order (at least 2)
+i32 U control-point count (at least U order)
+i32 V control-point count (at least V order)
+i32 flag (0)
+(U order + U control-point count - 2) × f64 U knots
+(V order + V control-point count - 2) × f64 V knots
+U control-point count × V control-point count
+  × (dimension + rational form) × f64 control values
+```
+
+The pre-class Brep record contains one `TCODE_RHINOIO_OBJECT_DATA` child with
+wire version `100` or `101`, then the following arrays:
+
+```text
+i32 2D-curve count (at least 1)
+2D-curve count × {
+  i32 segment count (at least 1)
+  segment count × TCODE_RHINOIO_OBJECT_NURBS_CURVE
+}
+i32 3D-curve count (at least 1)
+3D-curve count × {
+  i32 segment count (at least 1)
+  segment count × TCODE_RHINOIO_OBJECT_NURBS_CURVE
+}
+i32 surface count (at least 1)
+surface count × TCODE_RHINOIO_OBJECT_NURBS_SURFACE
+i32 vertex count
+vertex count × {
+  i32 vertex index
+  3 × f64 point
+  i32 edge-index count, edge-index count × i32 edge indices
+  f64 tolerance
+}
+i32 edge count
+edge count × {
+  i32 edge index
+  i32 3D-curve index
+  2 × f64 proxy domain
+  2 × i32 vertex indices
+  i32 trim-index count, trim-index count × i32 trim indices
+  f64 tolerance
+}
+i32 trim count
+trim count × {
+  i32 trim index
+  i32 2D-curve index
+  2 × f64 proxy domain
+  i32 edge index
+  2 × i32 vertex indices
+  i32 reversed-3D flag
+  i32 trim type (1 boundary, 2 mated, 3 seam, 4 singular)
+  i32 legacy isocurve flag
+  i32 loop index
+  2 × f64 tolerances
+  2 × 3 × f64 old trim points
+  f64 2D tolerance
+  f64 3D tolerance
+}
+i32 loop count
+loop count × {
+  i32 loop index
+  i32 trim-index count, trim-index count × i32 trim indices
+  i32 loop type (1 outer, 2 inner, 3 slit)
+  i32 face index
+}
+i32 face count
+face count × {
+  i32 face index
+  i32 loop-index count, loop-index count × i32 loop indices
+  i32 surface index
+  i32 reversed flag
+}
+2 × 3 × f64 bounding-box points
+```
 
 `TCODE_RH_POINT` begins with three `f64` coordinates. Attribute chunks follow
 the coordinates inside the same bounded chunk.

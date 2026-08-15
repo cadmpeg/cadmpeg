@@ -106,16 +106,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a later presentation record can be rejected or degraded even when its bounded prefix is readable.
 
-### LG-01. Direct V1 record dispatch
-
-**Question.** Which direct V1 typecodes are typed records rather than opaque records?
-
-**Known.** `rhino_3dm.md` §8.2 "V1 geometry is a flat sequence. The object reader dispatches these direct" lists text blocks, annotation leaders, dimensions, and pre-class NURBS records as direct V1 records. `legacy.rs:1218-1459` dispatches only units, points, legacy curve/face/shell, and mesh; the listed annotation and pre-class records fall through to `opaque_records`.
-
-**Need.** Add the settled direct-V1 typecodes to the dispatch model or revise the specification to state their opaque rule and loss behavior.
-
-**Note.** Reopened because a spec-listed direct record is not decoded as typed data. The later annotation decoder does not change the V1 dispatch table.
-
 ### LG-02. V2 class-payload compatibility
 
 **Question.** Do all V2 class payloads use the later archive class-data grammar and version fields?

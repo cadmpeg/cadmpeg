@@ -28,7 +28,7 @@ production_line_debt = 0
 
 [ceilings]
 from_endian_bytes = 113
-codec_error_malformed_format = 1264
+codec_error_malformed_format = 1280
 loss_note_struct_literals = 2
 bare_tolerance_literals = 708
 nonliteral_vec_repeat = 152
@@ -41,3 +41,4 @@ production_line_debt = 0
 from_endian_bytes = "widened glob from cadmpeg-codec-*/src to crates/**/src so the counter matches the unscoped from_le_bytes/from_be_bytes rule; honest end state is not zero (View/le/be and documented exceptions)"
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
 test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"
+codec_error_malformed_format = "Rhino V1 direct annotation and RhinoIO NURBS/Brep readers add field-specific malformed-input diagnostics; the parser is intentionally explicit rather than collapsing distinct producer fields into one generic error"
