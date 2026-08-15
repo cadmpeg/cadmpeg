@@ -36,6 +36,7 @@ pub(crate) fn transfer(
                 property.id
             )));
         }
+        validate_value_root(property, geometry_kind.value_tag())?;
         let Some(entry_name) = property.side_entries.first() else {
             continue;
         };
@@ -65,6 +66,36 @@ pub(crate) fn transfer(
 enum GeometryKind {
     Mesh,
     Points,
+}
+
+impl GeometryKind {
+    fn value_tag(self) -> &'static str {
+        match self {
+            Self::Mesh => "Mesh",
+            Self::Points => "Points",
+        }
+    }
+}
+
+fn validate_value_root(property: &PropertyRecord, expected_tag: &str) -> Result<(), CodecError> {
+    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::Malformed(format!(
+            "invalid geometry property XML {}: {error}",
+            property.id
+        ))
+    })?;
+    let root_count = document
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
+        .count();
+    if root_count != 1 {
+        return Err(CodecError::Malformed(format!(
+            "geometry property {} must contain exactly one {expected_tag} value root, found {root_count}",
+            property.id
+        )));
+    }
+    Ok(())
 }
 
 fn association(property: &PropertyRecord) -> SourceObjectAssociation {
@@ -165,8 +196,9 @@ fn point_transform(property: &PropertyRecord) -> Result<[[f64; 4]; 4], CodecErro
         ))
     })?;
     let Some(text) = document
-        .descendants()
-        .find(|node| node.has_tag_name("Points"))
+        .root_element()
+        .children()
+        .find(|node| node.is_element() && node.has_tag_name("Points"))
         .and_then(|node| node.attribute("mtrx"))
     else {
         return Ok(identity());
@@ -445,6 +477,46 @@ pub(crate) mod tests {
                 error,
                 cadmpeg_core::CodecError::Malformed(message)
                     if message.contains("references more than one side entry")
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_multiple_value_roots_with_one_side_entry() {
+        for (object_type, property_type, values, entry) in [
+            (
+                "Mesh::Feature",
+                "Mesh::PropertyMeshKernel",
+                r#"<Mesh/><Mesh file="payload"/>"#,
+                "payload",
+            ),
+            (
+                "Points::Feature",
+                "Points::PropertyPointKernel",
+                r#"<Points/><Points file="payload"/>"#,
+                "payload",
+            ),
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="{object_type}" name="Geometry"/></Objects>
+<ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Geometry" type="{property_type}">{values}</Property></Properties></Object></ObjectData>
+</Document>"#
+            );
+            let error = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive_entries(&[
+                        ("Document.xml", document.as_bytes()),
+                        (entry, b""),
+                    ])),
+                    &DecodeOptions::default(),
+                )
+                .expect_err("multiple typed geometry value roots");
+
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::Malformed(message)
+                    if message.contains("must contain exactly one")
             ));
         }
     }

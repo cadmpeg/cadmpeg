@@ -49,47 +49,6 @@ transferring an unregistered side entry to a typed native or neutral record.
 unregistered family fields still need their own writer evidence; native retention is not meaning
 evidence.
 
-### AR-03. Typed geometry side-entry cardinality
-
-**Question.** How many side entries can one `PropertyMeshKernel` or `PropertyPointKernel` property
-reference, and which entry contains the geometry payload?
-
-**Known.** The current specification defines one typed payload per property. Property records
-retain every side-entry request in source order. The current transfer path rejects more than one
-side entry and otherwise reads the first entry.
-
-**Need.** Establish producer cardinality and entry selection for both runtime types. The decoder
-must reject invalid cardinality or identify the payload entry from the typed value grammar.
-
-**Conflict.** Commit `02c7628b3` removed this item and wrote the one-entry rule into
-`freecad_fcstd.md` without changing the decoder and without tracing the FreeCAD writer path. Its
-existing malformed-input test establishes only decoder policy, not producer cardinality.
-
-**Note.** Reopened by this QA pass. `AR-05` records the separate value-root and side-entry
-association gap.
-
-### AR-05. Typed geometry value-root association
-
-**Question.** How are multiple `Mesh` or `Points` value roots associated with the one side-entry
-payload and its transform?
-
-**Known.** The specification states one typed value root per property and zero or one file
-reference. `application_geometry.rs:21-61` checks only the number of collected side entries,
-selects the first matching archive entry, and does not validate the value-root count.
-`application_geometry.rs:160-186` selects the first descendant `Points` root carrying `mtrx`.
-`persistence.rs:438-492` retains every descendant value and every file attribute.
-
-**Need.** Establish the producer root/file association for both runtime types. The decoder must
-reject multiple roots or select the payload and transform from one unambiguous typed value.
-
-**Conflict.** A property containing one `Points` root without a file and a later `Points` root with
-a file has one collected side entry, so it passes the current cardinality check while the
-transform is read from the first root and the payload from the second. The existing malformed
-test covers two roots that each have a file and therefore does not exercise this mismatch.
-
-**Note.** New item from this QA pass. The specification rule is not yet established from the
-FreeCAD writer path or from authored multi-root witnesses.
-
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars
