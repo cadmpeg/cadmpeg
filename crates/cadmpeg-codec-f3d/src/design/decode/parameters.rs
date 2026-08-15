@@ -450,7 +450,9 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
     let scalar = frame.get(owner_prefix::LEN..parameter_marker)?;
     let (evaluated_value, evaluated_value_offset) = match scalar.len() {
         9 if scalar.first() == Some(&0) => (View::f64_le_at(frame, 40)?, 40),
-        6 if scalar.get(..2) == Some(&[0, 1]) => (f64::from(View::u32_le_at(frame, 41)?), 41),
+        6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => {
+            (f64::from(View::u32_le_at(frame, 41)?), 41)
+        }
         5 if scalar.first() == Some(&0) && variant.is_none() => {
             (f64::from(View::u32_le_at(frame, 40)?), 40)
         }

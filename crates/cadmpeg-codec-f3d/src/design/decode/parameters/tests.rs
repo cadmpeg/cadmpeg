@@ -467,6 +467,19 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
 }
 
 #[test]
+fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
+    let mut frame = counted_parameter_owner_frame();
+    frame[40] = 0;
+    let parsed = parse_parameter_owner(&frame)
+        .expect("legacy counted parameter owner with zero scalar marker");
+    assert_eq!(parsed.frame_length, 101);
+    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value_offset, 41);
+    assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
 fn compact_typed_counted_parameter_owner_omits_variant_slot() {
     let parsed = parse_parameter_owner(&compact_typed_counted_parameter_owner_frame())
         .expect("compact typed counted parameter owner");
