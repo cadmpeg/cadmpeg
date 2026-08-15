@@ -32,6 +32,7 @@ use crate::brep::{
 use crate::native::PropertyRecord;
 
 type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
+type FacePcurve = (PcurveId, Option<[f64; 2]>);
 
 pub(crate) struct TopologyOccurrence {
     pub(crate) property: String,
@@ -823,7 +824,8 @@ impl<'a> Builder<'a> {
                 let edge_transform =
                     wire_transform.compose(self.tables.location(edge_use.location));
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
-                let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
+                let pcurve =
+                    self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
                 let id = coedge_ids[index].clone();
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
@@ -914,16 +916,25 @@ impl<'a> Builder<'a> {
             &self.payload.id,
             self.topology_label(edge_use.shape, transform),
         ));
-        let curve_representation = representations
-            .iter()
-            .find(|representation| representation.kind == 1);
-        let polygon_representation = representations
-            .iter()
-            .enumerate()
-            .find(|(_, representation)| matches!(representation.kind, 5..=7));
+        let curve_representation = unique_edge_representation(
+            edge_use.shape,
+            &representations,
+            |representation| representation.kind == 1,
+            "3D curve",
+        )?;
+        let polygon_representation = if curve_representation.is_none() {
+            unique_edge_representation(
+                edge_use.shape,
+                &representations,
+                |representation| matches!(representation.kind, 5..=7),
+                "polygon",
+            )?
+        } else {
+            None
+        };
         let curve = if degenerated {
             None
-        } else if let Some(representation) = curve_representation {
+        } else if let Some((_, representation)) = curve_representation {
             let carrier_transform =
                 transform.compose(self.tables.location(representation.location));
             Some(self.located_curve(ir, representation.primary, carrier_transform)?)
@@ -933,7 +944,7 @@ impl<'a> Builder<'a> {
             None
         };
         let param_range = curve_representation
-            .and_then(|representation| representation.parameter_range)
+            .and_then(|(_, representation)| representation.parameter_range)
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
@@ -1216,44 +1227,47 @@ impl<'a> Builder<'a> {
         edge_transform: Transform,
         surface: usize,
         surface_transform: Transform,
-    ) -> Option<(PcurveId, Option<[f64; 2]>)> {
+    ) -> Result<Option<FacePcurve>, CodecError> {
         let TextTShapeGeometry::Edge {
             degenerated,
             representations,
             ..
         } = &self.tables.tshapes[edge_use.shape - 1].geometry
         else {
-            return None;
+            return Ok(None);
         };
-        representations
-            .iter()
-            .enumerate()
-            .find(|(_, representation)| {
+        let Some((index, representation)) = unique_edge_representation(
+            edge_use.shape,
+            representations,
+            |representation| {
                 matches!(representation.kind, 2 | 3)
                     && representation.surface == Some(surface)
                     && transforms_equal(
                         edge_transform.compose(self.tables.location(representation.location)),
                         surface_transform,
                     )
-            })
-            .map(|(index, representation)| {
-                let reversed = is_reversed(edge_use.orientation);
-                let secondary = representation.secondary.is_some() && reversed;
-                let curve_index = if secondary {
-                    representation
-                        .secondary
-                        .expect("secondary representation exists")
-                } else {
-                    representation.primary
-                };
-                let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
-                let parameter_range =
-                    normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
-                (
-                    self.pcurve_id(edge_use.shape, index, secondary),
-                    bounded_pcurve_range(*degenerated, parameter_range),
-                )
-            })
+            },
+            "matching pcurve",
+        )?
+        else {
+            return Ok(None);
+        };
+        let reversed = is_reversed(edge_use.orientation);
+        let secondary = representation.secondary.is_some() && reversed;
+        let curve_index = if secondary {
+            representation
+                .secondary
+                .expect("secondary representation exists")
+        } else {
+            representation.primary
+        };
+        let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
+        let parameter_range =
+            normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
+        Ok(Some((
+            self.pcurve_id(edge_use.shape, index, secondary),
+            bounded_pcurve_range(*degenerated, parameter_range),
+        )))
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
@@ -1706,6 +1720,30 @@ fn edge_endpoint_uses(
             "edge TShape {edge} does not have both forward and reversed endpoint uses"
         ))
     })
+}
+
+fn unique_edge_representation<'a, Predicate>(
+    edge: usize,
+    representations: &'a [TextEdgeRepresentation],
+    predicate: Predicate,
+    role: &str,
+) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError>
+where
+    Predicate: Fn(&TextEdgeRepresentation) -> bool,
+{
+    let mut matches = representations
+        .iter()
+        .enumerate()
+        .filter(|(_, representation)| predicate(representation));
+    let Some(first) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "edge TShape {edge} has multiple {role} representations"
+        )));
+    }
+    Ok(Some(first))
 }
 
 pub(crate) fn normalize_occt_curve_range(

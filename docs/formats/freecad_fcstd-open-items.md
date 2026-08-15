@@ -24,7 +24,6 @@ These items have a Conflict part and need a decision.
 - GP-04. Topology-color shape-property association
 - PT-02. Element-map position to neutral-occurrence order
 - PT-03. Element-map carrier and owner selection
-- XT-02. Edge representation selection and uniqueness
 - XT-03. Non-manifold radial order
 - DP-01. Forward declared dependencies
 - DP-02. Sketch profile seed order
@@ -142,18 +141,6 @@ These items have a Conflict part and need a decision.
 rejection prevents a source-order choice but does not resolve the legal cardinality.
 
 ## 4. Exact-topology transfer
-
-### XT-02. Edge representation selection and uniqueness
-
-**Question.** When an edge has multiple 3D curve, polygon, or matching curve-on-surface representations, which representation supplies its neutral carrier and face pcurve?
-
-**Known.** Exact-shape records retain all geometry carriers, locations, parameter ranges, and pcurves. Polygon transfer is a fallback when an exact 3D curve is absent.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/topology_transfer.rs:912-928` takes the first kind-1 curve or first kind-5 through kind-7 polygon. `face_pcurve` at `:1223-1251` takes the first matching kind-2 or kind-3 representation. Neither path checks duplicate equivalence.
-
-**Need.** We must establish representation cardinality and precedence. If multiple candidates are legal, the decoder must select by serialized role or require equivalent geometry; otherwise it must reject the duplicate form.
-
-**Note.** Commit `63d07acec` promoted source order to the specification without producer evidence for multiple representations.
 
 ### XT-03. Non-manifold radial order
 

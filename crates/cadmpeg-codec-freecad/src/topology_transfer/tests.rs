@@ -103,6 +103,52 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
 }
 
 #[test]
+fn edge_representation_selection_requires_unique_candidates() {
+    let representation = |kind| TextEdgeRepresentation {
+        kind,
+        primary: 1,
+        secondary: None,
+        surface: None,
+        second_surface: None,
+        location: 0,
+        second_location: None,
+        parameter_range: None,
+        continuity: None,
+        uv_endpoints: None,
+    };
+    let exact = [representation(1), representation(1)];
+    assert!(matches!(
+        unique_edge_representation(7, &exact, |candidate| candidate.kind == 1, "3D curve"),
+        Err(CodecError::Malformed(_))
+    ));
+    let fallback = [representation(5), representation(6)];
+    assert!(matches!(
+        unique_edge_representation(
+            7,
+            &fallback,
+            |candidate| matches!(candidate.kind, 5..=7),
+            "polygon"
+        ),
+        Err(CodecError::Malformed(_))
+    ));
+    let matching_pcurves = [representation(2), representation(2)];
+    assert!(matches!(
+        unique_edge_representation(
+            7,
+            &matching_pcurves,
+            |candidate| candidate.kind == 2,
+            "matching pcurve"
+        ),
+        Err(CodecError::Malformed(_))
+    ));
+    let one = [representation(1), representation(2)];
+    let selected = unique_edge_representation(7, &one, |candidate| candidate.kind == 1, "3D curve")
+        .expect("unique exact curve")
+        .expect("exact curve");
+    assert_eq!(selected.0, 0);
+}
+
+#[test]
 fn non_manifold_incidence_does_not_invent_a_radial_order() {
     let edge = EdgeId("edge".into());
     let mut coedges = (0..3)

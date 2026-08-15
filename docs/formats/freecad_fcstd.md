@@ -221,12 +221,13 @@ vertex. `Internal` and `External` children do not supply endpoints. Closed and d
 still require both oriented uses; the uses can reference the same vertex. Duplicate endpoint
 orientations and an edge without both endpoint orientations are invalid.
 
-Edge geometry access follows serialized representation order. The first 3D-curve representation
-supplies the exact neutral carrier and parameter range. Only when no 3D curve exists does the first
-stored polygon representation supply an approximate carrier. For a face use, the first pcurve
-representation whose surface and composed location equal the face surface supplies the pcurve.
-A closed-surface representation supplies its second pcurve when the edge use is reversed. Later
-matching representations remain in the native edge record. The neutral analytic-surface frame uses
+Edge geometry access follows serialized representation order. At most one 3D-curve representation
+can supply the exact neutral carrier and parameter range. Only when no 3D curve exists can one
+stored polygon representation supply an approximate carrier; multiple fallback polygons are
+invalid. For a face use, at most one pcurve representation whose surface and composed location
+equal the face surface supplies the pcurve. A closed-surface representation supplies its second
+pcurve when the edge use is reversed. Later nonmatching representations remain in the native edge
+record. Duplicate matching representations are invalid. The neutral analytic-surface frame uses
 the cross product of its axis and reference direction. If the persisted plane frame has the
 opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or
 torus frame has the opposite circumferential direction, the pcurve U parameter is negated. A cone
