@@ -106,16 +106,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a later presentation record can be rejected or degraded even when its bounded prefix is readable.
 
-### FV-05. Future view and clipping records
-
-**Question.** Which later view and clipping-record versions are accepted, and how are appended fields skipped?
-
-**Known.** `views.rs:630-675` rejects clipping-plane minor versions above 3, while `rhino_3dm.md` §13.4 "The clipping-plane chunk has major version 1 and minor versions 0 through 5:" specifies fields introduced at later minors.
-
-**Need.** Define version admission and bounded suffix parsing for view and clipping records through the settled minor range.
-
-**Note.** Reopened because the current reader rejects specified later minors instead of consuming or skipping their bounded fields.
-
 ### LG-01. Direct V1 record dispatch
 
 **Question.** Which direct V1 typecodes are typed records rather than opaque records?
@@ -145,16 +135,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 **Need.** Audit every versioned reader, remove unjustified zero-tail requirements, and document only writer-band ceilings supported by evidence.
 
 **Note.** Reopened because a valid bounded later-minor suffix can make a containing presentation record fail or become opaque.
-
-### RS-02. Later-minor version admission
-
-**Question.** What version ceilings are valid for each versioned record, independent of its field suffix?
-
-**Known.** The global rule rejects a minor only at a documented writer-band ceiling. Local readers still use narrow caps, including the clipping-plane cap in `views.rs:630-675`, despite the specified minor range through 5 at `rhino_3dm.md` §13.4 "The clipping-plane chunk has major version 1 and minor versions 0 through 5:".
-
-**Need.** Establish record-specific version ceilings and parse or skip every settled later-minor field before the bounded end.
-
-**Note.** Reopened because current admission rejects specified later minors. The clipping-plane minor-4/5 mismatch is the clearest concrete case.
 
 ### RS-04. Strict boolean validation in object attributes
 

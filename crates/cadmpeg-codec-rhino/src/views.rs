@@ -629,7 +629,7 @@ fn parse_attributes(
             }
             let mut plane = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
             let (major, minor) = (plane.i32()?, plane.i32()?);
-            if major != 1 || !(0..=3).contains(&minor) {
+            if major != 1 || minor < 0 {
                 return Err(FramingError::structural(
                     plane.position(),
                     "clipping-plane version is unsupported",
@@ -668,12 +668,6 @@ fn parse_attributes(
             } else {
                 legacy_depth_enabled
             };
-            if plane.remaining() != 0 {
-                return Err(FramingError::structural(
-                    plane.position(),
-                    "clipping plane has trailing bytes",
-                ));
-            }
             result.clipping_planes.push(ClippingPlane {
                 equation_mm: equation,
                 plane_uuid: (!id.is_nil()).then(|| id.to_string()),
@@ -1017,7 +1011,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
 
 #[cfg(test)]
 mod tests {
-    use super::{legacy_clipping_depth, parse_viewport, Viewport, UNSET_POSITIVE_FLOAT};
+    use super::{
+        legacy_clipping_depth, parse_attributes, parse_viewport, Viewport, UNSET_POSITIVE_FLOAT,
+    };
+    use crate::chunks::ArchiveVersion;
+    use crate::test_support::test_dump::{anonymous_chunk, utf16_bytes};
 
     fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
         for coordinate in value {
@@ -1073,5 +1071,47 @@ mod tests {
         assert_eq!(legacy_clipping_depth(2.5), (2.5, true));
         assert_eq!(legacy_clipping_depth(-1.0), (0.0, false));
         assert_eq!(legacy_clipping_depth(UNSET_POSITIVE_FLOAT), (0.0, false));
+    }
+
+    #[test]
+    fn view_attributes_skip_later_clipping_plane_suffix() {
+        let archive = ArchiveVersion::V5;
+        let mut page = Vec::new();
+        page.extend(0_i32.to_le_bytes());
+        page.extend(100.0_f64.to_le_bytes());
+        page.extend(200.0_f64.to_le_bytes());
+        for _ in 0..4 {
+            page.extend(0.0_f64.to_le_bytes());
+        }
+        page.extend(utf16_bytes(""));
+
+        let mut clipping_plane = Vec::new();
+        for value in [0.0_f64, 0.0, 1.0, 0.0] {
+            clipping_plane.extend(value.to_le_bytes());
+        }
+        clipping_plane.extend([0x11; 16]);
+        clipping_plane.push(1);
+        clipping_plane.extend(3.0_f64.to_le_bytes());
+        clipping_plane.push(1);
+        clipping_plane.extend([0xaa, 0xbb]);
+
+        let mut body = vec![0x14];
+        body.extend(0_i32.to_le_bytes());
+        body.extend(100.0_f64.to_le_bytes());
+        body.extend(200.0_f64.to_le_bytes());
+        body.extend([0; 16]);
+        for _ in 0..6 {
+            body.extend(0.0_f64.to_le_bytes());
+        }
+        body.extend([0; 16]);
+        body.extend(anonymous_chunk(archive, 0, &page));
+        body.push(1);
+        body.extend(1_i32.to_le_bytes());
+        body.extend(anonymous_chunk(archive, 4, &clipping_plane));
+
+        let value = parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
+        assert_eq!(value.clipping_planes.len(), 1);
+        assert_eq!(value.clipping_planes[0].depth_mm, Some(3.0));
+        assert!(value.clipping_planes[0].depth_enabled);
     }
 }
