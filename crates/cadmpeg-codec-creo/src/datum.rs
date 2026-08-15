@@ -108,12 +108,21 @@ pub fn named_plane(payload: &[u8]) -> Option<DatumPlane> {
         .windows(id_marker.len())
         .rposition(|window| window == id_marker)?;
     let id_start = id_at + id_marker.len();
-    let id = *payload.get(id_start)? as u32;
     let feature_marker = b"feat_id\0";
     let feature_at = payload[..outline]
         .windows(feature_marker.len())
         .rposition(|window| window == feature_marker)?;
-    let feature_id = *payload.get(feature_at + feature_marker.len())? as u32;
+    let feature_field_start = feature_at.checked_sub(2)?;
+    (payload.get(feature_field_start) == Some(&crate::psb::token::NAMED_RECORD)).then_some(())?;
+    let outline_field_start = outline
+        .checked_sub(2)
+        .filter(|start| payload.get(*start) == Some(&crate::psb::token::NAMED_RECORD))
+        .unwrap_or(outline);
+    let (id, id_end) = crate::psb::reference_id(payload, id_start).ok()?;
+    (id_end <= feature_field_start).then_some(())?;
+    let feature_start = feature_at + feature_marker.len();
+    let (feature_id, feature_end) = crate::psb::reference_id(payload, feature_start).ok()?;
+    (feature_end <= outline_field_start).then_some(())?;
     let cache = scalar::ScalarCache::from_section(payload);
     let slots = named_outline_slots(payload, outline + marker.len(), &cache)?;
     let standalone_zero = |slot: &DatumSlot| matches!(slot.token.as_slice(), [0x18 | 0x0f]);

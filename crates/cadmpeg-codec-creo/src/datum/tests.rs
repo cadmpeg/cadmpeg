@@ -218,6 +218,16 @@ fn decodes_compact_width_datum_row_identifiers() {
 }
 
 #[test]
+fn decodes_compact_width_named_datum_identifiers() {
+    let data = b"\xe0\x01geom_id\0\x80\x80\xe0\x01feat_id\0\x81\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let plane = named_plane(data).expect("compact-width named plane");
+
+    assert_eq!(plane.id, 128);
+    assert_eq!(plane.feature_id, 257);
+    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+}
+
+#[test]
 fn bounds_a_datum_outline_at_the_next_validated_row() {
     let mut data = b"srf_array\0\xf8\x02".to_vec();
     data.extend([4, 0x22, 1, 1, 1, 0]);
