@@ -1771,7 +1771,9 @@ is the first counted row. Positional rows repeat the nested item schema for the
 first item, then store additional `ent_id`/`sense` pairs directly; `e2`
 separates direct items when the item count exceeds two. The row trailer is
 `f3` plus the table entity reference plus `e2`; a one-item row instead ends at
-its item `e2`, and the final row may end at the following named record. Solver
+its item `e2`. The final row may end at the following named record or at a
+following positional table wrapper `f4 04|05 f7 <class> f8 <count> f7 <class>
+fb e2`. Solver
 integer fields extend the compact-integer lattice with `c0..df XX YY`, equal
 to `((head-c0)<<16)|(XX<<8)|YY`, and `ea XX YY ZZ`, equal to the unsigned
 little-endian value `XX|(YY<<8)|(ZZ<<16)`.
@@ -3605,7 +3607,9 @@ same item-table and item-row classes across these rows. A repeated item-table
 class reference can immediately precede the array opener. The auxiliary frame
 does not replace or reorder `id`, `type`, `flags`, `status`, or the incidence
 items. Exactly one matching nested item array must occur before the incidence
-row separator.
+row separator. The final row may terminate at the end of the bounded
+definition, at a named record, or at a structurally complete following
+positional table wrapper `f4 04|05 f7 <class> f8 <count> f7 <class> fb e2`.
 
 The positional relation-join table repeats the labelled `triples_ptr` table
 class and stores exactly its `f8` count of `rel_id`, `eqn_id`, and `skamp_id`

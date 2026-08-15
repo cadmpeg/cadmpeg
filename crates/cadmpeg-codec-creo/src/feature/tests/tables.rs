@@ -658,6 +658,47 @@ fn positional_skamp_table_replays_counted_nested_items() {
 }
 
 #[test]
+fn positional_skamp_table_replays_consecutive_single_item_rows() {
+    let payload = b"\xf8\x03\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\xe2\
+            \x02\x01\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x07\x00\xe2\
+            \x03\x02\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 3);
+    assert_eq!(
+        skamps
+            .iter()
+            .map(|skamp| (skamp.id, skamp.kind, skamp.items[0].entity_id))
+            .collect::<Vec<_>>(),
+        [(1, 0, 6), (2, 1, 7), (3, 2, 8)]
+    );
+}
+
+#[test]
+fn positional_skamp_table_accepts_a_following_table_wrapper_boundary() {
+    let payload = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\xe2\
+            \x02\x01\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
+            \x07\x00\xf1\xf7\x60\xe2\x08\x02\
+            \xf4\x04\xf7\x64\xf8\x01\xf7\x64\xfb\xe2";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 2);
+    assert_eq!(skamps[1].items.len(), 2);
+    assert_eq!(
+        skamps[1]
+            .items
+            .iter()
+            .map(|item| (item.entity_id, item.sense))
+            .collect::<Vec<_>>(),
+        [(7, 0), (8, 2)]
+    );
+}
+
+#[test]
 fn positional_skamp_table_skips_row_auxiliary_frames() {
     let payload = b"\xf8\x03\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\

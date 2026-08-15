@@ -4272,37 +4272,96 @@ fn positional_skamp_item_array(
     row_separator.extend_from_slice(outer_table_class);
     row_separator.push(0xe2);
     let row_end = find_bytes(payload, &row_separator, start, end).unwrap_or(end);
-    let candidates = (start..row_end)
-        .filter_map(|array| {
-            (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-            let (count, after_count) = psb::compact_int(payload, array + 1);
-            (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (_, after_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
-            let table_class = payload.get(after_count..after_table_class)?;
-            expected_table_class
-                .is_none_or(|expected| expected == table_class)
+    let candidate = (start..row_end).find_map(|array| {
+        (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (count, after_count) = psb::compact_int(payload, array + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (_, after_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
+        let table_class = payload.get(after_count..after_table_class)?;
+        expected_table_class
+            .is_none_or(|expected| expected == table_class)
+            .then_some(())?;
+        (payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2]))
+            .then_some(())?;
+        let row_class_start = after_table_class + 2;
+        (payload.get(row_class_start) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (_, after_row_class) = psb::reference_id(payload, row_class_start + 1).ok()?;
+        let row_class = payload.get(row_class_start..after_row_class)?;
+        expected_row_class
+            .is_none_or(|expected| expected == row_class)
+            .then_some(())?;
+        Some((
+            count,
+            after_row_class,
+            table_class.to_vec(),
+            row_class.to_vec(),
+        ))
+    })?;
+    positional_skamp_item_array_has_valid_boundary(
+        payload,
+        candidate.1,
+        candidate.0,
+        &candidate.2,
+        outer_table_class,
+        end,
+    )?;
+    Some(candidate)
+}
+
+fn positional_skamp_item_array_has_valid_boundary(
+    payload: &[u8],
+    mut cursor: usize,
+    item_count: u32,
+    item_table_class: &[u8],
+    outer_table_class: &[u8],
+    end: usize,
+) -> Option<()> {
+    let item_limit = usize::try_from(item_count).unwrap_or(usize::MAX);
+    let mut items = 0;
+    while items < item_limit {
+        next_solver_int(payload, &mut cursor)?;
+        next_solver_int(payload, &mut cursor)?;
+        items += 1;
+        if items < item_limit {
+            cursor = consume_positional_separator(payload, cursor, end, item_table_class, &[0xf1])?;
+        }
+    }
+
+    let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
+    row_separator.push(0xf3);
+    row_separator.extend_from_slice(outer_table_class);
+    row_separator.push(0xe2);
+    if cursor == end {
+        return Some(());
+    }
+    if payload.get(cursor..cursor + row_separator.len()) == Some(row_separator.as_slice()) {
+        return Some(());
+    }
+    if payload.get(cursor) == Some(&0xe2) {
+        return Some(());
+    }
+    payload
+        .get(cursor)
+        .is_some_and(|byte| *byte == 0xe0)
+        .then_some(())
+        .or_else(|| {
+            let Some([0xf4, 0x04 | 0x05]) = payload.get(cursor..cursor + 2) else {
+                return None;
+            };
+            (payload.get(cursor + 2) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (_, after_table_class) = psb::reference_id(payload, cursor + 3).ok()?;
+            (after_table_class < end
+                && payload.get(after_table_class) == Some(&psb::token::ARRAY_OPEN))
+            .then_some(())?;
+            let (_, after_count) = psb::compact_int(payload, after_table_class + 1);
+            (after_count < end && payload.get(after_count) == Some(&psb::token::ENTITY_REF))
                 .then_some(())?;
-            (payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2]))
-                .then_some(())?;
-            let row_class_start = after_table_class + 2;
-            (payload.get(row_class_start) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (_, after_row_class) = psb::reference_id(payload, row_class_start + 1).ok()?;
-            let row_class = payload.get(row_class_start..after_row_class)?;
-            expected_row_class
-                .is_none_or(|expected| expected == row_class)
-                .then_some(())?;
-            Some((
-                count,
-                after_row_class,
-                table_class.to_vec(),
-                row_class.to_vec(),
-            ))
+            let (_, after_next_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
+            (after_next_table_class + 2 <= end
+                && payload.get(after_next_table_class..after_next_table_class + 2)
+                    == Some(&[0xfb, 0xe2]))
+            .then_some(())
         })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
 }
 
 pub(crate) fn feature_relation_triples(
