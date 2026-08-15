@@ -153,15 +153,10 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         Some(0)
     );
 
-    let scale_factor = parse_design_parameter(&parameter_record(
-        Some(1331),
-        "1",
-        "ScaleFactor",
-        None,
-        "scale",
-        1.0,
-    ))
-    .expect("scale-factor parameter");
+    let mut scale_factor = parameter_record(Some(1331), "1", "ScaleFactor", None, "scale", 1.0);
+    let scale_factor_tail = scale_factor.len() - 12;
+    scale_factor[scale_factor_tail + 2] = 16;
+    let scale_factor = parse_design_parameter(&scale_factor).expect("scale-factor parameter");
     assert_eq!(scale_factor.family_discriminator, Some(5));
     assert_eq!(scale_factor.owner_record_index, Some(1331));
     assert_eq!(scale_factor.unit, None);

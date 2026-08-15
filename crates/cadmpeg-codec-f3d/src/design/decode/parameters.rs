@@ -282,11 +282,11 @@ pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
 
 fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, tail: u8) -> bool {
     match tail {
-        16 => discriminator == Some(6),
+        16 => {
+            (discriminator == Some(5) && source_kind == "ScaleFactor") || discriminator == Some(6)
+        }
         19 => discriminator.is_none_or(|value| {
-            matches!(value, 0 | 3 | 4)
-                || (value == 5 && source_kind == "ScaleFactor")
-                || (value == 6 && source_kind == "TangencyWeight")
+            matches!(value, 0 | 3 | 4) || (value == 6 && source_kind == "TangencyWeight")
         }),
         _ => false,
     }
