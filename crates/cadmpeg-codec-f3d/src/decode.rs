@@ -2205,13 +2205,11 @@ impl<'a> F3dDecodeSession<'a> {
     fn decode_design_graph(&mut self) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
-        eprintln!("f3d progress history-start");
         for history_brep in container::history_breps(scan) {
             if let Some(history) = decode_asm_history(ctx, scan, history_brep)? {
                 self.native.asm_histories.push(history);
             }
         }
-        eprintln!("f3d progress history-done");
         self.native.construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
         self.native.persistent_references =
             crate::design::decode::sketch::decode_persistent_references(scan)?;
@@ -2227,23 +2225,16 @@ impl<'a> F3dDecodeSession<'a> {
             scan,
             &self.native.design_entity_headers,
         )?;
-        eprintln!("f3d progress headers-done");
         self.native.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
             scan,
             &self.native.design_record_headers,
         )?;
-        eprintln!("f3d progress relations-done");
         extend_related_design_records(scan, &mut self.native)?;
-        eprintln!("f3d progress related-done");
         self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
-        eprintln!("f3d progress points-done");
         self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
-        eprintln!("f3d progress texts-done");
         self.native.sketch_curve_identities =
             crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
-        eprintln!("f3d progress curves-done");
         self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
-        eprintln!("f3d progress surfaces-done");
         crate::design::decode::sketch::bind_sketch_graph(
             &self.native.design_entity_headers,
             &mut self.native.sketch_points,
@@ -2251,7 +2242,6 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_surfaces,
             &mut self.native.sketch_relations,
         )?;
-        eprintln!("f3d progress sketch-done");
         crate::design::decode::operands::bind_extrude_selection_geometry(
             &mut self.native.design_extrude_selection_members,
             &self.native.design_extrude_selection_groups,
@@ -2305,7 +2295,6 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_points,
             &mut self.native.sketch_curve_identities,
         )?;
-        eprintln!("f3d progress dimensions-done");
         self.native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
         if self.geometry.is_none() {
             self.native.design_body_bindings =
@@ -2328,7 +2317,6 @@ impl<'a> F3dDecodeSession<'a> {
         self.ir.model.configurations = crate::design::configurations::project_configurations(
             &self.native.design_configurations,
         )?;
-        eprintln!("f3d progress project-start");
         (self.ir.model.features, self.ir.model.parameters) =
             crate::design::feature_project::project_parameter_design_with_edge_identities(
                 &crate::design::feature_project::ProjectInputs {
@@ -3820,7 +3808,6 @@ fn extend_related_design_records(
             ))
         })
         .collect::<std::collections::HashSet<_>>();
-    eprintln!("f3d progress related-first-start indices={}", indices.len());
     native.design_record_headers.extend(
         crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
@@ -3830,13 +3817,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    eprintln!("f3d progress related-first-done");
-    eprintln!(
-        "f3d progress related-first-sort-start headers={}",
-        native.design_record_headers.len()
-    );
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
-    eprintln!("f3d progress related-first-sort-done");
     native.design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
         scan,
         &native.design_parameters,
@@ -3980,24 +3961,18 @@ fn extend_related_design_records(
             }),
     );
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
-    eprintln!("f3d progress profile-call-start");
     crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut native.design_parameter_scopes,
         &native.design_record_headers,
         &native.design_entity_headers,
     )?;
-    eprintln!("f3d progress profiles-done");
     native.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(
             scan,
             &mut native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
-    eprintln!(
-        "f3d progress construction-groups-done count={}",
-        native.design_construction_operand_groups.len()
-    );
     crate::design::decode::scopes::bind_mirror_constructions(
         scan,
         &mut native.design_parameter_scopes,
@@ -4005,17 +3980,12 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.design_parameter_owners,
     )?;
-    eprintln!("f3d progress mirrors-done");
     native.design_extrude_selection_groups =
         crate::design::decode::operands::decode_extrude_selection_groups(
             scan,
             &native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
-    eprintln!(
-        "f3d progress extrude-selections-done count={}",
-        native.design_extrude_selection_groups.len()
-    );
     let mut indices = native
         .design_extrude_selection_groups
         .iter()
@@ -4077,10 +4047,6 @@ fn extend_related_design_records(
             ))
         })
         .collect::<std::collections::HashSet<_>>();
-    eprintln!(
-        "f3d progress related-second-start indices={}",
-        indices.len()
-    );
     native.design_record_headers.extend(
         crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
@@ -4090,7 +4056,6 @@ fn extend_related_design_records(
                 })
             }),
     );
-    eprintln!("f3d progress related-second-done");
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     crate::design::decode::operands::bind_construction_operand_trailing_records(
         scan,

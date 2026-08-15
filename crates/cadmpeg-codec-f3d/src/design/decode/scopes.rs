@@ -276,13 +276,26 @@ pub(crate) fn admit_history_bound_scope_variants(
                     .is_some()
             })
             .collect::<Vec<_>>();
-        let [keep] = history_bound.as_slice() else {
-            return Err(CodecError::Malformed(
-                "Design scope record identity has unresolved duplicate envelopes".into(),
-            ));
+        let equivalent_payload = indices.first().is_some_and(|first| {
+            indices
+                .iter()
+                .skip(1)
+                .all(|index| equivalent_scope_variant_payload(&scopes[*first], &scopes[*index]))
+        });
+        let keep = match history_bound.as_slice() {
+            [keep] => *keep,
+            [] if equivalent_payload => *indices
+                .iter()
+                .max_by_key(|index| scopes[**index].byte_offset)
+                .expect("equivalent duplicate scope group is non-empty"),
+            _ => {
+                return Err(CodecError::Malformed(
+                    "Design scope record identity has unresolved duplicate envelopes".into(),
+                ));
+            }
         };
         for index in indices {
-            admitted[*index] = *index == *keep;
+            admitted[*index] = *index == keep;
         }
     }
 
@@ -293,6 +306,59 @@ pub(crate) fn admit_history_bound_scope_variants(
         .collect();
     *scopes = retained;
     Ok(())
+}
+
+/// Compare two same-index scope envelopes after removing source-location and
+/// dynamic-class fields. An equivalent envelope is one serialization of the
+/// same logical scope; the later envelope supersedes the earlier one when no
+/// decoded ASM state pair can select a revision.
+fn equivalent_scope_variant_payload(
+    left: &DesignParameterScope,
+    right: &DesignParameterScope,
+) -> bool {
+    let (Ok(mut left), Ok(mut right)) = (serde_json::to_value(left), serde_json::to_value(right))
+    else {
+        return false;
+    };
+    strip_scope_variant_provenance(&mut left, true);
+    strip_scope_variant_provenance(&mut right, true);
+    left == right
+}
+
+fn strip_scope_variant_provenance(value: &mut serde_json::Value, top_level: bool) {
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                strip_scope_variant_provenance(item, false);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            fields.retain(|key, _| {
+                if key.ends_with("_offset") {
+                    return false;
+                }
+                if top_level
+                    && matches!(
+                        key.as_str(),
+                        "id" | "class_tag"
+                            | "history_state_id"
+                            | "previous_history_state_id"
+                            | "paired_class_tag"
+                    )
+                {
+                    return false;
+                }
+                true
+            });
+            for field in fields.values_mut() {
+                strip_scope_variant_provenance(field, false);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
 }
 
 pub(crate) fn exact_thread_construction(
@@ -5566,38 +5632,31 @@ pub(crate) fn parse_parameter_scope(
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
-    let mut tail_candidates = vec![
-        (72, false),
-        (76, false),
-        (77, false),
-        (78, false),
-        (82, false),
-        (87, false),
-        (88, false),
-        (104, false),
-        (110, false),
-    ];
-    tail_candidates.extend((0..=256).map(|label_code_units| (78 + label_code_units * 2, true)));
-    for (tail_length, named_tail) in tail_candidates {
-        let Some(end) = paired_at.checked_sub(tail_length) else {
+    let kind_scan_start = paired_at
+        .saturating_sub(590 + 4 + 2 * 256)
+        .max(start.checked_add(11)?);
+    let kind_scan_end = paired_at.checked_sub(72)?;
+    for at in kind_scan_start..kind_scan_end {
+        let Some((kind, kind_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
             continue;
         };
-        let earliest = end.saturating_sub(4 + 2 * 256).max(start + 11);
-        for at in earliest..end {
-            let Some((kind, decoded_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
-                continue;
-            };
-            let named_tail_valid = !named_tail
-                || named_parameter_scope_tail_is_valid(bytes, decoded_end, paired_at, tail_length)
-                    .is_some_and(|valid| valid);
-            if decoded_end == end
-                && (parameter_scope_tail_length_is_valid(&kind, tail_length)
-                    || named_tail && tail_length == 78)
-                && kind.chars().all(|character| !character.is_control())
-                && named_tail_valid
-            {
-                candidates.push((at, end, tail_length, kind, named_tail));
-            }
+        if !kind.chars().all(|character| !character.is_control()) {
+            continue;
+        }
+        let Some(tail_length) = paired_at.checked_sub(kind_end) else {
+            continue;
+        };
+        let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
+        if fixed_tail && parameter_scope_tail_length_is_valid(&kind, tail_length) {
+            candidates.push((at, kind_end, tail_length, kind.clone(), false));
+        }
+        let named_tail = (78..=590).contains(&tail_length)
+            && tail_length.is_multiple_of(2)
+            && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78)
+            && named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
+                .is_some_and(|valid| valid);
+        if named_tail {
+            candidates.push((at, kind_end, tail_length, kind, true));
         }
     }
     if candidates.iter().filter(|candidate| candidate.4).count() == 1 {

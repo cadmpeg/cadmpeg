@@ -808,37 +808,15 @@ pub fn bind_sketch_profiles(
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
 ) -> Result<(), CodecError> {
-    eprintln!(
-        "f3d progress profile-start scopes={} headers={} entities={}",
-        scopes.len(),
-        headers.len(),
-        entities.len()
-    );
     let headers = headers
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
-    let profile_scope_count = scopes
-        .iter()
-        .filter(|scope| {
-            design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
-                || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
-                || scope.kind == "BaseFlange"
-        })
-        .count();
-    eprintln!("f3d progress profile-scopes={profile_scope_count}");
-    for (scope_ordinal, scope) in scopes
-        .iter_mut()
-        .filter(|scope| {
-            design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
-                || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
-                || scope.kind == "BaseFlange"
-        })
-        .enumerate()
-    {
-        if scope_ordinal % 100 == 0 {
-            eprintln!("f3d progress profile-scope={scope_ordinal}");
-        }
+    for scope in scopes.iter_mut().filter(|scope| {
+        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
+            || scope.kind == "BaseFlange"
+    }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };

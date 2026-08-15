@@ -221,6 +221,8 @@ The Design body map selects model BREP entries by complete BREP basename. Each r
 
 ### 3.1 Design metadata
 
+Same-index scope envelopes with the same feature-family token, frame length, family ordinal, and ordered reference indices are equivalent generation forms. If no unique history-state pair selects one, the later envelope in stream order is authoritative. Same-index envelopes with different logical payloads are malformed.
+
 The last edge-recipe member of a counted construction-operand group ends at the immediately following indexed record. Its terminal record index need not continue the consecutive indices of the member's four-record envelope.
 
 A body-map entity suffix between a history-bearing parameter scope and the next parameter scope is the result body of the first scope. Its BREP basename selects that scope's ASM history when the scope's state pair occurs in multiple histories. A whole-body recipe whose solved candidate faces name exactly one candidate BREP supplies the same history selection.
