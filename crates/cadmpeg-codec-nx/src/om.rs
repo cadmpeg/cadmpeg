@@ -1201,6 +1201,8 @@ pub struct Section<'a> {
     pub record_area_offset: Option<usize>,
     /// Exact record-area bytes, including its 12-byte control prefix.
     pub record_area: Option<&'a [u8]>,
+    /// Operation labels decoded while the section's record area is framed.
+    cached_operation_labels: Vec<OperationLabel<'a>>,
 }
 
 /// A feature operation name in a size-framed feature-history record area.
@@ -1216,6 +1218,63 @@ pub struct OperationLabel<'a> {
     pub object_indices: [Option<u32>; 4],
     /// Absolute byte offset of each object-index token in header order.
     pub object_index_offsets: [usize; 4],
+}
+
+/// Cached byte layout for one validated operation label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OperationLabelLayout {
+    header_offset: usize,
+    offset: usize,
+    value_len: usize,
+    object_indices: [Option<u32>; 4],
+    object_index_offsets: [usize; 4],
+}
+
+/// Convert borrowed operation labels into cached byte layouts.
+pub(crate) fn operation_label_layouts(labels: &[OperationLabel<'_>]) -> Vec<OperationLabelLayout> {
+    labels
+        .iter()
+        .map(|label| OperationLabelLayout {
+            header_offset: label.header_offset,
+            offset: label.offset,
+            value_len: label.value.len(),
+            object_indices: label.object_indices,
+            object_index_offsets: label.object_index_offsets,
+        })
+        .collect()
+}
+
+fn materialize_operation_labels<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    layouts: &[OperationLabelLayout],
+) -> Vec<OperationLabel<'a>> {
+    layouts
+        .iter()
+        .map(|layout| {
+            let value_start = layout
+                .offset
+                .checked_sub(base_offset)
+                .and_then(|offset| offset.checked_add(2))
+                .expect("cached operation label offset remains in record area");
+            let value_end = value_start
+                .checked_add(layout.value_len)
+                .expect("cached operation label length remains in record area");
+            let value = std::str::from_utf8(
+                bytes
+                    .get(value_start..value_end)
+                    .expect("cached operation label value remains in record area"),
+            )
+            .expect("cached operation label remains UTF-8");
+            OperationLabel {
+                header_offset: layout.header_offset,
+                offset: layout.offset,
+                value,
+                object_indices: layout.object_indices,
+                object_index_offsets: layout.object_index_offsets,
+            }
+        })
+        .collect()
 }
 
 /// One operation record bounded by consecutive validated operation headers.
@@ -2217,13 +2276,12 @@ impl<'a> Section<'a> {
 
     /// Decode strictly framed operation labels from the pointed record area.
     pub fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
-        let Some(bytes) = self.record_area else {
-            return Vec::new();
-        };
-        let Some(base_offset) = self.record_area_offset else {
-            return Vec::new();
-        };
-        operation_labels(bytes, base_offset)
+        self.cached_operation_labels.clone()
+    }
+
+    /// Return the validated operation-label layouts for container caching.
+    pub(crate) fn operation_label_layouts(&self) -> Vec<OperationLabelLayout> {
+        operation_label_layouts(&self.cached_operation_labels)
     }
 
     /// Decode fully framed Boolean operations from the pointed record area.
@@ -2234,7 +2292,7 @@ impl<'a> Section<'a> {
         let Some(base_offset) = self.record_area_offset else {
             return Vec::new();
         };
-        boolean_operations(bytes, base_offset)
+        boolean_operations_with_labels(bytes, base_offset, &self.cached_operation_labels)
     }
 
     /// Bound operation records by consecutive validated operation headers.
@@ -2245,7 +2303,7 @@ impl<'a> Section<'a> {
         let Some(base_offset) = self.record_area_offset else {
             return Vec::new();
         };
-        operation_records(bytes, base_offset)
+        operation_records_with_labels(bytes, base_offset, &self.cached_operation_labels)
     }
 
     /// Bound operation records and retain their ordinal in the complete label sequence.
@@ -2339,8 +2397,17 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
 }
 
 /// Bound every validated operation header through its successor or area end.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused parser tests.
 pub fn operation_records(bytes: &[u8], base_offset: usize) -> Vec<OperationRecord<'_>> {
     let labels = operation_labels(bytes, base_offset);
+    operation_records_with_labels(bytes, base_offset, &labels)
+}
+
+fn operation_records_with_labels<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'a>],
+) -> Vec<OperationRecord<'a>> {
     labels
         .iter()
         .enumerate()
@@ -5446,13 +5513,24 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
 }
 
 /// Decode Boolean target and tool lists following complete operation labels.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused parser tests.
 pub fn boolean_operations(bytes: &[u8], base_offset: usize) -> Vec<BooleanOperation> {
+    let labels = operation_labels(bytes, base_offset);
+    boolean_operations_with_labels(bytes, base_offset, &labels)
+}
+
+fn boolean_operations_with_labels(
+    bytes: &[u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'_>],
+) -> Vec<BooleanOperation> {
     const BODY_HEADER: &[u8] = &[
         0x31, 0x00, 0x00, 0x01, 0x00, 0x14, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03,
         0x00, 0x00, 0xe0, 0x7f, 0xff, 0xff, 0xff, 0x01, 0x01,
     ];
-    operation_labels(bytes, base_offset)
-        .into_iter()
+    labels
+        .iter()
+        .copied()
         .filter_map(|label| {
             let kind = match label.value {
                 "UNITE" => BooleanOperationKind::Unite,
@@ -5755,6 +5833,15 @@ pub fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
 
 /// Locate independently size-framed OM sections and their type registries.
 pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
+    sections_with_operation_label_layouts(bytes, None, &[])
+}
+
+/// Locate sections while reusing cached operation-label layouts when present.
+pub(crate) fn sections_with_operation_label_layouts<'a>(
+    bytes: &'a [u8],
+    entry_index: Option<usize>,
+    cached_operation_label_layouts: &[(usize, usize, Vec<OperationLabelLayout>)],
+) -> Vec<Section<'a>> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 16 <= bytes.len() {
@@ -5801,13 +5888,29 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
             } else {
                 (field_definitions(bytes, field_start, end), None)
             };
+        let record_area = record_area_offset.map(|start| &bytes[start..end]);
+        let cached_operation_labels = match (record_area, record_area_offset) {
+            (Some(record_area), Some(record_area_offset)) => cached_operation_label_layouts
+                .iter()
+                .find(|(cached_entry, offset, _)| {
+                    Some(*cached_entry) == entry_index && *offset == record_area_offset
+                })
+                .map_or_else(
+                    || operation_labels(record_area, record_area_offset),
+                    |(_, _, layouts)| {
+                        materialize_operation_labels(record_area, record_area_offset, layouts)
+                    },
+                ),
+            _ => Vec::new(),
+        };
         out.push(Section {
             offset,
             byte_len: end - offset,
             types,
             fields,
             record_area_offset,
-            record_area: record_area_offset.map(|start| &bytes[start..end]),
+            record_area,
+            cached_operation_labels,
         });
         at = end;
     }

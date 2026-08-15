@@ -399,6 +399,7 @@ mod tests {
                 file_span: Some((0, len)),
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
+            om_operation_label_layouts: std::sync::OnceLock::new(),
         }
     }
 

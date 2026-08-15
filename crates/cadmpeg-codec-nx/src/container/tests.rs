@@ -54,6 +54,38 @@ fn container_parses_header_and_directory() {
 }
 
 #[test]
+fn container_cached_operation_labels_preserve_section_materialization() {
+    let payload = size_framed_om_section_with_repeated_operations(2);
+    let container = Container {
+        data: payload.clone().into(),
+        version: 0,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count: 1,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        entries: vec![DirEntry {
+            name: "/Root/om".into(),
+            region: Region::Header,
+            file_span: Some((0, payload.len() as u64)),
+        }],
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_operation_label_layouts: std::sync::OnceLock::new(),
+    };
+    let direct = crate::om::sections(&payload);
+    let cached = container.om_sections();
+    assert_eq!(cached.len(), direct.len());
+    assert!(container.om_operation_label_layouts.get().is_some());
+    for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
+        assert_eq!(entry.name, "/Root/om");
+        assert_eq!(section, expected);
+        assert_eq!(section.operation_labels(), expected.operation_labels());
+        assert_eq!(section.operation_records(), expected.operation_records());
+    }
+    assert_eq!(container.om_sections(), cached);
+}
+
+#[test]
 fn container_rejects_incomplete_counted_directories() {
     let mut header = single_part_prt();
     header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());

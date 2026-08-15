@@ -292,8 +292,34 @@ impl Container<'_> {
 
     /// Locate independently size-framed NX object-model sections.
     pub fn om_sections(&self) -> Vec<(&DirEntry, crate::om::Section<'_>)> {
+        let cached_operation_label_layouts = self.om_operation_label_layouts.get_or_init(|| {
+            let mut layouts = Vec::new();
+            for (entry_index, entry) in self.entries.iter().enumerate() {
+                let Some((offset, size)) = entry.file_span else {
+                    continue;
+                };
+                let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size))
+                else {
+                    continue;
+                };
+                let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
+                    continue;
+                };
+                for section in crate::om::sections(payload) {
+                    let Some(record_area_offset) = section.record_area_offset else {
+                        continue;
+                    };
+                    layouts.push((
+                        entry_index,
+                        record_area_offset,
+                        section.operation_label_layouts(),
+                    ));
+                }
+            }
+            layouts
+        });
         let mut out = Vec::new();
-        for entry in &self.entries {
+        for (entry_index, entry) in self.entries.iter().enumerate() {
             let Some((offset, size)) = entry.file_span else {
                 continue;
             };
@@ -304,9 +330,13 @@ impl Container<'_> {
                 continue;
             };
             out.extend(
-                crate::om::sections(payload)
-                    .into_iter()
-                    .map(|section| (entry, section)),
+                crate::om::sections_with_operation_label_layouts(
+                    payload,
+                    Some(entry_index),
+                    cached_operation_label_layouts,
+                )
+                .into_iter()
+                .map(|section| (entry, section)),
             );
         }
         out
@@ -674,6 +704,9 @@ pub struct Container<'a> {
     pub entries: Vec<DirEntry>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<Vec<(usize, crate::om::IndexedSectionLayout)>>,
+    /// Cached operation-label layouts for size-framed object-model sections.
+    pub(crate) om_operation_label_layouts:
+        OnceLock<Vec<(usize, usize, Vec<crate::om::OperationLabelLayout>)>>,
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
@@ -771,6 +804,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         footer_fingerprint,
         entries,
         indexed_section_layouts: OnceLock::new(),
+        om_operation_label_layouts: OnceLock::new(),
     })
 }
 
