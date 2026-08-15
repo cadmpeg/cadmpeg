@@ -2003,6 +2003,10 @@ i32 loop index
 f64 tolerance[2]
 ```
 
+One trim stores exactly one parameter-space C2 reference and one proxy domain.
+The native trim record has no repeated C2-use list or alternate parameter-space
+curve slot.
+
 Each stored tolerance is a finite nonnegative value or an explicit unset
 sentinel. The unset sentinels are `-1.23432101234321e308` and
 `+1.23432101234321e308`.

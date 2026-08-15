@@ -182,13 +182,27 @@ the same producer-source audit or an independent witness.
 
 ### SW-10. Writer first-pcurve selection
 
-**Question.** Which parameter-space curve use does the Rhino writer serialize when one coedge has more than one ordered pcurve use?
+**Question.** When a neutral coedge has multiple ordered pcurve uses, which
+use-selection or rejection rule should the transfer writer apply before the
+single native C2 slot is written?
 
-**Known.** `writer.rs:2419-2443` allows multiple pcurve uses on one coedge. `writer.rs:2332-2338`, `writer.rs:2450-2456`, and `writer.rs:2481-2489` select only the first use for geometry, tolerance, and NURBS validation.
+**Known.** `writer.rs:2419-2443` allows multiple pcurve uses on one coedge.
+The native `ON_BrepTrim` record has one `m_c2i` and one proxy domain, as shown
+by `opennurbs_brep.h` and `ON_BrepTrim::Write`/`Read` in
+`opennurbs_brep_io.cpp`. `writer.rs:2332-2338`, `writer.rs:2450-2456`, and
+`writer.rs:2481-2489` currently select only the first use for geometry,
+tolerance, and NURBS validation.
 
-**Need.** Emit every supported pcurve use, or reject a coedge with more than one use before writing. Preserve its ordered range and geometry semantics.
+**Need.** Producer or transfer-policy evidence for the selection rule, or a
+writer change that rejects or reports loss for a coedge with more than one use.
+The rule must preserve the selected range and geometry semantics.
 
-**Note.** A second pcurve with a different range or carrier is accepted by ownership validation and then omitted from the written C2 or trim payload. The first ordered use silently wins.
+**Note.** Narrowed 2026-08-16. The native source settles the remaining
+capacity question: one trim cannot serialize multiple ordered pcurve uses. The
+current first-use behavior is implementation policy, not evidence of the
+Rhino transfer rule. A second pcurve with a different range or carrier is
+accepted by ownership validation and then omitted from the written C2 or trim
+payload.
 
 ### SW-11. Extrusion closure and orientation constants
 
