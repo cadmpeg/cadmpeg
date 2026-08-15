@@ -120,20 +120,11 @@ pub(crate) fn transfer(
                 active_child: None,
             }
         } else if is_body(&object.type_name) {
-            FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::SolidBodies,
-                children: body_membership_property(&owned).map_or_else(Vec::new, |property| {
-                    property
-                        .links
-                        .iter()
-                        .filter_map(|link| link.object.as_deref())
-                        .filter_map(|target| feature_ids.get(target).cloned())
-                        .collect()
-                }),
-                active_child: linked_feature_ids(&owned, "Tip", &feature_ids)
-                    .into_iter()
-                    .next(),
-            }
+            body_definition(&owned, &feature_ids).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -494,7 +485,81 @@ pub(crate) fn transfer(
 }
 
 fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
-    property(properties, "Group").or_else(|| property(properties, "Model"))
+    match (property(properties, "Group"), property(properties, "Model")) {
+        (Some(group), None) | (None, Some(group)) if group.type_name == "App::PropertyLinkList" => {
+            Some(group)
+        }
+        _ => None,
+    }
+}
+
+fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
+    match (property(properties, "Group"), property(properties, "Model")) {
+        (None, None) => true,
+        (Some(group), None) | (None, Some(group)) => group.type_name == "App::PropertyLinkList",
+        (Some(_), Some(_)) => false,
+    }
+}
+
+fn body_definition(
+    properties: &[&PropertyRecord],
+    feature_ids: &HashMap<&str, FeatureId>,
+) -> Option<FeatureDefinition> {
+    if !body_membership_carrier_is_valid(properties) {
+        return None;
+    }
+    let children = body_membership_property(properties).map_or_else(Vec::new, |property| {
+        property
+            .links
+            .iter()
+            .filter_map(|link| link.object.as_deref())
+            .filter_map(|target| feature_ids.get(target).cloned())
+            .collect()
+    });
+    let active_child = match body_tip(properties, feature_ids) {
+        BodyTipResolution::Valid(active_child) => active_child,
+        BodyTipResolution::Invalid => return None,
+    };
+    Some(FeatureDefinition::TreeNode {
+        role: FeatureTreeNodeRole::SolidBodies,
+        children,
+        active_child,
+    })
+}
+
+enum BodyTipResolution {
+    Valid(Option<FeatureId>),
+    Invalid,
+}
+
+fn body_tip(
+    properties: &[&PropertyRecord],
+    feature_ids: &HashMap<&str, FeatureId>,
+) -> BodyTipResolution {
+    let Some(property) = property(properties, "Tip") else {
+        return BodyTipResolution::Valid(None);
+    };
+    if property.type_name != "App::PropertyLink" {
+        return BodyTipResolution::Invalid;
+    }
+    match property.links.as_slice() {
+        [] => BodyTipResolution::Valid(None),
+        [link]
+            if link.subelements.is_empty()
+                && link.document.is_none()
+                && link.document_attribute.is_none() =>
+        {
+            let Some(target) = link.object.as_deref().filter(|target| !target.is_empty()) else {
+                return BodyTipResolution::Valid(None);
+            };
+            feature_ids
+                .get(target)
+                .cloned()
+                .map(Some)
+                .map_or(BodyTipResolution::Invalid, BodyTipResolution::Valid)
+        }
+        _ => BodyTipResolution::Invalid,
+    }
 }
 
 fn feature_ordinals<'a>(
@@ -4965,19 +5030,6 @@ fn feature_base_definition(
     Some(FeatureDefinition::DerivedGeometry {
         source: feature_ids.get(source)?.clone(),
     })
-}
-
-fn linked_feature_ids(
-    properties: &[&PropertyRecord],
-    name: &str,
-    feature_ids: &HashMap<&str, FeatureId>,
-) -> Vec<FeatureId> {
-    property(properties, name)
-        .into_iter()
-        .flat_map(|property| &property.links)
-        .filter_map(|link| link.object.as_deref())
-        .filter_map(|object| feature_ids.get(object).cloned())
-        .collect()
 }
 
 fn imported_geometry_definition(

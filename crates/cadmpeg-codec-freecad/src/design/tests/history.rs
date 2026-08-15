@@ -250,6 +250,59 @@ fn transfers_ordered_body_membership_and_active_tip() {
 }
 
 #[test]
+fn rejects_ambiguous_body_history_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="6">
+ <Object type="PartDesign::Body" name="TipList" id="1"/>
+ <Object type="PartDesign::Feature" name="First" id="2"/>
+ <Object type="PartDesign::Feature" name="Second" id="3"/>
+ <Object type="PartDesign::Body" name="MembershipAliases" id="4"/>
+ <Object type="PartDesign::Feature" name="Third" id="5"/>
+ <Object type="PartDesign::Feature" name="Fourth" id="6"/>
+</Objects>
+<ObjectData Count="6">
+ <Object name="TipList"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+ <Object name="MembershipAliases"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Third"/></LinkList></Property>
+  <Property name="Model" type="App::PropertyLinkList"><LinkList count="1"><Link value="Fourth"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Third"><Properties Count="0"/></Object>
+ <Object name="Fourth"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("ambiguous body carriers");
+    for name in ["TipList", "MembershipAliases"] {
+        assert!(matches!(
+            result
+                .ir()
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some(name))
+                .map(|feature| &feature.definition)
+                .expect("body feature"),
+            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Body"
+        ));
+    }
+    assert_eq!(result.report().losses.len(), 2);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn transfers_stored_and_external_part_feature_families() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="9">

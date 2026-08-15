@@ -419,8 +419,11 @@ multiple targets, or more than one populated compatibility name is not resolved 
 a linkless profile remains the native profile property. Object dependency links establish
 construction dependencies, and a feature's cached shape property links its neutral operation to
 every transferred result body from that payload. PartDesign body containers are structural
-history nodes: their group links establish ordered feature-tree membership and reciprocal
-parentage, while the tip link identifies one owned member as the active result. Suppressed, active,
+history nodes: the current `Group` or legacy `Model` is one `App::PropertyLinkList` membership
+carrier, and both aliases are malformed. Its scalar `App::PropertyLink` `Tip` has at most one
+local target; a link-list runtime type, multiple targets, or an unresolved non-null target retains
+the body natively instead of selecting a source-order value. A valid tip identifies one owned
+member as the active result. Suppressed, active,
 frozen, invalid, touched, mapping, support, and visibility properties remain individually named
 state rather than being collapsed into one enabled flag. Validation rejects duplicate members,
 inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
