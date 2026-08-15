@@ -1084,6 +1084,35 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
 }
 
 #[test]
+fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_occurrence_placement_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["subfigure_instances"].len(), 1);
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["issues"][0], "malformed_placement");
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrencePlacementMalformed.kind())
+        .expect("malformed placement loss");
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D5")
+    );
+}
+
+#[test]
 fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
     let result = crate::reader::decode_with_test_occurrence_limits(
         &occurrence_limit_file(),

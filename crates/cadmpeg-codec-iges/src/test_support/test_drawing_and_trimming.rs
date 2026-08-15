@@ -597,6 +597,32 @@ pub(crate) fn nested_subfigure_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn malformed_occurrence_placement_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "MEMBER".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "DEF".into(),
+            status: "00000200",
+            parameters: "308,0,10HDEFINITION,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "INSTANCE".into(),
+            status: "00000000",
+            parameters: "408,3,0,3Hbad,0,1;".into(),
+        },
+    ])
+}
+
 pub(crate) fn occurrence_limit_file() -> Vec<u8> {
     let mut entities = vec![OwnedTestEntity {
         entity_type: 308,

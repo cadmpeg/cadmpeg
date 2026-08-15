@@ -33,6 +33,8 @@ pub enum IgesLossCode {
     OccurrenceExpansionDepthTruncated,
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked,
+    /// Product-occurrence expansion omitted an instance or member with malformed placement data.
+    OccurrencePlacementMalformed,
     /// An envelope-admitted entity was retained without a neutral projection.
     EntityRetainedUnprojected,
     /// An entity type/form is outside the Fixed ASCII mechanical/document envelope.
@@ -43,6 +45,8 @@ pub enum IgesLossCode {
     PointerUnresolved,
     /// Directory display, font, or color data was not projected.
     DisplayDataNotProjected,
+    /// A drawing has conflicting valid properties of the same form.
+    DrawingPropertyAmbiguous,
     /// A Type 102 composite has no exact concatenated carrier.
     CompositeCarrierDegraded,
     /// Preserved source image required for a byte-exact write was unavailable.
@@ -60,11 +64,13 @@ impl IgesLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::OccurrenceRootInferenceBlocked,
+        Self::OccurrencePlacementMalformed,
         Self::EntityRetainedUnprojected,
         Self::EntityOutsideEnvelope,
         Self::EntityNotProjected,
         Self::PointerUnresolved,
         Self::DisplayDataNotProjected,
+        Self::DrawingPropertyAmbiguous,
         Self::CompositeCarrierDegraded,
         Self::PreservedSourceUnavailable,
         Self::ProceduralReduced,
@@ -78,11 +84,13 @@ impl IgesLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
+            Self::OccurrencePlacementMalformed => "occurrence.placement-malformed",
             Self::EntityRetainedUnprojected => "entity.retained-unprojected",
             Self::EntityOutsideEnvelope => "entity.outside-envelope",
             Self::EntityNotProjected => "entity.not-projected",
             Self::PointerUnresolved => "graph.pointer-unresolved",
             Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
+            Self::DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
             Self::CompositeCarrierDegraded => "curve.composite-carrier-degraded",
             Self::PreservedSourceUnavailable => "source.preserved-image-unavailable",
             Self::ProceduralReduced => "geometry.procedural-reduced",
@@ -99,11 +107,13 @@ impl IgesLossCode {
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
+            | Self::OccurrencePlacementMalformed
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
             | Self::PointerUnresolved
             | Self::DisplayDataNotProjected
+            | Self::DrawingPropertyAmbiguous
             | Self::CompositeCarrierDegraded
             | Self::PassthroughRecordOmitted => Severity::Warning,
         }
@@ -114,12 +124,14 @@ impl IgesLossCode {
         match self {
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked => LossTaxonomy::DecodeDiagnostic,
+            | Self::OccurrenceRootInferenceBlocked
+            | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::DisplayDataNotProjected => LossTaxonomy::MaterialNotTransferred,
+            Self::DrawingPropertyAmbiguous => LossTaxonomy::MetadataNotTransferred,
             Self::CompositeCarrierDegraded => LossTaxonomy::GeometryNotTransferred,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
@@ -167,11 +179,13 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
+                "occurrence.placement-malformed",
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",
                 "graph.pointer-unresolved",
                 "presentation.display-data-not-projected",
+                "presentation.drawing-property-ambiguous",
                 "curve.composite-carrier-degraded",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",

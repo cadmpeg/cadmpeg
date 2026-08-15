@@ -149,26 +149,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `7472b1242` preserves declared and effective values, but the synthetic fixture and same-commit documentation do not prove the defaults or angle unit.
 
-### DR-14. Malformed occurrence placement fields fall back to defaults
-
-**Question.** What must happen when a Type 408 or Type 420 placement field, or a member transform, is malformed?
-
-**Known.** `native.rs:1129-1151` replaces malformed translation and scale numbers with zero or one. `native.rs:1276-1291` replaces a failed member-transform resolution with the identity transform and still emits the member occurrence. The typed projections in `structure.rs:1808-1835` and `structure.rs:1946-2013` validate these fields and record malformed-record losses instead.
-
-**Need.** We need one malformed-field policy for native expansion and typed projection. A malformed placement must not become an unmarked translated, scaled, or identity occurrence.
-
-**Note.** Hostile sweep 2026-08-15: current code has separate fallback and loss paths. The fallback changes product structure and transform semantics without a native loss or refusal.
-
-### DR-15. Drawing property selection is first-wins and non-unique
-
-**Question.** How are duplicate Type 406 Form 15, 16, or 17 properties associated with a Type 404 drawing?
-
-**Known.** `native.rs:3722-3734` scans the property sequence list with `find_map` and selects the first matching property for each form. `native.rs:3784-3800` then uses that property for the drawing name, size, and units. `entities/drawing.rs:59-89` validates each Form 16 or 17 record but does not reject duplicate properties or record an ambiguity loss.
-
-**Need.** We need a uniqueness, precedence, or ambiguity rule for duplicate drawing properties. Native drawing metadata must not change when equivalent property records are reordered without a recorded loss.
-
-**Note.** Hostile sweep 2026-08-15: two valid properties of one form produce storage-order-dependent native metadata. No duplicate-selection rule is documented.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance

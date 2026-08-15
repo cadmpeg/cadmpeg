@@ -1597,6 +1597,60 @@ pub(crate) fn drawing_with_properties_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn drawing_with_conflicting_size_properties_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00020000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "NOTELOC".into(),
+            status: "00010100",
+            parameters: "116,5,6,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 16,
+            label: "SIZEA".into(),
+            status: "00010000",
+            parameters: "406,2,210,297;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 17,
+            label: "UNITS".into(),
+            status: "00010000",
+            parameters: "406,2,2,2HMM;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME".into(),
+            status: "00010000",
+            parameters: "406,1,7HDETAIL1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 16,
+            label: "SIZEB".into(),
+            status: "00010000",
+            parameters: "406,2,216,297;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 404,
+            form: 1,
+            label: "DRAWING".into(),
+            status: "00000000",
+            parameters: "404,1,1,10,20,0.5,1,3,0,4,5,7,9,11;".into(),
+        },
+    ])
+}
+
 pub(crate) fn text_annotation_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

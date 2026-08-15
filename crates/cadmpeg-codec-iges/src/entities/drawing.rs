@@ -4,6 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
+use crate::loss::IgesLossCode;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
@@ -35,6 +36,64 @@ fn has_in_plane_component(normal: [f64; 3], up: [f64; 3]) -> bool {
         normal[0] * up[1] - normal[1] * up[0],
     ];
     cross.iter().any(|value| *value != 0.0)
+}
+
+#[derive(Debug, PartialEq)]
+enum DrawingPropertyValue {
+    Name(Vec<u8>),
+    Size([f64; 2]),
+    Units(i64, Vec<u8>),
+}
+
+fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<DrawingPropertyValue> {
+    match form {
+        15 => (record.integer(1) == Some(1))
+            .then(|| record.string(2).filter(|value| !value.is_empty()))
+            .flatten()
+            .map(|value| DrawingPropertyValue::Name(value.to_vec())),
+        16 => {
+            if record.integer(1) != Some(2) {
+                return None;
+            }
+            let size = [record.number(2)?, record.number(3)?];
+            size.iter()
+                .all(|value| value.is_finite() && *value > 0.0)
+                .then_some(DrawingPropertyValue::Size(size))
+        }
+        17 => {
+            let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
+            let name = record.string(3).filter(|value| !value.is_empty())?;
+            (record.integer(1) == Some(2))
+                .then_some(DrawingPropertyValue::Units(units, name.to_vec()))
+        }
+        _ => None,
+    }
+}
+
+fn conflicting_drawing_property_forms(
+    record: &ParameterRecord,
+    form: i64,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> bool {
+    let Some(groups) = trailing_pointer_groups(record, directory) else {
+        return false;
+    };
+    let values = groups
+        .properties
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|sequence| {
+            directory
+                .get(sequence)
+                .is_some_and(|entry| entry.entity_type == 406 && entry.form == form)
+        })
+        .filter_map(|sequence| records.get(&sequence))
+        .filter_map(|record| drawing_property_value(form, record))
+        .collect::<Vec<_>>();
+    values.len() > 1 && values.windows(2).any(|pair| pair[0] != pair[1])
 }
 
 pub(super) fn project(
@@ -98,6 +157,17 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
+        for form in [15, 16, 17] {
+            if conflicting_drawing_property_forms(record, form, &entries, &records) {
+                losses.push(
+                    IgesLossCode::DrawingPropertyAmbiguous
+                        .note(format!(
+                            "IGES drawing has conflicting valid Type 406 Form {form} properties"
+                        ))
+                        .with_provenance(entry.loss_provenance()),
+                );
+            }
+        }
         let view_count = record.count(1);
         let width = if entry.form == 0 { 3 } else { 4 };
         let views_valid = view_count.is_some_and(|count| {

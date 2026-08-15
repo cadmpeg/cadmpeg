@@ -795,6 +795,7 @@ enum ProductOccurrenceIssue {
     OutputLimit,
     DepthLimit,
     MalformedDefinition,
+    MalformedPlacement,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -802,6 +803,7 @@ pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) output_truncated_at: Option<u32>,
     pub(crate) depth_truncated_at: Option<u32>,
     pub(crate) malformed_definition_sequences: Vec<u32>,
+    pub(crate) malformed_placement_sequences: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -878,6 +880,79 @@ struct NativeDrawing {
     size: Option<[Option<f64>; 2]>,
     units_flag: Option<i64>,
     units_name: Option<Vec<u8>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    ambiguous_property_forms: Vec<i64>,
+}
+
+#[derive(Debug, PartialEq)]
+enum DrawingPropertyValue {
+    Name(Vec<u8>),
+    Size([f64; 2]),
+    Units(i64, Vec<u8>),
+}
+
+fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<DrawingPropertyValue> {
+    match form {
+        15 => (record.integer(1) == Some(1))
+            .then(|| record.string(2).filter(|value| !value.is_empty()))
+            .flatten()
+            .map(|value| DrawingPropertyValue::Name(value.to_vec())),
+        16 => {
+            if record.integer(1) != Some(2) {
+                return None;
+            }
+            let size = [record.number(2)?, record.number(3)?];
+            size.iter()
+                .all(|value| value.is_finite() && *value > 0.0)
+                .then_some(DrawingPropertyValue::Size(size))
+        }
+        17 => {
+            let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
+            let name = record.string(3).filter(|value| !value.is_empty())?;
+            (record.integer(1) == Some(2))
+                .then_some(DrawingPropertyValue::Units(units, name.to_vec()))
+        }
+        _ => None,
+    }
+}
+
+fn drawing_property_candidates(
+    trailing: Option<&crate::parameter::TrailingPointerGroups>,
+    form: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> Vec<u32> {
+    trailing
+        .into_iter()
+        .flat_map(|groups| groups.properties.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|entry| entry.entity_type == 406 && entry.form == form)
+        })
+        .collect()
+}
+
+fn choose_drawing_property(
+    candidates: &[u32],
+    form: i64,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> (Option<u32>, bool) {
+    let valid = candidates
+        .iter()
+        .filter_map(|sequence| {
+            records
+                .get(sequence)
+                .and_then(|record| drawing_property_value(form, record))
+                .map(|value| (*sequence, value))
+        })
+        .collect::<Vec<_>>();
+    let conflicting = valid.len() > 1 && valid.windows(2).any(|pair| pair[0].1 != pair[1].1);
+    let selected = (!conflicting)
+        .then(|| valid.first().map(|(sequence, _)| *sequence))
+        .flatten();
+    (selected, conflicting)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1120,39 +1195,36 @@ fn placement_affine(
     length_factor: f64,
     precision: RealPrecision,
     ctx: Option<&DecodeContext<'_>>,
-) -> Option<(u32, Affine)> {
-    let definition = u32::try_from(record.integer(1)?).ok()?;
-    let translation = Affine {
-        rows: [
-            [
-                1.0,
-                0.0,
-                0.0,
-                record.number(2).unwrap_or(0.0) * length_factor,
-            ],
-            [
-                0.0,
-                1.0,
-                0.0,
-                record.number(3).unwrap_or(0.0) * length_factor,
-            ],
-            [
-                0.0,
-                0.0,
-                1.0,
-                record.number(4).unwrap_or(0.0) * length_factor,
-            ],
-        ],
+) -> Result<(u32, Affine), ()> {
+    let definition = u32::try_from(record.integer(1).ok_or(())?).map_err(|_| ())?;
+    let translation_component = |index| {
+        record
+            .number_or(index, 0.0)
+            .filter(|value| value.is_finite())
+            .ok_or(())
     };
-    let x_scale = record.number(5).unwrap_or(1.0);
+    let scale_component = |index, default| {
+        record
+            .number_or(index, default)
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .ok_or(())
+    };
+    let x_scale = scale_component(5, 1.0)?;
     let scales = if instance.entity_type == 420 {
         [
             x_scale,
-            record.number(6).unwrap_or(x_scale),
-            record.number(7).unwrap_or(x_scale),
+            scale_component(6, x_scale)?,
+            scale_component(7, x_scale)?,
         ]
     } else {
         [x_scale; 3]
+    };
+    let translation = Affine {
+        rows: [
+            [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
+            [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
+            [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
+        ],
     };
     let scale = Affine {
         rows: [
@@ -1161,8 +1233,36 @@ fn placement_affine(
             [0.0, 0.0, scales[2], 0.0],
         ],
     };
-    let directory = resolve_transform(
-        instance.transform,
+    let directory = if instance.transform == 0 {
+        Affine::IDENTITY
+    } else {
+        resolve_transform(
+            instance.transform,
+            entries,
+            records,
+            length_factor,
+            precision,
+            &mut std::collections::BTreeSet::new(),
+            ctx,
+        )
+        .map_err(|_| ())?
+    };
+    Ok((definition, directory.compose(translation.compose(scale))))
+}
+
+fn member_affine(
+    entry: &DirectoryEntry,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    length_factor: f64,
+    precision: RealPrecision,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Affine, ()> {
+    if entry.transform == 0 {
+        return Ok(Affine::IDENTITY);
+    }
+    resolve_transform(
+        entry.transform,
         entries,
         records,
         length_factor,
@@ -1170,8 +1270,7 @@ fn placement_affine(
         &mut std::collections::BTreeSet::new(),
         ctx,
     )
-    .ok()?;
-    Some((definition, directory.compose(translation.compose(scale))))
+    .map_err(|_| ())
 }
 
 struct OccurrenceExpansion<'a, 'ctx> {
@@ -1194,6 +1293,7 @@ impl OccurrenceExpansion<'_, '_> {
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
         depth_truncated_at: &mut Option<u32>,
+        malformed_placement_sequences: &mut std::collections::BTreeSet<u32>,
     ) -> Result<Option<u32>, CodecError> {
         let _depth = self
             .ctx
@@ -1217,7 +1317,7 @@ impl OccurrenceExpansion<'_, '_> {
         ) else {
             return Ok(None);
         };
-        let Some((definition_sequence, local)) = placement_affine(
+        let Ok((definition_sequence, local)) = placement_affine(
             instance,
             record,
             self.entries,
@@ -1226,6 +1326,7 @@ impl OccurrenceExpansion<'_, '_> {
             self.precision,
             self.ctx,
         ) else {
+            malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
@@ -1265,30 +1366,33 @@ impl OccurrenceExpansion<'_, '_> {
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if let Some(source_sequence) =
-                    self.expand(*member, world, path, occurrences, depth_truncated_at)?
-                {
+                if let Some(source_sequence) = self.expand(
+                    *member,
+                    world,
+                    path,
+                    occurrences,
+                    depth_truncated_at,
+                    malformed_placement_sequences,
+                )? {
                     path.pop();
                     return Ok(Some(source_sequence));
                 }
                 continue;
             }
-            let member_local = self
-                .entries
-                .get(member)
-                .and_then(|entry| {
-                    resolve_transform(
-                        entry.transform,
-                        self.entries,
-                        self.records,
-                        self.length_factor,
-                        self.precision,
-                        &mut std::collections::BTreeSet::new(),
-                        self.ctx,
-                    )
-                    .ok()
-                })
-                .unwrap_or(Affine::IDENTITY);
+            let Some(member_entry) = self.entries.get(member).copied() else {
+                continue;
+            };
+            let Ok(member_local) = member_affine(
+                member_entry,
+                self.entries,
+                self.records,
+                self.length_factor,
+                self.precision,
+                self.ctx,
+            ) else {
+                malformed_placement_sequences.insert(*member);
+                continue;
+            };
             if let Some(ctx) = self.ctx {
                 ctx.charge_collection_items(1, "iges_product_occurrences")?;
             }
@@ -3719,19 +3823,21 @@ pub(crate) fn store(
             let trailing = trailing_by_directory
                 .get(&entry.sequence)
                 .and_then(|groups| groups.as_ref());
-            let property = |form| {
-                trailing.as_ref().and_then(|groups| {
-                    groups.properties.iter().find_map(|sequence| {
-                        entries
-                            .get(sequence)
-                            .filter(|property| property.entity_type == 406 && property.form == form)
-                            .map(|_| *sequence)
-                    })
-                })
-            };
-            let name_property = property(15);
-            let size_property = property(16);
-            let units_property = property(17);
+            let candidates = |form| drawing_property_candidates(trailing, form, &entries);
+            let (name_property, name_ambiguous) =
+                choose_drawing_property(&candidates(15), 15, &by_directory);
+            let (size_property, size_ambiguous) =
+                choose_drawing_property(&candidates(16), 16, &by_directory);
+            let (units_property, units_ambiguous) =
+                choose_drawing_property(&candidates(17), 17, &by_directory);
+            let ambiguous_property_forms = [
+                (15, name_ambiguous),
+                (16, size_ambiguous),
+                (17, units_ambiguous),
+            ]
+            .into_iter()
+            .filter_map(|(form, ambiguous)| ambiguous.then_some(form))
+            .collect();
             NativeDrawing {
                 id: format!("iges:presentation:drawing#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -3798,6 +3904,7 @@ pub(crate) fn store(
                     .and_then(|sequence| by_directory.get(&sequence))
                     .and_then(|record| record.string(3))
                     .map(<[u8]>::to_vec),
+                ambiguous_property_forms,
             }
         })
         .collect::<Vec<_>>();
@@ -4391,6 +4498,7 @@ pub(crate) fn store(
     let mut product_occurrences = Vec::new();
     let mut output_truncated_at = None;
     let mut depth_truncated_at = None;
+    let mut malformed_placement_sequences = std::collections::BTreeSet::new();
     let expansion = OccurrenceExpansion {
         entries: &entries,
         records: &by_directory,
@@ -4414,6 +4522,7 @@ pub(crate) fn store(
                 &mut Vec::new(),
                 &mut product_occurrences,
                 &mut depth_truncated_at,
+                &mut malformed_placement_sequences,
             )? {
                 output_truncated_at = Some(source_sequence);
                 break;
@@ -4429,6 +4538,8 @@ pub(crate) fn store(
             .then_some(ProductOccurrenceIssue::DepthLimit),
         (!malformed_definition_sequences.is_empty())
             .then_some(ProductOccurrenceIssue::MalformedDefinition),
+        (!malformed_placement_sequences.is_empty())
+            .then_some(ProductOccurrenceIssue::MalformedPlacement),
     ]
     .into_iter()
     .flatten()
@@ -4544,6 +4655,7 @@ pub(crate) fn store(
         output_truncated_at,
         depth_truncated_at,
         malformed_definition_sequences,
+        malformed_placement_sequences: malformed_placement_sequences.into_iter().collect(),
     })
 }
 

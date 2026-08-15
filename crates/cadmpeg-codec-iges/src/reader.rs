@@ -217,6 +217,14 @@ fn decode_with_occurrence_limits(
             &directory,
         ));
     }
+    for source_sequence in product_occurrence_expansion.malformed_placement_sequences {
+        losses.push(occurrence_loss(
+            IgesLossCode::OccurrencePlacementMalformed,
+            "IGES product occurrence expansion omitted an instance or member with malformed placement data",
+            source_sequence,
+            &directory,
+        ));
+    }
     if !options.container_only {
         let generic_losses = directory
             .iter()

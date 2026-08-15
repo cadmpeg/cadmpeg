@@ -27,6 +27,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -198,6 +199,32 @@ fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
         result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
+    );
+}
+
+#[test]
+fn decode_reports_conflicting_drawing_property_values() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(drawing_with_conflicting_size_properties_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let drawing = &result.ir().native.namespace("iges").unwrap().arenas["drawings"][0];
+
+    assert!(drawing.fields()["size"].is_null());
+    assert_eq!(drawing.fields()["ambiguous_property_forms"][0], 16);
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::DrawingPropertyAmbiguous.kind())
+        .expect("ambiguous drawing property loss");
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D13")
     );
 }
 
