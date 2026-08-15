@@ -610,7 +610,7 @@ fn apply_body_placements(
 }
 
 fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
-    let mut items = BTreeSet::new();
+    let mut pending = Vec::new();
     for record in exchange.records.values() {
         let drawing_owner = record
             .partials
@@ -622,17 +622,50 @@ fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
             {
-                collect_references(value, &mut items);
+                collect_references(value, &mut pending);
+            }
+        }
+    }
+    let mut items = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        if record.partial("MAPPED_ITEM").is_some() {
+            items.insert(id);
+            continue;
+        }
+        if let Some(representation_items) = super::representation::items(record) {
+            pending.extend(representation_items);
+        }
+        for partial in record.partials.iter().filter(|partial| {
+            matches!(
+                partial.name.as_str(),
+                "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET" | "TESSELLATED_GEOMETRIC_SET"
+            )
+        }) {
+            let Some(values) = partial.parameters.iter().find_map(|value| match value {
+                Value::List(values) => Some(values.as_slice()),
+                _ => None,
+            }) else {
+                continue;
+            };
+            for value in values {
+                collect_references(value, &mut pending);
             }
         }
     }
     items
 }
 
-fn collect_references(value: &Value, references: &mut BTreeSet<u64>) {
+fn collect_references(value: &Value, references: &mut Vec<u64>) {
     match value {
         Value::Reference(id) => {
-            references.insert(*id);
+            references.push(*id);
         }
         Value::List(values) => {
             for value in values {

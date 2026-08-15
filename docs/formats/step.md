@@ -589,8 +589,9 @@ Repeated child uses without an
 occurrence-specific shape representation remain ambiguous and report the
 unresolved placement. A mapping whose origin and target are both 2D placement
 or 2D transformation records is presentation geometry and does not change a
-body placement. A mapped item directly owned by a drawing graph is presentation
-geometry and does not infer a product body placement.
+body placement. A mapped item directly owned by a drawing graph, or contained
+in its geometric or tessellated item sets, is presentation geometry and does
+not infer a product body placement.
 
 Product definitions and product-definition formations use the inherited base
 attribute prefix. A direct subtype carries that prefix in its own parameter

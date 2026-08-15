@@ -423,6 +423,28 @@ fn drawing_mapped_items_do_not_place_exact_bodies() {
 }
 
 #[test]
+fn nested_drawing_mapped_items_do_not_place_exact_bodies() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#20=ITEM('camera mapping');\n#21=REPRESENTATION_MAP(#20,#19);\n#22=MAPPED_ITEM('',#21,#6);\n#23=GEOMETRIC_SET('Drawing items',(#22));\n#24=DRAUGHTING_MODEL('Drawing',(#23),#2);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested drawing mapped item");
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("MAPPED_ITEM #22 has no resolved body placement")
+    }));
+}
+
+#[test]
 fn two_dimensional_mapping_does_not_change_body_placement() {
     let mut source = export(&unit_cube());
     let representation_line = source
