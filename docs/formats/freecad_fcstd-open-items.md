@@ -91,21 +91,26 @@ neutral meaning; the closure does not establish that every such type is opaque.
 
 ### PT-04. Source topology index provenance
 
-**Question.** Does the decoder's topology traversal reproduce the producer's persistent indexed-
-map position for every placed occurrence?
+**Question.** What OCCT identity and traversal rules determine whether repeated placed roots or
+equal shape-plus-location occurrences receive one shared or multiple indexed-map positions?
 
-**Known.** Persistent element-map names bind to topology occurrences. The element-map root is the
-final map node after child maps.
+**Known.** FreeCAD assigns non-root topology positions through `TopExp::MapShapes` into a
+`TopTools::IndexedMapOfShape`; root-shape positions use `TopoDS_Iterator` order. Part's
+`TopoShapeExpansion` walks those one-based positions and binds element-map names to them. The
+element-map root is the final map node after child maps.
 
-**Conflict.** topology_transfer.rs:1554-1598 assigns indices with a decoder-owned depth-first
-walk and a key composed of shape and transform. It does not read a producer index or establish a
-FreeCAD or OCCT enumeration rule. Equal shape and transform occurrences can collapse to one key.
+**Conflict.** The producer call sites do not establish the OCCT equality and traversal behavior for
+repeated placed roots or equal shape-plus-location occurrences. topology_transfer.rs:1554-1598
+uses a decoder-owned key composed of shape and transform, so its result cannot be assumed to match
+the producer for those cases.
 
-**Need.** Establish the producer indexed-map enumeration rule and carry that index through
-topology transfer. Preserve distinct persistent occurrences when their source positions differ.
+**Need.** Read the OCCT map implementation or author differential witnesses that distinguish equal
+shape-plus-location occurrences, repeated roots, and orientation changes. Then compare those
+positions with topology transfer and preserve distinct persistent occurrences when the producer
+does.
 
-**Note.** The closure corrected counter scope across multiple roots but did not prove that the
-replacement walk matches the producer. Reopened after the topology closure.
+**Note.** This pass settled the FreeCAD producer's map owner, root iterator, one-based positions,
+and element-map binding. The OCCT identity and traversal question remains smaller and open.
 
 ## 4. Exact-topology transfer
 
