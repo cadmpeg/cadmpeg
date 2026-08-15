@@ -378,7 +378,7 @@ pub(crate) fn transfer(
                     properties: BTreeMap::new(),
                 }
             })
-        } else if object.type_name.contains("Fillet") {
+        } else if is_fillet(&object.type_name) {
             fillet_definition(&object.type_name, &owned, entries)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
@@ -386,7 +386,7 @@ pub(crate) fn transfer(
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
                 })
-        } else if object.type_name.contains("Chamfer") {
+        } else if is_chamfer(&object.type_name) {
             chamfer_definition(&object.type_name, &owned, entries)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
@@ -991,6 +991,20 @@ struct SketchTransfer {
     parameters: Vec<DesignParameter>,
 }
 
+fn sketch_carrier<'a, 'input>(
+    node: roxmltree::Node<'a, 'input>,
+) -> Option<roxmltree::Node<'a, 'input>> {
+    let mut carriers = node.children().filter(|child| {
+        child.is_element()
+            && !matches!(
+                child.tag_name().name(),
+                "Construction" | "GeoExtensions" | "UID"
+            )
+    });
+    let carrier = carriers.next()?;
+    carriers.next().is_none().then_some(carrier)
+}
+
 fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
@@ -1007,13 +1021,7 @@ fn parse_sketch(
             .filter(|node| node.has_tag_name("Geometry"))
             .enumerate()
         {
-            let carrier = node.children().find(|child| {
-                child.is_element()
-                    && !matches!(
-                        child.tag_name().name(),
-                        "Construction" | "GeoExtensions" | "UID"
-                    )
-            });
+            let carrier = sketch_carrier(node);
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
@@ -1061,13 +1069,7 @@ fn parse_sketch(
             .skip(2)
             .enumerate()
         {
-            let carrier = node.children().find(|child| {
-                child.is_element()
-                    && !matches!(
-                        child.tag_name().name(),
-                        "Construction" | "GeoExtensions" | "UID"
-                    )
-            });
+            let carrier = sketch_carrier(node);
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
@@ -1236,7 +1238,9 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
 }
 
 fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeometry> {
-    if !kind.contains("BSpline") && !node.has_tag_name("BSplineCurve") {
+    if !matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
+        && !node.has_tag_name("BSplineCurve")
+    {
         return None;
     }
     let degree = node.attribute("Degree")?.parse::<u32>().ok()?;
@@ -2103,7 +2107,10 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
     let native = || SketchGeometry::Native {
         native_kind: kind.to_owned(),
     };
-    if kind.contains("Line") {
+    if matches!(
+        kind,
+        "Part::GeomLine" | "Part::GeomLineSegment" | "Line" | "LineSegment"
+    ) {
         match (
             number("StartX"),
             number("StartY"),
@@ -2116,11 +2123,14 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             },
             _ => native(),
         }
-    } else if kind.contains("Ellipse") {
+    } else if matches!(
+        kind,
+        "Part::GeomEllipse" | "Part::GeomArcOfEllipse" | "Ellipse" | "ArcOfEllipse"
+    ) {
         let major_angle = number("MajorAngle")
             .or_else(|| number("AngleXU"))
             .or_else(|| Some(number("MajorAxisY")?.atan2(number("MajorAxisX")?)));
-        let bounds = if kind.contains("Arc") {
+        let bounds = if matches!(kind, "Part::GeomArcOfEllipse" | "ArcOfEllipse") {
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
@@ -2150,8 +2160,11 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Hyperbola") {
-        let bounds = if kind.contains("Arc") {
+    } else if matches!(
+        kind,
+        "Part::GeomHyperbola" | "Part::GeomArcOfHyperbola" | "Hyperbola" | "ArcOfHyperbola"
+    ) {
+        let bounds = if matches!(kind, "Part::GeomArcOfHyperbola" | "ArcOfHyperbola") {
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
@@ -2181,8 +2194,11 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Parabola") {
-        let bounds = if kind.contains("Arc") {
+    } else if matches!(
+        kind,
+        "Part::GeomParabola" | "Part::GeomArcOfParabola" | "Parabola" | "ArcOfParabola"
+    ) {
+        let bounds = if matches!(kind, "Part::GeomArcOfParabola" | "ArcOfParabola") {
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
@@ -2208,7 +2224,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Arc") {
+    } else if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
         let frame_angle = number("AngleXU").unwrap_or(0.0);
         match (
             number("CenterX"),
@@ -2232,7 +2248,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Circle") {
+    } else if matches!(kind, "Part::GeomCircle" | "Circle") {
         match (number("CenterX"), number("CenterY"), number("Radius")) {
             (Some(x), Some(y), Some(radius)) if radius > 0.0 => SketchGeometry::Circle {
                 center: Point2::new(x, y),
@@ -2243,7 +2259,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             },
             _ => native(),
         }
-    } else if kind.contains("Point") {
+    } else if matches!(kind, "Part::GeomPoint" | "Point") {
         match (number("X"), number("Y")) {
             (Some(x), Some(y)) => SketchGeometry::Point {
                 position: Point2::new(x, y),
@@ -4808,7 +4824,7 @@ fn imported_geometry_definition(
 }
 
 fn is_sketch(kind: &str) -> bool {
-    kind.contains("Sketcher::SketchObject")
+    kind == "Sketcher::SketchObject"
 }
 fn is_datum(kind: &str) -> bool {
     matches!(
@@ -4925,12 +4941,18 @@ fn is_pattern(kind: &str) -> bool {
     )
 }
 fn is_dress_up(kind: &str) -> bool {
-    kind.contains("Fillet")
-        || kind.contains("Chamfer")
+    is_fillet(kind)
+        || is_chamfer(kind)
         || matches!(
             kind,
             "PartDesign::Thickness" | "PartDesign::Draft" | "Part::Thickness"
         )
+}
+fn is_fillet(kind: &str) -> bool {
+    matches!(kind, "Part::Fillet" | "PartDesign::Fillet")
+}
+fn is_chamfer(kind: &str) -> bool {
+    matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
 fn is_body(kind: &str) -> bool {
     kind.contains("PartDesign::Body")

@@ -254,6 +254,14 @@ first/last-parameter bound names identify the same conic interval. A persisted p
 the sketch origin, normal, and in-plane axis by applying
 its normalized quaternion to the canonical sketch basis. Attachment support and mapping mode remain
 linked source state when their complete support-frame composition is not resolved.
+Sketch geometry dispatch uses exact runtime names. `Part::GeomLine` and `Part::GeomLineSegment`
+select lines; `Part::GeomCircle` selects circles; `Part::GeomArcOfCircle` selects bounded arcs;
+`Part::GeomEllipse` and `Part::GeomArcOfEllipse` select ellipses; `Part::GeomHyperbola` and
+`Part::GeomArcOfHyperbola` select hyperbolas; `Part::GeomParabola` and
+`Part::GeomArcOfParabola` select parabolas; `Part::GeomPoint` selects points; and
+`Part::GeomBSplineCurve` selects NURBS. A `Geometry` record with an unknown runtime name or with
+zero or multiple eligible carrier children remains a native sketch entity. Metadata children
+`Construction`, `GeoExtensions`, and `UID` do not count as geometry carriers.
 An `ExternalGeometry` link creates an ordered construction entity. When `ExternalGeo` supplies its
 cached carrier, that carrier defines the solved sketch geometry. Without a cached carrier, the
 neutral entity retains the target document, object, and subelements as an unresolved external
@@ -388,6 +396,8 @@ tip outside the body's ordered membership.
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
 constant radius, and chamfers distinguish equal-distance, two-distance, and distance-angle laws.
+Dress-up dispatch recognizes exactly `Part::Fillet`, `PartDesign::Fillet`, `Part::Chamfer`, and
+`PartDesign::Chamfer`. Other runtime names remain native operations.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a

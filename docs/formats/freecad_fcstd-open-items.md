@@ -28,7 +28,6 @@ These items have a Conflict part and need a decision.
 - DP-01. Forward declared dependencies
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
-- DP-04. Design runtime and sketch-carrier dispatch
 - PR-01. Product membership and record identity selection
 - SA-01. Runtime-type to annotation-kind mapping
 - SA-02. Annotation scalar and position property selection
@@ -191,18 +190,6 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 **Need.** We must establish the endpoint equivalence rule and the admissible profile topology. An ambiguous junction must use constraint identity, an explicit source order rule, or an attributable refusal instead of a first match.
 
 **Note.** Commit `e024f02dd` added ambiguity handling and a scale formula, but the boundary still rests on an uncited constant. Exact and synthetic ambiguous cases do not verify the numeric boundary.
-
-### DP-04. Design runtime and sketch-carrier dispatch
-
-**Question.** Which exact runtime type and child value select a design feature or sketch geometry family?
-
-**Known.** Native records retain the exact runtime type and ordered XML children. Known FreeCAD families have family-specific value fields.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/design.rs:380-395` selects Fillet or Chamfer by substring. `parse_sketch` at `:1009-1029` takes the first eligible carrier child. `sketch_geometry` at `:2104-2251` selects the first matching substring family, with `Arc`, `Ellipse`, and `Circle` checks ordered by the decoder. A vendor type or multi-carrier value can enter the wrong semantic family or discard a later carrier.
-
-**Need.** We must establish the exact design runtime registry, child grammar, and family precedence. Unknown or conflicting carriers must remain native or be rejected.
-
-**Note.** The alternative order and first-child choices are direct code paths; valid extension naming and carrier cardinality are unknown.
 
 ## 6. Product structure
 

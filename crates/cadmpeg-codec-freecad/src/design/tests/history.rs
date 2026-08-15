@@ -97,6 +97,38 @@ fn distinguishes_stored_base_and_application_owned_features() {
 }
 
 #[test]
+fn keeps_extension_dress_ups_out_of_exact_design_dispatch() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+<Object type="Part::Fillet" name="PartFillet"/>
+<Object type="PartDesign::Fillet" name="DesignFillet"/>
+<Object type="Vendor::Fillet" name="VendorFillet"/>
+</Objects>
+<ObjectData Count="3">
+<Object name="PartFillet"><Properties Count="0"/></Object>
+<Object name="DesignFillet"><Properties Count="0"/></Object>
+<Object name="VendorFillet"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("exact dress-up dispatch");
+    let feature_names = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| feature.name.as_deref())
+        .collect::<Vec<_>>();
+    assert!(feature_names.contains(&"PartFillet"));
+    assert!(feature_names.contains(&"DesignFillet"));
+    assert!(!feature_names.contains(&"VendorFillet"));
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn transfers_ordered_body_membership_and_active_tip() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">

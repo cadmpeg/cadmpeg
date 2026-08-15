@@ -100,6 +100,37 @@ fn rejects_malformed_sketch_record_counts() {
 }
 
 #[test]
+fn retains_unknown_and_ambiguous_sketch_carriers_as_native() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="2">
+<Geometry type="Vendor::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="0" EndX="2" EndY="0"/><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("unknown and ambiguous carriers");
+    let entities = &result.ir().model.sketch_entities;
+    assert_eq!(entities.len(), 2);
+    assert!(matches!(
+        &entities[0].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Native { native_kind }
+            if native_kind == "Vendor::GeomLineSegment"
+    ));
+    assert!(matches!(
+        &entities[1].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Native { native_kind }
+            if native_kind == "Part::GeomLineSegment"
+    ));
+    assert_valid_document(result.ir());
+}
+
+#[test]
 pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
