@@ -433,6 +433,12 @@ pub(crate) fn certified_curved_offset_cache_fit(
     } else {
         None
     };
+    let support_derivatives = RationalSurfaceDerivativeNets::from_net(&support_net)?;
+    let candidate_derivatives = RationalSurfaceDerivativeNets::from_net(&candidate_net)?;
+    let residual_derivatives = match residual_net.as_ref() {
+        Some(net) => Some(RationalSurfaceDerivativeNets::from_net(net)?),
+        None => None,
+    };
 
     let mut u_breaks = support_net.u_knots[support_net.u_degree..=support_net.u_count].to_vec();
     u_breaks.extend(&candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count]);
@@ -459,12 +465,21 @@ pub(crate) fn certified_curved_offset_cache_fit(
     while let Some([u0, u1, v0, v1]) = rectangles.pop() {
         let u = u0 + (u1 - u0) * 0.5;
         let v = v0 + (v1 - v0) * 0.5;
-        let support_bounds = rational_surface_derivative_bounds(&support_net, u, v)?;
-        let (residual_u_bound, residual_v_bound) = if let Some(residual_net) = &residual_net {
-            let bounds = rational_surface_derivative_bounds(residual_net, u, v)?;
+        let support_bounds =
+            rational_surface_derivative_bounds_with_nets(&support_net, &support_derivatives, u, v)?;
+        let (residual_u_bound, residual_v_bound) = if let (Some(residual_net), Some(derivatives)) =
+            (&residual_net, &residual_derivatives)
+        {
+            let bounds =
+                rational_surface_derivative_bounds_with_nets(residual_net, derivatives, u, v)?;
             (bounds.u, bounds.v)
         } else {
-            let candidate_bounds = rational_surface_derivative_bounds(&candidate_net, u, v)?;
+            let candidate_bounds = rational_surface_derivative_bounds_with_nets(
+                &candidate_net,
+                &candidate_derivatives,
+                u,
+                v,
+            )?;
             (
                 support_bounds.u + candidate_bounds.u,
                 support_bounds.v + candidate_bounds.v,
@@ -527,8 +542,36 @@ pub(crate) struct RationalSurfaceDerivativeBounds {
     pub(crate) vv: f64,
 }
 
-pub(crate) fn rational_surface_derivative_bounds(
+struct RationalSurfaceDerivativeNets {
+    u: HomogeneousSurfaceNet,
+    v: HomogeneousSurfaceNet,
+    uv: HomogeneousSurfaceNet,
+    uu: Option<HomogeneousSurfaceNet>,
+    vv: Option<HomogeneousSurfaceNet>,
+}
+
+impl RationalSurfaceDerivativeNets {
+    fn from_net(net: &HomogeneousSurfaceNet) -> Option<Self> {
+        let u = net.derivative(true)?;
+        let v = net.derivative(false)?;
+        let uv = u.derivative(false)?;
+        let uu = if u.u_degree == 0 {
+            None
+        } else {
+            Some(u.derivative(true)?)
+        };
+        let vv = if v.v_degree == 0 {
+            None
+        } else {
+            Some(v.derivative(false)?)
+        };
+        Some(Self { u, v, uv, uu, vv })
+    }
+}
+
+fn rational_surface_derivative_bounds_with_nets(
     net: &HomogeneousSurfaceNet,
+    derivatives: &RationalSurfaceDerivativeNets,
     u: f64,
     v: f64,
 ) -> Option<RationalSurfaceDerivativeBounds> {
@@ -548,38 +591,27 @@ pub(crate) fn rational_surface_derivative_bounds(
     let base_bounds = net.active_control_bounds(u, v, origin)?;
     let weight_floor = (base_bounds.minimum_weight > 0.0).then_some(base_bounds.minimum_weight)?;
     let a = base_bounds.maximum_position_norm;
-    let u_net = net.derivative(true)?;
-    let v_net = net.derivative(false)?;
-    let u_bounds = u_net.active_control_bounds(u, v, origin)?;
-    let v_bounds = v_net.active_control_bounds(u, v, origin)?;
+    let u_bounds = derivatives.u.active_control_bounds(u, v, origin)?;
+    let v_bounds = derivatives.v.active_control_bounds(u, v, origin)?;
     let au = u_bounds.maximum_position_norm;
     let av = v_bounds.maximum_position_norm;
     let wu = u_bounds.maximum_weight_magnitude;
     let wv = v_bounds.maximum_weight_magnitude;
-    let uv_net = u_net.derivative(false)?;
-    let (auu, wuu) = if u_net.u_degree == 0 {
-        (0.0, 0.0)
-    } else {
-        let bounds = u_net
-            .derivative(true)?
-            .active_control_bounds(u, v, origin)?;
-        (
+    let (auu, wuu) = derivatives.uu.as_ref().map_or(Some((0.0, 0.0)), |net| {
+        let bounds = net.active_control_bounds(u, v, origin)?;
+        Some((
             bounds.maximum_position_norm,
             bounds.maximum_weight_magnitude,
-        )
-    };
-    let (avv, wvv) = if v_net.v_degree == 0 {
-        (0.0, 0.0)
-    } else {
-        let bounds = v_net
-            .derivative(false)?
-            .active_control_bounds(u, v, origin)?;
-        (
+        ))
+    })?;
+    let (avv, wvv) = derivatives.vv.as_ref().map_or(Some((0.0, 0.0)), |net| {
+        let bounds = net.active_control_bounds(u, v, origin)?;
+        Some((
             bounds.maximum_position_norm,
             bounds.maximum_weight_magnitude,
-        )
-    };
-    let uv_bounds = uv_net.active_control_bounds(u, v, origin)?;
+        ))
+    })?;
+    let uv_bounds = derivatives.uv.active_control_bounds(u, v, origin)?;
     let auv = uv_bounds.maximum_position_norm;
     let wuv = uv_bounds.maximum_weight_magnitude;
     let inverse_weight = weight_floor.recip();
