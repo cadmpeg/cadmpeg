@@ -314,11 +314,12 @@ current levels require those matrices and representative fixtures.
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
   history links. A payload reference from one transferred feature's design
-  object to a different transferred feature with an earlier feature ordinal
-  transfers one structural dependency in first relation order, deduplicated by
-  target. Storage selectors, unresolved targets, self-links, and forward
-  targets do not establish dependencies. This link does not assign an
-  operation role.
+  object to a different transferred feature, or to a target whose complete
+  owner-design-object chain reaches that feature, transfers one structural
+  dependency when the target feature has an earlier ordinal. Preserve first
+  relation order and deduplicate by target. Storage selectors, unresolved
+  targets, incomplete or cyclic owner chains, self-links, and forward targets
+  do not establish dependencies. This link does not assign an operation role.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source

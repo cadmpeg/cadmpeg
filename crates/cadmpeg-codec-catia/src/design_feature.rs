@@ -154,7 +154,8 @@ impl DesignFeatureTransfer {
     }
 
     /// Bind exact payload references to earlier transferred features as
-    /// structural dependencies. Storage selectors, unresolved targets,
+    /// structural dependencies. A target may resolve through its complete
+    /// owner-design-object chain. Storage selectors, unresolved targets,
     /// self-links, and forward targets do not establish history edges.
     pub(crate) fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
         let design_objects = native
@@ -188,13 +189,17 @@ impl DesignFeatureTransfer {
                 let Some(target_object) = relation.target_design_object.as_deref() else {
                     continue;
                 };
-                let Some(target) = self.feature_ids.get(target_object) else {
+                let Some(target) = nearest_feature_for_design_object(
+                    target_object,
+                    &design_objects,
+                    &self.feature_ids,
+                ) else {
                     continue;
                 };
-                if target == &feature.id || seen.contains(target) {
+                if target == feature.id || seen.contains(&target) {
                     continue;
                 }
-                let Some(target_ordinal) = feature_ordinals.get(target) else {
+                let Some(target_ordinal) = feature_ordinals.get(&target) else {
                     continue;
                 };
                 if *target_ordinal >= feature.ordinal {

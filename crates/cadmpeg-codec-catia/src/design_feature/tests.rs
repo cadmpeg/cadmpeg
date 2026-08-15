@@ -467,18 +467,27 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     source.relations = vec![
         payload_relation("first-object", 0),
         payload_relation("first-object", 1),
-        payload_relation("second-object", 2),
+        payload_relation("second-child", 2),
         payload_relation("forward-object", 3),
         storage_relation("storage-object"),
         payload_relation("source-object", 5),
         unresolved,
+        payload_relation("broken-object", 7),
+        payload_relation("cycle-first", 8),
     ];
+    let broken = design_object("broken-object", Some("missing-object"));
+    let cycle_first = design_object("cycle-first", Some("cycle-second"));
+    let cycle_second = design_object("cycle-second", Some("cycle-first"));
     let native = CatiaNative {
         design_objects: vec![
             design_object("first-object", None),
             design_object("second-object", None),
+            design_object("second-child", Some("second-object")),
             design_object("forward-object", None),
             design_object("storage-object", None),
+            broken,
+            cycle_first,
+            cycle_second,
             source,
         ],
         ..CatiaNative::default()
