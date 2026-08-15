@@ -148,6 +148,69 @@ fn complex_draughting_callout_reads_inherited_name() {
 }
 
 #[test]
+fn drawing_associations_preserve_shape_aspects_and_placeholders() {
+    let result = decode_inline(
+        "#1=REPRESENTATION_CONTEXT('','');
+#2=DRAUGHTING_MODEL('Model',(),#1);
+#3=SHAPE_ASPECT('feature','',#4,.T.);
+#4=ITEM('shape');
+#5=DRAUGHTING_CALLOUT('Callout',());
+#7=ANNOTATION_PLACEHOLDER_OCCURRENCE('placeholder',(),#8,.GPS_DATA.,$);
+#8=ITEM('placeholder geometry');
+#9=DRAUGHTING_MODEL_ITEM_ASSOCIATION('','',#3,#2,#5);
+#10=DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER('','',#3,#2,#5,#7);
+#11=(DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER() ITEM_IDENTIFIED_REPRESENTATION_USAGE('','',#3,#2,#5) ANNOTATION_PLACEHOLDER_OCCURRENCE(#7));",
+    );
+    let model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAUGHTING_MODEL")
+        .expect("draughting model");
+    assert!(model.relationships["semantic_definition"]
+        .iter()
+        .filter_map(|target| target.target.as_deref())
+        .any(|target| target == "step:data:shape_aspect#3"));
+    assert_eq!(
+        model.relationships["associated_items"]
+            .iter()
+            .filter_map(|target| target.target.as_deref())
+            .filter(|target| *target == "step:drawing:draughting_callout#5")
+            .count(),
+        3
+    );
+    assert_eq!(
+        model.relationships["annotation_placeholder"]
+            .iter()
+            .filter_map(|target| target.target.as_deref())
+            .filter(|target| *target == "step:presentation:pmi#7")
+            .count(),
+        2
+    );
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DraughtingSemanticDefinitionUntyped.kind()
+            || loss.code == StepLossCode::DraughtingAssociatedItemUntyped.kind()
+    }));
+    assert!(result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP native namespace")
+        .iter()
+        .all(|record| {
+            !record.id.0.ends_with("draughting_model_item_association#9")
+                && !record
+                    .id
+                    .0
+                    .ends_with("draughting_model_item_association_with_placeholder#10")
+                && !record
+                    .id
+                    .0
+                    .ends_with("draughting_model_item_association_with_placeholder+item_identified_representation_usage+annotation_placeholder_occurrence#11")
+        }));
+}
+
+#[test]
 fn drawing_relationship_with_multiple_product_views_is_not_retargeted() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');

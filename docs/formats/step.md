@@ -698,9 +698,13 @@ context. `PRESENTATION_SIZE` links a sheet revision to its presentation size.
 in a complex instance, these attributes come from its inherited
 `REPRESENTATION` partial.
 `DRAUGHTING_MODEL_ITEM_ASSOCIATION` links model items to their semantic
-definition. `DRAUGHTING_CALLOUT` carries an ordered callout-content set.
-Each drawing relationship target transfers only when its source record has
-exactly one neutral identity. An annotation plane transfers through its plane
+definition. `DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER` carries the
+same definition, draughting model, and callout links plus its annotation
+placeholder occurrence. Complex association instances read these attributes
+from their inherited `ITEM_IDENTIFIED_REPRESENTATION_USAGE` partial.
+`DRAUGHTING_CALLOUT` carries an ordered callout-content set. Each drawing
+relationship target transfers when its source record has exactly one neutral
+or named opaque identity. An annotation plane transfers through its plane
 carrier, and a mapped item transfers through the items of its mapped
 representation, when that wrapper has no identity of its own and the reachable
 carrier graph has exactly one neutral identity and is acyclic. If a source

@@ -25,6 +25,10 @@ const DRAWING_ENTITIES: &[&str] = &[
     "DRAUGHTING_MODEL",
     "DRAUGHTING_CALLOUT",
 ];
+const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
+    "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+    "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER",
+];
 
 struct TargetContext<'a> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
@@ -171,9 +175,17 @@ pub(super) fn decode(
     }
 
     add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses);
-    add_draughting_model_associations(exchange, &mut drawings, &target_context, &mut losses);
+    let mut association_ids = HashSet::new();
+    add_draughting_model_associations(
+        exchange,
+        &mut drawings,
+        &target_context,
+        &mut losses,
+        &mut association_ids,
+    );
 
-    let typed_records = drawings.keys().copied().collect::<HashSet<_>>();
+    let mut typed_records = drawings.keys().copied().collect::<HashSet<_>>();
+    typed_records.extend(association_ids);
     ir.model.drawings.extend(drawings.into_values());
     StageOutcome {
         value: (),
@@ -425,22 +437,29 @@ fn add_draughting_model_associations(
     drawings: &mut BTreeMap<u64, Drawing>,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
+    typed: &mut HashSet<u64>,
 ) {
-    for (association_id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
-        let parameters = source_parameters(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION");
+    for association_id in
+        exchange.matching_entity_ids(|name| DRAWING_ASSOCIATION_TYPES.contains(&name))
+    {
+        let Some(record) = exchange.records.get(&association_id) else {
+            continue;
+        };
+        let Some(parameters) = association_parameters(record) else {
+            continue;
+        };
         let Some(model_id) = parameters.get(3).and_then(value_reference) else {
             continue;
         };
-        let Some(model) = drawings.get_mut(&model_id) else {
+        if !drawings.contains_key(&model_id) {
             continue;
-        };
-        if let Some(definition_id) = parameters.get(2).and_then(value_reference) {
+        }
+
+        let mut complete = true;
+        let definition_id = parameters.get(2).and_then(value_reference);
+        let definition_target = definition_id.and_then(|definition_id| {
             match target_context.target(definition_id) {
-                Some(definition) => model
-                    .relationships
-                    .entry("semantic_definition".into())
-                    .or_default()
-                    .push(definition),
+                Some(definition) => Some(definition),
                 None if target_context.ambiguous(definition_id).is_some() => {
                     note_ambiguous_target(
                         losses,
@@ -451,26 +470,40 @@ fn add_draughting_model_associations(
                             .ambiguous(definition_id)
                             .expect("ambiguity checked above"),
                     );
+                    complete = false;
+                    None
                 }
-                None => losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
-                    format!(
-                        "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
-                    ),
-                )),
+                None => {
+                    losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
+                        format!(
+                            "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
+                        ),
+                    ));
+                    complete = false;
+                    None
+                }
             }
+        });
+        if definition_id.is_none() {
+            complete = false;
         }
-        let Some(items) = parameters.get(4) else {
-            continue;
-        };
-        let mut references = Vec::new();
-        collect_references(items, &mut references);
-        for item_id in references {
-            match target_context.target(item_id) {
-                Some(item) => model
-                    .relationships
-                    .entry("associated_items".into())
-                    .or_default()
-                    .push(item),
+
+        let item_ids = parameters
+            .get(4)
+            .into_iter()
+            .flat_map(|items| {
+                let mut references = Vec::new();
+                collect_references(items, &mut references);
+                references
+            })
+            .collect::<Vec<_>>();
+        if item_ids.is_empty() {
+            complete = false;
+        }
+        let item_targets = item_ids
+            .into_iter()
+            .filter_map(|item_id| match target_context.target(item_id) {
+                Some(item) => Some(item),
                 None if target_context.ambiguous(item_id).is_some() => {
                     note_ambiguous_target(
                         losses,
@@ -481,15 +514,120 @@ fn add_draughting_model_associations(
                             .ambiguous(item_id)
                             .expect("ambiguity checked above"),
                     );
+                    complete = false;
+                    None
                 }
-                None => losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
-                    format!(
-                        "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
-                    ),
-                )),
+                None => {
+                    losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
+                        format!(
+                            "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
+                        ),
+                    ));
+                    complete = false;
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let placeholder_target = if record
+            .partials
+            .iter()
+            .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
+        {
+            match association_placeholder_reference(record, parameters) {
+                Some(placeholder_id) => match target_context.target(placeholder_id) {
+                    Some(placeholder) => Some(placeholder),
+                    None if target_context.ambiguous(placeholder_id).is_some() => {
+                        note_ambiguous_target(
+                            losses,
+                            &format!("draughting model #{model_id} association #{association_id}"),
+                            "annotation_placeholder",
+                            placeholder_id,
+                            &target_context
+                                .ambiguous(placeholder_id)
+                                .expect("ambiguity checked above"),
+                        );
+                        complete = false;
+                        None
+                    }
+                    None => {
+                        losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
+                            "STEP draughting model #{model_id} association #{association_id} relationship annotation_placeholder references source-typed record #{placeholder_id} without a neutral identity"
+                        )));
+                        complete = false;
+                        None
+                    }
+                },
+                None => {
+                    complete = false;
+                    None
+                }
             }
+        } else {
+            None
+        };
+
+        let Some(model) = drawings.get_mut(&model_id) else {
+            continue;
+        };
+        if let Some(definition) = definition_target {
+            model
+                .relationships
+                .entry("semantic_definition".into())
+                .or_default()
+                .push(definition);
+        }
+        model
+            .relationships
+            .entry("associated_items".into())
+            .or_default()
+            .extend(item_targets);
+        if let Some(placeholder) = placeholder_target {
+            model
+                .relationships
+                .entry("annotation_placeholder".into())
+                .or_default()
+                .push(placeholder);
+        }
+        if complete {
+            typed.insert(association_id);
         }
     }
+}
+
+fn association_parameters(record: &RawRecord) -> Option<&[Value]> {
+    [
+        "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER",
+        "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+        "ITEM_IDENTIFIED_REPRESENTATION_USAGE",
+    ]
+    .into_iter()
+    .find_map(|name| {
+        record
+            .partials
+            .iter()
+            .find(|partial| partial.name == name && partial.parameters.len() >= 5)
+            .map(|partial| partial.parameters.as_slice())
+    })
+}
+
+fn association_placeholder_reference(record: &RawRecord, parameters: &[Value]) -> Option<u64> {
+    parameters.get(5).and_then(value_reference).or_else(|| {
+        record
+            .partials
+            .iter()
+            .filter(|partial| {
+                partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER"
+                    || partial.name == "ANNOTATION_PLACEHOLDER_OCCURRENCE"
+            })
+            .flat_map(|partial| partial.parameters.iter())
+            .flat_map(|value| {
+                let mut references = Vec::new();
+                collect_references(value, &mut references);
+                references
+            })
+            .next()
+    })
 }
 
 fn target_for(
