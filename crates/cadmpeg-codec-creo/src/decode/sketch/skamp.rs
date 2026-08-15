@@ -150,12 +150,17 @@ pub(crate) fn section_skamp_point_on_line(
             .into_iter()
             .find_map(|(line_item, point_item)| {
                 let line = unique_section_skamp_segment(definition, line_item.entity_id)?;
-                let point = unique_section_skamp_segment(definition, point_item.entity_id)?;
-                (line_item.sense == 0
-                    && point_item.sense == 0
-                    && line.kind == crate::feature::FeatureSegmentKind::Line
-                    && point.kind == crate::feature::FeatureSegmentKind::Point)
-                    .then_some((line, point.point_ids[0]))
+                if line_item.sense != 0
+                    || point_item.sense != 0
+                    || line.kind != crate::feature::FeatureSegmentKind::Line
+                    || !section_skamp_is_point(definition, point_item)
+                {
+                    return None;
+                }
+                Some((
+                    line,
+                    section_skamp_selected_point_id(definition, point_item)?,
+                ))
             }),
         _ => None,
     }?;
@@ -193,7 +198,7 @@ pub(crate) fn section_skamp_saved_point_on_line(
                 }
                 Some((
                     line_item,
-                    unique_section_skamp_segment(definition, point_item.entity_id)?.point_ids[0],
+                    section_skamp_selected_point_id(definition, point_item)?,
                 ))
             }),
         _ => None,

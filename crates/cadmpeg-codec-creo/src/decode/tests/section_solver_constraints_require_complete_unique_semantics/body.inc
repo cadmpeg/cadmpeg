@@ -5153,6 +5153,74 @@
         .expect("conflicting point record");
     assert_eq!(conflicting_record.state, "conflicting");
     assert_eq!([conflicting_record.u, conflicting_record.v], [None; 2]);
+    let mut point_row_type_nine = definition.clone();
+    point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows[0]
+        .vertical_horizontal = Some(1);
+    point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .point_rows
+        .push(crate::feature::FeaturePointSegment {
+            point_id: 7,
+            external_id: 17,
+            offset: 90,
+        });
+    point_row_type_nine
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 7,
+            u: Some(4.0),
+            v: None,
+        });
+    point_row_type_nine
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps = vec![crate::feature::FeatureSkamp {
+        id: 90,
+        kind: 9,
+        flags: 0,
+        status: 1,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 17,
+                sense: 0,
+            },
+        ],
+        offset: 91,
+    }];
+    synchronize_segment_count(&mut point_row_type_nine);
+    point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count += 1;
+    synchronize_skamp_count(&mut point_row_type_nine);
+    let point_row_type_nine_skamp = &point_row_type_nine
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps[0];
+    assert_eq!(
+        section_skamp_point_on_line(&point_row_type_nine, point_row_type_nine_skamp),
+        Some((1, 7, 1))
+    );
+    assert_eq!(
+        resolved_section_coordinates(&point_row_type_nine).get(&7),
+        Some(&[Some(4.0), Some(2.0)])
+    );
     let mut saved_definition = definition;
     saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
         declared_count: 1,
@@ -5315,6 +5383,57 @@
     assert_eq!(
         resolved_section_points(&saved_definition).get(&4),
         Some(&[3.0, 1.0])
+    );
+    let mut saved_point_row_type_nine = saved_definition.clone();
+    saved_point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .point_rows
+        .push(crate::feature::FeaturePointSegment {
+            point_id: 7,
+            external_id: 17,
+            offset: 94,
+        });
+    saved_point_row_type_nine
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 7,
+            u: Some(3.0),
+            v: None,
+        });
+    saved_point_row_type_nine
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[1]
+        .entity_id = 17;
+    synchronize_segment_count(&mut saved_point_row_type_nine);
+    saved_point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count += 1;
+    synchronize_skamp_count(&mut saved_point_row_type_nine);
+    let saved_point_row_type_nine_skamp = &saved_point_row_type_nine
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps[0];
+    assert_eq!(
+        section_skamp_saved_point_on_line(
+            &saved_point_row_type_nine,
+            saved_point_row_type_nine_skamp,
+        ),
+        Some((7, 1, 1.0))
+    );
+    assert_eq!(
+        resolved_section_coordinates(&saved_point_row_type_nine).get(&7),
+        Some(&[Some(3.0), Some(1.0)])
     );
     let mut saved_coincident = saved_definition.clone();
     for point in &mut saved_coincident

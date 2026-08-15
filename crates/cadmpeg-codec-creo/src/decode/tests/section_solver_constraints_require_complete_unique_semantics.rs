@@ -16,6 +16,7 @@ use crate::decode::sketch::{
     resolved_section_coordinates, resolved_section_points, resolved_section_radii,
     resolved_section_reference_line_geometry, section_centered_line_geometry,
     section_line_fixed_coordinate, section_point_row_geometry, section_reference_line_geometry,
+    section_skamp_point_on_line, section_skamp_saved_point_on_line,
     section_skamp_selected_point_id, unique_section_skamp_segment,
 };
 use crate::decode::sketch_transfer::{
