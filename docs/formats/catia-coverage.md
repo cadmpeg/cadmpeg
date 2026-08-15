@@ -304,6 +304,14 @@ current levels require those matrices and representative fixtures.
   with its paired entity record. The entity keeps the source field identity and
   class as native geometry. Coordinates, placement, construction state,
   profiles, and constraints remain unresolved under DI-15 through DI-22.
+- An exact source-closed relation from an admitted `2DPoint` field to a
+  complete `ConstraintDYS` field transfers one unresolved native sketch
+  constraint when both fields are selected by the same transferred `Sketch`
+  owner list and their graph, entity, design-object, class-entry, and owner
+  identities agree. The point entity, target field and entity, and every
+  source/reference offset remain available. Constraint type, coordinates,
+  parameters, driving or active state, and solver semantics remain unresolved;
+  this slice does not raise the CATIA score.
 - A transferred typed parameter receives a feature owner only when its exact
   entity record selects an object record whose design-object owner chain
   reaches a transferred feature through a complete acyclic prefix. The nearest

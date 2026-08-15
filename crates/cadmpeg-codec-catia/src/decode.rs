@@ -163,6 +163,12 @@ fn finish_decode(
         &design_feature_transfer,
         modeling_graph_scope.as_ref(),
     );
+    let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
+        &mut ir,
+        &native,
+        &design_feature_transfer,
+        modeling_graph_scope.as_ref(),
+    );
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         &mut ir,
         &native,
@@ -1673,6 +1679,9 @@ fn finish_decode(
     let transferred_design_records = transferred_formula_design_records
         .union(&transferred_design_feature_records)
         .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
+        .chain(
+            transferred_native_sketch_constraint_records.intersection(&structurally_owned_records),
+        )
         .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
         .cloned()
         .collect::<HashSet<_>>();
