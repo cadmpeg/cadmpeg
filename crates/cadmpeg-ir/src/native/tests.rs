@@ -94,3 +94,79 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .iter()
         .any(|finding| finding.message == "entity id is not globally unique"));
 }
+
+/// The streaming canonical serializer must render the byte-exact text of the
+/// `serde_json::to_value` route it replaced: recursively sorted object keys,
+/// non-finite floats as `null`, `f32` widened to `f64`, and externally tagged
+/// enum forms.
+#[test]
+fn from_typed_matches_value_tree_canonical_text() {
+    #[derive(Serialize)]
+    enum CanonShape {
+        Unit,
+        Newtype(u32),
+        Tuple(i8, bool),
+        Struct { zulu: f64, alpha: Option<String> },
+    }
+
+    #[derive(Serialize)]
+    struct Shape<'a> {
+        id: &'a str,
+        #[serde(flatten)]
+        fields: &'a serde_json::Map<String, serde_json::Value>,
+    }
+
+    #[derive(Serialize)]
+    struct CanonRecord {
+        id: String,
+        zulu: f64,
+        alpha: Vec<f64>,
+        nested: BTreeMap<String, Vec<CanonShape>>,
+        keyed: std::collections::HashMap<u32, char>,
+        wide: f32,
+        text: String,
+        gone: Option<u8>,
+        none_at_all: Option<u8>,
+    }
+
+    let record = CanonRecord {
+        id: "f3d:test:canon#0 with \"quotes\" and \u{1F980}".into(),
+        zulu: -0.0,
+        alpha: vec![f64::NAN, f64::INFINITY, 0.1, -1.5e300, 3.0],
+        nested: BTreeMap::from([(
+            "b\nkey".to_owned(),
+            vec![
+                CanonShape::Unit,
+                CanonShape::Newtype(7),
+                CanonShape::Tuple(-3, true),
+                CanonShape::Struct {
+                    zulu: f64::NEG_INFINITY,
+                    alpha: Some("s".into()),
+                },
+            ],
+        )]),
+        keyed: std::collections::HashMap::from([(12, 'x')]),
+        wide: 0.1_f32,
+        text: "line\u{0}break\ttab".into(),
+        gone: Some(9),
+        none_at_all: None,
+    };
+
+    // The oracle is the replaced route itself: a `Value` tree flattened
+    // behind a leading string `id`.
+    let serde_json::Value::Object(mut fields) = serde_json::to_value(&record).unwrap() else {
+        panic!("record serializes as an object");
+    };
+    let serde_json::Value::String(id) = fields.remove("id").unwrap() else {
+        panic!("id serializes as a string");
+    };
+    let expected = serde_json::to_string(&Shape {
+        id: &id,
+        fields: &fields,
+    })
+    .unwrap();
+
+    let native = NativeRecord::from_typed(&record).unwrap();
+    assert_eq!(native.id(), id);
+    assert_eq!(&*native.json, expected);
+}
