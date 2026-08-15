@@ -64,7 +64,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
-fn dispatcher_preserves_unresolved_work_plane_construction() {
+fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced =
         DesignParameterScope::empty("f3d:native:parameter-scope#10", "WorkPlane", 10);
     referenced.work_plane_transform = Some(identity_matrix());
@@ -73,7 +73,13 @@ fn dispatcher_preserves_unresolved_work_plane_construction() {
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        } if *origin == Point3::new(0.0, 0.0, 0.0)
+            && *normal == Vector3::new(0.0, 0.0, 1.0)
+            && *u_axis == Vector3::new(1.0, 0.0, 0.0)
     ));
 }
 

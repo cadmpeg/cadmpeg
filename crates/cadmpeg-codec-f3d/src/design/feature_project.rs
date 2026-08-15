@@ -1803,14 +1803,10 @@ fn project_work_plane(
     let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
         &scope.work_plane_construction
     else {
-        return if scope.work_plane_reference.is_none() {
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            }
-        } else {
-            FeatureDefinition::DatumPlaneUnresolved
+        return FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
         };
     };
     let Some(state_id) = work_plane_recipe_state_id(scope) else {
