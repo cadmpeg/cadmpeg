@@ -103,7 +103,7 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
 
 #[test]
 fn decode_closes_form_63_with_the_global_minimum_resolution() {
-    for (gap, decoded) in [("0.000999", true), ("0.001001", false)] {
+    for (gap, decoded) in [("0.000999", true), ("0.001", false), ("0.001001", false)] {
         let parameters = format!("106,1,3,0,0,0,1,0,0,{gap};");
         let result = IgesCodec
             .decode(
@@ -132,6 +132,27 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
                 .contains("endpoints disagree beyond the minimum resolution")));
         }
     }
+}
+
+#[test]
+fn decode_rejects_a_form_63_non_endpoint_duplicate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(
+                63,
+                b"106,1,5,0,0,0,1,0,1,1,1,0,0,0;",
+                "00000000",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("coincident non-endpoint points")));
 }
 
 #[test]

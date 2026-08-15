@@ -14,7 +14,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
@@ -48,6 +48,84 @@ fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> Loss
             message.into()
         ))
         .with_provenance(entry.loss_provenance())
+}
+
+fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {
+    let distance = left.distance(right);
+    distance == 0.0 || distance < resolution
+}
+
+fn has_forbidden_form_63_duplicate(points: &[Point3], resolution: f64) -> bool {
+    if points.len() == 2 {
+        return true;
+    }
+    let allowed_endpoint_pair = |left: usize, right: usize| left == 0 && right + 1 == points.len();
+    let exact_key = |point: Point3| {
+        let key = |value: f64| {
+            if value == 0.0 {
+                0
+            } else {
+                value.to_bits()
+            }
+        };
+        (key(point.x), key(point.y), key(point.z))
+    };
+    let mut exact_points = None;
+    let mut cells = HashMap::new();
+    let cell_size = resolution * 0.5;
+    for (index, point) in points.iter().copied().enumerate() {
+        if cell_size <= 0.0 {
+            let exact_points = exact_points.get_or_insert_with(HashMap::new);
+            if let Some(previous) = exact_points.insert(exact_key(point), index) {
+                if !allowed_endpoint_pair(previous, index) {
+                    return true;
+                }
+            }
+            continue;
+        }
+        let cell_index = |value: f64| {
+            let index = (value / cell_size).floor();
+            (index.is_finite() && index >= i128::MIN as f64 && index <= i128::MAX as f64)
+                .then_some(index as i128)
+        };
+        let Some((x, y, z)) = cell_index(point.x)
+            .zip(cell_index(point.y))
+            .zip(cell_index(point.z))
+            .map(|((x, y), z)| (x, y, z))
+        else {
+            let exact_points = exact_points.get_or_insert_with(HashMap::new);
+            if let Some(previous) = exact_points.insert(exact_key(point), index) {
+                if !allowed_endpoint_pair(previous, index) {
+                    return true;
+                }
+            }
+            continue;
+        };
+        for dx in -2_i128..=2 {
+            for dy in -2_i128..=2 {
+                for dz in -2_i128..=2 {
+                    let Some(neighbor) = x
+                        .checked_add(dx)
+                        .zip(y.checked_add(dy))
+                        .zip(z.checked_add(dz))
+                        .map(|((x, y), z)| (x, y, z))
+                    else {
+                        continue;
+                    };
+                    let Some(&(previous, previous_point)) = cells.get(&neighbor) else {
+                        continue;
+                    };
+                    if points_coincident(point, previous_point, resolution)
+                        && !allowed_endpoint_pair(previous, index)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        cells.entry((x, y, z)).or_insert((index, point));
+    }
+    false
 }
 
 pub(super) fn project(
@@ -230,21 +308,21 @@ pub(super) fn project(
             continue;
         }
         let resolution = global.minimum_resolution_mm();
-        if entry.form == 63 && points[0].distance(points[points.len() - 1]) > resolution {
+        if entry.form == 63 && !points_coincident(points[0], points[points.len() - 1], resolution) {
             losses.push(entity_loss(
                 entry,
                 "simple closed path endpoints disagree beyond the minimum resolution",
             ));
             continue;
         }
-        if entry.form == 63
-            && points
-                .windows(2)
-                .any(|pair| pair[0].distance(pair[1]) <= resolution)
-        {
+        if entry.form == 63 && has_forbidden_form_63_duplicate(&points, resolution) {
             losses.push(entity_loss(
                 entry,
-                "simple closed path has coincident consecutive points",
+                if points.len() == 2 {
+                    "simple closed path has no non-zero segment"
+                } else {
+                    "simple closed path has coincident non-endpoint points"
+                },
             ));
             continue;
         }
