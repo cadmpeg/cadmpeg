@@ -528,11 +528,11 @@ fn collect_invisible_body_ids(
             .flatten()
             .filter_map(ValueExt::reference)
             .collect::<Vec<_>>()
-    } else if record.partials.iter().any(|partial| {
-        partial.name == "REPRESENTATION"
-            || partial.name.ends_with("_REPRESENTATION")
-            || partial.name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
-    }) {
+    } else if record
+        .partials
+        .iter()
+        .any(|partial| super::representation::is_representation_name(&partial.name))
+    {
         super::representation::items(record).unwrap_or_default()
     } else {
         Vec::new()
