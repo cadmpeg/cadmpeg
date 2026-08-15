@@ -20,6 +20,8 @@ use std::collections::BTreeMap;
 
 pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
+const DEFAULT_DIMENSION_DISPLAY_CHARACTER_SET: i64 = 1;
+const DEFAULT_DIMENSION_DISPLAY_WITNESS_LINE_ANGLE_RAD: f64 = std::f64::consts::FRAC_PI_2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceLimits {
@@ -3450,17 +3452,13 @@ pub(crate) fn store(
                         dimension_type: record.integer(2),
                         label_position: record.integer(3),
                         declared_character_set: record.integer(4),
-                        character_set: match record.tokens.get(4).map(|token| &token.value) {
-                            None | Some(TokenValue::Omitted) => Some(1),
-                            _ => record.integer(4),
-                        },
+                        character_set: record
+                            .integer_or(4, DEFAULT_DIMENSION_DISPLAY_CHARACTER_SET),
                         label: record.string(5).map(<[u8]>::to_vec),
                         decimal_symbol: record.integer(6),
                         declared_witness_line_angle: record.number(7),
-                        witness_line_angle: match record.tokens.get(7).map(|token| &token.value) {
-                            None | Some(TokenValue::Omitted) => Some(std::f64::consts::FRAC_PI_2),
-                            _ => record.number(7),
-                        },
+                        witness_line_angle: record
+                            .number_or(7, DEFAULT_DIMENSION_DISPLAY_WITNESS_LINE_ANGLE_RAD),
                         text_alignment: record.integer(8),
                         text_level: record.integer(9),
                         text_placement: record.integer(10),
