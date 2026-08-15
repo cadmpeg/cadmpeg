@@ -2210,7 +2210,8 @@ pub(super) fn constraint_reference_plane_frame(
         "moConstraintCoincLineAtAnglePlaneRefplaneData_c" => {
             matrix_reference_plane_frame(payload.get(body..body + matrix_plane::LEN)?)
         }
-        "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
+        "moConstraintCoincLineParallelPlaneRefplaneData_c"
+        | "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
         | "moFacePtRefPlnData_c"
         | "moFixedRefPlnData_c" => {
             let frame = payload.get(body..body + fixed_plane::LEN)?;

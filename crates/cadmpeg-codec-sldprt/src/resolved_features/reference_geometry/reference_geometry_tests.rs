@@ -1308,7 +1308,11 @@ fn named_reference_plane_data_classes_anchor_frame_lengths() {
         fixed[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     fixed[48] = 1;
-    for class in ["moFacePtRefPlnData_c", "moFixedRefPlnData_c"] {
+    for class in [
+        "moConstraintCoincLineParallelPlaneRefplaneData_c",
+        "moFacePtRefPlnData_c",
+        "moFixedRefPlnData_c",
+    ] {
         let (payload, root) = payload_for(class, &fixed);
         assert_eq!(
             constraint_reference_plane_frame(&payload, root, class),
