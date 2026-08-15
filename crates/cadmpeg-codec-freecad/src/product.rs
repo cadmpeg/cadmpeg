@@ -38,14 +38,12 @@ pub(crate) fn transfer(
             .cloned()
             .unwrap_or_default();
         let group = owned.iter().find(|property| property.name == "Group");
-        let linked = owned
-            .iter()
-            .find(|property| property.name == "LinkedObject");
-        let prototype_link = linked.and_then(|property| property.links.first());
-        let placement = owned
-            .iter()
-            .find(|property| property.name == "LinkPlacement")
-            .or_else(|| owned.iter().find(|property| property.name == "Placement"));
+        let linked = unique_property(&owned, "LinkedObject")?;
+        let prototype_link = singleton_link(linked, "LinkedObject")?;
+        let placement = selected_placement(&owned)?;
+        let link_transform = unique_property(&owned, "LinkTransform")?
+            .and_then(property_scalar)
+            .and_then(parse_bool);
         output.push(ProductNodeRecord {
             id: crate::native::native_id("product", &object.name),
             object: object.id.clone(),
@@ -59,10 +57,10 @@ pub(crate) fn transfer(
             external_document: prototype_link.and_then(|link| link.document.clone()),
             external_document_attribute: prototype_link
                 .and_then(|link| link.document_attribute.clone()),
-            local_transform: placement.and_then(|property| placement_matrix(property)),
+            local_transform: placement.and_then(placement_matrix),
             placement_property: placement.map(|property| property.id.clone()),
             element_count: scalar(&owned, "ElementCount").and_then(|value| value.parse().ok()),
-            link_transform: scalar(&owned, "LinkTransform").and_then(parse_bool),
+            link_transform,
             element_transforms: parse_placement_list(&owned, entries)?,
             element_scales: parse_vector_list(&owned, entries)?,
             linked_subelements: prototype_link
@@ -162,13 +160,23 @@ pub(crate) fn transfer_neutral(
     component_objects.sort();
     component_objects.dedup();
 
-    let placements_by_object = properties
-        .iter()
-        .filter(|property| matches!(property.name.as_str(), "LinkPlacement" | "Placement"))
-        .filter_map(|property| {
-            placement_matrix(property).map(|placement| (property.owner.as_str(), placement))
-        })
-        .collect::<HashMap<_, _>>();
+    let properties_by_owner = properties.iter().fold(
+        HashMap::<&str, Vec<&PropertyRecord>>::new(),
+        |mut map, property| {
+            map.entry(property.owner.as_str())
+                .or_default()
+                .push(property);
+            map
+        },
+    );
+    let mut placements_by_object = HashMap::new();
+    for (&owner, owned) in &properties_by_owner {
+        if let Some(property) = selected_placement(owned)? {
+            if let Some(placement) = placement_matrix(property) {
+                placements_by_object.insert(owner, placement);
+            }
+        }
+    }
 
     let definition_id = |object: &str| {
         ProductDefinitionId(crate::native::model_id(
@@ -284,15 +292,6 @@ pub(crate) fn transfer_neutral(
         .iter()
         .map(|object| (object.id.as_str(), object))
         .collect::<HashMap<_, _>>();
-    let properties_by_owner = properties.iter().fold(
-        HashMap::<&str, Vec<&PropertyRecord>>::new(),
-        |mut map, property| {
-            map.entry(property.owner.as_str())
-                .or_default()
-                .push(property);
-            map
-        },
-    );
     let property_owner = properties
         .iter()
         .map(|property| (property.id.as_str(), property.owner.as_str()))
@@ -574,6 +573,66 @@ fn side_bytes<'a>(
     })
 }
 
+fn singleton_link<'a>(
+    property: Option<&'a PropertyRecord>,
+    name: &str,
+) -> Result<Option<&'a crate::native::LinkTarget>, CodecError> {
+    let Some(property) = property else {
+        return Ok(None);
+    };
+    match property.links.as_slice() {
+        [] => Ok(None),
+        [link] => Ok(Some(link)),
+        _ => Err(CodecError::Malformed(format!("{name} has multiple links"))),
+    }
+}
+
+fn unique_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "{name} has duplicate carriers"
+        )));
+    }
+    Ok(Some(property))
+}
+
+fn selected_placement<'a>(
+    properties: &[&'a PropertyRecord],
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let link_placement = unique_property(properties, "LinkPlacement")?;
+    let placement = unique_property(properties, "Placement")?;
+    match (link_placement, placement) {
+        (Some(link_placement), Some(placement)) => {
+            let use_link_placement = unique_property(properties, "LinkTransform")?
+                .and_then(property_scalar)
+                .and_then(parse_bool)
+                .ok_or_else(|| {
+                    CodecError::Malformed(
+                        "LinkPlacement and Placement require a valid LinkTransform policy".into(),
+                    )
+                })?;
+            Ok(Some(if use_link_placement {
+                link_placement
+            } else {
+                placement
+            }))
+        }
+        (Some(link_placement), None) => Ok(Some(link_placement)),
+        (None, Some(placement)) => Ok(Some(placement)),
+        (None, None) => Ok(None),
+    }
+}
+
 fn list_layout(
     view: View<'_>,
     components: usize,
@@ -624,9 +683,12 @@ fn product_kind(kind: &str) -> Option<&'static str> {
 }
 
 fn scalar<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a str> {
-    properties
-        .iter()
-        .find(|property| property.name == name)?
+    let property = properties.iter().find(|property| property.name == name)?;
+    property_scalar(property)
+}
+
+fn property_scalar(property: &PropertyRecord) -> Option<&str> {
+    property
         .values
         .iter()
         .find_map(|value| value.attributes.get("value").map(String::as_str))

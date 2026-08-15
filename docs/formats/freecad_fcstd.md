@@ -345,6 +345,12 @@ empty reference is a distinct `missing_reference` state.
 Components retain their own local and hierarchy-resolved placements as well as explicit parentage.
 Neutral validation recomposes every component and occurrence world matrix from its direct parent
 and local matrix and rejects any mismatch, including finite but stale or double-applied transforms.
+An occurrence has at most one `LinkedObject` target. Its scalar target is not selected from a link
+list by source order. When both `LinkPlacement` and `Placement` are present, `LinkTransform=true`
+selects `LinkPlacement` and `LinkTransform=false` selects `Placement`; when only one carrier is
+present, that carrier supplies the local placement. Both carriers without a valid `LinkTransform`
+policy are ambiguous and are refused. Each named `LinkedObject`, `LinkPlacement`, `Placement`, and
+`LinkTransform` carrier occurs at most once in a product record.
 For nested links, `prototype_transform` records the linked placement chain selected by
 `LinkTransform`; the evaluated occurrence is container × local × prototype, each exactly once.
 The chain resolves each local product target through its unique product record. A local target with

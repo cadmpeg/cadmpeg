@@ -188,6 +188,146 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
+fn selects_the_active_link_placement_carrier() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Propagating" id="2"/>
+ <Object type="App::Link" name="LocalOnly" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Propagating"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+ <Object name="LocalOnly"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="30" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("active link placement carrier");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let x = |name: &str| {
+        nodes
+            .iter()
+            .find(|node| node.object.ends_with(name))
+            .and_then(|node| node.local_transform)
+            .map(|matrix| matrix[0][3])
+            .expect("link placement")
+    };
+    assert_eq!(x("Propagating"), 2.0);
+    assert_eq!(x("LocalOnly"), 30.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn rejects_ambiguous_link_placement_without_policy() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="3">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("ambiguous placement carriers");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_ambiguous_link_prototype_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="First" id="1"/>
+ <Object type="Part::Feature" name="Second" id="2"/>
+ <Object type="App::Link" name="Occurrence" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="1">
+  <Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("multiple linked-object carriers");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_duplicate_product_carriers() {
+    for document in [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="First" id="1"/>
+ <Object type="Part::Feature" name="Second" id="2"/>
+ <Object type="App::Link" name="Occurrence" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="First"/></Property>
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Second"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+    ] {
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("duplicate product carrier");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn rejects_overlapping_product_membership_for_neutral_projection() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object type="App::Part" name="First"/><Object type="App::Part" name="Second"/><Object type="Part::Feature" name="Member"/></Objects>
