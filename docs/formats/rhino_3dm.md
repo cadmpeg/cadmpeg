@@ -2911,3 +2911,25 @@ class UUID, userdata class UUID, userdata item UUID, plug-in UUID, object UUID,
 or archive offset. These categories partition the archive byte range without
 gaps or overlap. An opaque record's identity includes its exact byte length and
 SHA-256; retained bytes, when present, cover the complete record.
+
+### 20.6 Extension and version boundaries
+
+An unregistered class UUID has no typed payload contract. Its complete object
+record is opaque, and the class UUID identifies the class payload within that
+record. A class-userdata item with an unregistered class UUID, item UUID, or
+plug-in UUID remains part of the complete containing object record. A dictionary
+inside that item remains part of the same bounded userdata payload.
+
+A direct record in the user table is opaque when no built-in record type owns its
+payload. Its table typecode, record typecode, archive offset, byte length, and
+SHA-256 identify the record.
+
+Object attributes and layer extensions use tagged streams without a length for
+each item. An item ID outside the defined set makes the complete containing
+object or layer record opaque; the following bytes are not reinterpreted as a
+new item stream. A later major payload version or a later minor suffix uses the
+same rule when its fields are not defined: the complete bounded containing
+record remains opaque.
+
+Opaque records do not select neutral fields or partial typed state. Retained
+bytes, when present, cover the complete record boundary.

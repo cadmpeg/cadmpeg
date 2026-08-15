@@ -442,6 +442,7 @@ pub(crate) struct DecodeContext<'a> {
     ir: CadIr,
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
+    opaque_records: Vec<UnknownRecord>,
     statuses: Vec<GeometryStatus>,
     outcomes: BTreeMap<String, ClassOutcome>,
     retained_bytes: usize,
@@ -479,6 +480,7 @@ impl<'a> DecodeContext<'a> {
             ir: build_ir(scan),
             annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
+            opaque_records: Vec::new(),
             statuses: Vec::with_capacity(scan.objects.len()),
             outcomes: BTreeMap::new(),
             retained_bytes: 0,
@@ -504,6 +506,7 @@ impl<'a> DecodeContext<'a> {
             expansion_budget: ExpansionBudget::from_session(expand.ctx()),
         };
         context.retain_object_records();
+        context.retain_opaque_records();
         context
     }
 
@@ -516,10 +519,12 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn set_retention_limits(&mut self, record: usize, document: usize) {
         self.retention_limits = [record, document];
         self.unknowns.clear();
+        self.opaque_records.clear();
         self.statuses.clear();
         self.outcomes.clear();
         self.retained_bytes = 0;
         self.retain_object_records();
+        self.retain_opaque_records();
     }
 
     /// Returns the document mesh budget's retained-byte count.
@@ -2412,18 +2417,37 @@ impl<'a> DecodeContext<'a> {
             .unknowns
             .iter()
             .filter(|record| record.data.is_some())
-            .count();
-        let notes = vec![format!(
-            "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
-             records and complete bytes for {byte_records}; document cap {} bytes, per-record cap {} bytes",
-            self.unknowns.len(),
-            RETAINED_DOCUMENT_CAP,
-            RETAINED_RECORD_CAP
-        )];
+            .count()
+            + self
+                .opaque_records
+                .iter()
+                .filter(|record| record.data.is_some())
+                .count();
+        let note = if self.opaque_records.is_empty() {
+            format!(
+                "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
+                 records and complete bytes for {byte_records}; document cap {} bytes, per-record cap {} bytes",
+                self.unknowns.len(),
+                RETAINED_DOCUMENT_CAP,
+                RETAINED_RECORD_CAP
+            )
+        } else {
+            format!(
+                "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
+                 object records and {} opaque records, with complete bytes for {byte_records}; \
+                 document cap {} bytes, per-record cap {} bytes",
+                self.unknowns.len(),
+                self.opaque_records.len(),
+                RETAINED_DOCUMENT_CAP,
+                RETAINED_RECORD_CAP
+            )
+        };
+        let notes = vec![note];
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
         source_fidelity
             .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");
+        source_fidelity.retain_unknown_records("rhino", self.opaque_records);
         DecodeResult::new(
             self.ir,
             DecodeReport {
@@ -2440,52 +2464,71 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn retain_object_records(&mut self) {
-        for (source_order, object) in self.scan.objects.iter().enumerate() {
+        for source_order in 0..self.scan.objects.len() {
+            let object = &self.scan.objects[source_order];
             let id = Self::mint_unknown_id(source_order);
-            let bytes = &self.scan.data[object.range.clone()];
-            let byte_len = u64::try_from(bytes.len()).expect("Rhino record length fits u64");
             let class = object.class_uuid.to_string();
+            let object_type = object.object_type;
+            let framing_degraded = object.framing_degraded;
+            let attributes_degraded = object.attributes_degraded;
+            let record = self.source_record(id, object.range.clone());
             let outcome = self.outcomes.entry(class.clone()).or_default();
             if outcome.retained == 0 {
                 outcome.first_offset =
                     u64::try_from(object.range.start).expect("Rhino record offset fits u64");
-                outcome.first_object_type = object.object_type;
+                outcome.first_object_type = object_type;
             }
             outcome.retained += 1;
-            if object.framing_degraded {
+            if framing_degraded {
                 outcome.retained -= 1;
                 outcome.failed_framed += 1;
             }
-            if object.attributes_degraded {
+            if attributes_degraded {
                 outcome.attribute_degraded += 1;
             }
-            let data = if bytes.len() <= self.retention_limits[0]
-                && self
-                    .retained_bytes
-                    .checked_add(bytes.len())
-                    .is_some_and(|end| end <= self.retention_limits[1])
-            {
-                self.retained_bytes = self
-                    .retained_bytes
-                    .checked_add(bytes.len())
-                    .expect("retention cap checked");
-                Some(bytes.to_vec())
-            } else {
-                None
-            };
-            self.unknowns.push(UnknownRecord {
-                id,
-                offset: u64::try_from(object.range.start).expect("Rhino record offset fits u64"),
-                byte_len,
-                sha256: sha256_hex(bytes),
-                data,
-                links: Vec::new(),
-            });
-            self.statuses.push(if object.framing_degraded {
+            self.unknowns.push(record);
+            self.statuses.push(if framing_degraded {
                 GeometryStatus::Failed
             } else {
                 GeometryStatus::Retained
             });
+        }
+    }
+
+    fn retain_opaque_records(&mut self) {
+        for index in 0..self.scan.opaque_records.len() {
+            let source = &self.scan.opaque_records[index];
+            let id = UnknownId(format!(
+                "rhino:opaque:record#{:08x}-{:08x}-{:016x}",
+                source.table_typecode, source.record.typecode, source.record.range.start
+            ));
+            let record = self.source_record(id, source.record.range.clone());
+            self.opaque_records.push(record);
+        }
+    }
+
+    fn source_record(&mut self, id: UnknownId, range: std::ops::Range<usize>) -> UnknownRecord {
+        let bytes = &self.scan.data[range.clone()];
+        let byte_len = u64::try_from(bytes.len()).expect("Rhino record length fits u64");
+        let retain = bytes.len() <= self.retention_limits[0]
+            && self
+                .retained_bytes
+                .checked_add(bytes.len())
+                .is_some_and(|end| end <= self.retention_limits[1]);
+        let data = retain.then(|| bytes.to_vec());
+        if retain {
+            self.retained_bytes = self
+                .retained_bytes
+                .checked_add(bytes.len())
+                .expect("retention cap checked");
+        }
+        UnknownRecord {
+            id,
+            offset: u64::try_from(range.start).expect("Rhino record offset fits u64"),
+            byte_len,
+            sha256: sha256_hex(bytes),
+            data,
+            links: Vec::new(),
         }
     }
 

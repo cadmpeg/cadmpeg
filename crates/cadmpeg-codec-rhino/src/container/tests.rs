@@ -60,6 +60,7 @@ fn near_budget_user_table_keeps_count_without_record_descriptors() {
     let user = scan.tables.last().expect("user table");
     assert_eq!(user.record_count, 127);
     assert!(user.records.is_empty());
+    assert_eq!(scan.opaque_records.len(), 127);
 }
 
 #[test]

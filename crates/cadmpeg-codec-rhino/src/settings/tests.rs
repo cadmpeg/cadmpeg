@@ -282,6 +282,35 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         Some((1, 1))
     );
     assert!(warnings.is_empty());
+
+    let mut future_payload = payload.clone();
+    future_payload.pop();
+    future_payload.extend([0xfe, 0]);
+    let future_class = long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[
+            long_chunk(archive, 0x0002_fffb, &uuid_body),
+            crc_chunk(archive, 0x0002_fffc, &future_payload),
+            short_chunk(archive, 0x8002_7fff, 0),
+        ]
+        .concat(),
+    );
+    let (future_data, future_record) = metadata_record(0x2000_8050, future_class);
+    let future_table = crate::container::Table {
+        typecode: 0x1000_0011,
+        range: 0..future_data.len(),
+        body: 0..future_data.len(),
+        records: vec![future_record.clone()],
+        record_count: 1,
+        object_typecodes: std::collections::BTreeMap::new(),
+    };
+    let mut future_warnings = Vec::new();
+    let future =
+        settings::parse_metadata(&future_data, archive, &[future_table], &mut future_warnings);
+    assert!(future.layers.is_empty());
+    assert_eq!(future.opaque_records.len(), 1);
+    assert_eq!(future.opaque_records[0].record.range, future_record.range);
 }
 
 #[test]

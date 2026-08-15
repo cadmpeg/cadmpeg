@@ -7,7 +7,7 @@ use std::ops::Range;
 use cadmpeg_core::decode::View;
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
-use crate::container::{Record, Table};
+use crate::container::{OpaqueRecord, Record, Table};
 use crate::objects::{parse_class_wrapper, read_uuid_list};
 use crate::wire::Uuid;
 
@@ -332,6 +332,8 @@ pub(crate) struct DocumentMetadata {
     pub(crate) settings: DocumentSettings,
     /// Layer records.
     pub(crate) layers: Vec<LayerRecord>,
+    /// Complete metadata records whose tagged payload could not be decoded.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
 fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, FramingError> {
@@ -1295,6 +1297,7 @@ pub(crate) fn parse_metadata(
     let mut ids = BTreeSet::new();
     let mut property_singletons = BTreeSet::new();
     let mut setting_singletons = BTreeSet::new();
+    let mut opaque_records = Vec::new();
     for table in tables {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
@@ -1393,6 +1396,12 @@ pub(crate) fn parse_metadata(
                 }
             }
             if let Err(error) = result {
+                if table_type == LAYER && record.typecode == LAYER_RECORD {
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
+                }
                 warnings.push(format!(
                     "metadata record {:#x} at {} degraded: {}",
                     record.typecode, record.range.start, error
@@ -1400,6 +1409,7 @@ pub(crate) fn parse_metadata(
             }
         }
     }
+    metadata.opaque_records = opaque_records;
     let known_ids: BTreeSet<Uuid> = metadata
         .layers
         .iter()

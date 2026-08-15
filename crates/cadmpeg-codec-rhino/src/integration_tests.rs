@@ -313,6 +313,22 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     assert_valid(&result);
 }
 
+#[test]
+fn user_table_records_are_retained_as_complete_opaque_source_records() {
+    let record = support::long_chunk(0x7000_0042, b"plug-in application bytes");
+    let expected = record.clone();
+    let result = decode(support::archive_with_user_records(&[], &[record]));
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|value| value.id.starts_with("rhino:opaque:record#"))
+        .expect("user table record must be retained");
+    assert!(retained.id.contains("-70000042-"));
+    assert_eq!(retained.byte_len, expected.len() as u64);
+    assert_eq!(retained.data.as_deref(), Some(expected.as_slice()));
+}
+
 /// Object type for annotation records, per `docs/formats/rhino_3dm.md`.
 const ANNOTATION_OBJECT_TYPE: i64 = 0x0000_0200;
 /// `unit_value` 2 in `test_support::archive` is millimeters.

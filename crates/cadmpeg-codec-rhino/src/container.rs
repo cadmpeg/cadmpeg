@@ -98,6 +98,15 @@ pub(crate) struct Record {
     pub(crate) value: i64,
 }
 
+/// A complete direct table record whose payload has no typed owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpaqueRecord {
+    /// Containing table typecode.
+    pub(crate) table_typecode: u32,
+    /// Complete record descriptor.
+    pub(crate) record: Record,
+}
+
 /// A table descriptor with explicit source ranges.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Table {
@@ -130,6 +139,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
     pub(crate) objects: Vec<ObjectDescriptor>,
+    /// Direct table records retained as opaque source data.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
     /// Parsed instance definitions and recoverable definition diagnostics.
     pub(crate) definitions: DefinitionScan,
     /// Decoded built-in history records in source order.
@@ -358,6 +369,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     let mut saw_settings = false;
     let mut saw_objects = false;
     let mut all_objects = Vec::new();
+    let mut opaque_records = Vec::new();
     let mut definitions = DefinitionScan::default();
     let mut history = Vec::new();
     let mut record_count = 0_usize;
@@ -370,14 +382,17 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 ));
             }
             parse_eof(data, offset, archive).map_err(framing_error)?;
-            let metadata = crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
+            let mut metadata =
+                crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
             resolve_identities(&mut all_objects, &metadata, &mut warnings);
+            opaque_records.extend(std::mem::take(&mut metadata.opaque_records));
             return Ok(Scan {
                 data,
                 archive,
                 comment,
                 tables,
                 objects: all_objects,
+                opaque_records,
                 definitions,
                 history,
                 eof_offset: offset,
@@ -456,6 +471,8 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 short: child.short,
                 value: child.value,
             };
+            let opaque = table_base(chunk.typecode) == TCODE_USER
+                || !record_is_allowed(chunk.typecode, record.typecode, record.short);
             if !record_is_allowed(chunk.typecode, record.typecode, record.short) {
                 if known_record(record.typecode) {
                     return Err(CodecError::Malformed(format!(
@@ -486,6 +503,12 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 };
                 *object_typecodes.entry(descriptor.object_type).or_insert(0) += 1;
                 all_objects.push(descriptor);
+            }
+            if opaque {
+                opaque_records.push(OpaqueRecord {
+                    table_typecode: chunk.typecode,
+                    record: record.clone(),
+                });
             }
             if retain_records {
                 records.push(record);
