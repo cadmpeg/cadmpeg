@@ -91,6 +91,7 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
+        validate_text_carriers(&owned, &schema)?;
         let target = |link: &crate::native::LinkTarget| SemanticAnnotationTarget {
             target: link
                 .document
@@ -130,7 +131,7 @@ pub(crate) fn transfer_neutral(
                 .collect(),
             value: None,
             format: match schema.format {
-                Some(name) => string_property(&owned, name)?,
+                Some(name) => string_property(&owned, name, "App::PropertyString")?,
                 None => None,
             },
             position: annotation_position(&owned, schema.position)?,
@@ -154,15 +155,29 @@ pub(crate) fn is_annotation_type(type_name: &str) -> bool {
 struct AnnotationSchema {
     kind: SemanticAnnotationKind,
     text: &'static [&'static str],
+    text_type: Option<&'static str>,
     format: Option<&'static str>,
     position: PositionCarrier,
 }
 
 #[derive(Clone, Copy)]
 enum PositionCarrier {
-    Vector(&'static str),
-    Coordinates(&'static str, &'static str),
+    Vector {
+        name: &'static str,
+        type_name: &'static str,
+    },
+    Coordinates {
+        x_name: &'static str,
+        y_name: &'static str,
+        type_names: &'static [&'static str],
+    },
 }
+
+const TECHDRAW_POSITION_TYPES: &[&str] = &[
+    "App::PropertyDistance",
+    "App::PropertyLength",
+    "App::PropertyFloat",
+];
 
 fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
     use SemanticAnnotationKind as Kind;
@@ -170,46 +185,79 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
         "App::Annotation" => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
+            text_type: Some("App::PropertyStringList"),
             format: None,
-            position: PositionCarrier::Vector("Position"),
+            position: PositionCarrier::Vector {
+                name: "Position",
+                type_name: "App::PropertyVector",
+            },
         },
         "App::AnnotationLabel" => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
+            text_type: Some("App::PropertyStringList"),
             format: None,
-            position: PositionCarrier::Vector("TextPosition"),
+            position: PositionCarrier::Vector {
+                name: "TextPosition",
+                type_name: "App::PropertyVector",
+            },
         },
         "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython" => AnnotationSchema {
             kind: Kind::Text,
             text: &["Text"],
+            text_type: Some("App::PropertyStringList"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawRichAnno" | "TechDraw::DrawRichAnnoPython" => AnnotationSchema {
             kind: Kind::Text,
             text: &["AnnoText"],
+            text_type: Some("App::PropertyString"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawViewDimension"
         | "TechDraw::DrawViewDimExtent"
         | "TechDraw::LandmarkDimension" => AnnotationSchema {
             kind: Kind::Dimension,
             text: &["FormatSpec"],
+            text_type: Some("App::PropertyString"),
             format: Some("FormatSpec"),
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawViewBalloon" => AnnotationSchema {
             kind: Kind::Balloon,
             text: &["Text"],
+            text_type: Some("App::PropertyString"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawLeaderLine" | "TechDraw::DrawLeaderLinePython" => AnnotationSchema {
             kind: Kind::Leader,
             text: &[],
+            text_type: None,
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawViewSymbol"
         | "TechDraw::DrawViewSymbolPython"
@@ -217,8 +265,13 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
         | "TechDraw::DrawWeldSymbolPython" => AnnotationSchema {
             kind: Kind::Symbol,
             text: &["TailText"],
+            text_type: Some("App::PropertyString"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         _ => return None,
     };
@@ -230,13 +283,30 @@ fn annotation_position(
     carrier: PositionCarrier,
 ) -> Result<Option<[f64; 3]>, CodecError> {
     match carrier {
-        PositionCarrier::Vector(name) => optional_vector_property(properties, name),
-        PositionCarrier::Coordinates(x_name, y_name) => {
-            let x = optional_scalar_property(properties, x_name)?;
-            let y = optional_scalar_property(properties, y_name)?;
+        PositionCarrier::Vector { name, type_name } => {
+            let position = optional_vector_property(properties, name, &[type_name])?;
+            if position
+                .is_some_and(|position| position.iter().any(|component| !component.is_finite()))
+            {
+                return Err(CodecError::Malformed(
+                    "annotation position contains a non-finite coordinate".into(),
+                ));
+            }
+            Ok(position)
+        }
+        PositionCarrier::Coordinates {
+            x_name,
+            y_name,
+            type_names,
+        } => {
+            let x = optional_scalar_property(properties, x_name, type_names)?;
+            let y = optional_scalar_property(properties, y_name, type_names)?;
             match (x, y) {
                 (None, None) => Ok(None),
-                (Some(x), Some(y)) => Ok(Some([x, y, 0.0])),
+                (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok(Some([x, y, 0.0])),
+                (Some(_), Some(_)) => Err(CodecError::Malformed(
+                    "annotation position contains a non-finite coordinate".into(),
+                )),
                 _ => Err(CodecError::Malformed(format!(
                     "annotation position requires both {x_name} and {y_name}"
                 ))),
@@ -248,8 +318,9 @@ fn annotation_position(
 fn optional_scalar_property(
     properties: &[&PropertyRecord],
     name: &str,
+    type_names: &[&str],
 ) -> Result<Option<f64>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = typed_property(properties, name, type_names)? else {
         return Ok(None);
     };
     let Some(value) = unique_value(property)? else {
@@ -269,8 +340,9 @@ fn optional_scalar_property(
 fn optional_vector_property(
     properties: &[&PropertyRecord],
     name: &str,
+    type_names: &[&str],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = typed_property(properties, name, type_names)? else {
         return Ok(None);
     };
     let Some(value) = unique_value(property)? else {
@@ -290,14 +362,57 @@ fn optional_vector_property(
 fn string_property(
     properties: &[&PropertyRecord],
     name: &str,
+    type_name: &str,
 ) -> Result<Option<String>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = typed_property(properties, name, &[type_name])? else {
         return Ok(None);
     };
     let Some(value) = unique_value(property)? else {
-        return Ok(None);
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has no string value",
+            property.id
+        )));
     };
     Ok(property_attribute(value, &["value", "Value", "string", "String"]).map(str::to_owned))
+}
+
+fn typed_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+    type_names: &[&str],
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    if !type_names.contains(&property.type_name.as_str()) {
+        let expected = type_names.join(" or ");
+        return Err(CodecError::Malformed(format!(
+            "annotation property {name} has runtime type {}, expected {expected}",
+            property.type_name
+        )));
+    }
+    Ok(Some(property))
+}
+
+fn validate_text_carriers(
+    properties: &[&PropertyRecord],
+    schema: &AnnotationSchema,
+) -> Result<(), CodecError> {
+    let Some(type_name) = schema.text_type else {
+        return Ok(());
+    };
+    for name in schema.text {
+        let Some(property) = typed_property(properties, name, &[type_name])? else {
+            continue;
+        };
+        if type_name == "App::PropertyString" && property.values.len() > 1 {
+            return Err(CodecError::Malformed(format!(
+                "annotation property {} has multiple string values",
+                property.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn unique_property<'a>(
@@ -464,6 +579,46 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn accepts_historical_techdraw_annotation_position_types() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="TechDraw::DrawViewAnnotation" name="Note"/>
+ <Object type="TechDraw::DrawRichAnno" name="Rich"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Note"><Properties Count="3">
+  <Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+  <Property name="X" type="App::PropertyFloat"><Float value="10"/></Property>
+  <Property name="Y" type="App::PropertyLength"><Float value="20"/></Property>
+ </Properties></Object>
+ <Object name="Rich"><Properties Count="3">
+  <Property name="AnnoText" type="App::PropertyString"><String value="RICH"/></Property>
+  <Property name="X" type="App::PropertyLength"><Float value="30"/></Property>
+  <Property name="Y" type="App::PropertyFloat"><Float value="40"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("historical annotation positions");
+
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .semantic_annotations
+                .iter()
+                .map(|annotation| annotation.position)
+                .collect::<Vec<_>>(),
+            [Some([10.0, 20.0, 0.0]), Some([30.0, 40.0, 0.0])]
+        );
+        assert!(crate::validate_native(result.ir()).is_empty());
+        assert_valid_document(result.ir());
+    }
+
+    #[test]
     fn rejects_duplicate_annotation_carrier_properties_and_values() {
         let documents = [
             r#"<Document SchemaVersion="4" FileVersion="1">
@@ -501,6 +656,33 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn rejects_wrong_annotation_carrier_types() {
+        let documents = [
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Annotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="2">
+<Property name="LabelText" type="App::PropertyString"><String value="NOTE"/></Property>
+<Property name="Position" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Annotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="2">
+<Property name="LabelText" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="Position" type="App::PropertyString"><String value="1,2,3"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        ];
+        for document in documents {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
     fn separates_semantic_annotations_from_drawing_relationships() {
         let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -512,9 +694,10 @@ pub(crate) mod tests {
 <ObjectData Count="4">
  <Object name="Model"><Properties Count="0"/></Object>
  <Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property></Properties></Object>
- <Object name="Dimension"><Properties Count="5">
+ <Object name="Dimension"><Properties Count="6">
   <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
   <Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Model" sub="Edge1"/></LinkSubList></Property>
+  <Property name="Source3d" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Model" sub="Edge2"/></LinkSubList></Property>
   <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
   <Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
   <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
@@ -562,6 +745,8 @@ pub(crate) mod tests {
                 .as_deref(),
             Some("fcstd:native:object#View")
         );
+        assert_eq!(drawing_dimension.sources.len(), 2);
+        assert_eq!(drawing_dimension.sources[1].subelements, ["Edge2"]);
         let neutral_dimension = result
             .ir()
             .model

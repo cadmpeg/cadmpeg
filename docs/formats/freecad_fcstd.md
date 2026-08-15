@@ -612,32 +612,30 @@ assets. Drawing records independently retain every link-valued relationship, inc
 and section parents rather than only page membership and model sources. Validation requires exact
 annotation-object coverage and resolves both annotation and drawing relationships.
 
-The format-neutral drawing arena contains pages, templates, model
-views, projection groups, sections, details, dimensions, annotations, balloons, symbols, leaders,
-images, and extension drawing objects retain their runtime classification and source order. Local
-drawing relationships resolve to neutral drawing identities, model sources resolve to their local
-object identities, and external document/object pairs remain explicit without being treated as
-local references. View position, positive scale, nonzero projection direction, rotation, exact
-fallback parameters, and resolved template or image assets are independently validated.
+The format-neutral drawing arena contains pages, templates, model views, projection groups,
+sections, details, dimensions, annotations, balloons, symbols, leaders, images, and registered
+extension drawing records. Records retain runtime classification and source order. Local drawing
+relationships resolve to neutral drawing identities, model sources resolve to their local object
+identities, and external document/object pairs remain explicit without being treated as local
+references. A runtime type outside the registry remains in the native object and property records
+and does not enter the drawing arena.
 
 Core drawing dispatch uses exact runtime names. `TechDraw::DrawPage` is a page;
-`TechDraw::DrawSVGTemplate` and `TechDraw::DrawDXFTemplate` are templates;
-`TechDraw::DrawViewPart`, `TechDraw::DrawViewSpreadsheet`, and `TechDraw::DrawViewClip` are model
-views; `TechDraw::DrawProjGroup` and `TechDraw::DrawProjGroupItem` are projections;
-`TechDraw::DrawViewSection` is a section; `TechDraw::DrawViewDetail` is a detail;
-`TechDraw::DrawViewDimension`, `TechDraw::DrawViewDimExtent`, and
-`TechDraw::LandmarkDimension` are dimensions; `TechDraw::DrawViewAnnotation`,
-`TechDraw::DrawViewAnnotationPython`, `TechDraw::DrawRichAnno`, and
-`TechDraw::DrawRichAnnoPython` are annotations; `TechDraw::DrawViewBalloon` is a balloon;
-`TechDraw::DrawLeaderLine` and `TechDraw::DrawLeaderLinePython` are leaders;
-`TechDraw::DrawViewSymbol`, `TechDraw::DrawViewSymbolPython`, `TechDraw::DrawWeldSymbol`, and
-`TechDraw::DrawWeldSymbolPython` are symbols; and `TechDraw::DrawViewImage` is an image. A
-runtime type outside this registry remains an extension drawing with kind `other` and retains its
-exact native record. Drawing property names and registered value grammars provide carrier
-cardinality; projection does not select a carrier by source-order precedence. A page `Template`
-property is one `App::PropertyLink` with at most one target. A page `Views` property is one
-`App::PropertyLinkList` whose targets retain serialized order. Other runtime types do not supply
-page template or page-view carriers.
+`DrawSVGTemplate`, `DrawDXFTemplate`, and `DrawParametricTemplate` are templates;
+`DrawViewPart`, `DrawViewSpreadsheet`, `DrawViewClip`, `DrawViewMulti`, `DrawBrokenView`,
+`DrawViewArch`, and `DrawViewDraft` are model views; `DrawProjGroup` and `DrawProjGroupItem` are
+projections; `DrawViewSection` and `DrawComplexSection` are sections; `DrawViewDetail` is a detail;
+`DrawViewDimension`, `DrawViewDimExtent`, and `LandmarkDimension` are dimensions;
+`DrawViewAnnotation`, `DrawViewAnnotationPython`, `DrawRichAnno`, and `DrawRichAnnoPython` are
+annotations; `DrawViewBalloon` is a balloon; `DrawLeaderLine` and `DrawLeaderLinePython` are
+leaders; `DrawViewSymbol`, `DrawViewSymbolPython`, `DrawWeldSymbol`, and `DrawWeldSymbolPython`
+are symbols; and `DrawViewImage` is an image. `DrawView`, `DrawViewCollection`, `DrawHatch`,
+`DrawGeomHatch`, `DrawTile`, and `DrawTileWeld` are registered extension records with kind `other`.
+Python variants of the registered classes use the same kind. Drawing property names and registered
+value grammars provide carrier cardinality; projection does not select a carrier by source-order
+precedence. A page `Template` property is one `App::PropertyLink` with at most one target. A page
+`Views` property is one `App::PropertyLinkList` whose targets retain serialized order. Other runtime
+types do not supply page template or page-view carriers.
 
 The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
 are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
@@ -651,11 +649,13 @@ are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
 the semantic-annotation arena. The core registry has no semantic datum or geometric-tolerance
 runtime type.
 
-`TechDraw::DrawViewSpreadsheet` is a model view, not a semantic annotation. `DrawViewArch`,
-`DrawViewDraft`, and `DrawViewCollection` are drawing extension records with no semantic annotation
-kind. Datums and geometric-tolerance application objects likewise remain native application records.
+`TechDraw::DrawViewSpreadsheet` is a model view, not a semantic annotation. `DrawViewArch` and
+`DrawViewDraft` are model views with no semantic annotation kind. `DrawViewCollection` is a drawing
+extension record with no semantic annotation kind. Datums and geometric-tolerance application
+objects likewise remain native application records.
 
-`App::Annotation` uses `LabelText` and `Position`. `App::AnnotationLabel` uses `LabelText` and
+`App::Annotation` uses `App::PropertyStringList` `LabelText` and `App::PropertyVector` `Position`.
+`App::AnnotationLabel` uses `App::PropertyStringList` `LabelText` and `App::PropertyVector`
 `TextPosition`. TechDraw text, dimension, balloon, leader, and symbol records use the inherited `X`
 and `Y` pair as their optional position; one coordinate without the other is invalid. TechDraw
 annotation text uses `Text`, rich annotation text uses `AnnoText`, balloon text uses `Text`, weld
@@ -665,7 +665,21 @@ references, so decode does not select `Value`, `Measurement`, `Distance`, or `An
 Each registered scalar, vector, position, or format carrier has at most one property with that name
 and exactly one root value when present. Duplicate named carriers or duplicate root values are
 invalid. Text-list carriers retain all ordered text values; this cardinality rule applies only to
-scalar, vector, and format carriers.
+scalar, vector, and format carriers. An `App::PropertyEnumeration` has one selected `Integer`
+carrier; its optional `CustomEnumList` is metadata and does not count as another selected value.
+`X` and `Y` use `App::PropertyDistance`; historical
+`App::PropertyLength` and `App::PropertyFloat` forms are accepted. `Scale` uses
+`App::PropertyFloatConstraint` with the historical `App::PropertyFloat` form, and `Rotation` uses
+`App::PropertyAngle` with the historical `App::PropertyFloat` form. `Direction` and `XDirection`
+use `App::PropertyVector`; captions and format strings use `App::PropertyString`; scale, measure,
+dimension, and projection modes use `App::PropertyEnumeration`; and lock or perspective flags use
+`App::PropertyBool`. `XSource` uses `App::PropertyXLinkList`; `Sources` uses
+`App::PropertyLinkList`; and `References2D`, `References3D`, and `Source3d` use
+`App::PropertyLinkSubList`. `Source` uses the registered scalar or list link-family carrier for
+its runtime class, including explicit legacy link-family forms. A scalar `Source` carrier has at
+most one target. Wrong runtime types and conflicting carriers are invalid. Position and rotation
+values are finite, scale is positive, and a direction is finite and nonzero before neutral
+transfer.
 Records retain source order, exact runtime classification, role-grouped references, subelement
 selectors, fallback parameters, and resolved assets. Local drawing targets resolve to neutral
 drawing identities; external document/object pairs remain explicit.

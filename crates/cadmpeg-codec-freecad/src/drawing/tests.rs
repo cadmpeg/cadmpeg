@@ -123,6 +123,46 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
 }
 
 #[test]
+fn accepts_enumeration_metadata_and_registered_optional_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1">
+ <Object type="TechDraw::DrawViewPart" name="View" id="1"/>
+</Objects>
+<ObjectData Count="1">
+ <Object name="View"><Properties Count="13">
+  <Property name="X" type="App::PropertyDistance"><Float value="25"/></Property>
+  <Property name="Y" type="App::PropertyDistance"><Float value="40"/></Property>
+  <Property name="Scale" type="App::PropertyFloatConstraint"><Float value="2"/></Property>
+  <Property name="ScaleType" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="Page"/><Enum value="Custom"/></CustomEnumList></Property>
+  <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>
+  <Property name="XDirection" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>
+  <Property name="Rotation" type="App::PropertyAngle"><Float value="15"/></Property>
+  <Property name="Caption" type="App::PropertyString"><String value="VIEW"/></Property>
+  <Property name="LockPosition" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Perspective" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Normal"/></CustomEnumList></Property>
+  <Property name="FormatSpecOverTolerance" type="App::PropertyString"><String value="+0.1"/></Property>
+  <Property name="FormatSpecUnderTolerance" type="App::PropertyString"><String value="-0.1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("typed drawing carriers");
+
+    let drawing = &result.ir().model.drawings[0];
+    assert_eq!(drawing.position, Some([25.0, 40.0]));
+    assert_eq!(drawing.scale, Some(2.0));
+    assert_eq!(drawing.direction, Some([0.0, 0.0, 1.0]));
+    assert_eq!(drawing.rotation_degrees, Some(15.0));
+    assert_eq!(drawing.parameters["ScaleType"], r#"<Integer value="1"/>"#);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn rejects_noncanonical_page_link_carriers() {
     for document in [
         r#"<Document SchemaVersion="4" FileVersion="1">
@@ -218,4 +258,125 @@ fn classifies_drawing_runtime_types_exactly() {
         super::classify("Vendor::TechDraw::DrawPage"),
         cadmpeg_ir::drawings::DrawingKind::Other
     );
+}
+
+#[test]
+fn classifies_standard_derived_drawing_types() {
+    for (runtime_type, kind) in [
+        (
+            "TechDraw::DrawBrokenView",
+            cadmpeg_ir::drawings::DrawingKind::View,
+        ),
+        (
+            "TechDraw::DrawComplexSection",
+            cadmpeg_ir::drawings::DrawingKind::Section,
+        ),
+        (
+            "TechDraw::DrawParametricTemplate",
+            cadmpeg_ir::drawings::DrawingKind::Template,
+        ),
+        (
+            "TechDraw::DrawViewMulti",
+            cadmpeg_ir::drawings::DrawingKind::View,
+        ),
+        (
+            "TechDraw::DrawViewArch",
+            cadmpeg_ir::drawings::DrawingKind::View,
+        ),
+        (
+            "TechDraw::DrawViewDraft",
+            cadmpeg_ir::drawings::DrawingKind::View,
+        ),
+        (
+            "TechDraw::DrawViewCollection",
+            cadmpeg_ir::drawings::DrawingKind::Other,
+        ),
+    ] {
+        assert_eq!(super::classify(runtime_type), kind, "{runtime_type}");
+    }
+}
+
+#[test]
+fn retains_unknown_techdraw_runtime_types_only_in_native_records() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="TechDraw::VendorView" name="Unknown" id="1"/>
+ <Object type="TechDraw::DrawViewArch" name="Arch" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Unknown"><Properties Count="0"/></Object>
+ <Object name="Arch"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("drawing registry");
+    let drawings = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::DrawingRecord>("drawings")
+        .expect("drawings");
+    assert_eq!(drawings.len(), 1);
+    assert!(drawings[0].object.ends_with("#Arch"));
+    assert_eq!(result.ir().model.drawings.len(), 1);
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn rejects_wrong_drawing_carrier_types() {
+    let documents = [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+<Property name="X" type="App::PropertyString"><String value="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+<Property name="Source" type="App::PropertyString"><String value="Model"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+    ];
+    for document in documents {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn rejects_invalid_drawing_numeric_admission() {
+    let documents = [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+<Property name="Scale" type="App::PropertyFloatConstraint"><Float value="-1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+<Property name="X" type="App::PropertyDistance"><Float value="nan"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+<Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+    ];
+    for document in documents {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }
