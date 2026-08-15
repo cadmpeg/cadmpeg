@@ -149,6 +149,26 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `7472b1242` preserves declared and effective values, but the synthetic fixture and same-commit documentation do not prove the defaults or angle unit.
 
+### DR-14. Malformed occurrence placement fields fall back to defaults
+
+**Question.** What must happen when a Type 408 or Type 420 placement field, or a member transform, is malformed?
+
+**Known.** `native.rs:1129-1151` replaces malformed translation and scale numbers with zero or one. `native.rs:1276-1291` replaces a failed member-transform resolution with the identity transform and still emits the member occurrence. The typed projections in `structure.rs:1808-1835` and `structure.rs:1946-2013` validate these fields and record malformed-record losses instead.
+
+**Need.** We need one malformed-field policy for native expansion and typed projection. A malformed placement must not become an unmarked translated, scaled, or identity occurrence.
+
+**Note.** Hostile sweep 2026-08-15: current code has separate fallback and loss paths. The fallback changes product structure and transform semantics without a native loss or refusal.
+
+### DR-15. Drawing property selection is first-wins and non-unique
+
+**Question.** How are duplicate Type 406 Form 15, 16, or 17 properties associated with a Type 404 drawing?
+
+**Known.** `native.rs:3722-3734` scans the property sequence list with `find_map` and selects the first matching property for each form. `native.rs:3784-3800` then uses that property for the drawing name, size, and units. `entities/drawing.rs:59-89` validates each Form 16 or 17 record but does not reject duplicate properties or record an ambiguity loss.
+
+**Need.** We need a uniqueness, precedence, or ambiguity rule for duplicate drawing properties. Native drawing metadata must not change when equivalent property records are reordered without a recorded loss.
+
+**Note.** Hostile sweep 2026-08-15: two valid properties of one form produce storage-order-dependent native metadata. No duplicate-selection rule is documented.
+
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance
@@ -227,6 +247,8 @@ from a conformant file.
 
 **Known.** `curve_conversion.rs:24-27` defines one `ANGULAR_TOLERANCE` as `TAU * 1e-12`. The current tests pin the same project constant.
 
+**Conflict.** `writer.rs:4710-4717` accepts a conic sweep through `TAU + 1.0e-10`, while the reader uses `TAU * 1e-12` for angular equality. The writer can therefore emit a sweep that passes its gate but fails the reader's angular gate.
+
 **Need.** We need producer or specification evidence for angular equality, or a project-policy classification that does not present this value as an IGES rule.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `6173d018b` changed a magic number into a named constant, but naming a threshold is not evidence for it.
@@ -240,6 +262,36 @@ from a conformant file.
 **Need.** We need the precedence of flags, values, and derived ranges for every Type 126 form, plus the required behavior for inconsistent records.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `fa5bddc17` improved numeric consistency checks, but it did not establish which fields are authoritative in a conformant file.
+
+### GE-15. Type 104 standard-position coefficients use an undocumented tolerance
+
+**Question.** What tolerance defines a zero cross-term or center term for a Type 104 conic in standard position?
+
+**Known.** `entities/conics.rs:127-141` scales all six conic coefficients by their maximum absolute value, clamps the scale to one, and treats a coefficient as zero when its absolute value is at most `scale * 1.0e-12`. The current specification states the standard-position requirement but does not state this coefficient tolerance.
+
+**Need.** We need source or independent producer evidence for the coefficient tolerance, or a project-policy classification and an explicit loss/refusal contract for near-standard conics.
+
+**Note.** Hostile sweep 2026-08-15: a small cross-term or center term can change admission at the private threshold. This gate is distinct from the Type 104 endpoint tolerance in GE-09.
+
+### GE-16. Type 118 developable-surface semantics are discarded
+
+**Question.** Must the Type 118 developable-surface flag be retained or affect projection?
+
+**Known.** `entities/surfaces.rs:389-397` parses and validates both ruled-surface flags. The projection uses the direction flag, but `entities/surfaces.rs:495` discards `developable_flag`; the resulting NURBS and procedural-surface records carry no developability state or loss.
+
+**Need.** We need the semantic treatment of the developable flag. A valid Type 118 with different flag values must remain distinguishable or report the loss caused by projection.
+
+**Note.** Hostile sweep 2026-08-15: the decoder accepts both flag values and emits the same typed carrier for the same rails.
+
+### GE-17. Type 112 and Type 114 header semantics are discarded
+
+**Question.** Which Type 112 and Type 114 header fields must survive projection?
+
+**Known.** `entities/splines.rs:210-221` validates Type 112 curve type, continuity, and dimensions, then `entities/splines.rs:464` discards curve type and continuity. `entities/splines.rs:477-489` validates Type 114 curve and patch types, then `entities/splines.rs:749` discards both. All accepted values can therefore produce the same typed carrier when the numeric geometry matches.
+
+**Need.** We need the semantic retention or loss policy for these header fields. Projection must preserve distinctions that affect downstream interpretation, or report each dropped distinction.
+
+**Note.** Hostile sweep 2026-08-15: the fields are admission gates only; the native and neutral outputs do not retain their accepted values.
 
 ## 5. Surfaces and topology
 
@@ -292,6 +344,16 @@ from a conformant file.
 **Need.** We need an ownership invariant or a source rule that makes the curve-to-edge relation unique, or a resolution path that verifies each candidate's range and endpoints. A wrong choice transfers the wrong range or endpoints to a boundary, B-rep, offset, composite, or sweep.
 
 **Note.** Candidate checks prevent silent transfer of a wrong range or endpoint, but they do not establish the source ownership rule. The codec now refuses conflicting composite candidates instead of selecting one by storage order.
+
+### TP-10. Tolerance vertex merging depends on the first representative
+
+**Question.** How are boundary endpoints clustered when one point is within tolerance of more than one existing vertex?
+
+**Known.** `entities/trimming.rs:89-117` returns the first vertex whose position is within tolerance and otherwise creates a vertex at the current endpoint. The function is called for every boundary segment endpoint at `entities/trimming.rs:757-771`. It does not choose the nearest representative, compute a transitive cluster, or record a merge ambiguity.
+
+**Need.** We need a deterministic clustering rule and a loss or refusal policy for non-transitive tolerance neighborhoods. Topology must not depend on the order of boundary segments without an explicit rule.
+
+**Note.** Hostile sweep 2026-08-15: if A and B are farther apart than tolerance while C is within tolerance of both, source order determines whether C joins A or B. This can change vertex identity and sewing topology.
 
 ## 6. Product structure, annotation, and presentation
 
@@ -480,3 +542,13 @@ from a conformant file.
 **Note.** GE-01 is the demonstrated case. Commit `f20d17e65` set `TRANSFORM_TOLERANCE` and authored the fixture that justifies it in the same commit, perturbed to 5e-11 against a threshold of 1e-10.
 
 **Need.** We need each tolerance and default in sections 2 through 5 traced to evidence outside this repository, or marked as a project convention in `iges.md` rather than as a format rule.
+
+### EV-07. Tolerance coverage is partial and not independently bracketed
+
+**Question.** Which tolerance and default decisions have independent accept/reject boundary evidence?
+
+**Known.** The current suite has paired geometry cases for selected Type 141/142 boundaries, Type 104 endpoints, Type 100 arcs, Type 102 joins, Type 112 continuity, and Type 106 endpoints. It does not provide paired boundary cases for every tolerance or default currently stated in sections 2 through 5; the transform, angular, frame, flag, and several default policies remain unbracketed.
+
+**Need.** We need an independent accept/reject pair for each material tolerance and default, or a project-policy classification that removes the claim of format authority.
+
+**Note.** Closure audit 2026-08-15: reopened. The mass-closure tests improved coverage but closed this item only partially; selected geometry pairs do not establish coverage of every active gate.
