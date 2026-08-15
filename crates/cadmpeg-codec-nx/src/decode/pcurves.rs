@@ -4,8 +4,8 @@
 use super::blend::{
     blend_boundary_parameter_from_support_pcurve, blend_surface_definition,
     blend_surface_parameters_for_fit_with_grid, blend_surface_point_inner_with_index,
-    closest_spine_parameter, decoded_surface_point, decoded_surface_point_inner, model_curve_point,
-    model_curve_tangent, BlendParameterGrid, BoundaryInverseTarget,
+    closest_spine_parameter, decoded_surface_point_inner, model_curve_point, model_curve_tangent,
+    BlendParameterGrid, BoundaryInverseTarget,
 };
 use super::offset::{
     lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index, point_distance,
@@ -252,128 +252,134 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
             Some((vertex.id.clone(), point.position))
         })
         .collect::<BTreeMap<_, _>>();
-    let mut replacements = Vec::new();
-    for procedural in &ir.model.procedural_curves {
-        let ProceduralCurveDefinition::TolerantIntersection {
-            supports,
-            endpoints,
-            tolerance: _,
-            parameterization: None,
-        } = &procedural.definition
-        else {
-            continue;
-        };
-        let edges = ir
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
-            .collect::<Vec<_>>();
-        let [edge] = edges.as_slice() else {
-            continue;
-        };
-        let Some(endpoint_tolerance) = edge
-            .tolerance
-            .filter(|value| value.is_finite() && *value >= 0.0)
-        else {
-            continue;
-        };
-        let edge_reversed = match (vertex_points.get(&edge.start), vertex_points.get(&edge.end)) {
-            (Some(start), Some(end)) => {
-                let forward = point_distance(*start, endpoints[0]) <= endpoint_tolerance
-                    && point_distance(*end, endpoints[1]) <= endpoint_tolerance;
-                let reversed = point_distance(*start, endpoints[1]) <= endpoint_tolerance
-                    && point_distance(*end, endpoints[0]) <= endpoint_tolerance;
-                match (forward, reversed) {
-                    (true, false) => false,
-                    (false, true) => true,
-                    (true, true) if edge.start == edge.end => false,
-                    _ => continue,
+    let replacements = {
+        let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+        let mut replacements = Vec::new();
+        for procedural in &ir.model.procedural_curves {
+            let ProceduralCurveDefinition::TolerantIntersection {
+                supports,
+                endpoints,
+                tolerance: _,
+                parameterization: None,
+            } = &procedural.definition
+            else {
+                continue;
+            };
+            let edges = ir
+                .model
+                .edges
+                .iter()
+                .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+                .collect::<Vec<_>>();
+            let [edge] = edges.as_slice() else {
+                continue;
+            };
+            let Some(endpoint_tolerance) = edge
+                .tolerance
+                .filter(|value| value.is_finite() && *value >= 0.0)
+            else {
+                continue;
+            };
+            let edge_reversed = match (vertex_points.get(&edge.start), vertex_points.get(&edge.end))
+            {
+                (Some(start), Some(end)) => {
+                    let forward = point_distance(*start, endpoints[0]) <= endpoint_tolerance
+                        && point_distance(*end, endpoints[1]) <= endpoint_tolerance;
+                    let reversed = point_distance(*start, endpoints[1]) <= endpoint_tolerance
+                        && point_distance(*end, endpoints[0]) <= endpoint_tolerance;
+                    match (forward, reversed) {
+                        (true, false) => false,
+                        (false, true) => true,
+                        (true, true) if edge.start == edge.end => false,
+                        _ => continue,
+                    }
                 }
+                _ => continue,
+            };
+            let candidates = supports.each_ref().map(|support| {
+                incident
+                    .get(&(procedural.curve.clone(), support.clone()))
+                    .map(Vec::as_slice)
+            });
+            let [Some([(first_id, first_use_range)]), Some([(second_id, second_use_range)])] =
+                candidates
+            else {
+                continue;
+            };
+            let carriers = [first_id, second_id].map(|id| {
+                ir.model
+                    .pcurves
+                    .iter()
+                    .find(|candidate| &candidate.id == id)
+            });
+            let [Some(first), Some(second)] = carriers else {
+                continue;
+            };
+            let ranges = [
+                first_use_range
+                    .or(first.parameter_range)
+                    .or_else(|| pcurve_parameter_range(&first.geometry)),
+                second_use_range
+                    .or(second.parameter_range)
+                    .or_else(|| pcurve_parameter_range(&second.geometry)),
+            ];
+            let [Some(first_range), Some(second_range)] = ranges else {
+                continue;
+            };
+            if !first_range
+                .iter()
+                .zip(second_range)
+                .all(|(first, second)| first.to_bits() == second.to_bits())
+                || !first_range[0].is_finite()
+                || !first_range[1].is_finite()
+                || first_range[0] >= first_range[1]
+            {
+                continue;
             }
-            _ => continue,
-        };
-        let candidates = supports.each_ref().map(|support| {
-            incident
-                .get(&(procedural.curve.clone(), support.clone()))
-                .map(Vec::as_slice)
-        });
-        let [Some([(first_id, first_use_range)]), Some([(second_id, second_use_range)])] =
-            candidates
-        else {
-            continue;
-        };
-        let carriers = [first_id, second_id].map(|id| {
-            ir.model
-                .pcurves
-                .iter()
-                .find(|candidate| &candidate.id == id)
-        });
-        let [Some(first), Some(second)] = carriers else {
-            continue;
-        };
-        let ranges = [
-            first_use_range
-                .or(first.parameter_range)
-                .or_else(|| pcurve_parameter_range(&first.geometry)),
-            second_use_range
-                .or(second.parameter_range)
-                .or_else(|| pcurve_parameter_range(&second.geometry)),
-        ];
-        let [Some(first_range), Some(second_range)] = ranges else {
-            continue;
-        };
-        if !first_range
-            .iter()
-            .zip(second_range)
-            .all(|(first, second)| first.to_bits() == second.to_bits())
-            || !first_range[0].is_finite()
-            || !first_range[1].is_finite()
-            || first_range[0] >= first_range[1]
-        {
-            continue;
+            if edge.param_range.is_some_and(|range| {
+                !range
+                    .iter()
+                    .zip(first_range)
+                    .all(|(existing, branch)| existing.to_bits() == branch.to_bits())
+            }) {
+                continue;
+            }
+            let Some(()) = first
+                .fit_tolerance
+                .zip(second.fit_tolerance)
+                .map(|(first, second)| first + second)
+                .filter(|bound| bound.is_finite() && *bound <= endpoint_tolerance)
+                .map(|_| ())
+            else {
+                continue;
+            };
+            let carriers = [first, second];
+            let pcurves: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
+                orient_tolerant_intersection_pcurve_with_index(
+                    &model_index,
+                    ir,
+                    &procedural.curve,
+                    &supports[side],
+                    &carriers[side].geometry,
+                    first_range,
+                    *endpoints,
+                    endpoint_tolerance,
+                )
+            });
+            if let [Some(first), Some(second)] = pcurves {
+                replacements.push((
+                    procedural.id.clone(),
+                    edge.id.clone(),
+                    edge_reversed,
+                    TolerantIntersectionParameterization {
+                        pcurves: [first, second],
+                        parameter_range: first_range,
+                    },
+                ));
+            }
         }
-        if edge.param_range.is_some_and(|range| {
-            !range
-                .iter()
-                .zip(first_range)
-                .all(|(existing, branch)| existing.to_bits() == branch.to_bits())
-        }) {
-            continue;
-        }
-        let Some(()) = first
-            .fit_tolerance
-            .zip(second.fit_tolerance)
-            .map(|(first, second)| first + second)
-            .filter(|bound| bound.is_finite() && *bound <= endpoint_tolerance)
-            .map(|_| ())
-        else {
-            continue;
-        };
-        let carriers = [first, second];
-        let pcurves: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
-            orient_tolerant_intersection_pcurve(
-                ir,
-                &procedural.curve,
-                &supports[side],
-                &carriers[side].geometry,
-                first_range,
-                *endpoints,
-                endpoint_tolerance,
-            )
-        });
-        if let [Some(first), Some(second)] = pcurves {
-            replacements.push((
-                procedural.id.clone(),
-                edge.id.clone(),
-                edge_reversed,
-                TolerantIntersectionParameterization {
-                    pcurves: [first, second],
-                    parameter_range: first_range,
-                },
-            ));
-        }
-    }
+        replacements
+    };
 
     for (procedural_id, edge_id, edge_reversed, parameterization) in replacements {
         let Some(procedural) = ir
@@ -406,6 +412,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn orient_tolerant_intersection_pcurve(
     ir: &CadIr,
     curve: &CurveId,
@@ -416,9 +423,25 @@ pub(crate) fn orient_tolerant_intersection_pcurve(
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    orient_tolerant_intersection_pcurve_with_index(
+        &index, ir, curve, support, pcurve, range, endpoints, tolerance,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn orient_tolerant_intersection_pcurve_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    ir: &CadIr,
+    curve: &CurveId,
+    support: &SurfaceId,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
+    endpoints: [Point3; 2],
+    tolerance: f64,
+) -> Option<PcurveGeometry> {
     let points = range.map(|parameter| {
         let uv = pcurve_uv(pcurve, parameter)?;
-        decoded_surface_point(ir, support, uv.u, uv.v)
+        decoded_surface_point_inner(index, support, uv.u, uv.v, 0)
     });
     let [Some(first), Some(second)] = points else {
         return None;
@@ -436,7 +459,7 @@ pub(crate) fn orient_tolerant_intersection_pcurve(
             let alignment = |candidate: &PcurveGeometry| {
                 let uv = pcurve_uv(candidate, range[0])?;
                 let uv_tangent = pcurve_tangent(candidate, range[0])?;
-                let partials = model_surface_partials_by_id(&index, support, uv.u, uv.v)?;
+                let partials = model_surface_partials_by_id(index, support, uv.u, uv.v)?;
                 let tangent = unit_vector(Vector3::new(
                     uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
                     uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
@@ -962,11 +985,20 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
             };
             let [first_surface, second_surface] = supports;
             let candidates = [first_surface, second_surface].map(|surface| {
-                exact_boundary_pcurve(ir, &procedural.curve, surface, endpoints, range, tolerance)
+                exact_boundary_pcurve_with_index(
+                    &model_index,
+                    ir,
+                    &procedural.curve,
+                    surface,
+                    endpoints,
+                    range,
+                    tolerance,
+                )
             });
             let pcurves = match candidates {
                 [Some(first), Some(second)] => {
-                    if coincident_pcurve_pair(
+                    if coincident_pcurve_pair_with_index(
+                        &model_index,
                         ir,
                         [first_surface, second_surface],
                         [&first, &second],
@@ -1104,7 +1136,22 @@ pub(crate) fn curve_is_cache_backed(ir: &CadIr, curve: &CurveId) -> bool {
         .is_some_and(|carrier| !matches!(&carrier.geometry, CurveGeometry::Procedural { .. }))
 }
 
+#[cfg(test)]
 pub(crate) fn exact_boundary_pcurve(
+    ir: &CadIr,
+    curve: &CurveId,
+    surface: &SurfaceId,
+    endpoints: [Point3; 2],
+    range: [f64; 2],
+    tolerance: f64,
+) -> Option<PcurveGeometry> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    exact_boundary_pcurve_with_index(&index, ir, curve, surface, endpoints, range, tolerance)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn exact_boundary_pcurve_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
@@ -1134,7 +1181,7 @@ pub(crate) fn exact_boundary_pcurve(
             if !parameter.u.is_finite() || !parameter.v.is_finite() {
                 return None;
             }
-            let mapped = decoded_surface_point(ir, surface, parameter.u, parameter.v)?;
+            let mapped = decoded_surface_point_inner(index, surface, parameter.u, parameter.v, 0)?;
             let error = point_distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
                 return None;
@@ -1156,8 +1203,8 @@ pub(crate) fn exact_boundary_pcurve(
             ),
             direction,
         };
-        return exact_boundary_pcurve_matches_carrier(
-            ir, curve, surface, &candidate, range, tolerance,
+        return exact_boundary_pcurve_matches_carrier_with_index(
+            index, ir, curve, surface, &candidate, range, tolerance,
         )
         .then_some(candidate);
     }
@@ -1186,14 +1233,14 @@ pub(crate) fn exact_boundary_pcurve(
         };
         for (endpoint, parameter) in endpoints.into_iter().zip(range) {
             let uv = pcurve_uv(&candidate, parameter)?;
-            let mapped = decoded_surface_point(ir, surface, uv.u, uv.v)?;
+            let mapped = decoded_surface_point_inner(index, surface, uv.u, uv.v, 0)?;
             let error = point_distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
                 return None;
             }
         }
-        return exact_boundary_pcurve_matches_carrier(
-            ir, curve, surface, &candidate, range, tolerance,
+        return exact_boundary_pcurve_matches_carrier_with_index(
+            index, ir, curve, surface, &candidate, range, tolerance,
         )
         .then_some(candidate);
     }
@@ -1245,7 +1292,9 @@ pub(crate) fn exact_boundary_pcurve(
             })
         })
         .filter(|candidate| {
-            exact_boundary_pcurve_matches_carrier(ir, curve, surface, candidate, range, tolerance)
+            exact_boundary_pcurve_matches_carrier_with_index(
+                index, ir, curve, surface, candidate, range, tolerance,
+            )
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
@@ -1254,7 +1303,9 @@ pub(crate) fn exact_boundary_pcurve(
     Some(candidate.clone())
 }
 
-pub(crate) fn exact_boundary_pcurve_matches_carrier(
+#[allow(clippy::too_many_arguments)]
+fn exact_boundary_pcurve_matches_carrier_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
@@ -1284,7 +1335,7 @@ pub(crate) fn exact_boundary_pcurve_matches_carrier(
         let Some(uv) = pcurve_uv(pcurve, parameter) else {
             return false;
         };
-        let Some(expected) = decoded_surface_point(ir, surface, uv.u, uv.v) else {
+        let Some(expected) = decoded_surface_point_inner(index, surface, uv.u, uv.v, 0) else {
             return false;
         };
         let Some(actual) = model_curve_point(ir, curve, parameter) else {
@@ -1446,7 +1497,21 @@ pub(crate) fn exact_analytic_isocurve_pcurve(
     Some(candidate)
 }
 
+#[cfg(test)]
 pub(crate) fn coincident_pcurve_pair(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    pcurves: [&PcurveGeometry; 2],
+    range: [f64; 2],
+    tolerance: f64,
+) -> bool {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    coincident_pcurve_pair_with_index(&index, ir, surfaces, pcurves, range, tolerance)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn coincident_pcurve_pair_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     pcurves: [&PcurveGeometry; 2],
@@ -1466,7 +1531,7 @@ pub(crate) fn coincident_pcurve_pair(
     let separation = |parameter| {
         let points = [0usize, 1usize].map(|side| {
             let uv = pcurve_uv(pcurves[side], parameter)?;
-            decoded_surface_point(ir, surfaces[side], uv.u, uv.v)
+            decoded_surface_point_inner(index, surfaces[side], uv.u, uv.v, 0)
         });
         let [Some(first), Some(second)] = points else {
             return None;
@@ -1487,7 +1552,7 @@ pub(crate) fn coincident_pcurve_pair(
     }
     let Some(speed_bound) = [0usize, 1usize]
         .into_iter()
-        .map(|side| boundary_curve_speed_bound(ir, surfaces[side], pcurves[side]))
+        .map(|side| boundary_curve_speed_bound_with_index(index, ir, surfaces[side], pcurves[side]))
         .sum::<Option<f64>>()
     else {
         return false;
@@ -1581,7 +1646,8 @@ pub(crate) fn boundary_curve_affine_breaks(
     }
 }
 
-pub(crate) fn boundary_curve_speed_bound(
+fn boundary_curve_speed_bound_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
@@ -1595,9 +1661,14 @@ pub(crate) fn boundary_curve_speed_bound(
         return None;
     };
     let affine_speed = || {
-        let first = decoded_surface_point(ir, surface, origin.u, origin.v)?;
-        let second =
-            decoded_surface_point(ir, surface, origin.u + direction.u, origin.v + direction.v)?;
+        let first = decoded_surface_point_inner(index, surface, origin.u, origin.v, 0)?;
+        let second = decoded_surface_point_inner(
+            index,
+            surface,
+            origin.u + direction.u,
+            origin.v + direction.v,
+            0,
+        )?;
         let speed = point_distance(first, second);
         speed.is_finite().then_some(speed)
     };
@@ -1944,17 +2015,6 @@ pub(crate) fn append_transferred_pcurve_segment(
     )
 }
 
-pub(crate) fn surface_parameters_for_fit(
-    ir: &CadIr,
-    surface: &SurfaceId,
-    point: Point3,
-    seed: Option<Point2>,
-    tolerance: f64,
-) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    surface_parameters_for_fit_with_index(&index, surface, point, seed, tolerance)
-}
-
 pub(crate) fn surface_parameters_for_fit_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -2001,97 +2061,109 @@ pub(crate) fn attach_tolerant_edge_intersections(
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let mut candidates = Vec::new();
-    for (&xmt, edge_id) in edges {
-        let Some(edge_fields) = graph.get(16, xmt).and_then(Node::edge_fields) else {
-            continue;
-        };
-        let Some(first_fin) = graph.get(17, edge_fields.fin).and_then(Node::fin_fields) else {
-            continue;
-        };
-        if edge_fields.curve != 1 || first_fin.curve_xmt != 1 || first_fin.other <= 1 {
-            continue;
-        }
-        let Some(second_fin) = graph.get(17, first_fin.other).and_then(Node::fin_fields) else {
-            continue;
-        };
-        if second_fin.other != edge_fields.fin || second_fin.edge != xmt {
-            continue;
-        }
-        let Some(edge) = ir
-            .model
-            .edges
-            .iter()
-            .find(|candidate| &candidate.id == edge_id)
-        else {
-            continue;
-        };
-        let Some(tolerance) = edge.tolerance else {
-            continue;
-        };
-        if edge.curve.is_some() {
-            continue;
-        }
-        let support = |fin_xmt| {
-            let coedge_id = CoedgeId(format!("{prefix}:fin#{fin_xmt}"));
-            ir.model
-                .coedges
-                .iter()
-                .find(|coedge| coedge.id == coedge_id && &coedge.edge == edge_id)
-                .and_then(|coedge| {
-                    let face = ir
-                        .model
-                        .loops
-                        .iter()
-                        .find(|loop_| loop_.id == coedge.owner_loop)?
-                        .face
-                        .clone();
-                    ir.model
-                        .faces
-                        .iter()
-                        .find(|candidate| candidate.id == face)
-                        .map(|face| face.surface.clone())
-                })
-        };
-        let Some(first_support) = support(edge_fields.fin) else {
-            continue;
-        };
-        let Some(second_support) = support(first_fin.other) else {
-            continue;
-        };
-        if first_support == second_support {
-            continue;
-        }
-        let endpoint = |vertex_id: &VertexId| {
-            let point_id = &ir
+    let candidates = {
+        let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+        let mut candidates = Vec::new();
+        for (&xmt, edge_id) in edges {
+            let Some(edge_fields) = graph.get(16, xmt).and_then(Node::edge_fields) else {
+                continue;
+            };
+            let Some(first_fin) = graph.get(17, edge_fields.fin).and_then(Node::fin_fields) else {
+                continue;
+            };
+            if edge_fields.curve != 1 || first_fin.curve_xmt != 1 || first_fin.other <= 1 {
+                continue;
+            }
+            let Some(second_fin) = graph.get(17, first_fin.other).and_then(Node::fin_fields) else {
+                continue;
+            };
+            if second_fin.other != edge_fields.fin || second_fin.edge != xmt {
+                continue;
+            }
+            let Some(edge) = ir
                 .model
-                .vertices
+                .edges
                 .iter()
-                .find(|vertex| &vertex.id == vertex_id)?
-                .point;
-            ir.model
-                .points
-                .iter()
-                .find(|point| &point.id == point_id)
-                .map(|point| point.position)
-        };
-        let (Some(start), Some(end)) = (endpoint(&edge.start), endpoint(&edge.end)) else {
-            continue;
-        };
-        let endpoints = [start, end];
-        let supports = [first_support, second_support];
-        let endpoints_bound_supports = supports.iter().all(|surface| {
-            endpoints.iter().all(|point| {
-                surface_parameters_for_fit(ir, surface, *point, None, tolerance)
-                    .and_then(|uv| decoded_surface_point(ir, surface, uv.u, uv.v))
+                .find(|candidate| &candidate.id == edge_id)
+            else {
+                continue;
+            };
+            let Some(tolerance) = edge.tolerance else {
+                continue;
+            };
+            if edge.curve.is_some() {
+                continue;
+            }
+            let support = |fin_xmt| {
+                let coedge_id = CoedgeId(format!("{prefix}:fin#{fin_xmt}"));
+                ir.model
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.id == coedge_id && &coedge.edge == edge_id)
+                    .and_then(|coedge| {
+                        let face = ir
+                            .model
+                            .loops
+                            .iter()
+                            .find(|loop_| loop_.id == coedge.owner_loop)?
+                            .face
+                            .clone();
+                        ir.model
+                            .faces
+                            .iter()
+                            .find(|candidate| candidate.id == face)
+                            .map(|face| face.surface.clone())
+                    })
+            };
+            let Some(first_support) = support(edge_fields.fin) else {
+                continue;
+            };
+            let Some(second_support) = support(first_fin.other) else {
+                continue;
+            };
+            if first_support == second_support {
+                continue;
+            }
+            let endpoint = |vertex_id: &VertexId| {
+                let point_id = &ir
+                    .model
+                    .vertices
+                    .iter()
+                    .find(|vertex| &vertex.id == vertex_id)?
+                    .point;
+                ir.model
+                    .points
+                    .iter()
+                    .find(|point| &point.id == point_id)
+                    .map(|point| point.position)
+            };
+            let (Some(start), Some(end)) = (endpoint(&edge.start), endpoint(&edge.end)) else {
+                continue;
+            };
+            let endpoints = [start, end];
+            let supports = [first_support, second_support];
+            let endpoints_bound_supports = supports.iter().all(|surface| {
+                endpoints.iter().all(|point| {
+                    surface_parameters_for_fit_with_index(
+                        &model_index,
+                        surface,
+                        *point,
+                        None,
+                        tolerance,
+                    )
+                    .and_then(|uv| {
+                        decoded_surface_point_inner(&model_index, surface, uv.u, uv.v, 0)
+                    })
                     .is_some_and(|support_point| point_distance(*point, support_point) <= tolerance)
-            })
-        });
-        if !endpoints_bound_supports {
-            continue;
+                })
+            });
+            if !endpoints_bound_supports {
+                continue;
+            }
+            candidates.push((xmt, edge_id.clone(), supports, endpoints, tolerance));
         }
-        candidates.push((xmt, edge_id.clone(), supports, endpoints, tolerance));
-    }
+        candidates
+    };
 
     for (xmt, edge_id, supports, endpoints, tolerance) in candidates {
         let curve_id = CurveId(format!("{prefix}:tolerant-curve#{xmt}"));

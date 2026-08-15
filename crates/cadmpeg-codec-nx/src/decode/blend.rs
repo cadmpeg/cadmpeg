@@ -20,16 +20,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-pub(crate) fn decoded_surface_point(
-    ir: &CadIr,
-    surface: &SurfaceId,
-    u: f64,
-    v: f64,
-) -> Option<Point3> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    decoded_surface_point_inner(&index, surface, u, v, 0)
-}
-
 pub(crate) fn decoded_surface_point_inner(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,

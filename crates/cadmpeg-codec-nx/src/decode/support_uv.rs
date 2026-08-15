@@ -11,7 +11,7 @@ use super::offset::{
     continue_surface_intersection_parameters_with_seeds,
     offset_surface_parameters_with_tolerance_with_index, point_distance, surface_parameters,
 };
-use super::pcurves::pcurve_matches_edge;
+use super::pcurves::pcurve_matches_edge_range_with_index;
 use super::MISSING_TOLERANCE;
 use crate::topology::Graph;
 use cadmpeg_ir::document::CadIr;
@@ -844,37 +844,48 @@ pub(crate) fn attach_completed_intersection_pcurves(
         }
     }
 
-    let replacements = ir
-        .model
-        .coedges
-        .iter()
-        .filter(|coedge| coedge.pcurves.is_empty() && coedge.id.0.starts_with(prefix))
-        .filter_map(|coedge| {
-            let surface = loop_faces
-                .get(&coedge.owner_loop)
-                .and_then(|face| face_surfaces.get(*face))?;
-            let curve = edge_curves.get(&coedge.edge)?;
-            let [candidate] = candidates
-                .get(&((*curve).clone(), (*surface).clone()))?
-                .as_slice()
-            else {
-                return None;
-            };
-            let fit_tolerance = candidate.2.or_else(|| {
-                ir.model
-                    .edges
-                    .iter()
-                    .find(|edge| edge.id == coedge.edge)
-                    .and_then(|edge| edge.tolerance)
-            });
-            pcurve_matches_edge(ir, &coedge.edge, surface, &candidate.0, fit_tolerance).then(|| {
-                (
-                    coedge.id.clone(),
-                    (candidate.0.clone(), candidate.1, fit_tolerance),
+    let replacements = {
+        let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+        ir.model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.pcurves.is_empty() && coedge.id.0.starts_with(prefix))
+            .filter_map(|coedge| {
+                let surface = loop_faces
+                    .get(&coedge.owner_loop)
+                    .and_then(|face| face_surfaces.get(*face))?;
+                let curve = edge_curves.get(&coedge.edge)?;
+                let [candidate] = candidates
+                    .get(&((*curve).clone(), (*surface).clone()))?
+                    .as_slice()
+                else {
+                    return None;
+                };
+                let fit_tolerance = candidate.2.or_else(|| {
+                    ir.model
+                        .edges
+                        .iter()
+                        .find(|edge| edge.id == coedge.edge)
+                        .and_then(|edge| edge.tolerance)
+                });
+                pcurve_matches_edge_range_with_index(
+                    ir,
+                    &model_index,
+                    &coedge.edge,
+                    surface,
+                    &candidate.0,
+                    None,
+                    fit_tolerance,
                 )
+                .then(|| {
+                    (
+                        coedge.id.clone(),
+                        (candidate.0.clone(), candidate.1, fit_tolerance),
+                    )
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    };
     for (coedge_id, (geometry, parameter_range, fit_tolerance)) in replacements {
         let Some(fin_xmt) = coedge_id
             .0

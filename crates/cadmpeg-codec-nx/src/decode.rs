@@ -69,18 +69,20 @@ pub(crate) use pcurves::blend_boundary_parameter_from_support_spine;
 pub(crate) use pcurves::{
     append_transferred_pcurve_segment, attach_tolerant_edge_intersections,
     blend_boundary_parameter_from_support_spine_with_index, blend_boundary_spine_geometry_matches,
-    boundary_curve_affine_breaks, boundary_curve_speed_bound, coincident_pcurve_pair,
-    complete_exact_boundary_intersection_pcurves,
+    boundary_curve_affine_breaks, complete_exact_boundary_intersection_pcurves,
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_pcurves_from_opposite_charts,
     complete_intersection_supports_from_edge_incidence,
     complete_tolerant_intersection_pcurves_from_serialized_branches, curve_is_cache_backed,
-    exact_analytic_isocurve_pcurve, exact_boundary_curve_breaks, exact_boundary_pcurve,
-    exact_boundary_pcurve_matches_carrier, ordered_parameter_range,
-    orient_tolerant_intersection_pcurve, pcurve_matches_edge, pcurve_matches_edge_range,
-    pcurve_matches_edge_range_with_index, pcurve_parameter_range, reverse_pcurve_over_range,
-    surface_parameters_for_fit, surface_parameters_for_fit_with_index,
+    exact_analytic_isocurve_pcurve, exact_boundary_curve_breaks, ordered_parameter_range,
+    pcurve_matches_edge, pcurve_matches_edge_range, pcurve_matches_edge_range_with_index,
+    pcurve_parameter_range, reverse_pcurve_over_range, surface_parameters_for_fit_with_index,
     transfer_intersection_pcurve, transferred_pcurve_sample, TransferredPcurveSample,
+};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use pcurves::{
+    coincident_pcurve_pair, exact_boundary_pcurve, orient_tolerant_intersection_pcurve,
 };
 
 mod offset;
@@ -145,9 +147,9 @@ pub(crate) use blend::{
     closest_nurbs_curve_parameter, closest_parameter_candidates, closest_pcurve_parameters,
     closest_periodic_analytic_curve_parameter, closest_spine_parameter,
     coarse_blend_surface_parameters_with_index, constant_surface_offset_between,
-    decoded_surface_point, decoded_surface_point_inner, homogeneous_pcurve_spans,
-    homogeneous_residual_distance, insert_homogeneous_curve_knot, lift_periodic_parameters,
-    model_curve_point, model_curve_tangent, polynomial_roots_in_unit_interval, polynomial_value,
+    decoded_surface_point_inner, homogeneous_pcurve_spans, homogeneous_residual_distance,
+    insert_homogeneous_curve_knot, lift_periodic_parameters, model_curve_point,
+    model_curve_tangent, polynomial_roots_in_unit_interval, polynomial_value,
     rational_squared_distance_derivative, real_polynomial_roots,
     refine_blend_surface_parameters_with_index, rodrigues_rotate, scalar_bernstein_sign_variations,
     scalar_bezier_roots, scalar_bezier_value, signed_angle, spine_contact_direction_with_index,
