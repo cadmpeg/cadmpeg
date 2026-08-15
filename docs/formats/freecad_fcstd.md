@@ -48,6 +48,12 @@ decompression.
 presentation graph. Other entries acquire meaning only from typed references in either graph;
 unreferenced entries remain named archive records.
 
+Each side-entry reference names one ZIP member. The member's complete uncompressed byte sequence
+is one payload, and the ZIP member boundary is the only generic side-entry framing. A property
+runtime type may define an internal grammar for that payload. A runtime type outside the registered
+property grammar does not define a generic internal framing or field model; its complete payload
+remains one named opaque record.
+
 `GuiDocument.xml` has at most one `ViewProviderData` container. `ViewProvider` names are unique.
 Each provider has one direct `Properties` container, and direct property names are unique within
 that container. Registered GUI property types define the cardinality of their value elements;
@@ -485,8 +491,11 @@ respectively. Each registered property contains exactly one value root. Scalar v
 `value` attribute. Vectors use `valueX`, `valueY`, and `valueZ`. Color-list and material-list
 values use one `file` attribute. Material values use four packed-color attributes plus finite `shininess` and
 `transparency` scalars. Boolean lists contain only `0` and `1`. Numeric values are finite, and
-registered tags and attributes are mandatory. An unregistered GUI runtime type retains its exact
-ordered XML values without semantic dispatch.
+registered tags and attributes are mandatory. The GUI property registry is the same exact runtime
+type registry used for application properties; GUI persistence does not introduce a second value
+grammar. A registered property family remains typed even when no neutral presentation field uses
+it. An unregistered GUI runtime type retains its exact ordered XML values without semantic
+dispatch, and its XML span is `named_opaque` in the logical ledger.
 
 A color-list side entry contains a little-endian `u32` count followed by that many little-endian
 packed `u32` colors. A material-list value has a format version from zero through three. Versions
@@ -543,11 +552,13 @@ lengths, and digests.
 A side entry has field framing and value semantics only when an exact registered runtime property
 type and value tag select that grammar. A file name, extension, value-tag spelling, byte prefix, or
 payload signature does not select an application grammar. Without the registered property
-discriminator, no application-specific record family exists: the complete side entry is one named
-opaque payload owned by its archive entry and referenced by the declaring property. The decoder
-does not infer fields, record boundaries, or neutral values from those bytes. This rule permits
-third-party properties to remain byte-exact without confusing coincidental payload bytes with a
-core mesh, point, shape, list, or asset grammar.
+discriminator, the complete side entry is one named opaque payload owned by its archive entry and
+referenced by the declaring property. The decoder does not infer fields, record boundaries, or
+neutral values from those bytes. This rule permits extension properties to remain byte-exact
+without confusing coincidental payload bytes with a core mesh, point, shape, list, or asset
+grammar. `EntryRecord.referenced_by` retains each distinct referring property, GUI property, or GUI
+state in serialized traversal order; the logical span remains single-owner and is never duplicated
+for shared references.
 
 `Mesh::PropertyMeshKernel` contains one `Mesh` value. The value has zero or one non-empty `file`
 attribute. A non-empty attribute identifies the property's only binary side entry. A `Mesh` value

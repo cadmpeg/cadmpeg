@@ -26,6 +26,15 @@ pub(crate) struct Graph {
     pub(crate) properties: Vec<GuiPropertyRecord>,
 }
 
+/// Whether the shared application-property registry knows this GUI property type.
+pub(crate) fn has_registered_property_grammar(type_name: &str) -> bool {
+    gui_value_tag(type_name).is_some()
+        || !matches!(
+            crate::persistence::property_family(type_name),
+            crate::native::PropertyFamily::Unknown
+        )
+}
+
 pub(crate) fn requires_alpha_conversion(program_version: Option<&str>) -> bool {
     program_version.is_some_and(|version| version.starts_with('0') || version.starts_with("1.0"))
 }
@@ -732,7 +741,10 @@ fn append_native_provider(
         let side_entries = values
             .iter()
             .flat_map(|value| value.attributes.iter())
-            .filter(|(attribute, _)| matches!(attribute.as_str(), "file" | "File"))
+            .filter(|(attribute, _)| {
+                matches!(attribute.as_str(), "file" | "File")
+                    && !crate::persistence::is_xlink_type(type_name)
+            })
             .map(|(_, value)| value.clone())
             .filter(|value| !value.is_empty())
             .collect();

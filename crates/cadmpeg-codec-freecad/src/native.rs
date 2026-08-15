@@ -609,7 +609,7 @@ pub struct EntryRecord {
     pub byte_len: u64,
     /// Lowercase SHA-256 of logical bytes.
     pub sha256: String,
-    /// Property identities that reference this entry.
+    /// Application property, GUI property, and GUI state identities that reference this entry.
     pub referenced_by: Vec<String>,
     /// Complete logical bytes.
     pub data: Vec<u8>,

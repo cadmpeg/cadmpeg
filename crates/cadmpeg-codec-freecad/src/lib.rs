@@ -864,6 +864,33 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .flat_map(|document| document.states.iter().map(|state| state.id.as_str())),
         )
         .collect::<HashSet<_>>();
+    let mut expected_references = HashMap::<String, Vec<String>>::new();
+    for property in &properties {
+        for entry_name in &property.side_entries {
+            let owners = expected_references.entry(entry_name.clone()).or_default();
+            if !owners.contains(&property.id) {
+                owners.push(property.id.clone());
+            }
+        }
+    }
+    for property in &gui_properties {
+        for entry_name in &property.side_entries {
+            let owners = expected_references.entry(entry_name.clone()).or_default();
+            if !owners.contains(&property.id) {
+                owners.push(property.id.clone());
+            }
+        }
+    }
+    for document in &gui_documents {
+        for state in &document.states {
+            for entry_name in &state.side_entries {
+                let owners = expected_references.entry(entry_name.clone()).or_default();
+                if !owners.contains(&state.id) {
+                    owners.push(state.id.clone());
+                }
+            }
+        }
+    }
     for entry in &entries {
         entry_lengths.insert(entry.name.as_str(), entry.byte_len);
         if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
@@ -881,6 +908,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(entry.id.clone()),
                 ));
             }
+        }
+        let expected = expected_references
+            .get(entry.name.as_str())
+            .map_or(&[][..], Vec::as_slice);
+        if !entry
+            .referenced_by
+            .iter()
+            .map(String::as_str)
+            .eq(expected.iter().map(String::as_str))
+        {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} has a stale side-entry reference relation", entry.id),
+                Some(entry.id.clone()),
+            ));
         }
     }
     let physical_end = ir
@@ -1300,7 +1342,13 @@ impl CodecBackend for FcstdCodec {
                     .iter_mut()
                     .find(|entry| entry.name == entry_name)
                 {
-                    entry.referenced_by.push(owner.to_owned());
+                    if !entry
+                        .referenced_by
+                        .iter()
+                        .any(|candidate| candidate == owner)
+                    {
+                        entry.referenced_by.push(owner.to_owned());
+                    }
                 }
             }
             ir.native

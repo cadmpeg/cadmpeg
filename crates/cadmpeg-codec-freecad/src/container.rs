@@ -333,7 +333,11 @@ pub(crate) fn logical_ledger(
                         (
                             property.byte_start,
                             property.byte_end,
-                            "typed",
+                            if gui::has_registered_property_grammar(&property.type_name) {
+                                "typed"
+                            } else {
+                                "named_opaque"
+                            },
                             property.id.clone(),
                         )
                     })

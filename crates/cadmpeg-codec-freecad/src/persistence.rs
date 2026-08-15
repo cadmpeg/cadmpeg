@@ -403,7 +403,7 @@ fn parse_properties(
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
-            family: classify_property(&type_name),
+            family: property_family(&type_name),
             type_name,
             status: node
                 .attribute("status")
@@ -471,7 +471,7 @@ fn parse_properties(
                     .iter()
                     .filter(|(name, _)| {
                         (matches!(name.as_str(), "file" | "File") && !is_xlink_type(&type_name))
-                            || (classify_property(&type_name) == PropertyFamily::File
+                            || (property_family(&type_name) == PropertyFamily::File
                                 && matches!(name.as_str(), "name" | "Name"))
                     })
                     .map(|(_, value)| value.clone())
@@ -482,7 +482,7 @@ fn parse_properties(
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
-            family: classify_property(&type_name),
+            family: property_family(&type_name),
             type_name,
             status: node
                 .attribute("status")
@@ -694,7 +694,7 @@ fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Resul
     Ok(())
 }
 
-fn classify_property(type_name: &str) -> PropertyFamily {
+pub(crate) fn property_family(type_name: &str) -> PropertyFamily {
     match type_name {
         "App::PropertyPythonObject" => PropertyFamily::PythonObject,
         "App::PropertyExpression" | "App::PropertyExpressionEngine" => PropertyFamily::Expression,
@@ -764,7 +764,7 @@ fn classify_property(type_name: &str) -> PropertyFamily {
     }
 }
 
-fn is_xlink_type(type_name: &str) -> bool {
+pub(crate) fn is_xlink_type(type_name: &str) -> bool {
     matches!(
         type_name,
         "App::PropertyXLink"

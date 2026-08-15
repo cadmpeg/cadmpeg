@@ -291,3 +291,95 @@ fn retains_unregistered_gui_property_values_without_semantic_dispatch() {
     assert_eq!(properties[0].values[0].tag, "VendorState");
     assert_eq!(properties[0].values[1].tag, "Nested");
 }
+
+#[test]
+fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="ExtensionState" type="Vendor::PropertyState"><VendorState file="state.bin" mode="custom"><Nested value="kept"/></VendorState></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let payload = [
+        0xd0, 0xc0, 0xb0, 0xa0, 0x00, 0x00, 0x01, 0x00, 0x7f, 0x45, 0x4c, 0x46,
+    ];
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+                ("state.bin", &payload),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("unregistered GUI side entry");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
+    let properties = namespace
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    let property = properties
+        .iter()
+        .find(|property| property.name == "ExtensionState")
+        .expect("extension property");
+    assert_eq!(property.side_entries, ["state.bin"]);
+
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let entry = entries
+        .iter()
+        .find(|entry| entry.name == "state.bin")
+        .expect("state entry");
+    assert_eq!(
+        entry.referenced_by.as_slice(),
+        std::slice::from_ref(&property.id)
+    );
+    assert_eq!(entry.data, payload);
+
+    let logical = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    let span = logical
+        .iter()
+        .find(|span| span.entry == entry.name)
+        .expect("state span");
+    assert_eq!(span.classification, "named_opaque");
+    assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn does_not_treat_gui_external_links_as_archive_members() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="Remote" type="App::PropertyXLink"><XLink file="External.FCStd" name="Body"/></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("external GUI link");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
+    let properties = namespace
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    let property = properties
+        .iter()
+        .find(|property| property.name == "Remote")
+        .expect("external-link property");
+    assert!(property.side_entries.is_empty());
+    assert!(namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries")
+        .iter()
+        .all(|entry| entry.name != "External.FCStd"));
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
