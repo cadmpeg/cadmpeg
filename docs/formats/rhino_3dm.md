@@ -3325,12 +3325,28 @@ A direct record in the user table is opaque when no built-in record type owns it
 payload. Its table typecode, record typecode, archive offset, byte length, and
 SHA-256 identify the record.
 
-Object attributes and layer extensions use tagged streams without a length for
-each item. An item ID outside the defined set makes the complete containing
-object or layer record opaque; the following bytes are not reinterpreted as a
-new item stream. A later major payload version or a later minor suffix uses the
-same rule when its fields are not defined: the complete bounded containing
-record remains opaque.
+V5+ object attributes use a major-2 tagged stream. After the UUID and layer
+reference, each item is a one-byte ID followed directly by the value grammar
+for that ID; there is no per-item length. ID zero terminates the stream. The
+known IDs and their values are the fields defined in §9.2. If a later minor
+contains an ID outside the known set, the ID is the only byte whose width is
+known. The reader stops at that ID and does not guess its value width; the
+remaining bytes through the containing attributes chunk boundary are not
+reinterpreted as typed fields.
+
+Layer records use the same one-byte ID convention for their post-version
+extensions. A later layer ID outside the known set has no generic value
+grammar or skip length; the reader stops and leaves the remaining bounded
+layer payload untyped. A later major payload version or later minor suffix
+uses the same rule when its fields are not defined: only its containing chunk
+boundary is available for preservation.
+
+The settings table has a different boundary rule. Each top-level settings item
+is a length-bounded chunk. An unknown top-level typecode is skipped by ending
+that chunk, without assigning a payload grammar. The counted named-view and
+named-construction-plane lists require each child to have their defined child
+typecode; an unexpected child type is a read failure, not a generically
+skippable future item.
 
 Opaque records do not select neutral fields or partial typed state. Retained
 bytes, when present, cover the complete record boundary.

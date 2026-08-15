@@ -46,26 +46,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because the closure supplies no grammar for the originally requested direct-record fields.
 
-### PP-05. Future object attribute items
-
-**Question.** What width and value grammar applies to unknown future object-attribute items?
-
-**Known.** Section 20.6 marks unknown future attribute items opaque at `rhino_3dm.md` §20.6 "Object attributes and layer extensions use tagged streams without a length for"; the typed parser cannot consume their fields.
-
-**Need.** Establish a bounded skip grammar and preservation rule for each future item, including how its length is obtained.
-
-**Note.** Reopened because whole-record retention does not establish the item boundary or permit later fields to be decoded.
-
-### PP-06. Future layer and settings items
-
-**Question.** What width and value grammar applies to unknown future layer and settings items?
-
-**Known.** The current policy retains unknown future layer/settings material as opaque data, but the parser has no typed field grammar for it.
-
-**Need.** Establish item boundaries, supported values, and forward-compatible skipping for future layer and settings items.
-
-**Note.** Reopened because the retained bytes do not answer the original future-item grammar question.
-
 ### FV-01. Future object-class payloads
 
 **Question.** Which later object-class payload versions are compatible with the typed decoder?
