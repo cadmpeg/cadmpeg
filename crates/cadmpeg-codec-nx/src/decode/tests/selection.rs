@@ -883,6 +883,64 @@ fn decode_retains_unsupported_named_stream_payloads() {
 }
 
 #[test]
+fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
+    let member = b"0123456789abcdef0123456789abcdef:Off";
+    let mut toggle = vec![1];
+    toggle.extend_from_slice(&1_u32.to_le_bytes());
+    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(member);
+    toggle.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
+
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("NX native namespace");
+    assert_eq!(namespace.arenas["saved_toggle_streams"].len(), 1);
+    assert_eq!(namespace.arenas["saved_toggle_entries"].len(), 1);
+    assert!(result.ir().native_unknowns("nx").unwrap().is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn container_only_retains_typed_saved_toggle_payload() {
+    let member = b"0123456789abcdef0123456789abcdef:On";
+    let mut toggle = vec![1];
+    toggle.extend_from_slice(&1_u32.to_le_bytes());
+    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(member);
+    toggle.extend_from_slice(&[1, 2, 3, 4]);
+    let toggle_len = toggle.len() as u64;
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
+
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(file),
+            &options_in(DecodeMode::Salvage, true),
+        )
+        .unwrap();
+    assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
+    assert_eq!(
+        result.source_fidelity().retained_records[0].byte_len,
+        toggle_len
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
+}
+
+#[test]
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{

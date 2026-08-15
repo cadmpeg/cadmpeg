@@ -19,7 +19,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use crate::container::{self, Container};
+use crate::container::{self, Container, EntryContent};
 use crate::loss::NxLossCode;
 use crate::parasolid::{self, Stream, StreamKind};
 
@@ -223,7 +223,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
         let (ir, annotations, unknowns) = build_container_only_ir(&scan);
         let mut report = build_container_report(&scan, true);
-        report_untransferred_streams(&scan, &mut report);
+        report_untransferred_streams(&scan, &mut report, false);
         return decode_result(
             ctx,
             ir,
@@ -252,7 +252,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 
     let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
     let mut report = build_container_report(&scan, false);
-    report_untransferred_streams(&scan, &mut report);
+    report_untransferred_streams(&scan, &mut report, true);
     decode_result(
         ctx,
         ir,
@@ -281,7 +281,7 @@ fn build_container_only_ir(
             unknowns.push(unknown);
         }
     }
-    crate::native::attach_container_layer(&mut ir, scan, &mut annotations, &mut unknowns);
+    crate::native::attach_container_layer(&mut ir, scan, &mut annotations, &mut unknowns, false);
     (ir, annotations.build(), unknowns)
 }
 
@@ -303,7 +303,11 @@ fn decode_result(
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
-fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
+fn report_untransferred_streams(
+    scan: &Scan,
+    report: &mut DecodeReport,
+    typed_native_available: bool,
+) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
         report.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
@@ -313,7 +317,11 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     }
     for entry in &scan.container.entries {
         let content = entry.content();
-        if content.retains_opaque_payload() {
+        if content.retains_opaque_payload()
+            && !(typed_native_available
+                && content == EntryContent::SaveToggleInfo
+                && crate::native::has_complete_saved_toggle_stream(&scan.container))
+        {
             report.losses.push(NxLossCode::ContainerStreamOpaque.note(format!(
                 "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                 entry.name,

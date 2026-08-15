@@ -873,7 +873,7 @@ pub(crate) fn try_decode_geometry(
         ir.model.tessellations.len(),
         &model,
     );
-    report_untransferred_streams(scan, &mut report);
+    report_untransferred_streams(scan, &mut report, true);
     Ok(Some((ir, report, annotations, unknowns)))
 }
 

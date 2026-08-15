@@ -31,6 +31,7 @@ pub(crate) mod vector;
 pub(crate) use model::{extract_segment_lineage, terminal_feature_body_ids, NativeModel};
 pub(crate) use om::{evaluate_parameterized_expression, expression_parameter_names};
 pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
+pub(crate) use toggle::has_complete_saved_toggle_stream;
 
 /// Attach a pre-extracted [`NativeModel`] to `ir`: annotations, namespace arenas,
 /// and semantic islands. Build the model with [`NativeModel::extract`].
@@ -50,6 +51,7 @@ pub(crate) fn attach_container_layer(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
+    typed_native_available: bool,
 ) {
-    attach::attach_container_layer(ir, scan, annotations, unknowns);
+    attach::attach_container_layer(ir, scan, annotations, unknowns, typed_native_available);
 }

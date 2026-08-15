@@ -95,6 +95,11 @@ pub fn saved_toggle_records(
     (vec![parsed.stream], parsed.entries)
 }
 
+/// Whether the canonical saved-toggle entry has a complete admitted grammar.
+pub(crate) fn has_complete_saved_toggle_stream(container: &Container) -> bool {
+    !saved_toggle_records(container).0.is_empty()
+}
+
 fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedToggleStream> {
     let mut view = View::over_retained(bytes);
     let version = view.u8()?;
