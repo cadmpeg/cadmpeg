@@ -93,6 +93,35 @@ fn presentation_layer_expands_all_product_definition_views() {
 }
 
 #[test]
+fn presentation_layer_preserves_empty_label_and_visibility() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=PRESENTATION_LAYER_ASSIGNMENT('','empty label description',(#1));
+#3=INVISIBILITY((#2));",
+    );
+
+    let layer = result
+        .ir()
+        .model
+        .presentation_layers
+        .first()
+        .expect("empty-label presentation layer");
+    assert!(layer.name.is_empty());
+    assert_eq!(
+        layer.description.as_deref(),
+        Some("empty label description")
+    );
+    assert_eq!(layer.visible, Some(false));
+    assert!(matches!(
+        layer.items.as_slice(),
+        [PresentationItem::Source { source_id }] if source_id == "#1"
+    ));
+
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 pub(crate) fn step_color_assets_round_trip_names_and_tessellation_targets_strictly() {
     let cases: [(&[u8], StepSchema, &[&str]); 2] = [
         (

@@ -601,8 +601,10 @@ records use the parameters of their `PRODUCT` partial. A presentation layer
 item that references a `PRODUCT` expands to every CADIR product-definition
 view derived from that product, in source-definition order. A
 `PRESENTATION_LAYER_ASSIGNMENT` is the carrier for layer membership and layer
-visibility. `INVISIBILITY` targeting that assignment sets the layer's
-`visible=false`; it does not hide the assigned model or presentation items.
+visibility. Its `name` is a `label` and may be empty. A valid assignment has
+at least one assigned item. `INVISIBILITY` targeting that assignment sets the
+layer's `visible=false`; it does not hide the assigned model or presentation
+items.
 The writer emits one assignment and a layer-targeted `INVISIBILITY` for each
 emitted hidden layer on schemas that support visibility. A target schema that
 does not support `INVISIBILITY` reports

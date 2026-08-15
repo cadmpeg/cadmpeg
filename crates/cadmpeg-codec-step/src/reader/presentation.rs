@@ -199,12 +199,6 @@ pub(super) fn decode(
             ));
             continue;
         };
-        if name.is_empty() {
-            warnings.push(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty name"
-            ));
-            continue;
-        }
         let description = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
             .and_then(|value| {
                 decode_text(

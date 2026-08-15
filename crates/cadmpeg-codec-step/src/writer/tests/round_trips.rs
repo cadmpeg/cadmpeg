@@ -745,6 +745,46 @@ fn writer_round_trips_presentation_layer_visibility() {
 }
 
 #[test]
+fn writer_round_trips_empty_presentation_layer_label() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#unnamed".into()),
+        name: String::new(),
+        description: Some("unnamed layer".into()),
+        visible: Some(false),
+        items: vec![PresentationItem::Body { body }],
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write empty-label presentation layer");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('','unnamed layer',"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode empty-label presentation layer");
+    let layer = decoded
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name.is_empty())
+        .expect("decoded empty-label presentation layer");
+    assert_eq!(layer.description.as_deref(), Some("unnamed layer"));
+    assert_eq!(layer.visible, Some(false));
+    assert!(matches!(
+        layer.items.as_slice(),
+        [PresentationItem::Body { .. }]
+    ));
+}
+
+#[test]
 fn analytic_surfaces_map_to_their_step_entities() {
     // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![
