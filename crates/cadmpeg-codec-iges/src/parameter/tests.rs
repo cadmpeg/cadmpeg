@@ -139,6 +139,36 @@ fn parameter_card_count_must_equal_the_owned_contiguous_range() {
 }
 
 #[test]
+fn parameter_card_count_includes_comment_card_payload() {
+    let comment = "comment".repeat(12);
+    let parameters = format!("116,1,2,3,0;{comment}");
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "POINT".into(),
+                status: "00010000",
+                parameters,
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let entity = &result.ir().native.namespace("iges").unwrap().arenas["entities"][0];
+    let fields = entity.fields();
+    assert_eq!(fields["parameter_line_count"], 2);
+    let retained_comment = fields["comment"].as_array().unwrap();
+    assert_eq!(retained_comment.len(), 128 - "116,1,2,3,0;".len());
+    let prefix = retained_comment
+        .iter()
+        .take(comment.len())
+        .map(|value| value.as_u64().unwrap().try_into().unwrap())
+        .collect::<Vec<u8>>();
+    assert_eq!(prefix, comment.as_bytes());
+}
+
+#[test]
 fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
     let token_count: usize = 4096;
     let mut tokens = (0..token_count)

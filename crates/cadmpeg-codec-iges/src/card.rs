@@ -159,6 +159,20 @@ fn physical_lines(
             }
             None => (source.len(), LineEnding::None, source.len()),
         };
+        let payload_width = payload_end.saturating_sub(start);
+        if payload_width > CARD_WIDTH && !terminated {
+            let fixed_end = start
+                .checked_add(CARD_WIDTH)
+                .ok_or_else(|| CodecError::Malformed("IGES line offset overflow".into()))?;
+            let fixed = source.get(start..fixed_end).ok_or_else(|| {
+                CodecError::Malformed("IGES fixed card exceeds the source image".into())
+            })?;
+            if !matches!(header(fixed), Some((b'T', _))) {
+                return Err(CodecError::Malformed(
+                    "IGES Fixed ASCII physical line exceeds 80 bytes before Terminate".into(),
+                ));
+            }
+        }
         let card_end = start.saturating_add(CARD_WIDTH).min(payload_end);
         let payload = source[start..card_end].to_vec();
         let section = (!terminated && payload.len() == CARD_WIDTH)

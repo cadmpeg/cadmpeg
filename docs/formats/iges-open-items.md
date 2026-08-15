@@ -55,26 +55,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `fdfda1cff` preserved malformed trailing groups but did not establish the boundary. The current `iges.md` wording promotes the earliest structurally closed suffix to a format rule without independent evidence. If an entity contains an earlier token suffix that also satisfies the pointer shape, the decoder can assign the wrong parameters and property owner.
 
-### PH-04. A physical line longer than 80 bytes
-
-**Question.** How does a line with more than 80 payload bytes divide into records?
-
-**Known.** `card.rs:164-170` creates a fixed card only when `payload.len() == CARD_WIDTH`; an overlong line remains one opaque record. The current format documentation calls bytes beyond column 80 a separate physical record.
-
-**Need.** We need the fixed-record division rule for overlong input, or a correction to the format documentation. The rule must distinguish a valid card with trailing bytes from a malformed card.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `de6b6d5bf` changed the documentation and tests together, but no independent source supports converting an overlong line into a card plus a separate record. The current policy can turn malformed input into a valid card with ignored tail bytes.
-
-### PH-05. Disagreement between the declared and actual Parameter Data card count
-
-**Question.** Is the Directory Entry card count or the set of back-pointers authoritative?
-
-**Known.** `parameter.rs:326-350` treats the declared count as a lower bound. More owned cards produce a warning and are consumed; fewer cards reject the entity. The format documentation states that the declared count defines the expected contiguous range.
-
-**Need.** We need the authority rule for both directions of count disagreement. The same producer defect must not be recoverable in one direction and fatal in the other without evidence.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `316a50b13` changed the behavior and the self-authored fixtures, but did not establish whether the count or the pointers is authoritative.
-
 ## 2. Global metadata
 
 ### GL-01. Global defaults, and defaults applied to unparseable fields
