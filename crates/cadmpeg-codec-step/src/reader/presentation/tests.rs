@@ -662,6 +662,49 @@ fn styled_item_invisibility_is_binding_scoped() {
 }
 
 #[test]
+fn surface_style_transparency_transfers_to_appearance_alpha() {
+    const EPS_ALPHA: f32 = 0.000_001;
+
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
+#2=DIRECTION('surface normal',(0.,0.,1.));
+#3=DIRECTION('surface u',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('surface placement',#1,#2,#3);
+#5=PLANE('styled surface',#4);
+#6=COLOUR_RGB('red',1.,0.,0.);
+#7=SURFACE_STYLE_TRANSPARENT(0.25);
+#8=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#6,(#7));
+#9=SURFACE_SIDE_STYLE('',(#8));
+#10=SURFACE_STYLE_USAGE(.BOTH.,#9);
+#11=PRESENTATION_STYLE_ASSIGNMENT((#10));
+#12=STYLED_ITEM('',(#11),#5);
+#13=SURFACE_STYLE_TRANSPARENT(0.75);
+#14=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#6,(#13));
+#15=SURFACE_SIDE_STYLE('',(#14));
+#16=SURFACE_STYLE_USAGE(.BOTH.,#15);
+#17=PRESENTATION_STYLE_ASSIGNMENT((#16));
+#18=STYLED_ITEM('',(#17),#5);",
+    );
+
+    let alphas = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| appearance.base_color.map(|color| color.a))
+        .collect::<Vec<_>>();
+    assert_eq!(alphas.len(), 2);
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.75).abs() < EPS_ALPHA));
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.25).abs() < EPS_ALPHA));
+    assert!(result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| binding.source_entity_id.as_deref() == Some("#12")));
+}
+
+#[test]
 fn point_style_invisibility_on_a_point_set_is_binding_scoped() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('point',(0.,0.,0.));

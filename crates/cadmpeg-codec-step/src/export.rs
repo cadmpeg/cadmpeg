@@ -719,7 +719,7 @@ impl<'a> Builder<'a> {
             real(f64::from(color.g)),
             real(f64::from(color.b))
         );
-        let key = format!("surface:{name}:{rgb}");
+        let key = format!("surface:{name}:{rgb}:{}", color.a.to_bits());
         if let Some(style) = cache.get(&key) {
             return *style;
         }
@@ -735,9 +735,20 @@ impl<'a> Builder<'a> {
         let style_fill = self
             .emitter
             .emit("SURFACE_STYLE_FILL_AREA", &fill.to_string());
+        let mut styles = vec![style_fill];
+        if color.a < 1.0 {
+            let transparency = self
+                .emitter
+                .emit("SURFACE_STYLE_TRANSPARENT", &real(1.0 - f64::from(color.a)));
+            let rendering = self.emitter.emit(
+                "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
+                &format!(".CONSTANT_SHADING.,{colour},{}", refs(&[transparency])),
+            );
+            styles.push(rendering);
+        }
         let side = self
             .emitter
-            .emit("SURFACE_SIDE_STYLE", &format!("'',({style_fill})"));
+            .emit("SURFACE_SIDE_STYLE", &format!("'',{}", refs(&styles)));
         let usage = self
             .emitter
             .emit("SURFACE_STYLE_USAGE", &format!(".BOTH.,{side}"));
@@ -4237,6 +4248,20 @@ impl<'a> Builder<'a> {
                     .iter()
                     .filter(|binding| binding.appearance == appearance.id)
                     .collect::<Vec<_>>();
+                let alpha_unwritable = appearance.base_color.is_some_and(|color| {
+                    color.a != 1.0
+                        && bindings.iter().any(|binding| match &binding.target {
+                            AppearanceTarget::Curve(_)
+                            | AppearanceTarget::Edge(_)
+                            | AppearanceTarget::Point(_)
+                            | AppearanceTarget::Vertex(_) => true,
+                            AppearanceTarget::Body(body) => self
+                                .bodies
+                                .get(body.as_str())
+                                .is_some_and(|body| body.kind == BodyKind::Wire),
+                            _ => false,
+                        })
+                });
                 appearance.asset_guid.is_some()
                     || appearance.visual_guid.is_some()
                     || appearance.physical_token.is_some()
@@ -4246,7 +4271,7 @@ impl<'a> Builder<'a> {
                         .is_some_and(|schema| schema != "step_surface_style")
                     || appearance.category.is_some()
                     || !appearance.properties.is_empty()
-                    || appearance.base_color.is_none_or(|color| color.a != 1.0)
+                    || alpha_unwritable
                     || bindings.is_empty()
                     || bindings
                         .iter()
@@ -4258,7 +4283,7 @@ impl<'a> Builder<'a> {
                 StepLossCode::AppearanceReducedToBaseColor,
                 format!(
                     "{lossy_appearances} appearance asset(s) were reduced to STYLED_ITEM base colors; \
-                     schemas, textures, and shader properties were not written to STEP"
+                     unsupported schemas, textures, and shader properties were not written to STEP"
                 ),
             );
         }

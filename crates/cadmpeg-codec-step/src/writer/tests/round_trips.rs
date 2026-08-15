@@ -708,6 +708,94 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
 }
 
 #[test]
+fn writer_round_trips_surface_appearance_transparency() {
+    const EPS_ALPHA: f32 = 0.000_001;
+
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let appearance = AppearanceId("test:appearance#transparent".into());
+    let second_appearance = AppearanceId("test:appearance#more-transparent".into());
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: Some("transparent face".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.8,
+            g: 0.2,
+            b: 0.1,
+            a: 0.35,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearances.push(Appearance {
+        id: second_appearance.clone(),
+        name: Some("more transparent face".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.8,
+            g: 0.2,
+            b: 0.1,
+            a: 0.65,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#transparent-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#more-transparent-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[1].id.clone()),
+        appearance: second_appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write transparent surface appearance");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("SURFACE_STYLE_TRANSPARENT"));
+    assert!(text.contains("SURFACE_STYLE_RENDERING_WITH_PROPERTIES"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode transparent surface appearance");
+    let alphas = decoded
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| appearance.base_color.map(|color| color.a))
+        .collect::<Vec<_>>();
+    assert_eq!(alphas.len(), 2);
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.35).abs() < EPS_ALPHA));
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.65).abs() < EPS_ALPHA));
+}
+
+#[test]
 fn writer_round_trips_presentation_layer_visibility() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};

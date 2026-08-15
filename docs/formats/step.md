@@ -681,7 +681,10 @@ occurrence. A style on a `GEOMETRIC_SET` or `GEOMETRIC_CURVE_SET` applies to
 each member, and its style domain derives from those members; a point-only set
 uses point-style semantics. Empty and NULL style assignments leave appearance
 unchanged. Independent effective styles on one face or body retain every
-appearance binding. The neutral scalar color is
+appearance binding. `SURFACE_STYLE_TRANSPARENT` in a
+`SURFACE_STYLE_RENDERING_WITH_PROPERTIES` sets the neutral alpha to
+`1 - transparency`; zero is opaque and one is fully transparent. The neutral
+scalar color is
 set only when those styles produce one distinct color; conflicting colors
 leave it unset and produce a metadata loss. A direct `STYLED_ITEM` or
 `OVER_RIDING_STYLED_ITEM` still owns its curve, point, or surface target when

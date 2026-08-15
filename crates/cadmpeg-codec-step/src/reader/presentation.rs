@@ -93,7 +93,7 @@ pub(super) fn decode(
             .map(|item| item.id.clone())
             .collect(),
     };
-    let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
+    let mut appearance_ids = BTreeMap::<(u64, u32), AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
     let mut hidden_layer_ids = BTreeSet::new();
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
@@ -378,9 +378,14 @@ pub(super) fn decode(
             continue;
         };
         let appearance_id = appearance_ids
-            .entry(color_id)
+            .entry((color_id, color.a.to_bits()))
             .or_insert_with(|| {
-                let id = AppearanceId(StepIdentity::presentation("appearance", color_id));
+                let key = if color.a == 1.0 {
+                    color_id.to_string()
+                } else {
+                    format!("{color_id}-alpha-{}", color.a.to_bits())
+                };
+                let id = AppearanceId(StepIdentity::presentation("appearance", key));
                 ir.model.appearances.push(Appearance {
                     id: id.clone(),
                     name,
@@ -1044,7 +1049,10 @@ fn find_color(
     if !active.insert(id) {
         return None;
     }
-    let result = (|| {
+    let transparency = (domain == StyleDomain::Surface)
+        .then(|| surface_transparency(record, exchange))
+        .flatten();
+    let mut result = (|| {
         let side_rank = if domain == StyleDomain::Surface {
             surface_side_rank(record)
         } else {
@@ -1181,6 +1189,7 @@ fn find_color(
                         .as_ref()
                         .is_none_or(|current: &(u8, u64, Color, Option<String>)| {
                             candidate.0 > current.0
+                                || (candidate.0 == current.0 && candidate.2.a < current.2.a)
                         })
                     {
                         best = Some(candidate);
@@ -1190,9 +1199,32 @@ fn find_color(
             }
         }
     })();
+    if let Some(transparency) = transparency {
+        if let Some((_, _, color, _)) = result.as_mut() {
+            color.a = (1.0 - transparency) as f32;
+        }
+    }
     active.remove(&id);
     cache.insert((id, domain), result.clone());
     result
+}
+
+fn surface_transparency(record: &RawRecord, exchange: &Exchange) -> Option<f64> {
+    record
+        .partials
+        .iter()
+        .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
+        .flat_map(|partial| partial.parameters.iter().flat_map(references))
+        .filter_map(|id| exchange.records.get(&id))
+        .filter_map(|property| {
+            property
+                .partials
+                .iter()
+                .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
+                .and_then(|partial| partial.parameters.first())
+                .and_then(ValueExt::number)
+        })
+        .find(|transparency| transparency.is_finite() && (0.0..=1.0).contains(transparency))
 }
 
 fn surface_side_rank(record: &RawRecord) -> u8 {
@@ -1290,6 +1322,10 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
             || name.contains("SURFACE")
             || name.contains("SOLID")
             || name.contains("SHELL")
+            || matches!(
+                name,
+                "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
+            )
     }) {
         StyleDomain::Surface
     } else {
