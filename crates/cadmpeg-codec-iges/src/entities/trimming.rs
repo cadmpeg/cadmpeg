@@ -8,7 +8,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::draft::ModelDraft;
+use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -288,7 +288,6 @@ pub(super) fn project(
         );
         decoded.insert(entry.sequence);
     }
-
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 141 && entry.form == 0)
@@ -391,7 +390,6 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
         }
     }
-
     for entry in directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 143 | 144) && entry.form == 0)
@@ -799,8 +797,9 @@ pub(super) fn project(
         staged.push((entry.sequence, candidate));
     }
     drop(carrier_index);
+    let mut commit_session = CommitSession::new(ir);
     for (sequence, candidate) in staged {
-        if candidate.commit_model(ir).is_err() {
+        if commit_session.commit_model(candidate, ir).is_err() {
             let entry = entries
                 .get(&sequence)
                 .copied()

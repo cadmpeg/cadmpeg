@@ -30,6 +30,45 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
+fn decode_commits_a_large_batch_of_trimmed_surfaces_without_quadratic_growth() {
+    let trimmed_count = 1_000;
+    let mut entities = Vec::with_capacity(trimmed_count + 1);
+    entities.push(OwnedTestEntity {
+        entity_type: 128,
+        form: 0,
+        label: "SURFACE".into(),
+        status: "00010000",
+        parameters:
+            "128,1,1,1,1,0,0,1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,1,0,1,1,0,0,1,0,1;".into(),
+    });
+    for index in 0..trimmed_count {
+        entities.push(OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: format!("TRIM{index}"),
+            status: "00000000",
+            parameters: "144,1,0,0,0;".into(),
+        });
+    }
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), trimmed_count);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let result = IgesCodec
         .decode(
