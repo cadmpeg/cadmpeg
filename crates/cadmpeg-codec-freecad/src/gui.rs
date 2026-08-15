@@ -340,7 +340,7 @@ pub(crate) fn transfer(
         properties,
         payloads,
         element_maps,
-    );
+    )?;
     transfer_neutral_presentation(ir, &graph)?;
     Ok(graph)
 }
@@ -1203,7 +1203,7 @@ fn transfer_shape_appearances(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
-) {
+) -> Result<(), CodecError> {
     for provider in &graph.providers {
         let Some(object_id) = provider.object.as_deref() else {
             continue;
@@ -1221,8 +1221,8 @@ fn transfer_shape_appearances(
         if materials.is_empty() {
             continue;
         }
-        let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads);
-        let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face");
+        let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
+        let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
         let mapped_count = group.map_or(0, |group| group.names.len().saturating_sub(1));
         if materials.len() == 1 {
             let legacy_id = AppearanceId(format!("fcstd:appearance:object#{}", provider.name));
@@ -1278,6 +1278,7 @@ fn transfer_shape_appearances(
             }
         }
     }
+    Ok(())
 }
 
 fn displayed_shape_bodies(
@@ -1285,8 +1286,8 @@ fn displayed_shape_bodies(
     object_id: &str,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
-) -> Vec<cadmpeg_ir::ids::BodyId> {
-    displayed_shape_payload(object_id, properties, payloads)
+) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+    Ok(displayed_shape_payload(object_id, properties, payloads)?
         .into_iter()
         .flat_map(|payload| {
             let prefix = format!("{}:", crate::native::id_key(&payload.id));
@@ -1296,20 +1297,39 @@ fn displayed_shape_bodies(
                 .filter(move |body| crate::native::id_key(&body.id.0).starts_with(&prefix))
                 .map(|body| body.id.clone())
         })
-        .collect()
+        .collect())
 }
 
 fn displayed_shape_payload<'a>(
     object_id: &str,
     properties: &[PropertyRecord],
     payloads: &'a [ShapePayloadRecord],
-) -> Option<&'a ShapePayloadRecord> {
-    let property = properties
+) -> Result<Option<&'a ShapePayloadRecord>, CodecError> {
+    let shape_properties = properties
         .iter()
-        .find(|property| property.owner == object_id && property.name == "Shape")?;
-    payloads
+        .filter(|property| property.owner == object_id && property.name == "Shape")
+        .collect::<Vec<_>>();
+    let property = match shape_properties.as_slice() {
+        [] => return Ok(None),
+        [property] => property,
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "object {object_id} has multiple Shape properties"
+            )));
+        }
+    };
+    let shape_payloads = payloads
         .iter()
-        .find(|payload| payload.property == property.id)
+        .filter(|payload| payload.property == property.id)
+        .collect::<Vec<_>>();
+    match shape_payloads.as_slice() {
+        [] => Ok(None),
+        [payload] => Ok(Some(payload)),
+        _ => Err(CodecError::Malformed(format!(
+            "Shape property {} has multiple payloads",
+            property.id
+        ))),
+    }
 }
 
 fn displayed_shape_group<'a>(
@@ -1318,16 +1338,40 @@ fn displayed_shape_group<'a>(
     payloads: &[ShapePayloadRecord],
     element_maps: &'a [ElementMapRecord],
     indexed_name: &str,
-) -> Option<&'a ElementMapGroup> {
-    let payload = displayed_shape_payload(object_id, properties, payloads)?;
-    element_maps
+) -> Result<Option<&'a ElementMapGroup>, CodecError> {
+    let Some(payload) = displayed_shape_payload(object_id, properties, payloads)? else {
+        return Ok(None);
+    };
+    let shape_maps = element_maps
         .iter()
-        .find(|map| map.property == payload.property)?
-        .maps
-        .last()?
+        .filter(|map| map.property == payload.property)
+        .collect::<Vec<_>>();
+    let map = match shape_maps.as_slice() {
+        [] => return Ok(None),
+        [map] => map,
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "Shape property {} has multiple element maps",
+                payload.property
+            )));
+        }
+    };
+    let Some(root) = map.maps.last() else {
+        return Ok(None);
+    };
+    let groups = root
         .groups
         .iter()
-        .find(|group| group.indexed_name == indexed_name)
+        .filter(|group| group.indexed_name == indexed_name)
+        .collect::<Vec<_>>();
+    match groups.as_slice() {
+        [] => Ok(None),
+        [group] => Ok(Some(group)),
+        _ => Err(CodecError::Malformed(format!(
+            "Shape property {} has multiple {indexed_name} groups",
+            payload.property
+        ))),
+    }
 }
 
 fn material_appearance(
@@ -1445,7 +1489,7 @@ fn transfer_topology_colors(
     let colors = parse_color_list(view, entry_name, requires_alpha_conversion)?;
     let count = colors.len();
     let Some(group) =
-        displayed_shape_group(object_id, properties, payloads, element_maps, kind.name())
+        displayed_shape_group(object_id, properties, payloads, element_maps, kind.name())?
     else {
         return Ok(());
     };
@@ -1610,6 +1654,133 @@ mod color_tests {
         assert_eq!(materials[0].diffuse, 0x4455_66bf);
         assert_eq!(materials[0].specular, 0x7788_997f);
         assert_eq!(materials[0].emissive, 0xaabb_cc00);
+    }
+}
+
+#[cfg(test)]
+mod shape_association_tests {
+    use super::displayed_shape_group;
+    use crate::brep::{ShapePayloadForm, ShapePayloadRecord};
+    use crate::native::{
+        ElementMapGroup, ElementMapNode, ElementMapRecord, PropertyFamily, PropertyRecord,
+    };
+
+    fn shape_property(id: &str) -> PropertyRecord {
+        PropertyRecord {
+            id: id.into(),
+            owner: "object".into(),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: PropertyFamily::Geometry,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            raw_xml: "<Property/>".into(),
+            byte_start: 0,
+            byte_end: 11,
+        }
+    }
+
+    fn shape_payload(id: &str, property: &str) -> ShapePayloadRecord {
+        ShapePayloadRecord {
+            id: id.into(),
+            property: property.into(),
+            entry: "Shape.brp".into(),
+            form: ShapePayloadForm::Empty,
+            text: None,
+            binary: None,
+        }
+    }
+
+    fn element_map(property: &str, groups: Vec<ElementMapGroup>) -> ElementMapRecord {
+        ElementMapRecord {
+            id: "map".into(),
+            property: property.into(),
+            version: "1.0".into(),
+            hasher_index: None,
+            source_entry: None,
+            map_id: 1,
+            declared_count: 0,
+            postfixes: Vec::new(),
+            maps: vec![ElementMapNode {
+                index: 1,
+                map_id: 1,
+                groups,
+            }],
+        }
+    }
+
+    fn group(indexed_name: &str) -> ElementMapGroup {
+        ElementMapGroup {
+            indexed_name: indexed_name.into(),
+            children: Vec::new(),
+            names: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn rejects_ambiguous_shape_association_candidates() {
+        let property = shape_property("property");
+        let payload = shape_payload("payload", "property");
+        let map = element_map("property", vec![group("Face")]);
+
+        let duplicate_property = shape_property("property-2");
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                &[property.clone(), duplicate_property],
+                std::slice::from_ref(&payload),
+                std::slice::from_ref(&map),
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_payload = ShapePayloadRecord {
+            id: "payload-2".into(),
+            ..payload.clone()
+        };
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                std::slice::from_ref(&property),
+                &[payload.clone(), duplicate_payload],
+                std::slice::from_ref(&map),
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_map = ElementMapRecord {
+            id: "map-2".into(),
+            ..map.clone()
+        };
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                std::slice::from_ref(&property),
+                std::slice::from_ref(&payload),
+                &[map, duplicate_map],
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_group = element_map("property", vec![group("Face"), group("Face")]);
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                &[property],
+                &[payload],
+                &[duplicate_group],
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 

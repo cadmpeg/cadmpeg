@@ -486,6 +486,11 @@ transparency, four packed material colors, shininess, and UUID. Multiple materia
 the persistent Face element-map group only when their count equals the group's indexed face count.
 If persistent face identity is absent or the counts differ, the material list remains native and
 the legacy object color remains the neutral fallback.
+Topology-color and multi-material association requires one unambiguous application property named
+`Shape`, at most one exact-shape payload for that property, and at most one element-map record for
+that payload. The final `ElementMap2` node owns the shape. A requested `Face`, `Edge`, or `Vertex`
+group occurs at most once in that node. Duplicate association candidates are malformed. Missing
+association candidates retain the native side entry or material list without a source-order choice.
 Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
 higher-precedence presentation layers. They are not inferred from the corresponding object color.
 Each list contains a little-endian count followed by packed-color records. A count of one applies

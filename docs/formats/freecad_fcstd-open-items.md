@@ -21,7 +21,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 These items have a Conflict part and need a decision.
 
 - AR-03. Typed geometry side-entry cardinality
-- GP-04. Topology-color shape-property association
 - PT-02. Element-map position to neutral-occurrence order
 - PT-03. Element-map carrier and owner selection
 - XT-03. Non-manifold radial order
@@ -94,18 +93,6 @@ These items have a Conflict part and need a decision.
 **Need.** We must know the value semantics to transfer the property to the correct neutral presentation field.
 
 **Note.** The opaque/native fallback in `6d9430a69` is not semantic evidence. The item remains open for any unregistered GUI type; no FreeCAD source or independent files establish that the type has no neutral meaning.
-
-### GP-04. Topology-color shape-property association
-
-**Question.** Which exact-shape property and element map does a `DiffuseColor`, `LineColorArray`, or `PointColorArray` side entry describe when the application object owns more than one shape property?
-
-**Known.** Persistent element names supply the neutral topology occurrences that receive an override. Missing identity must leave the side entry retained without guessing a transient topology label.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/gui.rs:1289-1314` selects the first application property named `Shape`, the first matching shape payload, the first element map, the last map node, and the first requested topology group. It does not verify that the GUI array and shape property have a persisted association.
-
-**Need.** We must find the persisted association rule between a GUI topology-color array and its application shape property. If the format supplies no association, neutral transfer must require one unambiguous shape candidate.
-
-**Note.** Commit `472740f40` wrote the `Shape` association into the specification and added synthetic count tests. Those tests construct the association expected by the implementation; they do not show that FreeCAD writes it or that duplicate shape candidates are invalid.
 
 ## 3. Persistent topology identity
 
