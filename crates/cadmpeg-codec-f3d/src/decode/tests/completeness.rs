@@ -27,6 +27,37 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
 }
 
 #[test]
+fn coordinate_systems_require_a_finite_right_handed_frame() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::DatumCoordinateSystem {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            x_axis: Vector3::new(1.0, 0.0, 0.0),
+            y_axis: Vector3::new(0.0, 1.0, 0.0),
+            z_axis: Vector3::new(0.0, 0.0, 1.0),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DatumCoordinateSystem {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            x_axis: Vector3::new(1.0, 0.0, 0.0),
+            y_axis: Vector3::new(0.0, 1.0, 0.0),
+            z_axis: Vector3::new(0.0, 0.0, -1.0),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DatumCoordinateSystem {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            x_axis: Vector3::new(2.0, 0.0, 0.0),
+            y_axis: Vector3::new(0.0, 1.0, 0.0),
+            z_axis: Vector3::new(0.0, 0.0, 1.0),
+        }
+    ));
+}
+
+#[test]
 fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 

@@ -381,6 +381,26 @@ fn datum_plane_frame_is_resolved(
         && normal.dot(u_axis).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
 }
 
+fn datum_coordinate_system_is_resolved(
+    origin: &cadmpeg_ir::math::Point3,
+    x_axis: &cadmpeg_ir::math::Vector3,
+    y_axis: &cadmpeg_ir::math::Vector3,
+    z_axis: &cadmpeg_ir::math::Vector3,
+) -> bool {
+    const EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL: f64 = 1.0e-9;
+
+    let axes = [*x_axis, *y_axis, *z_axis];
+    point_is_finite(origin)
+        && axes.iter().all(|axis| {
+            vector_is_finite(axis)
+                && (axis.norm() - 1.0).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        })
+        && x_axis.dot(*y_axis).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        && x_axis.dot(*z_axis).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        && y_axis.dot(*z_axis).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        && x_axis.cross(*y_axis).dot(*z_axis) >= 1.0 - EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+}
+
 fn positive_finite(value: f64) -> bool {
     value.is_finite() && value > 0.0
 }
@@ -495,6 +515,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             normal,
             u_axis,
         } => !datum_plane_frame_is_resolved(origin, normal, u_axis),
+        FeatureDefinition::DatumCoordinateSystem {
+            origin,
+            x_axis,
+            y_axis,
+            z_axis,
+        } => !datum_coordinate_system_is_resolved(origin, x_axis, y_axis, z_axis),
         FeatureDefinition::DatumThreePointPlane {
             origin,
             normal,
