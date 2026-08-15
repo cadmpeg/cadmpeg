@@ -208,38 +208,47 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     [origin.x, origin.y, origin.z],
                     [normal.x, normal.y, normal.z],
                 )),
+                [Surface {
+                    geometry: SurfaceGeometry::Unknown { .. },
+                    ..
+                }] => {}
                 _ => return None,
             },
-            crate::surface::SurfaceKind::Cylinder => {
-                let [Surface {
+            crate::surface::SurfaceKind::Cylinder => match surfaces.as_slice() {
+                [Surface {
+                    geometry: SurfaceGeometry::Unknown { .. },
+                    ..
+                }] => {}
+                [Surface {
                     geometry: SurfaceGeometry::Cylinder { origin, axis, .. },
                     ..
-                }] = surfaces.as_slice()
-                else {
-                    return None;
-                };
-                let parameters =
-                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?;
-                let frame = parameters.positional_cylinder_frame?;
-                let transferred_origin = [origin.x, origin.y, origin.z];
-                let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
-                let frame_axis = normalized(frame.axis)?;
-                let scale = transferred_origin
-                    .into_iter()
-                    .chain(frame.origin)
-                    .map(f64::abs)
-                    .fold(1.0, f64::max);
-                (transferred_origin
-                    .into_iter()
-                    .zip(frame.origin)
-                    .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
-                    && transferred_axis
+                }] => {
+                    let parameters = crate::surface::unique_surface_parameter(
+                        &scan.surfaces.parameters,
+                        row.id,
+                    )?;
+                    let frame = parameters.positional_cylinder_frame?;
+                    let transferred_origin = [origin.x, origin.y, origin.z];
+                    let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
+                    let frame_axis = normalized(frame.axis)?;
+                    let scale = transferred_origin
                         .into_iter()
-                        .zip(frame_axis)
-                        .all(|(left, right)| (left - right).abs() <= 1e-10))
-                .then_some(())?;
-                frames.push(frame);
-            }
+                        .chain(frame.origin)
+                        .map(f64::abs)
+                        .fold(1.0, f64::max);
+                    (transferred_origin
+                        .into_iter()
+                        .zip(frame.origin)
+                        .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
+                        && transferred_axis
+                            .into_iter()
+                            .zip(frame_axis)
+                            .all(|(left, right)| (left - right).abs() <= 1e-10))
+                    .then_some(())?;
+                    frames.push(frame);
+                }
+                _ => return None,
+            },
             _ => unreachable!("surface family checked above"),
         }
     }

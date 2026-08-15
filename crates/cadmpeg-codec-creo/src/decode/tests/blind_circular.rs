@@ -1413,21 +1413,50 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         },
     ]);
 
+    let expected = Some((
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(8.0),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        [0.0, -1.0, 0.0],
+    ));
     assert_eq!(
         generated_bounded_cylinder_extent(&scan, &ir, 7, None),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: Termination::Blind {
-                        length: Length(8.0),
-                    },
-                    draft: None,
-                    offset: None,
-                },
-            },
-            [0.0, -1.0, 0.0],
-        ))
+        expected
     );
+
+    scan.surfaces
+        .rows
+        .push(row(34, crate::surface::SurfaceKind::Plane));
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        expected
+    );
+
+    scan.surfaces
+        .rows
+        .push(row(35, crate::surface::SurfaceKind::Cylinder));
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        expected
+    );
+    scan.surfaces.rows.truncate(3);
+    ir.model.surfaces.truncate(3);
 
     let mut untransferred_caps = ir.clone();
     untransferred_caps
