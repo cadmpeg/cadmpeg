@@ -19,7 +19,7 @@ use super::equations::{
     PlaneConicEquation, PlaneEquation,
 };
 use super::pcurves::{directed_pcurve_points, pcurve_edge_endpoints, solve_pcurve_vertex_domains};
-use super::planes::{solve_carriers, valid_positive_nurbs_curve};
+use super::planes::solve_carriers;
 
 const EPS_AGREE: f64 = 1e-9;
 const EPS_NEAR_ZERO: f64 = 1e-12;
@@ -404,6 +404,9 @@ pub fn solved_topological_vertices(
         };
         constraints.push((vertices, points));
     }
+    // Non-periodic NURBS boundary rows contribute their intrinsic endpoint
+    // pair through the witness constraint above. They are not analytic
+    // carrier equations for the vertex-domain solver.
     let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
         .filter_map(|row| {
@@ -414,15 +417,14 @@ pub fn solved_topological_vertices(
                 .iter()
                 .find(|curve| curve.id == id)?
                 .geometry;
-            let evaluable = match geometry {
+            let evaluable = matches!(
+                geometry,
                 CurveGeometry::Line { .. }
-                | CurveGeometry::Circle { .. }
-                | CurveGeometry::Ellipse { .. }
-                | CurveGeometry::Parabola { .. }
-                | CurveGeometry::Hyperbola { .. } => true,
-                CurveGeometry::Nurbs(nurbs) => valid_positive_nurbs_curve(nurbs).is_some(),
-                _ => false,
-            };
+                    | CurveGeometry::Circle { .. }
+                    | CurveGeometry::Ellipse { .. }
+                    | CurveGeometry::Parabola { .. }
+                    | CurveGeometry::Hyperbola { .. }
+            );
             evaluable.then_some((row.id, geometry))
         })
         .collect::<BTreeMap<_, _>>();

@@ -61,10 +61,12 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
 ) -> BTreeSet<CurveId> {
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir);
-    let solved_vertices = solved_topological_vertices(scan, ir, &carriers, &BTreeSet::new());
+    let solved_vertices =
+        solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {

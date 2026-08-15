@@ -20,6 +20,7 @@ mod generated_nurbs;
 mod generated_source;
 mod interpolation_spline;
 mod numbered_intersect;
+mod nurbs_intersection;
 mod resolved;
 mod saved_line;
 mod schema;

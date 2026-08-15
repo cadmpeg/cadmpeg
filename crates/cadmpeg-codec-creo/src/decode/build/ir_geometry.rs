@@ -78,14 +78,18 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let rowless_round_cylinder_count = transfer_rowless_round_cylinders(scan, ir, annotations);
     let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(scan, ir, annotations);
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
-    let mut derived_intersection_curves =
-        transfer_carrier_intersection_curves(scan, ir, annotations);
     let nurbs_boundary_curves = transfer_nurbs_boundary_curves(ctx, scan, ir, annotations)?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
     let extrusion_plane_section_generator_curve_count =
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
     let shared_extrusion_generator_curve_count =
         nurbs_boundary_curves.shared_extrusion_generator_count;
+    let mut derived_intersection_curves = transfer_carrier_intersection_curves(
+        scan,
+        ir,
+        annotations,
+        &nurbs_boundary_curves.endpoint_witnesses,
+    );
     derived_intersection_curves.extend(nurbs_boundary_curves.ids.iter().cloned());
     let topology_bound_plane_count = transfer_topology_bound_planes(
         scan,
