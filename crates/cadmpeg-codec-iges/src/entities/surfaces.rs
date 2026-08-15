@@ -4,6 +4,7 @@
 use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -492,7 +493,11 @@ pub(super) fn project(
                 Some(second_interval[1]),
             ]),
         });
-        let _ = developable_flag;
+        losses.push(
+            IgesLossCode::RuledDevelopabilityNotTransferred
+                .note("Type 118 developability is retained only in the native entity record")
+                .with_provenance(entry.loss_provenance()),
+        );
         decoded.insert(entry.sequence);
     }
 

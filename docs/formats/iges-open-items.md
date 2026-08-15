@@ -253,26 +253,6 @@ from a conformant file.
 
 **Note.** Hostile sweep 2026-08-15: a small cross-term or center term can change admission at the private threshold. This gate is distinct from the Type 104 endpoint tolerance in GE-09.
 
-### GE-16. Type 118 developable-surface semantics are discarded
-
-**Question.** Must the Type 118 developable-surface flag be retained or affect projection?
-
-**Known.** `entities/surfaces.rs:389-397` parses and validates both ruled-surface flags. The projection uses the direction flag, but `entities/surfaces.rs:495` discards `developable_flag`; the resulting NURBS and procedural-surface records carry no developability state or loss.
-
-**Need.** We need the semantic treatment of the developable flag. A valid Type 118 with different flag values must remain distinguishable or report the loss caused by projection.
-
-**Note.** Hostile sweep 2026-08-15: the decoder accepts both flag values and emits the same typed carrier for the same rails.
-
-### GE-17. Type 112 and Type 114 header semantics are discarded
-
-**Question.** Which Type 112 and Type 114 header fields must survive projection?
-
-**Known.** `entities/splines.rs:210-221` validates Type 112 curve type, continuity, and dimensions, then `entities/splines.rs:464` discards curve type and continuity. `entities/splines.rs:477-489` validates Type 114 curve and patch types, then `entities/splines.rs:749` discards both. All accepted values can therefore produce the same typed carrier when the numeric geometry matches.
-
-**Need.** We need the semantic retention or loss policy for these header fields. Projection must preserve distinctions that affect downstream interpretation, or report each dropped distinction.
-
-**Note.** Hostile sweep 2026-08-15: the fields are admission gates only; the native and neutral outputs do not retain their accepted values.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

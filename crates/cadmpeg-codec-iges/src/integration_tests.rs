@@ -5,6 +5,7 @@
 use super::*;
 use cadmpeg_ir::codec::{Codec, CodecBackend};
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -841,11 +842,26 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        assert!(
-            result.report().losses.is_empty(),
-            "{name}: {:#?}",
-            result.report().losses
-        );
+        let loss_codes = result
+            .report()
+            .losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        if name == "spline-surface" {
+            assert_eq!(
+                loss_codes,
+                vec![IgesLossCode::SplineHeaderNotTransferred.kind()],
+                "{name}: {:#?}",
+                result.report().losses
+            );
+        } else {
+            assert!(
+                loss_codes.is_empty(),
+                "{name}: {:#?}",
+                result.report().losses
+            );
+        }
         let validation = cadmpeg_ir::validate_neutral_with_source_fidelity(
             result.ir(),
             result.source_fidelity(),

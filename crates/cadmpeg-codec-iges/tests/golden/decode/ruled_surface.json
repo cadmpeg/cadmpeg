@@ -2251,7 +2251,23 @@
     "container_only": false,
     "format": "iges",
     "geometry_transferred": true,
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "geometry.ruled-developability-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges"
+        },
+        "message": "Type 118 developability is retained only in the native entity record",
+        "provenance": {
+          "format": "iges",
+          "offset": 567,
+          "stream": "iges",
+          "tag": "directory_entry:D5"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=3",
       "entity.110.form.0=2",
@@ -2276,7 +2292,7 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection emitted with an attributed loss",
           "source": "D5",
           "target": "iges:entity:directory#5"
         }

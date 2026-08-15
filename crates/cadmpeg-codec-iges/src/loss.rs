@@ -47,6 +47,10 @@ pub enum IgesLossCode {
     DisplayDataNotProjected,
     /// A drawing has conflicting valid properties of the same form.
     DrawingPropertyAmbiguous,
+    /// A Type 118 developability flag was not transferred to neutral geometry.
+    RuledDevelopabilityNotTransferred,
+    /// Type 112 or Type 114 header semantics were not transferred to neutral geometry.
+    SplineHeaderNotTransferred,
     /// A Type 102 composite has no exact concatenated carrier.
     CompositeCarrierDegraded,
     /// Preserved source image required for a byte-exact write was unavailable.
@@ -71,6 +75,8 @@ impl IgesLossCode {
         Self::PointerUnresolved,
         Self::DisplayDataNotProjected,
         Self::DrawingPropertyAmbiguous,
+        Self::RuledDevelopabilityNotTransferred,
+        Self::SplineHeaderNotTransferred,
         Self::CompositeCarrierDegraded,
         Self::PreservedSourceUnavailable,
         Self::ProceduralReduced,
@@ -91,6 +97,10 @@ impl IgesLossCode {
             Self::PointerUnresolved => "graph.pointer-unresolved",
             Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
             Self::DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
+            Self::RuledDevelopabilityNotTransferred => {
+                "geometry.ruled-developability-not-transferred"
+            }
+            Self::SplineHeaderNotTransferred => "geometry.spline-header-not-transferred",
             Self::CompositeCarrierDegraded => "curve.composite-carrier-degraded",
             Self::PreservedSourceUnavailable => "source.preserved-image-unavailable",
             Self::ProceduralReduced => "geometry.procedural-reduced",
@@ -114,6 +124,8 @@ impl IgesLossCode {
             | Self::PointerUnresolved
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
+            | Self::RuledDevelopabilityNotTransferred
+            | Self::SplineHeaderNotTransferred
             | Self::CompositeCarrierDegraded
             | Self::PassthroughRecordOmitted => Severity::Warning,
         }
@@ -131,7 +143,9 @@ impl IgesLossCode {
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::DisplayDataNotProjected => LossTaxonomy::MaterialNotTransferred,
-            Self::DrawingPropertyAmbiguous => LossTaxonomy::MetadataNotTransferred,
+            Self::DrawingPropertyAmbiguous
+            | Self::RuledDevelopabilityNotTransferred
+            | Self::SplineHeaderNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::CompositeCarrierDegraded => LossTaxonomy::GeometryNotTransferred,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
@@ -186,6 +200,8 @@ mod tests {
                 "graph.pointer-unresolved",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",
+                "geometry.ruled-developability-not-transferred",
+                "geometry.spline-header-not-transferred",
                 "curve.composite-carrier-degraded",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",

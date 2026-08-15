@@ -27,6 +27,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -85,9 +86,38 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
-    assert!(result.report().losses.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_retains_both_ruled_surface_developability_values_in_native_parameters() {
+    for developable_flag in [0, 1] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(ruled_surface_file_with_developable_flag(developable_flag)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#5")
+            .unwrap();
+        assert_eq!(
+            entity.fields()["parameters"][4]["value"]["value"],
+            developable_flag
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
+    }
 }
 
 #[test]
@@ -99,11 +129,11 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
         )
         .unwrap();
     assert_eq!(ruled.ir().model.procedural_surfaces.len(), 1);
-    assert!(
-        ruled.report().losses.is_empty(),
-        "{:#?}",
-        ruled.report().losses
-    );
+    assert!(ruled
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
     assert!(cadmpeg_ir::validate_neutral(ruled.ir(), Vec::new()).is_ok());
 
     let tabulated = IgesCodec

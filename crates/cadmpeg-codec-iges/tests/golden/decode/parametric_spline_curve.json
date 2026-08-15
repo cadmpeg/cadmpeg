@@ -1578,7 +1578,23 @@
     "container_only": false,
     "format": "iges",
     "geometry_transferred": true,
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "geometry.spline-header-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges"
+        },
+        "message": "Type 112 curve type, continuity, and dimensionality are retained only in native parameters",
+        "provenance": {
+          "format": "iges",
+          "offset": 243,
+          "stream": "iges",
+          "tag": "directory_entry:D1"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=1",
       "entity.112.form.0=1",
@@ -1590,7 +1606,7 @@
       "entries": [
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection emitted with an attributed loss",
           "source": "D1",
           "target": "iges:entity:directory#1"
         }

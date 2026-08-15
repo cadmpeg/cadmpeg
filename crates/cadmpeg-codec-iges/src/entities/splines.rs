@@ -4,6 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInterval};
 use crate::directory::DirectoryEntry;
 use crate::global::{Global, RealPrecision};
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -460,8 +461,14 @@ pub(super) fn project(
             continue;
         };
         wire_edges.push(edge);
+        losses.push(
+            IgesLossCode::SplineHeaderNotTransferred
+                .note(
+                    "Type 112 curve type, continuity, and dimensionality are retained only in native parameters",
+                )
+                .with_provenance(entry.loss_provenance()),
+        );
         decoded.insert(entry.sequence);
-        let _ = (curve_type, continuity);
     }
 
     for entry in directory
@@ -745,8 +752,12 @@ pub(super) fn project(
             }),
             source_object: Some(source_object(entry)),
         });
+        losses.push(
+            IgesLossCode::SplineHeaderNotTransferred
+                .note("Type 114 curve and patch types are retained only in native parameters")
+                .with_provenance(entry.loss_provenance()),
+        );
         decoded.insert(entry.sequence);
-        let _ = (curve_type, patch_type);
     }
 
     Ok(SplineProjection {

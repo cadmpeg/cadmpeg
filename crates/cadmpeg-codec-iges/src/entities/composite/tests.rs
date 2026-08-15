@@ -757,10 +757,16 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
         composite.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
     ));
-    assert_eq!(result.report().losses.len(), 1);
-    assert!(result.report().losses[0]
-        .message
-        .contains("terminal derivative block disagrees with the last polynomial"));
+    assert_eq!(result.report().losses.len(), 2);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("terminal derivative block disagrees with the last polynomial")
+    }));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

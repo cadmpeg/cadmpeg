@@ -821,6 +821,10 @@ pub(crate) fn nurbs_surface_file() -> Vec<u8> {
 }
 
 pub(crate) fn ruled_surface_file() -> Vec<u8> {
+    ruled_surface_file_with_developable_flag(1)
+}
+
+pub(crate) fn ruled_surface_file_with_developable_flag(developable_flag: i64) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -864,7 +868,11 @@ pub(crate) fn ruled_surface_file() -> Vec<u8> {
     }
     bytes.extend(parameter_card(b"110,0,0,0,1,0,0;", 1, 1));
     bytes.extend(parameter_card(b"110,0,1,0,1,1,0;", 3, 2));
-    bytes.extend(parameter_card(b"118,1,3,0,1;", 5, 3));
+    bytes.extend(parameter_card(
+        format!("118,1,3,0,{developable_flag};").as_bytes(),
+        5,
+        3,
+    ));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
