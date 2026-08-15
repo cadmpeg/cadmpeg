@@ -2384,6 +2384,8 @@ impl<'a> DecodeContext<'a> {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
             } else if warning.contains(" has invalid color source ") {
                 RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
+            } else if redundant_field_diagnostic(warning) {
+                RhinoLossCode::RedundantFieldRepaired.note(warning.clone())
             } else if duplicate_resolution_diagnostic(warning) {
                 RhinoLossCode::DuplicateRecordResolved.note(warning.clone())
             } else {
@@ -2394,6 +2396,10 @@ impl<'a> DecodeContext<'a> {
         for warning in &self.phase_warnings {
             if integrity_diagnostic(warning) {
                 losses.push(RhinoLossCode::IntegrityFailure.note(warning.clone()));
+                continue;
+            }
+            if redundant_field_diagnostic(warning) {
+                losses.push(RhinoLossCode::RedundantFieldRepaired.note(warning.clone()));
                 continue;
             }
             let (family, detail) = warning
@@ -2649,8 +2655,17 @@ impl<'a> DecodeContext<'a> {
                 self.append_link(source_order, body_id.to_string());
             }
             crate::curves::DecodedGeometry::PointCloud(cloud) => {
-                let Some(entity_count) = cloud
-                    .points
+                let crate::curves::PointCloud {
+                    points,
+                    scaled,
+                    warnings,
+                } = cloud;
+                self.phase_warnings.extend(
+                    warnings
+                        .into_iter()
+                        .map(|warning| format!("{}: {warning}", identity.source_id)),
+                );
+                let Some(entity_count) = points
                     .len()
                     .checked_mul(2)
                     .and_then(|count| count.checked_add(3))
@@ -2665,8 +2680,8 @@ impl<'a> DecodeContext<'a> {
                 let region_id: cadmpeg_ir::ids::RegionId =
                     format!("rhino:object:region#{key}").into();
                 let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}").into();
-                let mut vertices = Vec::with_capacity(cloud.points.len());
-                for (index, position) in cloud.points.into_iter().enumerate() {
+                let mut vertices = Vec::with_capacity(points.len());
+                for (index, position) in points.into_iter().enumerate() {
                     let point_id: cadmpeg_ir::ids::PointId =
                         format!("rhino:object:point#{key}.{index}").into();
                     let vertex_id: cadmpeg_ir::ids::VertexId =
@@ -2718,7 +2733,7 @@ impl<'a> DecodeContext<'a> {
                     self.annotations.exactness.insert(
                         point_id,
                         ExactnessNote {
-                            entity: if cloud.scaled {
+                            entity: if scaled {
                                 Exactness::Derived
                             } else {
                                 Exactness::ByteExact
@@ -3352,6 +3367,10 @@ fn duplicate_resolution_diagnostic(message: &str) -> bool {
     message.starts_with("duplicate layer index ")
         || message.starts_with("duplicate layer UUID ")
         || message.starts_with("duplicate singleton metadata record ")
+}
+
+fn redundant_field_diagnostic(message: &str) -> bool {
+    message.starts_with("redundant ") || message.contains(": redundant ")
 }
 
 fn duplicate_userdata_count(
@@ -5249,8 +5268,8 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
         crate::history::project(&scan.history, geometry_context, candidate)
     });
     match untyped {
-        Ok((0, 0, 0)) => {}
-        Ok((untyped, failed, later_dependencies)) => {
+        Ok((0, 0, 0, 0)) => {}
+        Ok((untyped, failed, later_dependencies, redundant_repairs)) => {
             if untyped != 0 {
                 context
                     .typed_losses
@@ -5270,6 +5289,13 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
                     .typed_losses
                     .push(RhinoLossCode::HistoryDependencyDropped.note(format!(
                         "{later_dependencies} history dependency edge(s) point to later producers"
+                    )));
+            }
+            if redundant_repairs != 0 {
+                context
+                    .typed_losses
+                    .push(RhinoLossCode::RedundantFieldRepaired.note(format!(
+                        "{redundant_repairs} history geometry optional channel repair(s)"
                     )));
             }
         }

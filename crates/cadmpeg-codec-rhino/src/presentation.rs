@@ -852,17 +852,17 @@ fn parse_material(
         reader.skip(bytes)?;
     }
     let shareable = if minor >= 3 || modern {
-        reader.bool()?
+        reader.bool_with_writer_version(writer_version)?
     } else {
         false
     };
     let disable_lighting = if minor >= 3 || modern {
-        reader.bool()?
+        reader.bool_with_writer_version(writer_version)?
     } else {
         false
     };
     let fresnel_reflections = if minor >= 4 || modern {
-        reader.bool()?
+        reader.bool_with_writer_version(writer_version)?
     } else {
         false
     };
@@ -887,7 +887,7 @@ fn parse_material(
         None
     };
     let alpha = if minor >= 6 || modern {
-        Some(reader.bool()?)
+        Some(reader.bool_with_writer_version(writer_version)?)
     } else {
         None
     };
@@ -2045,6 +2045,7 @@ fn parse_font(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    writer_version: Option<i64>,
 ) -> Result<FontRecord, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
@@ -2076,7 +2077,7 @@ fn parse_font(
     }
     if minor >= 3 {
         font.point_size = Some(read_finite(&mut value, "font point size")?);
-        if value.bool()? {
+        if value.bool_with_writer_version(writer_version)? {
             value.skip(4 + 16)?;
         }
     }
@@ -2204,13 +2205,13 @@ fn parse_text_style(
         ));
     }
     let component = component(data, &mut reader, archive)?;
-    let font_description = if reader.bool()? {
+    let font_description = if reader.bool_with_writer_version(writer_version)? {
         utf16(&mut reader)?
     } else {
         String::new()
     };
-    let font = if reader.bool()? {
-        parse_font(data, &mut reader, archive)?
+    let font = if reader.bool_with_writer_version(writer_version)? {
+        parse_font(data, &mut reader, archive, writer_version)?
     } else {
         FontRecord::default()
     };

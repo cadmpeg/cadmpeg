@@ -46,7 +46,7 @@ fn record(record_id: u8, command: u8, antecedents: &[u8], descendants: &[u8]) ->
 fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 0));
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(
@@ -74,7 +74,7 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
 fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 1));
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
     assert!(ir.model.features[0].dependencies.is_empty());
 }
 
@@ -119,7 +119,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     });
     let records = [producer, record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 0));
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(
         ir.model.features[1].dependencies,
@@ -155,6 +155,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         let mut sink = GeometrySink {
             untyped: 0,
             failed: 0,
+            redundant_repairs: 0,
         };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
@@ -189,6 +190,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let mut sink = GeometrySink {
         untyped: 0,
         failed: 0,
+        redundant_repairs: 0,
     };
     crate::decode::with_expand_bytes(&geometry_value, |expand| {
         structured_value_properties(
@@ -242,6 +244,33 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
             && values[0].subd_id == subd_id
             && values[0].edge_ids == [11, 12]
             && values[0].orientations == [0, 1]));
+}
+
+#[test]
+fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
+    let mut chain = [0_u8; 16].to_vec();
+    chain[15] = 42;
+    chain.extend(2_i32.to_le_bytes());
+    chain.extend(2_i32.to_le_bytes());
+    chain.extend(11_u32.to_le_bytes());
+    chain.extend(12_u32.to_le_bytes());
+    chain.extend(1_i32.to_le_bytes());
+    chain.push(0);
+    let mut chains = 1_i32.to_le_bytes().to_vec();
+    chains.extend(anonymous_value(1, &chain));
+    let value = value(14, &anonymous_value(1, &chains));
+    let mut warnings = Vec::new();
+    let (parsed, _) =
+        parse_value_with_warnings(&value, 0, value.len(), ArchiveVersion::V8, &mut warnings)
+            .expect("mismatched redundant arrays remain bounded");
+    assert!(matches!(
+        parsed.value,
+        Value::SubdEdgeChains(values)
+            if values.len() == 1
+                && values[0].edge_ids.is_empty()
+                && values[0].orientations.is_empty()
+    ));
+    assert_eq!(warnings.len(), 1);
 }
 
 #[test]

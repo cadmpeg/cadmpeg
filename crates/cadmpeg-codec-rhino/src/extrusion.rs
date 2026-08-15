@@ -118,14 +118,17 @@ pub(crate) fn decode(
         ));
     }
     let up = ir_vector(vector(&mut reader)?);
-    let miter_present = [reader.bool()?, reader.bool()?];
+    let miter_present = [
+        reader.bool_with_writer_version(writer_version)?,
+        reader.bool_with_writer_version(writer_version)?,
+    ];
     let miter_normals = [
         ir_vector(vector(&mut reader)?),
         ir_vector(vector(&mut reader)?),
     ];
     let path_domain =
         increasing_interval(interval(&mut reader)?.0, reader.position(), "path domain")?;
-    let transposed = reader.bool()?;
+    let transposed = reader.bool_with_writer_version(writer_version)?;
     let profile_count = if minor >= 1 { reader.i32()? } else { 1 };
     if profile_count <= 0 {
         return Err(error(
@@ -135,7 +138,10 @@ pub(crate) fn decode(
     }
 
     let raw_caps = if minor >= 2 {
-        [reader.bool()?, reader.bool()?]
+        [
+            reader.bool_with_writer_version(writer_version)?,
+            reader.bool_with_writer_version(writer_version)?,
+        ]
     } else {
         [false, false]
     };

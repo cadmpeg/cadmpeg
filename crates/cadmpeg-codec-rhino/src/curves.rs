@@ -91,6 +91,8 @@ pub(crate) struct PointCloud {
     pub(crate) points: Vec<Point3>,
     /// Whether a unit conversion was applied.
     pub(crate) scaled: bool,
+    /// Repairs applied to optional channels that do not match the point count.
+    pub(crate) warnings: Vec<String>,
 }
 
 /// A validated polycurve construction.
@@ -247,6 +249,28 @@ mod alias_tests {
             assert!(supported_class(class));
             assert!(surface_class(class));
         }
+    }
+
+    #[test]
+    fn point_cloud_keeps_points_when_an_optional_channel_count_is_redundant() {
+        let mut bytes = vec![0x11];
+        bytes.extend_from_slice(&2_i32.to_le_bytes());
+        for point in [[0.0_f64, 0.0, 0.0], [1.0, 0.0, 0.0]] {
+            for coordinate in point {
+                bytes.extend_from_slice(&coordinate.to_le_bytes());
+            }
+        }
+        bytes.extend(std::iter::repeat_n(0_u8, 16 * 8 + 6 * 8));
+        bytes.extend_from_slice(&0_i32.to_le_bytes());
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.extend(std::iter::repeat_n(0_u8, 3 * 8));
+        bytes.extend_from_slice(&0_i32.to_le_bytes());
+
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
+        let cloud = read_cloud(&mut reader, 1.0).expect("optional channel is recoverable");
+        assert_eq!(cloud.points.len(), 2);
+        assert_eq!(cloud.warnings.len(), 1);
+        assert_eq!(reader.remaining(), 0);
     }
 }
 
@@ -1084,8 +1108,9 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     let native_plane = plane(reader)?;
     let _bounds = bbox(reader)?;
     let flags = reader.i32()?;
+    let mut warnings = Vec::new();
     let normals = if minor >= 1 {
-        read_vectors(reader, point_count)?
+        read_vectors(reader, point_count, &mut warnings)?
     } else {
         Vec::new()
     };
@@ -1094,6 +1119,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
         let mut values: Vec<[u8; 4]> = Vec::with_capacity(color_count);
         for _ in 0..color_count {
             values.push(reader.take(4)?.try_into().expect("color width checked"));
+        }
+        if color_count != 0 && color_count != point_count {
+            warnings
+                .push("redundant point-cloud color count mismatch; channel dropped".to_string());
         }
         values
     } else {
@@ -1109,24 +1138,25 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
             }
             values.push(value);
         }
+        if value_count != 0 && value_count != point_count {
+            warnings
+                .push("redundant point-cloud scalar count mismatch; channel dropped".to_string());
+        }
         values
     } else {
         Vec::new()
     };
-    if point_count == 0
-        || (!normals.is_empty() && normals.len() != point_count)
-        || (!colors.is_empty() && colors.len() != point_count)
-        || (!values.is_empty() && values.len() != point_count)
-    {
+    if point_count == 0 {
         return Err(error(
             reader.position(),
-            "point-cloud channel count is invalid",
+            "point-cloud point count is invalid",
         ));
     }
     let _ = (normals, colors, values, flags, native_plane);
     Ok(PointCloud {
         points,
         scaled: scale != 1.0,
+        warnings,
     })
 }
 
@@ -1488,13 +1518,11 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
 fn read_vectors(
     reader: &mut BoundedReader<'_>,
     expected: usize,
+    warnings: &mut Vec<String>,
 ) -> Result<Vec<Vector3>, GeometryError> {
     let count = count(reader, 24)?;
     if count != 0 && count != expected {
-        return Err(error(
-            reader.position(),
-            "point-cloud normal count mismatch",
-        ));
+        warnings.push("redundant point-cloud normal count mismatch; channel dropped".to_string());
     }
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {

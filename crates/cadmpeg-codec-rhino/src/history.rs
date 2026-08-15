@@ -480,6 +480,7 @@ fn subd_edge_chain(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 1 {
@@ -493,6 +494,9 @@ fn subd_edge_chain(
     let mut edge_ids = array(&mut reader, 4, read_u32)?;
     let mut orientations = array(&mut reader, 1, read_u8)?;
     if edge_ids.len() != count || orientations.len() != count {
+        warnings.push(
+            "redundant history SubD edge-chain count mismatch; both arrays dropped".to_string(),
+        );
         edge_ids.clear();
         orientations.clear();
     }
@@ -513,6 +517,7 @@ fn subd_edge_chain(
 fn subd_edge_chains(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<Vec<SubdEdgeChain>, FramingError> {
     let (mut nested, next, minor) = anonymous(
         reader.backing_bytes(),
@@ -534,6 +539,7 @@ fn subd_edge_chains(
             nested.position(),
             nested.end(),
             archive,
+            warnings,
         )?;
         nested.skip(value_next - nested.position())?;
         values.push(value);
@@ -543,11 +549,23 @@ fn subd_edge_chains(
     Ok(values)
 }
 
+#[cfg(test)]
 fn parse_value(
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
+) -> Result<(HistoryValue, usize), FramingError> {
+    let mut warnings = Vec::new();
+    parse_value_with_warnings(bytes, offset, end, archive, &mut warnings)
+}
+
+fn parse_value_with_warnings(
+    bytes: &[u8],
+    offset: usize,
+    end: usize,
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<(HistoryValue, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 0 {
@@ -573,7 +591,7 @@ fn parse_value(
         10 => Value::Geometries(geometries(&mut reader, archive)?),
         11 => Value::Uuids(array(&mut reader, 16, uuid)?),
         13 => Value::PolyEdges(poly_edges(&mut reader, archive)?),
-        14 => Value::SubdEdgeChains(subd_edge_chains(&mut reader, archive)?),
+        14 => Value::SubdEdgeChains(subd_edge_chains(&mut reader, archive, warnings)?),
         _ => {
             reader.skip(reader.remaining())?;
             Value::Opaque {
@@ -659,11 +677,12 @@ fn parse_record(
     let value_count = count(&mut values_reader, 1)?;
     let mut values = Vec::new();
     for _ in 0..value_count {
-        let (value, value_next) = parse_value(
+        let (value, value_next) = parse_value_with_warnings(
             bytes,
             values_reader.position(),
             values_reader.end(),
             archive,
+            warnings,
         )?;
         values_reader.skip(value_next - values_reader.position())?;
         values.push(value);
@@ -1090,6 +1109,7 @@ fn extended_geometry_json(
 struct GeometrySink {
     untyped: usize,
     failed: usize,
+    redundant_repairs: usize,
 }
 
 fn structured_value_properties(
@@ -1133,6 +1153,7 @@ fn structured_value_properties(
                                 serde_json::to_string(&position)
                             }
                             crate::curves::DecodedGeometry::PointCloud(cloud) => {
+                                sink.redundant_repairs += cloud.warnings.len();
                                 serde_json::to_string(&cloud.points)
                             }
                             crate::curves::DecodedGeometry::Curve { curve } => {
@@ -1225,8 +1246,8 @@ fn structured_value_properties(
 /// Projects source history into ordered neutral native operations.
 /// Projects history records into native features and carrier geometry.
 ///
-/// Returns the number of decoded history values that reached no neutral carrier.
-/// The caller charges them; see [`GeometrySink`].
+/// Returns counts for untyped values, failed geometry, later dependencies, and
+/// repaired optional geometry channels. The caller reports these counts.
 pub(crate) fn project(
     records: &[HistoryRecord],
     geometry_context: Option<(
@@ -1236,7 +1257,7 @@ pub(crate) fn project(
         f64,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
-) -> (usize, usize, usize) {
+) -> (usize, usize, usize, usize) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
     #[derive(serde::Serialize)]
@@ -1256,6 +1277,7 @@ pub(crate) fn project(
     let mut sink = GeometrySink {
         untyped: 0,
         failed: 0,
+        redundant_repairs: 0,
     };
     let mut ids = Vec::with_capacity(records.len());
     let mut native_ids = Vec::with_capacity(records.len());
@@ -1390,7 +1412,12 @@ pub(crate) fn project(
         .namespace_mut("rhino")
         .set_arena("history_records", &native)
         .expect("Rhino history records serialize");
-    (sink.untyped, sink.failed, later_dependencies)
+    (
+        sink.untyped,
+        sink.failed,
+        later_dependencies,
+        sink.redundant_repairs,
+    )
 }
 
 #[cfg(test)]

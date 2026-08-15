@@ -282,13 +282,71 @@ pub(crate) struct RawBrep {
 pub(crate) struct ValidatedRawBrep {
     /// Validated Brep payload.
     raw: RawBrep,
-    /// Warnings for discarded optional caches or region topology.
+    /// Warnings for repaired positional fields or discarded optional data.
     warnings: Vec<String>,
 }
 
 impl ValidatedRawBrep {
     /// Validates and normalizes one structurally decoded Brep.
     pub(crate) fn try_new(mut raw: RawBrep) -> Result<Self, GeometryError> {
+        let mut warnings = Vec::new();
+        for (label, mismatch) in [
+            (
+                "vertex",
+                raw.vertices
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| value.index != index as i32),
+            ),
+            (
+                "edge",
+                raw.edges
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| value.index != index as i32),
+            ),
+            (
+                "trim",
+                raw.trims
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| value.index != index as i32),
+            ),
+            (
+                "loop",
+                raw.loops
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| value.index != index as i32),
+            ),
+            (
+                "face",
+                raw.faces
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| value.index != index as i32),
+            ),
+            (
+                "region face-side",
+                raw.face_sides
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| value.index != index as i32),
+            ),
+            (
+                "region",
+                raw.regions
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| value.index != index as i32),
+            ),
+        ] {
+            if mismatch {
+                warnings.push(format!(
+                    "redundant Brep {label} positional index mismatch; serialized array order used"
+                ));
+            }
+        }
         for vertex in &raw.vertices {
             refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
             finite_tolerance(vertex.tolerance, "vertex tolerance")?;
@@ -321,7 +379,7 @@ impl ValidatedRawBrep {
                 }
             }
         }
-        for trim in &raw.trims {
+        for (trim_index, trim) in raw.trims.iter().enumerate() {
             if trim.trim_type == 6 {
                 if trim.curve != -1 {
                     return Err(error(
@@ -339,7 +397,7 @@ impl ValidatedRawBrep {
             refs(&[trim.loop_index], raw.loops.len(), "trim loop")?;
             if !raw.loops[trim.loop_index as usize]
                 .trims
-                .contains(&trim.index)
+                .contains(&(trim_index as i32))
             {
                 return Err(error(
                     trim.source_range.start,
@@ -457,7 +515,6 @@ impl ValidatedRawBrep {
             }
         }
         validate_rings(&raw)?;
-        let mut warnings = Vec::new();
         if raw.minor >= 3
             && (!raw.face_sides.is_empty() || !raw.regions.is_empty())
             && validate_regions(&raw).is_err()
@@ -1034,7 +1091,10 @@ fn read_regions(
             warnings,
         )?;
         if sides.len() != face_count.saturating_mul(2) {
-            return Err(error(outer.position(), "region face-side count mismatch"));
+            return Err(error(
+                outer.position(),
+                "redundant Brep region face-side count mismatch",
+            ));
         }
         outer.skip_remaining()?;
         Ok((sides, regions, Some(nested_chunk.range())))
@@ -1195,7 +1255,7 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
     }
     let mut infinite = 0;
     for (index, side) in raw.face_sides.iter().enumerate() {
-        if side.index != index as i32 || side.face < 0 || side.face as usize >= raw.faces.len() {
+        if side.face < 0 || side.face as usize >= raw.faces.len() {
             return Err(error(
                 side.source_range.start,
                 "region face-side index is invalid",
@@ -1223,7 +1283,7 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
     }
     let mut listed_sides = BTreeSet::new();
     for (index, region) in raw.regions.iter().enumerate() {
-        if region.index != index as i32 || !matches!(region.region_type, 0 | 1) {
+        if !matches!(region.region_type, 0 | 1) {
             return Err(error(region.source_range.start, "region record is invalid"));
         }
         if region.region_type == 0 {
@@ -1243,8 +1303,8 @@ fn validate_regions(raw: &RawBrep) -> Result<(), GeometryError> {
     if raw
         .face_sides
         .iter()
-        .filter(|side| side.region >= 0)
-        .any(|side| !listed_sides.contains(&side.index))
+        .enumerate()
+        .any(|(index, side)| side.region >= 0 && !listed_sides.contains(&(index as i32)))
     {
         return Err(error(
             raw.source_range.start,
@@ -2003,6 +2063,18 @@ mod tests {
     #[test]
     fn valid_one_face_raw_brep_validates_all_reciprocal_links() {
         assert!(ValidatedRawBrep::try_new(one_face_raw()).is_ok());
+    }
+
+    #[test]
+    fn positional_indexes_are_diagnostic_and_array_order_remains_authoritative() {
+        let mut raw = one_face_raw();
+        raw.vertices[0].index = 9;
+        raw.edges[1].index = 9;
+        raw.trims[2].index = 9;
+        raw.loops[0].index = 9;
+        raw.faces[0].index = 9;
+        let validated = ValidatedRawBrep::try_new(raw).expect("positional indexes are redundant");
+        assert_eq!(validated.warnings().len(), 5);
     }
 
     #[test]

@@ -1098,3 +1098,21 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
         .iter()
         .any(|loss| loss.severity == Severity::Error));
 }
+
+#[test]
+fn redundant_field_diagnostics_use_the_typed_repair_loss() {
+    assert!(redundant_field_diagnostic(
+        "redundant mesh channel count mismatch"
+    ));
+    assert!(redundant_field_diagnostic(
+        "rhino:object:curve#1: redundant point-cloud color count mismatch"
+    ));
+    assert!(!redundant_field_diagnostic("mesh channel count mismatch"));
+    assert_eq!(
+        RhinoLossCode::RedundantFieldRepaired
+            .note("repair")
+            .code
+            .local_code(),
+        "container.redundant-field-repaired"
+    );
+}

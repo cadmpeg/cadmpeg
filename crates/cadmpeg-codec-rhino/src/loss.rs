@@ -37,6 +37,8 @@ pub enum RhinoLossCode {
     MeshNgonGroupingDropped,
     /// A stored enumeration value was retained but could not select a neutral value.
     EnumerationValueDegraded,
+    /// A redundant count or size was inconsistent; dependent data was dropped.
+    RedundantFieldRepaired,
     /// A duplicate source record was resolved by the format's ownership rule.
     DuplicateRecordResolved,
     /// A stored quad was converted to neutral triangles.
@@ -101,6 +103,7 @@ impl RhinoLossCode {
         Self::PresentationRecordDropped,
         Self::MeshNgonGroupingDropped,
         Self::EnumerationValueDegraded,
+        Self::RedundantFieldRepaired,
         Self::DuplicateRecordResolved,
         Self::MeshQuadTopologyTriangulated,
         Self::HistoryEmbeddedGeometryDropped,
@@ -139,6 +142,7 @@ impl RhinoLossCode {
             Self::PresentationRecordDropped => "presentation.record-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
             Self::EnumerationValueDegraded => "container.enumeration-value-degraded",
+            Self::RedundantFieldRepaired => "container.redundant-field-repaired",
             Self::DuplicateRecordResolved => "container.duplicate-record-resolved",
             Self::MeshQuadTopologyTriangulated => "mesh.quad-topology-triangulated",
             Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
@@ -195,7 +199,9 @@ impl RhinoLossCode {
             Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::EnumerationValueDegraded => LossTaxonomy::DecodeDiagnostic,
+            Self::EnumerationValueDegraded | Self::RedundantFieldRepaired => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::DuplicateRecordResolved => LossTaxonomy::DecodeDiagnostic,
             Self::HistoryEmbeddedGeometryDropped => LossTaxonomy::GeometryNotTransferred,
             Self::DimensionOverrideDropped => LossTaxonomy::PmiOmitted,
@@ -265,6 +271,7 @@ mod tests {
                 "presentation.record-dropped",
                 "mesh.ngon-grouping-dropped",
                 "container.enumeration-value-degraded",
+                "container.redundant-field-repaired",
                 "container.duplicate-record-resolved",
                 "mesh.quad-topology-triangulated",
                 "history.embedded-geometry-dropped",

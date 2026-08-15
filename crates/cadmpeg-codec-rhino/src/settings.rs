@@ -1133,7 +1133,7 @@ fn parse_layer(
     let _obsolete_scale = finite(&reader, scale_raw, "layer scale")?;
     let name = utf16(&mut reader)?;
     let visible = if version.1 >= 1 {
-        reader.bool()?
+        reader.bool_with_writer_version(writer_version)?
     } else {
         obsolete_mode != 1
     };
@@ -1150,7 +1150,7 @@ fn parse_layer(
         None
     };
     let locked = if version.1 >= 4 {
-        reader.bool()?
+        reader.bool_with_writer_version(writer_version)?
     } else {
         obsolete_mode == 2
     };
@@ -1162,7 +1162,7 @@ fn parse_layer(
         None
     };
     let expanded = if version.1 >= 6 && parent_compatible {
-        Some(reader.bool()?)
+        Some(reader.bool_with_writer_version(writer_version)?)
     } else {
         None
     };
@@ -1241,7 +1241,8 @@ fn parse_layer(
             layer.extension_items.push(item);
             match item {
                 28 => {
-                    layer.no_clipping_planes = Some(reader.bool()?);
+                    layer.no_clipping_planes =
+                        Some(reader.bool_with_writer_version(writer_version)?);
                     read_uuid_list(&mut reader, archive)?;
                 }
                 29 => {

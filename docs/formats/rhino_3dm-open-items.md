@@ -38,26 +38,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We need a second fixture tier that mirrors the example-file structure, plus a per-archive-version transfer measurement that defines the support claim.
 
-### RS-04. Non-canonical boolean bytes
-
-**Question.** Which byte values does a stored `bool` field allow?
-
-**Known.** `chunks.rs:304-307` normalizes every nonzero byte to true for every archive version. It has no pre- or post-2017 archive gate for the later strict `ReadBool` behavior, and the specification states the same unconditional rule.
-
-**Note.** Reopened. The branch removed the old rejection but did not implement the source's archive-version distinction or distinguish raw character fields from strict Boolean fields.
-
-**Need.** The archive-version condition must gate the refusal, and a field read as a raw character must not use the strict Boolean rule.
-
-### RS-06. Redundant count and index agreement
-
-**Question.** Which stored counts and indices must agree before a record decodes?
-
-**Known.** Some positional checks were removed and some SubD count mismatches are cleared, but the implementation has no typed loss for those repairs and still has exact count, index, and unit checks in several geometry and instance paths. A repaired or discarded field is not distinguished in the loss census.
-
-**Note.** Reopened. Partial tolerance is not the requested rule. Each redundant field needs a source-backed repair or degradation policy and a typed loss where the IR no longer carries the stored value.
-
-**Need.** Each redundant field must repair or degrade and record a typed loss. Discarding a record loses data that the file holds.
-
 ### SW-03. Instance transform ownership inferred from topology
 
 **Question.** Which decoded entities from one instance-definition member receive the instance transform?

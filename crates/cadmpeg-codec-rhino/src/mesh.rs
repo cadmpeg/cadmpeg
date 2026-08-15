@@ -320,7 +320,7 @@ pub(crate) fn decode(
                 }
             }
         }
-        if minor >= 6 && reader.bool()? {
+        if minor >= 6 && reader.bool_with_writer_version(writer_version)? {
             ngon_count = read_ngons(
                 &mut reader,
                 archive,
@@ -332,7 +332,7 @@ pub(crate) fn decode(
     }
     let mut double_vertices = None;
     if post_2006_fields {
-        if minor >= 7 && reader.bool()? {
+        if minor >= 7 && reader.bool_with_writer_version(writer_version)? {
             let (count, bytes) = read_double_chunk(
                 expand,
                 &mut reader,
@@ -358,9 +358,9 @@ pub(crate) fn decode(
                     }
                 }
             } else {
-                decoded
-                    .warnings
-                    .push("double vertex count mismatch; using float vertices".to_string());
+                decoded.warnings.push(
+                    "redundant mesh double vertex count mismatch; using float vertices".to_string(),
+                );
             }
         }
         if minor >= 8 {
@@ -621,7 +621,9 @@ fn read_counted_raw(
 ) -> Result<Option<Vec<u8>>, GeometryError> {
     let count = reader.i32()?;
     if count < 0 {
-        warnings.push(format!("{name} channel has a negative count"));
+        warnings.push(format!(
+            "redundant mesh {name} channel has a negative count; channel dropped"
+        ));
         return Ok(None);
     }
     if count == 0 {
@@ -632,7 +634,9 @@ fn read_counted_raw(
         .ok_or_else(|| error(reader.position(), "mesh channel byte count overflow"))?;
     let data = reader.take(bytes)?.to_vec();
     if count as usize != vertices {
-        warnings.push(format!("{name} channel count mismatch"));
+        warnings.push(format!(
+            "redundant mesh {name} channel count mismatch; channel dropped"
+        ));
         return Ok(None);
     }
     Ok(Some(data))
@@ -741,7 +745,9 @@ fn read_buffer<'a>(
     };
     reader.skip(consumed)?;
     if bytes.len() != expected {
-        warnings.push(format!("{name} compressed-buffer size mismatch"));
+        warnings.push(format!(
+            "redundant mesh {name} compressed-buffer size mismatch; channel dropped"
+        ));
         return Ok(None);
     }
     if crc32fast::hash(&bytes) != crc {

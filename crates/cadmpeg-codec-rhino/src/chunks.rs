@@ -22,6 +22,11 @@ pub(crate) const TCODE_SHORT: u32 = token::TCODE_SHORT;
 /// The bit marking a CRC-bearing chunk.
 pub(crate) const TCODE_CRC: u32 = token::TCODE_CRC;
 
+// The first strict boolean reader version in the encoded openNURBS version
+// form: 6.0.2017-08-24. Older files also store this value as YYYYMMDDn.
+const STRICT_BOOLEAN_VERSION_ENCODED: i64 = 2_348_836_140;
+const STRICT_BOOLEAN_VERSION_DATE: i64 = 201_708_240;
+
 /// Archive versions understood by the chunk layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArchiveVersion {
@@ -313,6 +318,29 @@ impl<'a> BoundedReader<'a> {
     /// Reads an archive boolean encoded as one byte.
     pub(crate) fn bool(&mut self) -> Result<bool, FramingError> {
         Ok(self.u8()? != 0)
+    }
+
+    /// Reads an archive boolean with the writer-version validation rule.
+    ///
+    /// A missing writer version keeps the historical permissive behavior. Raw
+    /// character fields must call [`BoundedReader::u8`] instead.
+    pub(crate) fn bool_with_writer_version(
+        &mut self,
+        writer_version: Option<i64>,
+    ) -> Result<bool, FramingError> {
+        let offset = self.position();
+        let value = self.u8()?;
+        let strict = writer_version.is_some_and(|version| {
+            version >= STRICT_BOOLEAN_VERSION_ENCODED
+                || (STRICT_BOOLEAN_VERSION_DATE..1_000_000_000).contains(&version)
+        });
+        if strict && value > 1 {
+            return Err(FramingError::structural(
+                offset,
+                "archive boolean must be encoded as 0 or 1",
+            ));
+        }
+        Ok(value != 0)
     }
 
     /// Reads a little-endian IEEE-754 binary32 value.

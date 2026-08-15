@@ -250,14 +250,43 @@ Properties and settings are read in table order. A repeated singleton record
 replaces the preceding value; the last successfully read occurrence owns the
 field.
 
-Stored Boolean integers and bytes use zero for false and a nonzero value for
-true. Presence and enumeration fields that define a separate numeric grammar
-retain that grammar. An enumeration value outside its defined set is retained
-in native source data, uses the field's documented neutral fallback, and
-emits a typed degradation loss. It does not discard the containing record.
+Stored Boolean fields use one byte. `0x00` is false and `0x01` is true. When
+the writer version is unavailable or predates openNURBS 6.0.2017-08-24, any
+nonzero byte is true. At or after that writer version, a Boolean byte other
+than `0x00` or `0x01` is malformed. The strict threshold is encoded writer
+version `2348836140`; the legacy `YYYYMMDDn` form uses `201708240`. A raw
+character field uses its byte value and does not use this Boolean rule.
+
+Presence and enumeration fields that define a separate numeric grammar retain
+that grammar. An enumeration value outside its defined set is retained in
+native source data, uses the field's documented neutral fallback, and emits a
+typed degradation loss. It does not discard the containing record.
 
 A stored geometry item count is bounded by its containing payload and the byte
 width of one item. The format does not impose a separate 65536-item limit.
+
+Redundant count and size fields have a defined repair boundary. A mesh optional
+channel with a negative count, a count different from the mesh vertex count, or
+a decompressed size different from its declared size is dropped while the base
+mesh is retained. A mesh double-precision vertex channel with a count different
+from the float vertex count is dropped and the float vertices remain
+authoritative. A point-cloud normal, color, or scalar channel with a nonzero
+count different from the point count is consumed and dropped while the points
+remain. An embedded history SubD edge chain whose edge-ID and orientation
+counts do not match its stored chain count retains the chain with both
+dependent arrays empty. An optional Brep region topology with a face-side count
+different from twice the face count is dropped while the Brep remains. Each
+repair emits a `container.redundant-field-repaired` loss.
+
+Brep vertex, edge, trim, loop, face, region face-side, and region positional
+index fields are redundant. The serialized array position is authoritative when
+one differs, and the stored positional value is retained only in native bytes.
+Each affected array emits a `container.redundant-field-repaired` loss.
+
+Counts and indices that control byte framing, required NURBS arithmetic, or core
+topology references are admission invariants. A mismatch in those fields
+rejects the affected record or causes its documented carrier fallback; it is
+not repaired as an optional channel.
 
 ## 5. Versions and end of file
 

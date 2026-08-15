@@ -285,6 +285,30 @@ fn bounded_reader_skips_a_valid_future_suffix() {
 }
 
 #[test]
+fn archive_boolean_strictness_uses_writer_version_encoding() {
+    for writer_version in [Some(200_206_180), None] {
+        let bytes = [2_u8];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        assert!(reader
+            .bool_with_writer_version(writer_version)
+            .expect("legacy boolean is normalized"));
+    }
+
+    for writer_version in [Some(201_708_240), Some(2_348_836_140)] {
+        let bytes = [2_u8];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        assert!(matches!(
+            reader.bool_with_writer_version(writer_version),
+            Err(FramingError::Structural { .. })
+        ));
+    }
+
+    let bytes = [2_u8];
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    assert_eq!(reader.u8().expect("raw character"), 2);
+}
+
+#[test]
 fn top_level_framing_preserves_truncation_classification() {
     let bytes = header("50");
     let truncated = &bytes[..bytes.len() - 1];
