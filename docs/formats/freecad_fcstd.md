@@ -148,6 +148,9 @@ The exact-shape runtime type is `Part::PropertyPartShape`. Other runtime types d
 exact-shape or persistent element-map parsing. Part shape properties reference text or binary
 B-rep entries. Shape records retain native table
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
+An exact-shape property has at most one `Part` carrier and at most one `ElementMap2` carrier. Each
+carrier belongs to its enclosing property. Duplicate carriers are malformed. A missing carrier
+retains the exact property without selecting a different property or side entry.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
 For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and

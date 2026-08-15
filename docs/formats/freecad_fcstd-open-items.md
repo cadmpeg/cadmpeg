@@ -20,9 +20,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 These items have a Conflict part and need a decision.
 
-- AR-03. Typed geometry side-entry cardinality
 - PT-02. Element-map position to neutral-occurrence order
-- PT-03. Element-map carrier and owner selection
 - XT-03. Non-manifold radial order
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
@@ -48,18 +46,6 @@ These items have a Conflict part and need a decision.
 **Need.** We must know the field meanings to transfer the side entry to a typed native or neutral record.
 
 **Note.** Commit `3d3bf58f4` converted the absence of a typed decoder into a specification claim that no application record family exists. Opaque retention prevents an unsafe interpretation but does not establish field semantics. No producer evidence was supplied.
-
-### AR-03. Typed geometry side-entry cardinality
-
-**Question.** How many side entries can one `PropertyMeshKernel` or `PropertyPointKernel` property reference, and which entry contains the geometry payload?
-
-**Known.** The current specification defines one typed payload per property. Property records retain every side-entry request in source order.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/application_geometry.rs:31-38` rejects more than one side entry and otherwise reads the first entry. The rejection test only exercises synthetic malformed XML; it does not establish the producer cardinality or entry selection rule.
-
-**Need.** We must establish the cardinality rule for both runtime types. The decoder must reject an invalid cardinality or identify the payload entry from the typed value grammar.
-
-**Note.** Commit `2ceb8c2b0` turned the one-entry policy into settled format prose without a FreeCAD-saved witness or producer source for the cardinality.
 
 ### AR-04. Shared side-entry logical ownership
 
@@ -106,19 +92,6 @@ These items have a Conflict part and need a decision.
 **Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by an inferred traversal.
 
 **Note.** Commit `cfdcda41e` replaced the earlier modulo join and passed repeated-root synthetic tests. The tests verify the new internal walk, not the producer's indexed-map order. The specification now promotes that walk to settled behavior without independent evidence.
-
-### PT-03. Element-map carrier and owner selection
-
-**Question.** Which `Part`, `ElementMap2`, and property carrier belong to one persistent element map when a shape XML contains more than one candidate?
-
-**Known.** Element maps are associated with a shape property and retain their source XML and map order.
-
-**Conflict.** The decoder rejects more than one `Part` or `ElementMap2` carrier in one exact-shape property and rejects more than one enclosing property for a string table. The producer-defined cardinality and association rule for duplicate carriers is still not established, and no discriminator links multiple legal carriers.
-
-**Need.** We must establish the exact element-map carrier cardinality and property association. Duplicate candidates must be rejected or linked by a producer-defined discriminator.
-
-**Note.** No producer rule for duplicate carriers or shared map ownership was found. Conservative
-rejection prevents a source-order choice but does not resolve the legal cardinality.
 
 ## 4. Exact-topology transfer
 
