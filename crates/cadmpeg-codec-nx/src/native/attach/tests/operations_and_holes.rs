@@ -831,20 +831,18 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     ));
     assert_eq!(
         super::non_boolean_feature_definition("BLEND", &[], None, None, None),
-        FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
-                tangency_weight: None,
-            }],
+        FeatureDefinition::Native {
+            kind: "BLEND".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
         }
     );
     assert_eq!(
         super::non_boolean_feature_definition("FACE_BLEND", &[], None, None, None),
-        FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Unresolved,
-            second_faces: FaceSelection::Unresolved,
-            radius: RadiusSpec::Unresolved { form: None },
+        FeatureDefinition::Native {
+            kind: "FACE_BLEND".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
         }
     );
     for kind in ["CPROJ", "CPROJ_CMB"] {

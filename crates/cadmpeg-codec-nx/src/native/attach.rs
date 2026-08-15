@@ -5283,6 +5283,13 @@ fn non_boolean_feature_definition_with_parameters(
     native_parameters: BTreeMap<String, String>,
 ) -> FeatureDefinition {
     let hole_template = unique_simple_hole_template(payload_strings);
+    if matches!(kind, "BLEND" | "FACE_BLEND") {
+        return FeatureDefinition::Native {
+            kind: kind.to_string(),
+            parameters: native_parameters,
+            properties: BTreeMap::new(),
+        };
+    }
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
         return FeatureDefinition::Block {
             dimensions: Some(dimensions.map(Length)),
