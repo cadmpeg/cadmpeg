@@ -2167,13 +2167,26 @@ coordinates. Profile coordinates use document length conversion before the
 profile frame places them at the trimmed path endpoints.
 
 The profile orientation is the sign of its oriented area in the profile plane.
-The outer boundary is positive and every inner boundary is negative. A
-nonperiodic boundary is closed when its evaluated endpoints are coincident by
-the archive point-coincidence rule; a periodic boundary is closed by its
-periodic flag. Analytic and compound profile curves use their exact NURBS
-representation for this rule. A single open outer boundary has orientation
-zero and is valid only without caps. Multiple boundaries must be closed and
-must have the outer-then-inner orientation sequence above.
+For two evaluated coordinates `a` and `b`, point coincidence means
+`abs(a-b) <= 2^-32` or `abs(a-b) <= (abs(a)+abs(b))*2^-42`. A nonperiodic
+boundary is closed when its endpoints are coincident and neither the one-third
+nor two-thirds parameter point is coincident with either endpoint. A periodic
+NURBS boundary is closed when its knot vector is periodic and its duplicated
+degree-many control points are pairwise coincident. Analytic and compound
+profile curves use their exact NURBS representation for these tests.
+
+The oriented-area accumulator visits every nonempty curve span. It uses one
+sample per span for degree at most 1, four samples per span for degree 2 or 3
+(doubling the count until the total is at least 17), and the degree as the
+sample count for degree at least 4. Samples are taken at fractions `j/n` for
+`j = 0 .. n-1`, followed by the final endpoint. For each consecutive pair
+`(x0,y0)` and `(x1,y1)`, it adds
+`(x0-x1)*(y0+y1)` and then divides the sum by two. Compound curves sum the
+area of each segment in order. Positive area is the outer orientation and
+negative area is the inner orientation. Zero area has orientation zero. A
+single open or zero-area outer boundary is valid only without caps. Multiple
+boundaries must be closed and must have the outer-then-inner orientation
+sequence above.
 
 ## 17. SubD
 

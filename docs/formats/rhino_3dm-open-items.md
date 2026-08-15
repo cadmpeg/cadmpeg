@@ -203,13 +203,3 @@ current first-use behavior is implementation policy, not evidence of the
 Rhino transfer rule. A second pcurve with a different range or carrier is
 accepted by ownership validation and then omitted from the written C2 or trim
 payload.
-
-### SW-11. Extrusion closure and orientation constants
-
-**Question.** Which source rule defines extrusion profile endpoint coincidence and orientation?
-
-**Known.** `extrusion.rs:21-24` introduces absolute and relative closure tolerances. `extrusion.rs:328-390` approximates signed area by a fixed sample count per knot span. Section 16 states an archive point-coincidence rule and an oriented-area rule but gives neither the numeric tolerance nor the sampling authority.
-
-**Need.** Establish the source coincidence tolerance and orientation algorithm, or mark the approximation as derived and refuse cases whose classification is not proven.
-
-**Note.** Reopened as an invented-constant and plausibility-framing finding. A small endpoint gap changes cap admission, and a high-curvature rational profile can change area classification between samples.
