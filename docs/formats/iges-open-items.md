@@ -87,16 +87,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-01. An unclassified loop is written as an inner loop
-
-**Question.** How does the writer encode a loop whose source does not classify it as outer or inner?
-
-**Known.** `writer.rs:2321-2364` orders loop roles and returns the first loop that is not `Inner`. The Type 510 path uses `face_outer_loop` at `writer.rs:1375-1382`; the Type 144 path also promotes the first unclassified loop. `LoopBoundaryRole::Unspecified` is a real IR state.
-
-**Need.** We need the encoding for an unclassified loop, or a refusal when no valid outer-loop representation exists. The choice must not depend on list order.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `ed211eb05` documented the first-unclassified policy and added generated fixtures, but it supplied no source or producer evidence. Two unclassified loops with different containment or orientation can produce the wrong outer boundary.
-
 ### WR-02. The declared Global minimum resolution is tighter than the writer's own acceptance bound
 
 **Question.** What minimum resolution must a generated file declare?

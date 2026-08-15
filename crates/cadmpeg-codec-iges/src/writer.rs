@@ -554,6 +554,28 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                         face.id, shell.id
                     )));
                 }
+                let face_loops = face_loop_order(ir, face)?;
+                let has_unspecified_loop = face_loops
+                    .iter()
+                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+                let has_outer_loop = face_loops
+                    .iter()
+                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer);
+                let has_inner_loop = face_loops
+                    .iter()
+                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Inner);
+                if has_unspecified_loop && (has_outer_loop || has_inner_loop) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES B-rep writer cannot mix classified and unspecified boundary loops ({})",
+                        face.id
+                    )));
+                }
+                if has_inner_loop && !has_outer_loop {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES B-rep writer requires an explicit outer loop for inner boundary loops ({})",
+                        face.id
+                    )));
+                }
                 if !owned_faces.insert(face.id.as_str().to_owned()) {
                     return Err(CodecError::Malformed(format!(
                         "IGES face {} is owned more than once",
@@ -2380,7 +2402,7 @@ fn face_outer_loop<'a>(loops: &'a [&Loop]) -> Option<&'a Loop> {
     loops
         .first()
         .copied()
-        .filter(|loop_| loop_.boundary_role != LoopBoundaryRole::Inner)
+        .filter(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
 }
 
 fn boundary_entity(

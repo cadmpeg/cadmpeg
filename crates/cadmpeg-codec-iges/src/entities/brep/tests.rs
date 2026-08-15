@@ -162,7 +162,7 @@ fn decode_preserves_a_face_with_no_explicit_outer_loop() {
         .unwrap();
     assert_eq!(
         loop_.boundary_role,
-        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+        cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
     assert!(
         result.report().losses.is_empty(),

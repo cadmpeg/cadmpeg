@@ -227,7 +227,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
 }
 
 #[test]
-fn face_loop_order_promotes_the_first_unclassified_loop() {
+fn face_loop_order_does_not_promote_an_unclassified_loop() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
     use cadmpeg_ir::units::Units;
@@ -265,8 +265,5 @@ fn face_loop_order_promotes_the_first_unclassified_loop() {
 
     let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, unclassified_id);
-    assert_eq!(
-        face_outer_loop(&ordered).map(|loop_| &loop_.id),
-        Some(&unclassified_id)
-    );
+    assert!(face_outer_loop(&ordered).is_none());
 }

@@ -990,8 +990,10 @@ pub(super) fn project(
                         face: face_id.clone(),
                         boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
                             cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                        } else {
+                        } else if face_definition.has_outer_loop {
                             cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                        } else {
+                            cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
                         },
                         coedges: coedge_ids,
                         vertex_uses: loop_vertex_uses,
