@@ -828,15 +828,17 @@ pub(super) fn implicit_circle_marker<'a>(
     same_dimension_length(radius, expected_radius).then_some((*center, radius))
 }
 
-pub(super) fn declared_entity_handle_circular_marker<'a>(
+#[derive(Clone, Copy)]
+pub(super) enum DeclaredEntityHandleOwner<'a> {
+    Absent,
+    Unique(&'a FeatureInputLane),
+    Ambiguous,
+}
+
+pub(super) fn declared_entity_handle_owner<'a>(
     lanes: &'a [FeatureInputLane],
-    feature: &str,
     operand: &FeatureInputOperand,
-    expected_radius: f64,
-) -> Option<(&'a SketchInputEntity, f64)> {
-    if !expected_radius.is_finite() || expected_radius <= 0.0 {
-        return None;
-    }
+) -> DeclaredEntityHandleOwner<'a> {
     let mut owners = lanes.iter().filter_map(|lane| {
         let reference = lane
             .references
@@ -848,10 +850,29 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
             .and_then(|id| lane.classes.iter().find(|class| class.id == id))?;
         (class.name == "sgEntHandle").then_some(lane)
     });
-    let lane = owners.next()?;
+    let Some(lane) = owners.next() else {
+        return DeclaredEntityHandleOwner::Absent;
+    };
     if owners.next().is_some() {
+        DeclaredEntityHandleOwner::Ambiguous
+    } else {
+        DeclaredEntityHandleOwner::Unique(lane)
+    }
+}
+
+pub(super) fn declared_entity_handle_circular_marker<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+    expected_radius: f64,
+) -> Option<(&'a SketchInputEntity, f64)> {
+    if !expected_radius.is_finite() || expected_radius <= 0.0 {
         return None;
     }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return None;
+    };
     let mut markers = lane
         .sketch_entities
         .iter()
