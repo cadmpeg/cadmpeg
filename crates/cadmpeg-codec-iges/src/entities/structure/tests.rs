@@ -1104,6 +1104,18 @@ fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
     assert!(result.report().losses.iter().any(|loss| {
         loss.message == "IGES product occurrence expansion reached its configured output limit"
     }));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionOutputTruncated.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D203")
+    );
 }
 
 #[test]
@@ -1130,6 +1142,18 @@ fn decode_reports_product_occurrence_depth_truncation() {
         loss.message
             == "IGES product occurrence expansion reached its configured nesting-depth limit"
     }));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionDepthTruncated.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D259")
+    );
 }
 
 #[test]
@@ -1164,10 +1188,23 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
     let expansion = &native.arenas["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields()["truncated"], true);
     assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            == "IGES product occurrence root inference was suppressed because a definition member list is malformed"
-    }));
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::OccurrenceRootInferenceBlocked.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 2);
+    let tags = losses
+        .iter()
+        .map(|loss| {
+            loss.provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(tags, ["directory_entry:D5", "directory_entry:D7"]);
     let dangling = native.arenas["entities"]
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#7")

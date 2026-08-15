@@ -59,6 +59,23 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     }
 }
 
+fn occurrence_loss(
+    code: IgesLossCode,
+    message: impl Into<String>,
+    source_sequence: u32,
+    directory: &[directory::DirectoryEntry],
+) -> LossNote {
+    let note = code.note(message);
+    if let Some(entry) = directory
+        .iter()
+        .find(|entry| entry.sequence == source_sequence)
+    {
+        note.with_provenance(entry.loss_provenance())
+    } else {
+        note
+    }
+}
+
 pub(crate) fn decode(
     bytes: &[u8],
     options: DecodeOptions,
@@ -163,22 +180,28 @@ fn decode_with_occurrence_limits(
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
     losses.extend(graph::losses(&references, &scan, &parameters));
-    if product_occurrence_expansion.output_truncated {
-        losses.push(
-            IgesLossCode::OccurrenceExpansionOutputTruncated
-                .note("IGES product occurrence expansion reached its configured output limit"),
-        );
+    if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
+        losses.push(occurrence_loss(
+            IgesLossCode::OccurrenceExpansionOutputTruncated,
+            "IGES product occurrence expansion reached its configured output limit",
+            source_sequence,
+            &directory,
+        ));
     }
-    if product_occurrence_expansion.depth_truncated {
-        losses.push(
-            IgesLossCode::OccurrenceExpansionDepthTruncated.note(
-                "IGES product occurrence expansion reached its configured nesting-depth limit",
-            ),
-        );
+    if let Some(source_sequence) = product_occurrence_expansion.depth_truncated_at {
+        losses.push(occurrence_loss(
+            IgesLossCode::OccurrenceExpansionDepthTruncated,
+            "IGES product occurrence expansion reached its configured nesting-depth limit",
+            source_sequence,
+            &directory,
+        ));
     }
-    if product_occurrence_expansion.root_inference_blocked {
-        losses.push(IgesLossCode::OccurrenceRootInferenceBlocked.note(
+    for source_sequence in product_occurrence_expansion.malformed_definition_sequences {
+        losses.push(occurrence_loss(
+            IgesLossCode::OccurrenceRootInferenceBlocked,
             "IGES product occurrence root inference was suppressed because a definition member list is malformed",
+            source_sequence,
+            &directory,
         ));
     }
     if !options.container_only {

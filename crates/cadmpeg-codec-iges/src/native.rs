@@ -797,11 +797,11 @@ enum ProductOccurrenceIssue {
     MalformedDefinition,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceExpansion {
-    pub(crate) output_truncated: bool,
-    pub(crate) depth_truncated: bool,
-    pub(crate) root_inference_blocked: bool,
+    pub(crate) output_truncated_at: Option<u32>,
+    pub(crate) depth_truncated_at: Option<u32>,
+    pub(crate) malformed_definition_sequences: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1193,27 +1193,29 @@ impl OccurrenceExpansion<'_, '_> {
         parent: Affine,
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
-        depth_truncated: &mut bool,
-    ) -> Result<bool, CodecError> {
+        depth_truncated_at: &mut Option<u32>,
+    ) -> Result<Option<u32>, CodecError> {
         let _depth = self
             .ctx
             .map(|ctx| ctx.enter_nested("iges_product_occurrence", None))
             .transpose()?;
         if occurrences.len() >= self.output_limit {
-            return Ok(true);
+            return Ok(Some(instance_sequence));
         }
         if path.len() >= self.depth_limit {
-            *depth_truncated = true;
-            return Ok(false);
+            if depth_truncated_at.is_none() {
+                *depth_truncated_at = Some(instance_sequence);
+            }
+            return Ok(None);
         }
         if path.contains(&instance_sequence) {
-            return Ok(false);
+            return Ok(None);
         }
         let (Some(instance), Some(record)) = (
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
-            return Ok(false);
+            return Ok(None);
         };
         let Some((definition_sequence, local)) = placement_affine(
             instance,
@@ -1224,10 +1226,10 @@ impl OccurrenceExpansion<'_, '_> {
             self.precision,
             self.ctx,
         ) else {
-            return Ok(false);
+            return Ok(None);
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
-            return Ok(false);
+            return Ok(None);
         };
         let world = parent.compose(local);
         path.push(instance_sequence);
@@ -1256,16 +1258,18 @@ impl OccurrenceExpansion<'_, '_> {
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
                 path.pop();
-                return Ok(true);
+                return Ok(Some(instance_sequence));
             }
             if self
                 .entries
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if self.expand(*member, world, path, occurrences, depth_truncated)? {
+                if let Some(source_sequence) =
+                    self.expand(*member, world, path, occurrences, depth_truncated_at)?
+                {
                     path.pop();
-                    return Ok(true);
+                    return Ok(Some(source_sequence));
                 }
                 continue;
             }
@@ -1300,7 +1304,7 @@ impl OccurrenceExpansion<'_, '_> {
             });
         }
         path.pop();
-        Ok(false)
+        Ok(None)
     }
 }
 
@@ -4273,17 +4277,17 @@ pub(crate) fn store(
             })
         })
         .collect::<Vec<_>>();
-    let mut root_inference_blocked = false;
+    let mut malformed_definition_sequences = Vec::new();
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
         .filter_map(|entry| {
             let Some(record) = by_directory.get(&entry.sequence).copied() else {
-                root_inference_blocked = true;
+                malformed_definition_sequences.push(entry.sequence);
                 return None;
             };
             let Some(count) = record.count(3) else {
-                root_inference_blocked = true;
+                malformed_definition_sequences.push(entry.sequence);
                 return Some((
                     entry.sequence,
                     OccurrenceDefinition {
@@ -4291,16 +4295,20 @@ pub(crate) fn store(
                     },
                 ));
             };
+            let mut malformed = false;
             let members = (0..count)
                 .filter_map(|index| {
                     let member = record
                         .integer(4 + index)
                         .and_then(|value| u32::try_from(value).ok())
                         .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence));
-                    root_inference_blocked |= member.is_none();
+                    malformed |= member.is_none();
                     member
                 })
                 .collect();
+            if malformed {
+                malformed_definition_sequences.push(entry.sequence);
+            }
             Some((entry.sequence, OccurrenceDefinition { members }))
         })
         .collect::<BTreeMap<_, _>>();
@@ -4359,8 +4367,8 @@ pub(crate) fn store(
         }
     }
     let mut product_occurrences = Vec::new();
-    let mut output_truncated = false;
-    let mut depth_truncated = false;
+    let mut output_truncated_at = None;
+    let mut depth_truncated_at = None;
     let expansion = OccurrenceExpansion {
         entries: &entries,
         records: &by_directory,
@@ -4372,28 +4380,33 @@ pub(crate) fn store(
         depth_limit: limits.depth,
         ctx,
     };
-    if !root_inference_blocked {
+    if malformed_definition_sequences.is_empty() {
         for root in directory.iter().filter(|entry| {
             matches!(entry.entity_type, 408 | 420)
                 && entry.form == 0
                 && !contained_instances.contains(&entry.sequence)
         }) {
-            if expansion.expand(
+            if let Some(source_sequence) = expansion.expand(
                 root.sequence,
                 Affine::IDENTITY,
                 &mut Vec::new(),
                 &mut product_occurrences,
-                &mut depth_truncated,
+                &mut depth_truncated_at,
             )? {
-                output_truncated = true;
+                output_truncated_at = Some(source_sequence);
                 break;
             }
         }
     }
     let issues = [
-        output_truncated.then_some(ProductOccurrenceIssue::OutputLimit),
-        depth_truncated.then_some(ProductOccurrenceIssue::DepthLimit),
-        root_inference_blocked.then_some(ProductOccurrenceIssue::MalformedDefinition),
+        output_truncated_at
+            .is_some()
+            .then_some(ProductOccurrenceIssue::OutputLimit),
+        depth_truncated_at
+            .is_some()
+            .then_some(ProductOccurrenceIssue::DepthLimit),
+        (!malformed_definition_sequences.is_empty())
+            .then_some(ProductOccurrenceIssue::MalformedDefinition),
     ]
     .into_iter()
     .flatten()
@@ -4508,9 +4521,9 @@ pub(crate) fn store(
     namespace.set_arena_from("product_occurrences", product_occurrences)?;
     namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
     Ok(ProductOccurrenceExpansion {
-        output_truncated,
-        depth_truncated,
-        root_inference_blocked,
+        output_truncated_at,
+        depth_truncated_at,
+        malformed_definition_sequences,
     })
 }
 
