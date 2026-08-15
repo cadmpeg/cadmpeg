@@ -5333,7 +5333,7 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
     });
     match untyped {
         Ok((0, 0, 0, 0)) => {}
-        Ok((untyped, failed, later_dependencies, redundant_repairs)) => {
+        Ok((untyped, failed, dropped_dependencies, redundant_repairs)) => {
             if untyped != 0 {
                 context
                     .typed_losses
@@ -5348,11 +5348,11 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
                         "{failed} embedded history geometry value(s) could not be decoded"
                     )));
             }
-            if later_dependencies != 0 {
+            if dropped_dependencies != 0 {
                 context
                     .typed_losses
                     .push(RhinoLossCode::HistoryDependencyDropped.note(format!(
-                        "{later_dependencies} history dependency edge(s) point to later producers"
+                        "{dropped_dependencies} history dependency edge(s) point to later or ambiguous producers"
                     )));
             }
             if redundant_repairs != 0 {

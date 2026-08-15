@@ -1314,14 +1314,17 @@ pub(crate) fn project(
                 .or_insert_with(|| Some((index, ids[index].clone())));
         }
     }
-    let mut later_dependencies = 0;
+    let mut dropped_dependencies = 0;
     for (index, record) in records.iter().enumerate() {
-        later_dependencies += record
-            .antecedents
-            .iter()
-            .filter_map(|antecedent| producers.get(antecedent).and_then(Option::as_ref))
-            .filter(|(producer_index, _)| *producer_index >= index)
-            .count();
+        for antecedent in &record.antecedents {
+            match producers.get(antecedent) {
+                Some(None) => dropped_dependencies += 1,
+                Some(Some((producer_index, _))) if *producer_index >= index => {
+                    dropped_dependencies += 1;
+                }
+                _ => {}
+            }
+        }
         let mut dependency_seen = HashSet::new();
         let dependencies = record
             .antecedents
@@ -1420,7 +1423,7 @@ pub(crate) fn project(
     (
         sink.untyped,
         sink.failed,
-        later_dependencies,
+        dropped_dependencies,
         sink.redundant_repairs,
     )
 }
