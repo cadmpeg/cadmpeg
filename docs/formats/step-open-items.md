@@ -229,8 +229,8 @@ axis as an independent length coordinate. This item is reopened.
 
 **Need.** We need a parameter-scale table that preserves the source
 parameterization and vector magnitudes for every supported directrix and
-surface wrapper, with source equations and independent producer files before
-this rule is settled.
+surface wrapper, derived from the ISO 10303-42 equations and checked against
+exporter-authored witness files, before this rule is settled.
 
 ### TP-09. Pcurve endpoint and tied-locus verification
 
@@ -254,7 +254,8 @@ tied candidate then depends on candidate order. This item records the
 verification gap rather than treating the numerical heuristic as STEP
 semantics.
 
-**Need.** We need independent multi-pcurve files and an exact inverse or
+**Need.** We need multi-pcurve witness files, authored with an available
+exporter or taken from a public corpus, and an exact inverse or
 interval/adaptive proof for endpoint fit and locus equivalence, including
 reordered, near-tied, and crossing candidates.
 
@@ -276,9 +277,9 @@ carrier when the loop order changes. TP-04 was closed because conforming STEP
 prohibits multiple outer bounds; that closure does not establish this
 malformed-input fallback.
 
-**Need.** We need an explicit conservative salvage policy, or producer and
-validator evidence that first-role retention is required, with reordered
-duplicate-outer fixtures and validation results.
+**Need.** We need an explicit conservative salvage policy, recorded as a
+CADIR decision, or evidence that first-role retention is required, with
+reordered duplicate-outer fixtures and validation results.
 
 ## 6. Units and measures
 
@@ -300,7 +301,7 @@ consumer is unscoped, the selected scale can change when instance numbers or
 context order change. This is source-order/record-order selection, not
 evidence of the document unit.
 
-**Need.** We need the STEP document-level unit ownership rule and independent
+**Need.** We need the STEP document-level unit ownership rule and witness
 files with multiple global contexts, including conflicting and equivalent
 contexts, before selecting a fallback scale.
 
@@ -328,9 +329,9 @@ surface-side precedence; they do not settle context-dependent styles. This
 item records the missing context identity and neutral-IR policy.
 
 **Need.** We need the context matching and precedence rule, a policy for
-preserving separate context bindings or reporting ambiguity, and an
-independent file with two valid context styles consumed by different
-presentation contexts.
+preserving separate context bindings or reporting ambiguity, and a witness
+file with two valid context styles consumed by different presentation
+contexts.
 
 ### DR-01. Drawing target identity selection
 
