@@ -8,7 +8,7 @@ use super::pcurves::{
     complete_intersection_pcurves_from_opposite_charts,
     complete_intersection_supports_from_edge_incidence,
     complete_tolerant_intersection_pcurves_from_serialized_branches, ordered_parameter_range,
-    pcurve_matches_edge, pcurve_matches_edge_range_with_index, pcurve_parameter_range,
+    pcurve_matches_edge_range_with_index, pcurve_parameter_range,
 };
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
@@ -475,9 +475,9 @@ pub(crate) fn emit_topology(
         })
         .flatten()
         .collect();
-    let valid_pcurve_fins = {
+    let (valid_pcurve_fins, fallback_pcurves) = {
         let index = cadmpeg_ir::index::ModelIndex::new(ir);
-        fin_ids
+        let valid_pcurve_fins = fin_ids
             .keys()
             .filter_map(|fin_xmt| {
                 let fields = graph.get(17, *fin_xmt)?.fin_fields()?;
@@ -506,7 +506,47 @@ pub(crate) fn emit_topology(
                 )
                 .then_some(*fin_xmt)
             })
-            .collect::<BTreeSet<_>>()
+            .collect::<BTreeSet<_>>();
+        let fallback_pcurves = fin_ids
+            .keys()
+            .filter_map(|fin_xmt| {
+                if valid_pcurve_fins.contains(fin_xmt) {
+                    return None;
+                }
+                let fields = graph.get(17, *fin_xmt)?.fin_fields()?;
+                let edge = edges.get(&fields.edge)?;
+                let support = graph
+                    .get(15, fields.loop_xmt)
+                    .and_then(Node::loop_fields)
+                    .and_then(|loop_| graph.get(14, loop_.face))
+                    .and_then(Node::face_fields)
+                    .and_then(|face| surfaces.get(&face.surface))
+                    .cloned()?;
+                let carrier = ir
+                    .model
+                    .edges
+                    .iter()
+                    .find(|candidate| candidate.id == *edge)
+                    .and_then(|edge| edge.curve.clone())?;
+                let (geometry, parameter_range, fit_tolerance) = intersection_pcurves
+                    .get(&(carrier, support.clone()))?
+                    .clone();
+                pcurve_matches_edge_range_with_index(
+                    ir,
+                    &index,
+                    edge,
+                    &support,
+                    &geometry,
+                    None,
+                    fit_tolerance,
+                )
+                .then_some((
+                    *fin_xmt,
+                    (support, geometry, parameter_range, fit_tolerance),
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        (valid_pcurve_fins, fallback_pcurves)
     };
     let mut serialized_branch_pcurves = BTreeSet::new();
     for &fin_xmt in fin_ids.keys() {
@@ -570,23 +610,8 @@ pub(crate) fn emit_topology(
         }
         let attached_pcurve_use_range = pcurve.as_ref().and(pcurve_use_range);
         if pcurve.is_none() {
-            let carrier = ir
-                .model
-                .edges
-                .iter()
-                .find(|candidate| candidate.id == edge)
-                .and_then(|edge| edge.curve.clone());
-            if let Some((_support, geometry, parameter_range, fit_tolerance)) = carrier
-                .zip(support)
-                .and_then(|key| {
-                    intersection_pcurves
-                        .get(&key)
-                        .cloned()
-                        .map(|value| (key.1, value.0, value.1, value.2))
-                })
-                .filter(|(support, geometry, _, fit_tolerance)| {
-                    pcurve_matches_edge(ir, &edge, support, geometry, *fit_tolerance)
-                })
+            if let Some((_support, geometry, parameter_range, fit_tolerance)) =
+                fallback_pcurves.get(&fin_xmt).cloned()
             {
                 let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve#{fin_xmt}"));
                 annotations

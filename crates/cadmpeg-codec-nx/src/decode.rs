@@ -75,14 +75,15 @@ pub(crate) use pcurves::{
     complete_intersection_supports_from_edge_incidence,
     complete_tolerant_intersection_pcurves_from_serialized_branches, curve_is_cache_backed,
     exact_analytic_isocurve_pcurve, exact_boundary_curve_breaks, ordered_parameter_range,
-    pcurve_matches_edge, pcurve_matches_edge_range, pcurve_matches_edge_range_with_index,
-    pcurve_parameter_range, reverse_pcurve_over_range, surface_parameters_for_fit_with_index,
-    transfer_intersection_pcurve, transferred_pcurve_sample, TransferredPcurveSample,
+    pcurve_matches_edge_range_with_index, pcurve_parameter_range, reverse_pcurve_over_range,
+    surface_parameters_for_fit_with_index, transfer_intersection_pcurve, transferred_pcurve_sample,
+    TransferredPcurveSample,
 };
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use pcurves::{
     coincident_pcurve_pair, exact_boundary_pcurve, orient_tolerant_intersection_pcurve,
+    pcurve_matches_edge, pcurve_matches_edge_range,
 };
 
 mod offset;

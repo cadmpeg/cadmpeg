@@ -2209,6 +2209,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn pcurve_matches_edge(
     ir: &CadIr,
     edge_id: &EdgeId,
@@ -2219,6 +2220,7 @@ pub(crate) fn pcurve_matches_edge(
     pcurve_matches_edge_range(ir, edge_id, surface_id, geometry, None, fit_tolerance)
 }
 
+#[cfg(test)]
 pub(crate) fn pcurve_matches_edge_range(
     ir: &CadIr,
     edge_id: &EdgeId,
