@@ -145,23 +145,6 @@ prove geometric equivalence when duplicates are legal; otherwise define the exac
 **Note.** The closure promotes refusal to a format invariant without primary evidence for
 multiple representation cases. Reopened after the topology closure.
 
-### XT-03. Non-manifold radial order
-
-**Question.** What source order defines the radial cycle when more than two coedges use the same
-edge?
-
-**Known.** Native topology retains ordered child uses and orientations. A neutral coedge has one
-radial_next relation.
-
-**Conflict.** topology_transfer.rs:1678-1689 links only two coedges and leaves three or more
-self-radial. No producer or kernel rule establishes that the source has no radial order.
-
-**Need.** Establish whether FreeCAD or OCCT supplies a radial order for non-manifold uses. If it
-does not, retain unordered incidence or mark radial order unresolved.
-
-**Note.** The closure promotes a neutral fallback to settled source semantics without evidence
-for the non-manifold case. Reopened after the topology closure.
-
 ## 5. Design projection
 
 ### DP-02. Sketch profile seed order

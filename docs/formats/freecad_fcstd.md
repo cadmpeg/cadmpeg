@@ -251,7 +251,8 @@ and pcurves to zero-based local parameters while preserving each bound's directi
 The serialized edge child uses provide endpoint incidence but no radial-neighbor relation. One
 coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;
 their shared edge identity carries unordered non-manifold incidence without asserting a
-serialization-dependent radial cycle.
+serialization-dependent radial cycle. Each wire serializes its ordered edge uses independently;
+the format has no field that joins three or more uses into a radial cycle.
 
 ## 8. Design-history transfer
 
