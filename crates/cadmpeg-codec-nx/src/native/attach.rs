@@ -47,13 +47,22 @@ use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
 use cadmpeg_ir::native::catalogue::Phase;
 
-pub(crate) fn attach(
+pub(crate) fn attach_container_layer(
     ir: &mut CadIr,
-    model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) {
+    attach_container_payloads(ir, scan, annotations, unknowns);
+    attach_indexed_om_unknowns(scan, annotations, unknowns);
+}
+
+fn attach_container_payloads(
+    ir: &mut CadIr,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+) {
     let annotation_stream = annotations.stream("nx:container");
     for (ordinal, entry) in scan.container.entries.iter().enumerate() {
         let content = entry.content();
@@ -88,8 +97,63 @@ pub(crate) fn attach(
         });
     }
     attach_jpeg_preview_assets(ir, scan, annotations, unknowns);
+}
+
+fn attach_indexed_om_unknowns(
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+) {
+    let annotation_stream = annotations.stream("nx:container");
     let object_sections = scan.container.indexed_om_sections();
-    if model.is_empty() && object_sections.is_empty() {
+    for (section_index, (entry, section)) in object_sections.iter().enumerate() {
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (record_index, record) in section
+            .control
+            .iter()
+            .chain(section.records.iter())
+            .enumerate()
+        {
+            let kind = if record.object_id.is_some() {
+                "record"
+            } else {
+                "block"
+            };
+            let id = UnknownId(format!(
+                "nx:om-section-{section_index}:{kind}#{record_index}"
+            ));
+            let offset = entry_offset + record.offset as u64;
+            annotations
+                .note(&id, annotation_stream, offset)
+                .tag(if record.object_id.is_some() {
+                    "OM_ENTITY_RECORD"
+                } else {
+                    "OM_DATA_BLOCK"
+                });
+            annotations.exactness(&id, Exactness::ByteExact);
+            unknowns.push(UnknownRecord {
+                id,
+                offset,
+                byte_len: record.bytes.len() as u64,
+                sha256: sha256_hex(record.bytes),
+                data: Some(record.bytes.to_vec()),
+                links: Vec::new(),
+            });
+        }
+    }
+}
+
+pub(crate) fn attach(
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    attach_container_payloads(ir, scan, annotations, unknowns);
+    let has_object_sections = !scan.container.indexed_om_sections().is_empty();
+    let annotation_stream = annotations.stream("nx:container");
+    if model.is_empty() && !has_object_sections {
         return Ok(());
     }
     attach_rm_face_colors(ir, model, scan, annotations);
@@ -186,41 +250,7 @@ pub(crate) fn attach(
         annotations,
     );
     NATIVE_CATALOGUE.note_phase(Phase::GroupB, model, annotations);
-    for (section_index, (entry, section)) in object_sections.iter().enumerate() {
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (record_index, record) in section
-            .control
-            .iter()
-            .chain(section.records.iter())
-            .enumerate()
-        {
-            let kind = if record.object_id.is_some() {
-                "record"
-            } else {
-                "block"
-            };
-            let id = UnknownId(format!(
-                "nx:om-section-{section_index}:{kind}#{record_index}"
-            ));
-            let offset = entry_offset + record.offset as u64;
-            annotations
-                .note(&id, annotation_stream, offset)
-                .tag(if record.object_id.is_some() {
-                    "OM_ENTITY_RECORD"
-                } else {
-                    "OM_DATA_BLOCK"
-                });
-            annotations.exactness(&id, Exactness::ByteExact);
-            unknowns.push(UnknownRecord {
-                id,
-                offset,
-                byte_len: record.bytes.len() as u64,
-                sha256: sha256_hex(record.bytes),
-                data: Some(record.bytes.to_vec()),
-                links: Vec::new(),
-            });
-        }
-    }
+    attach_indexed_om_unknowns(scan, annotations, unknowns);
     if !model.om.configurations.is_empty() {
         for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
             let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));

@@ -43,3 +43,13 @@ pub(crate) fn attach_annotations(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     attach::attach(ir, model, scan, annotations, unknowns)
 }
+
+/// Preserve container-layer records without extracting typed native entities.
+pub(crate) fn attach_container_layer(
+    ir: &mut CadIr,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+) {
+    attach::attach_container_layer(ir, scan, annotations, unknowns);
+}
