@@ -42,6 +42,43 @@ pub(crate) fn resolved_face_group(
     })
 }
 
+/// Resolve a bounded-face group whose active lane is fully named by its own
+/// recipe selector, but whose generation does not emit historical slots.
+///
+/// This is intentionally separate from `resolved_face_group`: a multi-face
+/// bounded recipe normally needs a slot or history proof. The legacy Draft
+/// form admitted here has a complete structured recipe, no alternate or
+/// historical candidates, and no candidate outside the recipe's own
+/// selector. Those invariants make the active lane the selected face set.
+pub(crate) fn resolved_explicit_bounded_face_group(
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let stream = native_stream(&group.id)?;
+    let mut faces = Vec::with_capacity(group.members.len());
+    for record_index in &group.members {
+        let mut matches = operands.iter().filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index == *record_index
+        });
+        let operand = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let candidate_faces = explicit_bounded_face_candidates(operand)?;
+        for face in candidate_faces {
+            if !faces.contains(face) {
+                faces.push(face.clone());
+            }
+        }
+    }
+    (!faces.is_empty()).then(|| cadmpeg_ir::features::FaceSelection::Resolved {
+        faces,
+        native: group.id.clone(),
+    })
+}
+
 /// Resolve a direct scope face selection when every direct operand proves the
 /// same current face set through stable input-topology slots.
 pub(crate) fn resolved_direct_face_selection(
@@ -860,6 +897,21 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
     Some(vec![face.clone()])
 }
 
+fn explicit_bounded_face_candidates(
+    operand: &DesignFaceOperand,
+) -> Option<&[cadmpeg_ir::ids::FaceId]> {
+    (operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+        && operand.resolved_face_slots.is_empty()
+        && !operand.candidate_faces.is_empty()
+        && operand.unreferenced_candidate_faces.is_empty()
+        && operand.alternate_selector_candidate_faces.is_empty()
+        && operand.preceding_candidate_faces.is_empty()
+        && operand.changed_candidate_faces.is_empty()
+        && operand.historical_support_contexts.is_empty()
+        && complete_counted_face_recipe(operand).is_some())
+    .then_some(operand.candidate_faces.as_slice())
+}
+
 fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
     if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
         return None;
@@ -1472,6 +1524,96 @@ mod tests {
 
     fn face(slot: i64) -> FaceId {
         FaceId(format!("f3d:brep:entity#{slot}"))
+    }
+
+    #[test]
+    fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
+        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "group_record_index": 150,
+            "group_member_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "262",
+            "recipe_record_index": 201,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1, 1],
+            "recipe_node_offsets": [0],
+            "recipe_nodes": [{
+                "byte_offset": 0,
+                "end_byte_offset": 12,
+                "program": [0, -1, 1],
+                "recipe_structure": {
+                    "root": 0,
+                    "prelude": [0, 0],
+                    "sides": [
+                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []},
+                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []}
+                    ],
+                    "postlude": []
+                }
+            }],
+            "candidate_faces": ["f3d:brep:entity#10", "f3d:brep:entity#20"],
+            "unreferenced_candidate_faces": [],
+            "alternate_selector_candidate_faces": [],
+            "preceding_candidate_faces": [],
+            "changed_candidate_faces": [],
+            "historical_support_contexts": [],
+            "resolved_face_slots": [],
+            "next_record_index": 202,
+            "next_byte_offset": 100
+        }))
+        .expect("legacy bounded-face operand");
+        operand.recipe_references = vec![
+            reference(10, "selected-a", 201),
+            reference(20, "selected-b", 201),
+        ];
+
+        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:construction-group#150",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 150,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "role": 0x0000_0010_0000_0000_u64,
+            "members": [200],
+            "member_offsets": [0],
+            "frame": {
+                "member_count_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 0,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 0,
+                "variant": false
+            },
+            "role_offset": 0,
+            "paired_class_tag": "262",
+            "paired_byte_offset": 325,
+            "next_record_index": 151,
+            "next_byte_offset": 0
+        }))
+        .expect("legacy Draft face group");
+
+        assert_eq!(
+            resolved_explicit_bounded_face_group(&group, &[operand.clone()]),
+            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+                faces: vec![face(10), face(20)],
+                native: group.id.clone(),
+            })
+        );
+        operand.unreferenced_candidate_faces.push(face(30));
+        assert!(resolved_explicit_bounded_face_group(&group, &[operand]).is_none());
     }
 
     fn boundary(slot: i64, edge_count: usize) -> DesignHistoricalFaceBoundaryContext {

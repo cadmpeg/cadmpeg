@@ -2638,7 +2638,7 @@ fn project_draft(
             let pull_direction =
                 Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
             Some(FeatureDefinition::Draft {
-                faces: project_face_selection(scope, faces, face_operands, histories),
+                faces: project_draft_face_selection(scope, faces, face_operands, histories),
                 neutral_plane: cadmpeg_ir::features::FaceSelection::Native(
                     neutral_feature_id(neutral_plane).0,
                 ),
@@ -2657,8 +2657,8 @@ fn project_draft(
                 return None;
             }
             Some(FeatureDefinition::Draft {
-                faces: project_face_selection(scope, faces, face_operands, histories),
-                neutral_plane: project_face_selection(
+                faces: project_draft_face_selection(scope, faces, face_operands, histories),
+                neutral_plane: project_draft_face_selection(
                     scope,
                     neutral_plane,
                     face_operands,
@@ -2692,9 +2692,9 @@ fn project_draft(
             let pull_direction =
                 Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
             Some(FeatureDefinition::Draft {
-                faces: project_face_selection(scope, faces, face_operands, histories),
+                faces: project_draft_face_selection(scope, faces, face_operands, histories),
                 neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                parting_tool: Some(project_face_selection(
+                parting_tool: Some(project_draft_face_selection(
                     scope,
                     parting_tool,
                     face_operands,
@@ -2729,6 +2729,21 @@ fn project_face_selection(
     historical
         .or_else(|| resolved_face_group(group, face_operands))
         .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+}
+
+fn project_draft_face_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    face_operands: &[DesignFaceOperand],
+    histories: &[crate::history_records::AsmHistory],
+) -> cadmpeg_ir::features::FaceSelection {
+    let selection = project_face_selection(scope, group, face_operands, histories);
+    if matches!(&selection, cadmpeg_ir::features::FaceSelection::Native(_)) {
+        crate::design::face_resolve::resolved_explicit_bounded_face_group(group, face_operands)
+            .unwrap_or(selection)
+    } else {
+        selection
+    }
 }
 
 fn group_has_entity_selection(
