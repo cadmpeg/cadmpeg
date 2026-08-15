@@ -102,7 +102,7 @@ pub enum StepLossCode {
     DraughtingAssociatedItemUntyped,
     /// A tessellation item does not bind to exactly one decoded body.
     TessellationItemBodyUnresolved,
-    /// A tessellation item is not declared by an exact body container.
+    /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
     /// A geometric validation measure unit scale did not resolve.
     ValidationMeasureUnitUnresolved,

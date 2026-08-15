@@ -89,30 +89,17 @@ pub(super) fn decode(
         if bodies.is_empty() {
             continue;
         }
-        for container in items {
-            let Some(container_record) = exchange.records.get(&container) else {
-                continue;
-            };
-            let Some(container_kind) = entity_kind(
-                container_record,
-                &["TESSELLATED_SOLID", "TESSELLATED_SHELL"],
-            ) else {
-                continue;
-            };
-            let Some(container_items) =
-                entity_parameter(container_record, container_kind, 0, 1).and_then(ValueExt::list)
-            else {
-                continue;
-            };
-            for item in container_items.iter().filter_map(ValueExt::reference) {
-                if declared_items.contains(&item) {
-                    item_bodies
-                        .entry(item)
-                        .or_default()
-                        .extend(bodies.iter().cloned());
-                }
-            }
-            unresolved_containers.remove(&container);
+        let mut associator = RepresentationItemAssociator {
+            bodies: &bodies,
+            exchange,
+            item_bodies: &mut item_bodies,
+            declared_items: &mut declared_items,
+            unresolved_containers: &mut unresolved_containers,
+            typed: &mut typed,
+            active: BTreeSet::new(),
+        };
+        for item in items {
+            associator.visit(item, 0);
         }
     }
     for id in unresolved_containers {
@@ -352,6 +339,70 @@ fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
         .then(|| inherited_parameter(record, "TESSELLATED_FACE", 3))
         .flatten()
         .and_then(ValueExt::reference)
+}
+
+struct RepresentationItemAssociator<'a> {
+    bodies: &'a [BodyId],
+    exchange: &'a Exchange,
+    item_bodies: &'a mut BTreeMap<u64, BTreeSet<BodyId>>,
+    declared_items: &'a mut BTreeSet<u64>,
+    unresolved_containers: &'a mut BTreeSet<u64>,
+    typed: &'a mut HashSet<u64>,
+    active: BTreeSet<u64>,
+}
+
+impl RepresentationItemAssociator<'_> {
+    fn visit(&mut self, id: u64, depth: usize) {
+        if depth >= super::record_graph_limit(None) || !self.active.insert(id) {
+            return;
+        }
+        let Some(record) = self.exchange.records.get(&id) else {
+            self.active.remove(&id);
+            return;
+        };
+        if entity_kind(
+            record,
+            &[
+                "TRIANGULATED_FACE",
+                "COMPLEX_TRIANGULATED_FACE",
+                "TRIANGULATED_SURFACE_SET",
+                "COMPLEX_TRIANGULATED_SURFACE_SET",
+            ],
+        )
+        .is_some()
+        {
+            self.declared_items.insert(id);
+            self.item_bodies
+                .entry(id)
+                .or_default()
+                .extend(self.bodies.iter().cloned());
+        } else if let Some(kind) = entity_kind(
+            record,
+            &[
+                "TESSELLATED_SOLID",
+                "TESSELLATED_SHELL",
+                "TESSELLATED_GEOMETRIC_SET",
+            ],
+        ) {
+            self.typed.insert(id);
+            if matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL") {
+                self.unresolved_containers.remove(&id);
+            }
+            let item_ids = entity_parameter(record, kind, 0, 1)
+                .and_then(ValueExt::list)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(ValueExt::reference)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            for item in item_ids {
+                self.visit(item, depth + 1);
+            }
+        }
+        self.active.remove(&id);
+    }
 }
 
 fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyData) -> BTreeSet<BodyId> {

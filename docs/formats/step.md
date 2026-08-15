@@ -621,7 +621,10 @@ or both orders, identifies the child and parent representations, the
 occurrence placement is unresolved.
 
 Exact and tessellated representations of one product remain linked when their
-source item has one exact body owner. A missing or ambiguous owner detaches the
+source item has one exact body owner. A tessellated shape representation may
+list a supported triangulated item directly or through a tessellated geometric
+set; an exact representation relationship supplies that body owner to every
+supported leaf in the item graph. A missing or ambiguous owner detaches the
 tessellation, retains its source item association, and records a
 `ReferenceGraphNotClosed` loss. Tessellated indices are one-based. PNINDEX maps
 local points to shared coordinates. Triangle and fan indices address local

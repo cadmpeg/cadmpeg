@@ -237,6 +237,80 @@ fn tessellated_shape_relationship_supplies_exact_body_owner() {
 }
 
 #[test]
+fn direct_tessellated_representation_item_uses_exact_body_relationship() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90=SHAPE_REPRESENTATION_RELATIONSHIP('', '', #39, #8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode directly represented tessellation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("directly represented mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn nested_tessellated_representation_item_uses_exact_body_relationship() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#8=TESSELLATED_SHAPE_REPRESENTATION('complex mesh',(#7),#2);",
+        "#8=TESSELLATED_SHAPE_REPRESENTATION('complex mesh',(#91),#2);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#91=TESSELLATED_GEOMETRIC_SET('nested mesh',(#7));\n#90=SHAPE_REPRESENTATION_RELATIONSHIP('', '', #39, #8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested represented tessellation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("nested represented mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
 fn complex_tessellated_shape_representation_inherits_items() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
