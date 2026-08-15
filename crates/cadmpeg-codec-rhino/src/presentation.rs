@@ -1729,31 +1729,50 @@ fn parse_embedded_image(
     let file_path = utf16(&mut reader)?;
     let image_crc32 = reader.u32()?;
     let compression_method = reader.i32()?;
+    if !matches!(compression_method, 0 | 1) {
+        return Err(FramingError::structural(
+            reader.position() - 4,
+            "embedded-image compression method is unsupported",
+        ));
+    }
     let buffer_offset = reader.position();
     let uncompressed_byte_len = u64::from(reader.u32()?);
-    if uncompressed_byte_len != 0 {
-        reader.skip(4)?;
-        let method = reader.u8()?;
-        if method > 1 {
-            return Err(FramingError::structural(
-                reader.position() - 1,
-                "embedded-image buffer method is unsupported",
-            ));
-        }
-        if method == 0 {
-            let size = usize::try_from(uncompressed_byte_len)
-                .map_err(|_| FramingError::structural(buffer_offset, "image size overflow"))?;
-            reader.skip(size)?;
-        } else {
-            let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-            if chunk.typecode != ANONYMOUS || chunk.short {
-                return Err(FramingError::structural(
-                    reader.position(),
-                    "compressed image chunk is invalid",
-                ));
+    match compression_method {
+        0 => {
+            if uncompressed_byte_len != 0 {
+                let size = usize::try_from(uncompressed_byte_len)
+                    .map_err(|_| FramingError::structural(buffer_offset, "image size overflow"))?;
+                reader.skip(size)?;
             }
-            reader.skip(chunk.next_offset - reader.position())?;
         }
+        1 => {
+            if uncompressed_byte_len != 0 {
+                reader.skip(4)?;
+                let method = reader.u8()?;
+                if method > 1 {
+                    return Err(FramingError::structural(
+                        reader.position() - 1,
+                        "embedded-image buffer method is unsupported",
+                    ));
+                }
+                if method == 0 {
+                    let size = usize::try_from(uncompressed_byte_len).map_err(|_| {
+                        FramingError::structural(buffer_offset, "image size overflow")
+                    })?;
+                    reader.skip(size)?;
+                } else {
+                    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+                    if chunk.typecode != ANONYMOUS || chunk.short {
+                        return Err(FramingError::structural(
+                            reader.position(),
+                            "compressed image chunk is invalid",
+                        ));
+                    }
+                    reader.skip(chunk.next_offset - reader.position())?;
+                }
+            }
+        }
+        _ => unreachable!("embedded image compression method checked"),
     }
     let buffer_end = reader.position();
     let source_uuid = if packed & 0x0f >= 1 {
@@ -2552,6 +2571,65 @@ mod tests {
         bytes.extend((payload.len() as i64).to_le_bytes());
         bytes.extend(payload);
         bytes
+    }
+
+    fn embedded_bitmap_payload(minor: u8, id: Uuid, compression_method: i32) -> Vec<u8> {
+        let mut bytes = vec![0x10 | minor];
+        bytes.extend(utf16("image.png"));
+        bytes.extend(0x1122_3344_u32.to_le_bytes());
+        bytes.extend(compression_method.to_le_bytes());
+        if compression_method == 0 {
+            bytes.extend(3_u32.to_le_bytes());
+            bytes.extend([0x11, 0x22, 0x33]);
+        } else {
+            bytes.extend(0_u32.to_le_bytes());
+        }
+        if minor >= 1 {
+            bytes.extend(id.to_wire());
+            bytes.extend(utf16("preview"));
+        }
+        bytes.extend([0xaa, 0xbb]);
+        bytes
+    }
+
+    #[test]
+    fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
+        let id = Uuid::from_canonical([
+            0x77, 0x2e, 0x6f, 0xc1, 0xb1, 0x7b, 0x4f, 0xc4, 0x8f, 0x54, 0x5f, 0xda, 0x51, 0x1d,
+            0x76, 0xd2,
+        ]);
+        let minor_zero_bytes = embedded_bitmap_payload(0, id, 1);
+        let minor_zero = parse_embedded_image(
+            &minor_zero_bytes,
+            0..minor_zero_bytes.len(),
+            ArchiveVersion::V8,
+            42,
+        )
+        .expect("minor zero embedded bitmap");
+        assert_eq!(minor_zero.source_uuid, None);
+        assert_eq!(minor_zero.name, "");
+        assert_eq!(minor_zero.buffer_byte_len, 4);
+
+        let minor_one_bytes = embedded_bitmap_payload(1, id, 1);
+        let minor_one = parse_embedded_image(
+            &minor_one_bytes,
+            0..minor_one_bytes.len(),
+            ArchiveVersion::V8,
+            42,
+        )
+        .expect("minor one embedded bitmap");
+        assert_eq!(minor_one.source_uuid, Some(id.to_string()));
+        assert_eq!(minor_one.name, "preview");
+        assert_eq!(minor_one.image_crc32, 0x1122_3344);
+        assert_eq!(minor_one.compression_method, 1);
+        assert_eq!(minor_one.buffer_byte_len, 4);
+
+        let raw_bytes = embedded_bitmap_payload(0, id, 0);
+        let raw = parse_embedded_image(&raw_bytes, 0..raw_bytes.len(), ArchiveVersion::V8, 42)
+            .expect("raw embedded bitmap");
+        assert_eq!(raw.compression_method, 0);
+        assert_eq!(raw.uncompressed_byte_len, 3);
+        assert_eq!(raw.buffer_byte_len, 7);
     }
 
     #[test]

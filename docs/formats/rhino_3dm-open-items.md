@@ -138,13 +138,17 @@ for material, texture, mapping, group, light, linetype, hatch, font,
 text-style, dimension-style, rendering attributes, view children, annotation
 settings, grid defaults, render settings, and related settings records.
 Tagged attribute/layer streams and explicit terminators are not generic suffix
-grammars.
+grammars. `ON_EmbeddedBitmap` is now source-settled: its major-1 payload has
+the path, CRC, outer compression method, method-specific buffer, and minor-1
+UUID/name gate documented in §20.4.
 
-**Need.** Producer writer/reader evidence for any remaining presentation class,
-or an independent witness showing its later version, fields, and boundary.
+**Need.** Producer writer/reader evidence for the remaining presentation
+classes, including the Windows bitmap payloads, or an independent witness
+showing each later version, field order, and boundary.
 
-**Note.** Narrowed 2026-08-16. The audited presentation set is settled; the
-remaining presentation classes need source or witness evidence.
+**Note.** Narrowed 2026-08-16. The embedded-bitmap writer and reader are now
+audited and tested; the remaining presentation classes need source or witness
+evidence.
 
 ### RS-01. Later-minor bounded suffixes
 

@@ -1471,6 +1471,7 @@ failure make the buffer invalid.
 | `ON_Point`               | `C3101A1D-F157-11D3-BFE7-0010830122F0` |
 | `ON_PointCloud`          | `2488F347-F8FA-11D3-BFEC-0010830122F0` |
 | `ON_PointGrid`           | `4ED7D4E5-E947-11D3-BFE5-0010830122F0` |
+| `ON_EmbeddedBitmap`      | `772E6FC1-B17B-4FC4-8F54-5FDA511D76D2` |
 | `ON_Hatch`               | `0559733B-5332-49D1-A936-0532AC76ADE5` |
 | `ON_DetailView`          | `C8C66EFA-B3CB-4E00-9440-2AD66203379E` |
 | `ON_NurbsCage`           | `06936AFB-3D3C-41AC-BF70-C9319FA480A1` |
@@ -3335,6 +3336,21 @@ one or two compressed palette/pixel buffers. `ON_WindowsBitmapEx` prefixes the
 bitmap with packed version 1.0 and a UTF-16 file path. Embedded bitmaps store
 component identity, file reference, compression method, uncompressed size, and
 the image buffer.
+
+`ON_EmbeddedBitmap` class data uses packed version `1.minor`. Its common prefix
+is:
+
+```
+UTF-16 file path
+u32 image CRC32
+i32 image compression method
+```
+
+Method 0 stores `u32 byte count` followed by that many raw image bytes. Method 1
+stores a compressed buffer using §10. The writer emits method 1. Minor 0 ends
+after the buffer. Minor 1 and later append the component UUID and UTF-16 name.
+The reader accepts major 1, applies those minor gates, and leaves any remaining
+bytes before the bounded class-data end as a suffix.
 
 Global annotation settings store drafting sizes, unit and format enums, font
 face, text and hatch scales, model/layout scaling flags, and optional dimension
