@@ -60,6 +60,10 @@ pub(crate) fn curve_expression_helix_definition(
         u.z * v.x - u.x * v.z,
         u.x * v.y - u.y * v.x,
     );
+    slots[9..12]
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(())?;
     let origin = Point3::new(slots[9], slots[10], slots[11]);
     let (sin, cos) = helix.start_angle.sin_cos();
     let major_direction = Vector3::new(
@@ -533,3 +537,6 @@ pub(crate) fn transfer_curve_expression_features(
     }
     transferred_parameter_count
 }
+
+#[cfg(test)]
+mod tests;
