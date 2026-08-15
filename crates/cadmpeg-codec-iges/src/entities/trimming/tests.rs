@@ -27,7 +27,8 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use super::{
-    cluster_boundary_positions, pcurve_within_declared_bounds, BoundaryVertexClusterError,
+    cluster_boundary_positions, coordinate_quantum, pcurve_within_declared_bounds,
+    BoundaryVertexClusterError, FaceTolerancePolicy,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -203,6 +204,23 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
             .collect::<Vec<_>>(),
         vec![Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
     );
+}
+
+#[test]
+fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
+    let global = crate::global::parse(
+        &crate::card::scan(&fixed_ascii_with_global(
+            b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,3,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let points = [Point3::new(100.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)];
+    let policy = FaceTolerancePolicy::from_global(&global, points.into_iter());
+
+    assert!((global.minimum_resolution_mm() - 0.001).abs() <= f64::EPSILON * 64.0);
+    assert!((coordinate_quantum(&global, points.into_iter()) - 1.0).abs() <= f64::EPSILON);
+    assert!((policy.topology_sewing - 1.0).abs() <= f64::EPSILON);
 }
 
 #[test]

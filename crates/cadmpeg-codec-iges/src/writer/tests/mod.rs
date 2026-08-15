@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::CadIr;
+
 mod encode;
 mod roundtrip;
 
@@ -27,6 +33,59 @@ fn number_collapses_libm_near_zeros_and_near_ones() {
         number(1.802_581_857_082_682),
         number(1.802_581_857_082_681_5)
     );
+}
+
+#[test]
+fn generated_resolution_covers_large_coordinate_endpoint_admission() {
+    let point_start = PointId("point#start".into());
+    let point_end = PointId("point#end".into());
+    let vertex_start = VertexId("vertex#start".into());
+    let vertex_end = VertexId("vertex#end".into());
+    let curve_id = CurveId("curve#line".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.points.extend([
+        Point {
+            id: point_start.clone(),
+            source_object: None,
+            position: Point3::new(2_000_000.0, 0.0, 0.0),
+        },
+        Point {
+            id: point_end.clone(),
+            source_object: None,
+            position: Point3::new(2_000_001.0, 0.0, 0.0),
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: vertex_start.clone(),
+            point: point_start,
+            tolerance: None,
+        },
+        Vertex {
+            id: vertex_end.clone(),
+            point: point_end,
+            tolerance: None,
+        },
+    ]);
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(2_000_000.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId("edge#line".into()),
+        curve: Some(curve_id),
+        start: vertex_start,
+        end: vertex_end,
+        param_range: Some([0.0, 1.0]),
+        tolerance: None,
+    });
+
+    let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
+    assert!((generated_minimum_resolution(&ir) - expected).abs() <= f64::EPSILON * 64.0);
 }
 
 #[test]

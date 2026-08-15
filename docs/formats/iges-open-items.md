@@ -53,29 +53,9 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-01. The Global minimum resolution serves five unrelated roles
-
-**Question.** Which topology and geometry decisions may use Global minimum resolution?
-
-**Known.** `trimming.rs:59-74` derives a coordinate quantum from the largest coordinate and single-precision significance, then takes the maximum with Global minimum resolution. The result is used for ring closure, vertex merging, and stored edge and face tolerances.
-
-**Need.** We need the source meaning of minimum resolution and separate rules for coordinate precision, curve-fit tolerance, topology sewing, and native tolerance fields.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `6bb0de35f` supplied a formula and synthetic boundary tests, but no external evidence supports using one value for these five roles.
-
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path
-
-### WR-02. The declared Global minimum resolution is tighter than the writer's own acceptance bound
-
-**Question.** What minimum resolution must a generated file declare?
-
-**Known.** `writer.rs:3232-3245` derives a generated value from model tolerances and a floor, while `writer.rs:3037-3040` accepts some pcurve gaps against a larger effective floor. The current documentation presents the generated resolution as the settled writer policy.
-
-**Need.** We need the declared resolution derived from the tolerances the writer accepts, and a round-trip test that proves the reader and writer use compatible bounds.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `17c19bdcb` changed the generated-resolution policy and fixtures without independent producer evidence. The code needs an evidence-backed relation between accepted gaps and the declared value.
 
 ### WR-03. The Type 186 outer shell is the first shell by position
 

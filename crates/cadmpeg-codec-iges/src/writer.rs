@@ -38,6 +38,7 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
 ];
 const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = 1.0e-10;
+const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = 1.0e-8;
 const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
@@ -3076,11 +3077,7 @@ impl PcurveOrientationContext<'_> {
         if uses.is_empty() {
             return Ok(PcurveOrientation::Directed);
         }
-        let tolerance = if self.tolerance.is_finite() {
-            self.tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
-        } else {
-            cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        };
+        let tolerance = effective_topology_tolerance(self.tolerance);
         let mapped = self.map(uses)?;
         let (directed_start, directed_end) = if self.sense == Sense::Forward {
             (self.natural_start, self.natural_end)
@@ -3272,7 +3269,8 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
 }
 
 fn generated_minimum_resolution(ir: &CadIr) -> f64 {
-    ir.model
+    let topology_tolerance = ir
+        .model
         .edges
         .iter()
         .filter_map(|edge| edge.tolerance)
@@ -3283,7 +3281,52 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
                 .filter_map(|vertex| vertex.tolerance),
         )
         .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
-        .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max)
+        .map(effective_topology_tolerance)
+        .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
+    let endpoint_scale = generated_endpoint_coordinate_scale(ir);
+    topology_tolerance.max(endpoint_scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE)
+}
+
+fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {
+    if explicit_tolerance.is_finite() {
+        explicit_tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
+    } else {
+        cadmpeg_ir::units::COINCIDENCE_TOLERANCE
+    }
+}
+
+fn generated_endpoint_coordinate_scale(ir: &CadIr) -> f64 {
+    let mut scale = 1.0_f64;
+    for edge in &ir.model.edges {
+        for vertex_id in [&edge.start, &edge.end] {
+            if let Some(point) = vertex_position(ir, vertex_id) {
+                scale = scale.max(point_coordinate_scale(point));
+            }
+        }
+        let Some(curve_id) = edge.curve.as_ref() else {
+            continue;
+        };
+        let Some(range) = edge.param_range else {
+            continue;
+        };
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
+            continue;
+        };
+        for parameter in range {
+            if let Some(point) = curve_point(&curve.geometry, parameter) {
+                scale = scale.max(point_coordinate_scale(point));
+            }
+        }
+    }
+    scale
+}
+
+fn point_coordinate_scale(point: Point3) -> f64 {
+    [point.x, point.y, point.z]
+        .into_iter()
+        .filter(|value| value.is_finite())
+        .map(f64::abs)
+        .fold(1.0, f64::max)
 }
 
 fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
@@ -4827,7 +4870,7 @@ fn close_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f
         .max(right.y.abs())
         .max(right.z.abs())
         .max(1.0);
-    let tolerance = (scale * 1.0e-8).max(explicit_tolerance);
+    let tolerance = (scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE).max(explicit_tolerance);
     (left.x - right.x).abs() <= tolerance
         && (left.y - right.y).abs() <= tolerance
         && (left.z - right.z).abs() <= tolerance

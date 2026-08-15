@@ -90,21 +90,35 @@ fn close(left: Point3, right: Point3, tolerance: f64) -> bool {
     tolerance.is_finite() && tolerance >= 0.0 && left.distance(right) <= tolerance
 }
 
-fn topology_sewing_tolerance(global: &Global, points: impl Iterator<Item = Point3>) -> f64 {
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FaceTolerancePolicy {
+    topology_sewing: f64,
+}
+
+impl FaceTolerancePolicy {
+    fn from_global(global: &Global, points: impl Iterator<Item = Point3>) -> Self {
+        let carrier_agreement = global.minimum_resolution_mm();
+        let coordinate_quantum = coordinate_quantum(global, points);
+        Self {
+            topology_sewing: carrier_agreement.max(coordinate_quantum),
+        }
+    }
+}
+
+fn coordinate_quantum(global: &Global, points: impl Iterator<Item = Point3>) -> f64 {
     let magnitude = points.fold(0.0_f64, |magnitude, point| {
         magnitude
             .max(point.x.abs())
             .max(point.y.abs())
             .max(point.z.abs())
     });
-    let coordinate_quantum = if magnitude > 0.0 {
+    if magnitude > 0.0 {
         10.0_f64.powf(
             magnitude.log10().floor() - f64::from(global.single_precision_significance()) + 1.0,
         )
     } else {
         0.0
-    };
-    global.minimum_resolution_mm().max(coordinate_quantum)
+    }
 }
 
 fn point_order(left: Point3, right: Point3) -> Ordering {
@@ -907,7 +921,7 @@ pub(super) fn project(
     {
         handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
-        let agreement_tolerance = global.minimum_resolution_mm();
+        let carrier_agreement_tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1093,7 +1107,7 @@ pub(super) fn project(
                             *sequence,
                             &support_geometry,
                             factor,
-                            Some(agreement_tolerance),
+                            Some(carrier_agreement_tolerance),
                             ctx,
                         )
                     })
@@ -1138,7 +1152,7 @@ pub(super) fn project(
                     &surface_id,
                     &pcurves,
                     segment.sense,
-                    agreement_tolerance,
+                    carrier_agreement_tolerance,
                     segment.parameter_curves_authoritative,
                 ) {
                     Ok(selected) => selected,
@@ -1197,10 +1211,11 @@ pub(super) fn project(
                     (item.end, item.start)
                 }
             };
-            let sewing_tolerance = topology_sewing_tolerance(
+            let tolerance_policy = FaceTolerancePolicy::from_global(
                 global,
                 items.iter().flat_map(|item| [item.start, item.end]),
             );
+            let sewing_tolerance = tolerance_policy.topology_sewing;
             face_tolerance = face_tolerance.max(sewing_tolerance);
             if items.iter().enumerate().any(|(index, item)| {
                 let (_, end) = traversal(item);
