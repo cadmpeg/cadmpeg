@@ -89,8 +89,8 @@ pub enum RangeIntervalSlot {
 pub struct RangeInterval {
     /// Atom preceding the fixed range type frame.
     pub prefix: RangeIntervalPrefix,
-    /// Source-ordered lower and upper slots. An absent pair uses the shorter
-    /// no-slot production.
+    /// Source-ordered lower and upper slots. An absent pair uses one of the
+    /// no-slot productions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slots: Option<[RangeIntervalSlot; 2]>,
 }
@@ -1135,37 +1135,43 @@ pub fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<
     (bytes.get(at) == Some(&0xe8)).then_some(())?;
     let (type_atom, next) = compact_atom(bytes, at + 1)?;
     (type_atom == 3848 && bytes.get(next) == Some(&0x37)).then_some(())?;
-    let (layout, next) = one_byte_atom(bytes, next + 1)?;
-    at = next;
-    let slots = match layout {
-        1 => None,
-        3 => {
-            let (value, next) = one_byte_atom(bytes, at)?;
-            (value == 1).then_some(())?;
-            at = next;
-            let mut slots = Vec::with_capacity(2);
-            for _ in 0..2 {
-                match *bytes.get(at)? {
-                    0xe6 => {
-                        let scalar_end = at.checked_add(9)?;
-                        let bits = View::u64_le_at(bytes, at + 1)?;
-                        f64::from_bits(bits).is_finite().then_some(())?;
-                        slots.push(RangeIntervalSlot::Binary64 {
-                            bits,
-                            offset: start + at,
-                        });
-                        at = scalar_end;
+    let body_at = next.checked_add(1)?;
+    let slots = if bytes.get(body_at) == Some(&0xfe) {
+        at = body_at;
+        None
+    } else {
+        let (layout, next) = one_byte_atom(bytes, body_at)?;
+        at = next;
+        match layout {
+            1 => None,
+            3 => {
+                let (value, next) = one_byte_atom(bytes, at)?;
+                (value == 1).then_some(())?;
+                at = next;
+                let mut slots = Vec::with_capacity(2);
+                for _ in 0..2 {
+                    match *bytes.get(at)? {
+                        0xe6 => {
+                            let scalar_end = at.checked_add(9)?;
+                            let bits = View::u64_le_at(bytes, at + 1)?;
+                            f64::from_bits(bits).is_finite().then_some(())?;
+                            slots.push(RangeIntervalSlot::Binary64 {
+                                bits,
+                                offset: start + at,
+                            });
+                            at = scalar_end;
+                        }
+                        0xe8 => {
+                            slots.push(RangeIntervalSlot::Unset { offset: start + at });
+                            at += 1;
+                        }
+                        _ => return None,
                     }
-                    0xe8 => {
-                        slots.push(RangeIntervalSlot::Unset { offset: start + at });
-                        at += 1;
-                    }
-                    _ => return None,
                 }
+                Some(slots.try_into().ok()?)
             }
-            Some(slots.try_into().ok()?)
+            _ => return None,
         }
-        _ => return None,
     };
     (!bytes[at..].is_empty() && bytes[at..].iter().all(|byte| *byte == 0xfe)).then_some(())?;
     Some(RangeInterval { prefix, slots })
@@ -1442,6 +1448,28 @@ mod tests {
         ] {
             assert_eq!(parse_range_interval(malformed, 0, malformed.len()), None);
         }
+    }
+
+    #[test]
+    fn range_interval_decodes_short_no_slot_body() {
+        let valid = [0x82, 0xe8, 0xe0, 0x07, 0x37, 0xfe, 0xfe];
+        assert_eq!(
+            parse_range_interval(&valid, 0, valid.len()),
+            Some(RangeInterval {
+                prefix: RangeIntervalPrefix::Compact { value: 2, width: 1 },
+                slots: None,
+            })
+        );
+        let missing_terminator = [0x82, 0xe8, 0xe0, 0x07, 0x37];
+        assert_eq!(
+            parse_range_interval(&missing_terminator, 0, missing_terminator.len()),
+            None
+        );
+        let trailing_non_terminator = [0x82, 0xe8, 0xe0, 0x07, 0x37, 0xfe, 0x81];
+        assert_eq!(
+            parse_range_interval(&trailing_non_terminator, 0, trailing_non_terminator.len()),
+            None
+        );
     }
 
     #[test]
