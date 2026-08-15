@@ -633,6 +633,63 @@ fn styled_item_invisibility_is_binding_scoped() {
 }
 
 #[test]
+fn point_style_invisibility_on_a_point_set_is_binding_scoped() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('point',(0.,0.,0.));
+#2=GEOMETRIC_CURVE_SET('point set',(#1));
+#3=COLOUR_RGB('red',1.,0.,0.);
+#4=PRE_DEFINED_MARKER('dot');
+#5=POINT_STYLE('point style',#4,1.,#3);
+#6=PRESENTATION_STYLE_ASSIGNMENT((#5));
+#7=STYLED_ITEM('',(#6),#2);
+#8=INVISIBILITY((#7));",
+    );
+    let binding = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| binding.source_entity_id.as_deref() == Some("#7"))
+        .expect("point styled item appearance binding");
+    assert_eq!(binding.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #8 targets unsupported item #7")
+    }));
+}
+
+#[test]
+fn invisibility_on_a_base_styled_item_hides_overriding_bindings() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('start',(0.,0.,0.));
+#2=CARTESIAN_POINT('end',(1.,0.,0.));
+#3=POLYLINE('line',(#1,#2));
+#4=COLOUR_RGB('red',1.,0.,0.);
+#5=CURVE_STYLE('line style',1.,.POSITIVE.,#4);
+#6=PRESENTATION_STYLE_ASSIGNMENT((#5));
+#7=STYLED_ITEM('',(#6),#3);
+#8=OVER_RIDING_STYLED_ITEM('',(#6),#3,#7);
+#9=INVISIBILITY((#7));",
+    );
+    let binding = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| binding.source_entity_id.as_deref() == Some("#8"))
+        .expect("overriding styled item appearance binding");
+    assert_eq!(binding.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #9 targets unsupported item #7")
+    }));
+}
+
+#[test]
 fn presentation_layer_invisibility_is_layer_scoped() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('layer point',(0.,0.,0.));

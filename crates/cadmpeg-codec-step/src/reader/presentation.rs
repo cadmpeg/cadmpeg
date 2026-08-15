@@ -445,7 +445,13 @@ pub(super) fn decode(
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
                     object_type: None,
-                    visible: hidden_style_ids.contains(&style_id).then_some(false),
+                    visible: style_is_hidden(
+                        style_id,
+                        &hidden_style_ids,
+                        exchange,
+                        &mut BTreeSet::new(),
+                    )
+                    .then_some(false),
                     channels: BTreeMap::new(),
                 });
             }
@@ -459,10 +465,17 @@ pub(super) fn decode(
     }
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
-            let source_id = format!("#{style_id}");
             let mut matched = false;
             for binding in &mut ir.model.appearance_bindings {
-                if binding.source_entity_id.as_deref() == Some(source_id.as_str()) {
+                let Some(binding_style_id) = binding
+                    .source_entity_id
+                    .as_deref()
+                    .and_then(|source_id| source_id.strip_prefix('#'))
+                    .and_then(|source_id| source_id.parse::<u64>().ok())
+                else {
+                    continue;
+                };
+                if style_inherits_from(binding_style_id, style_id, exchange, &mut BTreeSet::new()) {
                     binding.visible = Some(false);
                     matched = true;
                 }
@@ -1212,14 +1225,55 @@ enum StyleDomain {
 }
 
 fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
+    style_domain_at(id, exchange, &mut BTreeSet::new())
+}
+
+fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> StyleDomain {
+    if !active.insert(id) {
+        return StyleDomain::Any;
+    }
     let Some(record) = exchange.records.get(&id) else {
+        active.remove(&id);
         return StyleDomain::Any;
     };
+    let set_name = record.partials.iter().find_map(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET"
+        )
+        .then_some(partial.name.as_str())
+    });
+    if let Some(set_name) = set_name {
+        let member_domains = partial_parameter(record, set_name, 1)
+            .and_then(ValueExt::list)
+            .into_iter()
+            .flatten()
+            .filter_map(ValueExt::reference)
+            .map(|member| style_domain_at(member, exchange, active))
+            .collect::<Vec<_>>();
+        if !member_domains.is_empty() {
+            let first = member_domains[0];
+            if member_domains.iter().all(|domain| *domain == first) {
+                active.remove(&id);
+                return first;
+            }
+            if member_domains.iter().any(|domain| {
+                matches!(
+                    domain,
+                    StyleDomain::Surface | StyleDomain::Curve | StyleDomain::Point
+                )
+            }) {
+                active.remove(&id);
+                return StyleDomain::Any;
+            }
+        }
+    }
     let has_point = record.partials.iter().any(|partial| {
         let name = partial.name.as_str();
         name.contains("POINT") || name.contains("VERTEX")
     });
     if has_point {
+        active.remove(&id);
         return StyleDomain::Point;
     }
     let has_curve = record.partials.iter().any(|partial| {
@@ -1233,9 +1287,10 @@ fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
             )
     });
     if has_curve {
+        active.remove(&id);
         return StyleDomain::Curve;
     }
-    if record.partials.iter().any(|partial| {
+    let result = if record.partials.iter().any(|partial| {
         let name = partial.name.as_str();
         name.contains("FACE")
             || name.contains("SURFACE")
@@ -1245,7 +1300,45 @@ fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
         StyleDomain::Surface
     } else {
         StyleDomain::Any
+    };
+    active.remove(&id);
+    result
+}
+
+fn style_is_hidden(
+    id: u64,
+    hidden_style_ids: &BTreeSet<u64>,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+) -> bool {
+    if hidden_style_ids.contains(&id) || !active.insert(id) {
+        return hidden_style_ids.contains(&id);
     }
+    let hidden = exchange
+        .records
+        .get(&id)
+        .and_then(overridden_style)
+        .is_some_and(|base| style_is_hidden(base, hidden_style_ids, exchange, active));
+    active.remove(&id);
+    hidden
+}
+
+fn style_inherits_from(
+    id: u64,
+    ancestor: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+) -> bool {
+    if id == ancestor || !active.insert(id) {
+        return id == ancestor;
+    }
+    let inherits = exchange
+        .records
+        .get(&id)
+        .and_then(overridden_style)
+        .is_some_and(|base| style_inherits_from(base, ancestor, exchange, active));
+    active.remove(&id);
+    inherits
 }
 
 fn contains_null_style(
