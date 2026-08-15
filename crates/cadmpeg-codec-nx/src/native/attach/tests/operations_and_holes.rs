@@ -24,7 +24,7 @@ use crate::NxCodec;
 use super::*;
 
 #[test]
-fn nx_boolean_does_not_mix_segment_and_offset_store_identity_namespaces() {
+fn nx_boolean_keeps_body_namespace_proofs_atomic() {
     use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
@@ -85,8 +85,14 @@ fn nx_boolean_does_not_mix_segment_and_offset_store_identity_namespaces() {
             &BTreeMap::from([(94, vec![BodyId("nx:s18:body#3".to_string())])]),
         ),
         FeatureDefinition::Combine {
-            target: BodySelection::Native("nx:om-object-index#94".to_string()),
-            tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
+            target: BodySelection::Local {
+                bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
+                native: "nx:om-object-index#94".to_string(),
+            },
+            tools: BodySelection::Local {
+                bodies: vec!["nx:om-data-blocks-3:block#122".to_string()],
+                native: "nx:om-object-indices#122".to_string(),
+            },
             op: BooleanOp::Cut,
             keep_tools: false,
         }

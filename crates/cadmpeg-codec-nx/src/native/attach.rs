@@ -7047,7 +7047,9 @@ struct FeatureBodySelection {
 /// decoded body image. Retain the complete feature-input-local identities when
 /// current topology cannot represent a consumed historical body. An offset-store
 /// selection uses the exact data-block identities from its feature-history
-/// section, but never crosses into the segment-body identity namespace.
+/// section. A complete operation-local offset-store map takes precedence over
+/// a segment alias with the same integer; mixed namespace coverage remains
+/// native.
 fn feature_body_selection(
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
@@ -7077,13 +7079,10 @@ fn feature_body_selection_with_offset_blocks(
             body_alias_roots.get(index),
             offset_store_body_blocks.get(index),
         ) {
-            (Some(_), Some(_)) => {
-                // The same integer in both stores has no operation-local
-                // namespace proof; integer equality cannot choose a body.
-                return FeatureBodySelection {
-                    selection: BodySelection::Native(native),
-                    identity_keys: None,
-                };
+            (Some(_), Some(data_block)) => {
+                if !offset_blocks.contains(data_block) {
+                    offset_blocks.push(data_block.clone());
+                }
             }
             (Some(root), None) => {
                 if !roots.contains(root) {
