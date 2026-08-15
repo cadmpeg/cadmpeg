@@ -218,6 +218,37 @@ fn version_name(flag: i64) -> Option<&'static str> {
     }
 }
 
+fn date_value_is_valid(bytes: &[u8]) -> bool {
+    let dot = match bytes.len() {
+        13 => 6,
+        15 => 8,
+        _ => return false,
+    };
+    if bytes.get(dot) != Some(&b'.')
+        || bytes
+            .iter()
+            .enumerate()
+            .any(|(index, byte)| index != dot && !byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let number = |start: usize, end: usize| {
+        std::str::from_utf8(&bytes[start..end])
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+    };
+    let (month_start, day_start, hour_start, minute_start, second_start) = if dot == 6 {
+        (2, 4, 7, 9, 11)
+    } else {
+        (4, 6, 9, 11, 13)
+    };
+    number(month_start, month_start + 2).is_some_and(|month| (1..=12).contains(&month))
+        && number(day_start, day_start + 2).is_some_and(|day| (1..=31).contains(&day))
+        && number(hour_start, hour_start + 2).is_some_and(|hour| hour < 24)
+        && number(minute_start, minute_start + 2).is_some_and(|minute| minute < 60)
+        && number(second_start, second_start + 2).is_some_and(|second| second < 60)
+}
+
 impl Global {
     fn integer_field(
         &self,
@@ -249,7 +280,70 @@ impl Global {
         }
     }
 
+    fn string_field(&self, index: usize, name: &str, has_default: bool) -> Result<(), CodecError> {
+        match self.values.get(index).unwrap_or(&Value::Omitted) {
+            Value::Omitted if has_default => Ok(()),
+            Value::Omitted => Err(malformed(format!(
+                "field {} ({name}) has no value",
+                index + 1
+            ))),
+            Value::String(_) => Ok(()),
+            Value::Atom(_) => Err(malformed(format!(
+                "field {} ({name}) is not a string",
+                index + 1
+            ))),
+        }
+    }
+
+    fn date_field(&self, index: usize, name: &str, has_default: bool) -> Result<(), CodecError> {
+        match self.values.get(index).unwrap_or(&Value::Omitted) {
+            Value::Omitted if has_default => Ok(()),
+            Value::Omitted => Err(malformed(format!(
+                "field {} ({name}) has no value",
+                index + 1
+            ))),
+            Value::String(value) if has_default && value.is_empty() => Ok(()),
+            Value::String(value) if date_value_is_valid(value) => Ok(()),
+            Value::String(_) => Err(malformed(format!(
+                "field {} ({name}) is not a valid timestamp",
+                index + 1
+            ))),
+            Value::Atom(_) => Err(malformed(format!(
+                "field {} ({name}) is not a string",
+                index + 1
+            ))),
+        }
+    }
+
     fn validate(&self) -> Result<(), CodecError> {
+        if self.values.len() > 26 {
+            return Err(malformed("Global record has more than 26 fields"));
+        }
+        for (index, name) in [
+            (2, "product identification"),
+            (3, "file name"),
+            (4, "native system ID"),
+            (5, "preprocessor version"),
+        ] {
+            self.string_field(index, name, false)?;
+        }
+        for (index, name) in [
+            (6, "integer representation bits"),
+            (7, "single-precision magnitude"),
+            (8, "single-precision significance"),
+            (9, "double-precision magnitude"),
+            (10, "double-precision significance"),
+        ] {
+            self.integer_field(index, name, None)?;
+        }
+        self.string_field(11, "receiver product identification", true)?;
+        self.string_field(14, "units name", true)?;
+        self.date_field(17, "date and time of exchange file generation", false)?;
+        self.string_field(20, "author name", true)?;
+        self.string_field(21, "author organization", true)?;
+        self.date_field(24, "date and time model was created or modified", true)?;
+        self.string_field(25, "application protocol", true)?;
+
         for (index, name) in [
             (8, "single-precision significance"),
             (10, "double-precision significance"),
@@ -278,9 +372,9 @@ impl Global {
             ));
         }
         let gradations = self.integer_field(15, "maximum line-weight gradations", Some(1))?;
-        if !(1..=32_768).contains(&gradations) {
+        if gradations <= 0 {
             return Err(malformed(
-                "field 16 (maximum line-weight gradations) must be in 1 through 32768",
+                "field 16 (maximum line-weight gradations) must be greater than zero",
             ));
         }
         let maximum_width = self.real_field(16, "maximum line width", None)?;
@@ -295,10 +389,17 @@ impl Global {
                 "field 19 (minimum resolution) must be finite and nonnegative",
             ));
         }
-        let version = self.integer_field(22, "version flag", Some(3))?;
-        if version_name(version).is_none() {
+        let maximum_coordinate = self.real_field(19, "maximum coordinate", Some(0.0))?;
+        if !maximum_coordinate.is_finite() || maximum_coordinate < 0.0 {
             return Err(malformed(
-                "field 23 (version flag) is not a defined IGES version",
+                "field 20 (maximum coordinate) must be finite and nonnegative",
+            ));
+        }
+        self.integer_field(22, "version flag", Some(3))?;
+        let drafting_standard = self.integer_field(23, "drafting standard flag", Some(0))?;
+        if !(0..=7).contains(&drafting_standard) {
+            return Err(malformed(
+                "field 24 (drafting standard flag) must be in 0 through 7",
             ));
         }
         Ok(())
@@ -424,8 +525,14 @@ impl Global {
     }
 
     pub(crate) fn version_flag(&self) -> i64 {
-        self.integer_field(22, "version flag", Some(3))
+        match self
+            .integer_field(22, "version flag", Some(3))
             .expect("validated Global version flag")
+        {
+            value if value < 1 => 3,
+            value if value > 11 => 11,
+            value => value,
+        }
     }
 
     pub(crate) fn version(&self) -> &'static str {
