@@ -192,6 +192,47 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
 }
 
 #[test]
+fn decode_does_not_infer_a_source_header_for_unresolved_partition_sites() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body(
+            "first partition header",
+            "SCH_SW_33103_11000",
+            &owned_triangle(0, 700, 0.0),
+        ),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body(
+            "second partition header",
+            "SCH_SW_33104_12000",
+            &owned_triangle(0, 701, 10_000.0),
+        ),
+    ));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let attributes = &result.ir().source.as_ref().unwrap().attributes;
+
+    assert_eq!(
+        attributes.get("sldprt_active_partition_unresolved"),
+        Some(&"true".to_string())
+    );
+    assert!(!attributes.contains_key("parasolid_schema"));
+    assert!(!attributes.contains_key("parasolid_description"));
+    assert!(result
+        .ir()
+        .model
+        .points
+        .iter()
+        .all(|point| point.id.0.contains("@block@")));
+}
+
+#[test]
 fn decode_uses_the_active_configuration_source_site() {
     let mut source = sldprt_with_colliding_sites();
     source.extend(make_block(

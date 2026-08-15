@@ -224,7 +224,7 @@ The attribute scanner accepts only the exact supported family names followed imm
 
 **Need.** We must know whether another stored field selects one partition when multiple partitions exist and no configuration record supplies `SourceIndex`.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/decode.rs:1918-1947` selects `max_by_key((faces, bodies, points, reverse(index)))` when `container::select_active_parasolid` returns no unique candidate. If a file has two non-ghost partition sites and no `SourceIndex`, the richer site is selected without a native identity field. The container selector itself requires an unambiguous candidate, but the decode fallback bypasses that unresolved state.
+**Note.** `container::select_active_parasolid` returns no candidate when multiple non-ghost partition sites exist without a native active selector. The decoder merges every such site with qualified identities. It copies Parasolid schema and description into source metadata only when the representative headers of all merged sites agree; otherwise those fields remain absent. The native field that would identify an active site remains unknown.
 
 ### CM-10. Parasolid stream boundary
 

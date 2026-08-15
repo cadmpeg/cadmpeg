@@ -2,17 +2,18 @@
 //! High-level `.sldprt` decoding.
 //!
 //! [`decode`] scans the outer [`crate::container`], groups related Parasolid
-//! `partition` and `deltas` streams, and selects the group that yields the
-//! richest B-rep. It then adds appearances, display meshes, document attributes,
+//! `partition` and `deltas` streams, and preserves the native active site when
+//! one is identified. Other sites are merged with qualified identities; when
+//! no active site is identified, every site is merged with qualified
+//! identities. It then adds appearances, display meshes, document attributes,
 //! feature history, feature-input lanes, provenance, and retained source data.
 //!
 //! The returned [`DecodeResult`] contains both the IR and its diagnostics.
 //! Untyped surface and curve carriers become opaque geometry linked to the
-//! retained partition. If no body stream yields geometry, decoding returns a
+//! retained Parasolid source record. If no body stream yields geometry, decoding returns a
 //! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
 //! requests the metadata-only path.
 
-use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -79,7 +80,9 @@ impl BodyOrigin<'_> {
 }
 
 struct DecodedBrep {
-    selected: usize,
+    /// Representative stream whose header is common to every merged site.
+    /// This can be present for an unresolved merge without selecting a site.
+    metadata_stream: Option<usize>,
     brep: Brep,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
 }
@@ -117,10 +120,13 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
+            let source_header = decoded
+                .metadata_stream
+                .and_then(|index| streams.get(index).map(|stream| &stream.header));
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &scan,
-                &streams[decoded.selected].header,
+                source_header,
                 decoded.brep,
                 &decoded.configuration_bodies,
                 &mut admitted_entities,
@@ -1879,8 +1885,7 @@ fn multiply_projected_sketch_relation_records(
         .count()
 }
 
-/// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
-/// frames but yields no geometry, so the caller falls back to metadata.
+/// Collect the available Parasolid body streams, excluding auxiliary sites.
 fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
     let block_streams = scan.blocks.iter().flat_map(|block| {
         block.ps_streams.iter().filter_map(move |payload| {
@@ -1929,6 +1934,9 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
     streams
 }
 
+/// Decode the available Parasolid body streams into one B-rep. Returns `None`
+/// when the streams frame but yield neither geometry nor a valid empty
+/// partition/deltas model, so the caller falls back to metadata.
 fn try_decode_brep(
     scan: &ContainerScan,
     streams: &[BodyStream<'_>],
@@ -1949,28 +1957,20 @@ fn try_decode_brep(
             .map(|index| (streams[*index].payload, &streams[*index].header))
             .collect();
         let decoded = brep::decode_bodies(&bodies, &name);
-        let score = (
-            decoded.faces.len(),
-            decoded.bodies.len(),
-            decoded.points.len(),
-        );
-        decoded_sites.push((site.clone(), first, score, decoded));
+        decoded_sites.push((site.clone(), first, decoded));
+    }
+    if decoded_sites.is_empty() {
+        return None;
     }
     let active_site = container::select_active_parasolid(scan)
         .map(|(block, _)| format!("block@{}", block.offset));
-    let resolved_active_site = active_site.as_ref().and_then(|active| {
-        decoded_sites
-            .iter()
-            .position(|(site, _, _, _)| site == active)
-    });
-    let selected_site = resolved_active_site.or_else(|| {
-        decoded_sites
-            .iter()
-            .enumerate()
-            .max_by_key(|(index, (_, _, score, _))| (*score, Reverse(*index)))
-            .map(|(index, _)| index)
-    })?;
-    let selected_is_empty_model = decoded_sites[selected_site].3.stats.source_entity_records == 0
+    let resolved_active_site = active_site
+        .as_ref()
+        .and_then(|active| decoded_sites.iter().position(|(site, _, _)| site == active));
+    // Without a resolved active site, this is only a deterministic merge
+    // accumulator. All site identities are qualified below.
+    let selected_site = resolved_active_site.unwrap_or(0);
+    let selected_is_empty_model = decoded_sites[selected_site].2.stats.source_entity_records == 0
         && sites[&decoded_sites[selected_site].0].iter().any(|index| {
             streams[*index]
                 .header
@@ -1985,15 +1985,53 @@ fn try_decode_brep(
                 .to_ascii_lowercase()
                 .contains("deltas")
         });
-    if !selected_is_empty_model
-        && decoded_sites[selected_site].3.faces.is_empty()
-        && decoded_sites[selected_site].3.surfaces.is_empty()
-        && decoded_sites[selected_site].3.points.is_empty()
-    {
-        return None;
+    let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
+        || !decoded_sites[selected_site].2.surfaces.is_empty()
+        || !decoded_sites[selected_site].2.points.is_empty();
+    if resolved_active_site.is_some() {
+        if !selected_is_empty_model && !selected_has_geometry {
+            return None;
+        }
+    } else {
+        let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
+            !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
+        });
+        let any_empty_model = decoded_sites.iter().any(|(site, _, decoded)| {
+            decoded.stats.source_entity_records == 0
+                && sites[site].iter().any(|index| {
+                    streams[*index]
+                        .header
+                        .description
+                        .to_ascii_lowercase()
+                        .contains("partition")
+                })
+                && sites[site].iter().any(|index| {
+                    streams[*index]
+                        .header
+                        .description
+                        .to_ascii_lowercase()
+                        .contains("deltas")
+                })
+        });
+        if !any_site_has_geometry && !any_empty_model {
+            return None;
+        }
     }
-    let (selected_site_key, selected, _, mut decoded) = decoded_sites.swap_remove(selected_site);
-    if resolved_active_site.is_none() {
+    let active_stream = resolved_active_site.map(|site| decoded_sites[site].1);
+    let metadata_stream = active_stream.or_else(|| {
+        let first = decoded_sites.first()?.1;
+        let first_header = &streams[first].header;
+        decoded_sites
+            .iter()
+            .all(|(_, representative, _)| {
+                let header = &streams[*representative].header;
+                header.schema == first_header.schema
+                    && header.description == first_header.description
+            })
+            .then_some(first)
+    });
+    let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
+    if active_stream.is_none() {
         decoded.qualify_ids(&selected_site_key);
     }
     bind_opaque_geometry(&mut decoded, &streams[selected].origin.unknown_id());
@@ -2004,7 +2042,7 @@ fn try_decode_brep(
             decoded.bodies.iter().map(|body| body.id.clone()).collect(),
         ));
     }
-    for (site, first, _, mut alternate) in decoded_sites {
+    for (site, first, mut alternate) in decoded_sites {
         alternate.qualify_ids(&site);
         bind_opaque_geometry(&mut alternate, &streams[first].origin.unknown_id());
         if let Some(index) = configuration_index(&streams[first].origin.name()) {
@@ -2022,7 +2060,7 @@ fn try_decode_brep(
     let report = build_geometry_report(scan, &decoded);
     Some((
         DecodedBrep {
-            selected,
+            metadata_stream,
             brep: decoded,
             configuration_bodies,
         },
@@ -2098,7 +2136,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    header: &StreamHeader,
+    header: Option<&StreamHeader>,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
     admitted_entities: &mut u64,
@@ -2531,6 +2569,9 @@ fn build_geometry_ir(
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
     let mut unknowns = brep.unknowns;
+    let annotation_source = header.map_or("unresolved Parasolid stream", |header| {
+        header.description.as_str()
+    });
     for face_color in brep.face_colors {
         let id = AppearanceId(format!(
             "sldprt:appearance:entity53#{}",
@@ -2539,7 +2580,7 @@ fn build_geometry_ir(
         crate::annotations::note(
             &mut annotations,
             id.0.clone(),
-            header.description.clone(),
+            annotation_source,
             face_color.offset as u64,
             "00_53_color",
             Exactness::ByteExact,
@@ -2785,7 +2826,7 @@ fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::S
     }
 }
 
-fn source_meta(scan: &ContainerScan, header: &StreamHeader) -> SourceMeta {
+fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
@@ -2813,11 +2854,13 @@ fn source_meta(scan: &ContainerScan, header: &StreamHeader) -> SourceMeta {
     } else {
         attributes.insert("sldprt_active_partition_unresolved".into(), "true".into());
     }
-    attributes.insert("parasolid_schema".to_string(), header.schema.clone());
-    attributes.insert(
-        "parasolid_description".to_string(),
-        header.description.clone(),
-    );
+    if let Some(header) = header {
+        attributes.insert("parasolid_schema".to_string(), header.schema.clone());
+        attributes.insert(
+            "parasolid_description".to_string(),
+            header.description.clone(),
+        );
+    }
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes);
     SourceMeta {
