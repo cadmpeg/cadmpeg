@@ -20,7 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 These items have a Conflict part and need a decision.
 
-- XT-03. Non-manifold radial order
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
 
@@ -78,21 +77,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** The opaque/native fallback in `6d9430a69` is not semantic evidence. The item remains open for any unregistered GUI type; no FreeCAD source or independent files establish that the type has no neutral meaning.
 
-## 3. Exact-topology transfer
-
-### XT-03. Non-manifold radial order
-
-**Question.** What source order defines the radial cycle when more than two coedges use the same edge?
-
-**Known.** Native topology retains ordered child uses and orientations. A neutral coedge has one `radial_next` relation.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/topology_transfer.rs:1661-1671` links one or two coedges, but leaves three or more self-radial. It therefore selects “no radial order” without showing that the source has no radial relation.
-
-**Need.** We must establish whether the B-rep topology supplies a radial order for non-manifold uses. If it does not, the neutral model must retain unordered incidence or mark the radial order unresolved.
-
-**Note.** Commit `63d07acec` changed the neutral fallback and stated that the source has no radial order. No producer source or independent non-manifold witness was cited.
-
-## 4. Design projection
+## 3. Design projection
 
 ### DP-02. Sketch profile seed order
 

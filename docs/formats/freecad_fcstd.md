@@ -240,7 +240,7 @@ slant distance to neutral axial distance. A surface of revolution uses U as its 
 V as its directrix parameter. A trimmed surface converts its persisted support-coordinate bounds
 and pcurves to zero-based local parameters while preserving each bound's direction.
 
-The B-rep edge record stores incidence but no radial order between three or more face uses. One
+The serialized edge child uses provide endpoint incidence but no radial-neighbor relation. One
 coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;
 their shared edge identity carries unordered non-manifold incidence without asserting a
 serialization-dependent radial cycle.

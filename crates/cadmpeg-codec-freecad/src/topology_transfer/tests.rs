@@ -228,6 +228,22 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .collect::<Vec<_>>();
     close_radial_rings(&mut coedges);
     assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
+
+    let id = CoedgeId("coedge-single".into());
+    let mut singleton = vec![Coedge {
+        id: id.clone(),
+        owner_loop: LoopId("loop-single".into()),
+        edge,
+        next: id.clone(),
+        previous: id.clone(),
+        radial_next: id.clone(),
+        sense: Sense::Forward,
+        use_curve: None,
+        use_curve_parameter_range: None,
+        pcurves: Vec::new(),
+    }];
+    close_radial_rings(&mut singleton);
+    assert_eq!(singleton[0].radial_next, id);
 }
 
 #[test]
