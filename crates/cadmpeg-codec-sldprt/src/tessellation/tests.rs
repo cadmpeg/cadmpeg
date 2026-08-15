@@ -160,6 +160,14 @@ fn analytic_surface_residuals_measure_normal_distance() {
         major_radius: 5.0,
         minor_radius: 2.0,
     };
+    let cone = SurfaceGeometry::Cone {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 3.0,
+        ratio: 0.5,
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
 
     for (surface, point, displaced) in [
         (
@@ -188,27 +196,32 @@ fn analytic_surface_residuals_measure_normal_distance() {
             analytic_surface_residual(surface, displaced).is_some_and(|residual| residual > 0.0)
         );
     }
+
+    let local_radius = 3.0 + 2.0 * std::f64::consts::FRAC_PI_4.tan();
+    let cone_point = Point3::new(local_radius, 0.0, 2.0);
+    assert!(analytic_surface_residual(&cone, cone_point)
+        .is_some_and(|residual| residual <= f64::EPSILON * 128.0));
+    assert!(
+        analytic_surface_residual(&cone, Point3::new(local_radius + 0.5, 0.0, 2.0))
+            .is_some_and(|residual| residual > 0.0)
+    );
 }
 
-fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) -> FaceId {
+fn add_face(
+    model: &mut cadmpeg_ir::document::Model,
+    name: &str,
+    geometry: SurfaceGeometry,
+    corners: [Point3; 4],
+) -> FaceId {
     let face_id = FaceId(format!("face-{name}"));
     let loop_id = LoopId(format!("loop-{name}"));
     let surface_id = SurfaceId(format!("surface-{name}"));
     model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry,
         source_object: None,
     });
-    let corners = [
-        Point3::new(x, -1.0, 0.0),
-        Point3::new(x + 2.0, -1.0, 0.0),
-        Point3::new(x + 2.0, 1.0, 0.0),
-        Point3::new(x, 1.0, 0.0),
-    ];
+
     let coedge_ids = (0..4)
         .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
         .collect::<Vec<_>>();
@@ -277,9 +290,26 @@ fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) 
     face_id
 }
 
-#[test]
-fn bounded_planar_trim_selects_between_coincident_supports() {
-    let mut model = cadmpeg_ir::document::Model {
+fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) -> FaceId {
+    add_face(
+        model,
+        name,
+        SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        [
+            Point3::new(x, -1.0, 0.0),
+            Point3::new(x + 2.0, -1.0, 0.0),
+            Point3::new(x + 2.0, 1.0, 0.0),
+            Point3::new(x, 1.0, 0.0),
+        ],
+    )
+}
+
+fn model_with_body() -> cadmpeg_ir::document::Model {
+    cadmpeg_ir::document::Model {
         bodies: vec![Body {
             id: BodyId("body".into()),
             kind: BodyKind::Solid,
@@ -302,7 +332,12 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
             free_vertices: Vec::new(),
         }],
         ..Default::default()
-    };
+    }
+}
+
+#[test]
+fn bounded_planar_trim_selects_between_coincident_supports() {
+    let mut model = model_with_body();
     let first = add_square_face(&mut model, "first", -4.0);
     let second = add_square_face(&mut model, "second", 2.0);
     model.shells[0].faces = vec![first.clone(), second.clone()];
@@ -342,6 +377,57 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     model.tessellations[0].faces.clear();
     assert!(assign_unique_analytic_owners(&mut model).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn cone_support_binds_display_list_face() {
+    let mut model = model_with_body();
+    let cone = SurfaceGeometry::Cone {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 3.0,
+        ratio: 0.5,
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
+    let v = 2.0;
+    let local_radius = 3.0 + v * std::f64::consts::FRAC_PI_4.tan();
+    let face = add_face(
+        &mut model,
+        "cone",
+        cone,
+        [
+            Point3::new(local_radius, 0.0, v),
+            Point3::new(0.0, local_radius * 0.5, v),
+            Point3::new(-local_radius, 0.0, v),
+            Point3::new(0.0, -local_radius * 0.5, v),
+        ],
+    );
+    model.shells[0].faces.push(face.clone());
+    model.tessellations.push(Tessellation {
+        id: "cone-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(local_radius, 0.0, v),
+            Point3::new(0.0, local_radius * 0.5, v),
+            Point3::new(-local_radius, 0.0, v),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert_eq!(assign_unique_analytic_owners(&mut model), vec!["cone-mesh"]);
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
 }
 
 #[test]

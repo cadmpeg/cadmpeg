@@ -820,11 +820,37 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
                     .abs(),
             )
         }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let unit = |vector: Vector3| {
+                let length = vector.norm();
+                (length.is_finite() && length > f64::EPSILON).then(|| vector.scale(1.0 / length))
+            };
+            let axis = unit(*axis)?;
+            let reference = unit(*ref_direction - axis.scale((*ref_direction).dot(axis)))?;
+            let transverse = unit(axis.cross(reference))?;
+            let slope = half_angle.tan();
+            if !radius.is_finite() || !ratio.is_finite() || *ratio <= 0.0 || !slope.is_finite() {
+                return None;
+            }
+            let delta = subtract(point, *origin);
+            let axial = delta.dot(axis);
+            let major = delta.dot(reference);
+            let minor = delta.dot(transverse);
+            let local_radius = radius + axial * slope;
+            let elliptical_radius = major.hypot(minor / ratio);
+            Some((elliptical_radius - local_radius.abs()).abs())
+        }
         SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             analytic_surface_residual(basis, transform.try_inverse_affine()?.apply_point(point))
         }
-        SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Nurbs(_)
+        SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }
