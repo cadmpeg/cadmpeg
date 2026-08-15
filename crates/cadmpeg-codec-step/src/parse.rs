@@ -542,6 +542,7 @@ fn has_named_carrier(name: &str) -> bool {
             | "SURFACE_OF_REVOLUTION"
             | "SURFACE_REPLICA"
             | "TESSELLATED_FACE"
+            | "TESSELLATED_CURVE_SET"
             | "TESSELLATED_GEOMETRIC_SET"
             | "REPOSITIONED_TESSELLATED_ITEM"
             | "TESSELLATED_SHELL"

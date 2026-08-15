@@ -33,6 +33,27 @@ use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
 
+const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
+
+fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
+    let CurveGeometry::Polyline {
+        points,
+        parameters,
+        chordal_deflection,
+    } = &curve.geometry
+    else {
+        panic!("expected tessellated curve to transfer as a polyline");
+    };
+    assert!(parameters.is_none());
+    assert!(chordal_deflection.abs() < EPS_TESSELLATED_CURVE_POINT);
+    assert_eq!(points.len(), expected.len());
+    for (point, &(x, y, z)) in points.iter().zip(expected) {
+        assert!((point.x - x).abs() < EPS_TESSELLATED_CURVE_POINT);
+        assert!((point.y - y).abs() < EPS_TESSELLATED_CURVE_POINT);
+        assert!((point.z - z).abs() < EPS_TESSELLATED_CURVE_POINT);
+    }
+}
+
 #[test]
 pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     let source = StepCodec::default()
@@ -640,4 +661,91 @@ fn unreferenced_curve_is_associated_as_free_geometry() {
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
+    let decoded = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=COORDINATES_LIST('',3,((1.,0.,0.),(2.,0.,0.),(2.,1.,0.),(3.,1.,0.)));
+#4=TESSELLATED_CURVE_SET('display curve',#3,((1,2,3),(3,4)));
+#5=(REPRESENTATION_ITEM('complex curve') TESSELLATED_CURVE_SET(#3,((4,1))));
+#6=REPRESENTATION('display',(#4,#5),#2);",
+    );
+
+    let first = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#4")
+        .expect("first tessellated line strip");
+    let second = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#4-strip-1")
+        .expect("second tessellated line strip");
+    let complex = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#5")
+        .expect("complex tessellated line strip");
+    assert_tessellated_curve_polyline(
+        first,
+        &[(10.0, 0.0, 0.0), (20.0, 0.0, 0.0), (20.0, 10.0, 0.0)],
+    );
+    assert_tessellated_curve_polyline(second, &[(20.0, 10.0, 0.0), (30.0, 10.0, 0.0)]);
+    assert_tessellated_curve_polyline(complex, &[(30.0, 10.0, 0.0), (10.0, 0.0, 0.0)]);
+    assert_eq!(
+        first
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#4")
+    );
+    assert_eq!(
+        first
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("display curve")
+    );
+    assert!(!decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| {
+            record.id.0.ends_with("#3")
+                || record.id.0.ends_with("#4")
+                || record.id.0.ends_with("#5")
+        }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn tessellated_curve_set_with_invalid_indices_stays_source_native() {
+    let decoded = decode_inline(
+        "#1=COORDINATES_LIST('',3,((1.,0.,0.),(2.,0.,0.)));
+#2=TESSELLATED_CURVE_SET(#1,((0,1)));",
+    );
+
+    assert!(!decoded.ir().model.curves.iter().any(|curve| {
+        curve
+            .source_object
+            .as_ref()
+            .is_some_and(|source| source.object_id == "#2")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0.ends_with("#2")));
 }

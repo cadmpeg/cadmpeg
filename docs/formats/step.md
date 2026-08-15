@@ -642,6 +642,9 @@ triangle strip alternates the first two indices for each odd triangle so
 adjacent triangles keep one surface orientation. A normal aggregate of length
 one applies to every local point; other normal aggregates align with the local
 point table.
+`TESSELLATED_CURVE_SET` uses its `COORDINATES_LIST` and one-based `line_strips`
+indices to transfer each strip as a separate polyline carrier. The reader does
+not join strips or invent source parameters or a chordal bound.
 
 `TESSELLATED_ANNOTATION_OCCURRENCE` carries a tessellated geometric set;
 supported triangulated descendants transfer as detached tessellations. A

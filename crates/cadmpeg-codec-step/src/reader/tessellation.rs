@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::SourceObjectAssociation;
@@ -36,7 +36,7 @@ pub(super) fn decode(
                 .get(&id)
                 .copied()
                 .unwrap_or(geometry.length_scale);
-            coordinate_rows(record, scale).map(|vertices| (id, vertices))
+            super::geometry::coordinate_rows(record, scale).map(|vertices| (id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
     let mut typed = HashSet::new();
@@ -631,34 +631,6 @@ fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {
         .iter()
         .map(|value| u32::try_from(value.integer()?).ok())
         .collect()
-}
-
-fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| partial.parameters.iter())
-        .filter_map(ValueExt::list)
-        .find_map(|rows| {
-            rows.iter()
-                .map(|row| {
-                    let values = row.list()?;
-                    if values.len() != 3 {
-                        return None;
-                    }
-                    let point = Point3::new(
-                        values[0].number()? * scale,
-                        values[1].number()? * scale,
-                        values[2].number()? * scale,
-                    );
-                    [point.x, point.y, point.z]
-                        .iter()
-                        .all(|coordinate| coordinate.is_finite())
-                        .then_some(point)
-                })
-                .collect::<Option<Vec<_>>>()
-                .filter(|vertices| !vertices.is_empty())
-        })
 }
 
 fn has_entity(record: &RawRecord, name: &str) -> bool {

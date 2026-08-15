@@ -336,14 +336,24 @@ fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
         .ir()
         .native_unknowns("step")
         .expect("STEP unknown records");
-    for id in [11, 12, 13] {
+    assert!(
+        unknowns.iter().any(|record| record.id.0.ends_with("#11")),
+        "unmodeled tessellated wrapper #11 was not retained"
+    );
+    for id in [12, 13] {
         assert!(
-            unknowns
+            !unknowns
                 .iter()
                 .any(|record| record.id.0.ends_with(&format!("#{id}"))),
-            "tessellated carrier #{id} was consumed without a neutral representation"
+            "decoded tessellated curve carrier #{id} was retained as opaque"
         );
     }
+    assert!(result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#12"));
 }
 
 #[test]

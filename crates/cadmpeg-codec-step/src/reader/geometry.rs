@@ -367,6 +367,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             _ => {}
         }
     }
+    decode_tessellated_curve_sets(
+        exchange,
+        &unit_scales,
+        scale,
+        ir,
+        &mut typed,
+        &mut warnings,
+        &mut losses,
+    );
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
         if record
@@ -1872,6 +1881,119 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         losses,
         notes: Vec::new(),
     }
+}
+
+fn decode_tessellated_curve_sets(
+    exchange: &Exchange,
+    unit_scales: &UnitScales,
+    fallback_scale: f64,
+    ir: &mut CadIr,
+    typed: &mut HashSet<u64>,
+    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
+) {
+    for (&id, record) in &exchange.records {
+        if record.partial("TESSELLATED_CURVE_SET").is_none() {
+            continue;
+        }
+        let Some(coordinates_id) =
+            tessellated_curve_parameter(record, 0).and_then(ValueExt::reference)
+        else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
+            ));
+            continue;
+        };
+        let Some(coordinates_record) = exchange.records.get(&coordinates_id) else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
+            ));
+            continue;
+        };
+        let scale = unit_scales.length(coordinates_id, fallback_scale);
+        let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
+            ));
+            continue;
+        };
+        let Some(strips) =
+            tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len())
+        else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} has invalid line strips"
+            ));
+            continue;
+        };
+        let source_name = representation_item_name(record)
+            .and_then(|value| {
+                super::decode_text(
+                    exchange,
+                    value,
+                    losses,
+                    id,
+                    "tessellated curve name",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            })
+            .filter(|name| !name.is_empty());
+        for (strip_index, indices) in strips.into_iter().enumerate() {
+            let curve_key = if strip_index == 0 {
+                id.to_string()
+            } else {
+                format!("{id}-strip-{strip_index}")
+            };
+            let points = indices.into_iter().map(|index| vertices[index]).collect();
+            ir.model.curves.push(Curve {
+                id: CurveId(StepIdentity::data("curve", curve_key)),
+                geometry: CurveGeometry::Polyline {
+                    points,
+                    parameters: None,
+                    chordal_deflection: 0.0,
+                },
+                source_object: Some(SourceObjectAssociation {
+                    format: "step".into(),
+                    object_id: format!("#{id}"),
+                    name: source_name.clone(),
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
+        typed.extend([id, coordinates_id]);
+    }
+}
+
+fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
+    let partial = record.partial("TESSELLATED_CURVE_SET")?;
+    let offset = usize::from(record.partials.len() == 1);
+    partial.parameters.get(index + offset)
+}
+
+fn tessellated_line_strips(value: Option<&Value>, point_count: usize) -> Option<Vec<Vec<usize>>> {
+    let strips = value?.list()?;
+    if strips.is_empty() {
+        return None;
+    }
+    let mut decoded = Vec::with_capacity(strips.len());
+    for strip in strips {
+        let values = strip.list()?;
+        if values.len() < 2 {
+            return None;
+        }
+        let mut indices = Vec::with_capacity(values.len());
+        for value in values {
+            let index = usize::try_from(value.integer()?).ok()?.checked_sub(1)?;
+            if index >= point_count {
+                return None;
+            }
+            indices.push(index);
+        }
+        decoded.push(indices);
+    }
+    Some(decoded)
 }
 
 fn face_surface_reference(record: &RawRecord) -> Option<u64> {
@@ -3646,6 +3768,34 @@ fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
+}
+
+pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
+        .filter_map(ValueExt::list)
+        .find_map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let values = row.list()?;
+                    if values.len() != 3 {
+                        return None;
+                    }
+                    let point = Point3::new(
+                        values[0].number()? * scale,
+                        values[1].number()? * scale,
+                        values[2].number()? * scale,
+                    );
+                    [point.x, point.y, point.z]
+                        .iter()
+                        .all(|coordinate| coordinate.is_finite())
+                        .then_some(point)
+                })
+                .collect::<Option<Vec<_>>>()
+                .filter(|vertices| !vertices.is_empty())
+        })
 }
 
 fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -> Option<Point3> {
