@@ -164,25 +164,6 @@ for the non-manifold case. Reopened after the topology closure.
 
 ## 5. Design projection
 
-### DP-01. Forward declared dependencies
-
-**Question.** Can a declared ObjectDeps target appear later than its dependent object in source
-order?
-
-**Known.** Declared dependencies and earlier link-property operands form the feature dependency
-graph. A declared dependency can target a later declaration. The source-order restriction applies
-to link operands, not declared dependencies.
-
-**Conflict.** design.rs:427-456 tags declared dependencies but applies the earlier-ordinal filter
-to declared and link operands together. A resolved declared forward dependency therefore remains
-native but disappears from the neutral feature graph.
-
-**Need.** Preserve every resolved declared feature dependency. Apply the earlier-source rule only
-to link-property operands.
-
-**Note.** The current specification and producer dependency writer allow the forward-declaration
-case. The closure removed the open item without changing this implementation. Reopened.
-
 ### DP-02. Sketch profile seed order
 
 **Question.** Which non-construction entity starts each oriented sketch profile chain?

@@ -447,10 +447,11 @@ pub(crate) fn transfer(
                     .cloned()
                     .map(|feature| (feature, declared))
             })
-            .filter(|(dependency, _)| {
-                ordinal_by_feature
-                    .get(dependency)
-                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
+            .filter(|(dependency, declared)| {
+                (*declared && !cycle_affected.contains(object.id.as_str()))
+                    || ordinal_by_feature
+                        .get(dependency)
+                        .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
             })
             .map(|(dependency, _)| dependency)
             .collect::<Vec<_>>();
