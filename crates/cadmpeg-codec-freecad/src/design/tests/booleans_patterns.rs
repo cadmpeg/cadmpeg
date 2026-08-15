@@ -402,6 +402,81 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
 }
 
 #[test]
+fn rejects_ambiguous_axis_and_plane_reference_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+ <Object type="Part::Box" name="Seed" id="1"/>
+ <Object type="PartDesign::Line" name="AxisLine" id="2"/>
+ <Object type="PartDesign::CoordinateSystem" name="AxisSystem" id="3"/>
+ <Object type="PartDesign::Plane" name="PlaneA" id="4"/>
+ <Object type="PartDesign::Plane" name="PlaneB" id="5"/>
+ <Object type="PartDesign::PolarPattern" name="MultipleTargets" id="6"/>
+ <Object type="PartDesign::PolarPattern" name="MultipleSelectors" id="7"/>
+ <Object type="PartDesign::Mirrored" name="MultiplePlanes" id="8"/>
+</Objects>
+<ObjectData Count="8">
+ <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="AxisLine"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="AxisSystem"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="PlaneA"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="PlaneB"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="MultipleTargets"><Properties Count="4">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Axis" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="AxisLine" sub=""/><Link obj="AxisSystem" sub=""/></LinkSubList></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
+ </Properties></Object>
+ <Object name="MultipleSelectors"><Properties Count="4">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Axis" type="App::PropertyLinkSub"><LinkSub value="AxisSystem" count="2"><Sub value="Z_Axis"/><Sub value="X_Axis"/></LinkSub></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
+ </Properties></Object>
+ <Object name="MultiplePlanes"><Properties Count="2">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="PlaneA" sub=""/><Link obj="PlaneB" sub=""/></LinkSubList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("ambiguous datum references");
+    let definition = |name: &str| {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("pattern")
+            .definition
+    };
+    for name in ["MultipleTargets", "MultipleSelectors"] {
+        assert!(matches!(
+            definition(name),
+            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::PolarPattern"
+        ));
+    }
+    assert!(matches!(
+        definition("MultiplePlanes"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::MirrorReference {
+                plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+            },
+            ..
+        } if plane.ends_with(":MirrorPlane")
+    ));
+    assert_eq!(result.report().losses.len(), 2);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
+}
+
+#[test]
 fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

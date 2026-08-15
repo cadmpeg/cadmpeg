@@ -2633,15 +2633,22 @@ fn revolution_definition(
     if bool_property(properties, "Reversed").unwrap_or(false) {
         axis.direction = Vector3::new(-axis.direction.x, -axis.direction.y, -axis.direction.z);
     }
-    let axis_reference_property = ["AxisLink", "ReferenceAxis"]
+    let axis_reference_properties = ["AxisLink", "ReferenceAxis"]
         .iter()
-        .find_map(|name| property(properties, name))
-        .filter(|property| property.links.iter().any(nonempty_link));
-    if axis_reference_property.is_some_and(|property| property.links.len() != 1) {
-        return None;
-    }
-    let axis_reference =
-        axis_reference_property.map(|property| PathRef::Native(property.id.clone()));
+        .filter_map(|name| property(properties, name))
+        .collect::<Vec<_>>();
+    let axis_reference = match axis_reference_properties.as_slice() {
+        [] => None,
+        [property] => {
+            if property.links.iter().any(nonempty_link) {
+                singular_reference_link(property)?;
+                Some(PathRef::Native(property.id.clone()))
+            } else {
+                None
+            }
+        }
+        _ => return None,
+    };
     let face_maker_class =
         if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
             Some(string_property_value(property(properties, "FaceMakerClass")?)?.to_owned())
@@ -4758,12 +4765,11 @@ fn axis_reference(
     if let Some(direction) = vector_property(properties, name) {
         return Some((Point3::new(0.0, 0.0, 0.0), direction.unit()?));
     }
-    let link = property(properties, name)?.links.first()?;
+    let (link, selector) = singular_reference_link(property(properties, name)?)?;
     let target = link.object.as_deref()?;
     let object = objects.iter().find(|object| object.id == target)?;
     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
-    let selector = link_selectors(link).next();
     let direction = match object.type_name.as_str() {
         "PartDesign::Line" | "App::Line" => z_axis,
         "PartDesign::Plane" | "App::Plane" => z_axis,
@@ -4790,12 +4796,11 @@ fn plane_reference(
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<(Point3, Vector3)> {
-    let link = property(properties, name)?.links.first()?;
+    let (link, selector) = singular_reference_link(property(properties, name)?)?;
     let target = link.object.as_deref()?;
     let object = objects.iter().find(|object| object.id == target)?;
     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
-    let selector = link_selectors(link).next();
     let normal = match object.type_name.as_str() {
         "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
@@ -4820,6 +4825,38 @@ fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str
         .iter()
         .flat_map(|selector| selector.split_ascii_whitespace())
         .filter(|selector| !selector.is_empty())
+}
+
+fn singular_reference_link(
+    property: &PropertyRecord,
+) -> Option<(&crate::native::LinkTarget, Option<&str>)> {
+    if !matches!(
+        property.type_name.as_str(),
+        "App::PropertyLink"
+            | "App::PropertyLinkChild"
+            | "App::PropertyLinkGlobal"
+            | "App::PropertyLinkHidden"
+            | "App::PropertyLinkSub"
+            | "App::PropertyLinkSubChild"
+            | "App::PropertyLinkSubGlobal"
+            | "App::PropertyLinkSubHidden"
+    ) {
+        return None;
+    }
+    let [link] = property.links.as_slice() else {
+        return None;
+    };
+    let object = link.object.as_deref()?;
+    if object.is_empty() {
+        return None;
+    }
+    let selectors = link_selectors(link).collect::<Vec<_>>();
+    let selector = match selectors.as_slice() {
+        [] => None,
+        [selector] => Some(*selector),
+        _ => return None,
+    };
+    Some((link, selector))
 }
 
 fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {

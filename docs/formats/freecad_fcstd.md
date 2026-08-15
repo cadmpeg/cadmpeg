@@ -858,7 +858,11 @@ sequences. Explicit sequences are cumulative transforms beginning at the unchang
 values override defaults, while multi-value spacing patterns repeat cyclically for unspecified
 gaps. A second linear direction is an ordered Cartesian-product stage with its own direction,
 reversal, mode, occurrence count, and spacing sequence. Invalid counts, list cardinalities,
-directions, and non-positive intervals leave the operation attributable and native.
+directions, and non-positive intervals leave the operation attributable and native. Axis and plane
+references use one scalar `PropertyLink` or `PropertyLinkSub` carrier, including their scalar
+runtime variants, with one target and at most one subelement selector. Link-list carriers,
+multiple targets, and multiple selectors are not resolved by source order; required references
+leave the operation native and optional references remain unresolved.
 
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
