@@ -151,11 +151,12 @@ These items have a Conflict part and need a decision.
 
 **Known.** Element maps are associated with a shape property and retain their source XML and map order.
 
-**Conflict.** `crates/cadmpeg-codec-freecad/src/element_map.rs:94-120` takes the first `Part` and first `ElementMap2` descendant for each property. `owning_property` at `:208-214` takes the first enclosing property. With two shape payloads or map nodes, source order selects the map used for every persistent-name binding.
+**Conflict.** The decoder rejects more than one `Part` or `ElementMap2` carrier in one exact-shape property and rejects more than one enclosing property for a string table. The producer-defined cardinality and association rule for duplicate carriers is still not established, and no discriminator links multiple legal carriers.
 
 **Need.** We must establish the exact element-map carrier cardinality and property association. Duplicate candidates must be rejected or linked by a producer-defined discriminator.
 
-**Note.** The first-candidate paths are direct; no source rule for duplicate carriers was found.
+**Note.** No producer rule for duplicate carriers or shared map ownership was found. Conservative
+rejection prevents a source-order choice but does not resolve the legal cardinality.
 
 ## 4. Exact-topology transfer
 

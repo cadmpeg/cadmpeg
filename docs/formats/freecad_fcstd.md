@@ -139,7 +139,9 @@ opaque span with its declared length and digest. No byte may be both typed and o
 
 ## 7. Exact shapes
 
-Part shape properties reference text or binary B-rep entries. Shape records retain native table
+The exact-shape runtime type is `Part::PropertyPartShape`. Other runtime types do not select
+exact-shape or persistent element-map parsing. Part shape properties reference text or binary
+B-rep entries. Shape records retain native table
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.

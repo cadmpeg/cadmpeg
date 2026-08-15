@@ -40,7 +40,7 @@ pub(crate) fn parse(
         let index = tables.len();
         let save_all = parse_bool(node.attribute("saveall").unwrap_or("0"))?;
         let threshold = parse_decimal(node.attribute("threshold").unwrap_or("0"), "threshold")?;
-        let owner_property = owning_property(node, properties);
+        let owner_property = owning_property(node, properties)?;
         let new_layout = node.attribute("new").is_some_and(|value| value != "0");
         let data_node = if new_layout {
             string_hasher_successor(node)?
@@ -86,7 +86,7 @@ pub(crate) fn parse(
     let mut maps = Vec::new();
     for property in properties
         .iter()
-        .filter(|property| property.type_name.contains("PropertyPartShape"))
+        .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
         let property_xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
             CodecError::Malformed(format!(
@@ -94,10 +94,7 @@ pub(crate) fn parse(
                 property.id
             ))
         })?;
-        let Some(part) = property_xml
-            .descendants()
-            .find(|node| node.has_tag_name("Part"))
-        else {
+        let Some(part) = unique_descendant(property_xml.root_element(), "Part")? else {
             continue;
         };
         let version = part.attribute("ElementMap").unwrap_or("").to_owned();
@@ -105,10 +102,7 @@ pub(crate) fn parse(
             .attribute("HasherIndex")
             .map(|value| parse_usize(value, "HasherIndex"))
             .transpose()?;
-        let Some(map_node) = property_xml
-            .descendants()
-            .find(|node| node.has_tag_name("ElementMap2"))
-        else {
+        let Some(map_node) = unique_descendant(property_xml.root_element(), "ElementMap2")? else {
             continue;
         };
         let declared_count = map_node
@@ -197,12 +191,39 @@ fn bind_group_occurrence(group: &mut ElementMapGroup, source_index: usize, id: &
     }
 }
 
-fn owning_property(node: roxmltree::Node<'_, '_>, properties: &[PropertyRecord]) -> Option<String> {
+fn owning_property(
+    node: roxmltree::Node<'_, '_>,
+    properties: &[PropertyRecord],
+) -> Result<Option<String>, CodecError> {
     let start = node.range().start as u64;
-    properties
+    let mut owners = properties
         .iter()
-        .find(|property| property.byte_start <= start && start < property.byte_end)
-        .map(|property| property.id.clone())
+        .filter(|property| property.byte_start <= start && start < property.byte_end);
+    let Some(owner) = owners.next() else {
+        return Ok(None);
+    };
+    if owners.next().is_some() {
+        return Err(CodecError::Malformed(
+            "StringHasher has multiple enclosing properties".into(),
+        ));
+    }
+    Ok(Some(owner.id.clone()))
+}
+
+fn unique_descendant<'a, 'input>(
+    root: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
+    let mut matches = root.descendants().filter(|node| node.has_tag_name(tag));
+    let Some(first) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(
+            "shape property has multiple carrier elements".into(),
+        ));
+    }
+    Ok(Some(first))
 }
 
 fn string_hasher_successor<'a, 'input>(
@@ -663,6 +684,26 @@ mod tests {
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
 
+    fn test_property(type_name: &str, raw_xml: &str) -> PropertyRecord {
+        PropertyRecord {
+            id: "fcstd:test:property#Shape".into(),
+            owner: "fcstd:test:object#Shape".into(),
+            name: "Shape".into(),
+            type_name: type_name.into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            raw_xml: raw_xml.into(),
+            byte_start: 0,
+            byte_end: raw_xml.len() as u64,
+        }
+    }
+
     #[test]
     fn restores_absolute_and_relative_string_table_headers() {
         let records = parse_string_table(b"a.c.2 alpha\n-3.c.-1 beta\n", 2, false)
@@ -939,5 +980,55 @@ Co 1001000 +2 0 *
         let error = parse(document, &[], &[]).expect_err("interleaved string table must fail");
 
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+
+    #[test]
+    fn rejects_ambiguous_shape_carriers() {
+        let duplicate_part = test_property(
+            "Part::PropertyPartShape",
+            "<Property><Part/><Part/></Property>",
+        );
+        assert!(matches!(
+            parse(b"<Document/>", &[duplicate_part], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_map = test_property(
+            "Part::PropertyPartShape",
+            "<Property><Part/><ElementMap2/><ElementMap2/></Property>",
+        );
+        assert!(matches!(
+            parse(b"<Document/>", &[duplicate_map], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn ignores_non_shape_runtime_names() {
+        let custom = test_property(
+            "Custom::PropertyPartShape",
+            "<Property><Part/><ElementMap2/></Property>",
+        );
+        let (tables, maps) = parse(b"<Document/>", &[custom], &[]).expect("unknown type");
+
+        assert!(tables.is_empty());
+        assert!(maps.is_empty());
+    }
+
+    #[test]
+    fn rejects_ambiguous_string_table_property_ownership() {
+        let xml = roxmltree::Document::parse("<Document><StringHasher count=\"0\"/></Document>")
+            .expect("test XML");
+        let node = xml.root_element().first_element_child().expect("hasher");
+        let mut first = test_property("App::PropertyString", "<Property/>");
+        first.byte_end = 1000;
+        let mut second = test_property("App::PropertyString", "<Property/>");
+        second.id = "fcstd:test:property#Other".into();
+        second.byte_end = 1000;
+
+        assert!(matches!(
+            owning_property(node, &[first, second]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }

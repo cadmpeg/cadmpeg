@@ -533,7 +533,7 @@ pub fn parse_payloads(
     let mut payloads = Vec::new();
     for property in properties
         .iter()
-        .filter(|property| property.type_name.contains("PropertyPartShape"))
+        .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
         for name in &property.side_entries {
             let entry = entries.get(name.as_str()).ok_or_else(|| {
@@ -4329,6 +4329,30 @@ pub(crate) mod tests {
         assert_eq!(payloads[0].form, ShapePayloadForm::Empty);
         assert!(payloads[0].text.is_none());
         assert!(payloads[0].binary.is_none());
+    }
+
+    #[test]
+    fn ignores_non_shape_runtime_names_when_framing_payloads() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:Custom"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Custom".into(),
+            type_name: "Custom::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["custom.brp".into()],
+            raw_xml: String::new(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+
+        let payloads = parse_payloads(&[property], &[]).expect("unknown type is retained");
+        assert!(payloads.is_empty());
     }
 
     #[test]
