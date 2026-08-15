@@ -299,6 +299,70 @@ fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
 }
 
 #[test]
+fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));",
+                "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.));",
+            )
+            .replace(
+                "#28=PLANE('',#27);",
+                "#28=SURFACE_OF_LINEAR_EXTRUSION('',#16,#70);",
+            )
+            .replace(
+                "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+                "#4=CARTESIAN_POINT('',(10.,0.,2.));",
+            )
+            .replace(
+                "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+                "#57=SURFACE_CURVE('',#72,(#56),.PCURVE_S1.);",
+            )
+            .replace(
+                "#52=DIRECTION('',(1.,0.));",
+                "#52=DIRECTION('',(1.,1.));",
+            )
+            .replace(
+                "#53=VECTOR('',#52,1.);",
+                "#53=VECTOR('',#52,1.4142135623730951);",
+            )
+            .replace(
+                "ENDSEC;\nEND-ISO-10303-21;",
+                "#70=VECTOR('',#71,2.);\n#71=DIRECTION('',(0.,0.,1.));\n#72=LINE('',#3,#73);\n#73=VECTOR('',#74,10.198039027185569);\n#74=DIRECTION('',(5.,0.,1.));\nENDSEC;\nEND-ISO-10303-21;",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode linear extrusion pcurve");
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("linear extrusion pcurve");
+    assert_eq!(
+        pcurve.geometry,
+        PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(10_000.0, 1.0),
+        }
+    );
+    assert!(decoded
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| {
+            surface.surface.as_str() == "step:data:surface#28"
+                && matches!(
+                    surface.definition,
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { .. }
+                )
+        }));
+}
+
+#[test]
 fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
     use cadmpeg_ir::geometry::PcurveGeometry;
     use cadmpeg_ir::math::Point2;

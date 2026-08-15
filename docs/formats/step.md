@@ -409,6 +409,19 @@ coordinate that the affine map collapses is constant across the pcurve's
 declared parameter interval. Otherwise the pcurve remains opaque and the
 decoder does not replace its native parameterization.
 
+The neutral chart conversion for a swept surface preserves the parameterization
+of each defining equation. A linear-extrusion U coordinate uses the directrix
+scale. For a `LINE` directrix, that scale is the directrix `VECTOR` magnitude
+times its length-unit conversion. `CIRCLE` and `ELLIPSE` directrices use the
+plane-angle conversion. `PARABOLA`, `HYPERBOLA`, `POLYLINE`, and B-spline
+directrices use dimensionless parameters. A curve replica, trim, or offset
+inherits its defining curve scale. A linear-extrusion V coordinate is
+dimensionless because the extrusion vector is already stored in document
+length units; its scale is one. A revolution U coordinate uses plane-angle
+conversion and its V coordinate uses the directrix scale. A composite
+directrix whose parameterization has no single affine scale does not admit
+typed pcurve conversion and remains opaque.
+
 A pcurve has no separate angular-unit override. The reader does not choose a
 degree or radian interpretation from endpoint fit; an angular coordinate that
 fails the owning surface chart remains an unusable pcurve carrier.
