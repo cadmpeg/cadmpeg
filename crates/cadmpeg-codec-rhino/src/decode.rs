@@ -2353,6 +2353,8 @@ impl<'a> DecodeContext<'a> {
         losses.extend(self.scan.warnings.iter().map(|warning| {
             if integrity_diagnostic(warning) {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
+            } else if warning.contains(" has invalid color source ") {
+                RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
             } else {
                 RhinoLossCode::ContainerScanDiagnostic.note(warning.clone())
             }
@@ -3053,7 +3055,7 @@ impl<'a> DecodeContext<'a> {
         self.annotations.exactness.insert(
             id.clone(),
             ExactnessNote {
-                entity: if mesh.scaled {
+                entity: if mesh.scaled || mesh.quad_count != 0 {
                     Exactness::Derived
                 } else {
                     Exactness::ByteExact
@@ -3066,6 +3068,13 @@ impl<'a> DecodeContext<'a> {
                 .push(RhinoLossCode::MeshNgonGroupingDropped.note(format!(
                     "{} n-gon grouping record(s) were not transferred for mesh {id}",
                     mesh.ngon_count
+                )));
+        }
+        if mesh.quad_count != 0 {
+            self.typed_losses
+                .push(RhinoLossCode::MeshQuadTopologyTriangulated.note(format!(
+                    "{} quadrilateral face(s) were triangulated for mesh {id}",
+                    mesh.quad_count
                 )));
         }
         self.append_link(source_order, id);
@@ -3104,7 +3113,12 @@ impl<'a> DecodeContext<'a> {
             crate::brep::BrepParse::SemanticInvalid { warnings, .. } => warnings,
         };
         for warning in warnings {
-            self.scan_warning(source_order, warning);
+            if warning.starts_with("invalid Brep is_solid value ") {
+                self.typed_losses
+                    .push(RhinoLossCode::EnumerationValueDegraded.note(warning));
+            } else {
+                self.scan_warning(source_order, warning);
+            }
         }
         let Some(identity) = object.identity.as_ref() else {
             self.scan_warning(

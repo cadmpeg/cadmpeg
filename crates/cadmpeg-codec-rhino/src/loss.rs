@@ -35,6 +35,10 @@ pub enum RhinoLossCode {
     PresentationRecordDropped,
     /// Mesh n-gon grouping is not represented in neutral tessellation.
     MeshNgonGroupingDropped,
+    /// A stored enumeration value was retained but could not select a neutral value.
+    EnumerationValueDegraded,
+    /// A stored quad was converted to neutral triangles.
+    MeshQuadTopologyTriangulated,
     /// Embedded history geometry could not be decoded.
     HistoryEmbeddedGeometryDropped,
     /// A dimension-style override object was not applied.
@@ -94,6 +98,8 @@ impl RhinoLossCode {
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
         Self::MeshNgonGroupingDropped,
+        Self::EnumerationValueDegraded,
+        Self::MeshQuadTopologyTriangulated,
         Self::HistoryEmbeddedGeometryDropped,
         Self::DimensionOverrideDropped,
         Self::HistoryDependencyDropped,
@@ -129,6 +135,8 @@ impl RhinoLossCode {
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
+            Self::EnumerationValueDegraded => "container.enumeration-value-degraded",
+            Self::MeshQuadTopologyTriangulated => "mesh.quad-topology-triangulated",
             Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
             Self::DimensionOverrideDropped => "dimension.override-dropped",
             Self::HistoryDependencyDropped => "history.dependency-dropped",
@@ -180,7 +188,10 @@ impl RhinoLossCode {
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
-            Self::MeshNgonGroupingDropped => LossTaxonomy::RecordNotTyped,
+            Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
+                LossTaxonomy::RecordNotTyped
+            }
+            Self::EnumerationValueDegraded => LossTaxonomy::DecodeDiagnostic,
             Self::HistoryEmbeddedGeometryDropped => LossTaxonomy::GeometryNotTransferred,
             Self::DimensionOverrideDropped => LossTaxonomy::PmiOmitted,
             Self::HistoryDependencyDropped => LossTaxonomy::ReferenceGraphNotClosed,
@@ -248,6 +259,8 @@ mod tests {
                 "container.integrity-failure",
                 "presentation.record-dropped",
                 "mesh.ngon-grouping-dropped",
+                "container.enumeration-value-degraded",
+                "mesh.quad-topology-triangulated",
                 "history.embedded-geometry-dropped",
                 "dimension.override-dropped",
                 "history.dependency-dropped",

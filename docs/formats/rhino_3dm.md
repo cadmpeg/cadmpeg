@@ -246,7 +246,9 @@ skipped at the bounded end. Array and element readers that define major version
 
 Stored Boolean integers and bytes use zero for false and a nonzero value for
 true. Presence and enumeration fields that define a separate numeric grammar
-retain that grammar.
+retain that grammar. An enumeration value outside its defined set is retained
+in native source data, uses the field's documented neutral fallback, and
+emits a typed degradation loss. It does not discard the containing record.
 
 A stored geometry item count is bounded by its containing payload and the byte
 width of one item. The format does not impose a separate 65536-item limit.
@@ -1027,6 +1029,11 @@ Defaults are normal object mode, visible unless hidden, layer color/linetype/
 material/plot color/plot weight sources, model space, wire density 1, and plot
 weight 0.0.
 
+The color source values are 0 layer color, 1 object color, 2 unresolved
+material color, and 3 parent color for an instance-definition member or layer
+color for another object. Other values retain the raw selector, leave neutral
+color unset, and emit a typed degradation loss.
+
 The low nibble of object mode is 0 normal, 1 hidden, 2 locked, or 3 instance-
 definition member. Higher bits do not change the mode. Before the explicit
 visibility field exists, mode 1 selects invisible and all other modes select
@@ -1594,6 +1601,8 @@ The stored width is 1, 2, or 4. Writers select 1 when vertex count is below
 Indices are little-endian unsigned values. A triangle is `[v0,v1,v2,v2]`; a
 quad is `[v0,v1,v2,v3]`. Neutral triangulation splits a quad along its shorter
 geometric diagonal. A repeated quad vertex is removed before triangulation.
+Quad topology is not preserved in the neutral tessellation: every four-vertex
+face is transferred as two triangles, and the transfer is derived.
 
 Major 1 follows the face array with raw counted arrays:
 
@@ -1772,8 +1781,9 @@ byte per face; nonzero is followed by a polymorphic object which must be an
 `ON_Mesh`. These are cache channels and do not alter Brep topology.
 
 For minor at least 2, `i32 is_solid` is 0 unset, 1 solid/outward, 2
-solid/inward, and 3 not-solid. Other values become unset. An unset value
-requires the reader to derive the solid state and orientation from the Brep.
+solid/inward, and 3 not-solid. Other values remain in native source data and
+use the unset neutral fallback. An unset value requires the reader to derive
+the solid state and orientation from the Brep.
 For an archive writer version before 2 October 2002, the stored value is unset.
 A Brep is closed when it has at least one face and every edge has exactly two
 trim uses. A closed Brep is solid; another Brep is a sheet.
@@ -2455,8 +2465,8 @@ face-array minor >= 2:
   if nonzero: count × ON_Color
 ```
 
-For Brep minor at least 1, each mesh-side wrapper is anonymous with packed
-version byte `0x00`, followed by exactly `face_count` entries:
+For Brep minor at least 1, each mesh-side wrapper is anonymous and starts with
+exactly `face_count` entries. There is no version byte before face zero:
 
 ```
 u8 present

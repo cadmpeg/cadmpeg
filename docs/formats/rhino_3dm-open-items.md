@@ -202,16 +202,6 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Need.** The archive-version condition must gate the refusal, and a field read as a raw character must not use the strict Boolean rule.
 
-### RS-05. Enumeration values outside the known range
-
-**Question.** What must a reader do with an enumeration value that it does not know?
-
-**Known.** `objects.rs:1101-1123` warns and returns no color for an unknown selector. `brep.rs:366-375` normalizes an unknown `is_solid` value to unset, while `decode.rs:4251-4259` then derives a body kind. The specification calls value 3 `not-solid`, which the decoder does not preserve.
-
-**Note.** Reopened. The branch still mixes fallback, unset, and silent normalization. It does not apply one source-backed clamp-or-retain rule or emit a typed loss for each unknown enumeration.
-
-**Need.** An unknown enumeration value must clamp and record a typed loss, or stay as stored data. It must not discard the containing record.
-
 ### RS-06. Redundant count and index agreement
 
 **Question.** Which stored counts and indices must agree before a record decodes?
@@ -221,16 +211,6 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 **Note.** Reopened. Partial tolerance is not the requested rule. Each redundant field needs a source-backed repair or degradation policy and a typed loss where the IR no longer carries the stored value.
 
 **Need.** Each redundant field must repair or degrade and record a typed loss. Discarding a record loses data that the file holds.
-
-### IC-04. Quad triangulation diagonal
-
-**Question.** Which diagonal splits a quadrilateral mesh face?
-
-**Known.** `mesh.rs` now compares diagonal lengths and removes repeated vertices. `decode.rs:3026-3034` still marks an unscaled tessellation byte-exact, and `commit_mesh` records an n-gon loss but no loss for converting stored quadrilateral topology to triangles.
-
-**Note.** Reopened. The geometric split rule is implemented, but the IR conversion remains falsely byte-exact and does not expose the topology loss required by the item.
-
-**Need.** The split must match openNURBS, and the loss of quadrilateral topology must be recorded.
 
 ## 4. Hostile sweep findings recorded on 2026-08-10
 

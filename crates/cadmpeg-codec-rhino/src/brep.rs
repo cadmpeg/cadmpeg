@@ -568,9 +568,9 @@ pub(crate) fn parse(
             Some(value)
         } else {
             warnings.push(format!(
-                "invalid Brep is_solid value {value}; normalized unset"
+                "invalid Brep is_solid value {value}; retained for native fidelity"
             ));
-            None
+            Some(value)
         }
     } else {
         None
@@ -1928,14 +1928,27 @@ mod tests {
     }
 
     #[test]
-    fn mesh_side_wrapper_rejects_non_boolean_presence_without_losing_parent() {
-        let bytes = anonymous(&[0, 2]);
+    fn mesh_side_wrapper_degrades_truncated_present_slot_without_losing_parent() {
+        let bytes = anonymous(&[1]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Vec::new();
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("degraded cache");
         assert!(slots[0].mesh.is_none());
         assert!(!warnings.is_empty());
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn mesh_side_wrapper_starts_with_face_zero_presence() {
+        let bytes = anonymous(&[0]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Vec::new();
+        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
+            .expect("empty cache slot");
+        assert_eq!(slots.len(), 1);
+        assert!(!slots[0].present);
+        assert!(warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
 

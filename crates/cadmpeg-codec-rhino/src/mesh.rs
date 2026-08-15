@@ -155,6 +155,8 @@ pub(crate) struct DecodedMesh {
     pub(crate) scaled: bool,
     /// Number of stored n-gon group records not represented in the IR.
     pub(crate) ngon_count: usize,
+    /// Number of stored quadrilateral faces converted to neutral triangles.
+    pub(crate) quad_count: usize,
 }
 
 /// Caller-owned identity and archive metadata for one mesh decode.
@@ -406,6 +408,7 @@ pub(crate) fn decode(
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?;
+    let quad_count = quad_face_count(&faces);
     let triangles = triangulate_faces(&faces, &vertices);
     Ok(DecodedMesh {
         tessellation: Tessellation {
@@ -427,6 +430,7 @@ pub(crate) fn decode(
         warnings: decoded.warnings,
         scaled: scale != 1.0,
         ngon_count,
+        quad_count,
     })
 }
 
@@ -468,15 +472,15 @@ fn read_faces(
 pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<[u32; 3]> {
     let mut triangles = Vec::with_capacity(faces.len().saturating_mul(2));
     for face in faces {
-        let mut unique = Vec::with_capacity(4);
-        for index in face {
-            if !unique.contains(index) {
-                unique.push(*index);
+        if unique_face_vertices(face) == 3 {
+            let mut unique = Vec::with_capacity(3);
+            for index in face {
+                if !unique.contains(index) {
+                    unique.push(*index);
+                }
             }
-        }
-        if unique.len() == 3 {
             triangles.push([unique[0], unique[1], unique[2]]);
-        } else if unique.len() == 4 {
+        } else if unique_face_vertices(face) == 4 {
             let diagonal_02 =
                 distance_squared(vertices[face[0] as usize], vertices[face[2] as usize]);
             let diagonal_13 =
@@ -489,6 +493,23 @@ pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<
         }
     }
     triangles
+}
+
+fn quad_face_count(faces: &[[u32; 4]]) -> usize {
+    faces
+        .iter()
+        .filter(|face| unique_face_vertices(face) == 4)
+        .count()
+}
+
+fn unique_face_vertices(face: &[u32; 4]) -> usize {
+    let mut unique = Vec::with_capacity(4);
+    for index in face {
+        if !unique.contains(index) {
+            unique.push(*index);
+        }
+    }
+    unique.len()
 }
 
 fn distance_squared(a: Point3, b: Point3) -> f64 {
@@ -1674,6 +1695,7 @@ mod tests {
             triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices),
             vec![[0, 1, 3], [1, 2, 3], [0, 1, 2]]
         );
+        assert_eq!(quad_face_count(&[[0, 1, 2, 3], [0, 1, 2, 2]]), 1);
     }
 
     #[test]
