@@ -521,6 +521,14 @@ const BASELINE: [(u64, usize, usize); 7] = [
     (80, 24, 39),
 ];
 
+const STRUCTURED_SOURCE_OBJECTS: usize = 6;
+const STRUCTURED_TRANSFER: [(u64, usize, usize); 4] = [
+    (50, 6, STRUCTURED_SOURCE_OBJECTS),
+    (60, 6, STRUCTURED_SOURCE_OBJECTS),
+    (70, 6, STRUCTURED_SOURCE_OBJECTS),
+    (80, 6, STRUCTURED_SOURCE_OBJECTS),
+];
+
 fn files(root: &Path, output: &mut Vec<PathBuf>) {
     let mut entries = fs::read_dir(root)
         .expect("read openNURBS example directory")
@@ -560,6 +568,11 @@ fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .ok()?;
+    if version == 1 {
+        // Version 1 is a documented L0 boundary. Keep the reader traversal in
+        // the external witness, but do not claim object transfer for it.
+        return None;
+    }
     let (supported, total) = note_count(&decoded.report().notes).unwrap_or((0, 0));
     if supported < total && std::env::var_os("RHINO_WITNESS_DIAGNOSTICS").is_some() {
         eprintln!("{}: {supported}/{total}", path.display());
@@ -567,7 +580,7 @@ fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
             eprintln!("  {}: {}", loss.code, loss.message);
         }
     }
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(
         validation.findings.iter().all(|finding| !matches!(
             finding.severity,
@@ -650,16 +663,34 @@ fn opennurbs_object_walk_and_transfer_floor() {
     let generated =
         PathBuf::from(std::env::var_os("OPENNURBS_SYNTH_DIR").expect("OPENNURBS_SYNTH_DIR"));
     for version in [50, 60, 70, 80] {
-        let path = generated.join(format!("witness-v{version}.3dm"));
+        let point_path = generated.join(format!("witness-v{version}-point.3dm"));
         let witness = Command::new(&reader)
-            .arg(&path)
+            .arg(&point_path)
             .output()
             .expect("run example_read on synthesized witness");
         assert!(
             witness.status.success(),
             "example_read refused {}",
+            point_path.display()
+        );
+        assert_eq!(decode_counts(&point_path), Some((version, 1, 1)));
+    }
+
+    for (version, expected_supported, expected_total) in STRUCTURED_TRANSFER {
+        let path = generated.join(format!("witness-v{version}-structured.3dm"));
+        let witness = Command::new(&reader)
+            .arg(&path)
+            .output()
+            .expect("run example_read on structured synthesized witness");
+        assert!(
+            witness.status.success(),
+            "example_read refused {}",
             path.display()
         );
-        assert_eq!(decode_counts(&path), Some((version, 1, 1)));
+        assert_eq!(oracle_object_count(&witness.stdout), expected_total);
+        assert_eq!(
+            decode_counts(&path),
+            Some((version, expected_supported, expected_total))
+        );
     }
 }
