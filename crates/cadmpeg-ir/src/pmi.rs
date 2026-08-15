@@ -281,6 +281,9 @@ pub struct PmiAnnotation {
     /// Display or source name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Whether the source explicitly displays this annotation occurrence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
     /// Qualified model objects.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<PmiTarget>,
@@ -303,6 +306,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: datum_id.clone(),
             name: Some("datum A".into()),
+            visible: None,
             targets: vec![PmiTarget::ShapeAspect {
                 source_id: "#10".into(),
             }],
@@ -313,6 +317,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#system".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::DatumSystem {
                 references: vec![DatumReference {
@@ -335,6 +340,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("synthetic:model:pmi#curve-target".into()),
             name: Some("curve target".into()),
+            visible: None,
             targets: vec![PmiTarget::Curve { curve }],
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
@@ -355,6 +361,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#graphic".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::Presentation {
                 text: None,
@@ -377,6 +384,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: dimension_id.clone(),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
@@ -389,6 +397,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#system".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::DatumSystem {
                 references: vec![DatumReference {
@@ -402,6 +411,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#tolerance".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: GeometricToleranceKind::Position,
@@ -435,6 +445,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#graphic".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::Presentation {
                 text: None,

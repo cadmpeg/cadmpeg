@@ -135,6 +135,13 @@ pub(super) fn decode(
             {
                 continue;
             }
+            if exchange
+                .records
+                .get(&target)
+                .is_some_and(super::pmi::is_supported_invisibility_target)
+            {
+                continue;
+            }
             let (body_ids, target_supported) =
                 invisible_body_ids(target, exchange, topology, &body_indices);
             let mut hidden = false;

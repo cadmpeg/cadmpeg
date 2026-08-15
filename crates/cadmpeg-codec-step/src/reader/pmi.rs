@@ -57,6 +57,7 @@ pub(super) fn decode(
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut annotations = BTreeMap::<u64, usize>::new();
+    let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange);
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
@@ -89,6 +90,7 @@ pub(super) fn decode(
                 )
             }),
             targets([id]),
+            None,
             PmiDefinition::Datum { identification },
         );
         typed.insert(id);
@@ -137,6 +139,7 @@ pub(super) fn decode(
                 )
             }),
             targets([id]),
+            None,
             PmiDefinition::DatumTarget {
                 form: datum_target_form(&form),
                 identification,
@@ -192,6 +195,7 @@ pub(super) fn decode(
                     .flat_map(references)
                     .filter(|id| base_aspects.contains(id)),
             ),
+            None,
             PmiDefinition::DatumSystem {
                 references: datum_references,
             },
@@ -261,6 +265,7 @@ pub(super) fn decode(
             id,
             name,
             targets(aspect_ids),
+            None,
             PmiDefinition::Dimension {
                 dimension: kind,
                 nominal,
@@ -504,6 +509,7 @@ pub(super) fn decode(
                     )
                 }),
             targets(refs.iter().copied().filter(|id| base_aspects.contains(id))),
+            None,
             PmiDefinition::GeometricTolerance {
                 tolerance,
                 magnitude,
@@ -611,6 +617,9 @@ pub(super) fn decode(
                     )
                 }),
             Vec::new(),
+            hidden_presentation_annotations
+                .contains(&id)
+                .then_some(false),
             PmiDefinition::Presentation {
                 text,
                 placement,
@@ -1093,7 +1102,8 @@ fn modifier_text(
 }
 
 pub(super) fn is_presentation_annotation(name: &str) -> bool {
-    name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE")
+    name.starts_with("ANNOTATION_")
+        && (name.ends_with("_OCCURRENCE") || name.ends_with("_OCCURRENCE_WITH_LEADER_LINE"))
         || matches!(
             name,
             "TESSELLATED_ANNOTATION_OCCURRENCE"
@@ -1107,6 +1117,34 @@ fn presentation_annotation_name(record: &RawRecord) -> Option<&str> {
     record.partials.iter().find_map(|partial| {
         is_presentation_annotation(&partial.name).then_some(partial.name.as_str())
     })
+}
+
+pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
+    presentation_annotation_name(record).is_some()
+}
+
+fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
+    let mut hidden = BTreeSet::new();
+    for record in exchange.records.values() {
+        let Some(items) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "INVISIBILITY")
+            .and_then(|partial| partial.parameters.first())
+        else {
+            continue;
+        };
+        for target in references(items) {
+            if exchange
+                .records
+                .get(&target)
+                .is_some_and(is_supported_invisibility_target)
+            {
+                hidden.insert(target);
+            }
+        }
+    }
+    hidden
 }
 
 fn all_parameters(record: &RawRecord) -> impl Iterator<Item = &Value> {
@@ -1217,12 +1255,14 @@ fn push_annotation(
     id: u64,
     name: Option<String>,
     targets: Vec<PmiTarget>,
+    visible: Option<bool>,
     definition: PmiDefinition,
 ) {
     annotations.insert(id, ir.model.pmi.len());
     ir.model.pmi.push(PmiAnnotation {
         id: pmi_id(id),
         name: name.filter(|value| !value.is_empty()),
+        visible,
         targets,
         definition,
     });

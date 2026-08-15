@@ -732,9 +732,13 @@ complex. The
 `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` partial supplies the datum-system
 link and does not add a shape-aspect target. The defined-unit and
 defined-area-unit partials retain their unit sizes and area shape; modifier
-aggregates retain their enumeration values. Presentation PMI
-retains annotation identity, text, and placement across inherited annotation
-partials. A direct text carrier or a graph with exactly one reachable text
+aggregates retain their enumeration values. Presentation PMI retains
+annotation identity, text, placement, and explicit occurrence visibility across
+inherited annotation partials. `INVISIBILITY` targeting a transferred
+presentation annotation sets its `visible=false`; it does not change visibility
+on a shared geometry or tessellation carrier. Annotation placeholder
+occurrences with a leader line transfer through the same presentation PMI
+model. A direct text carrier or a graph with exactly one reachable text
 carrier supplies the presentation text. A graph with multiple reachable text
 carriers has no ordered composition in this model, so the text remains absent,
 a metadata loss is emitted, and the carriers remain named opaque records with

@@ -3149,6 +3149,7 @@ impl<'a> Builder<'a> {
         }
         let mut presentation_items = Vec::new();
         let mut presentation_semantics = Vec::new();
+        let mut hidden_presentation_items = Vec::new();
         for annotation in &annotations {
             let PmiDefinition::Presentation {
                 text,
@@ -3199,6 +3200,9 @@ impl<'a> Builder<'a> {
                 ),
             );
             presentation_items.push(occurrence);
+            if annotation.visible == Some(false) {
+                hidden_presentation_items.push(occurrence);
+            }
             presentation_semantics.push((occurrence, semantic_refs));
             annotation_refs.insert(annotation.id.clone(), occurrence);
             self.written_pmi += 1;
@@ -3218,6 +3222,21 @@ impl<'a> Builder<'a> {
                         &format!("'','',{semantic},{model},{occurrence}"),
                     );
                 }
+            }
+        }
+        if !hidden_presentation_items.is_empty() {
+            if self.schema.supports_visibility() {
+                self.emitter
+                    .emit("INVISIBILITY", &refs(&hidden_presentation_items));
+            } else {
+                self.loss(
+                    StepLossCode::HiddenPmiVisibilityUnsupported,
+                    format!(
+                        "{} hidden PMI annotation visibility assignment(s) are unsupported by {}",
+                        hidden_presentation_items.len(),
+                        self.schema.file_schema()
+                    ),
+                );
             }
         }
         for (annotation, reference) in annotation_refs {

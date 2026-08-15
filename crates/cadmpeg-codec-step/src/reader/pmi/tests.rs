@@ -118,6 +118,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
         id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
         name: Some("width note".into()),
+        visible: Some(false),
         targets: Vec::new(),
         definition: PmiDefinition::Presentation {
             text: Some("12 mm".into()),
@@ -150,6 +151,17 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         &annotation.definition,
         PmiDefinition::Presentation { semantics, .. } if semantics.len() == 1
     )));
+    assert_eq!(
+        roundtrip
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("width note"))
+            .expect("roundtripped presentation annotation")
+            .visible,
+        Some(false)
+    );
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
@@ -621,6 +633,34 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
             && transform.rows[1][3] == 20.0
             && transform.rows[2][3] == 30.0
     ));
+}
+
+#[test]
+fn annotation_occurrence_with_leader_line_visibility_is_transferred() {
+    let result = decode_inline(
+        "#1=ANNOTATION_PLACEHOLDER_OCCURRENCE_WITH_LEADER_LINE('hidden placeholder',(),$,$);\n\
+#2=INVISIBILITY((#1));",
+    );
+    let annotation = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("hidden placeholder"))
+        .expect("placeholder occurrence is presentation PMI");
+    assert_eq!(annotation.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #2 targets unsupported item #1")
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown records")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#2"));
 }
 
 #[test]

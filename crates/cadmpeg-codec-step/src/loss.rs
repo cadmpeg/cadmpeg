@@ -130,6 +130,8 @@ pub enum StepLossCode {
     HiddenAppearanceVisibilityUnsupported,
     /// Hidden presentation layer visibility assignments are unsupported by the target schema.
     HiddenPresentationLayerVisibilityUnsupported,
+    /// Hidden PMI annotation visibility assignments are unsupported by the target schema.
+    HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
     /// Tessellations require an AP242 target.
@@ -332,6 +334,7 @@ impl StepLossCode {
         Self::HiddenBodyVisibilityUnsupported,
         Self::HiddenAppearanceVisibilityUnsupported,
         Self::HiddenPresentationLayerVisibilityUnsupported,
+        Self::HiddenPmiVisibilityUnsupported,
         Self::WireShellFreeVertices,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
@@ -477,6 +480,7 @@ impl StepLossCode {
             Self::HiddenPresentationLayerVisibilityUnsupported => {
                 "presentation.hidden-layer-visibility-unsupported"
             }
+            Self::HiddenPmiVisibilityUnsupported => "pmi.hidden-visibility-unsupported",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
@@ -634,6 +638,7 @@ impl StepLossCode {
             | Self::HiddenBodyVisibilityUnsupported
             | Self::HiddenAppearanceVisibilityUnsupported
             | Self::HiddenPresentationLayerVisibilityUnsupported
+            | Self::HiddenPmiVisibilityUnsupported
             | Self::HiddenPresentationLayerOmitted
             | Self::TessellationFeatureEdges
             | Self::TessellationCornerNormals
@@ -835,6 +840,7 @@ mod tests {
                 "body.hidden-visibility-unsupported",
                 "presentation.hidden-appearance-visibility-unsupported",
                 "presentation.hidden-layer-visibility-unsupported",
+                "pmi.hidden-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",

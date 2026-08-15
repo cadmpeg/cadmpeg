@@ -1345,6 +1345,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
         name: Some("inspection note".into()),
+        visible: None,
         targets: Vec::new(),
         definition: PmiDefinition::Presentation {
             text: Some("inspect this assembly".into()),
