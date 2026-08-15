@@ -4,6 +4,30 @@
 use super::super::*;
 
 #[test]
+fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
+    let valid = PositionalCylinderFrame {
+        origin: [0.0, 1.0, 2.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 3.0,
+        length: Some(4.0),
+    };
+    assert!(valid.is_valid());
+
+    let mut nonfinite_origin = valid;
+    nonfinite_origin.origin[1] = f64::NAN;
+    assert!(!nonfinite_origin.is_valid());
+
+    let mut nonfinite_radius = valid;
+    nonfinite_radius.radius = f64::INFINITY;
+    assert!(!nonfinite_radius.is_valid());
+
+    let mut nonpositive_length = valid;
+    nonpositive_length.length = Some(0.0);
+    assert!(!nonpositive_length.is_valid());
+}
+
+#[test]
 fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     let negative_x = [
         0x11, 0x18, 0x13, 0x29, 0xd9, 0x99, 0x47, 0x03, 0x33, 0x2d, 0x35, 0x0c, 0xcc, 0xcc, 0xcc,

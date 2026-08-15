@@ -368,6 +368,21 @@ pub struct PositionalCylinderFrame {
     pub length: Option<f64>,
 }
 
+impl PositionalCylinderFrame {
+    fn is_valid(&self) -> bool {
+        self.origin
+            .into_iter()
+            .chain(self.axis)
+            .chain(self.ref_direction)
+            .all(f64::is_finite)
+            && self.radius.is_finite()
+            && self.radius > 0.0
+            && self
+                .length
+                .is_none_or(|length| length.is_finite() && length > 0.0)
+    }
+}
+
 /// Complete model-space carrier decoded from a positional cone row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionalConeFrame {
@@ -870,6 +885,7 @@ impl SurfaceParameterRecord {
                     (Some(_), Some(_)) | (None, None) => None,
                 }
             })
+            .filter(PositionalCylinderFrame::is_valid)
     }
 
     fn terminal_scalar_frame_has_owned_end(
@@ -3123,6 +3139,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
+        .filter(PositionalCylinderFrame::is_valid)
 }
 
 fn decode_xz_axis_y_radial_cylinder_frame(
