@@ -2242,7 +2242,7 @@ pub(crate) fn pcurve_matches_edge_range(
 }
 
 pub(crate) fn pcurve_matches_edge_range_with_index(
-    ir: &CadIr,
+    _ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     edge_id: &EdgeId,
     surface_id: &SurfaceId,
@@ -2250,7 +2250,7 @@ pub(crate) fn pcurve_matches_edge_range_with_index(
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
 ) -> bool {
-    let Some(edge) = ir.model.edges.iter().find(|edge| &edge.id == edge_id) else {
+    let Some(edge) = index.edges(edge_id.0.as_str()) else {
         return false;
     };
     let Some([t0, t1]) = parameter_range.or_else(|| pcurve_parameter_range(geometry)) else {
@@ -2268,12 +2268,8 @@ pub(crate) fn pcurve_matches_edge_range_with_index(
     };
     let coincident_surface = [first, second];
     let vertex = |id: &VertexId| {
-        let vertex = ir.model.vertices.iter().find(|vertex| &vertex.id == id)?;
-        let point = ir
-            .model
-            .points
-            .iter()
-            .find(|point| point.id == vertex.point)?;
+        let vertex = index.vertices(id.0.as_str())?;
+        let point = index.points(vertex.point.0.as_str())?;
         Some((point.position, vertex.tolerance))
     };
     let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
