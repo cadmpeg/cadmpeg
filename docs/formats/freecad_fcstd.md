@@ -417,7 +417,16 @@ and `App::PropertyLinkSub` carriers are accepted only with one object target and
 subelement; all other runtime types are invalid. `JointType` is exactly
 `App::PropertyEnumeration` and has exactly one selected `Integer`; its zero-based index selects the matching
 ordered `Enum` value when present, and an out-of-range index remains the numeric native family.
-Each named scalar joint parameter has at most one root value; duplicate values are invalid.
+`Reference1` and `Reference2` use `App::PropertyXLinkSub`; the migration form
+`App::PropertyXLinkSubHidden` is accepted for older Assembly-rooted records. Each connector
+property has exactly one `XLink` target. That target may have zero, one, or multiple ordered `Sub`
+values, and an empty `name` is an explicit null target occupying the connector slot. A link-list
+carrier or multiple targets is malformed. `Angle`, `AngleMin`, and `AngleMax` are
+`App::PropertyAngle` properties with one `Float` value. `Distance`, `Distance2`, `LengthMin`, and
+`LengthMax` are `App::PropertyLength` properties with one `Float` value. `EnableAngleMin`,
+`EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`
+are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
+missing values, and duplicate values are malformed.
 Each connector-frame and connector-offset carrier is an `App::PropertyPlacement` property with at
 most one `PropertyPlacement` value and the same finite position and quaternion or axis-angle
 component rules as product placements.

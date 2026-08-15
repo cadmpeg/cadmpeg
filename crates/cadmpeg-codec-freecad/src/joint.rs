@@ -75,16 +75,15 @@ pub(crate) fn transfer(
             let offset1 = placement(&owned, "Offset1")?;
             let placement2 = placement(&owned, "Placement2")?;
             let offset2 = placement(&owned, "Offset2")?;
+            let reference1 = connector(&owned, "Reference1")?;
+            let reference2 = connector(&owned, "Reference2")?;
             let slots = [
-                (links(&owned, "Reference1"), placement1, offset1),
-                (links(&owned, "Reference2"), placement2, offset2),
-            ]
-            .into_iter()
-            .filter(|(references, _, _)| !references.is_empty())
-            .collect::<Vec<_>>();
+                (reference1, placement1, offset1),
+                (reference2, placement2, offset2),
+            ];
             let references = slots
                 .iter()
-                .flat_map(|(references, _, _)| references.clone())
+                .flat_map(|(references, _, _)| references.iter().cloned())
                 .collect();
             let placements = slots
                 .iter()
@@ -323,14 +322,42 @@ fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
 }
 
 fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
-    match property.values.as_slice() {
-        [] => Ok(None),
-        [value] => Ok(value.attributes.get("value").cloned()),
-        _ => Err(CodecError::Malformed(format!(
-            "joint parameter property {} has multiple values",
-            property.id
-        ))),
+    let (expected_type, expected_tag) = match property.name.as_str() {
+        "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
+        "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
+        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
+        | "Detach2" | "Suppressed" => ("App::PropertyBool", "Bool"),
+        _ => return Ok(None),
+    };
+    if property.type_name != expected_type {
+        return Err(malformed(format!(
+            "joint parameter property {} has runtime type {}, expected {expected_type}",
+            property.id, property.type_name
+        )));
     }
+    let [value] = property.values.as_slice() else {
+        return Err(malformed(format!(
+            "joint parameter property {} requires one {expected_tag} value",
+            property.id
+        )));
+    };
+    if value.tag != expected_tag {
+        return Err(malformed(format!(
+            "joint parameter property {} requires a {expected_tag} value",
+            property.id
+        )));
+    }
+    value
+        .attributes
+        .get("value")
+        .cloned()
+        .ok_or_else(|| {
+            malformed(format!(
+                "joint parameter property {} has no value",
+                property.id
+            ))
+        })
+        .map(Some)
 }
 
 fn unique_property<'a>(
@@ -373,6 +400,42 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
         .unwrap_or_default()
 }
 
+fn connector(
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Err(malformed(format!("joint connector {name} is missing")));
+    };
+    if !matches!(
+        property.type_name.as_str(),
+        "App::PropertyXLinkSub" | "App::PropertyXLinkSubHidden"
+    ) {
+        return Err(malformed(format!(
+            "joint connector {} has runtime type {}, expected App::PropertyXLinkSub",
+            property.id, property.type_name
+        )));
+    }
+    if property
+        .values
+        .first()
+        .is_none_or(|value| value.tag != "XLink")
+    {
+        return Err(malformed(format!(
+            "joint connector {} requires one XLink value",
+            property.id
+        )));
+    }
+    if property.links.len() != 1 {
+        return Err(malformed(format!(
+            "joint connector {} requires one target, found {}",
+            property.id,
+            property.links.len()
+        )));
+    }
+    Ok(property.links.clone())
+}
+
 fn placement(
     properties: &[&PropertyRecord],
     name: &str,
@@ -381,6 +444,10 @@ fn placement(
         return Ok(None);
     };
     crate::product::placement_matrix(property)
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
 }
 
 #[cfg(test)]
@@ -559,6 +626,62 @@ pub(crate) mod tests {
 <Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
 <ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="1">{property}</Properties></Object></ObjectData>
 </Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_connector_type_and_target_cardinality() {
+        for properties in [
+            r#"<Property name="Reference1" type="App::PropertyLinkSub"><LinkSub value="Base" count="0"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="Reference1" type="App::PropertyXLinkSubList"><XLinkSubList count="2"><XLink file="" name="Base"/><XLink file="" name="Other"/></XLinkSubList></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+        ] {
+            let property_count = properties.lines().count() + 1;
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="{property_count}">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+{properties}
+</Properties></Object></ObjectData></Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_joint_scalar_runtime_types_and_value_tags() {
+        for property in [
+            r#"<Property name="Angle" type="App::PropertyFloat"><Float value="15"/></Property>"#,
+            r#"<Property name="Distance" type="App::PropertyLength"><Integer value="3"/></Property>"#,
+            r#"<Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/><Bool value="false"/></Property>"#,
+            r#"<Property name="Suppressed" type="App::PropertyString"><String value="true"/></Property>"#,
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="4">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name=""/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name=""/></Property>
+{property}
+</Properties></Object></ObjectData></Document>"#
             );
             assert!(matches!(
                 FcstdCodec.decode(

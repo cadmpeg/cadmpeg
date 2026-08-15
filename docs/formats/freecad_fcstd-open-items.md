@@ -264,44 +264,6 @@ The remaining named carriers are not covered by those closures.
 
 ## 7. Assembly joints
 
-### JN-03. Joint connector reference runtime type and cardinality
-
-**Question.** Which runtime type and object cardinality must Reference1 and Reference2 have before
-their targets become joint operands?
-
-**Known.** JointObject.py declares both references as App::PropertyXLinkSub. Each connector has
-one target with an ordered subelement path. Joint validation expects two connector frames for a
-non-grounded joint.
-
-**Conflict.** joint.rs:79-97 calls links by name without checking the carrier type or enforcing
-one target per connector. The persistence parser accepts App::PropertyXLinkSubList and produces
-multiple LinkTarget values, while lib.rs:608-625 checks frame count and target existence but not
-reference count or carrier type.
-
-**Need.** Enforce the exact connector link family and one target per Reference1 and Reference2.
-Preserve an explicit null or external target according to the link contract without creating
-extra operands.
-
-**Note.** A hostile XLinkSubList with two targets in Reference1 produces more than two neutral
-operands while the two-frame validation still passes.
-
-### JN-04. Joint scalar parameter runtime types
-
-**Question.** Which runtime type must each named joint scalar and boolean parameter have before its
-value enters the neutral joint?
-
-**Known.** JointObject.py declares Angle and angle limits as App::PropertyAngle, distances and
-length limits as App::PropertyLength, and enable, detach, and suppression flags as
-App::PropertyBool. Each named parameter has at most one root value.
-
-**Conflict.** joint.rs:99-127 selects parameters by name, and scalar_parameter at
-joint.rs:325-333 reads any single value attribute without checking the runtime type or value tag.
-A PropertyString or PropertyInteger with a parseable value can populate a neutral angle, length,
-or boolean field.
-
-**Need.** Enforce the exact runtime type and root value tag for every named joint parameter before
-neutral transfer.
-
 ## 8. Attachment and assembly
 
 ### AT-02. Native map-mode representation
