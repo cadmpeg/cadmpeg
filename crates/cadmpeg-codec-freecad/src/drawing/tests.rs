@@ -123,6 +123,62 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
 }
 
 #[test]
+fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Model" id="1"/>
+ <Object type="TechDraw::DrawPage" name="PageNull" id="2"/>
+ <Object type="TechDraw::DrawPage" name="PageModel" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Model"><Properties Count="0"/></Object>
+ <Object name="PageNull"><Properties Count="2">
+  <Property name="Template" type="App::PropertyLink"><Link value=""/></Property>
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="Model"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="PageModel"><Properties Count="2">
+  <Property name="Template" type="App::PropertyLink"><Link value="Model"/></Property>
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="Model"/></LinkList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("typed page links");
+    let pages = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .filter(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::Page)
+        .collect::<Vec<_>>();
+    assert_eq!(pages.len(), 2);
+    let null_page = pages
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#PageNull"))
+        .expect("null page");
+    assert!(null_page.template.is_none());
+    assert!(null_page.relationships["Template"][0].is_null);
+    assert_eq!(
+        null_page.relationships["Views"][0].target.as_deref(),
+        Some("fcstd:native:object#Model")
+    );
+    let model_page = pages
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#PageModel"))
+        .expect("model page");
+    assert!(model_page.template.is_none());
+    assert_eq!(
+        model_page.relationships["Template"][0].target.as_deref(),
+        Some("fcstd:native:object#Model")
+    );
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn accepts_enumeration_metadata_and_registered_optional_carriers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1">

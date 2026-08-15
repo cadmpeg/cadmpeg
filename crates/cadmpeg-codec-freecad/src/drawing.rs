@@ -172,23 +172,30 @@ pub(crate) fn transfer_neutral(
         } else {
             None
         };
+        let relationships = record
+            .relationships
+            .iter()
+            .map(|(role, targets)| (role.clone(), targets.iter().map(relationship).collect()))
+            .collect::<BTreeMap<_, _>>();
+        let template = record
+            .relationships
+            .get("Template")
+            .and_then(|targets| targets.first())
+            .and_then(|link| {
+                if link.document.is_some() {
+                    return None;
+                }
+                let object = link.object.as_deref().filter(|object| !object.is_empty())?;
+                neutral_ids.get(object).cloned()
+            });
         model.drawings.push(Drawing {
             id: DrawingId(neutral_ids[record.object.as_str()].clone()),
             object: record.object.clone(),
             kind: classify(&record.kind),
             runtime_type: record.kind.clone(),
             order: order as u32,
-            relationships: record
-                .relationships
-                .iter()
-                .map(|(role, targets)| (role.clone(), targets.iter().map(relationship).collect()))
-                .collect(),
-            template: record.template.as_ref().map(|object| {
-                neutral_ids
-                    .get(object.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| object.clone())
-            }),
+            relationships,
+            template,
             position,
             scale,
             direction,

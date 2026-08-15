@@ -637,6 +637,11 @@ precedence. A page `Template` property is one `App::PropertyLink` with at most o
 `Views` property is one `App::PropertyLinkList` whose targets retain serialized order. Other runtime
 types do not supply page template or page-view carriers.
 
+For a page, the persisted `Template` link is represented as an optional local template identity only
+when its nonempty target resolves to a registered template drawing. Its typed relationship retains an
+explicit null, external target, or non-drawing target. The persisted `Views` link list is represented
+by an ordered typed relationship, including null, external, and non-drawing targets.
+
 The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
 are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
 `TechDraw::DrawViewAnnotationPython`, `TechDraw::DrawRichAnno`, and

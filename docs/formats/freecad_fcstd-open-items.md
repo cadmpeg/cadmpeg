@@ -336,29 +336,7 @@ or boolean field.
 **Need.** Enforce the exact runtime type and root value tag for every named joint parameter before
 neutral transfer.
 
-## 8. TechDraw projection
-
-### DG-04. Page link null projection
-
-**Question.** How do null and non-local page Template and Views links enter the neutral page
-record?
-
-**Known.** A page Views carrier is one App::PropertyLinkList whose targets retain serialized
-order. An explicit empty link is distinct from an absent target and is accepted by referential
-validation as a null target.
-
-**Conflict.** drawing.rs:36-41 projects page Views and Template into scalar object ids, and
-drawing.rs:186-191 carries the template as an untyped string. An explicit empty Link value becomes
-the empty string instead of a null DrawingTarget; lib.rs:637-646 then treats that string as a
-missing object. The projection loses the link's null state and raises a missing-target finding.
-
-**Need.** Preserve page link targets as typed DrawingTarget values, including explicit null and
-external states, or reject the link before neutral admission. Keep serialized order.
-
-**Note.** The current relationship map retains more link detail, but page membership and template
-fields still use lossy string projections.
-
-## 9. Attachment and assembly
+## 8. Attachment and assembly
 
 ### AT-02. Attachment support and map-mode carrier grammar
 

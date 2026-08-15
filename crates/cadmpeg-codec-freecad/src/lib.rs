@@ -636,14 +636,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for drawing in &drawings {
         let missing_object = !object_ids.contains(drawing.object.as_str())
-            || drawing
-                .views
-                .iter()
-                .any(|view| !object_ids.contains(view.as_str()))
-            || drawing
-                .template
-                .as_ref()
-                .is_some_and(|template| !object_ids.contains(template.as_str()))
             || drawing.sources.iter().any(|source| {
                 source.document.is_none()
                     && source.object.as_ref().is_some_and(|object| {
