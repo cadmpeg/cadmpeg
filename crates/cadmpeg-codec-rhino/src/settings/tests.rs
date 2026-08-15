@@ -140,7 +140,7 @@ fn rejects_custom_scale_and_tolerance_products_that_overflow() {
 }
 
 #[test]
-fn decodes_as_file_name_as_utf16_and_rejects_fixed_trailing_bytes() {
+fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
     let mut name = Vec::new();
     name.extend(2_u32.to_le_bytes());
     name.extend([b'X', 0, 0, 0]);
@@ -171,8 +171,8 @@ fn decodes_as_file_name_as_utf16_and_rejects_fixed_trailing_bytes() {
     };
     let mut warnings = Vec::new();
     let metadata = settings::parse_metadata(&trailing, ArchiveVersion::V5, &[table], &mut warnings);
-    assert!(metadata.properties.as_file_name.is_none());
-    assert_eq!(warnings.len(), 1);
+    assert_eq!(metadata.properties.as_file_name.as_deref(), Some("X"));
+    assert!(warnings.is_empty());
 }
 
 #[test]

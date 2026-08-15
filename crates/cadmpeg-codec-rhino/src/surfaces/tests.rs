@@ -686,13 +686,13 @@ fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
 }
 
 #[test]
-fn sum_surface_rejects_future_packed_version_before_children() {
-    let bytes = [0x11];
+fn sum_surface_accepts_later_minor_version_and_skips_suffix() {
+    let mut bytes = valid_sum_payload();
+    bytes[0] = 0x11;
+    bytes.push(0xaa);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    assert!(matches!(
-        super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0),
-        Err(crate::curves::GeometryError::UnsupportedVersion { .. })
-    ));
+    assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_ok());
+    assert_eq!(reader.remaining(), 0);
 }
 
 #[test]

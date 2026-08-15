@@ -1293,7 +1293,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn strict_flags_trim_domains_and_future_versions_are_rejected() {
+    fn strict_flags_trim_domains_and_later_minor_versions_are_accepted() {
         let valid = payload(2, [false, false], None);
         let body_start = long_v50::LEN;
         let profile_len = polyline_wrapper(false, true).len();
@@ -1331,20 +1331,18 @@ pub(crate) mod tests {
             )
             .is_err());
         }
-        let mut future = payload(2, [false, false], None);
+        let mut future = payload(3, [false, false], Some(one_mesh_cache()));
         future[body_start + anon_ver::MINOR..body_start + anon_ver::LEN]
             .copy_from_slice(&4_i32.to_le_bytes());
-        assert!(matches!(
-            decode(
-                &future,
-                0..future.len(),
-                ArchiveVersion::V5,
-                None,
-                1.0,
-                &mut crate::mesh::MeshBudget::new(),
-            ),
-            Err(GeometryError::UnsupportedVersion { .. })
-        ));
+        assert!(decode(
+            &future,
+            0..future.len(),
+            ArchiveVersion::V5,
+            None,
+            1.0,
+            &mut crate::mesh::MeshBudget::new(),
+        )
+        .is_ok());
     }
 
     #[test]
@@ -1435,7 +1433,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn exact_payload_end_is_required() {
+    fn payload_suffix_is_skipped() {
         let mut bytes = payload(2, [false, false], None);
         let crc_offset = bytes.len() - 4;
         bytes.insert(crc_offset, 0xff);
@@ -1453,6 +1451,6 @@ pub(crate) mod tests {
             1.0,
             &mut crate::mesh::MeshBudget::new(),
         )
-        .is_err());
+        .is_ok());
     }
 }
