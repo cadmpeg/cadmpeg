@@ -204,6 +204,67 @@ fn target_profiles_cover_every_emitted_entity_form() {
 }
 
 #[test]
+fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
+    let cases = [
+        (
+            SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            190,
+        ),
+        (
+            SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            192,
+        ),
+        (
+            SurfaceGeometry::Cone {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+                ratio: 1.0,
+                half_angle: std::f64::consts::FRAC_PI_6,
+            },
+            194,
+        ),
+        (
+            SurfaceGeometry::Sphere {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            196,
+        ),
+        (
+            SurfaceGeometry::Torus {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 2.0,
+                minor_radius: 1.0,
+            },
+            198,
+        ),
+    ];
+    for (geometry, expected_type) in cases {
+        let entities = surface_entities(&geometry, 0).expect("analytic surface has a carrier");
+        let surface = entities
+            .last()
+            .expect("analytic surface emits a surface entity");
+        assert_eq!(surface.type_code, expected_type);
+        assert_eq!(surface.form, 1);
+    }
+}
+
+#[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let geometry = CurveGeometry::Hyperbola {
         center: Point3::new(1.0, 2.0, 3.0),

@@ -57,16 +57,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-06. The analytic surface family is fixed with no fallback
-
-**Question.** Which IGES surface entity should a generated file use for each analytic surface?
-
-**Known.** `writer.rs` maps planes, cylinders, cones, spheres, and tori to Types 190, 192, 194, 196, and 198, and rejects unsupported native forms. The writer does not record why this family is preferred over Type 108/120/128 alternatives.
-
-**Need.** We need the encoding choice and its interoperability evidence, plus a loss or refusal when the selected family is not supported by the target profile.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `f4a07d64b` made the analytic-family choice explicit but did not establish portability or a target-profile rule.
-
 ### WR-07. Orthonormality gates refuse foreign frames instead of repairing them
 
 **Question.** What frame perturbation must the writer accept?

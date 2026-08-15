@@ -3792,6 +3792,39 @@ fn pointer_surface_support(
     ))
 }
 
+#[derive(Clone, Copy)]
+enum AnalyticSurfaceFamily {
+    Plane,
+    Cylinder,
+    Cone,
+    Sphere,
+    Torus,
+}
+
+impl AnalyticSurfaceFamily {
+    const fn type_code(self) -> u32 {
+        match self {
+            Self::Plane => 190,
+            Self::Cylinder => 192,
+            Self::Cone => 194,
+            Self::Sphere => 196,
+            Self::Torus => 198,
+        }
+    }
+}
+
+fn analytic_surface_family(geometry: &SurfaceGeometry) -> Option<AnalyticSurfaceFamily> {
+    match geometry {
+        SurfaceGeometry::Plane { .. } => Some(AnalyticSurfaceFamily::Plane),
+        SurfaceGeometry::Cylinder { .. } => Some(AnalyticSurfaceFamily::Cylinder),
+        SurfaceGeometry::Cone { .. } => Some(AnalyticSurfaceFamily::Cone),
+        SurfaceGeometry::Sphere { .. } => Some(AnalyticSurfaceFamily::Sphere),
+        SurfaceGeometry::Torus { .. } => Some(AnalyticSurfaceFamily::Torus),
+        SurfaceGeometry::Nurbs(_) => None,
+        _ => None,
+    }
+}
+
 fn append_surface_entities(
     entities: &mut Vec<Entity>,
     geometry: &SurfaceGeometry,
@@ -3813,6 +3846,8 @@ fn surface_entities(
     geometry: &SurfaceGeometry,
     base_index: usize,
 ) -> Result<Vec<Entity>, CodecError> {
+    let analytic_type_code =
+        analytic_surface_family(geometry).map(AnalyticSurfaceFamily::type_code);
     match geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -3822,7 +3857,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *normal, *u_axis)?;
             entities.push(Entity {
-                type_code: 190,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES plane has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "PLANE",
                 status: "00010000",
@@ -3852,7 +3889,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 192,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES cylinder has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "CYLINDER",
                 status: "00000000",
@@ -3898,7 +3937,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 194,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES cone has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "CONE",
                 status: "00000000",
@@ -3930,7 +3971,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *center, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 196,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES sphere has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "SPHERE",
                 status: "00000000",
@@ -3966,7 +4009,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *center, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 198,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES torus has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "TORUS",
                 status: "00000000",
