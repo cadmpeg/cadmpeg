@@ -524,3 +524,45 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn decode_projects_a_large_composite_batch_without_repeated_curve_scans() {
+    const COMPOSITE_COUNT: usize = 2_000;
+    let mut entities = vec![
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "CHILD1".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "CHILD2".into(),
+            status: "00010000",
+            parameters: "110,1,0,0,2,0,0;".into(),
+        },
+    ];
+    entities.extend((0..COMPOSITE_COUNT).map(|index| OwnedTestEntity {
+        entity_type: 102,
+        form: 0,
+        label: format!("C{index:06}"),
+        status: "00000000",
+        parameters: "102,2,1,3;".into(),
+    }));
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.procedural_curves.len(), COMPOSITE_COUNT);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
