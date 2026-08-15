@@ -70,6 +70,23 @@ fn parse_global_fields(fields: &[String]) -> Result<crate::global::Global, Codec
     crate::global::parse(&crate::card::scan(&bytes)?)
 }
 
+fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
+    let mut bytes = card(b"original fixture", b'S', 1);
+    let cards = chunks
+        .iter()
+        .flat_map(|chunk| chunk.chunks(72))
+        .collect::<Vec<_>>();
+    for (index, chunk) in cards.iter().enumerate() {
+        bytes.extend(card(chunk, b'G', u32::try_from(index + 1).unwrap()));
+    }
+    bytes.extend(card(
+        format!("S0000001G{:07}D0000000P0000000", cards.len()).as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 #[test]
 fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     let product = "p".repeat(70);
@@ -104,6 +121,29 @@ fn global_defaults_apply_only_to_omitted_fields() {
     assert_eq!(parsed.units_flag(), 1);
     assert_eq!(parsed.version_flag(), 3);
     assert_eq!(parsed.minimum_resolution_mm(), 0.0);
+}
+
+#[test]
+fn global_card_padding_is_ignored_outside_hollerith_values() {
+    let bytes = fixed_ascii_with_global_chunks(&[
+        b"1H,,1H;,7Hproduct,8Hpart.igs,",
+        b"7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    ]);
+    let parsed = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+
+    assert_eq!(parsed.sender_product().as_deref(), Some("product"));
+    assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
+}
+
+#[test]
+fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
+    let bytes = fixed_ascii_with_global_chunks(&[
+        b"1H,,1H;,3Hab ",
+        b",8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    ]);
+    let parsed = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+
+    assert_eq!(parsed.sender_product().as_deref(), Some("ab "));
 }
 
 #[test]

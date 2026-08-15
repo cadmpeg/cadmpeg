@@ -156,13 +156,53 @@ fn delimited_value(
     }
 }
 
-pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
-    let bytes = scan
+fn global_bytes(scan: &CardScan<'_>) -> Result<Vec<u8>, CodecError> {
+    let mut bytes = Vec::new();
+    let mut pending_digits = Vec::new();
+    let mut hollerith_remaining = 0_usize;
+
+    for line in scan
         .lines
         .iter()
         .filter(|line| line.section == Some(Section::Global))
-        .flat_map(|line| line.payload.iter().take(72).copied())
-        .collect::<Vec<_>>();
+    {
+        for byte in line.payload.iter().take(72).copied() {
+            if hollerith_remaining > 0 {
+                bytes.push(byte);
+                hollerith_remaining -= 1;
+                continue;
+            }
+
+            if byte == b' ' {
+                continue;
+            }
+            if byte.is_ascii_digit() {
+                pending_digits.push(byte);
+                continue;
+            }
+            if !pending_digits.is_empty() && matches!(byte, b'H' | b'h') {
+                let count = std::str::from_utf8(&pending_digits)
+                    .map_err(|_| malformed("Hollerith count is not ASCII"))?
+                    .parse::<usize>()
+                    .map_err(|_| malformed("Hollerith count is out of range"))?;
+                bytes.extend_from_slice(&pending_digits);
+                bytes.push(byte);
+                pending_digits.clear();
+                hollerith_remaining = count;
+                continue;
+            }
+
+            bytes.extend_from_slice(&pending_digits);
+            pending_digits.clear();
+            bytes.push(byte);
+        }
+    }
+    bytes.extend_from_slice(&pending_digits);
+    Ok(bytes)
+}
+
+pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
+    let bytes = global_bytes(scan)?;
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
