@@ -649,6 +649,12 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
         ("revolution", "Revol_ThickThin1", "revolution-record", 4_u32),
         ("sweep", "Sweep_ThickThin1", "sweep-record", 5_u32),
         ("fillet", "EdgeFillet", "fillet-record", 6_u32),
+        (
+            "circular-pattern",
+            "CircPattern_RadialNumber",
+            "circular-pattern-record",
+            7_u32,
+        ),
     ];
     let objects = cases
         .iter()
@@ -736,6 +742,18 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 assert!(matches!(
                     feature.definition,
                     FeatureDefinition::FilletUnresolved
+                ));
+            }
+            Some("CircPattern_RadialNumber") => {
+                let FeatureDefinition::Pattern { seeds, pattern } = &feature.definition else {
+                    panic!("expected a typed unresolved circular pattern");
+                };
+                assert!(seeds.is_empty());
+                assert!(matches!(
+                    pattern,
+                    cadmpeg_ir::features::PatternKind::Unresolved {
+                        form: Some(cadmpeg_ir::features::PatternForm::Circular)
+                    }
                 ));
             }
             other => panic!("unexpected operation source tag: {other:?}"),
@@ -1384,6 +1402,52 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
 }
 
 #[test]
+fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId::from("pattern-feature"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some("CircPattern_RadialNumber".to_string()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: cadmpeg_ir::features::PatternKind::Unresolved {
+                form: Some(cadmpeg_ir::features::PatternForm::Circular),
+            },
+        },
+        native_ref: Some("pattern-feature".to_string()),
+    });
+    let mut value = parameter("pattern-parameter", "pattern-native");
+    value.name = "Number".to_string();
+    value.expression = "3".to_string();
+    ir.model.parameters.push(value);
+
+    normalize_parameter_names(&mut ir);
+    assign_native_operation_parameter_values(
+        &mut ir,
+        &HashMap::from([(
+            ParameterId("pattern-parameter".to_string()),
+            FeatureId::from("pattern-feature"),
+        )]),
+    );
+
+    assert_eq!(
+        ir.model.features[0]
+            .source_properties
+            .get("catia_parameter_Number")
+            .map(String::as_str),
+        Some("3")
+    );
+}
+
+#[test]
 fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
     let owner = FeatureId::from("feature");
     let mut ir = CadIr::empty(Units::default());
@@ -1892,7 +1956,7 @@ fn visualization_values_do_not_assert_missing_design_intent() {
 
 #[test]
 fn decode_does_not_promote_operation_field_class_names_to_features() {
-    for class in ["Groove", "GSMHelix"] {
+    for class in ["Groove", "GSMHelix", "CircPattern_RadialNumber"] {
         let decoded = CatiaCodec
             .decode(
                 &mut Cursor::new(standard_catpart_with_design_class(class)),

@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, ParameterId, PrincipalPlane, SketchSpace,
+    Feature, FeatureDefinition, FeatureId, ParameterId, PatternForm, PatternKind, PrincipalPlane,
+    SketchSpace,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
@@ -342,6 +343,7 @@ fn assign_native_operation_parameter_values(
             FeatureDefinition::ExtrudeUnresolved
             | FeatureDefinition::RevolveUnresolved
             | FeatureDefinition::FilletUnresolved
+            | FeatureDefinition::Pattern { .. }
             | FeatureDefinition::Sweep { .. } => {
                 for (name, expression) in values {
                     feature
@@ -689,6 +691,7 @@ pub(crate) fn is_admitted_native_operation_class(name: &str) -> bool {
             | "Prism_ThickThin1"
             | "Prism_ThickThin2"
             | "Revol_ThickThin1"
+            | "CircPattern_RadialNumber"
             | "Sweep_ThickThin1"
     )
 }
@@ -750,7 +753,8 @@ fn transfer_native_operation(
 /// Project an admitted CATIA operation class into the neutral family while
 /// keeping every unresolved operand explicit. The exact owner declaration
 /// proves the family identity; it does not prove profile, axis, extent,
-/// result, edge-group, or operation-specific dependency roles.
+/// result, edge group, pattern seed, pattern axis, pattern angle, pattern
+/// count, or operation-specific dependency roles.
 fn native_operation_definition(
     kind: &str,
     native_ref: &str,
@@ -761,6 +765,12 @@ fn native_operation_definition(
             FeatureDefinition::ExtrudeUnresolved
         }
         "Revol_ThickThin1" => FeatureDefinition::RevolveUnresolved,
+        "CircPattern_RadialNumber" => FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Circular),
+            },
+        },
         "Sweep_ThickThin1" => FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),
             sections: Vec::new(),
