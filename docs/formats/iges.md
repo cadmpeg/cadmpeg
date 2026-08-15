@@ -102,7 +102,7 @@ Type 112 defines each segment coordinate as `a + b*w + c*w^2 + d*w^3`, where `w 
 
 Type 112 curve type, continuity class, and dimensionality are retained in the native entity's ordered parameter tokens. The neutral spline carrier uses the validated coefficient geometry and does not encode the curve type, continuity class, or dimensionality; a successful Type 112 projection emits `geometry.spline-header-not-transferred` with source provenance. Type 114 curve type and patch type follow the same rule: the native entity retains both header fields, the neutral NURBS carrier retains the validated patch geometry, and a successful projection emits the same loss code.
 
-Angular equality uses one absolute tolerance of `2π × 10^-12` radians. An arc whose endpoint directions differ by no more than this tolerance is a complete turn. A revolution whose sweep differs from `2π` by no more than this tolerance is periodic. A sweep may exceed `2π` by this tolerance and is then clamped to `2π` before exact carrier construction.
+Curve and surface projection and semantic conic writing use one absolute angular tolerance of `2π × 10^-12` radians. This is a codec representation policy, not a tolerance encoded by an IGES entity. An arc whose endpoint directions differ by no more than this tolerance is a complete turn. A revolution whose sweep differs from `2π` by no more than this tolerance is periodic. A sweep may exceed `2π` by this tolerance and is then clamped to `2π` before exact carrier construction.
 
 ## Primitive solids
 

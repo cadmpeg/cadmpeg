@@ -141,18 +141,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2ac641864` added endpoint validation, but no independent evidence establishes the authority or tolerance.
 
-### GE-10. Angular equality constants
-
-**Question.** What angular tolerance applies when the codec compares directions and spans?
-
-**Known.** `curve_conversion.rs:24-27` defines one `ANGULAR_TOLERANCE` as `TAU * 1e-12`. The current tests pin the same project constant.
-
-**Conflict.** `writer.rs:4710-4717` accepts a conic sweep through `TAU + 1.0e-10`, while the reader uses `TAU * 1e-12` for angular equality. The writer can therefore emit a sweep that passes its gate but fails the reader's angular gate.
-
-**Need.** We need producer or specification evidence for angular equality, or a project-policy classification that does not present this value as an IGES rule.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `6173d018b` changed a magic number into a named constant, but naming a threshold is not evidence for it.
-
 ### GE-12. Type 126 property flags against the values
 
 **Question.** Which Type 126 representation flags are authoritative when they disagree with the values?

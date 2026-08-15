@@ -5,6 +5,7 @@
 //! source image byte for byte. Otherwise the semantic writer emits the current
 //! supported neutral profile and refuses unsupported models or native records.
 
+use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
@@ -4709,7 +4710,7 @@ fn placement(
 
 fn validate_arc_sweep(range: [f64; 2]) -> Result<(), CodecError> {
     let sweep = range[1] - range[0];
-    if !(0.0..=TAU + 1.0e-10).contains(&sweep) || sweep == 0.0 {
+    if !(0.0..=TAU + ANGULAR_TOLERANCE).contains(&sweep) || sweep == 0.0 {
         return Err(CodecError::NotImplemented(
             "IGES conic writer requires a non-zero ordered span no larger than one revolution"
                 .into(),

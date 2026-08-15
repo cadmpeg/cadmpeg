@@ -180,6 +180,12 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
 }
 
 #[test]
+fn generated_conic_sweep_uses_the_shared_angular_tolerance() {
+    assert!(validate_arc_sweep([0.0, TAU + ANGULAR_TOLERANCE]).is_ok());
+    assert!(validate_arc_sweep([0.0, TAU + ANGULAR_TOLERANCE * 1.01]).is_err());
+}
+
+#[test]
 fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
