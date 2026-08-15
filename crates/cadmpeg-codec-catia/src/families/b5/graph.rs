@@ -4576,10 +4576,9 @@ fn framed_records_and_dependency_candidates(
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
     let mut candidates = DependencyCandidates::new();
     for frame in frames {
-        let Some(record) = record_from_frame(bytes, frame) else {
-            continue;
-        };
-        if is_reference_dependency_class(frame.family, frame.class) {
+        if is_reference_dependency_class(frame.family, frame.class)
+            && frame_payload(bytes, frame).is_some()
+        {
             candidates
                 .entry(frame.object_id)
                 .and_modify(|slot| {
@@ -4597,6 +4596,9 @@ fn framed_records_and_dependency_candidates(
         {
             continue;
         }
+        let Some(record) = record_from_frame(bytes, frame) else {
+            continue;
+        };
         if seen
             .get(&frame.object_id)
             .is_some_and(|(seen_class, seen_payload)| {
@@ -4631,7 +4633,9 @@ fn indexed_topology_records_and_dependency_candidates(
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
     let mut candidates = DependencyCandidates::new();
     for frame in frames {
-        if is_reference_dependency_class(frame.family, frame.class) {
+        if is_reference_dependency_class(frame.family, frame.class)
+            && frame_payload(bytes, frame).is_some()
+        {
             candidates
                 .entry(frame.object_id)
                 .and_modify(|slot| {
@@ -4684,16 +4688,18 @@ fn same_object_frame(bytes: &[u8], left: &ObjectFrame, right: &ObjectFrame) -> b
             .is_some_and(|(left, right)| left == right)
 }
 
-fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
+fn frame_payload<'a>(bytes: &'a [u8], frame: &ObjectFrame) -> Option<&'a [u8]> {
     let header = if frame.family == 0xa8 { 11 } else { 8 };
+    bytes.get(frame.start.checked_add(header)?..frame.end)
+}
+
+fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
     Some(B5Record {
         offset: frame.start,
         family: frame.family,
         class: frame.class,
         object_id: frame.object_id,
-        payload: bytes
-            .get(frame.start.checked_add(header)?..frame.end)?
-            .to_vec(),
+        payload: frame_payload(bytes, frame)?.to_vec(),
     })
 }
 
