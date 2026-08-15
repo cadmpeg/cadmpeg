@@ -23,9 +23,8 @@ pub(in super::super) fn section_point_locus(
     point_id: u32,
 ) -> Option<SketchLocus> {
     let unique_entities = unique_section_segment_external_ids(definition);
-    definition
-        .segments
-        .as_ref()?
+    let segments = definition.segments.as_ref()?;
+    let mut candidates = segments
         .rows
         .iter()
         .filter(|segment| unique_entities.contains(&segment.external_id))
@@ -53,6 +52,23 @@ pub(in super::super) fn section_point_locus(
             };
             Some((segment.offset, locus))
         })
+        .collect::<Vec<_>>();
+    candidates.extend(
+        segments
+            .point_rows
+            .iter()
+            .filter(|segment| {
+                segment.point_id == point_id && segments.external_id_count(segment.external_id) == 1
+            })
+            .map(|segment| {
+                (
+                    segment.offset,
+                    SketchLocus::Entity(sketch_entity_id(sketch, segment.external_id)),
+                )
+            }),
+    );
+    candidates
+        .into_iter()
         .min_by_key(|(offset, _)| *offset)
         .map(|(_, locus)| locus)
 }
@@ -937,4 +953,59 @@ pub(in super::super) fn active_complete_section_skamps(
     definition: &crate::feature::FeatureDefinition,
 ) -> impl Iterator<Item = &crate::feature::FeatureSkamp> {
     complete_section_skamps(definition).filter(|skamp| section_skamp_active(skamp.status))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::sketches::SketchEntityId;
+
+    #[test]
+    fn standalone_point_rows_supply_point_loci() {
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 1,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: Vec::new(),
+                circle_rows: Vec::new(),
+                point_rows: vec![crate::feature::FeaturePointSegment {
+                    point_id: 7,
+                    external_id: 12,
+                    offset: 20,
+                }],
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 10,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+        assert_eq!(
+            section_point_locus(
+                &definition,
+                &SketchId("creo:model:sketch#917".to_string()),
+                7,
+            ),
+            Some(SketchLocus::Entity(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:12".to_string(),
+            )))
+        );
+    }
 }
