@@ -1134,6 +1134,9 @@ pub(crate) fn bind_feature_body_selections(
                     groups,
                     body_recipe_operands,
                 );
+                if matches!(bodies, BodySelection::Native(_)) {
+                    bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                }
             } else {
                 bind_direct_body_recipe_body_selection(bodies, scope, inputs);
             }

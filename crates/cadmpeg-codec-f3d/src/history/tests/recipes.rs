@@ -1037,6 +1037,22 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         }
     );
 
+    let mut scale_scope = scope.clone();
+    scale_scope.kind = "Scale".into();
+    scale_scope.previous_history_state_id = Some(7);
+    let mut scale_group = group.clone();
+    scale_group.role = 0x0000_0004_0000_0000;
+    let scale_inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&scale_scope),
+        groups: std::slice::from_ref(&scale_group),
+        body_recipe_operands: std::slice::from_ref(&operand),
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: std::slice::from_ref(&body),
+        regions: std::slice::from_ref(&region),
+        shells: std::slice::from_ref(&shell),
+    };
     let mut feature = Feature::new(
         FeatureId("f3d:feature#scale".into()),
         0,
@@ -1051,8 +1067,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             },
         },
     );
-    feature.native_ref = Some(scope.id.clone());
-    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    feature.native_ref = Some(scale_scope.id.clone());
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs);
     assert!(matches!(
         feature.definition,
         FeatureDefinition::Scale {
