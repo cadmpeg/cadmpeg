@@ -4070,7 +4070,7 @@ fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
 /// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
 fn stamp_local_digests(ir: &mut CadIr) {
     ir.finalize();
-    let brep_hash = brep_local_sha256(ir);
+    let brep_hash = brep_local_sha256_in_place(ir);
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -4136,13 +4136,9 @@ fn stamp_local_digests(ir: &mut CadIr) {
 /// rest of the document is written. It carries every limitation
 /// [`document_local_sha256`] states, and the `_local_sha256` suffix says so.
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
-    use cadmpeg_ir::appearance::AppearanceTarget;
-
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
-    let mut normalized = CadIr::empty(ir.units.clone());
-    normalized.tolerances = ir.tolerances;
-    normalized.model = cadmpeg_ir::document::Model {
+    let partition = cadmpeg_ir::document::Model {
         bodies: ir.model.bodies.clone(),
         regions: ir.model.regions.clone(),
         shells: ir.model.shells.clone(),
@@ -4161,6 +4157,82 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
         appearance_bindings: ir.model.appearance_bindings.clone(),
         ..Default::default()
     };
+    brep_partition_sha256(ir.units.clone(), ir.tolerances, partition).0
+}
+
+/// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
+///
+/// Moves the structurally untouched B-rep arenas out of `ir`, hashes the same
+/// normalized partition [`brep_local_sha256`] builds, and moves them back in
+/// their original order. The two arenas the normalization filters —
+/// `appearances` and `appearance_bindings` — and the body display fields it
+/// strips are copied, so `ir` is bit-identical afterwards and both entry
+/// points produce the same digest for the same document.
+fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
+    use std::mem::take;
+
+    let saved_body_display = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| (body.name.clone(), body.color))
+        .collect::<Vec<_>>();
+    let partition = cadmpeg_ir::document::Model {
+        bodies: take(&mut ir.model.bodies),
+        regions: take(&mut ir.model.regions),
+        shells: take(&mut ir.model.shells),
+        faces: take(&mut ir.model.faces),
+        loops: take(&mut ir.model.loops),
+        coedges: take(&mut ir.model.coedges),
+        edges: take(&mut ir.model.edges),
+        vertices: take(&mut ir.model.vertices),
+        points: take(&mut ir.model.points),
+        surfaces: take(&mut ir.model.surfaces),
+        curves: take(&mut ir.model.curves),
+        pcurves: take(&mut ir.model.pcurves),
+        procedural_surfaces: take(&mut ir.model.procedural_surfaces),
+        procedural_curves: take(&mut ir.model.procedural_curves),
+        appearances: ir.model.appearances.clone(),
+        appearance_bindings: ir.model.appearance_bindings.clone(),
+        ..Default::default()
+    };
+    let (hash, mut partition) = brep_partition_sha256(ir.units.clone(), ir.tolerances, partition);
+    ir.model.bodies = take(&mut partition.bodies);
+    for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {
+        body.name = name;
+        body.color = color;
+    }
+    ir.model.regions = take(&mut partition.regions);
+    ir.model.shells = take(&mut partition.shells);
+    ir.model.faces = take(&mut partition.faces);
+    ir.model.loops = take(&mut partition.loops);
+    ir.model.coedges = take(&mut partition.coedges);
+    ir.model.edges = take(&mut partition.edges);
+    ir.model.vertices = take(&mut partition.vertices);
+    ir.model.points = take(&mut partition.points);
+    ir.model.surfaces = take(&mut partition.surfaces);
+    ir.model.curves = take(&mut partition.curves);
+    ir.model.pcurves = take(&mut partition.pcurves);
+    ir.model.procedural_surfaces = take(&mut partition.procedural_surfaces);
+    ir.model.procedural_curves = take(&mut partition.procedural_curves);
+    hash
+}
+
+/// Normalize and hash one B-rep partition; both digest entry points share it.
+///
+/// Returns the normalized model with the hash so an in-place caller can move
+/// its arenas back; only `bodies` (display fields stripped), `appearances`,
+/// and `appearance_bindings` (both filtered to face bindings) are mutated.
+fn brep_partition_sha256(
+    units: cadmpeg_ir::units::Units,
+    tolerances: cadmpeg_ir::units::Tolerances,
+    model: cadmpeg_ir::document::Model,
+) -> (String, cadmpeg_ir::document::Model) {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+
+    let mut normalized = CadIr::empty(units);
+    normalized.tolerances = tolerances;
+    normalized.model = model;
     normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;
         body.color = None;
@@ -4182,7 +4254,10 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
         .model
         .appearances
         .retain(|appearance| face_appearances.contains(&appearance.id));
-    cadmpeg_ir::hash::canonical_json_sha256(&normalized)
+    (
+        cadmpeg_ir::hash::canonical_json_sha256(&normalized),
+        normalized.model,
+    )
 }
 
 /// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
