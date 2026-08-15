@@ -137,43 +137,50 @@ legal repeated carriers.
 **Need.** Establish representation cardinality and precedence. Select by a serialized role or
 prove geometric equivalence when duplicates are legal; otherwise define the exact malformed form.
 
-**Note.** The closure promotes refusal to a format invariant without primary evidence for
-multiple representation cases. Reopened after the topology closure.
+**Note.** This pass settled the valid paired closed-surface pcurve form and its separation from
+polygon carriers. Repeated 3D or polygon carriers and multiple matching pcurves for one face use
+remain open.
 
 ## 5. Design projection
 
 ### DP-02. Sketch profile seed order
 
-**Question.** Which non-construction entity starts each oriented sketch profile chain?
+**Question.** Which neutral seed rule applies when the producer does not persist a profile-chain
+seed?
 
-**Known.** Sketch entities retain persisted source order and native identity. Profile chains must
-be deterministic and attributable.
+**Known.** FreeCAD writes separate ordered `GeometryList` and `ConstraintList` values. The authored
+`disconnected_a.FCStd` and `disconnected_b.FCStd` witnesses contain the same two disconnected
+chains with their geometry-list orders exchanged; neither `Document.xml` contains a profile-chain
+or seed record.
 
-**Conflict.** design.rs:2385-2410 seeds each profile from the first entity in a decoder-owned
-BTreeSet. Persisted geometry-list order does not establish that this disconnected-chain seed
-rule is producer-defined.
+**Conflict.** design.rs:2385-2410 must select a neutral seed from decoder-owned data because the
+producer does not persist one. Geometry-list order establishes source order but does not select a
+neutral seed rule by itself.
 
-**Need.** Establish the producer-defined seed rule for each disconnected chain and retain the
-persisted entity ordinal in the decision.
+**Need.** Settle the neutral seed rule and retain the persisted entity ordinal in the decision.
 
-**Note.** The closure fixed an earlier ordering defect but did not establish the source rule for
-disconnected profiles. Reopened.
+**Note.** This pass settled that the producer persists geometry and constraint order but no
+profile-chain seed. The neutral seed decision remains open.
 
 ### DP-03. Sketch profile junction ambiguity and tolerance
 
-**Question.** What endpoint tolerance connects two sketch entities, and what happens when more
-than one unused entity meets the current endpoint?
+**Question.** What neutral endpoint-equivalence and junction policy applies when the producer
+persists coordinates with optional constraint operands but no junction tolerance or tie-break?
 
-**Known.** Constraints and persisted geometry can produce coincident endpoints. A neutral profile
-chain asserts one ordered continuation and orientation at every junction.
+**Known.** FreeCAD writes endpoint coordinates in `GeometryList` and ordered constraint operands in
+`ConstraintList`; it writes no generic endpoint-junction tolerance or junction-selection field.
+The authored `junction_coordinates_only.FCStd` witness has three lines meeting at one coordinate
+with `ConstraintList count="0"`. `junction_two_constraints.FCStd` has the same geometry with two
+coincident constraints naming two continuations.
 
 **Conflict.** design.rs:2474-2499 supplements constraints with coordinate matching.
 endpoints_match_by_roundoff at design.rs:2593-2603 uses 64 machine epsilons scaled by coordinate
-magnitude. No producer or kernel rule establishes this numeric boundary or the full admissible
-profile topology.
+magnitude. The producer witnesses establish coordinates and optional constraints, not this
+neutral numeric boundary or the full admissible profile topology.
 
-**Need.** Establish endpoint equivalence and the admissible profile topology. An ambiguous
-junction must use constraint identity, an explicit source-order rule, or an attributable refusal.
+**Need.** Settle endpoint equivalence and admissible profile topology for unconstrained and
+multi-constraint junctions. An ambiguous junction must use constraint identity, an explicit
+source-order rule, or an attributable refusal.
 
 **Note.** The closure adds ambiguity handling and a scale formula, but the boundary remains a
 decoder policy without producer evidence. Reopened.
