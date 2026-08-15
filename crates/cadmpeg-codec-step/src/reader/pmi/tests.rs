@@ -957,7 +957,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
             .expect("fixture is UTF-8")
             .replace(
                 "ENDSEC;\nEND-ISO-10303-21;",
-                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\nENDSEC;\nEND-ISO-10303-21;",
+                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\n#54=SHAPE_ASPECT('curve feature','',#38,.T.);\n#55=DIMENSIONAL_SIZE(#54,'curve dimension');\n#56=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#54,#32,#16);\nENDSEC;\nEND-ISO-10303-21;",
             );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -998,6 +998,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
                     | "step:data:geometric_item_specific_usage#46"
                     | "step:data:geometric_item_specific_usage#49"
                     | "step:data:geometric_item_specific_usage#53"
+                    | "step:data:geometric_item_specific_usage#56"
             )
         }));
     let datum_target = result
@@ -1046,6 +1047,16 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     assert!((point.position.x - 1.0).abs() < EPS_POINT_COORDINATE);
     assert!((point.position.y - 2.0).abs() < EPS_POINT_COORDINATE);
     assert!((point.position.z - 3.0).abs() < EPS_POINT_COORDINATE);
+    let curve_dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("curve dimension"))
+        .expect("curve dimension annotation");
+    assert!(curve_dimension.targets.contains(&PmiTarget::Curve {
+        curve: "step:data:curve#16".into()
+    }));
 
     let mut output = Vec::new();
     let report = write_step(
@@ -1111,6 +1122,17 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .targets
         .iter()
         .any(|target| matches!(target, PmiTarget::Point { .. })));
+    let roundtripped_curve_dimension = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("curve dimension"))
+        .expect("roundtripped curve dimension");
+    assert!(roundtripped_curve_dimension
+        .targets
+        .iter()
+        .any(|target| matches!(target, PmiTarget::Curve { .. })));
 }
 
 #[test]

@@ -692,9 +692,9 @@ are ambiguous and do not supply one. Complex measure records referenced by a
 characteristic representation remain typed measure carriers.
 `GEOMETRIC_ITEM_SPECIFIC_USAGE` resolves a shape-aspect definition, including a
 definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
-topology item. A resolved face, edge, vertex, or body is added as a typed PMI
-target while the source shape-aspect target remains. An unresolved usage remains
-source-native with its identity and links.
+geometric or topology item. A resolved face, edge, vertex, body, point, or curve
+is added as a typed PMI target while the source shape-aspect target remains. An
+unresolved usage remains source-native with its identity and links.
 `DATUM_TARGET` and `PLACED_DATUM_TARGET_FEATURE` transfer as typed datum-target
 definitions with their target form and identification, while their source
 shape-aspect identity remains a PMI target. Standard placed-target forms are

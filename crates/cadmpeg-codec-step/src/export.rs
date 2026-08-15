@@ -2578,6 +2578,7 @@ impl<'a> Builder<'a> {
             PmiTarget::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
             PmiTarget::Vertex { vertex } => self.vertex_refs.get(vertex.as_str()).copied(),
             PmiTarget::Point { point } => self.point_refs.get(point.as_str()).copied(),
+            PmiTarget::Curve { curve } => self.curve_refs.get(curve.as_str()).copied(),
             PmiTarget::Product { .. }
             | PmiTarget::Occurrence { .. }
             | PmiTarget::ShapeAspect { .. } => None,

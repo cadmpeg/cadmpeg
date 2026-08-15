@@ -628,10 +628,15 @@ pub(super) fn decode(
 
     resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
     let points_by_source = point_sources(ir);
+    let curves_by_source = curve_sources(ir);
+    let geometry_sources = GeometrySources {
+        points: &points_by_source,
+        curves: &curves_by_source,
+    };
     resolve_geometric_item_usages(
         exchange,
         topology,
-        &points_by_source,
+        geometry_sources,
         &shape_aspects,
         &annotations,
         ir,
@@ -742,7 +747,7 @@ fn resolve_feature_for_datum_target_relationships(
 fn resolve_geometric_item_usages(
     exchange: &Exchange,
     topology: &TopologyData,
-    points_by_source: &BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>,
+    geometry_sources: GeometrySources<'_>,
     shape_aspects: &BTreeSet<u64>,
     annotations: &BTreeMap<u64, usize>,
     ir: &mut CadIr,
@@ -816,7 +821,7 @@ fn resolve_geometric_item_usages(
         if annotation_indices.is_empty() {
             continue;
         }
-        let targets = topology_targets(identified_item, topology, points_by_source);
+        let targets = topology_targets(identified_item, topology, geometry_sources);
         if targets.is_empty() {
             continue;
         }
@@ -832,10 +837,16 @@ fn resolve_geometric_item_usages(
     }
 }
 
+#[derive(Clone, Copy)]
+struct GeometrySources<'a> {
+    points: &'a BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>,
+    curves: &'a BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>,
+}
+
 fn topology_targets(
     id: u64,
     topology: &TopologyData,
-    points_by_source: &BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>,
+    geometry_sources: GeometrySources<'_>,
 ) -> Vec<PmiTarget> {
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
@@ -855,11 +866,19 @@ fn topology_targets(
             },
         );
     }
-    for point in points_by_source.get(&id).into_iter().flatten() {
+    for point in geometry_sources.points.get(&id).into_iter().flatten() {
         push_target(
             &mut targets,
             PmiTarget::Point {
                 point: point.clone(),
+            },
+        );
+    }
+    for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
+        push_target(
+            &mut targets,
+            PmiTarget::Curve {
+                curve: curve.clone(),
             },
         );
     }
@@ -902,6 +921,20 @@ fn point_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>> {
             .push(point.id.clone());
     }
     points
+}
+
+fn curve_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>> {
+    let mut curves = BTreeMap::new();
+    for curve in &ir.model.curves {
+        let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
+            continue;
+        };
+        curves
+            .entry(source)
+            .or_insert_with(Vec::new)
+            .push(curve.id.clone());
+    }
+    curves
 }
 
 fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
