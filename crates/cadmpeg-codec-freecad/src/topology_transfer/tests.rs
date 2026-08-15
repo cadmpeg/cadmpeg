@@ -128,6 +128,21 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
     assert_eq!(start.shape, 1);
     assert_eq!(end.shape, 4);
 
+    let closed = [
+        TextShapeUse {
+            shape: 7,
+            orientation: TextOrientation::Forward,
+            location: 0,
+        },
+        TextShapeUse {
+            shape: 7,
+            orientation: TextOrientation::Reversed,
+            location: 0,
+        },
+    ];
+    let (start, end) = edge_endpoint_uses(9, &closed).expect("closed edge endpoints");
+    assert_eq!(start.shape, end.shape);
+
     assert!(matches!(
         edge_endpoint_uses(9, &children[..2]),
         Err(CodecError::Malformed(_))
@@ -204,6 +219,17 @@ fn edge_representation_selection_requires_unique_candidates() {
         .expect("unique exact curve")
         .expect("exact curve");
     assert_eq!(selected.0, 0);
+
+    let exact_precedes_polygon = [representation(5), representation(1)];
+    let selected = unique_edge_representation(
+        7,
+        &exact_precedes_polygon,
+        |candidate| candidate.kind == 1,
+        "3D curve",
+    )
+    .expect("exact curve after polygon")
+    .expect("exact curve");
+    assert_eq!(selected.0, 1);
 }
 
 #[test]
@@ -228,6 +254,35 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .collect::<Vec<_>>();
     close_radial_rings(&mut coedges);
     assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
+
+    let mut four = (0..4)
+        .map(|index| {
+            let id = CoedgeId(format!("coedge-four-{index}"));
+            Coedge {
+                id: id.clone(),
+                owner_loop: LoopId(format!("loop-four-{index}")),
+                edge: edge.clone(),
+                next: id.clone(),
+                previous: id.clone(),
+                radial_next: id,
+                sense: Sense::Forward,
+                use_curve: None,
+                use_curve_parameter_range: None,
+                pcurves: Vec::new(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let original_ids = four
+        .iter()
+        .map(|coedge| coedge.radial_next.clone())
+        .collect::<Vec<_>>();
+    close_radial_rings(&mut four);
+    assert_eq!(
+        four.iter()
+            .map(|coedge| &coedge.radial_next)
+            .collect::<Vec<_>>(),
+        original_ids.iter().collect::<Vec<_>>()
+    );
 
     let id = CoedgeId("coedge-single".into());
     let mut singleton = vec![Coedge {

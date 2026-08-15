@@ -11,166 +11,7 @@ Each item has an identifier and these fields:
 - Conflict
 - Note
 
-## 1. Application-specific side entries
-
-### AR-01. Application-specific side-entry framing
-
-**Question.** What byte framing does each application-specific side-entry family use when no
-typed property grammar identifies the family?
-
-**Known.** A side entry gets semantic meaning from a typed reference in Document.xml or
-GuiDocument.xml. An unreferenced entry remains a named archive record. Application data without
-a neutral representation retains its owning object and property.
-
-**Need.** Establish the framing and record boundaries for each unregistered side-entry family.
-
-**Note.** Opaque retention is a safe decoder policy. It does not prove that no FreeCAD side-entry
-grammar exists. No producer source or independent saved witness settles the unregistered
-families.
-
-### AR-02. Application-specific side-entry values
-
-**Question.** What does each field in an application-specific side-entry family mean when no
-typed property grammar identifies the family?
-
-**Known.** The native record retains the owning object, property, declared application type,
-links, source order, XML bytes, side-entry bytes, byte spans, lengths, and digests.
-
-**Need.** Establish field semantics before transferring an unregistered side entry to a typed
-native or neutral record.
-
-**Note.** Opaque retention prevents unsafe interpretation. It does not establish field
-semantics or prove that an unregistered type has no neutral meaning.
-
-### AR-04. Shared side-entry logical ownership
-
-**Question.** How does the logical byte ledger represent one archive entry referenced by more
-than one property or typed payload?
-
-**Known.** EntryRecord.referenced_by retains multiple semantic references while the byte span
-has one archive-entry owner.
-
-**Need.** Establish whether typed side entries can be shared. If sharing is valid, keep one byte
-span with a many-owner relation. If sharing is invalid for a typed family, reject the conflicting
-claims.
-
-**Note.** The representation fix did not establish the FreeCAD producer rule. Writer::addFile
-creates a distinct archive file record on each call, but this does not cover all possible
-references or shared logical payloads.
-
-## 2. GUI properties
-
-### GP-01. Other GUI property grammars
-
-**Question.** What value grammar does each GUI property runtime type use when the specification
-does not define that type?
-
-**Known.** Undefined GUI properties retain their owner, runtime type, status, ordered value
-elements, side-entry references, exact XML, and byte range.
-
-**Need.** Establish each remaining runtime type grammar and validate its values without dropping
-the native record.
-
-**Note.** Exact handling for selected material and color-list types does not establish the
-grammar of the remaining GUI types. FreeCAD permits application-owned property types; no
-complete producer registry or witness was found for the unregistered set.
-
-### GP-02. Other GUI property semantics
-
-**Question.** What presentation value does each GUI property runtime type represent when the
-specification does not define that type?
-
-**Known.** GUI records retain view-provider identity and each undefined property's runtime type
-and ordered values.
-
-**Need.** Establish the value semantics before transferring an unregistered GUI property to a
-neutral presentation field.
-
-**Note.** Native retention is not semantic evidence. An unregistered property can still have
-neutral meaning; no producer source or independent file establishes that every such type is
-opaque.
-
-## 3. Persistence graph
-
-## 4. Persistent topology identity
-
-### PT-04. Source topology index provenance
-
-**Question.** Does the decoder's topology traversal reproduce the producer's persistent
-indexed-map position for every placed occurrence?
-
-**Known.** Persistent element-map names bind to topology occurrences. The element-map root is
-the final map node after child maps.
-
-**Conflict.** topology_transfer.rs:1554-1598 assigns indices with a decoder-owned depth-first
-walk and a key composed of shape and transform. It does not read a producer index or cite a
-FreeCAD or OCCT enumeration rule. Equal shape and transform occurrences can collapse to one key.
-
-**Need.** Establish the producer indexed-map enumeration rule and carry that index through
-topology transfer. Preserve distinct persistent occurrences when their source positions differ.
-
-**Note.** The PT-02 closure corrected the counter scope across multiple roots. It did not prove
-that the replacement walk matches the producer. A repeated source occurrence can receive a
-decoder-inferred identity instead of its persisted element-map position.
-
-## 5. Exact-topology transfer
-
-### XT-01. Edge endpoint child selection
-
-**Question.** What child-use cardinality and orientation combinations define the start and end
-vertices of normal, closed, degenerate, and malformed edge records?
-
-**Known.** Exact-shape records retain ordered and oriented topology children. Neutral edges
-require explicit start and end vertex identities.
-
-**Conflict.** topology_transfer.rs:1691-1721 requires one Forward and one Reversed child and
-rejects duplicate orientations. No FreeCAD or OCCT source or independent witness establishes
-that duplicate orientation uses are invalid, or that this is the complete valid endpoint grammar.
-
-**Need.** Establish the valid endpoint forms and their orientation semantics. Handle each valid
-form explicitly and reject only a form that cannot establish both endpoint identities.
-
-**Note.** The closure changed an unverified selection rule into a refusal rule. A refusal is not
-evidence that the producer cannot emit a valid non-manifold, degenerate, or seam-edge form.
-
-### XT-02. Edge representation selection and uniqueness
-
-**Question.** When an edge has multiple 3D curve, polygon, or matching curve-on-surface
-representations, which representation supplies its neutral carrier and face pcurve?
-
-**Known.** Exact-shape records retain all geometry carriers, locations, parameter ranges, and
-pcurves. Polygon transfer is a fallback when an exact 3D curve is absent.
-
-**Conflict.** topology_transfer.rs:1723-1745 rejects multiple matching representations. No
-producer source or independent witness establishes representation uniqueness, equivalence, or
-precedence for legal repeated carriers.
-
-**Need.** Establish representation cardinality and precedence. Select by a serialized role or
-prove geometric equivalence when duplicates are legal; otherwise define the exact malformed
-form.
-
-**Note.** The closure promotes refusal to a format invariant without primary evidence for
-multiple representation cases.
-
-### XT-03. Non-manifold radial order
-
-**Question.** What source order defines the radial cycle when more than two coedges use the same
-edge?
-
-**Known.** Native topology retains ordered child uses and orientations. A neutral coedge has
-one radial_next relation.
-
-**Conflict.** topology_transfer.rs:1678-1689 links only two coedges and leaves three or more
-self-radial. No producer source or independent non-manifold witness establishes that the source
-has no radial order.
-
-**Need.** Establish whether FreeCAD or OCCT supplies a radial order for non-manifold uses. If it
-does not, retain unordered incidence or mark radial order unresolved.
-
-**Note.** The closure promoted a neutral fallback to settled source semantics without evidence
-for the non-manifold case.
-
-## 6. Design projection
+## 1. Design projection
 
 ### DP-01. Forward declared dependencies
 
@@ -265,9 +106,9 @@ refuse with an explicit loss. Do not source-order a cycle and silently discard i
 back-edge from the neutral graph. Reordering the declarations changes the neutral relation while
 decode still succeeds.
 
-## 7. Product structure
+## 2. Product structure
 
-## 8. Semantic annotations
+## 3. Semantic annotations
 
 ### SA-01. Runtime-type to annotation-kind mapping
 
@@ -308,7 +149,7 @@ wrong-type carriers. Do not use property-name priority as semantic dispatch.
 **Note.** FreeCAD Annotation.cpp, DrawViewAnnotation.cpp, and DrawRichAnno.cpp provide expected
 property definitions for their types. The current path does not enforce those definitions.
 
-## 9. TechDraw projection
+## 4. TechDraw projection
 
 ### DG-01. TechDraw runtime-type classification
 
@@ -366,4 +207,4 @@ neutral transfer.
 **Note.** DrawView.cpp and DrawViewPart.cpp establish the normal property definitions and
 direction behavior. The current path permits a hostile value that violates the specification.
 
-## 10. Attachment and assembly
+## 5. Attachment and assembly

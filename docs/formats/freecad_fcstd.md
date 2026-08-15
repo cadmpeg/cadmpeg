@@ -562,12 +562,13 @@ A side entry has field framing and value semantics only when an exact registered
 type and value tag select that grammar. A file name, extension, value-tag spelling, byte prefix, or
 payload signature does not select an application grammar. Without the registered property
 discriminator, the complete side entry is one named opaque payload owned by its archive entry and
-referenced by the declaring property. The decoder does not infer fields, record boundaries, or
-neutral values from those bytes. This rule permits extension properties to remain byte-exact
-without confusing coincidental payload bytes with a core mesh, point, shape, list, or asset
-grammar. `EntryRecord.referenced_by` retains each distinct referring property, GUI property, or GUI
-state in serialized traversal order; the logical span remains single-owner and is never duplicated
-for shared references.
+referenced by the declaring property. This registry boundary is the complete generic codec
+contract: the decoder does not infer fields, record boundaries, or neutral values from an
+unregistered payload. This rule permits extension properties to remain byte-exact without
+confusing coincidental payload bytes with a core mesh, point, shape, list, or asset grammar.
+`EntryRecord.referenced_by` retains each distinct referring property, GUI property, or GUI state in
+serialized traversal order; the logical span remains single-owner and is never duplicated for
+shared references.
 
 `Mesh::PropertyMeshKernel` contains one `Mesh` value. The value has zero or one non-empty `file`
 attribute. A non-empty attribute identifies the property's only binary side entry. A `Mesh` value
