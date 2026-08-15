@@ -228,6 +228,34 @@ pub(super) fn decode(
             .flatten()
             .flat_map(references)
             .collect::<Vec<_>>();
+        let context_style_ids = style_references
+            .iter()
+            .copied()
+            .filter(|reference| {
+                exchange
+                    .records
+                    .get(reference)
+                    .is_some_and(is_presentation_style_by_context)
+            })
+            .collect::<BTreeSet<_>>();
+        if !context_style_ids.is_empty() {
+            let contexts = context_style_ids
+                .iter()
+                .map(|context_style_id| {
+                    let context = exchange
+                        .records
+                        .get(context_style_id)
+                        .and_then(presentation_style_context)
+                        .and_then(ValueExt::reference)
+                        .map_or_else(|| "unresolved".to_string(), |id| format!("#{id}"));
+                    format!("#{context_style_id} in {context}")
+                })
+                .collect::<Vec<_>>();
+            losses.push(StepLossCode::ContextDependentStyleUnresolved.note(format!(
+                "STYLED_ITEM #{style_id} has context-dependent style assignments {}; no presentation context is selected by the neutral model; those source branches remain opaque",
+                contexts.join(", ")
+            )));
+        }
         let color = style_references.iter().copied().find_map(|reference| {
             find_color(
                 reference,
@@ -256,7 +284,9 @@ pub(super) fn decode(
         });
         let Some((_, color_id, color, name)) = color else {
             let mut visited = BTreeSet::new();
-            if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
+            if context_style_ids.is_empty()
+                && !contains_null_style(parts.styles, exchange, &mut visited, 0)
+            {
                 warnings.push(format!(
                     "STYLED_ITEM #{style_id} has no resolved surface color"
                 ));
@@ -799,6 +829,21 @@ fn styled_item_parts(record: &RawRecord) -> Option<StyledItemParts<'_>> {
     })
 }
 
+fn is_presentation_style_by_context(record: &RawRecord) -> bool {
+    record
+        .partials
+        .iter()
+        .any(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT")
+}
+
+fn presentation_style_context(record: &RawRecord) -> Option<&Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT")
+        .and_then(|partial| partial.parameters.last())
+}
+
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
     styled_item_parts(record).and_then(|parts| parts.target.reference())
 }
@@ -842,11 +887,14 @@ fn find_color(
     if let Some(result) = cache.get(&(id, domain)) {
         return result.clone();
     }
+    let record = exchange.records.get(&id)?;
+    if is_presentation_style_by_context(record) {
+        return None;
+    }
     if !active.insert(id) {
         return None;
     }
     let result = (|| {
-        let record = exchange.records.get(&id)?;
         let side_rank = if domain == StyleDomain::Surface {
             surface_side_rank(record)
         } else {

@@ -84,6 +84,8 @@ pub enum StepLossCode {
     PmiAngleUnitUnresolved,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
+    /// A context-dependent style has no matching neutral presentation context.
+    ContextDependentStyleUnresolved,
     /// A drawing record has too few parameters and was retained opaque.
     DrawingRecordTooFewParameters,
     /// A drawing relationship references a source-typed record without identity.
@@ -297,6 +299,7 @@ impl StepLossCode {
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
         Self::ConflictingScalarColors,
+        Self::ContextDependentStyleUnresolved,
         Self::DrawingRecordTooFewParameters,
         Self::DrawingRelationshipUntypedTarget,
         Self::DrawingSheetRevisionUnresolved,
@@ -426,6 +429,9 @@ impl StepLossCode {
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
+            Self::ContextDependentStyleUnresolved => {
+                "presentation.context-dependent-style-unresolved"
+            }
             Self::DrawingRecordTooFewParameters => "drawing.record-too-few-parameters",
             Self::DrawingRelationshipUntypedTarget => "drawing.relationship-untyped-target",
             Self::DrawingSheetRevisionUnresolved => "drawing.sheet-revision-unresolved",
@@ -591,6 +597,7 @@ impl StepLossCode {
             | Self::DimensionalNominalAmbiguous
             | Self::DimensionalUnnamedMeasureAmbiguous
             | Self::ConflictingScalarColors
+            | Self::ContextDependentStyleUnresolved
             | Self::DrawingRelationshipUntypedTarget
             | Self::DraughtingSemanticDefinitionUntyped
             | Self::DraughtingAssociatedItemUntyped
@@ -776,6 +783,7 @@ mod tests {
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
                 "presentation.conflicting-scalar-colors",
+                "presentation.context-dependent-style-unresolved",
                 "drawing.record-too-few-parameters",
                 "drawing.relationship-untyped-target",
                 "drawing.sheet-revision-unresolved",

@@ -616,7 +616,11 @@ one face or body retain every appearance binding. The neutral scalar color is
 set only when those styles produce one distinct color; conflicting colors
 leave it unset and produce a metadata loss. A direct `STYLED_ITEM` or
 `OVER_RIDING_STYLED_ITEM` still owns its curve, point, or surface target when
-the assignment has no resolvable colour. An `ANNOTATION_PLANE` owns each
+the assignment has no resolvable colour. A `PRESENTATION_STYLE_BY_CONTEXT`
+branch is not selected without a matching presentation context. Its source
+records remain named opaque records and produce a
+`presentation.context-dependent-style-unresolved` loss. An unscoped sibling
+style may transfer independently. An `ANNOTATION_PLANE` owns each
 referenced surface carrier. A native presentation carrier without a neutral
 geometry arena retains its carrier identity as the style target. Semantic PMI
 retains its shape-aspect target, including a shape-aspect partial in a complex

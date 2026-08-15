@@ -446,6 +446,58 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
 }
 
 #[test]
+fn context_dependent_styles_are_not_flattened_without_context() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('shaded red',1.,0.,0.);
+#2=PRESENTATION_STYLE_ASSIGNMENT((#1));
+#3=COLOUR_RGB('wire blue',0.,0.,1.);
+#4=PRESENTATION_STYLE_ASSIGNMENT((#3));
+#5=CARTESIAN_POINT('shaded context',(0.,0.,0.));
+#6=CARTESIAN_POINT('wire context',(1.,0.,0.));
+#7=PRESENTATION_STYLE_BY_CONTEXT((#2),#5);
+#8=PRESENTATION_STYLE_BY_CONTEXT((#4),#6);
+#9=STYLED_ITEM('',(#7,#8),#10);
+#10=CARTESIAN_POINT('styled point',(0.,1.,0.));",
+    );
+
+    assert!(result.ir().model.appearances.is_empty());
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    let unknowns = result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    for id in [
+        "step:data:styled_item#9",
+        "step:data:presentation_style_by_context#7",
+        "step:data:presentation_style_by_context#8",
+    ] {
+        assert!(
+            unknowns.iter().any(|record| record.id.0 == id),
+            "missing {id}"
+        );
+    }
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+            && loss.message.contains("#7 in #5")
+            && loss.message.contains("#8 in #6")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let mut output = Vec::new();
+    let error = write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            unsupported: StepUnsupportedPolicy::Reject,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect_err("strict write must reject retained context styles");
+    assert!(matches!(error, StepError::Unsupported(_)));
+    assert!(output.is_empty());
+}
+
+#[test]
 fn presentation_records_retain_non_color_geometry_owners() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
