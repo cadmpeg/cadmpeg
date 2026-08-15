@@ -63,7 +63,7 @@ from a conformant file.
 
 **Need.** We need the fixed-record division rule for overlong input, including the status of an overlong Terminate line. The rule must distinguish a valid card with a post-Terminate remainder from a malformed pre-Terminate line.
 
-**Note.** Reopened by the 2026-08-16 audit. The code accepts an overlong Terminate line before the `terminated` state is set, while the Physical representation section calls every pre-Terminate overlong physical line malformed. The existing test asserts the opposite behavior. No independent format or producer evidence establishes which rule is correct.
+**Note.** Reopened by the 2026-08-16 audit. The code accepts an overlong Terminate line before the `terminated` state is set, while the Physical representation section calls every pre-Terminate overlong physical line malformed. The existing test asserts the opposite behavior. The closure did not settle the rule from the IGES specification or from an exporter-authored witness file.
 
 ### PH-05. Disagreement between the declared and actual Parameter Data card count
 
@@ -73,7 +73,7 @@ from a conformant file.
 
 **Need.** We need the authority rule for both directions of count disagreement. If the format permits recovery in either direction, the decoder must retain the unused cards or the missing-card condition with an attributed loss.
 
-**Note.** Reopened by the 2026-08-16 audit. The equality policy is implemented and documented, but the closure changed code, tests, and specification without independent format or producer evidence for count authority.
+**Note.** Reopened by the 2026-08-16 audit. The equality policy is implemented and documented, but the closure changed code, tests, and specification without citing the IGES specification or an exporter-authored witness file for count authority.
 
 ## 2. Global metadata
 
@@ -83,9 +83,9 @@ from a conformant file.
 
 **Known.** `global.rs:302-329` applies defaults only to omitted values, while malformed supplied values fail conversion. `global.rs:373-455` defines required fields, defaults, and numeric validation. The Global section of `iges.md` records the complete default table and the malformed-value rule.
 
-**Need.** We need an external Global-field default table and a rule that separates an omitted field from a malformed field. A wrong units or scale default changes every model coordinate and tolerance.
+**Need.** We need the Global-field default table from the IGES specification and a rule that separates an omitted field from a malformed field. A wrong units or scale default changes every model coordinate and tolerance.
 
-**Note.** Reopened by the 2026-08-16 audit. The current table is internally consistent, but the closure promoted project defaults and generated fixtures without independent evidence for the complete table and malformed-field behavior.
+**Note.** Reopened by the 2026-08-16 audit. The current table is internally consistent, but the closure promoted project defaults and generated fixtures without citing the IGES specification for the complete table and malformed-field behavior.
 
 ### GL-02. The units-name comparison rule
 
@@ -95,7 +95,7 @@ from a conformant file.
 
 **Need.** We need the standard comparison rule and the complete alias set. A rejected spelling removes the length factor used by geometry and topology projection.
 
-**Note.** Reopened by the 2026-08-16 audit. The current list is explicit, but the closure did not establish the repository's exact padding, case, or alias policy from an independent format or producer source.
+**Note.** Reopened by the 2026-08-16 audit. The current list is explicit, but the closure did not establish the repository's exact padding, case, or alias policy from the IGES specification or from an exporter-authored witness file.
 
 ### GL-03. A missing or zero Global minimum resolution
 
@@ -105,7 +105,7 @@ from a conformant file.
 
 **Need.** We need the meaning of zero or omission and one behavior across the codec. Loss messages must identify an invalid resolution, not report a geometry disagreement caused by a missing field.
 
-**Note.** Reopened by the 2026-08-16 audit. The closure validates one project interpretation and documents it, but supplies no independent source for positivity, zero semantics, or the cross-consumer policy.
+**Note.** Reopened by the 2026-08-16 audit. The closure validates one project interpretation and documents it, but did not cite the IGES specification for positivity, zero semantics, or the cross-consumer policy.
 
 ### GL-04. Byte encoding of Global Hollerith values
 
@@ -127,7 +127,7 @@ from a conformant file.
 
 **Need.** We need a source rule for per-member recovery or for blocking root inference after a malformed definition. The decoder must not fabricate occurrences or silently discard valid independent roots.
 
-**Note.** Reopened by the 2026-08-16 audit. The code and synthetic tests implement a conservative project recovery policy, but no format or producer evidence establishes that one malformed definition invalidates every root inference.
+**Note.** Reopened by the 2026-08-16 audit. The code and synthetic tests implement a conservative project recovery policy, but the rule that one malformed definition invalidates every root inference is not established from the IGES specification or from an exporter-authored witness file.
 
 ### DR-09. The Directory status field accepts blank or eight digits and nothing between
 
@@ -135,9 +135,9 @@ from a conformant file.
 
 **Known.** `directory.rs:92-115` accepts an all-blank field or exactly eight ASCII digits. It rejects right-justified digits with leading blanks, while `directory.rs:81-90` accepts trimmed decimal integers in other fixed fields. The Directory Entry section of `iges.md` describes an eight-character status number and blank defaults.
 
-**Need.** We need the required rendering and blank-field rule from the format source. A wrong choice rejects a complete file when a producer uses conventional right alignment.
+**Need.** We need the required rendering and blank-field rule from the IGES specification. A wrong choice rejects a complete file when a producer uses conventional right alignment.
 
-**Note.** Reopened by the 2026-08-16 audit. The closure added behavior and tests, but no independent source settles the status subfield rendering or leading-blank semantics.
+**Note.** Reopened by the 2026-08-16 audit. The closure added behavior and tests, but did not settle the status subfield rendering or leading-blank semantics from the IGES specification.
 
 ### DR-10. Two fixed defaults in the Type 406 Form 30 native record
 
@@ -169,7 +169,7 @@ from a conformant file.
 
 **Need.** We need the parameter-domain rule for every supported curve form, including open, closed, and unbounded cases, and evidence for every fallback and affine mapping.
 
-**Note.** Reopened by the 2026-08-16 audit. The centralized mapping and coverage tests do not verify the mapping against an independent format source or producer output.
+**Note.** Reopened by the 2026-08-16 audit. The centralized mapping and coverage tests do not verify the mapping against the IGES specification or an exporter-authored witness file.
 
 ### GE-08. Type 106 duplicate points and closure
 
@@ -179,7 +179,7 @@ from a conformant file.
 
 **Need.** We need the Type 106 form rules for duplicate points and closed paths, including the tolerance and whether source order must be retained.
 
-**Note.** Reopened by the 2026-08-16 audit. The closure made the path policy internally consistent, but consistency with generated fixtures is not independent conformance evidence.
+**Note.** Reopened by the 2026-08-16 audit. The closure made the path policy internally consistent, but did not check the policy against the IGES specification or an exporter-authored witness file.
 
 ### GE-09. Type 104 endpoints are not independently authoritative
 
@@ -189,7 +189,7 @@ from a conformant file.
 
 **Need.** We need the source authority between the analytic coefficients and endpoint fields, and the tolerance for disagreement.
 
-**Note.** Reopened by the 2026-08-16 audit. Endpoint validation is implemented, but no independent evidence establishes the authority or tolerance.
+**Note.** Reopened by the 2026-08-16 audit. Endpoint validation is implemented, but the closure did not establish the authority or the tolerance from the IGES specification or from a witness file.
 
 ### GE-12. Type 126 property flags against the values
 
@@ -221,7 +221,7 @@ from a conformant file.
 
 **Need.** We need the source rule for the offset sign and a representative point that is valid for bounded, unbounded, and varying-normal surfaces.
 
-**Note.** Reopened by the 2026-08-16 audit. The implementation, documentation, and fixtures changed together; no independent evidence establishes midpoint selection or the `(0, 0)` fallback.
+**Note.** Reopened by the 2026-08-16 audit. The implementation, documentation, and fixtures changed together. Neither midpoint selection nor the `(0, 0)` fallback is established from the IGES specification or from an exporter-authored witness file.
 
 ### TP-06. Type 180 Form 1 requires a direct Type 186 operand
 
@@ -231,7 +231,7 @@ from a conformant file.
 
 **Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the IGES specification or exporter-authored witness files.
 
-**Note.** Reopened by the 2026-08-16 audit. The recursive interpretation is internally consistent, but the source rule remains unverified.
+**Note.** Reopened by the 2026-08-16 audit. The recursive interpretation is internally consistent, but the closure did not verify the rule against the IGES specification or an exporter-authored witness file.
 
 ## 6. Product structure, annotation, and presentation
 
@@ -243,7 +243,7 @@ from a conformant file.
 
 **Need.** We need the default, token type, and allowed values for both fields, with one consistent malformed-token policy.
 
-**Note.** Reopened by the 2026-08-16 audit. The local behavior is now explicit and tested, but the closure did not establish the format rule for the differing optionality.
+**Note.** Reopened by the 2026-08-16 audit. The local behavior is now explicit and tested, but the closure did not establish the rule for the differing optionality from the IGES specification.
 
 ### PS-06. Type 402 Form 5 requires a non-null leader pointer
 
@@ -253,7 +253,7 @@ from a conformant file.
 
 **Need.** We need the nullability of the Form 5 leader field from the IGES specification or exporter-authored witness files.
 
-**Note.** Reopened by the 2026-08-16 audit. The requirement and fixture coverage are explicit, but no independent evidence establishes it.
+**Note.** Reopened by the 2026-08-16 audit. The requirement and fixture coverage are explicit, but the closure did not establish it from the IGES specification or from a witness file.
 
 ### PS-07. Type 406 Form 33 requires a file-global unique identity
 
@@ -263,7 +263,7 @@ from a conformant file.
 
 **Need.** We need the identity scope and duplicate behavior from the IGES specification or exporter-authored witness files.
 
-**Note.** Reopened by the 2026-08-16 audit. The file-global rule and duplicate test are project decisions without independent evidence for that scope.
+**Note.** Reopened by the 2026-08-16 audit. The file-global rule and duplicate test are project decisions; the closure did not establish that scope from the IGES specification or from a witness file.
 
 ### PS-08. Type 406 Form 6 requires an ordered layer pair
 
@@ -273,7 +273,7 @@ from a conformant file.
 
 **Need.** We need the field definitions and order rule for the Form 6 layer pair.
 
-**Note.** Reopened by the 2026-08-16 audit. The check and fixture establish implementation behavior, but no independent source establishes the ordering requirement.
+**Note.** Reopened by the 2026-08-16 audit. The check and fixture establish implementation behavior, but the closure did not establish the ordering requirement from the IGES specification.
 
 ## 7. Write path
 
@@ -283,8 +283,8 @@ from a conformant file.
 
 **Known.** `writer.rs:39-47` fixes frame and pcurve protocol values, and `writer.rs:2502-2506` and `writer.rs:2688-2697` emits them for Type 141 and Type 142. The writer also emits fixed Directory status strings at `writer.rs:1240-1575` and `writer.rs:3870-4505`; the Topology section of `iges.md` records the output constants.
 
-**Need.** We need the correct value for each field and independent evidence for the Type 504 hierarchy difference and each Type 141/142 protocol value.
+**Need.** We need the correct value for each field, and evidence from the IGES specification or from exporter-authored witness files for the Type 504 hierarchy difference and each Type 141/142 protocol value.
 
-**Note.** Reopened by the 2026-08-16 audit. The constants are explicit and deterministic, but the closure recorded them as settled without a complete external format or producer mapping.
+**Note.** Reopened by the 2026-08-16 audit. The constants are explicit and deterministic, but the closure recorded them as settled without a complete mapping to the IGES specification or to exporter-authored witness files.
 
 ## 8. Evidence
