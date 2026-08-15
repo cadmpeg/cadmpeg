@@ -126,6 +126,8 @@ pub enum StepLossCode {
     BodyNonRigidTransform,
     /// Hidden body visibility assignments are unsupported by the target schema.
     HiddenBodyVisibilityUnsupported,
+    /// Hidden appearance binding visibility assignments are unsupported by the target schema.
+    HiddenAppearanceVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
     /// Tessellations require an AP242 target.
@@ -324,6 +326,7 @@ impl StepLossCode {
         Self::OccurrencePlacementNotRigid,
         Self::BodyNonRigidTransform,
         Self::HiddenBodyVisibilityUnsupported,
+        Self::HiddenAppearanceVisibilityUnsupported,
         Self::WireShellFreeVertices,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
@@ -462,6 +465,9 @@ impl StepLossCode {
             Self::OccurrencePlacementNotRigid => "occurrence.placement-not-rigid",
             Self::BodyNonRigidTransform => "body.non-rigid-transform",
             Self::HiddenBodyVisibilityUnsupported => "body.hidden-visibility-unsupported",
+            Self::HiddenAppearanceVisibilityUnsupported => {
+                "presentation.hidden-appearance-visibility-unsupported"
+            }
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
@@ -616,6 +622,7 @@ impl StepLossCode {
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
             | Self::HiddenBodyVisibilityUnsupported
+            | Self::HiddenAppearanceVisibilityUnsupported
             | Self::TessellationFeatureEdges
             | Self::TessellationCornerNormals
             | Self::TessellationTriangleGroups
@@ -814,6 +821,7 @@ mod tests {
                 "occurrence.placement-not-rigid",
                 "body.non-rigid-transform",
                 "body.hidden-visibility-unsupported",
+                "presentation.hidden-appearance-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",

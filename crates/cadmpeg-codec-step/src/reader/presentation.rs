@@ -94,6 +94,8 @@ pub(super) fn decode(
             .collect(),
     };
     let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
+    let mut hidden_style_ids = BTreeSet::new();
+    let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>)>::new();
     for (&id, record) in &exchange.records {
         if !has_partial(record, "INVISIBILITY") {
             continue;
@@ -104,7 +106,17 @@ pub(super) fn decode(
             continue;
         };
         let mut supported = true;
+        let mut style_targets = BTreeSet::new();
         for target in items.iter().filter_map(ValueExt::reference) {
+            if exchange
+                .records
+                .get(&target)
+                .is_some_and(|record| styled_item_parts(record).is_some())
+            {
+                hidden_style_ids.insert(target);
+                style_targets.insert(target);
+                continue;
+            }
             let (body_ids, target_supported) =
                 invisible_body_ids(target, exchange, topology, &body_indices);
             let mut hidden = false;
@@ -121,8 +133,10 @@ pub(super) fn decode(
                 supported = false;
             }
         }
-        if supported {
+        if style_targets.is_empty() && supported {
             typed.insert(id);
+        } else if !style_targets.is_empty() {
+            deferred_invisibility.insert(id, (supported, style_targets));
         }
     }
     for (&layer_id, layer) in &exchange.records {
@@ -405,6 +419,7 @@ pub(super) fn decode(
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
                     object_type: None,
+                    visible: hidden_style_ids.contains(&style_id).then_some(false),
                     channels: BTreeMap::new(),
                 });
             }
@@ -415,6 +430,27 @@ pub(super) fn decode(
         }
         typed.extend(color_cache.keys().map(|(id, _)| *id));
         typed.insert(color_id);
+    }
+    for (invisibility_id, (mut supported, style_targets)) in deferred_invisibility {
+        for style_id in style_targets {
+            let source_id = format!("#{style_id}");
+            let mut matched = false;
+            for binding in &mut ir.model.appearance_bindings {
+                if binding.source_entity_id.as_deref() == Some(source_id.as_str()) {
+                    binding.visible = Some(false);
+                    matched = true;
+                }
+            }
+            if !matched {
+                warnings.push(format!(
+                    "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
+                ));
+                supported = false;
+            }
+        }
+        if supported {
+            typed.insert(invisibility_id);
+        }
     }
     for (target, candidates) in scalar_color_candidates {
         let mut colors = Vec::new();

@@ -671,7 +671,13 @@ one face or body retain every appearance binding. The neutral scalar color is
 set only when those styles produce one distinct color; conflicting colors
 leave it unset and produce a metadata loss. A direct `STYLED_ITEM` or
 `OVER_RIDING_STYLED_ITEM` still owns its curve, point, or surface target when
-the assignment has no resolvable colour. A `PRESENTATION_STYLE_BY_CONTEXT`
+the assignment has no resolvable colour. `INVISIBILITY` targeting a styled item
+sets `visible=false` on every appearance binding for that styled-item identity.
+Visibility remains binding-level and does not change visibility on a shared
+geometry carrier. The writer emits binding-specific `INVISIBILITY` records for
+emitted hidden styled items on schemas that support visibility; unsupported
+schemas report `presentation.hidden-appearance-visibility-unsupported`. A
+`PRESENTATION_STYLE_BY_CONTEXT`
 branch transfers when its context representation or representation context
 directly contains the styled item. A branch without that exact membership
 remains named opaque source data and produces a

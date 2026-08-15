@@ -581,6 +581,58 @@ fn complex_representation_invisibility_reaches_surface_body() {
 }
 
 #[test]
+fn styled_item_invisibility_is_binding_scoped() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
+#2=DIRECTION('surface normal',(0.,0.,1.));
+#3=DIRECTION('surface u',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('surface placement',#1,#2,#3);
+#5=PLANE('styled surface',#4);
+#6=COLOUR_RGB('red',1.,0.,0.);
+#7=SURFACE_STYLE_RENDERING(#6,$,$,$,$,$);
+#8=PRESENTATION_STYLE_ASSIGNMENT((#7));
+#9=STYLED_ITEM('',(#8),#5);
+#10=COLOUR_RGB('blue',0.,0.,1.);
+#11=SURFACE_STYLE_RENDERING(#10,$,$,$,$,$);
+#12=PRESENTATION_STYLE_ASSIGNMENT((#11));
+#13=STYLED_ITEM('',(#12),#5);
+#14=INVISIBILITY((#13));",
+    );
+    let bindings = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| {
+            matches!(
+                &binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Surface(surface)
+                    if surface.0 == "step:data:surface#5"
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(bindings.len(), 2);
+    assert!(bindings.iter().any(|binding| {
+        binding.source_entity_id.as_deref() == Some("#13") && binding.visible == Some(false)
+    }));
+    assert!(bindings.iter().any(|binding| {
+        binding.source_entity_id.as_deref() == Some("#9") && binding.visible.is_none()
+    }));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #14 targets unsupported item #13")
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#14"));
+}
+
+#[test]
 fn presentation_records_retain_non_color_geometry_owners() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -1070,6 +1122,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
     let s = export(&ir);
@@ -1118,6 +1171,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         appearance: AppearanceId("test:appearance#vertex".to_string()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 
@@ -1358,6 +1412,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 

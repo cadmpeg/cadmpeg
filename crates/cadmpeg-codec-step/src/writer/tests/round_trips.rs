@@ -655,6 +655,59 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
 }
 
 #[test]
+fn writer_round_trips_binding_scoped_appearance_visibility() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let appearance = AppearanceId("test:appearance#hidden".into());
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: Some("hidden face".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.8,
+            g: 0.2,
+            b: 0.1,
+            a: 1.0,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#hidden-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: Some(false),
+        channels: std::collections::BTreeMap::new(),
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write hidden appearance binding");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("INVISIBILITY"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode hidden appearance binding");
+    assert!(decoded
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| binding.visible == Some(false)));
+}
+
+#[test]
 fn analytic_surfaces_map_to_their_step_entities() {
     // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![

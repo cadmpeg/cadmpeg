@@ -557,6 +557,7 @@ fn writer_reports_dangling_appearance_binding() {
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 
@@ -596,6 +597,7 @@ fn writer_reports_appearance_without_base_color() {
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 
@@ -879,6 +881,58 @@ fn ap203e1_does_not_emit_invisibility_entities() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("hidden body visibility")));
+}
+
+#[test]
+fn ap203e1_reports_hidden_appearance_visibility_loss() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let appearance = AppearanceId("test:appearance#hidden".into());
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.4,
+            g: 0.5,
+            b: 0.6,
+            a: 1.0,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#hidden-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: Some(false),
+        channels: std::collections::BTreeMap::new(),
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap203Edition1,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("report-mode AP203e1 write");
+    assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::HiddenAppearanceVisibilityUnsupported.kind() }));
 }
 
 #[test]

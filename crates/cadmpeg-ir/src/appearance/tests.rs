@@ -96,6 +96,7 @@ fn appearance_asset_and_binding_round_trip() {
         appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Body".into()),
+        visible: Some(false),
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -104,6 +105,7 @@ fn appearance_asset_and_binding_round_trip() {
         appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Edge".into()),
+        visible: None,
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -112,6 +114,7 @@ fn appearance_asset_and_binding_round_trip() {
         appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Vertex".into()),
+        visible: None,
         channels: std::collections::BTreeMap::new(),
     });
 

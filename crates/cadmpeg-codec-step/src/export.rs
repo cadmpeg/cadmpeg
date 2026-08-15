@@ -176,6 +176,7 @@ pub(crate) struct Builder<'a> {
     tessellation_step_refs: HashMap<String, Ref>,
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
+    hidden_appearance_items: Vec<Ref>,
     unstyled_colors: usize,
     unwritten_geometry_carriers: BTreeSet<String>,
     unwritten_pcurve_carriers: BTreeSet<String>,
@@ -327,6 +328,7 @@ impl<'a> Builder<'a> {
             tessellation_step_refs: HashMap::new(),
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
+            hidden_appearance_items: Vec::new(),
             unstyled_colors: 0,
             unwritten_geometry_carriers: BTreeSet::new(),
             unwritten_pcurve_carriers: BTreeSet::new(),
@@ -427,6 +429,7 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         self.emit_presentation(context);
+        self.emit_appearance_visibility();
         self.emit_pmi(context);
         self.emit_layers();
         self.note_unrepresented();
@@ -440,6 +443,13 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|appearance| (appearance.id.as_str(), appearance))
             .collect();
+        let hidden_binding_ids = ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.visible == Some(false))
+            .map(|binding| binding.id.as_str())
+            .collect::<BTreeSet<_>>();
         let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
@@ -548,8 +558,12 @@ impl<'a> Builder<'a> {
                 .unwrap_or("");
             let style = self.surface_style(spec.color, name, &mut style_refs);
             styled.push(
-                self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
+                self.emit_styled_item(
+                    style,
+                    *face,
+                    spec.binding_id
+                        .is_some_and(|binding_id| hidden_binding_ids.contains(binding_id)),
+                ),
             );
         }
         let mut direct_unstyled = BTreeSet::new();
@@ -603,10 +617,11 @@ impl<'a> Builder<'a> {
                 _ => unreachable!(),
             };
             self.written_appearance_bindings.insert(binding.id.clone());
-            styled.push(
-                self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
-            );
+            styled.push(self.emit_styled_item(
+                style,
+                target,
+                hidden_binding_ids.contains(binding.id.as_str()),
+            ));
         }
         for (body_id, spec) in &body_colors {
             if styled_bodies.contains(body_id) {
@@ -640,10 +655,14 @@ impl<'a> Builder<'a> {
             } else {
                 self.surface_style(spec.color, name, &mut style_refs)
             };
-            styled.extend(targets.into_iter().map(|target| {
-                self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}"))
-            }));
+            let hidden = spec
+                .binding_id
+                .is_some_and(|binding_id| hidden_binding_ids.contains(binding_id));
+            styled.extend(
+                targets
+                    .into_iter()
+                    .map(|target| self.emit_styled_item(style, target, hidden)),
+            );
             styled_bodies.insert(body_id);
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
@@ -671,6 +690,16 @@ impl<'a> Builder<'a> {
             "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION",
             &format!("'',{},{context}", refs(&styled)),
         );
+    }
+
+    fn emit_styled_item(&mut self, style: Ref, target: Ref, hidden: bool) -> Ref {
+        let item = self
+            .emitter
+            .emit("STYLED_ITEM", &format!("'color',({style}),{target}"));
+        if hidden {
+            self.hidden_appearance_items.push(item);
+        }
+        item
     }
 
     fn surface_style(
@@ -1485,6 +1514,33 @@ impl<'a> Builder<'a> {
             .extend(hidden_without_items);
         if !hidden.is_empty() {
             self.emitter.emit("INVISIBILITY", &refs(&hidden));
+        }
+    }
+
+    fn emit_appearance_visibility(&mut self) {
+        let hidden_bindings = self
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.visible == Some(false))
+            .count();
+        if hidden_bindings == 0 {
+            return;
+        }
+        if !self.schema.supports_visibility() {
+            self.loss(
+                StepLossCode::HiddenAppearanceVisibilityUnsupported,
+                format!(
+                    "{hidden_bindings} hidden appearance binding visibility assignment(s) are unsupported by {}",
+                    self.schema.file_schema()
+                ),
+            );
+            return;
+        }
+        if !self.hidden_appearance_items.is_empty() {
+            self.emitter
+                .emit("INVISIBILITY", &refs(&self.hidden_appearance_items));
         }
     }
 
