@@ -41,6 +41,12 @@ impl TargetContext<'_> {
             self.external_documents,
         )
     }
+
+    fn ambiguous(&self, id: u64) -> Option<&BTreeSet<String>> {
+        self.target_identities
+            .get(&id)
+            .filter(|identities| identities.len() > 1)
+    }
 }
 
 /// Decode the drawing object graph without claiming unsupported graphics.
@@ -264,15 +270,39 @@ fn add_reference_fields(
         let mut references = Vec::new();
         collect_references(value, &mut references);
         for target_id in references {
-            let Some(target) = target_context.target(target_id) else {
-                losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
-                        "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
-                    )));
-                continue;
-            };
-            relationships.entry(role.into()).or_default().push(target);
+            match target_context.target(target_id) {
+                Some(target) => relationships.entry(role.into()).or_default().push(target),
+                None => {
+                    if let Some(identities) = target_context.ambiguous(target_id) {
+                        note_ambiguous_target(
+                            losses,
+                            &format!("drawing #{source_id} {name}"),
+                            role,
+                            target_id,
+                            identities,
+                        );
+                    } else {
+                        losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
+                                "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
+                            )));
+                    }
+                }
+            }
         }
     }
+}
+
+fn note_ambiguous_target(
+    losses: &mut Vec<LossNote>,
+    source: &str,
+    role: &str,
+    target_id: u64,
+    identities: &BTreeSet<String>,
+) {
+    let identities = identities.iter().cloned().collect::<Vec<_>>().join(", ");
+    losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(format!(
+        "STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"
+    )));
 }
 
 fn add_sheet_revision_usages(
@@ -303,6 +333,14 @@ fn add_sheet_revision_usages(
                     .entry("drawing_revision".into())
                     .or_default()
                     .push(target);
+            } else if let Some(identities) = target_context.ambiguous(revision_id) {
+                note_ambiguous_target(
+                    losses,
+                    &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
+                    "drawing_revision",
+                    revision_id,
+                    identities,
+                );
             } else {
                 losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
@@ -329,6 +367,14 @@ fn add_sheet_revision_usages(
                     .entry("sheet_revision".into())
                     .or_default()
                     .push(target);
+            } else if let Some(identities) = target_context.ambiguous(sheet_id) {
+                note_ambiguous_target(
+                    losses,
+                    &format!("drawing revision #{revision_id} usage #{usage_id}"),
+                    "sheet_revision",
+                    sheet_id,
+                    identities,
+                );
             } else {
                 losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
@@ -352,20 +398,30 @@ fn add_draughting_model_associations(
         let Some(model) = drawings.get_mut(&model_id) else {
             continue;
         };
-        if let Some(definition) = parameters
-            .get(2)
-            .and_then(value_reference)
-            .and_then(|id| target_context.target(id))
-        {
-            model
-                .relationships
-                .entry("semantic_definition".into())
-                .or_default()
-                .push(definition);
-        } else if parameters.get(2).and_then(value_reference).is_some() {
-            losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(format!(
+        if let Some(definition_id) = parameters.get(2).and_then(value_reference) {
+            match target_context.target(definition_id) {
+                Some(definition) => model
+                    .relationships
+                    .entry("semantic_definition".into())
+                    .or_default()
+                    .push(definition),
+                None if target_context.ambiguous(definition_id).is_some() => {
+                    note_ambiguous_target(
+                        losses,
+                        &format!("draughting model #{model_id} association #{association_id}"),
+                        "semantic_definition",
+                        definition_id,
+                        target_context
+                            .ambiguous(definition_id)
+                            .expect("ambiguity checked above"),
+                    );
+                }
+                None => losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
+                    format!(
                         "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
-                )));
+                    ),
+                )),
+            }
         }
         let Some(items) = parameters.get(4) else {
             continue;
@@ -373,16 +429,28 @@ fn add_draughting_model_associations(
         let mut references = Vec::new();
         collect_references(items, &mut references);
         for item_id in references {
-            if let Some(item) = target_context.target(item_id) {
-                model
+            match target_context.target(item_id) {
+                Some(item) => model
                     .relationships
                     .entry("associated_items".into())
                     .or_default()
-                    .push(item);
-            } else {
-                losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(format!(
+                    .push(item),
+                None if target_context.ambiguous(item_id).is_some() => {
+                    note_ambiguous_target(
+                        losses,
+                        &format!("draughting model #{model_id} association #{association_id}"),
+                        "associated_items",
+                        item_id,
+                        target_context
+                            .ambiguous(item_id)
+                            .expect("ambiguity checked above"),
+                    );
+                }
+                None => losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
+                    format!(
                         "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
-                    )));
+                    ),
+                )),
             }
         }
     }
@@ -397,6 +465,7 @@ fn target_for(
 ) -> Option<DrawingTarget> {
     if let Some(identity) = target_identities
         .get(&id)
+        .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.iter().next())
     {
         return Some(DrawingTarget {

@@ -97,3 +97,34 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         matches!(error, StepError::Unsupported(message) if message.contains("drawing/presentation"))
     );
 }
+
+#[test]
+fn drawing_relationship_with_multiple_product_views_is_not_retargeted() {
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','Part','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('v1','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('design view','',#4,#5);
+#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
+#8=PRODUCT_DEFINITION('manufacturing view','',#7,#5);
+#9=REPRESENTATION_CONTEXT('','');
+#10=PRESENTATION_VIEW('Front',(#3),#9);",
+    );
+
+    let view = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "PRESENTATION_VIEW")
+        .expect("presentation view");
+    assert_eq!(view.parameters["items"], "(#3)");
+    assert!(!view.relationships.contains_key("items"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DrawingRelationshipTargetAmbiguous.kind()
+            && loss.message.contains("multiple neutral identities")
+            && loss.message.contains("no target was selected")
+    }));
+}

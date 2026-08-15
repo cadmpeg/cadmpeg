@@ -90,6 +90,8 @@ pub enum StepLossCode {
     DrawingRecordTooFewParameters,
     /// A drawing relationship references a source-typed record without identity.
     DrawingRelationshipUntypedTarget,
+    /// A drawing relationship references a source record with multiple identities.
+    DrawingRelationshipTargetAmbiguous,
     /// A drawing sheet usage has no resolvable drawing revision.
     DrawingSheetRevisionUnresolved,
     /// A drawing revision usage has no resolvable sheet revision.
@@ -302,6 +304,7 @@ impl StepLossCode {
         Self::ContextDependentStyleUnresolved,
         Self::DrawingRecordTooFewParameters,
         Self::DrawingRelationshipUntypedTarget,
+        Self::DrawingRelationshipTargetAmbiguous,
         Self::DrawingSheetRevisionUnresolved,
         Self::DrawingRevisionSheetUnresolved,
         Self::DraughtingSemanticDefinitionUntyped,
@@ -434,6 +437,7 @@ impl StepLossCode {
             }
             Self::DrawingRecordTooFewParameters => "drawing.record-too-few-parameters",
             Self::DrawingRelationshipUntypedTarget => "drawing.relationship-untyped-target",
+            Self::DrawingRelationshipTargetAmbiguous => "drawing.relationship-target-ambiguous",
             Self::DrawingSheetRevisionUnresolved => "drawing.sheet-revision-unresolved",
             Self::DrawingRevisionSheetUnresolved => "drawing.revision-sheet-unresolved",
             Self::DraughtingSemanticDefinitionUntyped => {
@@ -666,6 +670,7 @@ impl StepLossCode {
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
             | Self::PcurveCandidatesCarrierUnresolved
+            | Self::DrawingRelationshipTargetAmbiguous
             | Self::DrawingSheetRevisionUnresolved
             | Self::DrawingRevisionSheetUnresolved
             | Self::TessellationItemBodyUnresolved
@@ -786,6 +791,7 @@ mod tests {
                 "presentation.context-dependent-style-unresolved",
                 "drawing.record-too-few-parameters",
                 "drawing.relationship-untyped-target",
+                "drawing.relationship-target-ambiguous",
                 "drawing.sheet-revision-unresolved",
                 "drawing.revision-sheet-unresolved",
                 "drawing.draughting-semantic-definition-untyped",
