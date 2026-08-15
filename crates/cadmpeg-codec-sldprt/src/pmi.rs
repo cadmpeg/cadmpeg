@@ -468,7 +468,8 @@ enum ValueKind {
     Array(Vec<SpannedValue>),
     Map(BTreeMap<String, SpannedValue>),
     Nil,
-    /// `bin` / `ext` / out-of-range integers: cursor advanced, content opaque.
+    /// Invalid-UTF-8 strings, `bin` / `ext`, and out-of-range integers: cursor
+    /// advanced, content opaque.
     Opaque,
 }
 
@@ -1008,12 +1009,13 @@ fn parse_string(
 ) -> Option<SpannedValue> {
     let data_offset = *cursor;
     let end = cursor.checked_add(len)?;
-    let value = std::str::from_utf8(bytes.get(*cursor..end)?)
-        .ok()?
-        .to_string();
+    let value = bytes.get(*cursor..end)?;
+    let kind = std::str::from_utf8(value).map_or(ValueKind::Opaque, |value| {
+        ValueKind::String(value.to_string())
+    });
     *cursor = end;
     Some(SpannedValue {
-        kind: ValueKind::String(value),
+        kind,
         start,
         end: *cursor,
         data_offset,
