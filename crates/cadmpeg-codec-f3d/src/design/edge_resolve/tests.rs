@@ -308,6 +308,9 @@ fn local_support_face_references_resolve_one_unchanged_shared_edge() {
     operand.recipe_reference_contexts[2].shared_edge_slots = vec![106, 180, 181];
     assert_eq!(resolved_edge_operand(&operand), None);
 
+    operand.recipe_reference_contexts[2].shared_edge_slots = vec![106];
+    assert_eq!(resolved_edge_operand(&operand), None);
+
     operand.local_topology_references = Some(vec![std::num::NonZeroU32::new(2).unwrap()]);
     assert_eq!(resolved_edge_operand(&operand), None);
 }

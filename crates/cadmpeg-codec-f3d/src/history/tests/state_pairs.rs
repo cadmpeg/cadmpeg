@@ -1433,6 +1433,22 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ordered_loop_vertices(&[7, 8, 9], &cyclic),
         Some(vec![1, 2, 3])
     );
+    let disconnected = AsmHistoricalTopology {
+        edge_vertices: vec![
+            AsmHistoricalEdge {
+                edge: 7,
+                start_vertex: 1,
+                end_vertex: 2,
+            },
+            AsmHistoricalEdge {
+                edge: 8,
+                start_vertex: 3,
+                end_vertex: 4,
+            },
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    assert_eq!(ordered_loop_vertices(&[7, 8], &disconnected), None);
 }
 
 #[test]

@@ -1324,12 +1324,15 @@ fn common_local_reference_shared_edge(operand: &DesignEdgeOperand) -> Option<i64
     candidates.sort_unstable();
     candidates.dedup();
 
-    (support_count >= 2
-        && candidates.len() == 1
-        && operand
-            .preceding_boundary_edge_slots
-            .contains(&candidates[0]))
-    .then_some(candidates[0])
+    if support_count < 2 {
+        return None;
+    }
+    match candidates.as_slice() {
+        [candidate] if operand.preceding_boundary_edge_slots.contains(candidate) => {
+            Some(*candidate)
+        }
+        _ => None,
+    }
 }
 
 /// Resolve the selected edge of a zero-payload terminal recipe from the two
@@ -1670,7 +1673,10 @@ fn corroborated_edge_set_intersection(
             return None;
         }
     }
-    (candidates.len() == 1).then_some(candidates[0])
+    match candidates.as_slice() {
+        [candidate] => Some(*candidate),
+        _ => None,
+    }
 }
 
 /// Edges every reference set shares, ascending and without repeats. An empty
@@ -1703,7 +1709,10 @@ fn corroborated_edge_intersection(
         shared_edge_sets.iter().copied(),
         boundary_counts_only,
     )?;
-    (candidates.len() == 1).then_some(candidates[0])
+    match candidates.as_slice() {
+        [candidate] => Some(*candidate),
+        _ => None,
+    }
 }
 
 fn corroborated_edge_candidates<'a>(

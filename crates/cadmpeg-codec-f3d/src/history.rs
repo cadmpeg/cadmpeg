@@ -4417,7 +4417,10 @@ fn ordered_loop_vertices(edge_slots: &[i64], topology: &AsmHistoricalTopology) -
                 .collect::<Vec<_>>();
             shared.sort_unstable();
             shared.dedup();
-            (shared.len() == 1).then_some(shared[0])
+            match shared.as_slice() {
+                [vertex] => Some(*vertex),
+                _ => None,
+            }
         })
         .collect()
 }
