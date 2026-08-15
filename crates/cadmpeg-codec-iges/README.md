@@ -53,8 +53,10 @@ validates topology ownership, edge spans, radial incidence, and supported
 surface and pcurve geometry before output. Unsupported neutral or native
 content is explicitly refused. Edited source documents may report
 `passthrough_record_omitted` losses for native direction, display, or
-occurrence-expansion records that are not regenerated. The independent
-FreeCAD gate is [`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
+occurrence-expansion records that are not regenerated. The bounded full-file
+gate is [`scripts/verify-iges-bounded.py`](../../scripts/verify-iges-bounded.py);
+the independent FreeCAD gate is
+[`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
 
 ## Data model
 
