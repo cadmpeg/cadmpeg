@@ -1772,6 +1772,11 @@ edge count × i32 edge index
 f64 tolerance
 ```
 
+An empty edge list is valid. It records a native vertex with no edge
+incidence. A singular or point-on-surface trim can still name that vertex;
+those trims use edge index `-1` and identical endpoint indexes. The vertex
+record has no shell-membership field.
+
 ### 15.2 Edge
 
 ```

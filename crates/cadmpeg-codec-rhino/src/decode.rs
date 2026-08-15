@@ -4077,6 +4077,17 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     let components = face_components(raw);
     let grouping = region_shell_groups(raw, &components);
+    let free_vertex_indices = brep_free_vertex_indices(raw);
+    if !free_vertex_indices.is_empty() && grouping.shell_faces.len() != 1 {
+        return Ok(finish_brep_fallback(
+            staged,
+            "Brep free vertices have no unique shell membership",
+        ));
+    }
+    let free_vertex_ids = free_vertex_indices
+        .iter()
+        .map(|index| format!("rhino:object:vertex#{key}.slot-{index}").into())
+        .collect::<Vec<cadmpeg_ir::ids::VertexId>>();
     if grouping.fallback {
         staged.warnings.push(
             "Brep 3.3 region topology was not representable; incidence-derived shells used"
@@ -4218,7 +4229,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             region: region_id.clone(),
             faces: faces.iter().map(|index| face_ids[*index].clone()).collect(),
             wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
+            free_vertices: if component == 0 {
+                free_vertex_ids.clone()
+            } else {
+                Vec::new()
+            },
         });
         if !regions.iter().any(|region: &Region| region.id == region_id) {
             regions.push(Region {
@@ -4826,6 +4841,25 @@ fn face_components(raw: &crate::brep::RawBrep) -> Vec<usize> {
             let next = labels.len();
             *labels.entry(value).or_insert(next)
         })
+        .collect()
+}
+
+fn brep_free_vertex_indices(raw: &crate::brep::RawBrep) -> Vec<usize> {
+    let mut attached = vec![false; raw.vertices.len()];
+    for (index, vertex) in raw.vertices.iter().enumerate() {
+        if !vertex.edges.is_empty() {
+            attached[index] = true;
+        }
+    }
+    for trim in &raw.trims {
+        if trim.edge < 0 {
+            attached[trim.vertices[0] as usize] = true;
+        }
+    }
+    attached
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, attached)| (!attached).then_some(index))
         .collect()
 }
 
