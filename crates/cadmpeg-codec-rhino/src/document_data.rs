@@ -187,7 +187,7 @@ fn annotation_settings(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
-    if packed >> 4 != 1 || minor > 4 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "annotation-settings version is unsupported",
@@ -226,12 +226,7 @@ fn annotation_settings(
             None
         },
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "annotation settings have trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(value)
 }
 
@@ -242,7 +237,7 @@ fn grid_defaults(
     scale: f64,
 ) -> Result<GridDefaultsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
-    if reader.u8()? != 0x10 {
+    if reader.u8()? >> 4 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "grid-default version is unsupported",
@@ -259,12 +254,7 @@ fn grid_defaults(
         show_grid_axes: flag_i32(&mut reader)?,
         show_world_axes: flag_i32(&mut reader)?,
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "grid defaults have trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(value)
 }
 
@@ -278,7 +268,7 @@ fn render_settings(
     let modern = data.get(body.start).copied() == Some(0);
     let (mut reader, minor, legacy_version) = if modern {
         let chunk = chunk_at(data, body.start, body.end, archive, false)?;
-        if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != body.end {
+        if chunk.typecode != ANONYMOUS || chunk.short {
             return Err(FramingError::Structural {
                 offset: body.start,
                 message: "render-settings wrapper is invalid".to_string(),
@@ -286,7 +276,7 @@ fn render_settings(
         }
         let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
         let (major, minor) = (reader.i32()?, reader.i32()?);
-        if major != 1 || !(0..=3).contains(&minor) {
+        if major != 1 || minor < 0 {
             return Err(FramingError::structural(
                 reader.position(),
                 "render-settings version is unsupported",
@@ -393,12 +383,7 @@ fn render_settings(
         };
         (dpi, units, bottom, fit)
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "render settings have trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
         id: "rhino:document:render_settings#current".to_string(),
         source_offset: source_offset as u64,

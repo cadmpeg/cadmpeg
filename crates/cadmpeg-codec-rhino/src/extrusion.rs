@@ -92,14 +92,14 @@ pub(crate) fn decode(
     mesh_budget: &mut crate::mesh::MeshBudget,
 ) -> Result<DecodedExtrusion, GeometryError> {
     let outer = chunk_at(data, range.start, range.end, archive, false)?;
-    if outer.typecode != ANONYMOUS || outer.short || outer.next_offset != range.end {
+    if outer.typecode != ANONYMOUS || outer.short {
         return Err(error(range.start, "invalid extrusion anonymous framing"));
     }
     let mut reader = BoundedReader::new(data, outer.body.start, outer.body.end)?;
     let version_offset = reader.position();
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 || !(0..=3).contains(&minor) {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported extrusion anonymous version",
@@ -672,17 +672,12 @@ fn finish_anonymous(
     data: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
-    child: BoundedReader<'_>,
+    mut child: BoundedReader<'_>,
     children: &[std::ops::Range<usize>],
     name: &str,
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
-    if child.remaining() != 0 {
-        return Err(error(
-            child.position(),
-            &format!("{name} has trailing bytes"),
-        ));
-    }
+    child.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
@@ -700,16 +695,11 @@ fn finish_anonymous(
 fn finish_payload(
     data: &[u8],
     chunk: &Chunk,
-    reader: BoundedReader<'_>,
+    mut reader: BoundedReader<'_>,
     children: &[std::ops::Range<usize>],
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
-    if reader.remaining() != 0 {
-        return Err(error(
-            reader.position(),
-            "extrusion payload has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
@@ -730,7 +720,9 @@ fn require_anonymous_version(
     name: &str,
 ) -> Result<(), GeometryError> {
     let offset = reader.position();
-    if reader.i32()? != major || reader.i32()? != minor {
+    let actual_major = reader.i32()?;
+    let actual_minor = reader.i32()?;
+    if actual_major != major || actual_minor < minor {
         return Err(GeometryError::unsupported(
             offset,
             format!("unsupported {name} version"),

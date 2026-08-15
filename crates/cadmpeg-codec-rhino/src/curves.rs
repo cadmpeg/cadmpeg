@@ -390,12 +390,7 @@ pub(crate) fn decode_inner(
             ))
         }
     };
-    if reader.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "geometry payload has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(result)
 }
 
@@ -996,12 +991,7 @@ pub(crate) fn decode_inner_2d(
             ))
         }
     };
-    if reader.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "C2 curve payload has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(result)
 }
 
@@ -1090,12 +1080,6 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
-    if minor > 2 {
-        return Err(error(
-            reader.position() - 1,
-            "unsupported point-cloud payload minor version",
-        ));
-    }
     let point_count = count(reader, 24)?;
     let mut points = Vec::with_capacity(point_count);
     for _ in 0..point_count {
@@ -1153,6 +1137,7 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
         ));
     }
     let _ = (normals, colors, values, flags, native_plane);
+    reader.skip_remaining()?;
     Ok(PointCloud {
         points,
         scaled: scale != 1.0,

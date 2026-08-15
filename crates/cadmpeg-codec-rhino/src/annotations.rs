@@ -85,14 +85,16 @@ fn anonymous(
     expected_minor: i32,
 ) -> Result<BoundedReader<'_>, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
+    if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(FramingError::structural(
             range.start,
             "annotation wrapper is invalid",
         ));
     }
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if reader.i32()? != 1 || reader.i32()? != expected_minor {
+    let major = reader.i32()?;
+    let minor = reader.i32()?;
+    if major != 1 || minor < expected_minor {
         return Err(FramingError::structural(
             chunk.body.start,
             "annotation wrapper version is unsupported",
@@ -157,12 +159,7 @@ fn decode_annotation(
             ]);
         }
     }
-    if outer.remaining() != 0 {
-        return Err(FramingError::structural(
-            outer.position(),
-            "annotation has trailing bytes",
-        ));
-    }
+    outer.skip_remaining()?;
     Ok((annotation, points))
 }
 
@@ -178,35 +175,25 @@ fn decode_legacy_annotation(
     ) {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let value = crate::dimensions::legacy_annotation_direct(&mut reader, scale)?;
-        if reader.remaining() != 0 {
-            return Err(FramingError::structural(
-                reader.position(),
-                "direct legacy annotation has trailing bytes",
-            ));
-        }
+        reader.skip_remaining()?;
         return Ok(value);
     }
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
+    if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(FramingError::structural(
             range.start,
             "legacy annotation wrapper is invalid",
         ));
     }
     let mut outer = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if outer.i32()? != 1 || outer.i32()? != 0 {
+    if outer.i32()? != 1 || outer.i32()? < 0 {
         return Err(FramingError::structural(
             chunk.body.start,
             "legacy annotation wrapper version is unsupported",
         ));
     }
     let value = crate::dimensions::legacy_annotation(data, &mut outer, scale, archive)?;
-    if outer.remaining() != 0 {
-        return Err(FramingError::structural(
-            outer.position(),
-            "legacy annotation has trailing bytes",
-        ));
-    }
+    outer.skip_remaining()?;
     Ok(value)
 }
 
@@ -217,7 +204,7 @@ fn decode_dot(
 ) -> Result<TextDotRecord, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
-    if packed >> 4 != 1 || packed & 0x0f > 1 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             range.start,
             "text-dot version is unsupported",
@@ -238,12 +225,7 @@ fn decode_dot(
     } else {
         String::new()
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "text dot has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(TextDotRecord {
         id: String::new(),
         source_offset: range.start as u64,

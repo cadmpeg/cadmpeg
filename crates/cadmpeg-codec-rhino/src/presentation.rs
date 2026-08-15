@@ -464,7 +464,7 @@ fn anonymous(
     archive: ArchiveVersion,
 ) -> Result<(BoundedReader<'_>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
+    if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(FramingError::structural(
             range.start,
             "presentation wrapper is invalid",
@@ -488,7 +488,8 @@ fn component(
         ));
     }
     let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if (value.i32()?, value.i32()?) != (1, 0) {
+    let version = (value.i32()?, value.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             value.position(),
             "model-component version is unsupported",
@@ -523,12 +524,7 @@ fn component(
         if bits & 0x10 != 0 {
             value.skip(8)?;
         }
-        if value.remaining() != 0 {
-            return Err(FramingError::structural(
-                value.position(),
-                "model-component attributes have trailing bytes",
-            ));
-        }
+        value.skip_remaining()?;
         reader.skip(chunk.next_offset - reader.position())?;
         return Ok(Component { index, id, name });
     }
@@ -582,12 +578,7 @@ fn component(
             ))
         }
     };
-    if value.remaining() != 0 {
-        return Err(FramingError::structural(
-            value.position(),
-            "model-component attributes have trailing bytes",
-        ));
-    }
+    value.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(Component { index, id, name })
 }
@@ -1293,7 +1284,7 @@ fn parse_hatch_pattern(
     let modern = data.get(range.start).copied() == Some(0);
     let (component, fill_type, description, lines) = if modern {
         let (mut reader, version) = anonymous(data, range, archive)?;
-        if version != (1, 0) {
+        if version.0 != 1 || version.1 < 0 {
             return Err(FramingError::structural(
                 reader.position(),
                 "hatch-pattern version is unsupported",
@@ -1324,39 +1315,25 @@ fn parse_hatch_pattern(
                 false,
             )?;
             let mut payload = BoundedReader::new(data, line.body.start, line.body.end)?;
-            if (payload.i32()?, payload.i32()?) != (1, 0) {
+            let version = (payload.i32()?, payload.i32()?);
+            if version.0 != 1 || version.1 < 0 {
                 return Err(FramingError::structural(
                     payload.position(),
                     "hatch-line version is unsupported",
                 ));
             }
             lines.push(hatch_line_fields(&mut payload, scale)?);
-            if payload.remaining() != 0 {
-                return Err(FramingError::structural(
-                    payload.position(),
-                    "hatch line has trailing bytes",
-                ));
-            }
+            payload.skip_remaining()?;
             line_reader.skip(line.next_offset - line_reader.position())?;
         }
-        if line_reader.remaining() != 0 {
-            return Err(FramingError::structural(
-                line_reader.position(),
-                "hatch-line array has trailing bytes",
-            ));
-        }
+        line_reader.skip_remaining()?;
         reader.skip(chunk.next_offset - reader.position())?;
-        if reader.remaining() != 0 {
-            return Err(FramingError::structural(
-                reader.position(),
-                "hatch pattern has trailing bytes",
-            ));
-        }
+        reader.skip_remaining()?;
         (component, fill_type, description, lines)
     } else {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
-        if packed >> 4 != 1 || packed & 0x0f > 2 {
+        if packed >> 4 != 1 {
             return Err(FramingError::structural(
                 range.start,
                 "legacy hatch-pattern version is unsupported",
@@ -1385,12 +1362,7 @@ fn parse_hatch_pattern(
         } else {
             Uuid::nil()
         };
-        if reader.remaining() != 0 {
-            return Err(FramingError::structural(
-                reader.position(),
-                "legacy hatch pattern has trailing bytes",
-            ));
-        }
+        reader.skip_remaining()?;
         (
             Component {
                 index: Some(index),
@@ -1637,12 +1609,7 @@ fn dimension_style_controls(
     if minor >= 9 {
         put!("decimal_separator", reader.u32()?);
     }
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "dimension style has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(values)
 }
 
@@ -1654,7 +1621,7 @@ fn parse_dimension_style(
     source_offset: usize,
 ) -> Result<DimensionStyleRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
-    if version.0 != 1 || !(0..=9).contains(&version.1) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "dimension-style version is unsupported",
@@ -1753,7 +1720,7 @@ fn parse_embedded_image(
 ) -> Result<EmbeddedImageRecord, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
-    if packed >> 4 != 1 || packed & 0x0f > 1 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             range.start,
             "embedded-image version is unsupported",
@@ -1799,12 +1766,7 @@ fn parse_embedded_image(
     } else {
         String::new()
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "embedded image has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     let source_uuid = source_uuid.filter(|id| !id.is_nil());
     let key = source_uuid.map_or_else(|| format!("record-{source_offset}"), |id| id.to_string());
     Ok(EmbeddedImageRecord {
@@ -1886,7 +1848,7 @@ fn parse_texture_mapping(
     source_offset: usize,
 ) -> Result<TextureMappingRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
-    if version.0 != 1 || !(0..=1).contains(&version.1) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "texture-mapping version is unsupported",
@@ -1909,12 +1871,7 @@ fn parse_texture_mapping(
     reader.skip(object.next_offset - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
     let capped = version.1 >= 1 && reader.bool()?;
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "texture mapping has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     let key = if id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -1990,12 +1947,7 @@ fn rendering_materials(
                 } else {
                     (None, None)
                 };
-                if value.remaining() != 0 {
-                    return Err(FramingError::structural(
-                        value.position(),
-                        "rendering-material reference has trailing bytes",
-                    ));
-                }
+                value.skip_remaining()?;
                 Ok(RenderingMaterialReference {
                     plugin_uuid,
                     front_material_uuid,
@@ -2006,12 +1958,7 @@ fn rendering_materials(
             values.push(parsed?);
             reader.skip(chunk.next_offset - reader.position())?;
         }
-        if reader.remaining() != 0 {
-            return Err(FramingError::structural(
-                reader.position(),
-                "rendering attributes have trailing bytes",
-            ));
-        }
+        reader.skip_remaining()?;
         Ok(values)
     })()
 }
@@ -2031,7 +1978,7 @@ fn parse_font(
     }
     let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let (major, minor) = (value.i32()?, value.i32()?);
-    if major != 1 || !(0..=6).contains(&minor) {
+    if major != 1 || minor < 0 {
         return Err(FramingError::structural(
             value.position(),
             "font version is unsupported",
@@ -2089,12 +2036,7 @@ fn parse_font(
     if minor >= 6 {
         font.quartet_member = Some(value.u8()?);
     }
-    if value.remaining() != 0 {
-        return Err(FramingError::structural(
-            value.position(),
-            "font has trailing bytes",
-        ));
-    }
+    value.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(font)
 }
@@ -2110,7 +2052,7 @@ fn parse_text_style(
     if data.get(range.start).copied() != Some(0) {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
-        if packed >> 4 != 1 || packed & 0x0f > 2 {
+        if packed >> 4 != 1 {
             return Err(FramingError::structural(
                 range.start,
                 "legacy text-style version is unsupported",
@@ -2155,12 +2097,7 @@ fn parse_text_style(
         } else {
             Uuid::nil()
         };
-        if reader.remaining() != 0 {
-            return Err(FramingError::structural(
-                reader.position(),
-                "legacy text style has trailing bytes",
-            ));
-        }
+        reader.skip_remaining()?;
         return Ok(TextStyleRecord {
             id: format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
             source_offset: source_offset as u64,
@@ -2173,7 +2110,7 @@ fn parse_text_style(
     }
 
     let (mut reader, version) = anonymous(data, range, archive)?;
-    if version.0 != 1 || !(0..=1).contains(&version.1) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "text-style version is unsupported",
@@ -2195,12 +2132,7 @@ fn parse_text_style(
     } else {
         (component.id, component.name)
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "text style has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     let index = component.index;
     Ok(TextStyleRecord {
         id: if id.is_nil() {

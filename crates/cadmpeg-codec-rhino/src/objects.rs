@@ -447,12 +447,6 @@ fn parse_userdata(
         let transform_range = transform_start..reader.position();
         let payload = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
-        if payload.next_offset != wrapper.body.end {
-            return Err(FramingError::structural(
-                wrapper.body.end,
-                "userdata wrapper has trailing bytes",
-            ));
-        }
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
             warnings.push(note);
         }
@@ -516,20 +510,11 @@ fn parse_userdata(
     };
     let archive_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     let writer_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
-    if header_reader.position() != header.body.end {
-        return Err(FramingError::structural(
-            header_reader.position(),
-            "userdata header has trailing bytes",
-        ));
-    }
+    header_reader.skip_remaining()?;
     let payload = child(bytes, header.next_offset, wrapper.body.end, archive, false)?;
     require_long(&payload, ANONYMOUS)?;
-    if payload.next_offset != wrapper.body.end {
-        return Err(FramingError::structural(
-            payload.next_offset,
-            "userdata wrapper has trailing bytes",
-        ));
-    }
+    reader.skip(payload.next_offset - reader.position())?;
+    reader.skip_remaining()?;
     if let Some(note) =
         checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
     {
@@ -709,7 +694,7 @@ pub(crate) fn parse_attributes(
         let obsolete_thickness =
             finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
         let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
-        finish_attributes(&reader, "fixed object attributes")?;
+        finish_attributes(&mut reader, "fixed object attributes")?;
         return Ok(ObjectAttributes {
             source: SourceRange {
                 range: source_range.clone(),
@@ -834,7 +819,7 @@ pub(crate) fn parse_attributes(
     while reader.remaining() > 0 {
         let item = reader.u8()?;
         if item == 0 {
-            finish_attributes(&reader, "tagged object attributes")?;
+            finish_attributes(&mut reader, "tagged object attributes")?;
             return Ok(attributes);
         }
         let gate = match item {
@@ -1019,15 +1004,10 @@ fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, Fr
 }
 
 fn finish_attributes(
-    reader: &crate::chunks::BoundedReader<'_>,
-    label: &str,
+    reader: &mut crate::chunks::BoundedReader<'_>,
+    _label: &str,
 ) -> Result<(), FramingError> {
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            format!("{label} has trailing bytes"),
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(())
 }
 

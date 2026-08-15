@@ -254,7 +254,7 @@ fn parse_trace_image(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
-    if packed >> 4 != 1 || minor > 4 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             body.start,
             "trace-image version is unsupported",
@@ -275,12 +275,7 @@ fn parse_trace_image(
     } else {
         None
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "trace image has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(TraceImage {
         legacy_file_path,
         width_mm,
@@ -303,7 +298,7 @@ fn parse_wallpaper(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
-    if packed >> 4 != 1 || minor > 2 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             body.start,
             "wallpaper version is unsupported",
@@ -317,12 +312,7 @@ fn parse_wallpaper(
     } else {
         None
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "wallpaper has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(Wallpaper {
         legacy_file_path,
         grayscale,
@@ -338,7 +328,7 @@ fn parse_cplane(
 ) -> Result<ConstructionPlane, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
-    if packed >> 4 != 1 || packed & 0x0f > 1 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             body.start,
             "construction-plane version is unsupported",
@@ -355,12 +345,7 @@ fn parse_cplane(
     let thick_line_frequency = reader.i32()?;
     let name = utf16(&mut reader)?;
     let depth_buffer = packed & 0x0f < 1 || reader.bool()?;
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "construction plane has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(ConstructionPlane {
         plane_origin_mm: value.origin.0,
         plane_x_axis: value.xaxis.0,
@@ -384,7 +369,7 @@ fn parse_viewport(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let version = [packed >> 4, packed & 0x0f];
-    if version[0] != 1 || version[1] > 5 {
+    if version[0] != 1 {
         return Err(FramingError::structural(
             body.start,
             "viewport version is unsupported",
@@ -451,12 +436,7 @@ fn parse_viewport(
     } else {
         None
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "viewport has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(Viewport {
         version,
         camera_valid,
@@ -573,7 +553,8 @@ fn parse_attributes(
             ));
         }
         let mut page = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-        if (page.i32()?, page.i32()?) != (1, 0) {
+        let page_version = (page.i32()?, page.i32()?);
+        if page_version.0 != 1 || page_version.1 < 0 {
             return Err(FramingError::structural(
                 page.position(),
                 "page-settings version is unsupported",
@@ -594,12 +575,7 @@ fn parse_attributes(
             ));
         }
         let printer_name = utf16(&mut page)?;
-        if page.remaining() != 0 {
-            return Err(FramingError::structural(
-                page.position(),
-                "page settings have trailing bytes",
-            ));
-        }
+        page.skip_remaining()?;
         reader.skip(chunk.next_offset - reader.position())?;
         result.page_settings = Some(PageSettings {
             page_number,
@@ -702,12 +678,7 @@ fn parse_attributes(
     if version[1] >= 9 {
         result.section_behavior = Some(reader.u8()?);
     }
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "view attributes have trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(result)
 }
 
@@ -764,12 +735,7 @@ fn parse_view(
             VIEW_WALLPAPER if !child.short => {
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
                 let path = utf16(&mut reader)?;
-                if reader.remaining() != 0 {
-                    return Err(FramingError::structural(
-                        reader.position(),
-                        "wallpaper path has trailing bytes",
-                    ));
-                }
+                reader.skip_remaining()?;
                 wallpaper = Some(Wallpaper {
                     legacy_file_path: path,
                     grayscale: true,
@@ -783,12 +749,7 @@ fn parse_view(
             VIEW_NAME if !child.short => {
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
                 name = utf16(&mut reader)?;
-                if reader.remaining() != 0 {
-                    return Err(FramingError::structural(
-                        reader.position(),
-                        "view name has trailing bytes",
-                    ));
-                }
+                reader.skip_remaining()?;
             }
             VIEW_TARGET if !child.short => {
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
@@ -801,6 +762,7 @@ fn parse_view(
                         )
                     })?;
                 }
+                reader.skip_remaining()?;
                 target = Some(point);
             }
             VIEW_SHOW_GRID if child.short => show_grid = child.value != 0,
@@ -981,12 +943,7 @@ fn parse_named_cplanes(
         });
         reader.skip(chunk.next_offset - reader.position())?;
     }
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "named construction-plane list has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(values)
 }
 

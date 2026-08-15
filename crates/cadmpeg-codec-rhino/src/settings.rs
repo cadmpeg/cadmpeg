@@ -493,13 +493,8 @@ fn times(reader: &mut BoundedReader<'_>) -> Result<UtcTime, FramingError> {
     Ok(UtcTime { fields })
 }
 
-fn finish(reader: &BoundedReader<'_>, label: &str) -> Result<(), FramingError> {
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            format!("{label} has trailing bytes"),
-        ));
-    }
+fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingError> {
+    reader.skip_remaining()?;
     Ok(())
 }
 
@@ -516,7 +511,7 @@ fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
 fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
-    if version != (1, 0) {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported revision-history version",
@@ -532,14 +527,14 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
         last_edited: times(&mut reader)?,
         revision_count: reader.i32()?,
     };
-    finish(&reader, "revision-history")?;
+    reader.skip_remaining()?;
     Ok(value)
 }
 
 fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
-    if version.0 != 1 || version.1 > 1 {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported notes version",
@@ -560,14 +555,14 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
         rectangle,
         locked,
     };
-    finish(&reader, "notes")?;
+    reader.skip_remaining()?;
     Ok(value)
 }
 
 fn parse_application(data: &[u8], record: &Record) -> Result<Application, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
-    if version != (1, 0) {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported application version",
@@ -581,7 +576,7 @@ fn parse_application(data: &[u8], record: &Record) -> Result<Application, Framin
         url: utf16(&mut reader)?,
         details: utf16(&mut reader)?,
     };
-    finish(&reader, "application")?;
+    reader.skip_remaining()?;
     Ok(value)
 }
 
@@ -728,7 +723,7 @@ pub(crate) fn parse_units(
             "scaled absolute tolerance is invalid",
         ));
     }
-    finish(&reader, "units")?;
+    finish(&mut reader, "units")?;
     Ok(UnitsAndTolerances {
         version,
         unit_value,
@@ -813,11 +808,11 @@ pub(crate) fn parse_rendering_attributes(
         if material_minor >= 1 {
             material_payload.skip(16 + 4)?;
         }
-        finish(&material_payload, "rendering material reference")?;
+        material_payload.skip_remaining()?;
         children.push(material.range());
         payload.skip(material.next_offset - payload.position())?;
     }
-    finish(&payload, "rendering attributes")?;
+    payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
@@ -972,7 +967,7 @@ pub(crate) fn parse_direct_linetype<'a>(
             ));
         }
     }
-    finish(&payload, "embedded linetype")?;
+    finish(&mut payload, "embedded linetype")?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
@@ -1052,7 +1047,7 @@ pub(crate) fn parse_direct_section_style<'a>(
             "embedded section style is missing terminator",
         ));
     }
-    finish(&payload, "embedded section style")?;
+    finish(&mut payload, "embedded section style")?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
@@ -1282,7 +1277,7 @@ fn parse_layer(
             ));
         }
     }
-    finish(&reader, "layer payload")?;
+    finish(&mut reader, "layer payload")?;
     Ok(layer)
 }
 
@@ -1468,7 +1463,7 @@ fn next_layer_index(used: &BTreeSet<i32>) -> i32 {
 fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let value = utf16(&mut reader)?;
-    finish(&reader, "UTF-16 property")?;
+    finish(&mut reader, "UTF-16 property")?;
     Ok(value)
 }
 

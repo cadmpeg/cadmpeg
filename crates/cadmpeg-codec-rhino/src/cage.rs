@@ -102,7 +102,7 @@ pub(crate) fn decode_at(
 
     let major = req_i32(&mut body)?;
     let minor = req_i32(&mut body)?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: chunk.body.start,
             message: format!("unsupported NURBS cage version {major}.{minor}"),
@@ -260,12 +260,10 @@ pub(crate) fn decode_at(
             .push(point)
             .map_err(|error| refused(body.position(), &error))?;
     }
-    if body.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            body.position(),
-            "NURBS cage has trailing bytes",
-        ));
-    }
+    let remaining = body.remaining();
+    body.skip(remaining).ok_or_else(|| {
+        GeometryError::malformed(body.position(), "NURBS cage suffix is out of range")
+    })?;
     let control_points = control_points
         .finish()
         .map_err(|error| refused(body.position(), &error))?;

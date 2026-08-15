@@ -199,13 +199,7 @@ fn text_content(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<TextContent, FramingError> {
-    let (mut text, next, version) = anonymous(data, reader.position(), reader.end(), archive)?;
-    if version != 0 {
-        return Err(FramingError::structural(
-            text.position(),
-            "unsupported text-content version",
-        ));
-    }
+    let (mut text, next, _version) = anonymous(data, reader.position(), reader.end(), archive)?;
     let rich_text = utf16(&mut text)?;
     plane(&mut text)?;
     let rectangle_width = text.f64()?;
@@ -225,12 +219,7 @@ fn text_content(
         ));
     }
     let wrapped = text.bool()?;
-    if text.remaining() != 0 {
-        return Err(FramingError::structural(
-            text.position(),
-            "text content has trailing bytes",
-        ));
-    }
+    text.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(TextContent {
         rich_text,
@@ -249,26 +238,14 @@ pub(crate) fn annotation(
 ) -> Result<Annotation, FramingError> {
     let (mut annotation, next, version) =
         anonymous(data, reader.position(), reader.end(), archive)?;
-    if version > 4 {
-        return Err(FramingError::structural(
-            annotation.position(),
-            "unsupported annotation version",
-        ));
-    }
     let text = text_content(data, &mut annotation, archive)?;
     let dimstyle_id = uuid(&mut annotation)?;
     let plane = plane(&mut annotation)?;
     let annotation_type = if version >= 1 { annotation.i32()? } else { 0 };
     let mut override_present = false;
     if version >= 2 {
-        let (mut overrides, override_next, override_version) =
+        let (mut overrides, override_next, _override_version) =
             anonymous(data, annotation.position(), annotation.end(), archive)?;
-        if override_version != 1 {
-            return Err(FramingError::structural(
-                overrides.position(),
-                "unsupported dimension override version",
-            ));
-        }
         if overrides.bool()? {
             override_present = true;
             let wrapper = chunk_at(data, overrides.position(), overrides.end(), archive, false)?;
@@ -281,12 +258,7 @@ pub(crate) fn annotation(
             )?;
             overrides.skip(wrapper.next_offset - overrides.position())?;
         }
-        if overrides.remaining() != 0 {
-            return Err(FramingError::structural(
-                overrides.position(),
-                "dimension overrides have trailing bytes",
-            ));
-        }
+        overrides.skip_remaining()?;
         annotation.skip(override_next - annotation.position())?;
     }
     let horizontal_direction = if version >= 3 {
@@ -295,12 +267,7 @@ pub(crate) fn annotation(
         [1.0, 0.0]
     };
     let allow_text_scaling = version < 4 || annotation.bool()?;
-    if annotation.remaining() != 0 {
-        return Err(FramingError::structural(
-            annotation.position(),
-            "annotation has trailing bytes",
-        ));
-    }
+    annotation.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(Annotation {
         rich_text: text.rich_text,
@@ -353,12 +320,6 @@ pub(crate) fn legacy_annotation(
     archive: ArchiveVersion,
 ) -> Result<LegacyAnnotation, FramingError> {
     let (mut annotation, next, minor) = anonymous(data, reader.position(), reader.end(), archive)?;
-    if minor > 3 {
-        return Err(FramingError::structural(
-            annotation.position(),
-            "unsupported legacy annotation version",
-        ));
-    }
     let value = legacy_annotation_fields(&mut annotation, scale, minor, false)?;
     reader.skip(next - reader.position())?;
     Ok(value)
@@ -452,12 +413,7 @@ fn legacy_annotation_fields(
     } else {
         initial_style_index
     };
-    if annotation.remaining() != 0 {
-        return Err(FramingError::structural(
-            annotation.position(),
-            "legacy annotation has trailing bytes",
-        ));
-    }
+    annotation.skip_remaining()?;
     let (plane, justification) = if kind == 7 && justification == 0 {
         (shifted_plane(plane, [0.0, text_height]), (1 << 18) | 1)
     } else {
@@ -538,34 +494,17 @@ fn decode_legacy(
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
     let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive)?;
-    if next != range.end
-        || if class == V5_ORDINATE {
-            minor > 1
-        } else {
-            minor != 0
-        }
-    {
+    if next != range.end {
         return Err(FramingError::structural(
             range.start,
             "unsupported legacy dimension version",
         ));
     }
     let annotation = if class == V5_ORDINATE {
-        let (mut wrapper, wrapper_next, wrapper_minor) =
+        let (mut wrapper, wrapper_next, _wrapper_minor) =
             anonymous(data, outer.position(), outer.end(), archive)?;
-        if wrapper_minor != 0 {
-            return Err(FramingError::structural(
-                wrapper.position(),
-                "unsupported legacy ordinate annotation wrapper",
-            ));
-        }
         let annotation = legacy_annotation(data, &mut wrapper, scale, archive)?;
-        if wrapper.remaining() != 0 {
-            return Err(FramingError::structural(
-                wrapper.position(),
-                "legacy ordinate annotation wrapper has trailing bytes",
-            ));
-        }
+        wrapper.skip_remaining()?;
         outer.skip(wrapper_next - outer.position())?;
         annotation
     } else {
@@ -610,12 +549,7 @@ fn decode_legacy(
     } else {
         None
     };
-    if outer.remaining() != 0 {
-        return Err(FramingError::structural(
-            outer.position(),
-            "legacy dimension has trailing bytes",
-        ));
-    }
+    outer.skip_remaining()?;
     let (plane, definition, user_text_point, measurement) = if class == V5_LINEAR {
         if !matches!(annotation.kind, 1 | 2) || annotation.points.len() != 5 {
             return Err(FramingError::structural(
@@ -760,8 +694,8 @@ pub(crate) fn decode(
     if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
         return decode_legacy(data, class, range, scale, archive);
     }
-    let (mut outer, outer_next, outer_version) = anonymous(data, range.start, range.end, archive)?;
-    if outer_next != range.end || outer_version != 0 {
+    let (mut outer, outer_next, _outer_version) = anonymous(data, range.start, range.end, archive)?;
+    if outer_next != range.end {
         return Err(FramingError::structural(
             range.start,
             "unsupported dimension family version",
@@ -769,12 +703,6 @@ pub(crate) fn decode(
     }
     let (mut common, common_next, common_version) =
         anonymous(data, outer.position(), outer.end(), archive)?;
-    if common_version > 1 {
-        return Err(FramingError::structural(
-            common.position(),
-            "unsupported common dimension version",
-        ));
-    }
     let mut annotation = annotation(data, &mut common, archive)?;
     annotation.plane = scale_plane(annotation.plane, scale, range.start)?;
     let user_text = utf16(&mut common)?;
@@ -804,12 +732,7 @@ pub(crate) fn decode(
     if common_version >= 1 {
         common.i32()?;
     }
-    if common.remaining() != 0 {
-        return Err(FramingError::structural(
-            common.position(),
-            "common dimension has trailing bytes",
-        ));
-    }
+    common.skip_remaining()?;
     outer.skip(common_next - outer.position())?;
     let definition = if class == LINEAR {
         if !matches!(annotation.kind, 1 | 5) {
@@ -924,12 +847,7 @@ pub(crate) fn decode(
             "unsupported dimension class",
         ));
     };
-    if outer.remaining() != 0 {
-        return Err(FramingError::structural(
-            outer.position(),
-            "dimension has trailing bytes",
-        ));
-    }
+    outer.skip_remaining()?;
     let measurement = match &definition {
         Definition::Linear {
             definition_point, ..
@@ -1010,16 +928,16 @@ pub(crate) fn apply_userdata(
             .iter()
             .find(|userdata| userdata.class_uuid == V5_ANGULAR_EXTRA)
         {
-            let (mut reader, next, minor) = anonymous(
+            let (mut reader, next, _minor) = anonymous(
                 data,
                 extra.payload_range.start,
                 extra.payload_range.end,
                 archive,
             )?;
-            if next != extra.payload_range.end || minor != 0 {
+            if next != extra.payload_range.end {
                 return Err(FramingError::structural(
                     extra.payload_range.start,
-                    "unsupported V5 angular dimension extension version",
+                    "invalid V5 angular dimension extension boundary",
                 ));
             }
             *first_extension_offset = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
@@ -1035,12 +953,7 @@ pub(crate) fn apply_userdata(
                         "invalid V5 angular extension offset",
                     )
                 })?;
-            if reader.remaining() != 0 {
-                return Err(FramingError::structural(
-                    reader.position(),
-                    "V5 angular dimension extension has trailing bytes",
-                ));
-            }
+            reader.skip_remaining()?;
         }
     }
     let Some(extra) = userdata
@@ -1055,7 +968,7 @@ pub(crate) fn apply_userdata(
         extra.payload_range.end,
         archive,
     )?;
-    if next != extra.payload_range.end || minor > 2 {
+    if next != extra.payload_range.end {
         return Err(FramingError::structural(
             extra.payload_range.start,
             "unsupported V5 dimension extension version",
@@ -1096,12 +1009,7 @@ pub(crate) fn apply_userdata(
     } else {
         Uuid::nil()
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "V5 dimension extension has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     dimension.arrow_position = arrow_position;
     if dimension.dimstyle_index.is_some() {
         dimension.distance_scale = distance_scale;

@@ -149,12 +149,7 @@ pub(crate) fn decode(
             "unsupported Rhino surface class",
         ));
     };
-    if reader.remaining() != 0 {
-        return Err(error(
-            reader.position(),
-            "surface payload has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(result)
 }
 
@@ -166,7 +161,7 @@ fn read_clipping_plane_surface(
 ) -> Result<DecodedSurface, GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let outer = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if outer.typecode != ANONYMOUS || outer.short || outer.next_offset != reader.end() {
+    if outer.typecode != ANONYMOUS || outer.short {
         return Err(error(
             reader.position(),
             "invalid clipping-plane outer chunk",
@@ -320,7 +315,7 @@ fn read_revolution(
     let version_offset = reader.position();
     let version = reader.u8()?;
     let major = version >> 4;
-    if !(major == 1 || major == 2) || version & 0x0f != 0 {
+    if !(major == 1 || major == 2) {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported revolution-surface version",
@@ -385,6 +380,7 @@ fn read_revolution(
         transposed,
         version_offset,
     )?;
+    reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
         geometry,
         definition: DecodedProceduralSurface::Revolution {
@@ -406,7 +402,7 @@ fn read_sum(
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
     let version_offset = reader.position();
-    if reader.u8()? != 0x10 {
+    if reader.u8()? >> 4 != 1 {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported sum-surface version",
@@ -427,6 +423,7 @@ fn read_sum(
     let first_nurbs = exact_nurbs(&first, version_offset)?;
     let second_nurbs = exact_nurbs(&second, version_offset)?;
     let geometry = sum_nurbs(&first_nurbs, &second_nurbs, basepoint, version_offset)?;
+    reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
         geometry,
         definition: DecodedProceduralSurface::Sum { basepoint },
@@ -731,12 +728,6 @@ fn read_nurbs_curve_inner(
             "unsupported NURBS curve version",
         ));
     }
-    if minor > 1 {
-        return Err(GeometryError::unsupported(
-            version_offset,
-            "unsupported NURBS curve minor version",
-        ));
-    }
     let dimension = reader.i32()?;
     let rational = reader.i32()?;
     let order = checked_positive(reader.i32()?, reader.position(), "curve order")?;
@@ -772,6 +763,7 @@ fn read_nurbs_curve_inner(
     }
     let periodic = periodic_knots(&knots, order, cv_count);
     let full_knots = reconstruct_knots(&knots, order, cv_count)?;
+    reader.skip_remaining()?;
     Ok(NurbsCurve {
         degree: u32::try_from(order - 1).expect("validated order fits u32"),
         knots: full_knots,
@@ -825,7 +817,7 @@ pub(crate) fn read_nurbs_surface(
 ) -> Result<NurbsSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
-    if version >> 4 != 1 || version & 0x0f != 0 {
+    if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS surface version",
@@ -876,6 +868,7 @@ pub(crate) fn read_nurbs_surface(
     let (control_points, weights) = read_poles(reader, stored_cv_count, rational != 0, scale)?;
     let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
+    reader.skip_remaining()?;
     Ok(NurbsSurface {
         u_degree: u32::try_from(u_order - 1).expect("validated order fits u32"),
         v_degree: u32::try_from(v_order - 1).expect("validated order fits u32"),

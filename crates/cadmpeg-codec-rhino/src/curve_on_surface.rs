@@ -107,12 +107,7 @@ pub(crate) fn decode(
         archive,
         depth,
     )?;
-    if reader.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "curve-on-surface has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(CurveOnSurface {
         source_range: range,
         parameter_curve,

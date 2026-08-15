@@ -107,7 +107,7 @@ pub(crate) fn decode(
     let version_offset = body.position();
     let version = body.req_u8()?;
     let (major, minor) = (version >> 4, version & 0x0f);
-    if major != 1 || minor > 2 {
+    if major != 1 {
         return Err(GeometryError::UnsupportedVersion {
             offset: version_offset,
             message: format!("unsupported hatch version {major}.{minor}"),
@@ -166,7 +166,7 @@ pub(crate) fn decode(
     for loop_index in 0..count {
         let loop_offset = body.position();
         let loop_version = body.req_u8()?;
-        if loop_version >> 4 != 1 || loop_version & 0x0f > 1 {
+        if loop_version >> 4 != 1 {
             return Err(GeometryError::UnsupportedVersion {
                 offset: loop_offset,
                 message: format!(
@@ -225,12 +225,8 @@ pub(crate) fn decode(
     } else {
         [0.0, 0.0]
     };
-    if body.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            body.position(),
-            "hatch has trailing bytes",
-        ));
-    }
+    body.skip(body.remaining())
+        .ok_or_else(|| GeometryError::malformed(body.position(), "hatch suffix is out of range"))?;
     let loops = match loops.finish() {
         Ok(loops) => loops,
         Err(error) => return Err(refused(body.position(), &error)),
@@ -301,6 +297,7 @@ fn parse_userdata(
             GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
         })?,
     ];
+    reader.skip_remaining()?;
     Ok(basepoint)
 }
 
