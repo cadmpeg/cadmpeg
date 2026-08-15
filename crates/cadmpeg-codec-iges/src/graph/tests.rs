@@ -26,9 +26,33 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use super::{cyclic_transform_nodes, ReferenceEdge, ReferenceKind, Resolution};
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+#[test]
+fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
+    let chain_length = 100_000_u32;
+    let edges = (1..=chain_length)
+        .map(|source| {
+            let target = source + 1;
+            (
+                source,
+                vec![ReferenceEdge {
+                    kind: ReferenceKind::Transform,
+                    raw_pointer: i64::from(target),
+                    target: Some(format!("iges:entity:directory#{target}")),
+                    resolution: Resolution::Resolved,
+                    expected: "type-124".into(),
+                    parameter_index: None,
+                }],
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    assert!(cyclic_transform_nodes(&edges).is_empty());
+}
 
 #[test]
 fn inspect_preserves_transform_cycles_as_named_reference_states() {

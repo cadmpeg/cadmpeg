@@ -313,18 +313,29 @@ fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet
         })
         .collect::<BTreeMap<_, _>>();
     let mut cyclic = BTreeSet::new();
+    let mut completed = BTreeSet::new();
+    let mut active = BTreeMap::<u32, usize>::new();
     for start in next.keys().copied() {
         let mut path = Vec::new();
-        let mut positions = BTreeMap::new();
         let mut current = start;
-        while let Some(target) = next.get(&current).copied() {
-            if let Some(position) = positions.get(&current).copied() {
+        loop {
+            if completed.contains(&current) {
+                break;
+            }
+            if let Some(position) = active.get(&current).copied() {
                 cyclic.extend(path[position..].iter().copied());
                 break;
             }
-            positions.insert(current, path.len());
+            active.insert(current, path.len());
             path.push(current);
+            let Some(target) = next.get(&current).copied() else {
+                break;
+            };
             current = target;
+        }
+        for node in path {
+            active.remove(&node);
+            completed.insert(node);
         }
     }
     cyclic
