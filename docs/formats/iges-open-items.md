@@ -378,15 +378,15 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `34861ac75` made the recursive interpretation internally consistent, but the source rule remains unverified. The current documentation promotes the recursive choice to a settled format fact.
 
-### TP-09. A model-curve pointer selects the first neutral edge
+### TP-09. A model-curve pointer has no resolved edge-ownership rule
 
 **Question.** How does a Type 141/142 model-curve pointer select a neutral edge when multiple edges use the same curve carrier?
 
-**Known.** `trimming.rs:207-212` builds `edges_by_curve` with `or_insert`, and `trimming.rs:564-565` uses that first edge. `brep.rs:858-863`, `composite.rs:426-430` and `535-540`, `offsets.rs:222-226`, and `csg.rs:30-35` also choose the first matching edge. `Edge` permits repeated `CurveId` values with distinct vertices and parameter ranges. Type 141/142 carry curve entity pointers, not edge occurrence identities.
+**Known.** `trimming.rs` retains all candidates and selects a unique Type 141/142 edge whose parameter-curve endpoints agree; a model-preferred boundary with multiple candidates is rejected as ambiguous. `brep.rs` selects a candidate whose declared range evaluates to the Type 186 vertex-list endpoints. `offsets.rs` uses the same curve-endpoint check for the source parameter range, and `csg.rs` rejects conflicting closed/open results. `composite.rs` still stores one edge candidate per curve in its indexed path and uses the first matching edge in its fallback path. `Edge` permits repeated `CurveId` values with distinct vertices and parameter ranges. Type 141/142 carry curve entity pointers, not edge occurrence identities.
 
 **Need.** We need an ownership invariant or a source rule that makes the curve-to-edge relation unique, or a resolution path that verifies each candidate's range and endpoints. A wrong choice transfers the wrong range or endpoints to a boundary, B-rep, offset, composite, or sweep.
 
-**Note.** New item filed after the hostile sweep on 2026-08-10. With two edge occurrences sharing one curve but having different spans, storage order decides; no candidate comparison or rejection exists.
+**Note.** Candidate checks prevent silent transfer of a wrong range or endpoint, but they do not establish the source ownership rule. Composite flattening can still depend on one candidate when a curve has multiple edge occurrences.
 
 ## 6. Product structure, annotation, and presentation
 
