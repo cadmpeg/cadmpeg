@@ -130,6 +130,19 @@ jobs:
         # running, so a separate `cargo build` step would be redundant.
         run: cargo test-fast
 
+      - name: Bounded IGES decode and validation gate
+        # Give every synthesized IGES fixture independent decode and CADIR
+        # validation deadlines under the unattended resource profile.
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/side2/tmp/iges-l9"
+          python3 scripts/verify-iges-bounded.py \
+            crates/cadmpeg-codec-iges/tests/golden/fixtures \
+            --cadmpeg target/debug/cadmpeg \
+            --limits service \
+            --timeout 30 \
+            --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
+
       - name: Independent Inventor evidence test
         run: python3 -m unittest -v scripts/test_inventor_evidence.py
 
