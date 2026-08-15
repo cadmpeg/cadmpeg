@@ -12,7 +12,8 @@ use cadmpeg_ir::eval::{
     nurbs_surface_partials, surface_partials,
 };
 use cadmpeg_ir::geometry::{
-    IntcurveSupportSide, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+    knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -246,8 +247,8 @@ impl HomogeneousSurfaceNet {
                 .iter()
                 .chain(&surface.v_knots)
                 .any(|knot| !knot.is_finite())
-            || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
-            || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+            || !knots_nondecreasing(&surface.u_knots)
+            || !knots_nondecreasing(&surface.v_knots)
             || surface
                 .control_points
                 .iter()
@@ -1511,19 +1512,17 @@ pub(crate) fn least_squares_step(
     dv: Vector3,
     residual: Vector3,
 ) -> Option<(f64, f64)> {
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let du_squared = dot(du, du);
-    let mixed = dot(du, dv);
-    let dv_squared = dot(dv, dv);
+    let du_squared = du.dot(du);
+    let mixed = du.dot(dv);
+    let dv_squared = dv.dot(dv);
     let determinant = du_squared * dv_squared - mixed * mixed;
     if !determinant.is_finite()
         || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
     {
         return None;
     }
-    let du_residual = dot(du, residual);
-    let dv_residual = dot(dv, residual);
+    let du_residual = du.dot(residual);
+    let dv_residual = dv.dot(residual);
     Some((
         (dv_squared * du_residual - mixed * dv_residual) / determinant,
         (du_squared * dv_residual - mixed * du_residual) / determinant,

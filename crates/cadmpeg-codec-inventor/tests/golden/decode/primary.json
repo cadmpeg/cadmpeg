@@ -484,18 +484,18 @@
     "losses": [
       {
         "code": {
-          "code": "geometry_not_transferred",
+          "code": "geometry.kernel-carrier-not-transferred",
           "kind": "geometry_not_transferred",
-          "namespace": "shared"
+          "namespace": "inventor"
         },
         "message": "the active kernel carrier decoded no surfaces, points, or faces",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "record_not_typed",
+          "code": "rse.segment-pair-untyped",
           "kind": "record_not_typed",
-          "namespace": "shared"
+          "namespace": "inventor"
         },
         "message": "Retained 1 structurally paired RSe segment(s) without record semantics.",
         "severity": "warning"

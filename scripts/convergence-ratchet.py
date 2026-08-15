@@ -4,14 +4,13 @@
 
 Patterns (production filter — see ``docs/convergence-ledger.toml``):
 
-* ``from_le_bytes`` / ``from_be_bytes`` in ``crates/cadmpeg-codec-*/src``
-* ``le::*_at`` / ``be::*_at`` call sites outside ``cadmpeg-core`` (not ``use``
-  lines), including calls through names imported from those modules
-  (``use cadmpeg_core::le::u32_at as u32_le`` then ``u32_le(...)``). Method
-  calls (``view.u32_le()``, ``View::u32_le_at``) are not this pattern.
+* ``from_le_bytes`` / ``from_be_bytes`` in ``crates/**/src`` (pressure: documented
+  exceptions remain, so the honest end state is not zero)
 * ``CodecError::Malformed(format!`` (multiline-aware)
 * ``LossNote {`` struct literals (not ``-> LossNote {`` or the struct definition)
-* bare ``1e-6`` / ``1e-9`` / ``1e-10`` / ``1e-12`` in ``crates/**/src``
+* bare ``1e-6`` / ``1e-7`` / ``1e-8`` / ``1e-9`` / ``1e-10`` / ``1e-11`` /
+  ``1e-12`` in ``crates/**/src`` (counts occurrences only; does not see naming
+  or collapse of distinct values)
 * non-literal ``vec![value; count]`` repeats (parsed-count allocations)
 
 Modes:
@@ -21,7 +20,9 @@ Modes:
 * ``--json``: emit machine-readable counts (and check result) on stdout
 
 A deliberate increase is a manual ledger edit: raise the ceiling and record a
-reason under ``[reasons]`` for that key in the same commit.
+reason under ``[reasons]`` for that key in the same commit. ``check`` compares
+working-tree ceilings to ``HEAD:docs/convergence-ledger.toml`` and fails a
+raise that has no reason.
 """
 
 from __future__ import annotations
@@ -38,7 +39,6 @@ LEDGER = ROOT / "docs" / "convergence-ledger.toml"
 
 LEGACY_METRIC_KEYS = (
     "from_endian_bytes",
-    "le_be_at_outside_core",
     "codec_error_malformed_format",
     "loss_note_struct_literals",
     "bare_tolerance_literals",
@@ -52,34 +52,25 @@ PLACEMENT_KEYS = (
     "production_line_debt",
 )
 
-TARGET_KEYS = PLACEMENT_KEYS
+# Pressure keys have no zero destination (exceptions remain). Convergence keys
+# have a [targets] completion criterion.
+PRESSURE_KEYS = (
+    "from_endian_bytes",
+)
 METRIC_KEYS = LEGACY_METRIC_KEYS + PLACEMENT_KEYS
+CONVERGENCE_KEYS = tuple(key for key in METRIC_KEYS if key not in PRESSURE_KEYS)
+TARGET_KEYS = CONVERGENCE_KEYS
+KIND_BY_KEY = {
+    key: ("pressure" if key in PRESSURE_KEYS else "convergence") for key in METRIC_KEYS
+}
+MEASURED_AT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
-LE_BE_AT = re.compile(r"\b(?:le|be)::[A-Za-z_][A-Za-z0-9_]*_at\b")
-USE_LE_BE = re.compile(r"(?:pub(?:\([^)]*\))?\s+)?use\s+cadmpeg_core::(?:le|be)::([^;]+);")
-# Names in cadmpeg_core::{le,be} that end in `_at`. Used when a glob import
-# would otherwise hide every helper behind `*`.
-LE_BE_AT_HELPERS = (
-    "u16_at",
-    "i16_at",
-    "u32_at",
-    "i32_at",
-    "u64_at",
-    "i64_at",
-    "f32_at",
-    "f64_at",
-    "f64s_at",
-    "vec3_at",
-    "int_at",
-    "lp_u32_bytes_at",
-    "utf16le_at",
-)
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
 LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
 LOSS_NOTE_STRUCT = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?struct\s+LossNote\s*\{")
-BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|9|10|12)\b")
+BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|7|8|9|10|11|12)\b")
 # `vec![value; count]` where count is not a decimal/hex literal.
 VEC_REPEAT = re.compile(r"vec!\s*\[(?:[^\];]|;)*;\s*([^\]]+)\]", re.MULTILINE)
 VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
@@ -94,10 +85,13 @@ FILTER_DESCRIPTION = (
     "legacy metrics: production .rs under crates/**/src via is_production_rs; "
     "exclude tests/ and benches/ path segments; exclude files named tests.rs or "
     "*test*.rs; strip cfg(test)-attributed items with blank-preserving elision. "
+    "from_endian_bytes uses that same crates/**/src glob (not codec crates only). "
     "Placement metrics: scan crates/**/*.rs by ownership, structural entry "
     "points, standard mod resolution, and test-only #[path] ancestry; "
     "golden_tests files stay out of test-line debt. production_line_debt "
-    "reuses is_production_rs and elides cfg(test) items without blank placeholders."
+    "reuses is_production_rs and elides cfg(test) items without blank placeholders. "
+    "[kinds] marks each key pressure (no zero destination) or convergence "
+    "([targets] is the completion criterion)."
 )
 
 
@@ -197,71 +191,9 @@ def iter_src_files(glob: str) -> list[Path]:
 
 def count_from_endian_bytes() -> int:
     total = 0
-    for path in iter_src_files("crates/cadmpeg-codec-*/src/**/*.rs"):
+    for path in iter_src_files("crates/**/src/**/*.rs"):
         text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
         total += len(FROM_ENDIAN.findall(text))
-    return total
-
-
-def _use_spec_at_names(spec: str) -> set[str]:
-    """Local names bound to a ``*_at`` helper in one ``use cadmpeg_core::{le,be}`` spec."""
-    spec = re.sub(r"\s+", " ", spec).strip()
-    if spec == "*":
-        return set(LE_BE_AT_HELPERS)
-    items = (
-        [part.strip() for part in spec[1:-1].split(",") if part.strip()]
-        if spec.startswith("{") and spec.endswith("}")
-        else [spec]
-    )
-    names: set[str] = set()
-    for item in items:
-        if item == "*":
-            names.update(LE_BE_AT_HELPERS)
-            continue
-        if " as " in item:
-            orig, local = (part.strip() for part in item.split(" as ", 1))
-        else:
-            orig = local = item
-        if orig.endswith("_at"):
-            names.add(local)
-    return names
-
-
-def imported_le_be_at_names(code: str) -> frozenset[str]:
-    """Local identifiers that bind ``cadmpeg_core::{le,be}::* _at`` helpers."""
-    names: set[str] = set()
-    for match in USE_LE_BE.finditer(code):
-        names.update(_use_spec_at_names(match.group(1)))
-    return frozenset(names)
-
-
-def _imported_at_call_re(names: frozenset[str]) -> re.Pattern[str] | None:
-    if not names:
-        return None
-    pattern = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
-    # Reject `view.u32_le(` and `View::u32_le_at(` / `le::u32_at(` (the last is
-    # counted by LE_BE_AT). Bare `u32_le(` / `u32_at(` from an import counts.
-    return re.compile(rf"(?<![:.\w])(?:{pattern})\s*\(")
-
-
-def count_le_be_at_outside_core() -> int:
-    total = 0
-    for path in iter_src_files("crates/**/src/**/*.rs"):
-        if "cadmpeg-core" in path.parts:
-            continue
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
-        stripped_lines = [line.split("//", 1)[0] for line in text.splitlines()]
-        code = "\n".join(stripped_lines)
-        imported_calls = _imported_at_call_re(imported_le_be_at_names(code))
-        for line in stripped_lines:
-            stripped = line.lstrip()
-            if stripped.startswith("use ") or re.match(
-                r"pub(?:\([^)]*\))?\s+use\s+", stripped
-            ):
-                continue
-            total += len(LE_BE_AT.findall(line))
-            if imported_calls is not None:
-                total += len(imported_calls.findall(line))
     return total
 
 
@@ -662,7 +594,6 @@ def collect_placement_contributors() -> dict[str, list[dict[str, object]]]:
 def measure_all() -> tuple[dict[str, int], dict[str, list[dict[str, object]]]]:
     counts = {
         "from_endian_bytes": count_from_endian_bytes(),
-        "le_be_at_outside_core": count_le_be_at_outside_core(),
         "codec_error_malformed_format": count_malformed_format(),
         "loss_note_struct_literals": count_loss_note_literals(),
         "bare_tolerance_literals": count_bare_tolerances(),
@@ -713,10 +644,14 @@ def strip_toml_comment(raw: str) -> str:
     return "".join(out)
 
 
-def parse_ledger(path: Path) -> dict[str, object]:
+def parse_ledger_text(text: str) -> dict[str, object]:
     """Minimal TOML reader for the ledger shape used here."""
-    text = path.read_text(encoding="utf-8")
-    data: dict[str, object] = {"targets": {}, "ceilings": {}, "reasons": {}}
+    data: dict[str, object] = {
+        "targets": {},
+        "ceilings": {},
+        "reasons": {},
+        "kinds": {},
+    }
     section: str | None = None
     for raw in text.splitlines():
         line = strip_toml_comment(raw).strip()
@@ -750,7 +685,28 @@ def parse_ledger(path: Path) -> dict[str, object]:
             cast = data["reasons"]
             assert isinstance(cast, dict)
             cast[key] = parsed
+        elif section == "kinds":
+            cast = data["kinds"]
+            assert isinstance(cast, dict)
+            cast[key] = parsed
     return data
+
+
+def parse_ledger(path: Path) -> dict[str, object]:
+    return parse_ledger_text(path.read_text(encoding="utf-8"))
+
+
+def head_ledger() -> dict[str, object] | None:
+    """Parse the committed ledger, or None when HEAD has no copy."""
+    try:
+        raw = subprocess.check_output(
+            ["git", "show", "HEAD:docs/convergence-ledger.toml"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    return parse_ledger_text(raw.decode())
 
 
 def render_ledger(
@@ -764,19 +720,18 @@ def render_ledger(
         "# Convergence ratchet ceilings. Counts may only fall.",
         "# A decrease updates this file in the same commit. A deliberate increase",
         "# requires a reason under [reasons] for every raised key.",
+        "# [kinds] is pressure (no zero destination) or convergence ([targets]).",
         f'measured_at = "{measured_at}"',
         f'filter = "{filter_description}"',
         "",
-        "[targets]",
+        "[kinds]",
     ]
+    for key in METRIC_KEYS:
+        lines.append(f'{key} = "{KIND_BY_KEY[key]}"')
+    lines.extend(["", "[targets]"])
     for key in TARGET_KEYS:
         lines.append(f"{key} = {targets[key]}")
-    lines.extend(
-        [
-            "",
-        "[ceilings]",
-        ]
-    )
+    lines.extend(["", "[ceilings]"])
     for key in METRIC_KEYS:
         lines.append(f"{key} = {ceilings[key]}")
     if reasons:
@@ -799,9 +754,19 @@ def git_head() -> str:
 
 
 def check(
-    counts: dict[str, int], ceilings: dict[str, int], targets: dict[str, int]
+    counts: dict[str, int],
+    ceilings: dict[str, int],
+    targets: dict[str, int],
+    kinds: dict[str, str] | None = None,
+    reasons: dict[str, str] | None = None,
+    previous_ceilings: dict[str, int] | None = None,
+    measured_at: object | None = None,
 ) -> list[str]:
     failures: list[str] = []
+    if measured_at is not None and not (
+        isinstance(measured_at, str) and MEASURED_AT_SHA.fullmatch(measured_at)
+    ):
+        failures.append("ledger measured_at is not a 40-char git SHA")
     for key in METRIC_KEYS:
         if key not in ceilings:
             failures.append(f"ledger missing ceiling for {key}")
@@ -813,6 +778,27 @@ def check(
     for key in TARGET_KEYS:
         if key not in targets:
             failures.append(f"ledger missing target for {key}")
+    for key in PRESSURE_KEYS:
+        if key in targets:
+            failures.append(f"{key}: pressure key must not have a [targets] entry")
+    if kinds is not None:
+        for key in METRIC_KEYS:
+            kind = kinds.get(key)
+            expected = KIND_BY_KEY[key]
+            if kind is None:
+                failures.append(f"ledger missing kind for {key}")
+            elif kind != expected:
+                failures.append(f"{key}: kind {kind!r} != {expected!r}")
+    if previous_ceilings is not None:
+        recorded = reasons or {}
+        for key in METRIC_KEYS:
+            new = ceilings.get(key)
+            if new is None:
+                continue
+            old = previous_ceilings.get(key)
+            if old is None or new > old:
+                if not str(recorded.get(key, "")).strip():
+                    failures.append(f"{key}: ceiling raised without [reasons].{key}")
     return failures
 
 
@@ -847,9 +833,31 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(reasons_raw, dict)
         else {}
     )
+    kinds_raw = ledger.get("kinds")
+    kinds = (
+        {str(k): str(v) for k, v in kinds_raw.items()}
+        if isinstance(kinds_raw, dict)
+        else {}
+    )
+    previous = head_ledger()
+    previous_ceilings: dict[str, int] | None = None
+    if previous is not None:
+        previous_raw = previous.get("ceilings")
+        if isinstance(previous_raw, dict):
+            previous_ceilings = {
+                str(k): int(v) for k, v in previous_raw.items()  # type: ignore[arg-type]
+            }
 
     counts, contributors = measure_all()
-    failures = check(counts, ceilings, targets)
+    failures = check(
+        counts,
+        ceilings,
+        targets,
+        kinds=kinds,
+        reasons=reasons,
+        previous_ceilings=previous_ceilings,
+        measured_at=ledger.get("measured_at"),
+    )
 
     if args.update:
         if failures:

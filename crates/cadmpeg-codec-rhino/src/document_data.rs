@@ -168,16 +168,10 @@ struct RenderSettingsRecord {
     force_viewport_aspect_ratio: Option<bool>,
 }
 
-fn structural(reader: &BoundedReader<'_>, message: &str) -> FramingError {
-    FramingError::Structural {
-        offset: reader.position(),
-        message: message.to_string(),
-    }
-}
-
 fn length(reader: &mut BoundedReader<'_>, scale: f64) -> Result<f64, FramingError> {
-    scaled_coordinate(reader.f64()?, scale)
-        .ok_or_else(|| structural(reader, "scaled setting length is invalid"))
+    scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+        FramingError::structural(reader.position(), "scaled setting length is invalid")
+    })
 }
 
 fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
@@ -194,8 +188,8 @@ fn annotation_settings(
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 || minor > 4 {
-        return Err(structural(
-            &reader,
+        return Err(FramingError::structural(
+            reader.position(),
             "annotation-settings version is unsupported",
         ));
     }
@@ -233,8 +227,8 @@ fn annotation_settings(
         },
     };
     if reader.remaining() != 0 {
-        return Err(structural(
-            &reader,
+        return Err(FramingError::structural(
+            reader.position(),
             "annotation settings have trailing bytes",
         ));
     }
@@ -249,7 +243,10 @@ fn grid_defaults(
 ) -> Result<GridDefaultsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     if reader.u8()? != 0x10 {
-        return Err(structural(&reader, "grid-default version is unsupported"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "grid-default version is unsupported",
+        ));
     }
     let value = GridDefaultsRecord {
         id: "rhino:document:grid_defaults#current".to_string(),
@@ -263,7 +260,10 @@ fn grid_defaults(
         show_world_axes: flag_i32(&mut reader)?,
     };
     if reader.remaining() != 0 {
-        return Err(structural(&reader, "grid defaults have trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "grid defaults have trailing bytes",
+        ));
     }
     Ok(value)
 }
@@ -287,8 +287,8 @@ fn render_settings(
         let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
         let (major, minor) = (reader.i32()?, reader.i32()?);
         if major != 1 || !(0..=3).contains(&minor) {
-            return Err(structural(
-                &reader,
+            return Err(FramingError::structural(
+                reader.position(),
                 "render-settings version is unsupported",
             ));
         }
@@ -297,8 +297,8 @@ fn render_settings(
         let mut reader = BoundedReader::new(data, body.start, body.end)?;
         let version = reader.i32()?;
         if !(100..200).contains(&version) {
-            return Err(structural(
-                &reader,
+            return Err(FramingError::structural(
+                reader.position(),
                 "legacy render-settings version is unsupported",
             ));
         }
@@ -394,7 +394,10 @@ fn render_settings(
         (dpi, units, bottom, fit)
     };
     if reader.remaining() != 0 {
-        return Err(structural(&reader, "render settings have trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "render settings have trailing bytes",
+        ));
     }
     Ok(RenderSettingsRecord {
         id: "rhino:document:render_settings#current".to_string(),

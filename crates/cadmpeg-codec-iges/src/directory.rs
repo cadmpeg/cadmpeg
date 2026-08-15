@@ -59,7 +59,7 @@ impl DirectoryEntry {
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(format!(
+    crate::error::malformed(format!(
         "IGES Directory Entry D{sequence}: {}",
         message.into()
     ))

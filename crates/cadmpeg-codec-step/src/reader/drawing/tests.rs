@@ -5,6 +5,7 @@
 #![allow(clippy::default_trait_access)]
 #![allow(unused_imports)]
 
+use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
 use crate::{write_step, StepError, StepUnsupportedPolicy, StepWriteOptions};
 
@@ -78,7 +79,8 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .iter()
         .any(|record| record.id.0 == "step:data:item#5"));
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code != cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code != StepLossCode::DrawingSheetRevisionUnresolved.kind()
+            && loss.code != StepLossCode::DrawingRevisionSheetUnresolved.kind()
     }));
 
     let mut output = Vec::new();

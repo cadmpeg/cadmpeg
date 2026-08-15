@@ -20,7 +20,6 @@ use crate::history_records::{
 use crate::records::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
-use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
@@ -2729,19 +2728,14 @@ fn hem_direction_from_transition(
         if planes.next().is_some() {
             continue;
         }
-        let Some(normal) = unit_vector(plane.normal) else {
+        let length = plane.normal.norm();
+        if !(length.is_finite() && length > 0.0) {
             continue;
-        };
+        }
+        let normal = plane.normal.scale(1.0 / length);
         let offsets = cylinders
             .iter()
-            .map(|cylinder| {
-                let offset = Vector3::new(
-                    cylinder.origin.x - plane.origin.x,
-                    cylinder.origin.y - plane.origin.y,
-                    cylinder.origin.z - plane.origin.z,
-                );
-                normal.x * offset.x + normal.y * offset.y + normal.z * offset.z
-            })
+            .map(|cylinder| normal.dot(cylinder.origin.vector_from(plane.origin)))
             .collect::<Vec<_>>();
         let Some(first) = offsets.first().copied() else {
             continue;
@@ -2781,18 +2775,19 @@ fn hem_direction_from_transition(
     })
 }
 
-fn unit_vector(vector: cadmpeg_ir::math::Vector3) -> Option<cadmpeg_ir::math::Vector3> {
-    let length = (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
-    (length.is_finite() && length > 0.0).then(|| {
-        cadmpeg_ir::math::Vector3::new(vector.x / length, vector.y / length, vector.z / length)
-    })
-}
-
 fn parallel_directions(left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math::Vector3) -> bool {
-    let (Some(left), Some(right)) = (unit_vector(left), unit_vector(right)) else {
+    let left_length = left.norm();
+    let right_length = right.norm();
+    if !(left_length.is_finite()
+        && left_length > 0.0
+        && right_length.is_finite()
+        && right_length > 0.0)
+    {
         return false;
-    };
-    let dot = left.x * right.x + left.y * right.y + left.z * right.z;
+    }
+    let dot = left
+        .scale(1.0 / left_length)
+        .dot(right.scale(1.0 / right_length));
     dot.is_finite() && (dot.abs() - 1.0).abs() <= 1.0e-7
 }
 
@@ -6108,21 +6103,11 @@ pub(crate) fn same_axis_line(
     left: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
     right: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
 ) -> bool {
-    let direction_dot = left.1.x * right.1.x + left.1.y * right.1.y + left.1.z * right.1.z;
+    let direction_dot = left.1.dot(right.1);
     if (direction_dot.abs() - 1.0).abs() > 1.0e-9 {
         return false;
     }
-    let delta = cadmpeg_ir::math::Vector3::new(
-        right.0.x - left.0.x,
-        right.0.y - left.0.y,
-        right.0.z - left.0.z,
-    );
-    let cross = cadmpeg_ir::math::Vector3::new(
-        delta.y * left.1.z - delta.z * left.1.y,
-        delta.z * left.1.x - delta.x * left.1.z,
-        delta.x * left.1.y - delta.y * left.1.x,
-    );
-    let distance = (cross.x * cross.x + cross.y * cross.y + cross.z * cross.z).sqrt();
+    let distance = right.0.vector_from(left.0).cross(left.1).norm();
     distance.is_finite() && distance <= 1.0e-8
 }
 
@@ -6271,16 +6256,8 @@ fn historical_mirror_plane(
 }
 
 fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirrorPlane) -> bool {
-    let dot = left.normal.x * right.normal.x
-        + left.normal.y * right.normal.y
-        + left.normal.z * right.normal.z;
-    let delta = cadmpeg_ir::math::Vector3::new(
-        right.origin.x - left.origin.x,
-        right.origin.y - left.origin.y,
-        right.origin.z - left.origin.z,
-    );
-    let normal_distance =
-        delta.x * left.normal.x + delta.y * left.normal.y + delta.z * left.normal.z;
+    let dot = left.normal.dot(right.normal);
+    let normal_distance = right.origin.vector_from(left.origin).dot(left.normal);
     (dot.abs() - 1.0).abs() <= 1.0e-9 && normal_distance.abs() <= 1.0e-8
 }
 

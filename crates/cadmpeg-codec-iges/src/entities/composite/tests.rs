@@ -27,6 +27,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -370,7 +371,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
     );
     assert!(outside_resolution.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+        loss.code == IgesLossCode::CompositeCarrierDegraded.kind()
             && loss.message.contains("Global minimum resolution")
     }));
     let validation = cadmpeg_ir::validate_neutral(

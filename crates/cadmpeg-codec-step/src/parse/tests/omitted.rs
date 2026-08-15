@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -225,8 +226,7 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
         .losses
         .iter()
         .find(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::NoncanonicalSourceSyntax)
+            loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()
                 && loss
                     .message
                     .contains("recovered 37 simple named carrier instance(s)")

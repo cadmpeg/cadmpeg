@@ -1,0 +1,81 @@
+# Crate-root public items for each cadmpeg-codec-* library.
+# scripts/check-codec-facade.py is the oracle. A new pub name at lib.rs
+# must be added here in the same change, or the item must not be pub.
+#
+# names: allowed crate-root names that are not the fuzz module.
+# hidden: names that must exist and be #[doc(hidden)].
+# fuzz = "required": a #[doc(hidden)] pub mod fuzz must exist.
+# fuzz = "absent": no pub mod fuzz; fuzz_reason is required.
+
+[[crate]]
+id = "catia"
+names = ["CatiaCodec"]
+fuzz = "required"
+
+[[crate]]
+id = "creo"
+names = ["CreoCodec"]
+fuzz = "required"
+
+[[crate]]
+id = "f3d"
+names = ["F3dCodec", "validate_native"]
+fuzz = "absent"
+fuzz_reason = "focused targets call cadmpeg_asm"
+
+[[crate]]
+id = "freecad"
+names = [
+    "FcstdCodec",
+    "FcstdWriteOptions",
+    "validate_native",
+    "FcstdDocumentBuilder",
+    "FcstdPropertyValue",
+    "FcstdPropertyOwner",
+]
+fuzz = "absent"
+fuzz_reason = "focused targets call FcstdCodec::decode"
+
+[[crate]]
+id = "iges"
+names = ["IgesCodec", "IgesEncoder", "IgesWriteOptions", "IgesVersion"]
+fuzz = "required"
+
+[[crate]]
+id = "inventor"
+names = ["InventorCodec", "validate_native"]
+fuzz = "required"
+
+[[crate]]
+id = "nx"
+names = ["NxCodec"]
+hidden = ["saved_body_census_evidence", "BodyCensusEvidence"]
+fuzz = "required"
+
+[[crate]]
+id = "rhino"
+names = ["RhinoCodec", "RhinoArchiveVersion", "RhinoEncoder"]
+fuzz = "required"
+
+[[crate]]
+id = "sat"
+names = ["SatCodec"]
+fuzz = "absent"
+fuzz_reason = "focused targets call SatCodec"
+
+[[crate]]
+id = "sldprt"
+names = ["SldprtCodec", "validate_native"]
+fuzz = "required"
+
+[[crate]]
+id = "step"
+names = [
+    "StepCodec",
+    "StepWriteOptions",
+    "StepSchema",
+    "StepUnsupportedPolicy",
+    "write_step",
+    "StepError",
+]
+fuzz = "required"

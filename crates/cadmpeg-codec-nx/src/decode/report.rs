@@ -22,12 +22,13 @@ use super::feature_completeness::{
     valid_feature_direction,
 };
 use super::{summary_notes, Counts, Scan};
+use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, SketchSpace,
 };
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn build_geometry_report(
@@ -42,74 +43,55 @@ pub(crate) fn build_geometry_report(
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
-    losses.push(LossNote {
-        code: LossKind::shared(LossTaxonomy::CarrierSummary),
-        severity: Severity::Info,
-        message: format!(
-            "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
+    losses.push(NxLossCode::CarrierAnalyticCensus.note(format!(
+        "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
              metres → millimetres), {} analytic surface carrier(s) ({} plane, {} cylinder, {} \
              cone, {} sphere, {} torus), and {} analytic curve carrier(s) ({} line, {} circle, {} \
              ellipse). All parameters are byte-exact at the document's millimetre scale.",
-            counts.points,
-            counts.surfaces(),
-            counts.planes,
-            counts.cylinders,
-            counts.cones,
-            counts.spheres,
-            counts.tori,
-            counts.curves(),
-            counts.lines,
-            counts.circles,
-            counts.ellipses,
-        ),
-        provenance: None,
-    });
+        counts.points,
+        counts.surfaces(),
+        counts.planes,
+        counts.cylinders,
+        counts.cones,
+        counts.spheres,
+        counts.tori,
+        counts.curves(),
+        counts.lines,
+        counts.circles,
+        counts.ellipses,
+    )));
 
     if tessellation_count != 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::CarrierSummary),
-            severity: Severity::Info,
-            message: format!(
-                "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
-            ),
-            provenance: None,
-        });
+        losses.push(NxLossCode::CarrierTessellationCensus.note(format!(
+            "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
+        )));
     }
 
     if !has_topology {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Blocking,
-            message: "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
+        losses.push(NxLossCode::TopologyGraphNotReconstructed.note(
+            "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
                       reconstructed because the surviving typed records did not form a complete \
                       connected ownership graph. Exact-key supported partition↔deltas replacements \
                       and deletions were applied before graph construction. Required unresolved \
                       records prevent their dependent incidence from being emitted; decoded geometry \
-                      then remains unattached."
-                .to_string(),
-            provenance: None,
-        });
+                      then remains unattached.",
+        ));
     }
 
     if counts.intersection_rejections.total() > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::ObjectRecordsUntransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{} surface-intersection record(s) without a complete validated CHART_s and \
+        losses.push(NxLossCode::IntersectionRecordsOpaque.note(format!(
+            "{} surface-intersection record(s) without a complete validated CHART_s and \
                  term-endpoint witness remain opaque constructions. Support-UV values govern \
                  optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
                  Parasolid stream is preserved verbatim as an unknown passthrough record so the \
                  unresolved source bytes remain available. Rejections: {} missing chart, {} missing \
                  start term, {} missing end term, {} endpoint mismatch.",
-                counts.intersection_rejections.total(),
-                counts.intersection_rejections.missing_chart,
-                counts.intersection_rejections.missing_start_term,
-                counts.intersection_rejections.missing_end_term,
-                counts.intersection_rejections.endpoint_mismatch,
-            ),
-            provenance: None,
-        });
+            counts.intersection_rejections.total(),
+            counts.intersection_rejections.missing_chart,
+            counts.intersection_rejections.missing_start_term,
+            counts.intersection_rejections.missing_end_term,
+            counts.intersection_rejections.endpoint_mismatch,
+        )));
     }
 
     if scan.count(StreamKind::Deltas) > 0 {
@@ -120,16 +102,9 @@ pub(crate) fn build_geometry_report(
             .map(|(family, count)| format!("{family} {count}"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-            severity: if unmatched_tombstones == 0 {
-                Severity::Info
-            } else {
-                Severity::Warning
-            },
-            message: if unmatched_tombstones == 0 {
-                format!(
-                    "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+        if unmatched_tombstones == 0 {
+            losses.push(NxLossCode::DeltasApplied.note(format!(
+                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
@@ -151,47 +126,36 @@ pub(crate) fn build_geometry_report(
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
-                    scan.count(StreamKind::Deltas)
-                )
-            } else {
-                format!(
-                    "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+                scan.count(StreamKind::Deltas)
+            )));
+        } else {
+            losses.push(NxLossCode::DeltasUnmatchedTombstones.note(format!(
+                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                     Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                    scan.count(StreamKind::Deltas)
-                )
-            },
-            provenance: None,
-        });
+                scan.count(StreamKind::Deltas)
+            )));
+        }
     }
 
     if has_unresolved_sub_bodies {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "This part is composed of {} sub-body partition(s); its decoded feature-history \
+        losses.push(NxLossCode::SubBodyCompositionUnresolved.note(format!(
+            "This part is composed of {} sub-body partition(s); its decoded feature-history \
                  Booleans do not resolve every intermediate body object to a partition image. \
                  Carriers from all sub-bodies are emitted without the unresolved composition that \
                  would remove interior/construction faces.",
-                scan.count(StreamKind::Partition)
-            ),
-            provenance: None,
-        });
+            scan.count(StreamKind::Partition)
+        )));
     }
 
     append_design_intent_losses(ir, &mut losses);
 
     if has_untransferred_attribute_fields {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
-            severity: Severity::Warning,
-            message: "A referenced Parasolid attribute value was not transferred because its \
-                      complete value relation did not resolve."
-                .to_string(),
-            provenance: None,
-        });
+        losses.push(NxLossCode::AttributeValueUnresolved.note(
+            "A referenced Parasolid attribute value was not transferred because its \
+                      complete value relation did not resolve.",
+        ));
     }
 
     DecodeReport {
@@ -240,15 +204,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if unresolved_suppression_count != 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "Suppression state remains unresolved for {unresolved_suppression_count} NX \
+        losses.push(NxLossCode::FeatureSuppressionUnresolved.note(format!(
+            "Suppression state remains unresolved for {unresolved_suppression_count} NX \
                  {suppression_scope}feature history operation(s)."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     let active_configuration_count = ir
@@ -280,29 +239,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if incomplete_configuration_count != 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "Activation, complete body membership, evaluated feature state, or evaluated \
+        losses.push(NxLossCode::ConfigurationStateUnresolved.note(format!(
+            "Activation, complete body membership, evaluated feature state, or evaluated \
                  parameter state remains unresolved for {incomplete_configuration_count} NX \
                  design configuration(s)."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     let incomplete_expression_count = incomplete_expression_parameters(ir).len();
     if incomplete_expression_count != 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "Neutral evaluation or dependency semantics remain incomplete for \
+        losses.push(NxLossCode::ExpressionParameterIncomplete.note(format!(
+            "Neutral evaluation or dependency semantics remain incomplete for \
                  {incomplete_expression_count} NX expression parameter(s)."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
@@ -320,15 +269,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .map(|(kind, count)| format!("{kind} ({count})"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "NX feature-history operation(s) remain native-only because their complete neutral \
+        losses.push(NxLossCode::FeatureNativeKindRetained.note(format!(
+            "NX feature-history operation(s) remain native-only because their complete neutral \
                  operation semantics are not decoded: {kinds}."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
@@ -353,15 +297,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .map(|(family, count)| format!("{family} ({count})"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(
+            NxLossCode::FeatureFamilyConstructionUnresolved.note(format!(
                 "NX feature family identities were transferred, but their neutral construction \
                  semantics remain unresolved: {families}."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
 
     let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
@@ -586,15 +527,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .map(|(family, count)| format!("{family} ({count})"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "NX typed feature operation output lineage is missing, duplicated, or does not \
+        losses.push(NxLossCode::FeatureOutputLineageIncomplete.note(format!(
+            "NX typed feature operation output lineage is missing, duplicated, or does not \
                  resolve to a transferred body: {families}."
-            ),
-            provenance: None,
-        });
+        )));
     }
     if !incomplete_feature_construction_families.is_empty() {
         let families = incomplete_feature_construction_families
@@ -602,15 +538,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .map(|(family, count)| format!("{family} ({count})"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "NX typed feature operations have incomplete neutral construction fields: \
+        losses.push(NxLossCode::FeatureConstructionIncomplete.note(format!(
+            "NX typed feature operations have incomplete neutral construction fields: \
                  {families}."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     let sketch_feature_count = ir
@@ -633,16 +564,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if unresolved_sketch_feature_count != 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
+        losses.push(NxLossCode::SketchGraphUnresolved.note(format!(
+            "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
                  {unresolved_sketch_feature_count} have no neutral sketch graph because complete \
                  sketch placement and entity semantics are unresolved."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     let active_sketch_ids = ir
@@ -686,15 +612,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Warning,
-            message: format!(
-                "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \
+        losses.push(NxLossCode::SketchNativeSemantics.note(format!(
+            "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \
                  geometry record(s) and {native_sketch_constraint_count} sketch constraint \
                  record(s)."
-            ),
-            provenance: None,
-        });
+        )));
     }
 }

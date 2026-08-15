@@ -10,6 +10,8 @@ Each item has these parts:
 - **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
 - **Note** — a defect in the item or in the specification.
 
+When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
+
 Each item has an identifier. Use the identifier in commit messages and in code comments.
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
@@ -36,7 +38,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What value grammar and semantics does each plug-in-defined dictionary entry select?
 
-**Known.** `rhino_3dm.md` §6.3 "| dictionary                |" through `rhino_3dm.md` §6.3 "| dictionary                |" define the dictionary chunk typecodes. `rhino_3dm.md` §7.2 "A class userdata chunk begins with a packed version byte." through `rhino_3dm.md` §7.2 "The header has the checksum selected by its typecode." define the containing userdata boundary and identity.
+**Known.** `rhino_3dm.md` §6.3 "| dictionary |" through `rhino_3dm.md` §6.3 "| dictionary end |" define the dictionary chunk typecodes. `rhino_3dm.md` §7.2 "A class userdata chunk begins with a packed version byte." through `rhino_3dm.md` §7.2 "The header has the checksum selected by its typecode." define the containing userdata boundary and identity.
 
 **Need.** We must know the value grammar and semantics to decode a plug-in dictionary without treating its entries as one opaque record.
 
@@ -238,11 +240,9 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1317` retains every layer record and emits only a duplicate-index warning. `crates/cadmpeg-codec-rhino/src/objects.rs:1377-1390` builds a map with `layers.entry(layer.index).or_insert(layer)`, so the first record supplies object identity, color, visibility, and name.
 
-**Failure story.** If two layer records share an index and the later record carries the authoritative name or appearance, objects that reference the index resolve to the first record. Reordering the two records changes object identity without changing the reference. No ambiguity loss is emitted.
+**Note.** Duplicate indexes may be malformed, but the scanner already accepts and reports them; the resolver has no source-backed owner rule.
 
-**Note.** Confidence: high. Duplicate indexes may be malformed, but the scanner already accepts and reports them; the resolver has no source-backed owner rule.
-
-**Need.** We need the openNURBS duplicate-index behavior or an independent corpus case, then a deterministic owner rule with an ambiguity loss when the source does not identify one.
+**Need.** We need the openNURBS duplicate-index behavior or an independent corpus case, then a deterministic owner rule with an ambiguity loss when the source does not identify one. If two layer records share an index and the later record carries the authoritative name or appearance, objects that reference the index resolve to the first record. Reordering the two records changes object identity without changing the reference. No ambiguity loss is emitted.
 
 ### SW-02. Duplicate singleton metadata selection
 
@@ -250,11 +250,9 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1303` assigns `writer_version` on each matching property in table iteration order. `settings.rs:1357-1432` assigns `units`, current layer, current material, current color, font, and dimstyle each time a matching setting is read. There is no duplicate check or ambiguity loss for these fields.
 
-**Failure story.** If two unit records disagree, the later record silently changes coordinate scaling. If two writer-version records disagree, the later record changes version gates. Reordering the records changes the decoded document without a stated ownership rule.
+**Note.** The normal table model treats these fields as singletons, but the decoder has no source-backed response to a duplicate and no diagnostic that identifies which value won.
 
-**Note.** Confidence: medium-high. The normal table model treats these fields as singletons, but the decoder has no source-backed response to a duplicate and no diagnostic that identifies which value won.
-
-**Need.** We need independent reader behavior for duplicate singleton records, or a settled reject/first/last policy with a typed ambiguity diagnostic.
+**Need.** We need independent reader behavior for duplicate singleton records, or a settled reject/first/last policy with a typed ambiguity diagnostic. If two unit records disagree, the later record silently changes coordinate scaling. If two writer-version records disagree, the later record changes version gates. Reordering the records changes the decoded document without a stated ownership rule.
 
 ### SW-03. Instance transform ownership inferred from topology
 
@@ -262,11 +260,9 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Known.** `crates/cadmpeg-codec-rhino/src/decode.rs:1940-1973` decodes one definition member and then calls `transform_new_entities`. At `decode.rs:1982-2107`, points referenced by new vertices, curves referenced by new edges, and surfaces referenced by new faces are classified as body-owned; other points, curves, and surfaces are transformed directly. Meshes and SubD entities are always transformed, and procedural curves and surfaces are omitted.
 
-**Failure story.** If one member emits a body plus an auxiliary curve or surface whose source ownership is not represented by topology, the topology heuristic decides whether it moves. A shared or cache-like entity can therefore be transformed as free geometry, left in body-local coordinates, or omitted based on the emitted IR shape rather than the source member identity. No ownership ambiguity loss is emitted.
+**Note.** The heuristic prevents double transformation for ordinary Brep topology, but no source field or independent witness establishes that topology attachment is the format's ownership rule for every member class.
 
-**Note.** Confidence: medium. The heuristic prevents double transformation for ordinary Brep topology, but no source field or independent witness establishes that topology attachment is the format's ownership rule for every member class.
-
-**Need.** We need an instance fixture with mixed body and free member entities, plus an independent reader result or source membership rule that identifies which entities move and which stay local.
+**Need.** We need an instance fixture with mixed body and free member entities, plus an independent reader result or source membership rule that identifies which entities move and which stay local. If one member emits a body plus an auxiliary curve or surface whose source ownership is not represented by topology, the topology heuristic decides whether it moves. A shared or cache-like entity can therefore be transformed as free geometry, left in body-local coordinates, or omitted based on the emitted IR shape rather than the source member identity. No ownership ambiguity loss is emitted.
 
 ### SW-04. V1 vertex deduplication by first nearby point
 
@@ -274,11 +270,9 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Known.** `crates/cadmpeg-codec-rhino/src/legacy.rs:578-612` builds IR vertices from endpoint coordinates and reuses the first existing vertex for which `same_point` succeeds. The comparison uses the maximum of the source tolerances and a fixed floor; it does not use a source vertex identifier.
 
-**Failure story.** If two distinct V1 vertex records lie within the selected tolerance but are topologically separate, the first endpoint inserted absorbs the second. Changing trim or face order changes the chosen IR vertex and can collapse a narrow edge or face.
+**Note.** The code is an explicit first-match plausibility choice. The broad V1 grammar item LG-01 did not record this topology-selection rule.
 
-**Note.** Confidence: high. The code is an explicit first-match plausibility choice. The broad V1 grammar item LG-01 did not record this topology-selection rule.
-
-**Need.** We need a source-backed V1 vertex identity rule and a fixture with distinct nearby vertices to test whether tolerance permits merging or only validates coordinates.
+**Need.** We need a source-backed V1 vertex identity rule and a fixture with distinct nearby vertices to test whether tolerance permits merging or only validates coordinates. If two distinct V1 vertex records lie within the selected tolerance but are topologically separate, the first endpoint inserted absorbs the second. Changing trim or face order changes the chosen IR vertex and can collapse a narrow edge or face.
 
 ### SW-05. V1 seam-group curve selection
 
@@ -286,11 +280,9 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Known.** `crates/cadmpeg-codec-rhino/src/legacy.rs:527-539` unions seam and shell mates, then stores only the first explicit curve for each union root with `or_insert_with`. It uses that curve's endpoints for the shared edge.
 
-**Failure story.** If two trims in one union group contain different model-space curve copies, source order selects the edge geometry and endpoints. A stale or transformed second copy is silently discarded, with no consistency check or loss.
+**Note.** Seam and mate records may be required to carry equivalent curves, but the current code does not verify that rule and the V1 ledger did not record the first-wins selection.
 
-**Note.** Confidence: medium. Seam and mate records may be required to carry equivalent curves, but the current code does not verify that rule and the V1 ledger did not record the first-wins selection.
-
-**Need.** We need the V1 seam/mate ownership rule and an independent pair of records with different curve copies to establish whether one is authoritative or disagreement is malformed.
+**Need.** We need the V1 seam/mate ownership rule and an independent pair of records with different curve copies to establish whether one is authoritative or disagreement is malformed. If two trims in one union group contain different model-space curve copies, source order selects the edge geometry and endpoints. A stale or transformed second copy is silently discarded, with no consistency check or loss.
 
 ### SW-06. First-match selection of built-in userdata extensions
 
@@ -298,8 +290,6 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Known.** `crates/cadmpeg-codec-rhino/src/dimensions.rs:945-985` selects the first matching angular or dimension extension with `.find`. `crates/cadmpeg-codec-rhino/src/hatch.rs:255-264` selects the first matching V5 hatch extension. Later matching records are ignored without a warning or loss.
 
-**Failure story.** If a dimension or hatch contains two extension records with different offsets, arrow data, or base-point data, changing userdata order changes the decoded presentation while the discarded record leaves no trace.
+**Note.** The extensions may be singleton by source convention, but no uniqueness rule is documented and the implementation does not detect duplicates.
 
-**Note.** Confidence: medium. The extensions may be singleton by source convention, but no uniqueness rule is documented and the implementation does not detect duplicates.
-
-**Need.** We need the source uniqueness or precedence rule for these built-in userdata classes, plus an ambiguity loss when a file supplies more than one conflicting extension.
+**Need.** We need the source uniqueness or precedence rule for these built-in userdata classes, plus an ambiguity loss when a file supplies more than one conflicting extension. If a dimension or hatch contains two extension records with different offsets, arrow data, or base-point data, changing userdata order changes the decoded presentation while the discarded record leaves no trace.

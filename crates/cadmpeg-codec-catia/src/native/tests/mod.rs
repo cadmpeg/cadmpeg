@@ -8,6 +8,7 @@ mod constraint;
 mod design;
 mod entity;
 mod entity_suffix;
+mod entity_suffix_framing;
 mod formula_relation;
 mod inventory;
 mod load;

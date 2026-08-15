@@ -16,6 +16,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
+use cadmpeg_core::bytes::{find, find_from};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::{ContainerEntry, ContainerSummary};
 
@@ -313,10 +314,8 @@ fn parse_last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
 }
 
 fn tagged_ascii(data: &[u8], open: &[u8], close: &[u8]) -> Option<String> {
-    let start = data.windows(open.len()).position(|value| value == open)? + open.len();
-    let relative_end = data[start..]
-        .windows(close.len())
-        .position(|value| value == close)?;
+    let start = find(data, open)? + open.len();
+    let relative_end = find(&data[start..], close)?;
     let value = data.get(start..start + relative_end)?;
     value
         .is_ascii()
@@ -805,7 +804,7 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
     if data.len() < inner_hdr::LEN {
         return None;
     }
-    let inner = find_subslice(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
+    let inner = find_from(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
     let a = View::u32_be_at(data, inner.checked_add(inner_hdr::DIRECTORY_OFFSET_DELTA)?)? as usize;
     let b = View::u32_be_at(data, inner.checked_add(inner_hdr::DIRECTORY_LENGTH)?)?;
     let dir_offset = inner.checked_add(a)?;
@@ -1217,16 +1216,6 @@ fn unique_largest_descriptor<'a>(
         }
     }
     (equal_count == 1).then_some(selected).flatten()
-}
-
-fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if from >= haystack.len() || needle.is_empty() {
-        return None;
-    }
-    haystack[from..]
-        .windows(needle.len())
-        .position(|w| w == needle)
-        .map(|p| p + from)
 }
 
 /// Identify the storage variant from container-level evidence ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#1-variant-families)).

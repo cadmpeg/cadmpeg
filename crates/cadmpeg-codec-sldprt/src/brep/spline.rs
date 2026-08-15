@@ -3,7 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
+};
 use cadmpeg_ir::math::Point3;
 
 use cadmpeg_core::decode::View;
@@ -704,8 +706,7 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if control.len() != expected_control_values {
             continue;
         }
-        if !unique_knots.iter().all(|value| value.is_finite())
-            || !unique_knots.windows(2).all(|window| window[0] <= window[1])
+        if !unique_knots.iter().all(|value| value.is_finite()) || !knots_nondecreasing(unique_knots)
         {
             continue;
         }
@@ -908,8 +909,8 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         }
         if !u_unique.iter().all(|value| value.is_finite())
             || !v_unique.iter().all(|value| value.is_finite())
-            || !u_unique.windows(2).all(|window| window[0] <= window[1])
-            || !v_unique.windows(2).all(|window| window[0] <= window[1])
+            || !knots_nondecreasing(&u_unique)
+            || !knots_nondecreasing(&v_unique)
         {
             continue;
         }

@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex, VertexUse,
 };
@@ -28,9 +28,11 @@ use crate::assemble::{
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
+use crate::loss::CatiaLossCode;
 use crate::solve::UnionFind;
 
 const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
+const EPS_AXIS_ALIGN: f64 = 1e-8;
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
@@ -163,20 +165,11 @@ pub(crate) fn try_decode_e5(
         } else {
             "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
         };
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Warning,
-            message: message.to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::TopologyE5GaugeSubstituted.note(message)]
     } else {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Blocking,
-            message: "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::TopologyE5GraphUnclosed.note(
+            "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
+        )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
@@ -502,7 +495,8 @@ pub(crate) fn solve_e5_plane_frame(
         if !candidates
             .iter()
             .any(|(existing_normal, existing_u): &(Vector3, Vector3)| {
-                existing_normal.dot(normal) > 1.0 - 1e-8 && existing_u.dot(u_axis) > 1.0 - 1e-8
+                existing_normal.dot(normal) > 1.0 - EPS_AXIS_ALIGN
+                    && existing_u.dot(u_axis) > 1.0 - EPS_AXIS_ALIGN
             })
         {
             candidates.push((normal, u_axis));
@@ -521,7 +515,8 @@ pub(crate) fn solve_e5_plane_frame(
         };
         if !canonical.iter().any(
             |(existing_normal, existing_u, _): &(Vector3, Vector3, [f64; 2])| {
-                existing_normal.dot(normal) > 1.0 - 1e-8 && existing_u.dot(u_axis) > 1.0 - 1e-8
+                existing_normal.dot(normal) > 1.0 - EPS_AXIS_ALIGN
+                    && existing_u.dot(u_axis) > 1.0 - EPS_AXIS_ALIGN
             },
         ) {
             canonical.push((normal, u_axis, uv_scale));

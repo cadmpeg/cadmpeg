@@ -122,6 +122,15 @@ pub(crate) enum FramingError {
     MissingEof,
 }
 
+impl FramingError {
+    pub(crate) fn structural(offset: usize, message: impl Into<String>) -> Self {
+        Self::Structural {
+            offset,
+            message: message.into(),
+        }
+    }
+}
+
 impl fmt::Display for FramingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

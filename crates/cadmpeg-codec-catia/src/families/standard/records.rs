@@ -9,6 +9,7 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::assemble::unit_vector;
 use crate::layout::analytic_surface_cone as analytic_cone;
 use crate::layout::analytic_surface_cylinder as analytic_cylinder;
 use crate::layout::analytic_surface_plane as analytic_plane;
@@ -820,18 +821,6 @@ fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
     let az2 = (1.0 - (ax * ax + ay * ay) as f64).max(0.0);
     let az = az2.sqrt().copysign(signed as f64);
     unit_vector(Vector3::new(ax as f64, ay as f64, az))
-}
-
-fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.x.hypot(vector.y).hypot(vector.z);
-    if !norm.is_finite() || norm == 0.0 {
-        return None;
-    }
-    let unit = vector.scale(1.0 / norm);
-    [unit.x, unit.y, unit.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(unit)
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {

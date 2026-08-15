@@ -64,7 +64,7 @@ pub(crate) struct RealPrecision {
 }
 
 fn malformed(message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(format!("IGES Global: {}", message.into()))
+    crate::error::malformed(format!("IGES Global: {}", message.into()))
 }
 
 fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize)>, CodecError> {

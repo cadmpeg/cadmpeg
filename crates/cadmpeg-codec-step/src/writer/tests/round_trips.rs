@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -813,7 +814,7 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
     let report = write_step(&ir, &mut output, &StepWriteOptions::default())
         .expect("write mixed general body");
     assert!(!report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::WireRegionNoConnectedEdgeSet.kind()
             && loss.message.contains("wire region")
     }));
     let text = String::from_utf8(output).expect("mixed general STEP is UTF-8");
@@ -837,7 +838,7 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     let report = write_step(&source, &mut bytes, &StepWriteOptions::default())
         .expect("writer should recover a continuous loop order");
     assert!(!report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("continuous vertex-to-vertex")
     }));

@@ -17,11 +17,11 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
 use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -660,7 +660,7 @@ fn decode_does_not_use_a_sibling_brep_for_a_brep_less_design_asset() {
         .unwrap();
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == LossCode::shared(LossTaxonomy::MissingGeometryStream)
+        loss.code == F3dLossCode::MissingGeometryStream.kind()
             && loss.message == "no ASM BREP stream (.smb/.smbh) was found in the container"
     }));
 }

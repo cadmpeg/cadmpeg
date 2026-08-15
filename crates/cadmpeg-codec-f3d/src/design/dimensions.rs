@@ -2815,40 +2815,19 @@ fn spatial_parallel_line_distance(
     else {
         return None;
     };
-    let first_direction = Vector3::new(
-        first_end.x - first_start.x,
-        first_end.y - first_start.y,
-        first_end.z - first_start.z,
-    );
-    let second_direction = Vector3::new(
-        second_end.x - second_start.x,
-        second_end.y - second_start.y,
-        second_end.z - second_start.z,
-    );
+    let first_direction = first_end.vector_from(*first_start);
+    let second_direction = second_end.vector_from(*second_start);
     let first_length = first_direction.norm();
     let second_length = second_direction.norm();
-    let cross = Vector3::new(
-        first_direction.y * second_direction.z - first_direction.z * second_direction.y,
-        first_direction.z * second_direction.x - first_direction.x * second_direction.z,
-        first_direction.x * second_direction.y - first_direction.y * second_direction.x,
-    );
+    let cross = first_direction.cross(second_direction);
     if first_length <= 1.0e-12
         || second_length <= 1.0e-12
         || cross.norm() > 1.0e-9 * first_length * second_length
     {
         return None;
     }
-    let offset = Vector3::new(
-        second_start.x - first_start.x,
-        second_start.y - first_start.y,
-        second_start.z - first_start.z,
-    );
-    let area = Vector3::new(
-        offset.y * first_direction.z - offset.z * first_direction.y,
-        offset.z * first_direction.x - offset.x * first_direction.z,
-        offset.x * first_direction.y - offset.y * first_direction.x,
-    )
-    .norm();
+    let offset = second_start.vector_from(*first_start);
+    let area = offset.cross(first_direction).norm();
     Some(area / first_length)
 }
 
@@ -2873,15 +2852,9 @@ fn spatial_parallel_line_span_distance(
     else {
         unreachable!("parallel line distance requires line geometry")
     };
-    let direction = Vector3::new(
-        first_end.x - first_start.x,
-        first_end.y - first_start.y,
-        first_end.z - first_start.z,
-    );
+    let direction = first_end.vector_from(*first_start);
     let length = direction.norm();
-    let project = |point: Point3| {
-        (point.x * direction.x + point.y * direction.y + point.z * direction.z) / length
-    };
+    let project = |point: Point3| Vector3::new(point.x, point.y, point.z).dot(direction) / length;
     let first_interval = [project(*first_start), project(*first_end)];
     let second_interval = [project(*second_start), project(*second_end)];
     let first_min = first_interval[0].min(first_interval[1]);

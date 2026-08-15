@@ -844,8 +844,8 @@
     "losses": [
       {
         "code": {
-          "namespace": "shared",
-          "code": "carrier_summary",
+          "namespace": "f3d",
+          "code": "geometry.nurbs-surface-carrier",
           "kind": "carrier_summary"
         },
         "severity": "info",
@@ -853,8 +853,8 @@
       },
       {
         "code": {
-          "namespace": "shared",
-          "code": "material_not_transferred",
+          "namespace": "f3d",
+          "code": "material.not-transferred",
           "kind": "material_not_transferred"
         },
         "severity": "warning",

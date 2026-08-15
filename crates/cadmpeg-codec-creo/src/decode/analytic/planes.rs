@@ -18,6 +18,8 @@ use super::equations::{
 };
 use super::vertices::model_points_agree;
 
+const EPS_ON_CARRIER: f64 = 1e-7;
+const EPS_POINT_UNIQUE: f64 = 1e-7;
 const EPS_AGREE: f64 = 1e-9;
 const EPS_ORTHO: f64 = 1e-10;
 const EPS_NEAR_ZERO: f64 = 1e-12;
@@ -26,7 +28,7 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
         CarrierEquation::Plane(plane) => {
             let residual = dot(plane.normal, point) - dot(plane.normal, plane.origin);
-            residual.abs() <= 1e-7
+            residual.abs() <= EPS_ON_CARRIER
         }
         CarrierEquation::Cylinder(cylinder) => {
             let Some(axis) = normalized(cylinder.axis) else {
@@ -35,7 +37,8 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             let relative = std::array::from_fn(|index| point[index] - cylinder.origin[index]);
             let axial = dot(relative, axis);
             let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
-            (dot(radial, radial).sqrt() - cylinder.radius).abs() <= 1e-7 * cylinder.radius.max(1.0)
+            (dot(radial, radial).sqrt() - cylinder.radius).abs()
+                <= EPS_ON_CARRIER * cylinder.radius.max(1.0)
         }
         CarrierEquation::Cone(cone) => {
             let (Some(axis), Some(x_axis)) =
@@ -52,11 +55,13 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             let radius = cone.radius + axial * cone.half_angle.tan();
             let radial_x = dot(relative, x_axis);
             let radial_y = dot(relative, y_axis) / cone.ratio;
-            (radial_x.hypot(radial_y) - radius.abs()).abs() <= 1e-7 * radius.abs().max(1.0)
+            (radial_x.hypot(radial_y) - radius.abs()).abs()
+                <= EPS_ON_CARRIER * radius.abs().max(1.0)
         }
         CarrierEquation::Sphere(sphere) => {
             let relative = std::array::from_fn(|index| point[index] - sphere.center[index]);
-            (dot(relative, relative).sqrt() - sphere.radius).abs() <= 1e-7 * sphere.radius.max(1.0)
+            (dot(relative, relative).sqrt() - sphere.radius).abs()
+                <= EPS_ON_CARRIER * sphere.radius.max(1.0)
         }
         CarrierEquation::Torus(torus) => {
             let Some(axis) = normalized(torus.axis) else {
@@ -67,7 +72,7 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
             let tube_distance = (dot(radial, radial).sqrt() - torus.major_radius).hypot(axial);
             (tube_distance - torus.minor_radius).abs()
-                <= 1e-7 * torus.minor_radius.max(torus.major_radius).max(1.0)
+                <= EPS_ON_CARRIER * torus.minor_radius.max(torus.major_radius).max(1.0)
         }
     }
 }
@@ -263,7 +268,7 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
             known
                 .iter()
                 .zip(candidate)
-                .all(|(left, right)| (left - right).abs() <= 1e-7)
+                .all(|(left, right)| (left - right).abs() <= EPS_POINT_UNIQUE)
         }) {
             unique.push(candidate);
         }

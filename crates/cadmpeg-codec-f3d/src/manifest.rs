@@ -107,11 +107,13 @@ impl<'a> Cursor<'a> {
 
     fn utf16(&mut self, field: &str) -> Result<String, CodecError> {
         let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
-        let units = self
-            .view
-            .read_counted(count as u64, 2, View::u16_le)
-            .ok_or_else(|| truncated(field))?;
-        String::from_utf16(&units).map_err(|_| malformed(field, "contains invalid UTF-16LE"))
+        let needed = count.checked_mul(2).ok_or_else(|| truncated(field))?;
+        if self.view.remaining() < needed {
+            return Err(truncated(field));
+        }
+        self.view
+            .utf16_le(count)
+            .ok_or_else(|| malformed(field, "contains invalid UTF-16LE"))
     }
 
     fn expect_utf16(&mut self, field: &str, expected: &str) -> Result<(), CodecError> {
@@ -625,7 +627,7 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
 }
 
 fn malformed(field: &str, message: impl std::fmt::Display) -> CodecError {
-    CodecError::Malformed(format!("F3D {field}: {message}"))
+    crate::error::malformed(format!("F3D {field}: {message}"))
 }
 
 fn truncated(field: &str) -> CodecError {

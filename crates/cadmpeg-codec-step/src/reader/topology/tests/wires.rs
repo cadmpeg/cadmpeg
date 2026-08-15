@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -60,13 +61,13 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
         .iter()
         .all(|edge| edge.curve.is_none()));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::EdgeNoSurfaceOrCurveForPcurve.kind()
             && loss
                 .message
                 .contains("edge #19 has no decoded surface or curve carrier")
     }));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::DecodeDiagnostic)
+        loss.code == StepLossCode::DecodeWarning.kind()
             && loss
                 .message
                 .contains("STEP edge #19 has no 3D curve carrier")
@@ -225,7 +226,7 @@ fn seam_edge_does_not_guess_an_unlisted_pcurve_reference() {
             .all(|use_| use_.pcurve.as_str() != "step:data:pcurve#75")
     }));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
@@ -259,7 +260,7 @@ fn seam_edge_rejects_an_explicit_pcurve_outside_its_curve() {
             .all(|use_| use_.pcurve.as_str() != "step:data:pcurve#75")
     }));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind()
             && loss.message.contains("SEAM_EDGE #22")
             && loss.message.contains("belongs to its edge curve")
     }));

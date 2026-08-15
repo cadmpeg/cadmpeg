@@ -28,12 +28,6 @@ pub(crate) fn zlib(data: &[u8]) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 
-pub(crate) fn crc32(data: &[u8]) -> u32 {
-    let mut h = crc32fast::Hasher::new();
-    h.update(data);
-    h.finalize()
-}
-
 /// Assemble one CRC-validated block frame carrying `payload`, named `section`.
 pub(crate) fn make_block(type_id: u32, section: &str, payload: &[u8]) -> Vec<u8> {
     let comp = raw_deflate(payload);
@@ -41,7 +35,7 @@ pub(crate) fn make_block(type_id: u32, section: &str, payload: &[u8]) -> Vec<u8>
     let mut b = Vec::new();
     b.extend_from_slice(&MARKER);
     b.extend_from_slice(&type_id.to_le_bytes());
-    b.extend_from_slice(&crc32(payload).to_le_bytes());
+    b.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
     b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
     b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());

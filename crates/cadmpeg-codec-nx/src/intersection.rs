@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
@@ -883,7 +884,7 @@ pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
             insert_unique(&mut out, &mut duplicates, term.xmt, term);
         }
     }
-    for label in find_bytes(stream, b"term_use") {
+    for label in find_iter(stream, b"term_use") {
         let tail = label + b"term_use".len();
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
@@ -958,7 +959,7 @@ pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
             insert_unique(&mut out, &mut duplicates, record.xmt, record);
         }
     }
-    for label in find_bytes(stream, b"values") {
+    for label in find_iter(stream, b"values") {
         let tail = label + b"values".len();
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             let pos = tail + INLINE_UV_TAIL.len();
@@ -1042,18 +1043,8 @@ fn uv_at(
     ))
 }
 
-fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {
-    stream
-        .windows(2)
-        .enumerate()
-        .filter_map(move |(offset, bytes)| (bytes == tag).then_some(offset))
-}
-
-fn find_bytes<'a>(stream: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item = usize> + 'a {
-    stream
-        .windows(needle.len())
-        .enumerate()
-        .filter_map(move |(offset, bytes)| (bytes == needle).then_some(offset))
+fn find_tags(stream: &[u8], tag: [u8; 2]) -> Vec<usize> {
+    find_iter(stream, &tag).collect()
 }
 
 fn point_m(stream: &[u8], at: usize) -> Option<Point3> {

@@ -119,12 +119,9 @@ impl<'a> Cursor<'a> {
             CodecError::Malformed(format!("Inventor PmDc {field} length overflows"))
         })?;
         ctx.charge_retained(len as u64, "retain Inventor PmDc string", None)?;
-        let mut value = Vec::with_capacity(units);
-        for _ in 0..units {
-            value.push(self.source.req_u16_le()?);
-        }
-        String::from_utf16(&value)
-            .map_err(|_| CodecError::Malformed(format!("Inventor PmDc {field} is not UTF-16")))
+        self.source
+            .utf16_le(units)
+            .ok_or_else(|| CodecError::Malformed(format!("Inventor PmDc {field} is not UTF-16")))
     }
 
     pub(crate) fn reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {

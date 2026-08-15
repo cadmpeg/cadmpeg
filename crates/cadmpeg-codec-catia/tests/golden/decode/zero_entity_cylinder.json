@@ -498,9 +498,9 @@
     "losses": [
       {
         "code": {
-          "code": "topology_not_transferred",
+          "code": "topology.zero-entity-not-transferred",
           "kind": "topology_not_transferred",
-          "namespace": "shared"
+          "namespace": "catia"
         },
         "message": "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred.",
         "severity": "blocking"

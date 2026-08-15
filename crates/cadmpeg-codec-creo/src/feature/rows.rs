@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::bytes::{contains, find_from, find_in};
 use cadmpeg_core::decode::bounded_len;
 
 use crate::psb;
@@ -402,12 +403,9 @@ pub fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
     for row in rows {
         let mut hits = Vec::new();
         for &label in CHOICE_LABELS {
+            let needle = [label, b"\0"].concat();
             let mut from = 0;
-            while let Some(relative) = row.body.get(from..).and_then(|tail| {
-                tail.windows(label.len() + 1)
-                    .position(|window| window == [label, b"\0"].concat())
-            }) {
-                let label_offset = from + relative;
+            while let Some(label_offset) = find_from(&row.body, &needle, from) {
                 let (header_offset, type_byte) = if label_offset >= 2
                     && row.body[label_offset - 2] == psb::token::NAMED_RECORD
                 {
@@ -579,11 +577,7 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
         for &(label, kind) in FIELDS {
             let needle = [label, b"\0"].concat();
             let mut from = 0;
-            while let Some(relative) = row.body.get(from..).and_then(|tail| {
-                tail.windows(needle.len())
-                    .position(|window| window == needle)
-            }) {
-                let offset = from + relative;
+            while let Some(offset) = find_from(&row.body, &needle, from) {
                 from = offset + needle.len();
                 let Some((count, entity_class, entry_ids)) =
                     geometry_table_at(&row.body, offset + needle.len(), kind)
@@ -741,11 +735,7 @@ pub fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
         for &(label, kind) in FIELDS {
             let needle = [label, b"\0"].concat();
             let mut from = 0;
-            while let Some(relative) = row.body.get(from..).and_then(|tail| {
-                tail.windows(needle.len())
-                    .position(|window| window == needle)
-            }) {
-                let label_offset = from + relative;
+            while let Some(label_offset) = find_from(&row.body, &needle, from) {
                 from = label_offset + needle.len();
                 if label_offset < 2
                     || row.body[label_offset - 2] != psb::token::NAMED_RECORD
@@ -1041,13 +1031,10 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
             .or_default();
         let (pair, source_offset) = if let Some(anchor) = anchor {
             let run_start = anchor + ANCHOR_LEN;
-            let Some(term_relative) = row.body[run_start..]
-                .windows(TERMINATOR.len())
-                .position(|window| window == TERMINATOR)
-            else {
+            let Some(term) = find_from(&row.body, TERMINATOR, run_start) else {
                 continue;
             };
-            let run = &row.body[run_start..run_start + term_relative];
+            let run = &row.body[run_start..term];
             let Some(pair) = replay_affected_pair(run, *state) else {
                 continue;
             };
@@ -1220,18 +1207,12 @@ pub fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDir
         for &(label, lane) in FIELDS {
             let needle = [label, b"\0"].concat();
             let mut from = 0;
-            while let Some(relative) = row.body.get(from..).and_then(|tail| {
-                tail.windows(needle.len())
-                    .position(|window| window == needle)
-            }) {
-                let label_offset = from + relative;
+            while let Some(label_offset) = find_from(&row.body, &needle, from) {
                 from = label_offset + needle.len();
                 if label_offset < 2
                     || row.body[label_offset - 2] != psb::token::NAMED_RECORD
                     || row.body[label_offset - 1] != 1
-                    || !row.body[..label_offset - 2]
-                        .windows(b"lo_restore\0".len())
-                        .any(|window| window == b"lo_restore\0")
+                    || !contains(&row.body[..label_offset - 2], b"lo_restore\0")
                 {
                     continue;
                 }
@@ -1272,11 +1253,7 @@ pub fn loop_history_entries(
             continue;
         };
         let table_offset = table.offset - row.body_offset;
-        let Some(label_offset) = row.body[table_offset..]
-            .windows(LABEL.len())
-            .position(|window| window == LABEL)
-            .map(|offset| table_offset + offset)
-        else {
+        let Some(label_offset) = find_from(&row.body, LABEL, table_offset) else {
             continue;
         };
         let label_stream_offset = row.body_offset + label_offset;
@@ -1428,11 +1405,13 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
         if row.body.get(schema_end) != Some(&2) {
             continue;
         }
-        let Some(choice_start) = row.body[schema_end + 1..row.body.len().min(64)]
-            .windows(PARAMETER_CHOICE_PREFIX.len())
-            .position(|window| window == PARAMETER_CHOICE_PREFIX)
-            .map(|relative| schema_end + 1 + relative + PARAMETER_CHOICE_PREFIX.len())
-        else {
+        let Some(choice_start) = find_in(
+            &row.body,
+            PARAMETER_CHOICE_PREFIX,
+            schema_end + 1,
+            row.body.len().min(64),
+        )
+        .map(|at| at + PARAMETER_CHOICE_PREFIX.len()) else {
             continue;
         };
         if row

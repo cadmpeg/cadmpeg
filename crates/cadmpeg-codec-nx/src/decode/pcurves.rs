@@ -1842,7 +1842,7 @@ pub(crate) fn blend_boundary_spine_geometry_matches(
         return false;
     };
     let radial = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
-    let distance = (radial.x * radial.x + radial.y * radial.y + radial.z * radial.z).sqrt();
+    let distance = radial.norm();
     if !distance.is_finite() || (distance - radius).abs() > tolerance {
         return false;
     }
@@ -1853,7 +1853,7 @@ pub(crate) fn blend_boundary_spine_geometry_matches(
         return false;
     };
     let angular_tolerance = (tolerance / radius).max(1.0e-8);
-    (radial.x * tangent.x + radial.y * tangent.y + radial.z * tangent.z).abs() <= angular_tolerance
+    radial.dot(tangent).abs() <= angular_tolerance
 }
 
 #[allow(clippy::too_many_arguments)]

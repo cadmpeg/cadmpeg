@@ -99,6 +99,8 @@ pub enum SldprtLossCode {
     MaterialMetadataNotTransferred,
     /// No Parasolid partition/deltas stream was located in the container.
     ContainerNoParasolidStream,
+    /// Preserved source image required for a byte-exact write was unavailable.
+    SourcePreservedImageUnavailable,
 }
 
 impl SldprtLossCode {
@@ -143,6 +145,7 @@ impl SldprtLossCode {
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
+        Self::SourcePreservedImageUnavailable,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -188,6 +191,7 @@ impl SldprtLossCode {
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
+            Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
         }
     }
 
@@ -195,9 +199,9 @@ impl SldprtLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::GeometryParasolidNotTransferred | Self::TopologyGraphNotTransferred => {
-                Severity::Blocking
-            }
+            Self::GeometryParasolidNotTransferred
+            | Self::TopologyGraphNotTransferred
+            | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream => Severity::Error,
             _ => Severity::Warning,
         }
@@ -206,6 +210,7 @@ impl SldprtLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::ContainerNoParasolidStream => LossTaxonomy::MissingGeometryStream,
+            Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::TopologyBodyHierarchyDerived
             | Self::TopologyBodyAssignmentAmbiguous
             | Self::TopologyFaceOwnerAmbiguous => LossTaxonomy::TopologyGaugeSubstituted,
@@ -305,6 +310,7 @@ mod tests {
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
+                "source.preserved-image-unavailable",
             ]
         );
     }

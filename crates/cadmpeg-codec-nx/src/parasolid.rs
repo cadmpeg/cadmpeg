@@ -9,9 +9,10 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_container::compression::inflate_zlib_member;
+use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
-use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
@@ -696,9 +697,6 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
 /// real stream; indexed wrappers admit any complete member length.
 const MIN_INFLATED: usize = 64;
 
-/// Chunk size for streaming inflated output through the expander.
-const INFLATE_CHUNK: usize = 8192;
-
 /// Locates, inflates, and classifies zlib streams in `/Root/UG_PART/UG_PART`.
 pub fn extract_streams<'a>(
     ctx: &DecodeContext<'a>,
@@ -798,47 +796,18 @@ fn inflate_stream<'a>(
     let Some(source) = part_view.child(offset, part_view.end()) else {
         return Ok(None);
     };
-    let input = source.window();
-    let mut decoder = Decompress::new(true);
-    let mut writer = ctx.begin_expand(source, ExpandSpec::Unknown)?;
-    let mut inflated = Vec::new();
-    let mut chunk = [0u8; INFLATE_CHUNK];
-    let mut source_offset = 0usize;
-    loop {
-        let before_in = decoder.total_in();
-        let before_out = decoder.total_out();
-        let Ok(status) =
-            decoder.decompress(&input[source_offset..], &mut chunk, FlushDecompress::None)
-        else {
-            return Ok(None);
-        };
-        let Ok(consumed) = usize::try_from(decoder.total_in() - before_in) else {
-            return Ok(None);
-        };
-        let Some(next_source_offset) = source_offset.checked_add(consumed) else {
-            return Ok(None);
-        };
-        source_offset = next_source_offset;
-        let Ok(produced) = usize::try_from(decoder.total_out() - before_out) else {
-            return Ok(None);
-        };
-        writer.write(&chunk[..produced])?;
-        inflated.extend_from_slice(&chunk[..produced]);
-        if status == Status::StreamEnd {
-            break;
-        }
-        if consumed == 0 && produced == 0 {
-            return Ok(None);
-        }
-    }
-    if inflated.len() < minimum_inflated {
+    let (view, consumed) = match inflate_zlib_member(ctx, source, ExpandSpec::Unknown) {
+        Ok(result) => result,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    if view.window().len() < minimum_inflated {
         return Ok(None);
     }
-    let Ok(consumed) = u64::try_from(source_offset) else {
+    let Ok(consumed) = u64::try_from(consumed) else {
         return Ok(None);
     };
-    writer.finalize()?;
-    Ok(Some((inflated, consumed)))
+    Ok(Some((view.window().to_vec(), consumed)))
 }
 
 /// A zlib header has compression method 8 and a 16-bit header divisible by
@@ -875,17 +844,6 @@ fn read_schema(window: &[u8]) -> Option<String> {
         end += 1;
     }
     Some(String::from_utf8_lossy(&window[pos..end]).into_owned())
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    find(haystack, needle).is_some()
-}
-
-fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return None;
-    }
-    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 #[cfg(test)]

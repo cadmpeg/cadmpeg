@@ -6,7 +6,9 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{View, WorkBudget};
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
-use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
 use cadmpeg_ir::math::Point2;
 
 use super::vecmath::{add, cross, scale};
@@ -1468,10 +1470,7 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
         Some(values)
     };
     let distinct_knots = read_values(&mut position)?;
-    distinct_knots
-        .windows(2)
-        .all(|pair| pair[0] < pair[1])
-        .then_some(())?;
+    knots_strictly_increasing(&distinct_knots).then_some(())?;
     let multiplicities = (0..knot_count)
         .map(|_| wire::compact_uint(payload, &mut position))
         .collect::<Option<Vec<_>>>()?;
@@ -3996,7 +3995,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         distinct_knots.push(value);
     }
     position = view.position();
-    if distinct_knots.windows(2).any(|pair| pair[0] >= pair[1]) {
+    if !knots_strictly_increasing(&distinct_knots) {
         return None;
     }
     let mut multiplicities = Vec::with_capacity(knot_count);

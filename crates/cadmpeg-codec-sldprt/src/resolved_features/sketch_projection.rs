@@ -1,7 +1,7 @@
 //! Sketch projection from B-rep geometry.
 
 use super::names::configuration;
-use super::sketch_edges::{cross, project_edge, project_endpoint_constraints, project_point};
+use super::sketch_edges::{project_edge, project_endpoint_constraints, project_point};
 use crate::container::ContainerScan;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -123,7 +123,7 @@ fn project_brep(
         let sketch_id = SketchId(format!(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
         ));
-        let v_axis = cross(*normal, *u_axis);
+        let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
         let mut used_vertices = HashSet::new();

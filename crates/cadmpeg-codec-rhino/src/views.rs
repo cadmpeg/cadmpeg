@@ -196,13 +196,6 @@ fn legacy_clipping_depth(value: f64) -> (f64, bool) {
     }
 }
 
-fn structural(offset: usize, message: impl Into<String>) -> FramingError {
-    FramingError::Structural {
-        offset,
-        message: message.into(),
-    }
-}
-
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
@@ -215,7 +208,7 @@ fn bool_i32(reader: &mut BoundedReader<'_>, label: &str) -> Result<bool, Framing
 fn scale3(value: &mut [f64; 3], scale: f64, offset: usize) -> Result<(), FramingError> {
     for coordinate in value {
         *coordinate = scaled_coordinate(*coordinate, scale)
-            .ok_or_else(|| structural(offset, "scaled view coordinate is invalid"))?;
+            .ok_or_else(|| FramingError::structural(offset, "scaled view coordinate is invalid"))?;
     }
     Ok(())
 }
@@ -223,7 +216,7 @@ fn scale3(value: &mut [f64; 3], scale: f64, offset: usize) -> Result<(), Framing
 fn scaled_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
     scale3(&mut value.origin.0, scale, offset)?;
     value.equation[3] = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| structural(offset, "scaled plane equation is invalid"))?;
+        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
     Ok(value)
 }
 
@@ -261,13 +254,17 @@ fn parse_trace_image(
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 || minor > 4 {
-        return Err(structural(body.start, "trace-image version is unsupported"));
+        return Err(FramingError::structural(
+            body.start,
+            "trace-image version is unsupported",
+        ));
     }
     let legacy_file_path = utf16(&mut reader)?;
     let width_mm = scaled_coordinate(reader.f64()?, scale)
-        .ok_or_else(|| structural(reader.position() - 8, "trace width is invalid"))?;
-    let height_mm = scaled_coordinate(reader.f64()?, scale)
-        .ok_or_else(|| structural(reader.position() - 8, "trace height is invalid"))?;
+        .ok_or_else(|| FramingError::structural(reader.position() - 8, "trace width is invalid"))?;
+    let height_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+        FramingError::structural(reader.position() - 8, "trace height is invalid")
+    })?;
     let plane = scaled_plane(plane(&mut reader)?, scale, body.start)?;
     let grayscale = minor < 1 || reader.bool()?;
     let hidden = minor >= 2 && reader.bool()?;
@@ -278,7 +275,7 @@ fn parse_trace_image(
         None
     };
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "trace image has trailing bytes",
         ));
@@ -306,7 +303,10 @@ fn parse_wallpaper(
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 || minor > 2 {
-        return Err(structural(body.start, "wallpaper version is unsupported"));
+        return Err(FramingError::structural(
+            body.start,
+            "wallpaper version is unsupported",
+        ));
     }
     let legacy_file_path = utf16(&mut reader)?;
     let grayscale = reader.bool()?;
@@ -317,7 +317,7 @@ fn parse_wallpaper(
         None
     };
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "wallpaper has trailing bytes",
         ));
@@ -338,22 +338,24 @@ fn parse_cplane(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 || packed & 0x0f > 1 {
-        return Err(structural(
+        return Err(FramingError::structural(
             body.start,
             "construction-plane version is unsupported",
         ));
     }
     let value = scaled_plane(plane(&mut reader)?, scale, body.start)?;
-    let grid_spacing_mm = scaled_coordinate(reader.f64()?, scale)
-        .ok_or_else(|| structural(reader.position() - 8, "grid spacing is invalid"))?;
-    let snap_spacing_mm = scaled_coordinate(reader.f64()?, scale)
-        .ok_or_else(|| structural(reader.position() - 8, "snap spacing is invalid"))?;
+    let grid_spacing_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+        FramingError::structural(reader.position() - 8, "grid spacing is invalid")
+    })?;
+    let snap_spacing_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+        FramingError::structural(reader.position() - 8, "snap spacing is invalid")
+    })?;
     let grid_line_count = reader.i32()?;
     let thick_line_frequency = reader.i32()?;
     let name = utf16(&mut reader)?;
     let depth_buffer = packed & 0x0f < 1 || reader.bool()?;
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "construction plane has trailing bytes",
         ));
@@ -382,7 +384,10 @@ fn parse_viewport(
     let packed = reader.u8()?;
     let version = [packed >> 4, packed & 0x0f];
     if version[0] != 1 || version[1] > 5 {
-        return Err(structural(body.start, "viewport version is unsupported"));
+        return Err(FramingError::structural(
+            body.start,
+            "viewport version is unsupported",
+        ));
     }
     let camera_valid = bool_i32(&mut reader, "camera-valid")?;
     let frustum_valid = bool_i32(&mut reader, "frustum-valid")?;
@@ -396,7 +401,9 @@ fn parse_viewport(
             .iter()
             .all(|coordinate| coordinate.is_finite())
             .then_some(value)
-            .ok_or_else(|| structural(reader.position() - 24, "viewport vector is invalid"))
+            .ok_or_else(|| {
+                FramingError::structural(reader.position() - 24, "viewport vector is invalid")
+            })
     };
     let camera_direction = vector(&mut reader)?;
     let camera_up = vector(&mut reader)?;
@@ -405,8 +412,9 @@ fn parse_viewport(
     let camera_z_axis = vector(&mut reader)?;
     let mut frustum = [0.0; 6];
     for coordinate in &mut frustum {
-        *coordinate = scaled_coordinate(reader.f64()?, scale)
-            .ok_or_else(|| structural(reader.position() - 8, "viewport frustum is invalid"))?;
+        *coordinate = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+            FramingError::structural(reader.position() - 8, "viewport frustum is invalid")
+        })?;
     }
     let mut port = [0; 6];
     for coordinate in &mut port {
@@ -433,7 +441,7 @@ fn parse_viewport(
             .iter()
             .all(|coordinate| coordinate.is_finite() && *coordinate > 0.0)
         {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position() - 24,
                 "viewport scale is invalid",
             ));
@@ -443,7 +451,10 @@ fn parse_viewport(
         None
     };
     if reader.remaining() != 0 {
-        return Err(structural(reader.position(), "viewport has trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "viewport has trailing bytes",
+        ));
     }
     Ok(Viewport {
         version,
@@ -504,7 +515,7 @@ fn parse_attributes(
     let packed = reader.u8()?;
     let version = [packed >> 4, packed & 0x0f];
     if version[0] != 1 || version[1] < 1 {
-        return Err(structural(
+        return Err(FramingError::structural(
             body.start,
             "view-attributes version is unsupported",
         ));
@@ -513,7 +524,7 @@ fn parse_attributes(
     let width = reader.f64()?;
     let height = reader.f64()?;
     if !width.is_finite() || !height.is_finite() {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position() - 16,
             "view page size is not finite",
         ));
@@ -521,7 +532,7 @@ fn parse_attributes(
     let _obsolete_parent = uuid(&mut reader)?;
     for _ in 0..6 {
         if !reader.f64()?.is_finite() {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position() - 8,
                 "view bounds are not finite",
             ));
@@ -555,14 +566,14 @@ fn parse_attributes(
     if version[1] >= 2 {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.typecode != 0x4000_8000 || chunk.short {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "page-settings wrapper is invalid",
             ));
         }
         let mut page = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
         if (page.i32()?, page.i32()?) != (1, 0) {
-            return Err(structural(
+            return Err(FramingError::structural(
                 page.position(),
                 "page-settings version is unsupported",
             ));
@@ -576,11 +587,14 @@ fn parse_attributes(
             .chain(margins_mm)
             .all(f64::is_finite)
         {
-            return Err(structural(page.position(), "page setting is not finite"));
+            return Err(FramingError::structural(
+                page.position(),
+                "page setting is not finite",
+            ));
         }
         let printer_name = utf16(&mut page)?;
         if page.remaining() != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 page.position(),
                 "page settings have trailing bytes",
             ));
@@ -602,11 +616,13 @@ fn parse_attributes(
         let count = usize::try_from(reader.i32()?)
             .ok()
             .filter(|count| *count <= 1 << 16)
-            .ok_or_else(|| structural(count_offset, "clipping-plane count is invalid"))?;
+            .ok_or_else(|| {
+                FramingError::structural(count_offset, "clipping-plane count is invalid")
+            })?;
         for _ in 0..count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             if chunk.typecode != 0x4000_8000 || chunk.short {
-                return Err(structural(
+                return Err(FramingError::structural(
                     reader.position(),
                     "clipping-plane wrapper is invalid",
                 ));
@@ -614,20 +630,21 @@ fn parse_attributes(
             let mut plane = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
             let (major, minor) = (plane.i32()?, plane.i32()?);
             if major != 1 || !(0..=3).contains(&minor) {
-                return Err(structural(
+                return Err(FramingError::structural(
                     plane.position(),
                     "clipping-plane version is unsupported",
                 ));
             }
             let mut equation = [plane.f64()?, plane.f64()?, plane.f64()?, plane.f64()?];
             if !equation.iter().all(|value| value.is_finite()) {
-                return Err(structural(
+                return Err(FramingError::structural(
                     plane.position() - 32,
                     "clipping equation is invalid",
                 ));
             }
-            equation[3] = scaled_coordinate(equation[3], scale)
-                .ok_or_else(|| structural(plane.position() - 8, "clipping equation is invalid"))?;
+            equation[3] = scaled_coordinate(equation[3], scale).ok_or_else(|| {
+                FramingError::structural(plane.position() - 8, "clipping equation is invalid")
+            })?;
             let id = uuid(&mut plane)?;
             let enabled = plane.bool()?;
             let (depth, legacy_depth_enabled) = if minor >= 1 {
@@ -639,7 +656,7 @@ fn parse_attributes(
                 };
                 (
                     Some(scaled_coordinate(raw_depth, scale).ok_or_else(|| {
-                        structural(plane.position() - 8, "clipping depth is invalid")
+                        FramingError::structural(plane.position() - 8, "clipping depth is invalid")
                     })?),
                     enabled,
                 )
@@ -652,7 +669,7 @@ fn parse_attributes(
                 legacy_depth_enabled
             };
             if plane.remaining() != 0 {
-                return Err(structural(
+                return Err(FramingError::structural(
                     plane.position(),
                     "clipping plane has trailing bytes",
                 ));
@@ -675,10 +692,10 @@ fn parse_attributes(
         result.show_construction_z_axis = reader.bool()?;
     }
     if version[1] >= 7 {
-        result.focal_blur_distance_mm = Some(
-            scaled_coordinate(reader.f64()?, scale)
-                .ok_or_else(|| structural(reader.position() - 8, "focal distance is invalid"))?,
-        );
+        result.focal_blur_distance_mm =
+            Some(scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+                FramingError::structural(reader.position() - 8, "focal distance is invalid")
+            })?);
         result.focal_blur_aperture = Some(reader.f64()?);
         result.focal_blur_jitter = Some(reader.f64()?);
         result.focal_blur_sample_count = Some(reader.i32()?);
@@ -691,7 +708,7 @@ fn parse_attributes(
         result.section_behavior = Some(reader.u8()?);
     }
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "view attributes have trailing bytes",
         ));
@@ -753,7 +770,7 @@ fn parse_view(
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
                 let path = utf16(&mut reader)?;
                 if reader.remaining() != 0 {
-                    return Err(structural(
+                    return Err(FramingError::structural(
                         reader.position(),
                         "wallpaper path has trailing bytes",
                     ));
@@ -772,7 +789,7 @@ fn parse_view(
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
                 name = utf16(&mut reader)?;
                 if reader.remaining() != 0 {
-                    return Err(structural(
+                    return Err(FramingError::structural(
                         reader.position(),
                         "view name has trailing bytes",
                     ));
@@ -783,7 +800,10 @@ fn parse_view(
                 let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
                 for value in &mut point {
                     *value = scaled_coordinate(*value, scale).ok_or_else(|| {
-                        structural(reader.position() - 24, "scaled view target is invalid")
+                        FramingError::structural(
+                            reader.position() - 24,
+                            "scaled view target is invalid",
+                        )
                     })?;
                 }
                 target = Some(point);
@@ -803,7 +823,10 @@ fn parse_view(
             }
             TCODE_ENDOFTABLE => {
                 if !child.short || child.value != 0 || child.next_offset != record.body.end {
-                    return Err(structural(offset, "view end marker is invalid"));
+                    return Err(FramingError::structural(
+                        offset,
+                        "view end marker is invalid",
+                    ));
                 }
                 terminated = true;
             }
@@ -812,7 +835,7 @@ fn parse_view(
         offset = child.next_offset;
     }
     if !terminated {
-        return Err(structural(
+        return Err(FramingError::structural(
             record.body.end,
             "view is missing its end marker",
         ));
@@ -924,12 +947,14 @@ fn parse_named_cplanes(
     let count = usize::try_from(reader.i32()?)
         .ok()
         .filter(|count| *count <= 1 << 16)
-        .ok_or_else(|| structural(count_offset, "named construction-plane count is invalid"))?;
+        .ok_or_else(|| {
+            FramingError::structural(count_offset, "named construction-plane count is invalid")
+        })?;
     let mut values = Vec::new();
     for index in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.typecode != VIEW_CPLANE || chunk.short {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "named construction-plane record is invalid",
             ));
@@ -943,7 +968,7 @@ fn parse_named_cplanes(
         reader.skip(chunk.next_offset - reader.position())?;
     }
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "named construction-plane list has trailing bytes",
         ));

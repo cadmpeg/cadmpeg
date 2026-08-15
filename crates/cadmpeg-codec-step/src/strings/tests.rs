@@ -8,6 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
 use crate::StepCodec;
 
@@ -66,7 +67,7 @@ fn invalid_step_string_escape_is_reported_as_metadata_loss() {
     let decoded = decode_inline(r"#1=PRODUCT('\X\GG','valid name','',());");
 
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MetadataNotTransferred)
+        loss.code == StepLossCode::MetadataStringInvalid.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message

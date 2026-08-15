@@ -14,12 +14,13 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::{self, Container};
+use crate::loss::NxLossCode;
 use crate::parasolid::{self, Stream, StreamKind};
 
 mod jpeg;
@@ -278,42 +279,29 @@ fn decode_result(
 fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::RecordNotTyped),
-            severity: Severity::Warning,
-            message: format!(
-                "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
-                control_count - classified_control_count
-            ),
-            provenance: None,
-        });
+        report.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
+            "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
+            control_count - classified_control_count
+        )));
     }
     for entry in &scan.container.entries {
         let content = entry.content();
         if content.retains_opaque_payload() {
-            report.losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::RecordNotTyped),
-                severity: Severity::Info,
-                message: format!(
-                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
-                    entry.name,
-                    content.label()
-                ),
-                provenance: None,
-            });
+            report.losses.push(NxLossCode::ContainerStreamOpaque.note(format!(
+                "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
+                entry.name,
+                content.label()
+            )));
         }
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
-            report.losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::PassthroughRecordOmitted),
-                severity: Severity::Info,
-                message: format!(
+            report
+                .losses
+                .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
                     "Non-Parasolid {} stream #{index} was classified but not transferred.",
                     stream.kind.label()
-                ),
-                provenance: None,
-            });
+                )));
         }
     }
 }
@@ -407,37 +395,26 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         && !scan.has_parasolid();
 
     if assembly {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-            severity: Severity::Blocking,
-            message: "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
+        losses.push(NxLossCode::AssemblyComponentsExternal.note(
+            "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
                       lives in external child .prt files named in EXTREFSTREAM, and the assembled \
                       solid's inputs (child partitions + constraint solve) are absent from this \
-                      file. This is an external-dependency boundary, not a decode gap."
-                .to_string(),
-            provenance: None,
-        });
+                      file. This is an external-dependency boundary, not a decode gap.",
+        ));
     } else {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Blocking,
-            message: "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
+        losses.push(NxLossCode::GeometryNotTransferred.note(
+            "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
                       in the embedded Parasolid streams (they may hold only B-spline/procedural \
                       geometry this codec does not yet type). The streams are preserved verbatim as \
-                      unknown passthrough records."
-                .to_string(),
-            provenance: None,
-        });
+                      unknown passthrough records.",
+        ));
     }
 
     if container_only {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::ContainerOnly),
-            severity: Severity::Info,
-            message: "Container-only decode requested; entity decode was not attempted."
-                .to_string(),
-            provenance: None,
-        });
+        losses.push(
+            NxLossCode::ContainerOnly
+                .note("Container-only decode requested; entity decode was not attempted."),
+        );
     }
 
     DecodeReport {

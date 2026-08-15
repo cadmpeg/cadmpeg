@@ -705,13 +705,9 @@ impl<'a> MetaCursor<'a> {
                 "RSe metadata {what} exceeds 4096 UTF-16 units"
             )));
         }
-        let mut view = View::over_retained(self.take(len, what)?);
-        let mut units = Vec::with_capacity(len / 2);
-        for _ in 0..len / 2 {
-            units.push(view.req_u16_le().map_err(|error| error.during(what))?);
-        }
-        String::from_utf16(&units)
-            .map_err(|_| CodecError::Malformed(format!("RSe metadata {what} is not UTF-16")))
+        self.source
+            .utf16_le(len / 2)
+            .ok_or_else(|| CodecError::Malformed(format!("RSe metadata {what} is not UTF-16")))
     }
 }
 

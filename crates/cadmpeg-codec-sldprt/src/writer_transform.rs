@@ -221,10 +221,10 @@ fn check_rigid(transform: Transform) -> Result<(), CodecError> {
         ),
     ];
     if rows.iter().any(|row| (row.norm() - 1.0).abs() > EPS)
-        || dot(rows[0], rows[1]).abs() > EPS
-        || dot(rows[0], rows[2]).abs() > EPS
-        || dot(rows[1], rows[2]).abs() > EPS
-        || (dot(rows[0], cross(rows[1], rows[2])) - 1.0).abs() > EPS
+        || rows[0].dot(rows[1]).abs() > EPS
+        || rows[0].dot(rows[2]).abs() > EPS
+        || rows[1].dot(rows[2]).abs() > EPS
+        || (rows[0].dot(rows[1].cross(rows[2])) - 1.0).abs() > EPS
     {
         return Err(CodecError::NotImplemented(
             "SLDPRT body transform must be a right-handed rigid transform".into(),
@@ -363,18 +363,6 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         }
     }
     Ok(())
-}
-
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
 }
 
 #[cfg(test)]

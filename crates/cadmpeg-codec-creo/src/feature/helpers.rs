@@ -50,9 +50,5 @@ pub(crate) fn decode_optional_scalars(
 }
 
 pub(crate) fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
-    payload
-        .get(start..end)?
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| start + relative)
+    cadmpeg_core::bytes::find_in(payload, needle, start, end)
 }

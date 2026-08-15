@@ -10,6 +10,8 @@ Each item has these parts:
 - **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
 - **Note** — a defect in the item or in the specification.
 
+When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
+
 Each item has an identifier. Use the identifier in commit messages and in code comments.
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
@@ -328,7 +330,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which additional fields join a section definition to its sketch datum when no unique bounded-source owner chain or generated-datum parent remains?
 
-**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" defines the recipe, consecutive datum, and `gsec3d_ptr.sketch_plane` join. The definition is eligible only inside its complete source range. The same section-plane entity used by multiple definitions remains ambiguous. `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
+**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" defines the recipe, consecutive datum, and `gsec3d_ptr.sketch_plane` join. The definition is eligible only inside its complete source range. The same section-plane entity used by multiple definitions remains ambiguous. `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "When the sketch plane resolves to a placed plane carrier" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
 
 **Need.** We must define a transfer for definitions that have no unique bounded-source chain and no unique generated-datum parent without inferring a feature owner or model-space frame.
 
@@ -516,7 +518,7 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Question.** How does a section select its sketch datum when the generated-datum parent-table remainder is not unique?
 
-**Known.** `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique remainder rule and the nested `plane_id` join.
+**Known.** `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "When the sketch plane resolves to a placed plane carrier" define the unique remainder rule and the nested `plane_id` join.
 
 **Need.** We must know the selection rule to place the sketch.
 

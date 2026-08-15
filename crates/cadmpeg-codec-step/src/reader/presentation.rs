@@ -11,10 +11,11 @@ use cadmpeg_ir::ids::{
     ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
@@ -136,7 +137,7 @@ pub(super) fn decode(
                     &mut losses,
                     layer_id,
                     "presentation layer name",
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                    StepLossCode::MetadataStringInvalid,
                 )
             })
         else {
@@ -159,7 +160,7 @@ pub(super) fn decode(
                     &mut losses,
                     layer_id,
                     "presentation layer description",
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                    StepLossCode::MetadataStringInvalid,
                 )
             })
             .filter(|value| !value.is_empty());
@@ -361,16 +362,11 @@ pub(super) fn decode(
                 .iter()
                 .map(|(style_id, _)| format!("#{style_id}"))
                 .collect::<Vec<_>>();
-            losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                severity: Severity::Warning,
-                message: format!(
+            losses.push(StepLossCode::ConflictingScalarColors.note(format!(
                     "independent styled items {} assign conflicting scalar colors to {:?}; scalar color omitted and appearance bindings retain every assignment",
                     style_ids.join(", "),
                     target,
-                ),
-                provenance: None,
-            });
+                )));
         }
     }
     StageOutcome {
@@ -938,7 +934,7 @@ fn find_color(
                             losses,
                             id,
                             "colour name",
-                            LossKind::shared(LossTaxonomy::AttributesNotTransferred),
+                            StepLossCode::AttributeStringInvalid,
                         )
                     }),
                 ))
@@ -959,7 +955,7 @@ fn find_color(
                     losses,
                     id,
                     "predefined colour name",
-                    LossKind::shared(LossTaxonomy::AttributesNotTransferred),
+                    StepLossCode::AttributeStringInvalid,
                 )?;
                 predefined(&name).map(|color| (side_rank, id, color, Some(name)))
             }

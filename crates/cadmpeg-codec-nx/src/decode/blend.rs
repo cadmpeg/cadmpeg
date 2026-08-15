@@ -14,8 +14,8 @@ use cadmpeg_ir::eval::{
     nurbs_surface_parameter_within_tolerance, pcurve_tangent, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve,
+    PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -929,7 +929,7 @@ pub(crate) fn homogeneous_pcurve_spans(
         || count <= degree
         || knots.len() != count.checked_add(degree)?.checked_add(1)?
         || knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(knots)
         || control_points
             .iter()
             .any(|control| !control.u.is_finite() || !control.v.is_finite())
@@ -2168,7 +2168,7 @@ pub(crate) fn closest_nurbs_curve_parameter(
         || count <= degree
         || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
         || curve.knots.iter().any(|knot| !knot.is_finite())
-        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&curve.knots)
         || curve.control_points.iter().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })

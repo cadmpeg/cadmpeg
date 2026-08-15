@@ -19,6 +19,8 @@ use super::super::graph::B5Graph;
 use super::{annotate, OrientedLoop, OwnershipPlan, TransferPlan};
 use crate::solve::UnionFind;
 
+const EPS_PLANE_AXES_ORTHO: f64 = 1e-8;
+
 pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let mut face_ids = HashSet::new();
     let mut loop_owners = HashMap::<u32, usize>::new();
@@ -243,7 +245,7 @@ fn b5_planar_loop_points(
     };
     let normal = normal.unit()?;
     let u_axis = u_axis.unit()?;
-    if normal.dot(u_axis).abs() > 1e-8 {
+    if normal.dot(u_axis).abs() > EPS_PLANE_AXES_ORTHO {
         return None;
     }
     let v_axis = normal.cross(u_axis).unit()?;

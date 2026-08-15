@@ -1,6 +1,5 @@
 //! Sketch record patching in native streams.
 
-use super::sketch_edges::{cross, dot};
 use super::SKETCH_POINT_TOLERANCE;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -33,7 +32,7 @@ pub(super) fn sketch_brep(
     let shell_id = ShellId(format!("{prefix}:shell"));
     let face_id = FaceId(format!("{prefix}:face"));
     let surface_id = SurfaceId(format!("{prefix}:surface"));
-    let v_axis = cross(normal, u_axis);
+    let v_axis = normal.cross(u_axis);
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -136,7 +135,7 @@ pub(super) fn sketch_brep(
                 end_3d.y - start_3d.y,
                 end_3d.z - start_3d.z,
             );
-            let length = (dot(delta, delta)).sqrt();
+            let length = delta.norm();
             if length == 0.0 && matches!(entity.geometry, SketchGeometry::Line { .. }) {
                 return Err(cadmpeg_core::CodecError::Malformed(format!(
                     "sketch entity {} has zero length",
@@ -322,7 +321,7 @@ fn generated_sketch_curve(
                 target.y - origin.y,
                 target.z - origin.z,
             );
-            let length = dot(delta, delta).sqrt();
+            let length = delta.norm();
             if length == 0.0 {
                 return Err(cadmpeg_core::CodecError::Malformed(
                     "source-less SLDPRT sketch contains a zero-length line".into(),
@@ -509,7 +508,7 @@ pub(super) fn patch_line_profiles(
                 sketch.id.0
             ))
         })?;
-        let v_axis = cross(normal, u_axis);
+        let v_axis = normal.cross(u_axis);
         for entity in ir
             .model
             .sketch_entities

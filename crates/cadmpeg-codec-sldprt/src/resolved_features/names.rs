@@ -34,14 +34,7 @@ pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName
                 return None;
             }
             let start = offset + NAME_MARKER.len() + 1;
-            let end = start.checked_add(length.checked_mul(2)?)?;
-            let slice = payload.get(start..end)?;
-            let mut view = View::over_retained(slice);
-            let mut units = Vec::new();
-            while let Some(unit) = view.u16_le() {
-                units.push(unit);
-            }
-            let value = String::from_utf16(&units).ok()?;
+            let (value, end) = View::utf16le_at(payload, start, length)?;
             let object_id = end
                 .checked_add(8)
                 .and_then(|offset| View::u32_le_at(payload, offset));

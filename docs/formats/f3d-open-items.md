@@ -10,6 +10,8 @@ Each item has these parts:
 - **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
 - **Note** — a defect in the item or in the specification.
 
+When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
+
 Each item has an identifier. Use the identifier in commit messages and in code comments.
 
 A reference to the specification gives the section number and the start of the paragraph. An example is `f3d.md` §3.1 "**The ACT segment.**". Do not use line numbers. Line numbers become incorrect when the specification changes. The `scripts/check-doc-anchors.py` command makes sure that each reference finds exactly one paragraph.

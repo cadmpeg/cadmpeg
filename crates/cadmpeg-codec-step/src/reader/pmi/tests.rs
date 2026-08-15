@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -473,9 +474,9 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
         },
     )
     .expect("write complex geometric tolerance with report policy");
-    assert!(!report.losses.iter().any(
-        |loss| loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PmiOmitted)
-    ));
+    assert!(!report.losses.iter().any(|loss| loss.code
+        == StepLossCode::PmiAnnotationNotWritten.kind()
+        || loss.code == StepLossCode::SemanticAnnotationOmitted.kind()));
     let output = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE"));
     assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_MODIFIERS"));

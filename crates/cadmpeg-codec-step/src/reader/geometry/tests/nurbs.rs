@@ -26,6 +26,7 @@ use cadmpeg_ir::CadIr;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::export::Builder;
 use crate::ids::StepIdentity;
 use crate::test_support::{decode_inline, export};
 use crate::{
@@ -260,7 +261,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));
-    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
+    let mut builder = Builder::new(&ir, StepSchema::Ap242Edition3);
     assert!(builder.emit_curve("composite").is_none());
     assert!(builder.active_curves.is_empty());
     assert!(builder.emit_curve("composite").is_none());

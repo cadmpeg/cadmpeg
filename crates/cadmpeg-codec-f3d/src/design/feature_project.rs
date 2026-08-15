@@ -4680,8 +4680,7 @@ fn analytic_surface_axis(
         SurfaceGeometry::Torus { center, axis, .. } => (*center, *axis),
         _ => return None,
     };
-    let length =
-        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
+    let length = direction.norm();
     (origin.x.is_finite()
         && origin.y.is_finite()
         && origin.z.is_finite()
@@ -4689,11 +4688,7 @@ fn analytic_surface_axis(
         && length > 0.0)
         .then_some(cadmpeg_ir::features::RevolutionAxis {
             origin,
-            direction: Vector3::new(
-                direction.x / length,
-                direction.y / length,
-                direction.z / length,
-            ),
+            direction: direction.scale(1.0 / length),
         })
 }
 
@@ -4773,8 +4768,7 @@ fn resolve_sketch_axis_selection(
             + placement.transform[2][1] * direction.y
             + placement.transform[2][2] * direction.z,
     );
-    let length =
-        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
+    let length = direction.norm();
     (origin.x.is_finite()
         && origin.y.is_finite()
         && origin.z.is_finite()
@@ -4782,11 +4776,7 @@ fn resolve_sketch_axis_selection(
         && length > 0.0)
         .then_some(cadmpeg_ir::features::RevolutionAxis {
             origin,
-            direction: Vector3::new(
-                direction.x / length,
-                direction.y / length,
-                direction.z / length,
-            ),
+            direction: direction.scale(1.0 / length),
         })
 }
 
@@ -5180,8 +5170,8 @@ fn project_rectangular_pattern_scalars(
             last[1][3] - first[1][3],
             last[2][3] - first[2][3],
         );
-        let norm = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
-        (norm > 0.0).then_some(Vector3::new(delta.x / norm, delta.y / norm, delta.z / norm))
+        let norm = delta.norm();
+        (norm > 0.0).then_some(delta.scale(1.0 / norm))
     });
     let seeds = construction
         .instances
@@ -6569,22 +6559,11 @@ pub(crate) fn spatial_sketch_entity_endpoints(
             start_angle,
             end_angle,
         } => {
-            let transverse = Vector3::new(
-                normal.y * reference_direction.z - normal.z * reference_direction.y,
-                normal.z * reference_direction.x - normal.x * reference_direction.z,
-                normal.x * reference_direction.y - normal.y * reference_direction.x,
-            );
+            let transverse = normal.cross(*reference_direction);
             let at = |angle: f64| {
-                Point3::new(
-                    center.x
-                        + radius.0
-                            * (reference_direction.x * angle.cos() + transverse.x * angle.sin()),
-                    center.y
-                        + radius.0
-                            * (reference_direction.y * angle.cos() + transverse.y * angle.sin()),
-                    center.z
-                        + radius.0
-                            * (reference_direction.z * angle.cos() + transverse.z * angle.sin()),
+                center.translated(
+                    reference_direction.scale(angle.cos()) + transverse.scale(angle.sin()),
+                    radius.0,
                 )
             };
             Some([at(start_angle.0), at(end_angle.0)])
@@ -6709,44 +6688,23 @@ pub(crate) fn closed_spatial_sketch_profiles(
         let origin = points[0];
         let mut normal = Vector3::new(0.0, 0.0, 0.0);
         for pair in points[1..].windows(2) {
-            let a = Vector3::new(
-                pair[0].x - origin.x,
-                pair[0].y - origin.y,
-                pair[0].z - origin.z,
-            );
-            let b = Vector3::new(
-                pair[1].x - origin.x,
-                pair[1].y - origin.y,
-                pair[1].z - origin.z,
-            );
-            normal.x += a.y * b.z - a.z * b.y;
-            normal.y += a.z * b.x - a.x * b.z;
-            normal.z += a.x * b.y - a.y * b.x;
+            let a = pair[0].vector_from(origin);
+            let b = pair[1].vector_from(origin);
+            normal = normal + a.cross(b);
         }
         let normal_length = normal.norm();
         let first_end = edges[uses[0].0].1[1];
-        let u = Vector3::new(
-            first_end.x - origin.x,
-            first_end.y - origin.y,
-            first_end.z - origin.z,
-        );
+        let u = first_end.vector_from(origin);
         let u_length = u.norm();
         if normal_length <= tolerance || u_length <= tolerance {
             continue;
         }
-        normal = Vector3::new(
-            normal.x / normal_length,
-            normal.y / normal_length,
-            normal.z / normal_length,
-        );
-        let u_axis = Vector3::new(u.x / u_length, u.y / u_length, u.z / u_length);
-        if points.iter().any(|point| {
-            ((point.x - origin.x) * normal.x
-                + (point.y - origin.y) * normal.y
-                + (point.z - origin.z) * normal.z)
-                .abs()
-                > tolerance
-        }) {
+        normal = normal.scale(1.0 / normal_length);
+        let u_axis = u.scale(1.0 / u_length);
+        if points
+            .iter()
+            .any(|point| point.vector_from(origin).dot(normal).abs() > tolerance)
+        {
             continue;
         }
         profiles.push(SpatialSketchProfile {

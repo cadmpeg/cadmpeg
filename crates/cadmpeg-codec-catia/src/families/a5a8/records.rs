@@ -11,8 +11,8 @@ use crate::wire::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
-    RollingBallJetSite, SurfaceGeometry,
+    knots_strictly_increasing, NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition,
+    RollingBallJetDerivative, RollingBallJetSite, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::ops::Range;
@@ -672,7 +672,7 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
         at += 8;
     }
     if distinct_knots.iter().any(|knot| !knot.is_finite())
-        || distinct_knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || !knots_strictly_increasing(&distinct_knots)
         || data.get(at) != Some(&0x01)
     {
         return None;
@@ -767,8 +767,7 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
         return None;
     }
     let knots = f64_values(data, &mut at, count, frame.end)?;
-    if knots.iter().any(|knot| !knot.is_finite()) || knots.windows(2).any(|pair| pair[0] >= pair[1])
-    {
+    if knots.iter().any(|knot| !knot.is_finite()) || !knots_strictly_increasing(&knots) {
         return None;
     }
     if at
@@ -923,7 +922,7 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     for _ in 0..count {
         multiplicities.push(compact_int(data, &mut at)?);
     }
-    if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
+    if knots.iter().any(|v| !v.is_finite()) || !knots_strictly_increasing(&knots) {
         return None;
     }
     let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
@@ -1015,7 +1014,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         knots.push(f64_le(data, at)?);
         at += 8;
     }
-    if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
+    if knots.iter().any(|v| !v.is_finite()) || !knots_strictly_increasing(&knots) {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 10]>> {
@@ -1163,7 +1162,7 @@ fn parse_object_stream_pcurve(
     at += 16;
     if data.get(at) != Some(&0x07)
         || mode % 4 != 1
-        || knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || !knots_strictly_increasing(&knots)
         || multiplicities.first() != Some(&6)
         || multiplicities.last() != Some(&6)
         || multiplicities[1..multiplicities.len() - 1]
@@ -1720,7 +1719,7 @@ fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>
 }
 
 fn strictly_increasing_finite(values: &[f64]) -> bool {
-    values.iter().all(|value| value.is_finite()) && values.windows(2).all(|pair| pair[0] < pair[1])
+    values.iter().all(|value| value.is_finite()) && knots_strictly_increasing(values)
 }
 
 fn a5_int(byte: u8) -> Option<u32> {

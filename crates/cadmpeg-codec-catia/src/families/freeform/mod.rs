@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -27,6 +27,7 @@ use crate::assemble::{
 use crate::assemble::{cgm_source, cgm_source_key};
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
+use crate::loss::CatiaLossCode;
 
 #[derive(Clone)]
 struct FreeformSurfaceCarrier {
@@ -577,37 +578,21 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut losses = if wire_topology_transferred {
         Vec::new()
     } else if topology_transferred && b5_complete {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Warning,
-            message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(
+            "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved.",
+        )]
     } else if topology_transferred {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Blocking,
-            message: "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(
+            "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph.",
+        )]
     } else if object_stream_selection_exhausted {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Blocking,
-            message: "The object-stream graph exceeds the bounded frame-index and record-materialization work slice; its topology remains native."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(
+            "The object-stream graph exceeds the bounded frame-index and record-materialization work slice; its topology remains native.",
+        )]
     } else {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Blocking,
-            message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::TopologyB5GraphUnclosed.note(
+            "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
+        )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);

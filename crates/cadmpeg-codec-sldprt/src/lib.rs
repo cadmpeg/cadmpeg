@@ -125,15 +125,16 @@ mod writer_transform;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
+use std::io::Write;
+
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{
-    Annotations, FidelityResolution, Finding, LossNote, Severity, SourceFidelity, WritePath,
-};
-use std::io::Write;
+use cadmpeg_ir::{Annotations, FidelityResolution, Finding, SourceFidelity, WritePath};
+
+use crate::loss::SldprtLossCode;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
@@ -244,10 +245,10 @@ impl CodecBackend for SldprtCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window());
+        let scan = container::scan(ctx, root)?;
         Ok(container::summarize(&scan))
     }
 
@@ -290,14 +291,10 @@ impl Encoder for SldprtCodec {
             (false, false) => FidelityResolution::NotProvided,
         };
         if matches!(report.fidelity, FidelityResolution::Degraded { .. }) {
-            report.losses.push(LossNote {
-                code: cadmpeg_ir::LossKind::shared(
-                    cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable,
-                ),
-                severity: Severity::Blocking,
-                message: "preserved SLDPRT source image is unavailable; regenerated from IR".into(),
-                provenance: None,
-            });
+            report.losses.push(
+                SldprtLossCode::SourcePreservedImageUnavailable
+                    .note("preserved SLDPRT source image is unavailable; regenerated from IR"),
+            );
         }
         Ok(ExportPlan::buffered(report, bytes))
     }

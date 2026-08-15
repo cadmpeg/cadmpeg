@@ -15,7 +15,7 @@ use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 
@@ -838,8 +838,7 @@ fn expand_knots(
     multiplicities: &[u16],
     required_count: usize,
 ) -> Option<Vec<f64>> {
-    if distinct.len() != multiplicities.len() || !distinct.windows(2).all(|pair| pair[0] <= pair[1])
-    {
+    if distinct.len() != multiplicities.len() || !knots_nondecreasing(distinct) {
         return None;
     }
     let expanded_count = multiplicities.iter().try_fold(0usize, |total, &count| {

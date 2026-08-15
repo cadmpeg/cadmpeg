@@ -15,12 +15,13 @@ use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::index::{step_instance_id, CarrierIndex};
@@ -181,13 +182,13 @@ impl UnitScales {
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
-        losses.push(unresolved_unit_loss(
+        losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
             "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         ));
         1.0
     });
     let angle_scale = plane_angle_scale(exchange).unwrap_or_else(|| {
-        losses.push(unresolved_unit_loss(
+        losses.push(StepLossCode::DocumentAngleUnitUnresolved.note(
             "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         ));
         1.0
@@ -303,7 +304,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
-                .map(|(direction, magnitude)| scale_vector(direction, magnitude * record_scale));
+                .map(|(direction, magnitude)| direction.scale(magnitude * record_scale));
             let value2 = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions2.get(&direction).copied())
@@ -347,14 +348,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             if let Some(reference) = orthogonal_reference(axis, reference) {
                                 reference
                             } else {
-                                losses.push(LossNote {
-                                    code: LossKind::shared(LossTaxonomy::CarrierAxisInferred),
-                                    severity: Severity::Warning,
-                                    message: format!(
+                                losses.push(StepLossCode::PlacementReferenceInferred.note(format!(
                                         "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
-                                    ),
-                                    provenance: None,
-                                });
+                                    )));
                                 first_projected_axis(axis)
                                     .unwrap_or(Vector3::new(1.0, 0.0, 0.0))
                             }
@@ -549,11 +545,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 // neither position is required to be the
                                 // longer one. The IR ellipse is canonicalized
                                 // around its semi-major direction.
-                                (
-                                    cross(axis, reference_direction),
-                                    second_radius,
-                                    first_radius,
-                                )
+                                (axis.cross(reference_direction), second_radius, first_radius)
                             };
                         CurveGeometry::Ellipse {
                             center,
@@ -1783,7 +1775,7 @@ pub(super) fn associate_free_geometric_set_members(
                         losses,
                         member,
                         "geometric-set member name",
-                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                        StepLossCode::MetadataStringInvalid,
                     )
                 })
                 .filter(|name| !name.is_empty());
@@ -1857,7 +1849,7 @@ pub(super) fn associate_free_representation_members(
                         losses,
                         member,
                         "representation member name",
-                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                        StepLossCode::MetadataStringInvalid,
                     )
                 })
                 .filter(|name| !name.is_empty());
@@ -1950,7 +1942,7 @@ fn associate_presentation_carrier(
                 losses,
                 target,
                 "presentation carrier name",
-                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                StepLossCode::MetadataStringInvalid,
             )
         })
         .filter(|name| !name.is_empty());
@@ -2639,14 +2631,9 @@ fn finalize_unit_candidates(
         }
     }
     if ambiguous > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(StepLossCode::ConflictingRepresentationUnits.note(format!(
                 "{ambiguous} geometry record(s) belong to representations with conflicting {dimension} units; source-order unit selection was not applied"
-            ),
-            provenance: None,
-        });
+            )));
     }
     selected
 }
@@ -3021,24 +3008,14 @@ fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option
         return measures.first().map(|(_, value)| *value);
     }
     if measures.len() > 1 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has {} resolvable length measure(s) and {} unresolved measure(s); the linear tolerance is ambiguous",
                 measures.len(), unresolved_measure_count
-            ),
-            provenance: None,
-        });
+            )));
     } else if measures.is_empty() && unresolved_measure_count > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved_measure_count} unresolved measure(s); the linear tolerance was not transferred"
-            ),
-            provenance: None,
-        });
+            )));
     }
     None
 }
@@ -3260,7 +3237,7 @@ fn line_parameter_scale(
                 .map(|magnitude| magnitude * length_scale)
                 .filter(|scale| scale.is_finite() && *scale > 0.0)
                 .unwrap_or_else(|| {
-                    losses.push(unresolved_unit_loss(format!(
+                    losses.push(StepLossCode::LineParameterScaleUnresolved.note(format!(
                         "LINE #{curve} parameter scale did not resolve; the document length scale was used"
                     )));
                     length_scale
@@ -3277,17 +3254,8 @@ fn line_parameter_scale(
     resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new())
 }
 
-fn unresolved_unit_loss(message: impl Into<String>) -> LossNote {
-    LossNote {
-        code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-        severity: Severity::Error,
-        message: message.into(),
-        provenance: None,
-    }
-}
-
 fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
-    let projection = dot(axis, reference);
+    let projection = axis.dot(reference);
     normalize(Vector3::new(
         reference.x - projection * axis.x,
         reference.y - projection * axis.y,
@@ -3308,7 +3276,7 @@ fn curve_parameter_at_point(
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
-        CurveGeometry::Line { origin, direction } => Some(dot(offset(*origin), *direction)),
+        CurveGeometry::Line { origin, direction } => Some(offset(*origin).dot(*direction)),
         CurveGeometry::Circle {
             center,
             axis,
@@ -3316,8 +3284,8 @@ fn curve_parameter_at_point(
             ..
         } => {
             let radial = offset(*center);
-            let y_axis = cross(*axis, *ref_direction);
-            Some(dot(radial, y_axis).atan2(dot(radial, *ref_direction)))
+            let y_axis = axis.cross(*ref_direction);
+            Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }
         CurveGeometry::Ellipse {
             center,
@@ -3327,10 +3295,10 @@ fn curve_parameter_at_point(
             minor_radius,
         } => {
             let radial = offset(*center);
-            let minor_direction = cross(*axis, *major_direction);
+            let minor_direction = axis.cross(*major_direction);
             Some(
-                (dot(radial, minor_direction) / minor_radius)
-                    .atan2(dot(radial, *major_direction) / major_radius),
+                (radial.dot(minor_direction) / minor_radius)
+                    .atan2(radial.dot(*major_direction) / major_radius),
             )
         }
         CurveGeometry::Nurbs(curve) => {
@@ -3344,18 +3312,6 @@ fn curve_parameter_at_point(
         ),
         _ => None,
     }
-}
-
-fn dot(a: Vector3, b: Vector3) -> f64 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
 }
 
 type CompositeCurveData = (Vec<(u64, CompositeCurveSegment)>, Option<bool>);
@@ -4771,30 +4727,20 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
 
 fn normalize(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| scale_vector(vector, 1.0 / norm))
-}
-
-fn subtract_vector(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 fn project_axis(vector: Vector3, normal: Vector3) -> Option<Vector3> {
     let vector = normalize(vector)?;
     let normal = normalize(normal)?;
-    normalize(subtract_vector(
-        vector,
-        scale_vector(normal, dot(vector, normal)),
-    ))
+    normalize(vector - normal.scale(vector.dot(normal)))
 }
 
 fn second_project_axis(z_axis: Vector3, x_axis: Vector3, vector: Vector3) -> Option<Vector3> {
     let vector = normalize(vector)?;
     let z_axis = normalize(z_axis)?;
     let x_axis = normalize(x_axis)?;
-    let projected = subtract_vector(
-        subtract_vector(vector, scale_vector(z_axis, dot(vector, z_axis))),
-        scale_vector(x_axis, dot(vector, x_axis)),
-    );
+    let projected = (vector - z_axis.scale(vector.dot(z_axis))) - x_axis.scale(vector.dot(x_axis));
     normalize(projected)
 }
 
@@ -4964,10 +4910,6 @@ fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2,
         }
         (None, None) => Some((Point2::new(1.0, 0.0), Point2::new(0.0, 1.0))),
     }
-}
-
-fn scale_vector(vector: Vector3, scale: f64) -> Vector3 {
-    Vector3::new(vector.x * scale, vector.y * scale, vector.z * scale)
 }
 
 fn optional_direction(

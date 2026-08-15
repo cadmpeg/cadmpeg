@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
+use crate::geometry::{knots_nondecreasing, knots_strictly_increasing};
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
@@ -1794,7 +1795,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .any(|multiplicity| *multiplicity == 0 || *multiplicity > degree + 1)
                 || knots.len() < 2
                 || knots.iter().any(|knot| !knot.is_finite())
-                || knots.windows(2).any(|pair| pair[0] >= pair[1])
+                || !knots_strictly_increasing(knots)
                 || !sites_valid
             {
                 bounds_err(
@@ -2721,7 +2722,7 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                 && axial_control_points.len() == radial_control_points.len()
                 && knots.len() == radial_control_points.len() + *degree as usize + 1
                 && finite(knots)
-                && knots.windows(2).all(|pair| pair[0] <= pair[1])
+                && knots_nondecreasing(knots)
                 && radial_control_points.iter().all(point)
                 && finite(axial_control_points)
                 && weights.as_ref().is_none_or(|weights| {
@@ -2751,7 +2752,7 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                 && control_points.len() > *degree as usize
                 && knots.len() == control_points.len() + *degree as usize + 1
                 && finite(knots)
-                && knots.windows(2).all(|pair| pair[0] <= pair[1])
+                && knots_nondecreasing(knots)
                 && control_points.iter().all(point)
                 && weights.as_ref().is_none_or(|weights| {
                     weights.len() == control_points.len()
@@ -2823,8 +2824,8 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
         }
         SurfaceGeometry::Nurbs(n) => {
             n.control_points.len() == n.u_count as usize * n.v_count as usize
-                && n.u_knots.windows(2).all(|w| w[0] <= w[1])
-                && n.v_knots.windows(2).all(|w| w[0] <= w[1])
+                && knots_nondecreasing(&n.u_knots)
+                && knots_nondecreasing(&n.v_knots)
         }
         SurfaceGeometry::Polygonal {
             vertices,
@@ -2869,7 +2870,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
             [point.x, point.y, point.z].into_iter().all(f64::is_finite)
         }
         CurveGeometry::Nurbs(n) => {
-            n.control_points.len() > n.degree as usize && n.knots.windows(2).all(|w| w[0] <= w[1])
+            n.control_points.len() > n.degree as usize && knots_nondecreasing(&n.knots)
         }
         CurveGeometry::Polyline {
             points,
@@ -2950,7 +2951,7 @@ fn support_side_mapping_is_finite(side: &crate::geometry::IntcurveSupportSide) -
 pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {
     let issue = if knots.iter().any(|knot| !knot.is_finite()) {
         Some("knot vector contains a non-finite value")
-    } else if knots.windows(2).any(|w| w[1] < w[0]) {
+    } else if !knots_nondecreasing(knots) {
         Some("knot vector is not non-decreasing")
     } else {
         None

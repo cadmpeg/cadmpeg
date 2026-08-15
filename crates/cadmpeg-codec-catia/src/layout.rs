@@ -19,7 +19,8 @@ pub(crate) mod token {
     /// `literal float data` (`7C D9`). Spec §4.
     pub(crate) const LITERAL_FLOAT_DATA: [u8; 2] = [0x7c, 0xd9];
     /// `standard edge-table delimiter` (`10 24 04 ff ff 00 00 00`). Spec §4.
-    pub(crate) const STANDARD_EDGE_TABLE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+    pub(crate) const STANDARD_EDGE_TABLE_DELIMITER: [u8; 8] =
+        [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
     /// `vertex XYZ record` (`05 08 01`). Spec §4.
     pub(crate) const VERTEX_XYZ_RECORD: [u8; 3] = [0x05, 0x08, 0x01];
     /// `zero-entity record family` (`a9 03`). Spec §4.

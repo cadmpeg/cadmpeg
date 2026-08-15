@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -154,9 +155,10 @@ fn strict_decode_rejects_an_attributed_projection_loss() {
         .decode(&mut Cursor::new(bytes), &options)
         .unwrap_err();
 
-    assert!(error
-        .to_string()
-        .contains("strict mode rejects shared/record_not_typed"));
+    assert!(error.to_string().contains(&format!(
+        "strict mode rejects {}",
+        IgesLossCode::EntityNotProjected.kind()
+    )));
     assert!(error
         .to_string()
         .contains("interpretation flag disagrees with the entity form"));

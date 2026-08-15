@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Focused parser entry points for fuzz harnesses.
+//! `()`-returning wrappers over internal parsers for the `cadmpeg-fuzz` targets.
+//!
+//! Each wrapper feeds arbitrary bytes to one internal parser and discards the
+//! result. The contract is that no input may panic.
+#![doc(hidden)]
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 

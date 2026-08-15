@@ -8,9 +8,7 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
-use crate::curves::{
-    decode_embedded_curve, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
-};
+use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
 use crate::settings::{
     bbox, interval, plane, point, vector as native_vector, Plane, Point3 as NativePoint3,
 };
@@ -122,7 +120,10 @@ pub(crate) fn decode(
     } else if class == SUM_SURFACE {
         read_sum(data, &mut reader, scale, archive, depth)?
     } else {
-        return Err(unsupported(range.start, "unsupported Rhino surface class"));
+        return Err(GeometryError::unsupported(
+            range.start,
+            "unsupported Rhino surface class",
+        ));
     };
     if reader.remaining() != 0 {
         return Err(error(
@@ -149,7 +150,7 @@ fn read_clipping_plane_surface(
     }
     let mut payload = BoundedReader::new(data, outer.body.start, outer.body.end)?;
     if payload.i32()? != 1 || payload.i32()? != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             outer.body.start,
             "unsupported clipping-plane surface version",
         ));
@@ -196,14 +197,14 @@ fn read_clipping_plane(
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if payload.i32()? != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping-plane major version",
         ));
     }
     let minor = payload.i32()?;
     if !(0..=5).contains(&minor) {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping-plane minor version",
         ));
@@ -252,7 +253,7 @@ fn read_uuid_list(
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if payload.i32()? != 1 || payload.i32()? != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping viewport-list version",
         ));
@@ -309,7 +310,7 @@ fn read_revolution(
     let version = reader.u8()?;
     let major = version >> 4;
     if !(major == 1 || major == 2) || version & 0x0f != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported revolution-surface version",
         ));
@@ -395,7 +396,7 @@ fn read_sum(
 ) -> Result<DecodedSurface, GeometryError> {
     let version_offset = reader.position();
     if reader.u8()? != 0x10 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported sum-surface version",
         ));
@@ -487,15 +488,15 @@ fn revolution_nurbs(
                 profile_point.y - axis_origin.y,
                 profile_point.z - axis_origin.z,
             );
-            let axial_length = dot(relative, axis);
-            let axial = scale_vector(axis, axial_length);
-            let radial = subtract(relative, axial);
-            let point = if dot(radial, radial) <= 1.0e-24 {
+            let axial_length = relative.dot(axis);
+            let axial = axis.scale(axial_length);
+            let radial = relative - axial;
+            let point = if radial.dot(radial) <= 1.0e-24 {
                 // A pole row is one exact axis point for every angular control point.
-                add_point_vector(axis_origin, axial)
+                axis_origin.translated(axial, 1.0)
             } else {
                 let rotated = rodrigues(radial, axis, theta);
-                add_point_vector(axis_origin, add(axial, scale_vector(rotated, radial_scale)))
+                axis_origin.translated(axial + rotated.scale(radial_scale), 1.0)
             };
             control_points.push(point);
             weights.push(profile_weight * angular_weight);
@@ -683,34 +684,11 @@ fn transpose_surface(surface: &mut NurbsSurface, offset: usize) -> Result<(), Ge
     Ok(())
 }
 
-fn scale_vector(value: Vector3, factor: f64) -> Vector3 {
-    Vector3::new(value.x * factor, value.y * factor, value.z * factor)
-}
-
-fn add(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(a.x + b.x, a.y + b.y, a.z + b.z)
-}
-
-fn subtract(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(a.x - b.x, a.y - b.y, a.z - b.z)
-}
-
-fn add_point_vector(point: Point3, vector: Vector3) -> Point3 {
-    Point3::new(point.x + vector.x, point.y + vector.y, point.z + vector.z)
-}
-
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     let cosine = angle.cos();
     let sine = angle.sin();
-    let cross = Vector3::new(
-        axis.y * value.z - axis.z * value.y,
-        axis.z * value.x - axis.x * value.z,
-        axis.x * value.y - axis.y * value.x,
-    );
-    add(
-        add(scale_vector(value, cosine), scale_vector(cross, sine)),
-        scale_vector(axis, dot(axis, value) * (1.0 - cosine)),
-    )
+    let cross = axis.cross(value);
+    value.scale(cosine) + cross.scale(sine) + axis.scale(axis.dot(value) * (1.0 - cosine))
 }
 
 pub(crate) fn read_nurbs_curve(
@@ -737,13 +715,13 @@ fn read_nurbs_curve_inner(
     let major = version >> 4;
     let minor = version & 0x0f;
     if major != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS curve version",
         ));
     }
     if minor > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS curve minor version",
         ));
@@ -837,7 +815,7 @@ pub(crate) fn read_nurbs_surface(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS surface version",
         ));
@@ -908,7 +886,7 @@ fn read_plane_surface(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported plane-surface version",
         ));
@@ -1093,10 +1071,10 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
         || (x.norm() - 1.0).abs() > 1.0e-10
         || (y.norm() - 1.0).abs() > 1.0e-10
         || (z.norm() - 1.0).abs() > 1.0e-10
-        || dot(x, y).abs() > 1.0e-10
-        || dot(x, z).abs() > 1.0e-10
-        || dot(y, z).abs() > 1.0e-10
-        || !close(cross(x, y), z)
+        || x.dot(y).abs() > 1.0e-10
+        || x.dot(z).abs() > 1.0e-10
+        || y.dot(z).abs() > 1.0e-10
+        || !close(x.cross(y), z)
     {
         return Err(error(
             offset,
@@ -1116,18 +1094,6 @@ fn scale_native_point(value: NativePoint3, scale: f64) -> Option<Point3> {
 
 fn vector(value: crate::settings::Vector3) -> Vector3 {
     Vector3::new(value.0[0], value.0[1], value.0[2])
-}
-
-fn dot(a: Vector3, b: Vector3) -> f64 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
 }
 
 fn close(a: Vector3, b: Vector3) -> bool {

@@ -7,6 +7,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::loss::CatiaLossCode;
 use crate::test_support::*;
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -236,10 +237,7 @@ fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
     assert!(result.ir().model.bodies.is_empty());
     assert!(result.ir().model.faces.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::report::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::TopologyNotTransferred,
-            )
+        loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
 }

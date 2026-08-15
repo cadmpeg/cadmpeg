@@ -57,7 +57,7 @@ Format research starts with a hypothesis about an unknown file region. Test that
 
 1. Work in the relevant [`docs/formats/`](docs/formats/) spec.
 2. Document findings with evidence: byte offsets, hex, and the reasoning that ties a region to a meaning. Record falsified hypotheses to avoid repeated analysis.
-3. Keep the companion `*-open-items.md` file current. Specs contain settled byte semantics and invariants; unresolved questions belong in the open-items file.
+3. Keep the companion `*-open-items.md` file current. Specs contain settled byte semantics and invariants; unresolved questions belong in the open-items file. An item uses only Question, Known, Need, Conflict, and Note. When the answer is settled, delete the item in the same change that writes it into the specification. Do not keep a Resolved part.
 4. Include the provenance declaration; format research is derived-knowledge work and the clean-room rules apply in full.
 
 ### Everything else

@@ -1,6 +1,5 @@
 //! Helix polyline fitting and the linear solvers it uses.
 
-use super::sketch_edges::{cross, dot};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 // Mesh coordinates are an approximation of the analytic helix. This fixed
@@ -24,7 +23,7 @@ pub(crate) fn fit_helix_polyline(
             pair[1].y - pair[0].y,
             pair[1].z - pair[0].z,
         );
-        parameters.push(parameters.last().copied()? + dot(delta, delta).sqrt());
+        parameters.push(parameters.last().copied()? + delta.norm());
     }
     let total = *parameters.last()?;
     if !total.is_finite() || total <= 0.0 {
@@ -48,8 +47,8 @@ pub(crate) fn fit_helix_polyline(
     let x = solve_four(normal, rhs)?;
     let cosine = Vector3::new(x[2][0], x[2][1], x[2][2]);
     let sine = Vector3::new(x[3][0], x[3][1], x[3][2]);
-    let mut axis = cross(cosine, sine);
-    let axis_length = dot(axis, axis).sqrt();
+    let mut axis = cosine.cross(sine);
+    let axis_length = axis.norm();
     if !axis_length.is_finite() || axis_length <= 0.0 {
         return None;
     }
@@ -60,8 +59,7 @@ pub(crate) fn fit_helix_polyline(
     );
     let radial_cosine = subtract_axis(cosine, axis);
     let radial_sine = subtract_axis(sine, axis);
-    let radius_estimate =
-        (dot(radial_cosine, radial_cosine).sqrt() + dot(radial_sine, radial_sine).sqrt()) * 0.5;
+    let radius_estimate = (radial_cosine.norm() + radial_sine.norm()) * 0.5;
     if !radius_estimate.is_finite() || radius_estimate <= 0.0 {
         return None;
     }
@@ -74,7 +72,7 @@ pub(crate) fn fit_helix_polyline(
                     pair[1].y - pair[0].y,
                     pair[1].z - pair[0].z,
                 );
-                *sum += dot(delta, delta).sqrt();
+                *sum += delta.norm();
                 Some(*sum)
             })),
         )
@@ -95,7 +93,7 @@ pub(crate) fn fit_helix_polyline(
         points.last()?.y - points[0].y,
         points.last()?.z - points[0].z,
     );
-    Some((origin, axis, radius, dot(displacement, axis)))
+    Some((origin, axis, radius, displacement.dot(axis)))
 }
 
 fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)> {
@@ -106,10 +104,10 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
     } else {
         Vector3::new(0.0, 0.0, 1.0)
     };
-    let mut u = cross(axis, helper);
-    let u_length = dot(u, u).sqrt();
+    let mut u = axis.cross(helper);
+    let u_length = u.norm();
     u = Vector3::new(u.x / u_length, u.y / u_length, u.z / u_length);
-    let v = cross(axis, u);
+    let v = axis.cross(u);
     let reference = points[0];
     let mut normal = [[0.0; 3]; 3];
     let mut rhs = [0.0; 3];
@@ -119,8 +117,8 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
             point.y - reference.y,
             point.z - reference.z,
         );
-        let x = dot(delta, u);
-        let y = dot(delta, v);
+        let x = delta.dot(u);
+        let y = delta.dot(v);
         let row = [x, y, 1.0];
         let target = -(x * x + y * y);
         for i in 0..3 {
@@ -180,7 +178,7 @@ fn solve_three(mut matrix: [[f64; 3]; 3], mut rhs: [f64; 3]) -> Option<[f64; 3]>
 }
 
 fn subtract_axis(vector: Vector3, axis: Vector3) -> Vector3 {
-    let axial = dot(vector, axis);
+    let axial = vector.dot(axis);
     Vector3::new(
         vector.x - axial * axis.x,
         vector.y - axial * axis.y,

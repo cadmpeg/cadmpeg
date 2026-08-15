@@ -11,8 +11,8 @@ use crate::records::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
-    ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    knots_nondecreasing, BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface,
+    PcurveGeometry, ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
@@ -2420,7 +2420,7 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
                 && *fit_tolerance >= 0.0
                 && knots.len() == control_points.len() + *degree as usize + 1
                 && knots.iter().all(|knot| knot.is_finite())
-                && knots.windows(2).all(|pair| pair[0] <= pair[1])
+                && knots_nondecreasing(knots)
                 && (weights.is_empty() || weights.len() == control_points.len())
                 && weights
                     .iter()

@@ -10,6 +10,7 @@ use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
+use crate::loss::CreoLossCode;
 use crate::surface::TorusRadius2Encoding;
 use crate::test_support::*;
 use crate::CreoCodec;
@@ -646,12 +647,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
             .report()
             .losses
             .iter()
-            .filter(|loss| {
-                loss.code
-                    == cadmpeg_ir::report::LossKind::shared(
-                        cadmpeg_ir::LossTaxonomy::AttributesNotTransferred,
-                    )
-            })
+            .filter(|loss| loss.code == CreoLossCode::LegacyStringEncodingRetained.kind())
             .count(),
         1
     );
@@ -846,8 +842,7 @@ fn incomplete_legacy_values_are_reported() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code
-                == cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::LossTaxonomy::RecordNotTyped))
+            .filter(|loss| { loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::RecordNotTyped })
             .count(),
         7
     );
@@ -856,10 +851,7 @@ fn incomplete_legacy_values_are_reported() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code
-                == cadmpeg_ir::report::LossKind::shared(
-                    cadmpeg_ir::LossTaxonomy::AttributesNotTransferred
-                ))
+            .filter(|loss| loss.code == CreoLossCode::LegacyByteStringEncodingRetained.kind())
             .count(),
         1
     );
