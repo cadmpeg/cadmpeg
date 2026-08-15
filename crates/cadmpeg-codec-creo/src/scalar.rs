@@ -592,7 +592,7 @@ pub fn decode_saved_conic_local_system_prefix(
         *value = decoded;
         cursor = next;
     }
-    Some((values, cursor))
+    Some((finite_local_system_slots(values)?, cursor))
 }
 
 /// Decode a positional plane local system, including its terminal-zero macro.
@@ -619,7 +619,9 @@ pub fn decode_positional_torus_local_system_prefix(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
-    decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PositionalTorus)
+    let (values, cursor) =
+        decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PositionalTorus)?;
+    Some((finite_local_system_slots(values)?, cursor))
 }
 
 /// Decode a positional plane support frame whose origin uses the named
@@ -647,7 +649,11 @@ fn decode_local_system_slots(
     variant: LocalSystemVariant,
 ) -> Option<[f64; 12]> {
     let (values, cursor) = decode_local_system_slot_prefix(body, cache, variant)?;
-    (cursor == body.len()).then_some(values)
+    (cursor == body.len()).then(|| finite_local_system_slots(values))?
+}
+
+fn finite_local_system_slots(values: [f64; 12]) -> Option<[f64; 12]> {
+    values.into_iter().all(f64::is_finite).then_some(values)
 }
 
 fn decode_local_system_slot_prefix(
@@ -1319,6 +1325,23 @@ mod tests {
             decode_plane_support_local_system_slots(&body, &cache),
             Some(expected)
         );
+    }
+
+    #[test]
+    fn complete_local_system_rejects_a_nonfinite_slot() {
+        let cache = ScalarCache {
+            entries: vec![CacheEntry { value: 1.0 }, CacheEntry { value: f64::NAN }],
+            paired_byte_1_by_tail: BTreeMap::new(),
+        };
+        let mut body = Vec::new();
+        for _ in 0..9 {
+            body.extend_from_slice(&[0x18, 0x00]);
+        }
+        for _ in 0..3 {
+            body.extend_from_slice(&[0x18, 0x01]);
+        }
+
+        assert!(decode_feature_local_system_slots(&body, &cache).is_none());
     }
 
     #[test]
