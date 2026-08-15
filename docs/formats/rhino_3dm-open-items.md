@@ -190,16 +190,6 @@ the same producer-source audit or an independent witness.
 
 **Note.** Reopened as a promotion-to-spec gap. Reordering conflicting unit records changes coordinate scaling; reordering writer-version records changes version gates.
 
-### SW-05. V1 seam-group curve ownership
-
-**Question.** Which model-space curve owns a V1 seam or mate relation when the paired trims carry different curve states?
-
-**Known.** `legacy.rs:523-558` glues only a curve-bearing trim to a curve-less trim. `legacy.rs:564-570` retains the first curve within a glued root, while the specification keeps two curve-bearing trims separate. The closure provides only local constructed cases for these alternatives.
-
-**Need.** Establish the source seam and mate ownership rule and the required behavior for conflicting curve copies.
-
-**Note.** Reopened because the closure promotes the exact-one and both-present decisions to the specification without an independent source witness.
-
 ### SW-06. Duplicate built-in userdata extensions
 
 **Question.** Which built-in userdata extension owns a dimension or hatch when duplicate class UUIDs occur?

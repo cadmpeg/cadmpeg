@@ -1116,9 +1116,10 @@ if edge-present: TCODE_LEGACY_CRV model-space edge curve
 Flag bit 0 marks an explicit model-space edge curve. Bit 1 marks a seam on the
 same face. Bit 2 marks a mated trim on another face. The face seam permutation
 and shell permutation pair trim records. A pair shares one edge only when
-exactly one trim stores a model-space edge curve; the curve-less trim uses that
-edge. If both trims store model-space edge curves, they remain separate edges.
-If neither trim stores one, neither trim has a model-space edge curve.
+exactly one trim stores a model-space edge curve; the curve-less trim aliases
+that edge. If both trims store model-space edge curves, both records remain as
+separate edges. If neither trim stores one, neither trim has a model-space edge
+curve.
 
 V1 Brep vertices are identified by trim-loop adjacency and the shared-edge
 permutations. The endpoint coordinates do not merge separate topological
