@@ -210,12 +210,6 @@ pub(crate) fn decode(
             "unsupported ON_Mesh major",
         ));
     }
-    if minor > 8 {
-        return Err(GeometryError::unsupported(
-            reader.position() - 1,
-            "unsupported ON_Mesh minor",
-        ));
-    }
     if major == 3 && archive == ArchiveVersion::V5 && minor > 5 {
         return Err(GeometryError::unsupported(
             reader.position() - 1,
@@ -376,13 +370,13 @@ pub(crate) fn decode(
         }
     }
     if major == 3 && minor >= 4 && !post_2006_fields {
-        reader.skip(reader.remaining())?;
+        reader.skip_remaining()?;
     }
-    if reader.remaining() != 0 {
-        return Err(error(
-            reader.position(),
-            "ON_Mesh payload has trailing bytes",
-        ));
+    let skipped = reader.skip_remaining()?;
+    if skipped != 0 {
+        decoded
+            .warnings
+            .push(format!("ON_Mesh skipped {skipped} trailing bytes"));
     }
     let source_vertices = double_vertices.unwrap_or_else(|| {
         decoded
@@ -818,7 +812,7 @@ fn read_ngons(
     let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported ngon version",
@@ -838,9 +832,7 @@ fn read_ngons(
             checked_u32(&mut child, faces)?;
         }
     }
-    if child.remaining() != 0 {
-        return Err(error(child.position(), "ngon chunk has trailing bytes"));
-    }
+    child.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(count)
 }
@@ -861,7 +853,7 @@ fn read_mapping_tag(
     let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
-    if major != 1 || minor > 1 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported mapping-tag version",
@@ -881,9 +873,7 @@ fn read_mapping_tag(
     if minor >= 1 {
         child.u32()?;
     }
-    if child.remaining() != 0 {
-        return Err(error(child.position(), "mapping tag has trailing bytes"));
-    }
+    child.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(())
 }
@@ -914,7 +904,7 @@ fn read_double_chunk<'a>(
     let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
-    if major != 1 || minor > 1 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported double-vertex version",
@@ -947,12 +937,7 @@ fn read_double_chunk<'a>(
         document_budget,
         archive,
     )?;
-    if child.remaining() != 0 {
-        return Err(error(
-            child.position(),
-            "double-vertex chunk has trailing bytes",
-        ));
-    }
+    child.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested_buffer.as_slice())?;
     if matches!(
         crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,

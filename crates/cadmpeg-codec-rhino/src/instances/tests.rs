@@ -106,7 +106,7 @@ fn reference_bytes(transform: Transform) -> Vec<u8> {
 }
 
 #[test]
-fn instance_reference_requires_exact_finite_invertible_affine_payload() {
+fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future_suffix() {
     let valid = reference_bytes(Transform::identity());
     let parsed = parse_reference(&valid, 0..valid.len()).expect("required invariant");
     assert_eq!(
@@ -126,8 +126,10 @@ fn instance_reference_requires_exact_finite_invertible_affine_payload() {
     assert!(parse_reference(&projective, 0..projective.len()).is_err());
 
     let mut trailing = valid;
+    trailing[0] = 0x11;
     trailing.push(0);
-    assert!(parse_reference(&trailing, 0..trailing.len()).is_err());
+    let parsed = parse_reference(&trailing, 0..trailing.len()).expect("future suffix is bounded");
+    assert_eq!(parsed.transform, Transform::identity());
 }
 
 #[test]

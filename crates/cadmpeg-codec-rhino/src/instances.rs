@@ -159,15 +159,9 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     ))
 }
 
-fn finish(reader: &BoundedReader<'_>, label: &str) -> Result<(), FramingError> {
-    if reader.remaining() == 0 {
-        Ok(())
-    } else {
-        Err(FramingError::structural(
-            reader.position(),
-            format!("{label} has trailing bytes"),
-        ))
-    }
+fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingError> {
+    reader.skip_remaining()?;
+    Ok(())
 }
 
 fn checksum_warning(
@@ -272,7 +266,7 @@ fn anonymous<'a>(
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>), FramingError> {
     let (chunk, payload, version) =
         anonymous_versioned(data, reader, archive, label, true, warnings)?;
-    if version != (1, 0) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             format!("unsupported {label} version"),
@@ -298,7 +292,7 @@ fn unit_detail<'a>(
         ));
     }
     let custom_name = utf16(&mut payload)?;
-    finish(&payload, "unit detail")?;
+    finish(&mut payload, "unit detail")?;
     Ok(UnitDetail {
         unit,
         meters_per_unit,
@@ -321,7 +315,9 @@ fn model_component(
     }
     checksum_warning(data, &chunk, "model-component attributes", warnings)?;
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if (payload.i32()?, payload.i32()?) != (1, 0) {
+    let major = payload.i32()?;
+    let minor = payload.i32()?;
+    if major != 1 || minor < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported model-component attributes version",
@@ -378,7 +374,7 @@ fn model_component(
             ))
         }
     };
-    finish(&payload, "model-component attributes")?;
+    finish(&mut payload, "model-component attributes")?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok((index, id, name))
 }
@@ -391,7 +387,7 @@ pub(crate) fn file_reference<'a>(
 ) -> Result<FileReference, FramingError> {
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "file reference", false, warnings)?;
-    if version.0 != 1 || !(0..=1).contains(&version.1) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported file-reference version",
@@ -407,7 +403,9 @@ pub(crate) fn file_reference<'a>(
         ));
     }
     let mut hash_payload = BoundedReader::new(data, hash.body.start, hash.body.end)?;
-    if (hash_payload.i32()?, hash_payload.i32()?) != (1, 0) {
+    let hash_major = hash_payload.i32()?;
+    let hash_minor = hash_payload.i32()?;
+    if hash_major != 1 || hash_minor < 0 {
         return Err(FramingError::structural(
             hash_payload.position(),
             "unsupported content-hash version",
@@ -427,13 +425,16 @@ pub(crate) fn file_reference<'a>(
         }
         checksum_warning(data, &digest, "SHA-1 hash", warnings)?;
         let mut bytes = BoundedReader::new(data, digest.body.start, digest.body.end)?;
-        if (bytes.i32()?, bytes.i32()?) != (1, 0) || bytes.remaining() != 20 {
+        let digest_major = bytes.i32()?;
+        let digest_minor = bytes.i32()?;
+        if digest_major != 1 || digest_minor < 0 {
             return Err(FramingError::structural(
                 bytes.position(),
                 "unsupported SHA-1 version",
             ));
         }
         let value = bytes.array()?;
+        bytes.skip_remaining()?;
         digest_ranges.push(digest.range());
         payload.skip(digest.next_offset - payload.position())?;
         Ok(value)
@@ -445,7 +446,7 @@ pub(crate) fn file_reference<'a>(
         name_sha1: read_sha1(&mut hash_payload)?,
         content_sha1: read_sha1(&mut hash_payload)?,
     };
-    finish(&hash_payload, "content hash")?;
+    finish(&mut hash_payload, "content hash")?;
     checksum_warning_excluding(data, &hash, &digest_ranges, "content hash", warnings)?;
     payload.skip(hash.next_offset - payload.position())?;
     let path_status = payload.u32()?;
@@ -454,7 +455,7 @@ pub(crate) fn file_reference<'a>(
     } else {
         None
     };
-    finish(&payload, "file reference")?;
+    finish(&mut payload, "file reference")?;
     checksum_warning_excluding(
         data,
         &chunk,
@@ -515,7 +516,7 @@ fn reference_settings<'a>(
 ) -> Result<Range<usize>, FramingError> {
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "reference settings", false, warnings)?;
-    if version != (1, 0) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported reference settings version",
@@ -534,7 +535,7 @@ fn reference_settings<'a>(
         children.push(parent.range());
         payload.skip(parent.next_offset - payload.position())?;
     }
-    finish(&payload, "reference settings")?;
+    finish(&mut payload, "reference settings")?;
     checksum_warning_excluding(data, &chunk, &children, "reference settings", warnings)?;
     Ok(chunk.range())
 }
@@ -549,7 +550,7 @@ fn parse_v5(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     let version = (packed >> 4, packed & 0x0f);
-    if version.0 != 1 || !(6..=7).contains(&version.1) {
+    if version.0 != 1 || version.1 < 6 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported V5 definition version",
@@ -604,7 +605,7 @@ fn parse_v5(
     if version.1 >= 7 {
         reader.skip(reader.remaining())?;
     }
-    finish(&reader, "V5 instance definition")?;
+    finish(&mut reader, "V5 instance definition")?;
     Ok(InstanceDefinition {
         source_range,
         id,
@@ -645,13 +646,13 @@ fn parse_v6(
         false,
         warnings,
     )?;
-    if outer_version != (1, 0) {
+    if outer_version.0 != 1 || outer_version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported instance definition version",
         ));
     }
-    finish(&outer, "instance-definition wrapper")?;
+    finish(&mut outer, "instance-definition wrapper")?;
     let component_start = reader.position();
     let (index, id, name) = model_component(data, &mut reader, archive, warnings)?;
     #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child, not its offsets.
@@ -682,7 +683,7 @@ fn parse_v6(
     if reader.bool()? {
         let (linked_chunk, mut linked, linked_version) =
             anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
-        if linked_version != (1, 0) {
+        if linked_version.0 != 1 || linked_version.1 < 0 {
             return Err(FramingError::structural(
                 linked.position(),
                 "unsupported linked-type version",
@@ -706,7 +707,7 @@ fn parse_v6(
                     .clone(),
             );
         }
-        finish(&linked, "linked type")?;
+        finish(&mut linked, "linked type")?;
         checksum_warning_excluding(
             data,
             &linked_chunk,
@@ -716,7 +717,7 @@ fn parse_v6(
         )?;
         outer_children.push(linked_chunk.range());
     }
-    finish(&reader, "instance definition")?;
+    finish(&mut reader, "instance definition")?;
     checksum_warning_excluding(
         data,
         &outer_chunk,
@@ -755,7 +756,7 @@ fn extract_member_ids(
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
     if v5_layout {
         let packed = outer.u8()?;
-        if packed >> 4 != 1 || !(6..=7).contains(&(packed & 0x0f)) {
+        if packed >> 4 != 1 || packed & 0x0f < 6 {
             return Err(FramingError::structural(
                 outer.position(),
                 "unsupported V5 definition version",
@@ -772,13 +773,13 @@ fn extract_member_ids(
         false,
         &mut Vec::new(),
     )?;
-    if version != (1, 0) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported instance definition version",
         ));
     }
-    finish(&outer, "instance-definition wrapper")?;
+    finish(&mut outer, "instance-definition wrapper")?;
     let _component = model_component(data, &mut reader, archive, &mut Vec::new())?;
     let _kind = reader.u32()?;
     let _units = unit_detail(data, &mut reader, archive, &mut Vec::new())?;
@@ -886,7 +887,8 @@ pub(crate) fn parse_reference(
     range: Range<usize>,
 ) -> Result<InstanceReference, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    if reader.u8()? != 0x10 {
+    let version = reader.u8()?;
+    if version >> 4 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "instance reference version is not 1.0",
@@ -906,7 +908,7 @@ pub(crate) fn parse_reference(
         }
     }
     let _bounds = bbox(&mut reader)?;
-    finish(&reader, "instance reference")?;
+    finish(&mut reader, "instance reference")?;
     if !rows.iter().flatten().all(|value| value.is_finite()) {
         return Err(FramingError::structural(
             reader.position(),

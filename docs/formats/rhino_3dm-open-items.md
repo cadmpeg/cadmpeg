@@ -18,16 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Hostile sweep findings recorded on 2026-08-10
 
-### ON-04. Strictness rules that openNURBS does not apply
-
-**Question.** Which of the codec's framing refusals must stay fatal?
-
-**Known.** `chunks.rs` now demotes negative long values, accepts an EOF body at least the file-size width, and keeps the stored EOF size informational. `container.rs` warns when a table has no end marker. The specification still says every table has a short end marker, so the decoder and specification do not state the same rule.
-
-**Note.** Reopened. The four-way decision was not closed as a specification-plus-decoder contract. The missing-table-marker path is recoverable in code but still described as required in `rhino_3dm.md` §7.
-
-**Need.** We must decide, for each rule, whether it stays fatal, becomes a warning with recovery, or is removed. The decision changes the specification and the decoder together.
-
 ### TE-01. Object transfer on Rhino-authored files
 
 **Question.** Why does an object class fail on a Rhino-authored file where the committed fixture for the same class passes?
@@ -47,26 +37,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Note.** Reopened. A test over the same corpus is useful regression evidence, but it does not supply the independent synthesized fixtures and support-boundary measurement required by this item.
 
 **Need.** We need a second fixture tier that mirrors the example-file structure, plus a per-archive-version transfer measurement that defines the support claim.
-
-### RS-01. Trailing bytes in a bounded chunk
-
-**Question.** What does a bounded chunk with unread trailing bytes mean?
-
-**Known.** `brep.rs` skips trailing bytes in some anonymous helpers, but `brep.rs:384-388`, `history.rs`, `mesh.rs`, and `instances.rs` still reject unread bytes at other bounded payload and record boundaries. The behavior is not a consistent bounded-chunk rule.
-
-**Note.** Reopened. The implementation only partially applies the openNURBS recovery behavior. A later suffix can still discard a complete geometry or instance record at the remaining fatal checks.
-
-**Need.** We must decide whether a bounded chunk may carry unread bytes and apply that decision consistently at every bounded reader.
-
-### RS-02. Exact minor-version equality
-
-**Question.** Which version fields must a decode site compare exactly?
-
-**Known.** The specification says major-1 array and element readers accept every nonnegative minor. Exact checks remain in `history.rs`, `mesh.rs`, `instances.rs`, `morph.rs`, `polyedge.rs`, and Brep nested readers. Later minor fields therefore still take incompatible paths at different sites.
-
-**Note.** Reopened. The broad promotion in `rhino_3dm.md` §4.2 "A reader consumes the fields defined for the payload major version" is not true of the current decoder. The version policy and suffix policy need a site-by-site rule with evidence.
-
-**Need.** A decode site must accept a minor version that is not less than the one whose fields it reads and then apply the trailing-byte rule of RS-01.
 
 ### RS-04. Non-canonical boolean bytes
 

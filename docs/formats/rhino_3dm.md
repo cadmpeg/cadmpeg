@@ -242,7 +242,9 @@ trailer.
 A reader consumes the fields defined for the payload major version. A later
 minor version can append fields before the bounded end. Unread suffix bytes are
 skipped at the bounded end. Array and element readers that define major version
-1 accept every nonnegative minor version.
+1 accept every nonnegative minor version. A reader may reject a minor version
+only when the containing archive grammar defines a writer-band ceiling for that
+payload; this is a grammar admission rule, not a trailing-byte rule.
 
 Properties and settings are read in table order. A repeated singleton record
 replaces the preceding value; the last successfully read occurrence owns the
@@ -469,8 +471,10 @@ The normal V2+ table sequence is:
 18. EOF.
 
 Optional tables may be absent. A table is a bounded table chunk containing
-record chunks followed by a short `TCODE_ENDOFTABLE` whose value is zero.
-Every record is contained within the table bound.
+record chunks. A short `TCODE_ENDOFTABLE` with value zero normally terminates
+the records. If the marker is absent, the table chunk boundary terminates the
+records and scanning emits a warning. A present marker must be the final table
+child. Every record is contained within the table bound.
 
 An object record is:
 
@@ -512,19 +516,19 @@ i32 command_version
 ON_UUID command_id
 ON_UuidList descendants
 ON_UuidList antecedents
-anonymous version 1.0 values
+anonymous version 1.minor values
   i32 value_count
   value_count × history value anonymous chunk
 if minor >= 1: i32 record_type
 if minor >= 2: bool copy_on_replace
 ```
 
-An `ON_UuidList` is an anonymous version 1.0 chunk containing an archive array
+An `ON_UuidList` is an anonymous major-1 chunk containing an archive array
 of UUIDs. Descendant order is serialized order. Antecedents identify input
 objects and descendants identify output objects. `record_type` is 0 for update
 history parameters and 1 for feature parameters.
 
-Each history value is an anonymous version 1.0 chunk:
+Each history value is an anonymous major-1 chunk:
 
 ```text
 i32 value_type
@@ -555,7 +559,9 @@ The fixed-layout value-type numbers are:
 Every value is independently bounded by its anonymous chunk. The next value or
 record suffix begins at that chunk's declared end.
 
-An object reference is an anonymous version 1.0 through 1.3 chunk:
+An object reference is an anonymous major-1 chunk. Minor 1 adds the first two
+evaluation intervals, minor 2 adds the third, and minor 3 adds object snap
+mode. Later minors append fields and leave an unread bounded suffix:
 
 ```text
 ON_UUID object_id
@@ -574,7 +580,7 @@ if minor >= 3: i32 object_snap_mode
 An evaluation interval gated by the minor version is absent when its field is
 not stored. It is not the interval `[0,0]`.
 
-An instance-reference path item is an anonymous version 1.0 or 1.1 chunk:
+An instance-reference path item is an anonymous major-1 chunk:
 
 ```text
 ON_UUID instance_reference_id
@@ -583,15 +589,15 @@ ON_UUID instance_definition_id
 i32 definition_geometry_index
 if minor >= 1:
   ON_ComponentIndex component
-  object-evaluation anonymous version 1.0 chunk
+  object-evaluation anonymous major-1 chunk
 ```
 
-A geometry value is an anonymous version 1.0 chunk containing an `i32` count
+A geometry value is an anonymous major-1 chunk containing an `i32` count
 followed by that many polymorphic class wrappers. Every wrapper contains its
 geometry class UUID and class-data payload.
 
-A polyedge value is an anonymous version 1.0 chunk containing an `i32` count
-followed by that many polyedge anonymous version 1.0 chunks:
+A polyedge value is an anonymous major-1 chunk containing an `i32` count
+followed by that many polyedge anonymous major-1 chunks:
 
 ```text
 i32 segment_count
@@ -600,7 +606,8 @@ archive array of f64 polyedge_parameters
 i32 evaluation_mode
 ```
 
-A curve-proxy-history chunk has version 1.0 or 1.1:
+A curve-proxy-history chunk is anonymous major 1. Minor 1 adds the edge and
+trim domains:
 
 ```text
 object reference
@@ -613,8 +620,9 @@ if minor >= 1:
   ON_Interval segment_trim_domain
 ```
 
-A SubD edge-chain value is an anonymous version 1.1 chunk containing an `i32`
-count followed by that many edge-chain anonymous version 1.1 chunks:
+A SubD edge-chain value is an anonymous major-1 minor-1-or-later chunk
+containing an `i32` count followed by that many edge-chain anonymous major-1
+minor-1-or-later chunks:
 
 ```text
 ON_UUID persistent_subd_id
@@ -1672,8 +1680,9 @@ minor >= 4 and writer version >= 200606010:
   minor >= 8: serialized vertex bounding box
 ```
 
-The mapping tag is version 1.0 or 1.1: mapping UUID, `i32` CRC, sixteen
-transform doubles, and for 1.1 a `u32` mapping type. Ngon records contain a
+The mapping tag is an anonymous major-1 chunk. Minor 1 adds the mapping type:
+mapping UUID, `i32` CRC, sixteen transform doubles, and for minor at least 1 a
+`u32` mapping type. Ngon records contain a
 `u32` count followed by each boundary vertex count, face count, vertex indices,
 and face indices. Double vertices contain a `u32` count and, when nonzero, a
 compressed `3*f64` channel. A valid double channel has exactly the declared
@@ -1681,7 +1690,9 @@ mesh vertex count and finite values.
 
 ## 15. Brep
 
-`ON_Brep` major 3 uses payload version 3.minor, with minors 0 through 3:
+`ON_Brep` major 3 uses payload version 3.minor. Minor 1 adds mesh-side
+chunks, minor 2 adds `is_solid`, and minor 3 adds region topology. Later
+minors append fields before the bounded end:
 
 ```
 packed version
@@ -1699,10 +1710,10 @@ minor >= 2: i32 is_solid
 minor >= 3: anonymous region-topology chunk
 ```
 
-Polymorphic C2/C3/surface arrays are anonymous version 1.0, then `i32 count`
+Polymorphic C2/C3/surface arrays are anonymous major-1, then `i32 count`
 and for each slot an `i32 present` flag followed by one polymorphic object when
 present is 1. Zero denotes a positional null slot. Vertices, edges, trims,
-loops, and faces are raw anonymous version 1.0 arrays with a packed `1.0` byte
+loops, and faces are raw anonymous major-1 arrays with a packed `1.minor` byte
 and inline records. Face array version is 1.1 before archive 70 and 1.2 at
 archive 70+;
 minor 1 adds one UUID per face and minor 2 adds a presence byte and one color
@@ -1830,9 +1841,9 @@ For an archive writer version before 2 October 2002, the stored value is unset.
 A Brep is closed when it has at least one face and every edge has exactly two
 trim uses. A closed Brep is solid; another Brep is a sheet.
 
-For minor 3, the region wrapper is anonymous version 1.1, followed by a
-presence byte and, when present, a version-1.0 region-topology object. The
-object contains a face-side array and region array, each with version 1.0 and
+For minor at least 3, the region wrapper is anonymous major-1, followed by a
+presence byte and, when present, a major-1 region-topology object. The object
+contains a face-side array and region array, each with major 1 and
 an `i32` count. Before archive 60, arrays contain raw anonymous element chunks;
 at archive 60 and later, arrays contain polymorphic objects.
 
@@ -1904,8 +1915,9 @@ profile frame places them at the trimmed path endpoints.
 ## 17. SubD
 
 `ON_SubD` begins with a one-byte SubDimple presence flag. Zero is empty; one is
-followed by an anonymous SubDimple chunk. SubDimple uses anonymous major 1 and
-minor 0 through 4. V5/V6 use minor 0; V7/V8 use minor 4.
+followed by an anonymous SubDimple chunk. SubDimple uses anonymous major 1.
+Minor 0 is the base payload; later minors append fields. V5/V6 use minor 0;
+V7/V8 use minor 4.
 
 SubDimple fields:
 
@@ -1978,7 +1990,7 @@ continuity, and closure.
 ## 18. Instance definitions and references
 
 Instance-definition records are in the instance-definition table. V5 payloads
-use packed version 1 with writer minors 6 or 7. Their order is:
+use packed major version 1 with writer minor 6 or later. Their order is:
 
 ```
 definition UUID
@@ -2002,7 +2014,7 @@ minor >= 7: file-reference presence and record
 The unit-system detail replaces the earlier unit fields. A version-1.7 reader
 skips all bytes after the optional file-reference record as an abandoned tail.
 
-V6 through V8 use anonymous version 1.0:
+V6 through V8 use anonymous major-1 payloads:
 
 ```
 model-component attributes
@@ -2015,7 +2027,7 @@ bounding box
 bool member UUID list present
 if present: member UUID array
 bool linked type
-if linked: anonymous linked-type version 1.0
+if linked: anonymous linked-type major-1 payload
 ```
 
 The linked-type chunk contains file reference, nested depth, linked appearance,
@@ -2023,7 +2035,7 @@ reference-component-settings presence, and optional settings. Static and
 linked-and-embedded definitions carry member UUIDs; linked external definitions
 normally do not.
 
-`ON_InstanceRef` uses packed version 1.0:
+`ON_InstanceRef` uses packed major version 1:
 
 ```
 definition UUID
@@ -2405,6 +2417,10 @@ The mesh version is a packed byte. Writer bands are:
 | 50           | 3.5                  |
 | 60, 70, 80   | 3.8                  |
 
+Archive band 50 admits major-3 mesh minors through 5. A larger minor in that
+band is a writer-band mismatch. In an admitting archive band, a larger minor
+uses the monotonic gates above and leaves later fields as a bounded suffix.
+
 Major 1 uses raw arrays. Major 2 has no defined payload layout. Major 3 uses
 five compressed buffers after the face array. Every buffer is present in
 sequence, including a zero-size absent channel.
@@ -2423,7 +2439,7 @@ whose size differs from its expected size is invalid. Vertex and face count are
 nonnegative; each face index is less than vertex count. The explicit
 index-width field is 1, 2, or 4 and matches the selection from vertex count.
 
-Major 3 gates are exact:
+Major 3 gates are monotonic:
 
 ```text
 minor >= 2: i32 packed texture rotation
@@ -2439,7 +2455,7 @@ The three minor-5 values are tri-state bytes: zero means unset, one means
 false, and two means true. Other values are invalid. They are not ordinary
 booleans.
 
-The mapping tag is an anonymous chunk with packed version 1.0 or 1.1:
+The mapping tag is an anonymous major-1 chunk. Minor 1 adds the mapping type:
 
 ```
 UUID mapping ID
@@ -2448,7 +2464,7 @@ i32 mapping CRC
 minor >= 1: u32 mapping type
 ```
 
-The ngon chunk is anonymous version 1.0:
+The ngon chunk is anonymous major-1:
 
 ```
 u32 ngon_count
@@ -2535,11 +2551,11 @@ unset values; tolerances are finite nonnegative values or explicit unset
 sentinels; singular and point-on-surface trims use edge -1 and identical
 endpoints; loop rings are directed, continuous, and closed.
 
-### 19.5 SubD exact record tables
+### 19.5 SubD record tables
 
-The SubDimple anonymous chunk is major 1, minor 0 through 4. The outer
-`ON_SubD` byte is `has_subdimple`: 0 means no following payload and 1 means
-one SubDimple chunk.
+The SubDimple anonymous chunk is major 1. Minor 0 is the base payload; later
+minors append fields. The outer `ON_SubD` byte is `has_subdimple`: 0 means no
+following payload and 1 means one SubDimple chunk.
 
 SubDimple field order:
 
@@ -2738,7 +2754,7 @@ at archive 50 and later when no valid appearance is stored.
 V6–V8 anonymous field order:
 
 ```
-anonymous version major=1, minor=0
+anonymous version major=1, minor=0 or later
 model-component attributes: index, UUID, name
 u32 definition type
 units/tolerances detail record
@@ -2750,7 +2766,7 @@ bool member-UUID-array-present
 if true: i32 UUID-array count, count × UUID
 bool linked-type
 if true:
-  anonymous linked-type version major=1, minor=0
+  anonymous linked-type major=1, minor=0 or later
   file-reference record
   i32 nested linked-definition depth
   u32 linked-component appearance
@@ -2758,7 +2774,8 @@ if true:
   if true: referenced-component-settings record
 ```
 
-`ON_InstanceRef` is packed version 1.0:
+`ON_InstanceRef` is packed major version 1. Minor 0 defines the fields below;
+later minors append fields:
 
 ```
 u8 version = 0x10
@@ -2774,17 +2791,18 @@ membership comes from the member UUID array, not object attributes.
 
 ### 20.1 External file identity
 
-A file reference is an anonymous chunk version 1.0 or 1.1:
+A file reference is an anonymous major-1 chunk. Minor 1 adds the embedded-file
+component:
 
 ```
 UTF-16 full path
 UTF-16 relative path
-anonymous content-hash chunk version 1.0:
+anonymous content-hash major-1 chunk:
   u64 referenced byte count
   u64 hash acquisition time
   u64 content modification time
-  anonymous SHA-1 chunk version 1.0: 20 digest bytes
-  anonymous SHA-1 chunk version 1.0: 20 digest bytes
+  anonymous SHA-1 major-1 chunk: 20 digest bytes
+  anonymous SHA-1 major-1 chunk: 20 digest bytes
 u32 path status
 minor >= 1: UUID embedded-file component
 ```

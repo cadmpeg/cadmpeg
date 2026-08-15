@@ -142,7 +142,7 @@ fn anonymous(
     let mut reader = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 {
+    if major != 1 || minor < 0 {
         return Err(FramingError::structural(
             chunk.body.start,
             "unsupported anonymous major version",
@@ -170,12 +170,7 @@ fn uuid_list(
     for _ in 0..count {
         values.push(uuid(&mut reader)?);
     }
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "UUID list has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((values, next))
 }
 
@@ -226,7 +221,7 @@ fn instance_reference(
     archive: ArchiveVersion,
 ) -> Result<(InstanceReference, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if !(0..=1).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported instance-reference path version",
@@ -240,30 +235,20 @@ fn instance_reference(
         let component = component(&mut reader)?;
         let (mut nested, nested_next, nested_minor) =
             anonymous(bytes, reader.position(), reader.end(), archive)?;
-        if nested_minor != 0 {
+        if nested_minor < 0 {
             return Err(FramingError::structural(
                 nested.position(),
                 "unsupported object-evaluation version",
             ));
         }
         let evaluation = evaluation(&mut nested, 3)?;
-        if nested.remaining() != 0 {
-            return Err(FramingError::structural(
-                nested.position(),
-                "object evaluation has trailing bytes",
-            ));
-        }
+        nested.skip_remaining()?;
         reader.skip(nested_next - reader.position())?;
         (Some(component), Some(evaluation))
     } else {
         (None, None)
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "instance-reference path has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         InstanceReference {
             reference_id,
@@ -284,7 +269,7 @@ fn object_reference(
     archive: ArchiveVersion,
 ) -> Result<(ObjectReference, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if !(0..=3).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported object-reference version",
@@ -311,12 +296,7 @@ fn object_reference(
         evaluation.intervals[2] = Some(interval(&mut reader)?);
     }
     let osnap_mode = if minor >= 3 { reader.i32()? } else { 0 };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "object reference has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         ObjectReference {
             object_id,
@@ -360,7 +340,7 @@ fn geometries(
         reader.end(),
         archive,
     )?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             nested.position(),
             "unsupported geometry-value version",
@@ -385,12 +365,7 @@ fn geometries(
             userdata,
         });
     }
-    if nested.remaining() != 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "geometry value has trailing bytes",
-        ));
-    }
+    nested.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(values)
 }
@@ -402,7 +377,7 @@ fn curve_proxy(
     archive: ArchiveVersion,
 ) -> Result<(CurveProxy, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if !(0..=1).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported curve-proxy version",
@@ -419,12 +394,7 @@ fn curve_proxy(
     } else {
         (None, None)
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "curve proxy has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         CurveProxy {
             curve,
@@ -446,7 +416,7 @@ fn poly_edge(
     archive: ArchiveVersion,
 ) -> Result<(PolyEdge, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported polyedge version",
@@ -461,12 +431,7 @@ fn poly_edge(
     }
     let parameters = array(&mut reader, 8, read_f64)?;
     let evaluation_mode = reader.i32()?;
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "polyedge has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         PolyEdge {
             segments,
@@ -487,7 +452,7 @@ fn poly_edges(
         reader.end(),
         archive,
     )?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             nested.position(),
             "unsupported polyedge-value version",
@@ -505,12 +470,7 @@ fn poly_edges(
         nested.skip(value_next - nested.position())?;
         values.push(value);
     }
-    if nested.remaining() != 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "polyedge value has trailing bytes",
-        ));
-    }
+    nested.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(values)
 }
@@ -539,12 +499,7 @@ fn subd_edge_chain(
     for orientation in &mut orientations {
         *orientation = u8::from(*orientation == 1);
     }
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "SubD edge chain has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         SubdEdgeChain {
             subd_id,
@@ -583,12 +538,7 @@ fn subd_edge_chains(
         nested.skip(value_next - nested.position())?;
         values.push(value);
     }
-    if nested.remaining() != 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "SubD edge-chain value has trailing bytes",
-        ));
-    }
+    nested.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(values)
 }
@@ -600,7 +550,7 @@ fn parse_value(
     archive: ArchiveVersion,
 ) -> Result<(HistoryValue, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported history-value version",
@@ -632,12 +582,7 @@ fn parse_value(
             }
         }
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "history value has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((HistoryValue { id, value }, next))
 }
 
@@ -684,13 +629,13 @@ fn parse_record(
             format!("history record has class {}", class.class_uuid),
         ));
     }
-    let (mut reader, next, minor) = anonymous(
+    let (mut reader, _next, minor) = anonymous(
         bytes,
         class.class_data_range.start,
         class.class_data_range.end,
         archive,
     )?;
-    if next != class.class_data_range.end || !(0..=2).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported history-record version",
@@ -705,7 +650,7 @@ fn parse_record(
     reader.skip(next - reader.position())?;
     let (mut values_reader, next, values_minor) =
         anonymous(bytes, reader.position(), reader.end(), archive)?;
-    if values_minor != 0 {
+    if values_minor < 0 {
         return Err(FramingError::structural(
             values_reader.position(),
             "unsupported history-values version",
@@ -723,12 +668,7 @@ fn parse_record(
         values_reader.skip(value_next - values_reader.position())?;
         values.push(value);
     }
-    if values_reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            values_reader.position(),
-            "history-values chunk has trailing bytes",
-        ));
-    }
+    values_reader.skip_remaining()?;
     reader.skip(next - reader.position())?;
     let record_type = if minor >= 1 {
         match reader.i32()? {
@@ -740,12 +680,7 @@ fn parse_record(
         RecordType::HistoryParameters
     };
     let copy_on_replace = minor >= 2 && reader.bool()?;
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "history record has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(HistoryRecord {
         source_range: record.range.clone(),
         id,

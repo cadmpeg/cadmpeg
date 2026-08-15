@@ -512,12 +512,6 @@ pub(crate) fn parse(
             "unsupported ON_Brep major",
         ));
     }
-    if version & 0x0f > 3 {
-        return Err(GeometryError::unsupported(
-            version_offset,
-            "unsupported ON_Brep minor",
-        ));
-    }
     let minor = version & 0x0f;
     let mut warnings = Vec::new();
     let c2 = read_children(
@@ -580,11 +574,9 @@ pub(crate) fn parse(
     } else {
         (Vec::new(), Vec::new(), None)
     };
-    if reader.remaining() != 0 {
-        return Err(error(
-            reader.position(),
-            "ON_Brep payload has trailing bytes",
-        ));
+    let skipped = reader.skip_remaining()?;
+    if skipped != 0 {
+        warnings.push(format!("ON_Brep skipped {skipped} trailing bytes"));
     }
     let raw = RawBrep {
         minor,
@@ -1014,14 +1006,14 @@ fn read_regions(
             ));
         }
         if !outer.bool()? {
-            if outer.remaining() != 0 {
-                return Err(error(outer.position(), "region wrapper has trailing bytes"));
-            }
+            outer.skip_remaining()?;
             return Ok((Vec::new(), Vec::new(), None));
         }
         let nested_chunk = anonymous_chunk(bytes, &mut outer, archive)?;
         let mut topology = body_reader(bytes, &nested_chunk)?;
-        if topology.i32()? != 1 || topology.i32()? != 0 {
+        let topology_major = topology.i32()?;
+        let topology_minor = topology.i32()?;
+        if topology_major != 1 || topology_minor < 0 {
             return Err(GeometryError::unsupported(
                 topology.position() - 8,
                 "unsupported Brep region-topology version",
@@ -1044,9 +1036,7 @@ fn read_regions(
         if sides.len() != face_count.saturating_mul(2) {
             return Err(error(outer.position(), "region face-side count mismatch"));
         }
-        if outer.remaining() != 0 {
-            return Err(error(outer.position(), "region wrapper has trailing bytes"));
-        }
+        outer.skip_remaining()?;
         Ok((sides, regions, Some(nested_chunk.range())))
     })();
     reader.skip(chunk.next_offset - reader.position())?;
@@ -1090,12 +1080,7 @@ fn read_region_sides<'a>(
             direction: child.i32()?,
             source_range: source,
         });
-        if child.remaining() != 0 {
-            return Err(error(
-                child.position(),
-                "region face-side has trailing bytes",
-            ));
-        }
+        child.skip_remaining()?;
     }
     finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
     Ok(result)
@@ -1118,9 +1103,7 @@ fn read_region_records<'a>(
         let region_type = child.i32()?;
         let sides = indexes(&mut child, "region side")?;
         let bounds = bbox(&mut child)?;
-        if child.remaining() != 0 {
-            return Err(error(child.position(), "region has trailing bytes"));
-        }
+        child.skip_remaining()?;
         result.push(RawBrepRegion {
             index,
             region_type,
@@ -1156,7 +1139,7 @@ fn region_element(
         let mut child = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
         let major = child.i32()?;
         let minor = child.i32()?;
-        if major != 1 || minor != 0 {
+        if major != 1 || minor < 0 {
             return Err(GeometryError::unsupported(
                 start,
                 "unsupported raw region element version",
@@ -1305,7 +1288,7 @@ fn raw_array_start(
 fn anonymous_array_start(reader: &mut BoundedReader<'_>) -> Result<usize, GeometryError> {
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::unsupported(
             reader.position() - 8,
             "unsupported region array version",

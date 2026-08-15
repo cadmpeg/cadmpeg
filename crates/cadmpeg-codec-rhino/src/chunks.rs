@@ -249,6 +249,19 @@ impl<'a> BoundedReader<'a> {
         Ok(())
     }
 
+    /// Skips the unread suffix of this bounded payload.
+    ///
+    /// The chunk boundary has already been validated by [`chunk_at`].  A
+    /// parser that has consumed all fields known to its payload version must
+    /// therefore advance to that boundary instead of treating later fields
+    /// as a framing failure.  Truncation and overrun still fail at the field
+    /// read that reaches beyond the bound.
+    pub(crate) fn skip_remaining(&mut self) -> Result<usize, FramingError> {
+        let count = self.remaining();
+        self.skip(count)?;
+        Ok(count)
+    }
+
     /// Reads a byte.
     pub(crate) fn u8(&mut self) -> Result<u8, FramingError> {
         self.need(1)?;

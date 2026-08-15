@@ -249,7 +249,28 @@ fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
 }
 
 #[test]
-fn requires_end_of_table_and_rejects_wrong_order() {
+fn missing_end_of_table_marker_is_recoverable_warning() {
+    let archive = ArchiveVersion::V5;
+    let bytes = minimal_document(
+        "50",
+        &[
+            long_chunk(archive, 0x1000_0014, &[]),
+            long_chunk(archive, 0x1000_0015, &[]),
+            long_chunk(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("table boundary is sufficient");
+    assert_eq!(
+        scan.warnings
+            .iter()
+            .filter(|warning| warning.contains("has no end-of-table marker"))
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn missing_end_of_file_and_wrong_table_order_remain_fatal() {
     let archive = ArchiveVersion::V5;
     let mut missing = header("50");
     missing.extend(long_chunk(archive, 1, b"comment"));

@@ -446,7 +446,7 @@ anchor = "| class data | `0x0002fffc` |"
 area = "Object payload grammars (§7-§20)"
 reason = "Roughly sixty payload layouts. Each states a serialization order and per-field types but no byte offsets and no total size, because version gates and counted arrays move every later field. They are slot layouts, and only the two in §3.2 state a size the slots can be checked against."
 section = "7"
-anchor = "A table is a bounded table chunk containing record chunks followed by a short `TCODE_ENDOFTABLE` whose value is zero."
+anchor = "A table is a bounded table chunk containing record chunks. A short `TCODE_ENDOFTABLE` with value zero normally terminates"
 
 [[not_applicable]]
 area = "Materials, linetypes, hatch patterns, fonts, dimstyles, and views (§20.2-§20.4)"

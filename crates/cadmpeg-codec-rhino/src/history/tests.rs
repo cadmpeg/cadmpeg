@@ -97,6 +97,20 @@ fn unstored_evaluation_intervals_remain_absent() {
 }
 
 #[test]
+fn history_value_accepts_a_future_minor_and_skips_its_suffix() {
+    let mut body = 2_i32.to_le_bytes().to_vec();
+    body.extend(7_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(42_i32.to_le_bytes());
+    body.extend([0xaa, 0xbb]);
+    let bytes = anonymous_value(9, &body);
+    let (parsed, next) = parse_value(&bytes, 0, bytes.len(), ArchiveVersion::V8)
+        .expect("future history minor is bounded");
+    assert_eq!(next, bytes.len());
+    assert!(matches!(parsed.value, Value::Integers(values) if values == [42]));
+}
+
+#[test]
 fn projection_preserves_duplicate_values_and_same_record_descendants() {
     let mut producer = record(1, 11, &[], &[40, 40]);
     producer.values.push(HistoryValue {

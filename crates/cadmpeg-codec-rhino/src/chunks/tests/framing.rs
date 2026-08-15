@@ -276,6 +276,15 @@ fn bounded_reader_fixed_arrays_preserve_absolute_cursor_bounds() {
 }
 
 #[test]
+fn bounded_reader_skips_a_valid_future_suffix() {
+    let bytes = [9, 8, 7, 6, 5];
+    let mut reader = BoundedReader::new(&bytes, 1, 5).expect("required invariant");
+    assert_eq!(reader.u16().expect("required invariant"), 0x0708);
+    assert_eq!(reader.skip_remaining().expect("required invariant"), 2);
+    assert_eq!(reader.remaining(), 0);
+}
+
+#[test]
 fn top_level_framing_preserves_truncation_classification() {
     let bytes = header("50");
     let truncated = &bytes[..bytes.len() - 1];

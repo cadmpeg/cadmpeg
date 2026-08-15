@@ -159,7 +159,7 @@ pub(crate) fn decode(
     let has_subdimple = reader.u8()?;
     match has_subdimple {
         0 => {
-            finish_payload(&reader)?;
+            finish_payload(&mut reader)?;
             Ok(DecodedSubd::Empty)
         }
         1 => {
@@ -167,7 +167,7 @@ pub(crate) fn decode(
             let mut child = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
             let major = child.i32()?;
             let minor = child.i32()?;
-            if major != 1 || !(0..=4).contains(&minor) {
+            if major != 1 || minor < 0 {
                 return Err(SubdError::UnsupportedVersion {
                     offset: chunk.body.start,
                     message: format!("unsupported SubDimple version {major}.{minor}"),
@@ -176,7 +176,7 @@ pub(crate) fn decode(
             let (surface, level_count, children) =
                 read_subdimple(&mut child, archive, minor, scale, id, &mut warnings)?;
             finish_chunk_children(&mut reader, &chunk, child, &children, &mut warnings)?;
-            finish_payload(&reader)?;
+            finish_payload(&mut reader)?;
             Ok(DecodedSubd::Surface {
                 surface: Box::new(surface),
                 neutral_metadata: minor > 0 || level_count > 1,
@@ -253,7 +253,7 @@ fn read_level(
     let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 || minor != 1 {
+    if major != 1 || minor < 1 {
         return Err(SubdError::UnsupportedVersion {
             offset: chunk.body.start,
             message: format!("unsupported SubD level version {major}.{minor}"),
@@ -1110,7 +1110,7 @@ fn read_mapping_tag(
     let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 || !(0..=1).contains(&minor) {
+    if major != 1 || minor < 0 {
         return Err(SubdError::UnsupportedVersion {
             offset: chunk.body.start,
             message: format!("unsupported SubD mapping-tag version {major}.{minor}"),
@@ -1134,7 +1134,7 @@ fn read_symmetry(
     let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
     let version = reader.i32()?;
-    if major != 1 || !(1..=4).contains(&version) {
+    if major != 1 || version < 1 {
         return Err(SubdError::UnsupportedVersion {
             offset: chunk.body.start,
             message: format!("unsupported SubD symmetry version {major}.{version}"),
@@ -1216,7 +1216,7 @@ fn read_subd_hash(
     let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 || minor != 1 {
+    if major != 1 || minor < 1 {
         return Err(SubdError::UnsupportedVersion {
             offset: chunk.body.start,
             message: format!("unsupported SubD topology-hash version {major}.{minor}"),
@@ -1243,7 +1243,7 @@ fn read_sha1(
     let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(SubdError::UnsupportedVersion {
             offset: chunk.body.start,
             message: format!("unsupported SHA-1 record version {major}.{minor}"),
@@ -1300,12 +1300,12 @@ fn finish_chunk(
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
-    _warnings: &mut Vec<String>,
+    warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
-    if child.remaining() != 0 {
-        return Err(malformed(
-            child.position(),
-            "SubD anonymous chunk has trailing bytes",
+    let skipped = child.remaining();
+    if skipped != 0 {
+        warnings.push(format!(
+            "SubD anonymous chunk skipped {skipped} trailing bytes"
         ));
     }
     parent.skip(chunk.next_offset - parent.position())?;
@@ -1318,10 +1318,10 @@ fn finish_direct_chunk(
     child: BoundedReader<'_>,
     warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
-    if child.remaining() != 0 {
-        return Err(malformed(
-            child.position(),
-            "SubD anonymous chunk has trailing bytes",
+    let skipped = child.remaining();
+    if skipped != 0 {
+        warnings.push(format!(
+            "SubD anonymous chunk skipped {skipped} trailing bytes"
         ));
     }
     if matches!(
@@ -1344,10 +1344,10 @@ fn finish_chunk_children(
     children: &[Range<usize>],
     warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
-    if child.remaining() != 0 {
-        return Err(malformed(
-            child.position(),
-            "SubD anonymous chunk has trailing bytes",
+    let skipped = child.remaining();
+    if skipped != 0 {
+        warnings.push(format!(
+            "SubD anonymous chunk skipped {skipped} trailing bytes"
         ));
     }
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
@@ -1364,15 +1364,8 @@ fn finish_chunk_children(
     Ok(())
 }
 
-fn finish_payload(reader: &BoundedReader<'_>) -> Result<(), SubdError> {
-    if reader.remaining() == 0 {
-        Ok(())
-    } else {
-        Err(malformed(
-            reader.position(),
-            "ON_SubD payload has trailing bytes",
-        ))
-    }
+fn finish_payload(reader: &mut BoundedReader<'_>) -> Result<(), SubdError> {
+    reader.skip_remaining().map(|_| ()).map_err(SubdError::from)
 }
 
 fn malformed(offset: usize, message: impl Into<String>) -> SubdError {

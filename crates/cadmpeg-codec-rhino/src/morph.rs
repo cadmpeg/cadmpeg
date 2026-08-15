@@ -104,7 +104,7 @@ fn captive_ids(
         archive,
         "captive UUID list",
     )?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: ids.position() - 8,
             message: format!("unsupported captive UUID-list version {major}.{minor}"),
@@ -115,12 +115,7 @@ fn captive_ids(
     for _ in 0..count {
         values.push(uuid(&mut ids)?);
     }
-    if ids.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            ids.position(),
-            "captive UUID list has trailing bytes",
-        ));
-    }
+    ids.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(values)
 }
@@ -163,7 +158,7 @@ fn optional_curve(
         archive,
         "localizer curve",
     )?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
             message: format!("unsupported localizer-curve version {major}.{minor}"),
@@ -173,12 +168,7 @@ fn optional_curve(
         .bool()?
         .then(|| crate::surfaces::read_nurbs_curve(&mut child, scale))
         .transpose()?;
-    if child.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            child.position(),
-            "localizer curve has trailing bytes",
-        ));
-    }
+    child.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(value)
 }
@@ -196,7 +186,7 @@ fn optional_surface(
         archive,
         "localizer surface",
     )?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
             message: format!("unsupported localizer-surface version {major}.{minor}"),
@@ -206,12 +196,7 @@ fn optional_surface(
         .bool()?
         .then(|| crate::surfaces::read_nurbs_surface(&mut child, scale))
         .transpose()?;
-    if child.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            child.position(),
-            "localizer surface has trailing bytes",
-        ));
-    }
+    child.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(value)
 }
@@ -224,7 +209,7 @@ fn localizer(
 ) -> Result<Localizer, GeometryError> {
     let (mut value, next, major, minor) =
         anonymous(data, reader.position(), reader.end(), archive, "localizer")?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: value.position() - 8,
             message: format!("unsupported localizer version {major}.{minor}"),
@@ -241,12 +226,7 @@ fn localizer(
     let interval = scale_interval(interval(&mut value)?.0, scale, offset)?;
     let curve = optional_curve(data, &mut value, scale, archive)?;
     let surface = optional_surface(data, &mut value, scale, archive)?;
-    if value.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            value.position(),
-            "localizer has trailing bytes",
-        ));
-    }
+    value.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(Localizer {
         kind,
@@ -266,7 +246,7 @@ fn control_child<'a>(
 ) -> Result<(BoundedReader<'a>, usize), GeometryError> {
     let (child, next, major, minor) =
         anonymous(data, reader.position(), reader.end(), archive, label)?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
             message: format!("unsupported {label} version {major}.{minor}"),
@@ -294,18 +274,9 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<Morph, GeometryError> {
     let data = expand.data();
-    let (mut outer, next, major, minor) =
+    let (mut outer, _next, major, minor) =
         anonymous(data, range.start, range.end, archive, "morph control")?;
-    if next != range.end {
-        return Err(GeometryError::malformed(
-            range.start,
-            "morph-control framing is invalid",
-        ));
-    }
-    if !matches!(major, 1 | 2)
-        || (major == 1 && minor != 0)
-        || (major == 2 && !(0..=1).contains(&minor))
-    {
+    if !matches!(major, 1 | 2) || (major == 1 && minor < 0) || (major == 2 && minor < 0) {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
             message: format!("unsupported morph-control version {major}.{minor}"),
@@ -324,12 +295,7 @@ pub(crate) fn decode(
                     )
                 })?;
         }
-        if outer.remaining() != 0 {
-            return Err(GeometryError::malformed(
-                outer.position(),
-                "legacy morph control has trailing bytes",
-            ));
-        }
+        outer.skip_remaining()?;
         return Ok(Morph {
             source_range: range,
             control: Control::Cage {
@@ -370,12 +336,7 @@ pub(crate) fn decode(
             })?;
         }
     }
-    if start.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            start.position(),
-            "morph start control has trailing bytes",
-        ));
-    }
+    start.skip_remaining()?;
     outer.skip(start_next - outer.position())?;
 
     let (mut end, end_next) = control_child(data, &mut outer, archive, "morph end control")?;
@@ -394,12 +355,7 @@ pub(crate) fn decode(
         },
         _ => unreachable!("validated morph variant"),
     };
-    if end.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            end.position(),
-            "morph end control has trailing bytes",
-        ));
-    }
+    end.skip_remaining()?;
     outer.skip(end_next - outer.position())?;
     let captive_ids = captive_ids(data, &mut outer, archive)?;
 
@@ -410,7 +366,7 @@ pub(crate) fn decode(
         archive,
         "morph localizers",
     )?;
-    if list_major != 1 || list_minor != 0 {
+    if list_major != 1 || list_minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: list.position() - 8,
             message: format!("unsupported morph-localizer-list version {list_major}.{list_minor}"),
@@ -421,12 +377,7 @@ pub(crate) fn decode(
     for _ in 0..localizer_count {
         localizers.push(localizer(data, &mut list, scale, archive)?);
     }
-    if list.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            list.position(),
-            "morph localizer list has trailing bytes",
-        ));
-    }
+    list.skip_remaining()?;
     outer.skip(list_next - outer.position())?;
     let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
         let tolerance = scaled_coordinate(outer.f64()?, scale)
@@ -438,12 +389,7 @@ pub(crate) fn decode(
     } else {
         (0.0, false, false)
     };
-    if outer.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            outer.position(),
-            "morph control has trailing bytes",
-        ));
-    }
+    outer.skip_remaining()?;
     Ok(Morph {
         source_range: range,
         control,
