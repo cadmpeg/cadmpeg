@@ -229,7 +229,8 @@ interval, but it is not an interval-arithmetic proof for arbitrary surface and
 pcurve compositions. This item records the verification gap rather than
 treating the numerical heuristic as STEP semantics.
 
-**Need.** We need independent multi-pcurve files and an exact inverse or
+**Need.** We need multi-pcurve witness files, authored with an available
+exporter or taken from a public corpus, and an exact inverse or
 interval/adaptive proof for endpoint fit and locus equivalence, including
 reordered, near-tied, and crossing candidates.
 
@@ -1080,9 +1081,9 @@ STEP prescribes omission of the whole topology shell. TP-04 was closed because
 conforming STEP prohibits multiple outer bounds; that closure does not
 establish this malformed-input disposition.
 
-**Need.** We need an explicit conservative salvage policy, or producer and
-validator evidence that first-role retention is required, with reordered
-duplicate-outer fixtures and validation results.
+**Need.** We need an explicit conservative salvage policy, recorded as a
+CADIR decision, or evidence that first-role retention is required, with
+reordered duplicate-outer fixtures and validation results.
 
 QA audit: reopened after reviewing closing commit 62e044540. The closing commit rejects a malformed duplicate outer-bound case. This is a conservative refusal policy, not evidence that the format requires this salvage disposition.
 
