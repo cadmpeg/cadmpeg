@@ -218,8 +218,8 @@ declared from a relative score threshold. Declared pcurve trims are checked at
 their own endpoints; a stale trim falls back to an independently inverted edge
 interval. `pcurve_loci_equivalent` includes NURBS breakpoints, performs bounded
 adaptive subdivision, and selects the lowest STEP identity for equivalent ties.
-Endpoint inversion still uses a finite seed grid and bounded iterative
-closest-point calculation.
+Endpoint inversion uses a finite uniform grid plus NURBS knot boundaries and
+their span midpoints, followed by bounded iterative closest-point calculation.
 
 **Note.** TP-02 records the semantic selection rule, but this implementation
 does not prove a global minimum or a global locus equivalence. A pcurve with

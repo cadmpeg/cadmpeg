@@ -3913,6 +3913,20 @@ fn pcurve_selection_seeds(
             let fraction = step as f64 / PCURVE_ENDPOINT_GRID_DIVISIONS as f64;
             seeds.push(start + (end - start) * fraction);
         }
+        let mut fractions = vec![0.0, 1.0];
+        pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions);
+        fractions.sort_by(f64::total_cmp);
+        fractions.dedup_by(|left, right| *left == *right);
+        seeds.extend(
+            fractions
+                .iter()
+                .map(|fraction| start + (end - start) * fraction),
+        );
+        seeds.extend(fractions.windows(2).map(|window| {
+            let lower = window[0];
+            let upper = window[1];
+            start + (end - start) * (lower + (upper - lower) * 0.5)
+        }));
     }
     if pcurve_has_angular_parameterization(geometry) {
         seeds.extend([

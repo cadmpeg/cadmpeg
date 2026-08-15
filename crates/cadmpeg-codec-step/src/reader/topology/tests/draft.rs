@@ -304,6 +304,47 @@ fn periodic_surface_line_seeds_cover_both_parameter_axes() {
 }
 
 #[test]
+fn bounded_nurbs_pcurve_seeds_cover_each_knot_span() {
+    let surface_id = SurfaceId("step:data:surface#nurbs-seed-spans".into());
+    let surface_geometry = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface_geometry.clone(),
+        source_object: None,
+    });
+    let geometry = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 0.001, 0.999, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(1.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+
+    let seeds = pcurve_selection_seeds(
+        &ModelIndex::new(&ir),
+        &surface_id,
+        &geometry,
+        &surface_geometry,
+    );
+    for expected in [0.001, 0.999, 0.0005, 0.5, 0.9995] {
+        assert!(
+            seeds.contains(&expected),
+            "missing NURBS knot-span seed {expected}: {seeds:?}"
+        );
+    }
+}
+
+#[test]
 fn shared_surface_carrier_is_staged_once() {
     let surface = Surface {
         id: SurfaceId("step:data:surface#shared".into()),
