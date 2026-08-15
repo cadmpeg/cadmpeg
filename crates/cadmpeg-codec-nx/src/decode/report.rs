@@ -17,9 +17,9 @@ use super::feature_completeness::{
     positive_feature_length, projected_curve_direction_is_incomplete,
     replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
     rib_definition_is_incomplete, sew_bodies_definition_is_incomplete,
-    sweep_definition_is_incomplete, thicken_definition_is_incomplete,
-    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
-    valid_feature_direction,
+    sphere_definition_is_incomplete, sweep_definition_is_incomplete,
+    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
+    trim_surface_definition_is_incomplete, valid_feature_direction,
 };
 use super::{summary_notes, Counts, Scan};
 use crate::loss::NxLossCode;
@@ -368,6 +368,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
+            }
+            FeatureDefinition::Sphere { .. } if sphere_definition_is_incomplete(feature) => {
+                "sphere"
             }
             FeatureDefinition::DatumOffsetPlane {
                 reference,

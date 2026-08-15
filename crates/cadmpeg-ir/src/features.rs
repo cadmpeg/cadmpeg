@@ -1698,6 +1698,7 @@ impl FeatureDefinition {
         match self {
             Self::BaseFeature { .. } => Some("base feature"),
             Self::Block { .. } => Some("block"),
+            Self::Sphere { .. } => Some("sphere"),
             Self::ExtractBody { .. } => Some("extract body"),
             Self::Loft { .. } => Some("loft"),
             Self::TrimSurface { .. } => Some("trim surface"),

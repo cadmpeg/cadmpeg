@@ -316,6 +316,14 @@ fn rederived_body_census(
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
+            FeatureDefinition::Sphere { op, .. } => {
+                apply_complete_boolean_outputs(
+                    feature,
+                    &mut bodies,
+                    *op,
+                    crate::decode::sphere_definition_is_incomplete(feature),
+                )?;
+            }
             FeatureDefinition::LoftUnresolved | FeatureDefinition::FreeformSurfaceUnresolved
                 if feature.outputs.is_empty() => {}
             FeatureDefinition::Loft { op, .. } => {
@@ -1243,6 +1251,37 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(complete_hole(body.clone()));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn complete_sphere_rederives_a_new_body() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let body = BodyId("sphere".to_string());
+        ir.model.bodies.push(model_body(&body.0));
+        ir.model.features.push(Feature {
+            id: FeatureId("sphere-feature".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body.clone()],
+            definition: FeatureDefinition::Sphere {
+                center: Point3::new(1.0, 2.0, 3.0),
+                radius: Length(4.0),
+                op: BooleanOp::NewBody,
+            },
+            native_ref: None,
+        });
 
         assert_eq!(
             evaluate_saved_body_census(&ir),

@@ -479,6 +479,15 @@ pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool
     face_selection_is_incomplete(faces) || distance.is_none_or(|distance| !distance.0.is_finite())
 }
 
+pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Sphere { center, radius, op } = &feature.definition else {
+        return true;
+    };
+    !finite_feature_point(*center)
+        || !positive_feature_length(*radius)
+        || matches!(op, BooleanOp::Unresolved)
+}
+
 pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Thicken {
         faces,

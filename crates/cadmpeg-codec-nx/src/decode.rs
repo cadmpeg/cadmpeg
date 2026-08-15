@@ -54,11 +54,11 @@ pub(crate) use feature_completeness::{
     replace_face_definition_is_incomplete, resolved_body_selection_len,
     revolve_definition_is_incomplete, revolve_feature_is_incomplete, rib_definition_is_incomplete,
     rib_feature_is_incomplete, selection_ids_are_incomplete, sew_bodies_definition_is_incomplete,
-    sweep_definition_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete, termination_is_incomplete,
-    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
-    trim_surface_definition_is_incomplete, unit_feature_direction, valid_draft_angle,
-    valid_feature_direction, valid_increasing_locations,
+    sphere_definition_is_incomplete, sweep_definition_is_incomplete, sweep_mode_is_incomplete,
+    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
+    termination_is_incomplete, thicken_definition_is_incomplete,
+    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
+    unit_feature_direction, valid_draft_angle, valid_feature_direction, valid_increasing_locations,
 };
 
 mod pcurves;
