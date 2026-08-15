@@ -198,6 +198,45 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
 }
 
 #[test]
+fn tessellated_shape_relationship_supplies_exact_body_owner() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#40=TESSELLATED_SHELL('sheet mesh',(#4),#37);",
+        "#40=TESSELLATED_SHELL('sheet mesh',(#4),$);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90=SHAPE_REPRESENTATION_RELATIONSHIP('','',#39,#5);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode related tessellation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+        .expect("related mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #4")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss.message.contains("TESSELLATED_SHELL #40")
+    }));
+}
+
+#[test]
 fn shared_tessellation_item_is_not_assigned_to_an_arbitrary_body() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),

@@ -42,8 +42,8 @@ pub(super) fn decode(
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
-    let mut unresolved_items = BTreeSet::new();
     let mut declared_items = BTreeSet::new();
+    let mut unresolved_containers = BTreeSet::new();
     for (&id, record) in &exchange.records {
         let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
             continue;
@@ -59,8 +59,7 @@ pub(super) fn decode(
         declared_items.extend(item_ids.iter().copied());
         let candidates = linked_bodies(record, kind, topology);
         if candidates.is_empty() {
-            unresolved_items.extend(item_ids.iter().copied());
-            warnings.push(format!("{kind} #{id} has no decoded exact body link"));
+            unresolved_containers.insert(id);
         }
         for item in item_ids {
             item_bodies
@@ -70,6 +69,65 @@ pub(super) fn decode(
         }
         typed.insert(id);
     }
+    let mut representation_cache = BTreeMap::new();
+    for (&id, record) in &exchange.records {
+        if !has_entity(record, "TESSELLATED_SHAPE_REPRESENTATION") {
+            continue;
+        }
+        let Some(items) = representation_items(record) else {
+            continue;
+        };
+        let bodies = super::topology::representation_bodies(
+            id,
+            exchange,
+            topology,
+            &mut representation_cache,
+            &mut BTreeSet::new(),
+            0,
+            None,
+        );
+        if bodies.is_empty() {
+            continue;
+        }
+        for container in items {
+            let Some(container_record) = exchange.records.get(&container) else {
+                continue;
+            };
+            let Some(container_kind) = entity_kind(
+                container_record,
+                &["TESSELLATED_SOLID", "TESSELLATED_SHELL"],
+            ) else {
+                continue;
+            };
+            let Some(container_items) =
+                entity_parameter(container_record, container_kind, 0, 1).and_then(ValueExt::list)
+            else {
+                continue;
+            };
+            for item in container_items.iter().filter_map(ValueExt::reference) {
+                if declared_items.contains(&item) {
+                    item_bodies
+                        .entry(item)
+                        .or_default()
+                        .extend(bodies.iter().cloned());
+                }
+            }
+            unresolved_containers.remove(&container);
+        }
+    }
+    for id in unresolved_containers {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
+            continue;
+        };
+        warnings.push(format!("{kind} #{id} has no decoded exact body link"));
+    }
+    let unresolved_items = item_bodies
+        .iter()
+        .filter_map(|(&item, bodies)| bodies.is_empty().then_some(item))
+        .collect::<BTreeSet<_>>();
     for (&item, bodies) in &item_bodies {
         if unresolved_items.contains(&item) || bodies.len() != 1 {
             let detail = if bodies.is_empty() {
@@ -315,6 +373,18 @@ fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyData) -> BTr
             .unwrap_or_default(),
         _ => BTreeSet::new(),
     }
+}
+
+fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
+    record
+        .partials
+        .iter()
+        .find(|partial| {
+            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        })
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(ValueExt::list)
+        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
 }
 
 fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {
