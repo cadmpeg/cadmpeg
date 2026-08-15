@@ -2,6 +2,7 @@
 //! Saved and active Rhino view presentation records.
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError, TCODE_ENDOFTABLE};
@@ -866,68 +867,87 @@ fn parse_list(
     archive: ArchiveVersion,
     scale: f64,
     kind: &'static str,
-) -> Vec<ViewRecord> {
-    let Ok(mut reader) = BoundedReader::new(data, record.body.start, record.body.end) else {
-        return Vec::new();
+) -> (Vec<ViewRecord>, Vec<LossNote>) {
+    let mut losses = Vec::new();
+    let mut reader = match BoundedReader::new(data, record.body.start, record.body.end) {
+        Ok(reader) => reader,
+        Err(error) => {
+            losses.push(
+                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "{kind} view list at offset {} could not be framed: {error}",
+                    record.body.start
+                )),
+            );
+            return (Vec::new(), losses);
+        }
     };
-    let Ok(signed_count) = reader.i32() else {
-        return Vec::new();
+    let signed_count = match reader.i32() {
+        Ok(value) => value,
+        Err(error) => {
+            losses.push(
+                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "{kind} view list at offset {} has no readable count: {error}",
+                    record.body.start
+                )),
+            );
+            return (Vec::new(), losses);
+        }
     };
     let Ok(count) = usize::try_from(signed_count) else {
-        return Vec::new();
+        losses.push(
+            crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                "{kind} view list at offset {} has a negative count {signed_count}",
+                record.body.start
+            )),
+        );
+        return (Vec::new(), losses);
     };
     if count > 1 << 16 {
-        return Vec::new();
+        losses.push(
+            crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                "{kind} view list at offset {} exceeds the 65536-entry bound",
+                record.body.start
+            )),
+        );
+        return (Vec::new(), losses);
     }
     let mut views = Vec::new();
     for index in 0..count {
-        let Ok(view) = chunk_at(data, reader.position(), reader.end(), archive, false) else {
-            break;
+        let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
+            Ok(view) => view,
+            Err(error) => {
+                losses.push(
+                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                        "{kind} view record at offset {} could not be framed: {error}",
+                        reader.position()
+                    )),
+                );
+                break;
+            }
         };
         let next = view.next_offset;
         if view.typecode == VIEW_RECORD && !view.short {
-            views.push(
-                parse_view(data, &view, archive, scale, kind, index).unwrap_or_else(|error| {
-                    ViewRecord {
-                        id: format!("rhino:document:view#{kind}-{index:04}"),
-                        source_offset: view.header_start as u64,
-                        list_kind: kind,
-                        list_index: index,
-                        name: String::new(),
-                        target_millimeters: None,
-                        show_construction_grid: true,
-                        show_construction_axes: true,
-                        show_world_axes: true,
-                        legacy_display_mode: None,
-                        view_type: None,
-                        page_width_mm: None,
-                        page_height_mm: None,
-                        display_mode_uuid: None,
-                        attributes_version: None,
-                        attributes: None,
-                        construction_plane: None,
-                        viewport: None,
-                        trace_image: None,
-                        wallpaper: None,
-                        children: vec![ViewChild {
-                            typecode: format!("{:#010x}", view.typecode),
-                            kind: "degraded view record",
-                            source_offset: view.header_start as u64,
-                            byte_len: (view.next_offset - view.header_start) as u64,
-                            sha256: cadmpeg_ir::hash::sha256_hex(
-                                &data[view.header_start..view.next_offset],
-                            ),
-                        }],
-                        parse_warnings: vec![format!("view retained: {error}")],
-                    }
-                }),
-            );
+            match parse_view(data, &view, archive, scale, kind, index) {
+                Ok(value) => views.push(value),
+                Err(error) => losses.push(
+                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                        "{kind} view record at offset {} was omitted after child parsing failed: {error}",
+                        view.header_start
+                    )),
+                ),
+            }
         }
-        if reader.skip(next - reader.position()).is_err() {
+        if let Err(error) = reader.skip(next - reader.position()) {
+            losses.push(
+                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "{kind} view record at offset {} could not advance to its bounded end: {error}",
+                    view.header_start
+                )),
+            );
             break;
         }
     }
-    views
+    (views, losses)
 }
 
 fn parse_named_cplanes(
@@ -971,7 +991,7 @@ fn parse_named_cplanes(
 }
 
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let scale = scan
         .metadata
         .settings
@@ -981,6 +1001,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         .unwrap_or(1.0);
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
+    let mut losses = Vec::new();
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
@@ -992,10 +1013,16 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                 }
             }
             if record.typecode == NAMED_VIEWS {
-                views.extend(parse_list(scan.data, record, scan.archive, scale, "named"));
+                let (parsed, mut parse_losses) =
+                    parse_list(scan.data, record, scan.archive, scale, "named");
+                views.extend(parsed);
+                losses.append(&mut parse_losses);
             }
             if record.typecode == ACTIVE_VIEWS {
-                views.extend(parse_list(scan.data, record, scan.archive, scale, "active"));
+                let (parsed, mut parse_losses) =
+                    parse_list(scan.data, record, scan.archive, scale, "active");
+                views.extend(parsed);
+                losses.append(&mut parse_losses);
             }
         }
     }
@@ -1007,15 +1034,18 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     namespace
         .set_arena("construction_planes", &cplanes)
         .expect("Rhino construction planes serialize");
+    losses
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        legacy_clipping_depth, parse_attributes, parse_viewport, Viewport, UNSET_POSITIVE_FLOAT,
+        legacy_clipping_depth, parse_attributes, parse_list, parse_viewport, Viewport,
+        UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
-    use crate::test_support::test_dump::{anonymous_chunk, utf16_bytes};
+    use crate::container::Record;
+    use crate::test_support::test_dump::{anonymous_chunk, long_chunk, utf16_bytes};
 
     fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
         for coordinate in value {
@@ -1071,6 +1101,29 @@ mod tests {
         assert_eq!(legacy_clipping_depth(2.5), (2.5, true));
         assert_eq!(legacy_clipping_depth(-1.0), (0.0, false));
         assert_eq!(legacy_clipping_depth(UNSET_POSITIVE_FLOAT), (0.0, false));
+    }
+
+    #[test]
+    fn failed_view_record_is_omitted_and_emits_typed_loss() {
+        let archive = ArchiveVersion::V5;
+        let view = long_chunk(archive, super::VIEW_RECORD, &[0]);
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(view);
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        assert!(views.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+        );
     }
 
     #[test]

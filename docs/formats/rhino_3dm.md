@@ -3031,6 +3031,14 @@ validity, and three dimensionless view-scale values. Camera locations, targets,
 frustum coordinates, construction-plane origins, and grid spacing are length
 values. Camera axes and view scale are not scaled.
 
+A saved or active view list has a bounded `i32` count followed by complete view
+chunks. A view enters the typed `views` arena only after its child chunks and
+end marker parse successfully. If a framed view record fails child parsing, it
+is omitted from the typed arena and emits a
+`presentation.record-dropped` loss; no synthetic identity, visibility, or child
+record is created. If the list cannot frame a later child, parsing stops at the
+bounded failure and emits the same loss for that record boundary.
+
 View-attributes packed versions 1.1 through 1.9 add view type; page dimensions;
 display-mode UUID; anonymous page settings; projection lock; an array of
 versioned clipping-plane equations, UUIDs, enabled flags, and depths; named-view

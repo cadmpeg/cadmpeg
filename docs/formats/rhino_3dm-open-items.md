@@ -236,16 +236,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** A disagreement such as `[1, 2]` versus `[2, 1]` changes the rational interpretation. Reordering the stored bytes changes the neutral surface without a source discriminator.
 
-### SW-08. Failed view-record fallback
-
-**Question.** What happens when a view record is framed but its child payload fails typed parsing?
-
-**Known.** `views.rs:890-892` stops a view list on a chunk error without a loss. `views.rs:895-929` converts a parse error into a synthetic view with empty identity fields and all three visibility flags set true. The warning is stored in the native view record, and `views.rs:1000-1011` publishes that record without a typed loss.
-
-**Need.** Retain the complete failed record as opaque or omit its typed view, and emit a typed loss. Do not expose fabricated visibility or identity as source state.
-
-**Note.** Reopened as silent substitution. A malformed or later view can become a visible default view, and later views can disappear after the first framing error.
-
 ### SW-09. Ambiguous history producers
 
 **Question.** How is a history dependency represented when more than one record produces the same descendant UUID?

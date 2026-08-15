@@ -2296,7 +2296,8 @@ impl<'a> DecodeContext<'a> {
         self.typed_losses
             .extend(crate::presentation::install(self.scan, &mut self.ir));
         crate::product::install(self.scan, &mut self.ir);
-        crate::views::install(self.scan, &mut self.ir);
+        self.typed_losses
+            .extend(crate::views::install(self.scan, &mut self.ir));
         self.ir.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let decoded = self
