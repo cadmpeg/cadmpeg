@@ -180,7 +180,9 @@ pub fn compact_simple_hole_cylinder_id(
             };
             let mut expected_materialized = BTreeSet::from([side.entity_id]);
             expected_materialized.extend(*plane);
-            (table.surface_ids.iter().copied().collect::<BTreeSet<_>>() == expected_materialized
+            (table.surface_ids.len() == expected_materialized.len()
+                && table.surface_ids.iter().copied().collect::<BTreeSet<_>>()
+                    == expected_materialized
                 && topology_index < bottom_index
                 && bottom_index < side_index)
                 .then_some(side.entity_id)
@@ -574,3 +576,6 @@ pub fn blind_extrude_side(length: f64) -> ExtrudeSide {
         offset: None,
     }
 }
+
+#[cfg(test)]
+mod tests;
