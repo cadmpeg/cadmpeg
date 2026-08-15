@@ -148,7 +148,7 @@ from a conformant file.
 
 **Need.** We need the fixed-record division rule for overlong input, or a correction to the format documentation. The rule must distinguish a valid card with trailing bytes from a malformed card.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `de6b6d5bf` changed the documentation and tests together, but no independent source supports converting an overlong line into a card plus a separate record. The current policy can turn malformed input into a valid card with ignored tail bytes.
+**Note.** Closure audit 2026-08-10: reopened. Commit `de6b6d5bf` changed the documentation and tests together, but the IGES specification has not been cited for converting an overlong line into a card plus a separate record. The current policy can turn malformed input into a valid card with ignored tail bytes.
 
 ### PH-05. Disagreement between the declared and actual Parameter Data card count
 
@@ -168,7 +168,7 @@ from a conformant file.
 
 **Known.** `global.rs` supplies defaults for model scale, units flag, maximum line-weight gradations, and version flag in addition to the delimiter defaults. The same conversion path maps blank, omitted, and malformed values to `None`, after which callers apply defaults. `global.rs:228-249` now preserves some omitted-versus-malformed distinctions, but the complete default table and error policy are not settled.
 
-**Need.** We need an external Global-field default table and a rule that separates an omitted field from a malformed field. A wrong units default rescales the complete model.
+**Need.** We need the Global-field default table from the IGES specification and a rule that separates an omitted field from a malformed field. A wrong units default rescales the complete model.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` promoted project defaults and synthetic fixtures; agreement with those fixtures is not independent evidence. The external material checked supports some defaults, not the full current table or malformed-field behavior.
 
@@ -190,7 +190,7 @@ from a conformant file.
 
 **Need.** We need the meaning of zero or omission and one behavior across the codec. Loss messages must name a missing or invalid resolution, not a geometry disagreement.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` validated one project interpretation but supplied no independent source for positivity, zero semantics, or the cross-consumer policy.
+**Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` validated one project interpretation but did not cite the IGES specification for positivity, zero semantics, or the cross-consumer policy.
 
 ### GL-04. Byte encoding of Global Hollerith values
 
@@ -212,7 +212,7 @@ from a conformant file.
 
 **Need.** We need a source rule for per-member recovery or for blocking root inference after a malformed definition. The decoder must not fabricate occurrences or silently discard valid independent roots.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `4080057b9` added suppression and a synthetic malformed fixture, but no producer or format evidence establishes that one malformed member invalidates every root inference.
+**Note.** Closure audit 2026-08-10: reopened. Commit `4080057b9` added suppression and a synthetic malformed fixture, but the rule that one malformed member invalidates every root inference is not established from the IGES specification or from witness files.
 
 ### DR-09. The Directory status field accepts blank or eight digits and nothing between
 
@@ -242,7 +242,7 @@ from a conformant file.
 
 **Known.** The reader uses intervals derived from Global real precision in `transform.rs`, and commit `40b1687ea` replaced a fixed tolerance with that calculation. The fixture perturbs a transform near the same project-selected boundary.
 
-**Need.** We need an IGES rule or independent producer evidence for transform equality and the accepted precision. Internal interval arithmetic proves only the implementation's chosen criterion.
+**Need.** We need the IGES specification rule, or exporter-authored witness files, for transform equality and the accepted precision. Internal interval arithmetic proves only the implementation's chosen criterion.
 
 **Note.** Closure audit 2026-08-10: reopened. The code, fixture, and documentation were authored together; this is the promotion-to-spec pattern described by the QA plan.
 
@@ -252,9 +252,9 @@ from a conformant file.
 
 **Known.** `geometry.rs` derives an interval from Global real precision and accepts a vector when the squared length interval contains one. The threshold is exercised by project-generated data.
 
-**Need.** We need a source or independent producer corpus that establishes the accepted numeric deviation and whether a decoder should normalize or reject it.
+**Need.** We need the specification rule, or a corpus of exporter-authored witness files, that establishes the accepted numeric deviation and whether a decoder should normalize or reject it.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `8d4e832c4` replaced the old threshold with a more principled calculation, but did not supply external evidence for the format tolerance.
+**Note.** Closure audit 2026-08-10: reopened. Commit `8d4e832c4` replaced the old threshold with a more principled calculation, but did not establish the format tolerance from the specification or witness files.
 
 ### GE-03. Type 112 segment continuity
 
@@ -262,7 +262,7 @@ from a conformant file.
 
 **Known.** `splines.rs` uses Global real-precision intervals for adjacent endpoint comparisons. The fixtures exercise the selected interval, not an independently specified producer boundary.
 
-**Need.** We need the continuity rule and its numeric tolerance from the format or independent producer output.
+**Need.** We need the continuity rule and its numeric tolerance from the IGES specification or from exporter-authored witness files.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
 
@@ -284,7 +284,7 @@ from a conformant file.
 
 **Need.** We need the parameter-domain rule for every supported curve form, including open, closed, and unbounded cases, and evidence for any fallback.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `2731411c2` centralized domains and added self-authored coverage; it did not verify the mapping against the format or independent producer files.
+**Note.** Closure audit 2026-08-10: reopened. Commit `2731411c2` centralized domains and added self-authored coverage; it did not verify the mapping against the IGES specification or witness files.
 
 ### GE-08. Type 106 duplicate points and closure
 
@@ -304,7 +304,7 @@ from a conformant file.
 
 **Need.** We need the source authority between the analytic coefficients and endpoint fields, and the tolerance for disagreement.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `2ac641864` added endpoint validation, but no independent evidence establishes the authority or tolerance.
+**Note.** Closure audit 2026-08-10: reopened. Commit `2ac641864` added endpoint validation, but did not establish the authority or the tolerance from the specification or a witness file.
 
 ### GE-10. Angular equality constants
 
@@ -312,7 +312,7 @@ from a conformant file.
 
 **Known.** `curve_conversion.rs:24-27` defines one `ANGULAR_TOLERANCE` as `TAU * 1e-12`. The current tests pin the same project constant.
 
-**Need.** We need producer or specification evidence for angular equality, or a project-policy classification that does not present this value as an IGES rule.
+**Need.** We need specification or witness evidence for angular equality, or a project-policy classification that does not present this value as an IGES rule.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `6173d018b` changed a magic number into a named constant, but naming a threshold is not evidence for it.
 
@@ -346,7 +346,7 @@ from a conformant file.
 
 **Need.** We need the source meaning of minimum resolution and separate rules for coordinate precision, curve-fit tolerance, topology sewing, and native tolerance fields.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `6bb0de35f` supplied a formula and synthetic boundary tests, but no external evidence supports using one value for these five roles.
+**Note.** Closure audit 2026-08-10: reopened. Commit `6bb0de35f` supplied a formula and synthetic boundary tests, but the use of one value for these five roles is not established from the specification or witness files.
 
 ### TP-03. Declared surface parameter subranges are discarded with no loss
 
@@ -366,7 +366,7 @@ from a conformant file.
 
 **Need.** We need the source rule for the offset sign and a representative point that is valid for bounded, unbounded, and varying-normal surfaces.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `23554c501` changed implementation, documentation, and fixtures together. No independent evidence establishes midpoint selection or the `(0, 0)` fallback.
+**Note.** Closure audit 2026-08-10: reopened. Commit `23554c501` changed implementation, documentation, and fixtures together. Neither midpoint selection nor the `(0, 0)` fallback is established from the specification or witness files.
 
 ### TP-06. Type 180 Form 1 requires a direct Type 186 operand
 
@@ -374,7 +374,7 @@ from a conformant file.
 
 **Known.** `brep.rs` recursively checks Type 180 and Type 430 references and accepts a Form 1 operand when the complete referenced subtree contains a Type 186. The current fixtures use project-generated nested trees.
 
-**Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the format source or independent producer files.
+**Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the IGES specification or exporter-authored witness files.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `34861ac75` made the recursive interpretation internally consistent, but the source rule remains unverified. The current documentation promotes the recursive choice to a settled format fact.
 
@@ -398,7 +398,7 @@ from a conformant file.
 
 **Need.** We need the optionality and default for each affected field, with omitted and malformed tokens distinguished.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `c486ba66d` made the selected defaults explicit and added fixtures, but it did not establish the complete field table from independent evidence.
+**Note.** Closure audit 2026-08-10: reopened. Commit `c486ba66d` made the selected defaults explicit and added fixtures, but it did not establish the complete field table from the IGES specification.
 
 ### PS-02. The same text-box metric has two different bounds
 
@@ -406,7 +406,7 @@ from a conformant file.
 
 **Known.** `drawing.rs` applies distinct bounds to the two record forms, including nonnegative checks for Type 312 dimensions. The current documentation records these bounds.
 
-**Need.** We need the field definitions and bounds for each form from the format source or independent producer output.
+**Need.** We need the field definitions and bounds for each form from the IGES specification or exporter-authored witness files.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `8d2479c8b` changed the checks and the documentation together; the test fixtures do not establish that the bounds are format rules.
 
@@ -418,7 +418,7 @@ from a conformant file.
 
 **Need.** We need the enumerated tables from the format source, including reserved and invalid values, and a rule for values outside each table.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `4c91d071e` made the source tables explicit but did not provide independent table evidence.
+**Note.** Closure audit 2026-08-10: reopened. Commit `4c91d071e` made the source tables explicit but did not cite the specification's tables.
 
 ### PS-05. Type 420 accepts a wrong-typed type flag and Type 320 does not
 
@@ -436,9 +436,9 @@ from a conformant file.
 
 **Known.** `structure.rs:573-594` requires a non-null leader pointer, while other nullable pointers accept zero explicitly. The current documentation states the leader requirement.
 
-**Need.** We need the nullability of the Form 5 leader field from the format source or independent producer files.
+**Need.** We need the nullability of the Form 5 leader field from the IGES specification or exporter-authored witness files.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `45cddb592` added the requirement and fixture coverage, but no independent evidence establishes it.
+**Note.** Closure audit 2026-08-10: reopened. Commit `45cddb592` added the requirement and fixture coverage, but did not establish it from the specification or a witness file.
 
 ### PS-07. Type 406 Form 33 requires a file-global unique identity
 
@@ -446,7 +446,7 @@ from a conformant file.
 
 **Known.** `structure.rs:1033-1045` rejects duplicate `(number, name)` pairs across the file. A separate path enforces at most one identifier per drawing owner. The current documentation states both policies.
 
-**Need.** We need the identity scope and duplicate behavior from the format source or independent producer evidence.
+**Need.** We need the identity scope and duplicate behavior from the IGES specification or exporter-authored witness files.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `9d0164b00` added a file-global uniqueness rule and self-authored duplicates, but did not establish that scope.
 
@@ -458,7 +458,7 @@ from a conformant file.
 
 **Need.** We need the field definitions and order rule for the Form 6 layer pair.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `7d7a4c288` added the check and fixture, but no independent source establishes the ordering requirement.
+**Note.** Closure audit 2026-08-10: reopened. Commit `7d7a4c288` added the check and fixture, but did not establish the ordering requirement from the specification.
 
 ## 7. Write path
 
@@ -470,7 +470,7 @@ from a conformant file.
 
 **Need.** We need the encoding for an unclassified loop, or a refusal when no valid outer-loop representation exists. The choice must not depend on list order.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `ed211eb05` documented the first-unclassified policy and added generated fixtures, but it supplied no source or producer evidence. Two unclassified loops with different containment or orientation can produce the wrong outer boundary.
+**Note.** Closure audit 2026-08-10: reopened. Commit `ed211eb05` documented the first-unclassified policy and added generated fixtures, but it cited neither the specification nor a witness file. Two unclassified loops with different containment or orientation can produce the wrong outer boundary.
 
 ### WR-02. The declared Global minimum resolution is tighter than the writer's own acceptance bound
 
@@ -480,7 +480,7 @@ from a conformant file.
 
 **Need.** We need the declared resolution derived from the tolerances the writer accepts, and a round-trip test that proves the reader and writer use compatible bounds.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `17c19bdcb` changed the generated-resolution policy and fixtures without independent producer evidence. The code needs an evidence-backed relation between accepted gaps and the declared value.
+**Note.** Closure audit 2026-08-10: reopened. Commit `17c19bdcb` changed the generated-resolution policy and fixtures together. The code needs an evidence-backed relation between accepted gaps and the declared value.
 
 ### WR-03. The Type 186 outer shell is the first shell by position
 
@@ -530,7 +530,7 @@ from a conformant file.
 
 **Need.** We need a source or producer-derived bound for representational frame noise, and a rule for repair versus refusal.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `dc2bd137a` added the repair threshold and synthetic boundary tests, but no external evidence establishes the bound.
+**Note.** Closure audit 2026-08-10: reopened. Commit `dc2bd137a` added the repair threshold and synthetic boundary tests, but the bound is not established from the specification or witness files.
 
 ### WR-10. Fixed protocol constants with no IR source
 
@@ -554,7 +554,7 @@ from a conformant file.
 
 **Note.** Nearly every item in sections 1 through 6 above is a rule that a self-authored fixture satisfies by construction and that a producer file may not. The items were found by reading, not by testing, because no test could have found them.
 
-**Need.** We need IGES files from at least two independent producers, under a license the repository admits, decoded and recorded. That measurement decides which of the tolerance items above are real and which are theoretical.
+**Need.** We need IGES files authored with at least two available exporters, under a license the repository admits, decoded and recorded. That measurement decides which of the tolerance items above are real and which are theoretical.
 
 ### EV-02. The independent-application gate cannot detect wrong geometry
 

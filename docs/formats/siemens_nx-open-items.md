@@ -316,7 +316,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the meaning of each code. The decoder admits the codes `1`, `4`, `5`, and `6`, and transfers the single code `6` as the periodic flag of the surface, curve, or pcurve. A periodic carrier whose code is not `6` transfers as open, so its seam trims as a boundary. Periodicity also gates the offset-surface cache relation, so a wrong flag admits or discards that relation.
 
-**Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate and has no independent evidence for their semantics.
+**Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate; their semantics remain unverified against corpus records.
 
 ### PS-35. Escaped and direct fixed-record disambiguation
 
@@ -552,7 +552,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
-**Note.** Commit `80222d179` removed this item as a documentation-only change. Refusing an equal-label join is a conservative ambiguity policy, not evidence that equal labels never identify a seed or that another serialized relation is absent. No independent pattern/profile record was supplied, so the item is reopened.
+**Note.** Commit `80222d179` removed this item as a documentation-only change. Refusing an equal-label join is a conservative ambiguity policy, not evidence that equal labels never identify a seed or that another serialized relation is absent. The closure cited no pattern/profile record from the corpus, so the item is reopened.
 
 ### OM-23. `POINT` header fields
 

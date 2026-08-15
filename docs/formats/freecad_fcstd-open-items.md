@@ -70,7 +70,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must know the framing to parse and validate record boundaries in these side entries.
 
-**Note.** Commit `3d3bf58f4` added an opaque-retention policy and promoted it to the specification. This is a safe decoder policy, not evidence that no FreeCAD side-entry grammar exists. No FreeCAD producer source or independent saved witness settles the framing. Keep the unknown open and retain the opaque fallback.
+**Note.** Commit `3d3bf58f4` added an opaque-retention policy and promoted it to the specification. This is a safe decoder policy, not evidence that no FreeCAD side-entry grammar exists. The closure cited no FreeCAD writer path and no saved witness for the framing. Keep the unknown open and retain the opaque fallback.
 
 ### AR-02. Application-specific side-entry values
 
@@ -80,7 +80,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must know the field meanings to transfer the side entry to a typed native or neutral record.
 
-**Note.** Commit `3d3bf58f4` converted the absence of a typed decoder into a specification claim that no application record family exists. Opaque retention prevents an unsafe interpretation but does not establish field semantics. No producer evidence was supplied.
+**Note.** Commit `3d3bf58f4` converted the absence of a typed decoder into a specification claim that no application record family exists. Opaque retention prevents an unsafe interpretation but does not establish field semantics. The closure did not trace the FreeCAD writer path for these records.
 
 ### AR-03. Typed geometry side-entry cardinality
 
@@ -114,7 +114,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must know each grammar to parse and validate the property as a typed presentation value.
 
-**Note.** Commit `6d9430a69` established exact handling for selected material and color-list types but closed this broader item by retaining every other type. That fallback avoids guessing; it does not prove the grammar of the remaining GUI types. No complete runtime registry or producer witness was supplied.
+**Note.** Commit `6d9430a69` established exact handling for selected material and color-list types but closed this broader item by retaining every other type. That fallback avoids guessing; it does not prove the grammar of the remaining GUI types. The closure did not derive the runtime registry from FreeCAD source or from saved witnesses.
 
 ### GP-02. Other GUI property semantics
 
@@ -124,7 +124,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must know the value semantics to transfer the property to the correct neutral presentation field.
 
-**Note.** The opaque/native fallback in `6d9430a69` is not semantic evidence. The item remains open for any unregistered GUI type; no FreeCAD source or independent files establish that the type has no neutral meaning.
+**Note.** The opaque/native fallback in `6d9430a69` is not semantic evidence. The item remains open for any unregistered GUI type; the FreeCAD source has not been examined to establish whether the type has a neutral meaning.
 
 ### GP-04. Topology-color shape-property association
 
@@ -174,7 +174,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must establish FreeCAD property-name uniqueness and the exact runtime-type registry. A conflicting duplicate or multi-family type must be rejected or retained without a semantic family choice.
 
-**Note.** The duplicate identity collision and ordered substring dispatch are direct code paths. The producer invariant requires primary source or independent malformed fixtures.
+**Note.** The duplicate identity collision and ordered substring dispatch are direct code paths. The producer invariant is not yet established from the FreeCAD writer path or from authored malformed witnesses.
 
 ## 5. Persistent topology identity
 
@@ -212,7 +212,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must establish the exact element-map carrier cardinality and property association. Duplicate candidates must be rejected or linked by a producer-defined discriminator.
 
-**Note.** The first-candidate paths are direct; no source rule for duplicate carriers was found.
+**Note.** The first-candidate paths are direct; the FreeCAD writer path for duplicate carriers has not been traced.
 
 ## 6. Exact-topology transfer
 
@@ -226,7 +226,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must define the valid endpoint child forms. The decoder must handle each valid form explicitly and reject a form that cannot establish both endpoint identities.
 
-**Note.** Commit `63d07acec` wrote the last-child rule into the specification and tested that rule with synthetic records. No FreeCAD/OCCT source or independent file establishes duplicate-orientation precedence.
+**Note.** Commit `63d07acec` wrote the last-child rule into the specification and tested that rule with synthetic records. Duplicate-orientation precedence has not been traced in FreeCAD/OCCT source or read from a saved witness.
 
 ### XT-02. Edge representation selection and uniqueness
 
@@ -238,7 +238,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must establish representation cardinality and precedence. If multiple candidates are legal, the decoder must select by serialized role or require equivalent geometry; otherwise it must reject the duplicate form.
 
-**Note.** Commit `63d07acec` promoted source order to the specification without producer evidence for multiple representations.
+**Note.** Commit `63d07acec` promoted source order to the specification; the FreeCAD/OCCT writer path for multiple representations was not traced.
 
 ### XT-03. Non-manifold radial order
 
@@ -250,7 +250,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must establish whether the B-rep topology supplies a radial order for non-manifold uses. If it does not, the neutral model must retain unordered incidence or mark the radial order unresolved.
 
-**Note.** Commit `63d07acec` changed the neutral fallback and stated that the source has no radial order. No producer source or independent non-manifold witness was cited.
+**Note.** Commit `63d07acec` changed the neutral fallback and stated that the source has no radial order. The closure cited no writer path and no non-manifold witness.
 
 ## 7. Design projection
 
@@ -272,7 +272,7 @@ These items have a Conflict part and need a decision.
 
 **Known.** Sketch entities retain persisted source order and native identity. Profile chains must be deterministic and attributable.
 
-**Conflict.** `crates/cadmpeg-codec-freecad/src/design.rs:2260-2304` selects the smallest in-memory entity index. The current code no longer uses lexicographic decimal ids, but no producer evidence establishes that the first persisted entity is the profile seed when multiple disconnected chains exist.
+**Conflict.** `crates/cadmpeg-codec-freecad/src/design.rs:2260-2304` selects the smallest in-memory entity index. The current code no longer uses lexicographic decimal ids, but the seed rule for multiple disconnected chains has not been traced in FreeCAD source.
 
 **Need.** Profile construction must keep the persisted entity ordinal as data and use a producer-defined seed rule for each chain.
 
@@ -364,7 +364,7 @@ These items have a Conflict part and need a decision.
 
 **Conflict.** `crates/cadmpeg-codec-freecad/src/drawing.rs:34-50` takes the first `Template` link. `scalar_property` and `vector_property` at `:170-193` take the first same-name property and first value. `links` at `:196-202` ignores later same-name properties. `drawing_parameters` at `:204-230` stores duplicate names in a `BTreeMap`, so the later value wins. Reordering conflicting carriers changes the projected drawing.
 
-**Need.** We must establish the TechDraw property definitions, cardinalities, and precedence from FreeCAD source or independent saved documents.
+**Need.** We must establish the TechDraw property definitions, cardinalities, and precedence from FreeCAD source or saved witness documents.
 
 **Note.** The code has separate first-wins and last-wins paths; producer uniqueness remains unverified.
 
@@ -394,7 +394,7 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must establish the FreeCAD attachment composition and property cardinality. The decoder must compose or reject conflicting carriers according to that rule.
 
-**Note.** The precedence is explicit; no producer rule for the neutral effective frame was found.
+**Note.** The precedence is explicit; the FreeCAD composition rule for the effective frame has not been traced.
 
 ### JN-01. Joint kind and enumeration carrier selection
 
@@ -404,7 +404,7 @@ These items have a Conflict part and need a decision.
 
 **Conflict.** `crates/cadmpeg-codec-freecad/src/joint.rs:29-36` gives `ObjectToGround` precedence over `JointType`. `enumeration_value` at `:266-283` takes the first `Integer` and the nth `Enum`; property and parameter helpers also take first matches. A record with both grounded and joint-type carriers, or duplicate enumeration values, changes kind and operands with source order.
 
-**Need.** We must establish joint runtime grammars, carrier cardinality, and grounded/joint-type precedence from FreeCAD source or independent saved documents.
+**Need.** We must establish joint runtime grammars, carrier cardinality, and grounded/joint-type precedence from FreeCAD source or saved witness documents.
 
 **Note.** The selection is direct, but the producer may forbid the conflicting forms.
 
@@ -420,4 +420,4 @@ These items have a Conflict part and need a decision.
 
 **Need.** We must establish the exact runtime-type registry and value grammar. Unknown or multi-family types must remain opaque or be rejected.
 
-**Note.** The dispatch order is direct; no exact registry evidence was found.
+**Note.** The dispatch order is direct; the exact runtime-type registry has not been traced in FreeCAD source.

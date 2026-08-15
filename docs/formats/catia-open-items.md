@@ -542,7 +542,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the role to make the complete pcurve record.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `a9117f1d5` labels the scalar as a source-span witness and adds tests that mutate it without changing standalone pcurve geometry. Production extrusion paths use the scalar as a span constraint, but no independent source identifies that role; the tests establish decoder consistency only.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `a9117f1d5` labels the scalar as a source-span witness and adds tests that mutate it without changing standalone pcurve geometry. Production extrusion paths use the scalar as a span constraint, a role that corpus records have not yet verified; the tests establish decoder consistency only.
 
 ### OS-11. Class-`0x2c` auxiliary scalars
 
