@@ -128,3 +128,82 @@ fn drawing_relationship_with_multiple_product_views_is_not_retargeted() {
             && loss.message.contains("no target was selected")
     }));
 }
+
+#[test]
+fn drawing_relationships_resolve_unique_wrapper_carriers() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=AXIS2_PLACEMENT_3D('',#1,#2,$);
+#4=PLANE('annotation support',#3);
+#5=ANNOTATION_PLANE('annotation plane',(),#4,());
+#6=REPRESENTATION_CONTEXT('','');
+#7=DRAUGHTING_MODEL('Annotation model',(#5),#6);
+#8=SHAPE_REPRESENTATION('mapped plane',(#4),#6);
+#9=REPRESENTATION_MAP(#3,#8);
+#10=MAPPED_ITEM('mapped annotation',#9,#3);
+#11=DRAUGHTING_MODEL('Mapped model',(#10),#6);
+#12=CARTESIAN_POINT('',(0.,1.,0.));
+#13=AXIS2_PLACEMENT_3D('',#12,#2,$);
+#14=PLANE('second support',#13);
+#15=SHAPE_REPRESENTATION('ambiguous plane',(#4,#14),#6);
+#16=REPRESENTATION_MAP(#3,#15);
+#17=MAPPED_ITEM('ambiguous mapped annotation',#16,#3);
+#18=DRAUGHTING_MODEL('Ambiguous model',(#17),#6);
+#19=SHAPE_REPRESENTATION('cyclic mapped item',(#21),#6);
+#20=REPRESENTATION_MAP(#3,#19);
+#21=MAPPED_ITEM('cyclic mapped annotation',#20,#3);
+#22=DRAUGHTING_MODEL('Cyclic model',(#21),#6);",
+    );
+
+    let annotation_model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.parameters.get("name") == Some(&"Annotation model".into()))
+        .expect("annotation drawing model");
+    assert!(annotation_model.relationships["items"]
+        .iter()
+        .any(|target| target.target.as_deref() == Some("step:data:surface#4")));
+
+    let mapped_model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.parameters.get("name") == Some(&"Mapped model".into()))
+        .expect("mapped drawing model");
+    assert!(mapped_model.relationships["items"]
+        .iter()
+        .any(|target| target.target.as_deref() == Some("step:data:surface#4")));
+
+    let ambiguous_model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.parameters.get("name") == Some(&"Ambiguous model".into()))
+        .expect("ambiguous drawing model");
+    assert!(!ambiguous_model.relationships.contains_key("items"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
+            && loss.message.contains("#17")
+    }));
+    let cyclic_model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.parameters.get("name") == Some(&"Cyclic model".into()))
+        .expect("cyclic drawing model");
+    assert!(!cyclic_model.relationships.contains_key("items"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
+            && loss.message.contains("#21")
+    }));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
+            && (loss.message.contains("#5") || loss.message.contains("#10"))
+    }));
+}

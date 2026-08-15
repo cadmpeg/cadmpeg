@@ -485,6 +485,15 @@ fn target_for(
             subelements: Vec::new(),
         });
     }
+    if let Some(identity) = wrapper_target_identity(id, target_identities, exchange) {
+        return Some(DrawingTarget {
+            target: Some(identity),
+            external_document: None,
+            external_object: None,
+            is_null: false,
+            subelements: Vec::new(),
+        });
+    }
     if known_typed.contains(&id) {
         return None;
     }
@@ -495,6 +504,118 @@ fn target_for(
         is_null: false,
         subelements: Vec::new(),
     })
+}
+
+fn wrapper_target_identity(
+    id: u64,
+    target_identities: &BTreeMap<u64, BTreeSet<String>>,
+    exchange: &Exchange,
+) -> Option<String> {
+    if target_identities.contains_key(&id) {
+        return None;
+    }
+    let mut identities = BTreeSet::new();
+    let mut active = BTreeSet::new();
+    let cyclic = collect_wrapper_targets(
+        id,
+        target_identities,
+        exchange,
+        &mut active,
+        &mut identities,
+    );
+    if !cyclic && identities.len() == 1 {
+        identities.into_iter().next()
+    } else {
+        None
+    }
+}
+
+fn collect_wrapper_targets(
+    id: u64,
+    target_identities: &BTreeMap<u64, BTreeSet<String>>,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    identities: &mut BTreeSet<String>,
+) -> bool {
+    if !active.insert(id) {
+        return true;
+    }
+    if let Some(targets) = target_identities.get(&id) {
+        identities.extend(targets.iter().cloned());
+        active.remove(&id);
+        return false;
+    }
+    let Some(record) = exchange.records.get(&id) else {
+        active.remove(&id);
+        return false;
+    };
+    let cyclic = if let Some(plane) = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "ANNOTATION_PLANE")
+        .and_then(|partial| partial.parameters.get(2))
+        .and_then(value_reference)
+    {
+        collect_wrapper_targets(plane, target_identities, exchange, active, identities)
+    } else if let Some(representation) = mapped_representation(record, exchange) {
+        if let Some(record) = exchange.records.get(&representation) {
+            if let Some(items) = representation_items(record) {
+                let mut cyclic = false;
+                for item in items {
+                    cyclic |= collect_wrapper_targets(
+                        item,
+                        target_identities,
+                        exchange,
+                        active,
+                        identities,
+                    );
+                }
+                cyclic
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    active.remove(&id);
+    cyclic
+}
+
+fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
+    let map_id = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "MAPPED_ITEM")
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(value_reference)?;
+    exchange
+        .records
+        .get(&map_id)
+        .and_then(|map| {
+            map.partials
+                .iter()
+                .find(|partial| partial.name == "REPRESENTATION_MAP")
+        })
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(value_reference)
+}
+
+fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
+    record
+        .partials
+        .iter()
+        .find(|partial| {
+            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        })
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(|value| match value {
+            Value::List(values) => Some(values),
+            _ => None,
+        })
+        .map(|items| items.iter().filter_map(value_reference).collect())
 }
 
 fn collect_references(value: &Value, output: &mut Vec<u64>) {

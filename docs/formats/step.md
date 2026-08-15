@@ -690,9 +690,14 @@ context. `PRESENTATION_SIZE` links a sheet revision to its presentation size.
 `DRAUGHTING_MODEL_ITEM_ASSOCIATION` links model items to their semantic
 definition. `DRAUGHTING_CALLOUT` carries an ordered callout-content set.
 Each drawing relationship target transfers only when its source record has
-exactly one neutral identity. If a source record has multiple neutral
-identities, no target is selected; the raw source parameter remains stored and
-the reader emits `drawing.relationship-target-ambiguous`. Target selection
-does not use identity ordering.
+exactly one neutral identity. An annotation plane transfers through its plane
+carrier, and a mapped item transfers through the items of its mapped
+representation, when that wrapper has no identity of its own and the reachable
+carrier graph has exactly one neutral identity and is acyclic. If a source
+record has multiple neutral identities, or a wrapper reaches multiple carriers
+or a cycle, no target is selected; the raw source parameter remains stored and
+the reader emits `drawing.relationship-target-ambiguous` for the former and
+`drawing.relationship-untyped-target` for the latter. Target selection does
+not use identity ordering.
 Unsupported drawing graphics retain their source entity and references without
 becoming geometric carriers.
