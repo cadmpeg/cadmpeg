@@ -65,7 +65,14 @@ def main() -> None:
     input_directory = Path(os.environ["CADMPEG_IGES_INPUT_DIR"])
     require_shape = os.environ.get("CADMPEG_IGES_REQUIRE_SHAPE") == "1"
     allow_empty = os.environ.get("CADMPEG_IGES_ALLOW_EMPTY") == "1"
-    files = sorted(input_directory.glob("*.igs"))
+    files = sorted(
+        (
+            path
+            for path in input_directory.iterdir()
+            if path.is_file() and path.suffix.lower() in {".igs", ".iges"}
+        ),
+        key=lambda path: path.name,
+    )
     if not files:
         print(f"no IGES files found in {input_directory}", file=sys.stderr)
         raise SystemExit(1)
