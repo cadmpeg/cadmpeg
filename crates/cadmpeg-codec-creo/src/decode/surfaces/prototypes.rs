@@ -89,6 +89,7 @@ pub(in super::super) fn prototype_local_frame(
     };
     let slots = values.iter().copied().collect::<Option<Vec<_>>>()?;
     let slots: [f64; 12] = slots.try_into().ok()?;
+    slots.iter().all(|value| value.is_finite()).then_some(())?;
     let first: [f64; 3] = slots[0..3].try_into().ok()?;
     let middle: [f64; 3] = slots[3..6].try_into().ok()?;
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
