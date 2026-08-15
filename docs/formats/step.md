@@ -621,17 +621,17 @@ or both orders, identifies the child and parent representations, the
 occurrence placement is unresolved.
 
 Exact and tessellated representations of one product remain linked when their
-source item has one exact body owner. A tessellated shape representation may
-list a supported triangulated item directly or through a tessellated geometric
-set; an exact representation relationship supplies that body owner to every
-supported leaf in the item graph. A missing or ambiguous owner detaches the
-tessellation, retains its source item association, and records a
-`ReferenceGraphNotClosed` loss. Tessellated indices are one-based. PNINDEX maps
-local points to shared coordinates. Triangle and fan indices address local
-points in listed order. A triangle strip alternates the first two indices for
-each odd triangle so adjacent triangles keep one surface orientation. A normal
-aggregate of length one applies to every local point; other normal aggregates
-align with the local point table.
+source item has one exact body owner. A tessellated solid, shell, or shape
+representation may list a supported triangulated item directly or through a
+tessellated geometric set. An exact body link or representation relationship
+supplies that body owner to every supported leaf in the item graph. A missing
+or ambiguous owner detaches the tessellation, retains its source item
+association, and records a `ReferenceGraphNotClosed` loss. Tessellated indices
+are one-based. PNINDEX maps local points to shared coordinates. Triangle and
+fan indices address local points in listed order. A triangle strip alternates
+the first two indices for each odd triangle so adjacent triangles keep one
+surface orientation. A normal aggregate of length one applies to every local
+point; other normal aggregates align with the local point table.
 
 Styles resolve from a styled item through presentation assignments to color.
 For `SURFACE_STYLE_USAGE`, `.BOTH.` takes precedence over `.POSITIVE.`, and

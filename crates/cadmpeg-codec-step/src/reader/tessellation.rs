@@ -61,11 +61,19 @@ pub(super) fn decode(
         if candidates.is_empty() {
             unresolved_containers.insert(id);
         }
+        let body_candidates = candidates.iter().cloned().collect::<Vec<_>>();
+        let mut associator = TessellationItemAssociator {
+            bodies: &body_candidates,
+            exchange,
+            item_bodies: &mut item_bodies,
+            declared_items: &mut declared_items,
+            unresolved_containers: &mut unresolved_containers,
+            typed: &mut typed,
+            declare_containers: true,
+            active: BTreeSet::new(),
+        };
         for item in item_ids {
-            item_bodies
-                .entry(item)
-                .or_default()
-                .extend(candidates.iter().cloned());
+            associator.visit(item, 0);
         }
         typed.insert(id);
     }
@@ -89,13 +97,14 @@ pub(super) fn decode(
         if bodies.is_empty() {
             continue;
         }
-        let mut associator = RepresentationItemAssociator {
+        let mut associator = TessellationItemAssociator {
             bodies: &bodies,
             exchange,
             item_bodies: &mut item_bodies,
             declared_items: &mut declared_items,
             unresolved_containers: &mut unresolved_containers,
             typed: &mut typed,
+            declare_containers: false,
             active: BTreeSet::new(),
         };
         for item in items {
@@ -341,17 +350,18 @@ fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
         .and_then(ValueExt::reference)
 }
 
-struct RepresentationItemAssociator<'a> {
+struct TessellationItemAssociator<'a> {
     bodies: &'a [BodyId],
     exchange: &'a Exchange,
     item_bodies: &'a mut BTreeMap<u64, BTreeSet<BodyId>>,
     declared_items: &'a mut BTreeSet<u64>,
     unresolved_containers: &'a mut BTreeSet<u64>,
     typed: &'a mut HashSet<u64>,
+    declare_containers: bool,
     active: BTreeSet<u64>,
 }
 
-impl RepresentationItemAssociator<'_> {
+impl TessellationItemAssociator<'_> {
     fn visit(&mut self, id: u64, depth: usize) {
         if depth >= super::record_graph_limit(None) || !self.active.insert(id) {
             return;
@@ -384,8 +394,16 @@ impl RepresentationItemAssociator<'_> {
                 "TESSELLATED_GEOMETRIC_SET",
             ],
         ) {
+            if self.declare_containers {
+                self.declared_items.insert(id);
+                self.item_bodies
+                    .entry(id)
+                    .or_default()
+                    .extend(self.bodies.iter().cloned());
+            }
             self.typed.insert(id);
-            if matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL") {
+            if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
+            {
                 self.unresolved_containers.remove(&id);
             }
             let item_ids = entity_parameter(record, kind, 0, 1)
@@ -400,6 +418,12 @@ impl RepresentationItemAssociator<'_> {
             for item in item_ids {
                 self.visit(item, depth + 1);
             }
+        } else if self.declare_containers {
+            self.declared_items.insert(id);
+            self.item_bodies
+                .entry(id)
+                .or_default()
+                .extend(self.bodies.iter().cloned());
         }
         self.active.remove(&id);
     }
