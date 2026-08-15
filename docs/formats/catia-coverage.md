@@ -263,6 +263,17 @@ current levels require those matrices and representative fixtures.
   native operand. The transfer assigns no neutral sketch entity, locus,
   parameter, driving state, or dimensional role; exact selector, framing,
   evaluation, and opcode-offset properties remain available on the constraint.
+  An exact two-selector `Range`/`CstAttr_Dimension` production transfers a
+  document PMI dimension when its admitted dimension framing carries a finite
+  nominal, the paired constraint evaluation is finite, and the two scalar
+  values have identical binary64 bits. The transfer carries the nullable lower
+  and upper range slots as millimetre deviations and derives the PMI identity
+  from the native entity identity. It assigns the selector name as an opaque
+  dimension kind and no target or sketch binding; the exact selector, framing,
+  evaluation, and range source remain in the native namespace. A range that
+  enters the proven sketch-constraint lane is not duplicated as PMI. Range-only
+  intervals and other selector sequences remain native until their semantic
+  owner is established.
   Exact schema-configuration `Configuration` records retain the first
   reference's payload-relative byte offset, selected value-schema ordinal,
   entry, and name, and retain the second reference as an independently resolved,

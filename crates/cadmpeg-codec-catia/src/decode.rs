@@ -25,6 +25,7 @@ use crate::families;
 use crate::formula;
 use crate::loss::CatiaLossCode;
 use crate::native::{CatiaNative, CatiaObjectGraph};
+use crate::pmi;
 use crate::sketch;
 
 fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
@@ -167,6 +168,12 @@ fn finish_decode(
         &native,
         &design_feature_transfer,
         modeling_graph_scope.as_ref(),
+    );
+    let transferred_pmi_dimension_count = pmi::transfer_dimensions(
+        &mut ir,
+        &native,
+        modeling_graph_scope.as_ref(),
+        &transferred_constraint_range_records,
     );
     let formula_transfer = formula::transfer_parameters(
         &mut ir,
@@ -3239,6 +3246,12 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ]);
+    if transferred_pmi_dimension_count != 0 {
+        report.coverage.insert(
+            "transferred_pmi_dimension_count".to_string(),
+            transferred_pmi_dimension_count,
+        );
+    }
     let untransferred_line_profile_count = native
         .consolidated_line_profiles
         .len()
