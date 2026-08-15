@@ -1099,3 +1099,71 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     ));
     assert!(result.report().losses.is_empty());
 }
+
+#[test]
+fn rejects_ambiguous_single_source_design_operands() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+ <Object type="Part::Box" name="A" id="1"/>
+ <Object type="Part::Box" name="B" id="2"/>
+ <Object type="Part::Box" name="C" id="3"/>
+ <Object type="Part::Scale" name="Scale" id="4"/>
+ <Object type="Part::Offset" name="Offset" id="5"/>
+ <Object type="Part::Cut" name="Cut" id="6"/>
+ <Object type="Part::Compound" name="Compound" id="7"/>
+ <Object type="Part::Sweep" name="Sweep" id="8"/>
+</Objects>
+<ObjectData Count="8">
+ <Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
+ <Object name="C"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="3"/></Property><Property name="Height" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object>
+ <Object name="Scale"><Properties Count="3">
+  <Property name="Base" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property>
+  <Property name="Uniform" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="UniformScale" type="App::PropertyFloat"><Float value="2"/></Property>
+ </Properties></Object>
+ <Object name="Offset"><Properties Count="3">
+  <Property name="Source" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property>
+  <Property name="Value" type="App::PropertyDistance"><Float value="1"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+ <Object name="Cut"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property>
+  <Property name="Tool" type="App::PropertyLink"><Link value="C"/></Property>
+ </Properties></Object>
+ <Object name="Compound"><Properties Count="1">
+  <Property name="Links" type="App::PropertyLinkList"><LinkList count="0"/></Property>
+ </Properties></Object>
+ <Object name="Sweep"><Properties Count="4">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="A"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkList"><LinkList count="2"><Link value="B"/><Link value="C"/></LinkList></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("ambiguous single-source operands");
+    let definition = |name: &str| {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+            .definition
+    };
+    for name in ["Scale", "Offset", "Cut", "Compound", "Sweep"] {
+        assert!(matches!(definition(name), FeatureDefinition::Native { .. }));
+    }
+    assert_eq!(result.report().losses.len(), 5);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
+}

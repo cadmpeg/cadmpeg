@@ -787,7 +787,15 @@ Part compound operations retain the complete ordered source list as one non-Bool
 construction; the alternate compound persistence class has the same construction semantics.
 Refine operations retain the single source whose redundant splitter boundaries are removed.
 Reverse operations retain the single source whose complete topological orientation is inverted.
-Missing, empty, or multiply valued single-source links remain attributable native operations.
+Part scale and whole-shape offset operations retain one source link. Two-input Part booleans use
+one `Base` link and one `Tool` link. A PartDesign Boolean uses one `BaseFeature` link when that
+optional carrier is populated. A compound with an empty source list, or any missing, empty, or
+multiply valued single-source link, remains an attributable native operation. These operations do
+not select a target by link-list order.
+
+Sweep spine and auxiliary-spine carriers each contain one link when the corresponding path is
+required. A selected extrusion or revolution face or shape termination contains one link. A
+helical PartDesign operation requires its profile carrier; an absent profile remains native.
 
 Part ruled surfaces retain two independently selected curve or wire boundaries and automatic,
 forward, or second-boundary-reversed traversal. Part section operations retain their two shape

@@ -2620,7 +2620,7 @@ fn revolution_definition(
             3 => RevolveExtent::OneSided {
                 termination: Termination::ToFace {
                     face: cadmpeg_ir::features::FaceSelection::Native(
-                        property(properties, "UpToFace")?.id.clone(),
+                        singular_operand(properties, "UpToFace")?.id.clone(),
                     ),
                     offset: None,
                 },
@@ -3098,13 +3098,13 @@ fn extrusion_definition(
             2 => Some(Termination::ToFirst),
             3 => Some(Termination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(
-                    property(properties, &face_name)?.id.clone(),
+                    singular_operand(properties, &face_name)?.id.clone(),
                 ),
                 offset: None,
             }),
             5 => Some(Termination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
-                    property(properties, &shape_name)?.id.clone(),
+                    singular_operand(properties, &shape_name)?.id.clone(),
                 ),
             }),
             _ => None,
@@ -3270,10 +3270,7 @@ fn dress_up_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
 }
 
 fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let base = property(properties, "Base")?;
-    if base.links.is_empty() {
-        return None;
-    }
+    let base = singular_operand(properties, "Base")?;
     let factor =
         |name| scalar_named(properties, name).filter(|factor| factor.is_finite() && *factor != 0.0);
     let factors = if bool_property(properties, "Uniform").unwrap_or(true) {
@@ -3441,10 +3438,7 @@ fn offset_shape_definition(
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
-    let source = property(properties, "Source")?;
-    if source.links.is_empty() {
-        return None;
-    }
+    let source = singular_operand(properties, "Source")?;
     let distance = scalar_named(properties, "Value")
         .filter(|distance| distance.is_finite() && *distance != 0.0)?;
     let mode = shell_mode(properties)?;
@@ -3473,9 +3467,7 @@ fn derived_shape_definition(
                 return property(properties, "Shape").map(|_| FeatureDefinition::StoredGeometry);
             };
             if links.links.is_empty() {
-                return Some(FeatureDefinition::Compound {
-                    members: BodySelection::Native(links.id.clone()),
-                });
+                return None;
             }
             Some(FeatureDefinition::Compound {
                 members: BodySelection::Native(links.id.clone()),
@@ -3664,6 +3656,20 @@ fn nonempty_link(link: &crate::native::LinkTarget) -> bool {
             .is_some_and(|object| !object.is_empty())
 }
 
+fn singular_operand<'a>(
+    properties: &'a [&PropertyRecord],
+    name: &str,
+) -> Option<&'a PropertyRecord> {
+    let property = property(properties, name)?;
+    let [link] = property.links.as_slice() else {
+        return None;
+    };
+    link.object
+        .as_deref()
+        .filter(|object| !object.is_empty())
+        .map(|_| property)
+}
+
 fn scalar_value(property: &PropertyRecord) -> Option<f64> {
     property
         .values
@@ -3847,9 +3853,10 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
         if group.links.is_empty() {
             return None;
         }
-        if let Some(base) =
-            property(properties, "BaseFeature").filter(|base| !base.links.is_empty())
+        if property(properties, "BaseFeature")
+            .is_some_and(|property| property.links.iter().any(nonempty_link))
         {
+            let base = singular_operand(properties, "BaseFeature")?;
             (
                 BodySelection::Native(base.id.clone()),
                 BodySelection::Native(group.id.clone()),
@@ -3861,12 +3868,9 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
                 BodySelection::Native(format!("{}:links:0..{last}", group.id)),
             )
         }
-    } else if let (Some(base), Some(tool)) =
-        (property(properties, "Base"), property(properties, "Tool"))
-    {
-        if base.links.is_empty() || tool.links.is_empty() {
-            return None;
-        }
+    } else if property(properties, "Base").is_some() || property(properties, "Tool").is_some() {
+        let base = singular_operand(properties, "Base")?;
+        let tool = singular_operand(properties, "Tool")?;
         (
             BodySelection::Native(base.id.clone()),
             BodySelection::Native(tool.id.clone()),
@@ -3964,10 +3968,9 @@ fn sweep_definition(
         return None;
     }
     let profile = profiles.remove(0);
-    let path_property = property(properties, "Spine").or_else(|| property(properties, "Path"))?;
-    if path_property.links.is_empty() {
-        return None;
-    }
+    let path_property = property(properties, "Spine")
+        .or_else(|| property(properties, "Path"))
+        .filter(|property| singular_operand(properties, &property.name).is_some())?;
     let solid =
         kind.starts_with("PartDesign::") || bool_property(properties, "Solid").unwrap_or(false);
     let transition = match integer_property(properties, "Transition")
@@ -3991,9 +3994,7 @@ fn sweep_definition(
             2 => SweepOrientation::Frenet,
             3 => {
                 let auxiliary = property(properties, "AuxiliarySpine")?;
-                if auxiliary.links.is_empty() {
-                    return None;
-                }
+                singular_operand(properties, "AuxiliarySpine")?;
                 SweepOrientation::Auxiliary {
                     path: PathRef::Native(auxiliary.id.clone()),
                     tangent: bool_property(properties, "AuxiliarySpineTangent").unwrap_or(false),
@@ -4252,8 +4253,12 @@ fn helical_sweep_definition(
         .zip(vector_property(properties, "Axis"))
         .map(|(origin, direction)| (Point3::new(origin.x, origin.y, origin.z), direction))
         .or_else(|| axis_reference(properties, "ReferenceAxis", objects, properties_by_owner))?;
+    let profile = profile_ref(owner, properties, sketches);
+    if matches!(profile, ProfileRef::Unresolved(_)) {
+        return None;
+    }
     let construction = HelicalSweepConstruction {
-        profile: profile_ref(owner, properties, sketches),
+        profile,
         axis_origin,
         axis_direction: axis_direction.unit()?,
         law,
