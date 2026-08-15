@@ -91,16 +91,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `8d4e832c4` replaced the old threshold with a more principled calculation, but did not supply external evidence for the format tolerance.
 
-### GE-07. The curve parameter-domain convention
-
-**Question.** Which parameter domain does each supported curve entity provide?
-
-**Known.** `offsets.rs` maps Type 100, 110, and 130 into domains used by topology and `native.rs` applies fallback domains for native records. The current domains and fallback policy are documented without a complete source mapping.
-
-**Need.** We need the parameter-domain rule for every supported curve form, including open, closed, and unbounded cases, and evidence for any fallback.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `2731411c2` centralized domains and added self-authored coverage; it did not verify the mapping against the format or independent producer files.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

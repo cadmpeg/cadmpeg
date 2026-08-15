@@ -84,8 +84,8 @@ fn source_parameter_map(
     record: &ParameterRecord,
     neutral: [f64; 2],
 ) -> Option<SourceParameterMap> {
-    let native = match entry.entity_type {
-        100 => {
+    let native = match (entry.entity_type, entry.form) {
+        (100, 0) => {
             let center = [record.number(2)?, record.number(3)?];
             let start = [record.number(4)?, record.number(5)?];
             let end = [record.number(6)?, record.number(7)?];
@@ -101,8 +101,16 @@ fn source_parameter_map(
             }
             [start_parameter, start_parameter + sweep]
         }
-        110 => [0.0, 1.0],
-        130 => [record.number(13)?, record.number(14)?],
+        (110, 0) => [0.0, 1.0],
+        (130, 0) => [record.number(13)?, record.number(14)?],
+        // These entities retain their IGES native parameter values in the
+        // neutral edge range. Their domains are bounded by the entity data:
+        // Type 102 starts at zero, Type 106 linear paths use one unit
+        // interval per segment, and Types 112 and 126 carry their active
+        // parameter bounds explicitly. Type 104 is not listed because the
+        // neutral hyperbola carrier uses a different analytic parameter than
+        // the IGES secant/tangent parameter and cannot use an affine map.
+        (102 | 112, 0) | (106, 11..=13 | 63) | (126, 0..=5) => neutral,
         _ => return None,
     };
     SourceParameterMap::new(native, neutral)

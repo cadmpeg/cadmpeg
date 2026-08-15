@@ -26,10 +26,122 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::parameter::{Token, TokenValue};
 use crate::test_support::*;
+use crate::{directory::DirectoryEntry, directory::Status, parameter::ParameterRecord};
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
+const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
+
+fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
+    DirectoryEntry {
+        source_offset: 0,
+        sequence: 1,
+        entity_type,
+        parameter_start: 1,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 1,
+            use_flag: 0,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 1,
+        form,
+        reserved: [[b' '; 8]; 2],
+        label: *b"SOURCE  ",
+        subscript: 0,
+    }
+}
+
+fn numeric_record(values: &[(usize, f64)]) -> ParameterRecord {
+    let length = values.iter().map(|(index, _)| index + 1).max().unwrap_or(0);
+    let mut tokens = (0..length)
+        .map(|_| Token {
+            value: TokenValue::Real(0.0),
+            span: 0..0,
+        })
+        .collect::<Vec<_>>();
+    for (index, value) in values {
+        tokens[*index].value = TokenValue::Real(*value);
+    }
+    ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens,
+        comment: Vec::new(),
+    }
+}
+
+#[test]
+fn source_parameter_map_uses_the_iges_domain_for_each_bounded_curve_form() {
+    let neutral = [2.0, 5.0];
+    for (entity_type, form) in [
+        (102, 0),
+        (106, 11),
+        (106, 12),
+        (106, 13),
+        (106, 63),
+        (112, 0),
+        (126, 0),
+        (126, 5),
+    ] {
+        let map = super::source_parameter_map(
+            &source_entry(entity_type, form),
+            &numeric_record(&[]),
+            neutral,
+        )
+        .expect("bounded source domain");
+        assert_eq!(map.native, neutral, "Type {entity_type} Form {form}");
+        assert!((map.to_neutral(neutral[0]) - neutral[0]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+        assert!((map.to_neutral(neutral[1]) - neutral[1]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    }
+}
+
+#[test]
+fn source_parameter_map_preserves_absolute_and_explicit_native_domains() {
+    let circle = super::source_parameter_map(
+        &source_entry(100, 0),
+        &numeric_record(&[(4, 0.0), (5, -1.0), (6, 1.0), (7, 0.0)]),
+        [10.0, 20.0],
+    )
+    .expect("circular-arc domain");
+    assert!(
+        (circle.native[0] - 3.0 * std::f64::consts::FRAC_PI_2).abs() < EPS_SOURCE_PARAMETER_DOMAIN
+    );
+    assert!((circle.native[1] - 2.0 * std::f64::consts::PI).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    assert!((circle.to_neutral(circle.native[0]) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    assert!((circle.to_neutral(circle.native[1]) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+
+    let explicit = super::source_parameter_map(
+        &source_entry(130, 0),
+        &numeric_record(&[(13, -4.0), (14, 6.0)]),
+        [10.0, 20.0],
+    )
+    .expect("offset-curve domain");
+    assert_eq!(explicit.native, [-4.0, 6.0]);
+}
+
+#[test]
+fn source_parameter_map_rejects_unbounded_line_forms() {
+    for form in [1, 2] {
+        assert!(super::source_parameter_map(
+            &source_entry(110, form),
+            &numeric_record(&[]),
+            [0.0, 1.0],
+        )
+        .is_none());
+    }
+}
 
 #[test]
 fn offset_source_range_uses_the_unique_curve_endpoint_match() {
