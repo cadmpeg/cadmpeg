@@ -85,9 +85,27 @@ fn presentation_layer_expands_all_product_definition_views() {
         [
             PresentationItem::Product { product: first },
             PresentationItem::Product { product: second },
-        ] if first.as_str() == "step:product:product#3-definition-6"
-            && second.as_str() == "step:product:product#3-definition-8"
+        ] if first.as_str() == "step:product:product#3-definition-8"
+            && second.as_str() == "step:product:product#3-definition-6"
     ));
+    assert!(result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| {
+            definition.id.as_str() == "step:product:product#3-definition-8"
+                && definition.native_ref.as_deref() == Some("#8")
+        }));
+    assert!(result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| {
+            definition.id.as_str() == "step:product:product#3-definition-6"
+                && definition.native_ref.as_deref() == Some("#6")
+        }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

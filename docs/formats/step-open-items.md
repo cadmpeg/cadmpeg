@@ -706,34 +706,6 @@ this rule.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PS-04. Product and product-definition identity
-
-**Question.** What STEP rule establishes product and product-definition identity?
-
-**Known.** A CADIR product definition represents one STEP
-`PRODUCT_DEFINITION` view. A product with one definition keeps the historical
-`step:product:product#<product>` identity. When one `PRODUCT` has multiple
-definitions, each view receives a distinct deterministic identity suffixed by
-its definition instance. Shape bodies and definition descriptions bind to
-their own view; they are not merged. Each definition not named as a usage
-receives one root occurrence, and every usage occurrence references the
-specific child definition view. When a presentation layer references the
-source `PRODUCT`, the reader emits all of that product's definition views in
-definition-instance order.
-
-**Need.** We need a primary format rule and an independent reordered or malformed input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
-The product decoder iterates the `definitions` `BTreeMap` when it
-builds `product_definition_ids_by_source`
-(`crates/cadmpeg-codec-step/src/reader/product.rs:157-165,234-237`). A
-presentation layer then preserves that vector at
-`crates/cadmpeg-codec-step/src/reader/presentation.rs:794-799`. A file whose
-definition record order differs from numeric instance order can therefore
-change the emitted view order. The current test uses matching record and
-numeric order and does not settle this identity/order rule.
-
 ### PS-05. Mapped-item scope for occurrence placement
 
 **Question.** Must a `MAPPED_ITEM` that supplies an occurrence placement
