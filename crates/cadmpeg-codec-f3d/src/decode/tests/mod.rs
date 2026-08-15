@@ -3,6 +3,7 @@
 
 mod bodyless;
 mod codec;
+mod completeness;
 mod container;
 mod curves;
 mod pcurves;

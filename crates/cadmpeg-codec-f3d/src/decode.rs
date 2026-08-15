@@ -345,6 +345,49 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -
     }
 }
 
+fn point_is_finite(point: &cadmpeg_ir::math::Point3) -> bool {
+    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+}
+
+fn vector_is_finite(vector: &cadmpeg_ir::math::Vector3) -> bool {
+    [vector.x, vector.y, vector.z]
+        .into_iter()
+        .all(f64::is_finite)
+}
+
+fn positive_finite(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool {
+    point_is_finite(&axis_angle.origin)
+        && vector_is_finite(&axis_angle.direction)
+        && axis_angle.direction.unit().is_some()
+        && axis_angle.angle.0.is_finite()
+}
+
+fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
+    use cadmpeg_ir::features::FaceMotion;
+
+    match motion {
+        FaceMotion::Offset { distance } => distance.0.is_finite(),
+        FaceMotion::Translate {
+            direction,
+            distance,
+        } => vector_is_finite(direction) && direction.unit().is_some() && distance.0.is_finite(),
+        FaceMotion::Rotate {
+            axis_origin,
+            axis_dir,
+            angle,
+        } => {
+            point_is_finite(axis_origin)
+                && vector_is_finite(axis_dir)
+                && axis_dir.unit().is_some()
+                && angle.0.is_finite()
+        }
+    }
+}
+
 fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
     use cadmpeg_ir::features::ProfileRef;
 
@@ -434,6 +477,25 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
             .as_ref()
             .is_none_or(|reference| !datum_plane_reference_is_resolved(reference)),
+        FeatureDefinition::Sphere { center, radius, op } => {
+            !point_is_finite(center)
+                || !positive_finite(radius.0)
+                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
+        FeatureDefinition::Torus {
+            center,
+            axis,
+            major_radius,
+            minor_radius,
+            op,
+        } => {
+            !point_is_finite(center)
+                || !vector_is_finite(axis)
+                || axis.unit().is_none()
+                || !positive_finite(major_radius.0)
+                || !positive_finite(minor_radius.0)
+                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
         FeatureDefinition::Extrude {
             profile,
             start,
@@ -631,6 +693,33 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::BaseFeature { bodies } | FeatureDefinition::InsertBodies { bodies } => {
             !body_selection_is_resolved(bodies)
         }
+        FeatureDefinition::Shell {
+            bodies,
+            removed_faces,
+            thickness,
+            outward,
+            ..
+        } => {
+            let bodies_are_resolved = bodies.as_ref().is_none_or(body_selection_is_resolved);
+            let empty_removed_faces_are_resolved =
+                matches!(
+                    removed_faces,
+                    cadmpeg_ir::features::FaceSelection::Faces(faces) if faces.is_empty()
+                ) && bodies.as_ref().is_some_and(body_selection_is_resolved);
+            !bodies_are_resolved
+                || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
+                || !thickness.is_some_and(|thickness| positive_finite(thickness.0))
+                || outward.is_none()
+        }
+        FeatureDefinition::Thicken {
+            faces,
+            thickness,
+            side,
+        } => {
+            !face_selection_is_resolved(faces)
+                || !thickness.is_some_and(|thickness| positive_finite(thickness.0))
+                || side.is_none()
+        }
         FeatureDefinition::Block {
             dimensions,
             placement,
@@ -642,6 +731,43 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Primitive { op, .. } => {
             *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
+        FeatureDefinition::MoveFace { faces, motion } => {
+            !face_selection_is_resolved(faces) || !face_motion_is_resolved(motion)
+        }
+        FeatureDefinition::MoveBody {
+            bodies,
+            translation,
+            rotation,
+            ..
+        } => {
+            !body_selection_is_resolved(bodies)
+                || !vector_is_finite(translation)
+                || rotation
+                    .as_ref()
+                    .is_some_and(|rotation| !axis_angle_is_resolved(rotation))
+        }
+        FeatureDefinition::Scale {
+            bodies,
+            center,
+            factors,
+        } => {
+            !body_selection_is_resolved(bodies)
+                || center.is_none()
+                || center.as_ref().is_some_and(|center| {
+                    matches!(center, cadmpeg_ir::features::ScaleCenter::Native(_))
+                        || matches!(
+                            center,
+                            cadmpeg_ir::features::ScaleCenter::Point(point)
+                                if !point_is_finite(point)
+                        )
+                })
+                || factors.resolved().is_none_or(|factors| {
+                    !vector_is_finite(&factors)
+                        || factors.x == 0.0
+                        || factors.y == 0.0
+                        || factors.z == 0.0
+                })
         }
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })

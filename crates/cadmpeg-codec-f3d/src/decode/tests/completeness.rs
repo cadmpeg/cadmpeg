@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Completeness predicates for projected design feature definitions.
+
+use super::super::feature_definition_is_incomplete;
+
+#[test]
+fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
+    use cadmpeg_ir::features::{
+        AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition, Length,
+        ScaleCenter, ScaleFactors, ThickenSide,
+    };
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let faces = FaceSelection::Faces(vec!["face:1".into()]);
+    let bodies = BodySelection::Bodies(vec![BodyId("body:1".into())]);
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            radius: Length(4.0),
+            op: BooleanOp::NewBody,
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            radius: Length(0.0),
+            op: BooleanOp::NewBody,
+        }
+    ));
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::Torus {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_radius: Length(8.0),
+            minor_radius: Length(2.0),
+            op: BooleanOp::Join,
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::Torus {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 0.0),
+            major_radius: Length(8.0),
+            minor_radius: Length(2.0),
+            op: BooleanOp::Join,
+        }
+    ));
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::MoveFace {
+            faces: faces.clone(),
+            motion: FaceMotion::Offset {
+                distance: Length(-2.0),
+            },
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::MoveFace {
+            faces: FaceSelection::Native("native:faces".into()),
+            motion: FaceMotion::Offset {
+                distance: Length(2.0),
+            },
+        }
+    ));
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::Thicken {
+            faces: faces.clone(),
+            thickness: Some(Length(2.0)),
+            side: Some(ThickenSide::Forward),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::Thicken {
+            faces,
+            thickness: Some(Length(0.0)),
+            side: Some(ThickenSide::Forward),
+        }
+    ));
+
+    let shell = |bodies, removed_faces| FeatureDefinition::Shell {
+        bodies,
+        removed_faces,
+        thickness: Some(Length(1.0)),
+        outward: Some(true),
+        mode: None,
+        join: None,
+        resolve_intersections: None,
+        allow_self_intersections: None,
+    };
+    assert!(!feature_definition_is_incomplete(&shell(
+        Some(bodies.clone()),
+        FaceSelection::Faces(Vec::new()),
+    )));
+    assert!(!feature_definition_is_incomplete(&shell(
+        None,
+        FaceSelection::Faces(vec!["face:opening".into()]),
+    )));
+    assert!(feature_definition_is_incomplete(&shell(
+        None,
+        FaceSelection::Faces(Vec::new()),
+    )));
+    assert!(feature_definition_is_incomplete(&shell(
+        Some(BodySelection::Native("native:bodies".into())),
+        FaceSelection::Faces(Vec::new()),
+    )));
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::MoveBody {
+            bodies: bodies.clone(),
+            translation: Vector3::new(1.0, 2.0, 3.0),
+            rotation: Some(AxisAngle {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+                angle: cadmpeg_ir::features::Angle(0.5),
+            }),
+            copies: 0,
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::MoveBody {
+            bodies,
+            translation: Vector3::new(f64::NAN, 0.0, 0.0),
+            rotation: None,
+            copies: 0,
+        }
+    ));
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::Scale {
+            bodies: BodySelection::Bodies(vec![BodyId("body:scale".into())]),
+            center: Some(ScaleCenter::ModelOrigin),
+            factors: ScaleFactors {
+                uniform: Some(1.5),
+                x: None,
+                y: None,
+                z: None,
+            },
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::Scale {
+            bodies: BodySelection::Bodies(vec![BodyId("body:scale".into())]),
+            center: Some(ScaleCenter::Native("native:center".into())),
+            factors: ScaleFactors {
+                uniform: Some(1.5),
+                x: None,
+                y: None,
+                z: None,
+            },
+        }
+    ));
+}
