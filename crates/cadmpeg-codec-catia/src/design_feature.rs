@@ -307,11 +307,13 @@ fn assign_document_parameter_ordinals(ir: &mut CadIr) {
     }
 }
 
-/// Expose exact feature-owned parameter expressions on an opaque native
-/// operation without assigning operation-specific roles. The map uses the
-/// neutral, scope-unique parameter names assigned by
-/// [`normalize_parameter_names`]. A changed name retains its source spelling
-/// in the corresponding parameter's `source_name` property.
+/// Expose exact feature-owned parameter expressions without assigning
+/// operation-specific roles. The map uses the neutral, scope-unique parameter
+/// names assigned by [`normalize_parameter_names`]. A changed name retains its
+/// source spelling in the corresponding parameter's `source_name` property.
+/// Typed unresolved operation families retain the same expressions in feature
+/// source properties because their neutral definitions have no generic
+/// parameter map.
 fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
@@ -331,11 +333,23 @@ fn assign_native_operation_parameter_values(
         let Some(values) = values_by_feature.remove(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Native { parameters, .. } = &mut feature.definition else {
-            continue;
-        };
-        if parameters.is_empty() {
-            *parameters = values;
+        match &mut feature.definition {
+            FeatureDefinition::Native { parameters, .. } => {
+                if parameters.is_empty() {
+                    *parameters = values;
+                }
+            }
+            FeatureDefinition::ExtrudeUnresolved
+            | FeatureDefinition::RevolveUnresolved
+            | FeatureDefinition::FilletUnresolved
+            | FeatureDefinition::Sweep { .. } => {
+                for (name, expression) in values {
+                    feature
+                        .source_properties
+                        .insert(format!("catia_parameter_{name}"), expression);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -700,6 +714,8 @@ fn transfer_native_operation(
         design_objects,
         native_operation_object_ids,
     );
+    let (definition, source_properties) =
+        native_operation_definition(&kind, &object.id, properties);
     let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -708,16 +724,12 @@ fn transfer_native_operation(
         suppressed: None,
         parent: None,
         dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
+        source_properties,
         source_tag: Some(kind.clone()),
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind,
-            parameters: BTreeMap::new(),
-            properties,
-        },
+        definition,
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -732,6 +744,51 @@ fn transfer_native_operation(
     transfer
         .native_operation_definition_chain_value_records
         .extend(definition_chain_value_records);
+}
+
+/// Project an admitted CATIA operation class into the neutral family while
+/// keeping every unresolved operand explicit. The exact owner declaration
+/// proves the family identity; it does not prove profile, axis, extent,
+/// result, edge-group, or operation-specific dependency roles.
+fn native_operation_definition(
+    kind: &str,
+    native_ref: &str,
+    properties: BTreeMap<String, String>,
+) -> (FeatureDefinition, BTreeMap<String, String>) {
+    let definition = match kind {
+        "Prism_ThickThin1" | "Prism_ThickThin2" => FeatureDefinition::ExtrudeUnresolved,
+        "Revol_ThickThin1" => FeatureDefinition::RevolveUnresolved,
+        "Sweep_ThickThin1" => FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),
+            sections: Vec::new(),
+            path: Some(cadmpeg_ir::features::PathRef::Unresolved(
+                native_ref.to_string(),
+            )),
+            mode: cadmpeg_ir::features::SweepMode::Unresolved,
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        },
+        "EdgeFillet" => FeatureDefinition::FilletUnresolved,
+        _ => FeatureDefinition::Native {
+            kind: kind.to_string(),
+            parameters: BTreeMap::new(),
+            properties: properties.clone(),
+        },
+    };
+    if matches!(definition, FeatureDefinition::Native { .. }) {
+        (definition, BTreeMap::new())
+    } else {
+        (definition, properties)
+    }
 }
 
 /// Retain complete definition-bound values on the exact native operation

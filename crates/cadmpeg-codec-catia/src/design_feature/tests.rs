@@ -228,7 +228,7 @@ fn transfers_compact_self_owned_operation_root() {
     );
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::Native { ref kind, .. } if kind == "Prism_ThickThin2"
+        FeatureDefinition::ExtrudeUnresolved
     ));
 }
 
@@ -612,24 +612,19 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         ir.model.features[1].parent,
         Some(FeatureId::from("parent-object:feature"))
     );
-    for (feature, kind) in ir
+    assert!(matches!(
+        ir.model.features[0].definition,
+        FeatureDefinition::ExtrudeUnresolved
+    ));
+    assert!(matches!(
+        ir.model.features[1].definition,
+        FeatureDefinition::FilletUnresolved
+    ));
+    assert!(ir
         .model
         .features
         .iter()
-        .zip(["Prism_ThickThin1", "EdgeFillet"])
-    {
-        let FeatureDefinition::Native {
-            kind: actual_kind,
-            parameters,
-            properties,
-        } = &feature.definition
-        else {
-            panic!("expected an opaque native operation");
-        };
-        assert_eq!(actual_kind, kind);
-        assert!(parameters.is_empty());
-        assert!(properties.is_empty());
-    }
+        .all(|feature| feature.source_properties.is_empty()));
     assert_eq!(
         transfer.native_operation_records,
         HashSet::from(["parent-record".to_string(), "child-record".to_string()])
@@ -641,7 +636,109 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
 }
 
 #[test]
-fn transfers_exact_definition_values_as_opaque_native_properties() {
+fn maps_each_admitted_operation_class_to_its_neutral_family() {
+    let cases = [
+        ("prism-one", "Prism_ThickThin1", "prism-one-record", 1_u32),
+        ("prism-two", "Prism_ThickThin2", "prism-two-record", 2_u32),
+        ("revolution", "Revol_ThickThin1", "revolution-record", 3_u32),
+        ("sweep", "Sweep_ThickThin1", "sweep-record", 4_u32),
+        ("fillet", "EdgeFillet", "fillet-record", 5_u32),
+    ];
+    let objects = cases
+        .iter()
+        .enumerate()
+        .map(|(ordinal, (id, kind, record, entity_id))| {
+            let mut object = native_operation_object(
+                id,
+                None,
+                *entity_id,
+                record,
+                kind,
+                &format!("{kind}-entry"),
+            );
+            object.first_field_byte_offset = (ordinal as u64) * 10;
+            object
+        })
+        .collect::<Vec<_>>();
+    let records = cases
+        .iter()
+        .map(|(_id, kind, record, entity_id)| {
+            object_record(
+                record,
+                None,
+                Some(*entity_id),
+                None,
+                Some(kind),
+                Some(&format!("{kind}-entry")),
+            )
+        })
+        .collect::<Vec<_>>();
+    let native = CatiaNative {
+        design_objects: objects,
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records,
+        }],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty(Units::default());
+
+    transfer_design_features(&mut ir, &native, None);
+
+    assert_eq!(ir.model.features.len(), cases.len());
+    for feature in &ir.model.features {
+        match feature.source_tag.as_deref() {
+            Some("Prism_ThickThin1" | "Prism_ThickThin2") => {
+                assert!(matches!(
+                    feature.definition,
+                    FeatureDefinition::ExtrudeUnresolved
+                ));
+            }
+            Some("Revol_ThickThin1") => {
+                assert!(matches!(
+                    feature.definition,
+                    FeatureDefinition::RevolveUnresolved
+                ));
+            }
+            Some("Sweep_ThickThin1") => {
+                let FeatureDefinition::Sweep {
+                    section,
+                    path,
+                    mode,
+                    ..
+                } = &feature.definition
+                else {
+                    panic!("expected a typed unresolved sweep");
+                };
+                assert!(matches!(
+                    section,
+                    cadmpeg_ir::features::SweepSection::Unresolved(Some(_))
+                ));
+                assert!(matches!(
+                    path,
+                    Some(cadmpeg_ir::features::PathRef::Unresolved(_))
+                ));
+                assert!(matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved));
+            }
+            Some("EdgeFillet") => {
+                assert!(matches!(
+                    feature.definition,
+                    FeatureDefinition::FilletUnresolved
+                ));
+            }
+            other => panic!("unexpected operation source tag: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn transfers_exact_definition_values_as_typed_feature_properties() {
     let mut operation = native_operation_object(
         "operation-object",
         None,
@@ -707,17 +804,12 @@ fn transfers_exact_definition_values_as_opaque_native_properties() {
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
-    let FeatureDefinition::Native {
-        parameters,
-        properties,
-        ..
-    } = &ir.model.features[0].definition
-    else {
-        panic!("expected an opaque native operation");
-    };
-    assert!(parameters.is_empty());
+    assert!(matches!(
+        ir.model.features[0].definition,
+        FeatureDefinition::ExtrudeUnresolved
+    ));
     assert_eq!(
-        properties,
+        &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
                 "catia_definition_value_0_definition_entry".to_string(),
@@ -776,7 +868,7 @@ fn transfers_exact_definition_values_as_opaque_native_properties() {
 }
 
 #[test]
-fn transfers_exact_definition_chains_as_opaque_native_properties() {
+fn transfers_exact_definition_chains_as_typed_feature_properties() {
     let mut operation = native_operation_object(
         "operation-object",
         None,
@@ -847,11 +939,12 @@ fn transfers_exact_definition_chains_as_opaque_native_properties() {
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
-    let FeatureDefinition::Native { properties, .. } = &ir.model.features[0].definition else {
-        panic!("expected an opaque native operation");
-    };
+    assert!(matches!(
+        ir.model.features[0].definition,
+        FeatureDefinition::ExtrudeUnresolved
+    ));
     assert_eq!(
-        properties,
+        &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
                 "catia_definition_chain_value_0_entity".to_string(),
@@ -980,11 +1073,12 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
-    let FeatureDefinition::Native { properties, .. } = &ir.model.features[0].definition else {
-        panic!("expected an opaque native operation");
-    };
+    assert!(matches!(
+        ir.model.features[0].definition,
+        FeatureDefinition::ExtrudeUnresolved
+    ));
     assert_eq!(
-        properties,
+        &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
                 "catia_definition_chain_value_0_entity".to_string(),
@@ -1133,14 +1227,17 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
             (ParameterId("document-parameter".to_string()), None, 0,),
         ]
     );
-    let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
-        panic!("expected an opaque native operation");
-    };
     assert_eq!(
-        parameters,
+        &ir.model.features[0].source_properties,
         &BTreeMap::from([
-            ("early-parameter".to_string(), "1 mm".to_string()),
-            ("late-parameter".to_string(), "1 mm".to_string()),
+            (
+                "catia_parameter_early-parameter".to_string(),
+                "1 mm".to_string()
+            ),
+            (
+                "catia_parameter_late-parameter".to_string(),
+                "1 mm".to_string()
+            ),
         ])
     );
 }
@@ -1219,11 +1316,11 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         ir.model.features[1].parent,
         Some(FeatureId::from("parent-operation:feature"))
     );
-    let FeatureDefinition::Native { parameters, .. } = &ir.model.features[1].definition else {
-        panic!("expected child native operation");
-    };
     assert_eq!(
-        parameters.get("parameter").map(String::as_str),
+        ir.model.features[1]
+            .source_properties
+            .get("catia_parameter_parameter")
+            .map(String::as_str),
         Some("1 mm")
     );
 }

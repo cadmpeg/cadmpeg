@@ -1719,6 +1719,35 @@ fn finish_decode(
             )
         })
         .count();
+    let native_operation_feature_ids = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.source_tag.as_deref(),
+                Some(
+                    "EdgeFillet"
+                        | "Prism_ThickThin1"
+                        | "Prism_ThickThin2"
+                        | "Revol_ThickThin1"
+                        | "Sweep_ThickThin1"
+                )
+            )
+        })
+        .map(|feature| feature.id.clone())
+        .collect::<HashSet<_>>();
+    let transferred_native_operation_parameter_count = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| native_operation_feature_ids.contains(owner))
+        })
+        .count();
     report.coverage.extend([
         (
             "decoded_appearance_packet_count".to_string(),
@@ -3183,16 +3212,7 @@ fn finish_decode(
         ),
         (
             "transferred_native_operation_parameter_count".to_string(),
-            ir.model
-                .features
-                .iter()
-                .filter_map(|feature| match &feature.definition {
-                    cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } => {
-                        Some(parameters.len())
-                    }
-                    _ => None,
-                })
-                .sum(),
+            transferred_native_operation_parameter_count,
         ),
         (
             "unresolved_design_record_count".to_string(),
