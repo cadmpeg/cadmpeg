@@ -682,9 +682,10 @@ A class userdata chunk begins with a packed version byte.
 
 An object accepts one userdata item for each item UUID. A duplicate item UUID
 is rejected by attachment, so the first serialized item owns the object state.
-Built-in extension readers that select by class UUID use the first serialized
-matching item; later matching items remain bounded source records and do not
-replace it.
+Attached built-in extension readers that select by class UUID use the first
+serialized matching item; later matching items remain bounded source records and
+do not replace it. An obsolete extension that is consumed by `DeleteAfterRead`
+is not attached and follows the class-specific rule for that side effect.
 
 Major `1` fields:
 
@@ -2476,6 +2477,8 @@ The rectangle count is zero or seven. Distance scale is finite and positive.
 Dimension plane origins, plane equation offsets, construction points, angular
 radius, kink offsets, and text height use document length conversion. Style
 indices, flags, directions, stored angles, and distance scale remain unscaled.
+When duplicate records for an attached built-in dimension extension occur, the
+first serialized matching record owns the extension state.
 
 ### 18.2 Hatches
 
@@ -2518,6 +2521,10 @@ anonymous version 1.minor
 ON_UUID ignored_id
 ON_2dPoint basepoint
 ```
+
+The obsolete hatch extension is consumed after reading. Each valid matching
+record applies its base point in serialized order, so the last valid record
+owns the hatch base point; no such extension remains attached to the hatch.
 
 ### 18.3 Detail views
 

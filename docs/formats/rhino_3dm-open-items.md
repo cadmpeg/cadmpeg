@@ -190,16 +190,6 @@ the same producer-source audit or an independent witness.
 
 **Note.** Reopened as a promotion-to-spec gap. Reordering conflicting unit records changes coordinate scaling; reordering writer-version records changes version gates.
 
-### SW-06. Duplicate built-in userdata extensions
-
-**Question.** Which built-in userdata extension owns a dimension or hatch when duplicate class UUIDs occur?
-
-**Known.** `dimensions.rs:1009-1012` and `dimensions.rs:1046-1049` select the first matching extension. `hatch.rs:256-260` does the same. `decode.rs:988-1000` and `decode.rs:1097-1107` emit a duplicate-resolution diagnostic, but the closure supplies no independent source precedence rule.
-
-**Need.** Establish the source uniqueness or precedence rule for each extension class and retain a typed ambiguity or resolution loss for conflicting duplicates.
-
-**Note.** Reopened as a promotion-to-spec gap. Reordering extensions with different offsets or base-point data changes the transferred presentation.
-
 ### SW-09. Ambiguous history producers
 
 **Question.** How is a history dependency represented when more than one record produces the same descendant UUID?
