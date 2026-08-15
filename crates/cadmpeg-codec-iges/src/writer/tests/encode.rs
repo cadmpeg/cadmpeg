@@ -656,6 +656,30 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
 }
 
 #[test]
+fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_cylinder_seam_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let error = IgesEncoder::default()
+        .plan(EncodeInput {
+            ir: decoded.ir(),
+            fidelity: None,
+        })
+        .err()
+        .expect("a cylindrical face without axial bounds must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("boundary loop that repeats one seam edge without axial bounds"),
+        "{error}"
+    );
+}
+
+#[test]
 fn encode_regenerates_a_single_face_trimmed_sheet() {
     let surface_id = SurfaceId("surface#sheet".into());
     let body_id = BodyId("body#sheet".into());

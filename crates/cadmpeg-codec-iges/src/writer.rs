@@ -570,6 +570,33 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                         ))
                     })?;
                 surface_entities(&surface.geometry, 0)?;
+                if matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
+                    && face.loops.iter().any(|loop_id| {
+                        let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id)
+                        else {
+                            return false;
+                        };
+                        loop_.coedges.len() == 2
+                            && loop_
+                                .coedges
+                                .iter()
+                                .filter_map(|coedge_id| {
+                                    ir.model
+                                        .coedges
+                                        .iter()
+                                        .find(|coedge| coedge.id == *coedge_id)
+                                        .map(|coedge| coedge.edge.as_str())
+                                })
+                                .collect::<std::collections::BTreeSet<_>>()
+                                .len()
+                                == 1
+                    })
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES B-rep writer refuses cylindrical face {} with a boundary loop that repeats one seam edge without axial bounds",
+                        face.id
+                    )));
+                }
                 for loop_id in &face.loops {
                     let loop_ = ir
                         .model
