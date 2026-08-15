@@ -229,7 +229,7 @@ from a conformant file.
 
 **Known.** `entities/csg.rs:70-123` recursively validates Type 180 operands and requires `has_direct_brep` to match Form 1; a Form 1 accepts a direct Type 186 term in addition to the admitted primitive and Type 430 terms. `entities/csg.rs:360-441` validates postfix structure, recursion, and cycles. The Primitive solids section of `iges.md` records the direct-operand rule.
 
-**Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the format source or independent producer files.
+**Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the IGES specification or exporter-authored witness files.
 
 **Note.** Reopened by the 2026-08-16 audit. The recursive interpretation is internally consistent, but the source rule remains unverified.
 
@@ -251,7 +251,7 @@ from a conformant file.
 
 **Known.** `entities/structure.rs:288-297` requires a valid Type 214 pointer for every Form 5 placement. `entities/structure/tests.rs:874-890` rejects a label display without a leader, and the Product structure section of `iges.md` states the non-null requirement.
 
-**Need.** We need the nullability of the Form 5 leader field from the format source or independent producer files.
+**Need.** We need the nullability of the Form 5 leader field from the IGES specification or exporter-authored witness files.
 
 **Note.** Reopened by the 2026-08-16 audit. The requirement and fixture coverage are explicit, but no independent evidence establishes it.
 
@@ -261,7 +261,7 @@ from a conformant file.
 
 **Known.** `entities/structure.rs:1021-1056` requires the `(number, name)` pair to occur once in the file, requires one Type 404 owner, and requires one sheet property on that owner. `entities/drawing/tests.rs:83-89` rejects duplicate drawing sheet IDs. The Appearance section of `iges.md` states the same identity scope.
 
-**Need.** We need the identity scope and duplicate behavior from the format source or independent producer evidence.
+**Need.** We need the identity scope and duplicate behavior from the IGES specification or exporter-authored witness files.
 
 **Note.** Reopened by the 2026-08-16 audit. The file-global rule and duplicate test are project decisions without independent evidence for that scope.
 
