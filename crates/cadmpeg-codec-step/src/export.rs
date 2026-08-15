@@ -2930,6 +2930,7 @@ impl<'a> Builder<'a> {
                 }
                 PmiDefinition::Datum { .. }
                 | PmiDefinition::DatumSystem { .. }
+                | PmiDefinition::DatumTarget { .. }
                 | PmiDefinition::Presentation { .. } => {}
             }
         }

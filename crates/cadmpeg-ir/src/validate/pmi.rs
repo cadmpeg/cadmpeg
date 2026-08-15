@@ -180,6 +180,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             PmiDefinition::Datum { .. } => {}
+            PmiDefinition::DatumTarget { .. } => {}
         }
     }
 }

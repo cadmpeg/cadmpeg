@@ -93,6 +93,25 @@ pub enum DimensionKind {
     Other(String),
 }
 
+/// Geometric form of a datum target feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DatumTargetForm {
+    /// Point target.
+    Point,
+    /// Line target.
+    Line,
+    /// Rectangular target.
+    Rectangle,
+    /// Circular target.
+    Circle,
+    /// Circular-curve target.
+    CircularCurve,
+    /// Source-defined or invalid target form.
+    Other(String),
+}
+
 /// Semantic geometric-tolerance characteristic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -177,6 +196,13 @@ pub enum PmiDefinition {
     DatumSystem {
         /// Ordered datum references.
         references: Vec<DatumReference>,
+    },
+    /// Datum target feature and its geometric form.
+    DatumTarget {
+        /// Geometric form of the target feature.
+        form: DatumTargetForm,
+        /// Target identifier shown with the datum target.
+        identification: String,
     },
     /// Geometric tolerance, zone units, modifiers, and optional datum system.
     GeometricTolerance {
