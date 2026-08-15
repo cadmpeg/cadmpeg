@@ -529,7 +529,9 @@ fn collect_invisible_body_ids(
             .filter_map(ValueExt::reference)
             .collect::<Vec<_>>()
     } else if record.partials.iter().any(|partial| {
-        partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        partial.name == "REPRESENTATION"
+            || partial.name.ends_with("_REPRESENTATION")
+            || partial.name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
     }) {
         super::representation::items(record).unwrap_or_default()
     } else {

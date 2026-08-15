@@ -2793,7 +2793,9 @@ fn same_scale(left: f64, right: f64) -> bool {
 
 fn is_representation_record(record: &RawRecord) -> bool {
     record.partials.iter().any(|partial| {
-        partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        partial.name == "REPRESENTATION"
+            || partial.name.ends_with("_REPRESENTATION")
+            || partial.name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
     })
 }
 
@@ -2802,7 +2804,9 @@ fn representation_context(record: &RawRecord) -> Option<u64> {
         .partials
         .iter()
         .filter(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+            partial.name == "REPRESENTATION"
+                || partial.name.ends_with("_REPRESENTATION")
+                || partial.name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
         })
         .flat_map(|partial| partial.parameters.iter().rev())
         .find_map(Value::reference)

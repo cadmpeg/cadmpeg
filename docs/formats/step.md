@@ -632,6 +632,10 @@ product link, shared product-linked items, or an exact representation link
 remains a detached source association. A missing or ambiguous owner detaches
 the tessellation, retains its source item association, and records a
 `ReferenceGraphNotClosed` loss.
+`TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS` uses the inherited
+representation name, item set, and context for the same ownership rules. Its
+accuracy-specific record remains source-native while the supported tessellated
+items transfer.
 Tessellated indices are one-based. PNINDEX maps local points to shared
 coordinates. Triangle and fan indices address local points in listed order. A
 triangle strip alternates the first two indices for each odd triangle so

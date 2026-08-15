@@ -33,7 +33,9 @@ pub(super) fn context(record: &RawRecord) -> Option<u64> {
 }
 
 fn is_representation_name(name: &str) -> bool {
-    name == "REPRESENTATION" || name.ends_with("_REPRESENTATION")
+    name == "REPRESENTATION"
+        || name.ends_with("_REPRESENTATION")
+        || name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
 }
 
 fn value_list(value: &Value) -> Option<&[Value]> {

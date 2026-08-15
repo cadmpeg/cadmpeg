@@ -91,7 +91,7 @@ pub(super) fn decode(
         .flatten()
         .collect::<BTreeSet<_>>();
     for (&id, record) in &exchange.records {
-        if !has_entity(record, "TESSELLATED_SHAPE_REPRESENTATION") {
+        if !is_tessellated_shape_representation(record) {
             continue;
         }
         let Some(items) = super::representation::items(record) else {
@@ -663,6 +663,17 @@ fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
 
 fn has_entity(record: &RawRecord, name: &str) -> bool {
     entity_kind(record, &[name]).is_some()
+}
+
+fn is_tessellated_shape_representation(record: &RawRecord) -> bool {
+    entity_kind(
+        record,
+        &[
+            "TESSELLATED_SHAPE_REPRESENTATION",
+            "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS",
+        ],
+    )
+    .is_some()
 }
 
 fn entity_kind<'a>(record: &'a RawRecord, names: &[&str]) -> Option<&'a str> {
