@@ -2680,6 +2680,72 @@
         ),
         None
     );
+    let mut endpoint_families = definition.clone();
+    let endpoint_segments = endpoint_families
+        .segments
+        .as_mut()
+        .expect("segment table");
+    endpoint_segments.declared_count += 2;
+    endpoint_segments
+        .reference_line_rows
+        .push(crate::feature::FeatureReferenceLineSegment {
+            point_ids: [Some(1), Some(5)],
+            external_id: 101,
+            ..reference_line.clone()
+        });
+    endpoint_segments
+        .bounded_curve_rows
+        .push(crate::feature::FeatureBoundedCurveSegment {
+            point_ids: [1, 5],
+            external_id: 102,
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            offset: 604,
+        });
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 2,
+            },
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 3,
+            },
+        ),
+        Some(5)
+    );
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 102,
+                sense: 2,
+            },
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 102,
+                sense: 3,
+            },
+        ),
+        Some(5)
+    );
     let mut opaque_line = definition.clone();
     opaque_line
         .segments

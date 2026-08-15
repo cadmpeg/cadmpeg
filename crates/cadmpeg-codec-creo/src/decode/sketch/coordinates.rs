@@ -560,13 +560,28 @@ pub(crate) fn section_linear_distance_coordinate(
         return None;
     }
     let table = definition.segments.as_ref()?;
+    // Only decoded point-bearing families establish that a dimension operand
+    // is a section endpoint. Opaque rows retain native identity but do not
+    // prove an endpoint role.
     let has_unique_incident_entity = |point_id| {
         table.rows.iter().any(|segment| {
             segment.point_ids.contains(&point_id)
                 && table.external_id_count(segment.external_id) == 1
         }) || table.point_rows.iter().any(|segment| {
             segment.point_id == point_id && table.external_id_count(segment.external_id) == 1
-        })
+        }) || (matches!(point_id, 0 | 1)
+            && table
+                .centered_line_rows
+                .iter()
+                .any(|segment| table.external_id_count(segment.external_id) == 1))
+            || table.reference_line_rows.iter().any(|segment| {
+                segment.point_ids.contains(&Some(point_id))
+                    && table.external_id_count(segment.external_id) == 1
+            })
+            || table.bounded_curve_rows.iter().any(|segment| {
+                segment.point_ids.contains(&point_id)
+                    && table.external_id_count(segment.external_id) == 1
+            })
     };
     has_unique_incident_entity(first).then_some(())?;
     has_unique_incident_entity(second).then_some(())?;

@@ -180,6 +180,70 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         ),
         None
     );
+
+    let mut endpoint_carriers = definition.clone();
+    let endpoint_segments = endpoint_carriers.segments.as_mut().expect("segments");
+    endpoint_segments.rows.clear();
+    endpoint_segments
+        .reference_line_rows
+        .push(crate::feature::FeatureReferenceLineSegment {
+            directions: [None; 3],
+            point_ids: [Some(1), Some(3)],
+            vertical_horizontal: None,
+            external_id: 20,
+            offset: 0,
+        });
+    endpoint_segments
+        .bounded_curve_rows
+        .push(crate::feature::FeatureBoundedCurveSegment {
+            directions: [None; 3],
+            point_ids: [2, 4],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 21,
+            offset: 0,
+        });
+    assert_eq!(
+        section_linear_distance_coordinate(
+            &endpoint_carriers,
+            &[],
+            1,
+            2,
+            &BTreeMap::from([(1, [Some(0.0), Some(1.0)]), (2, [Some(2.0), Some(1.0)])]),
+            &[],
+            &BTreeSet::new(),
+        ),
+        Some(0)
+    );
+
+    let mut centered_endpoint_carrier = definition;
+    let centered_segments = centered_endpoint_carrier
+        .segments
+        .as_mut()
+        .expect("segments");
+    centered_segments.rows.clear();
+    centered_segments
+        .centered_line_rows
+        .push(crate::feature::FeatureCenteredLineSegment {
+            center_id: 2,
+            external_id: 22,
+            offset: 0,
+        });
+    assert_eq!(
+        section_linear_distance_coordinate(
+            &centered_endpoint_carrier,
+            &[],
+            0,
+            1,
+            &BTreeMap::from([(0, [Some(0.0), Some(1.0)]), (1, [Some(2.0), Some(1.0)])]),
+            &[],
+            &BTreeSet::new(),
+        ),
+        Some(0)
+    );
 }
 
 #[test]

@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::sketch_transfer::{
     active_complete_section_skamps, section_saved_entity, section_skamp_is_line,
-    section_skamp_is_point, unique_centered_line_segment, unique_circle_segment,
-    unique_point_segment, unique_reference_line_segment,
+    section_skamp_is_point, unique_bounded_curve_segment, unique_centered_line_segment,
+    unique_circle_segment, unique_point_segment, unique_reference_line_segment,
 };
 
 pub(crate) fn section_line_fixed_coordinate(
@@ -350,6 +350,20 @@ pub(crate) fn section_skamp_selected_point_id(
             2 => Some(0),
             3 => Some(1),
             4 => Some(segment.center_id),
+            _ => None,
+        };
+    }
+    if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => segment.point_ids[0],
+            3 => segment.point_ids[1],
+            _ => None,
+        };
+    }
+    if let Some(segment) = unique_bounded_curve_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => Some(segment.point_ids[0]),
+            3 => Some(segment.point_ids[1]),
             _ => None,
         };
     }
