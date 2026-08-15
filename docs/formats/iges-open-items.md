@@ -93,18 +93,20 @@ Required closure:
 
 ## P1 — Exercise the writer under fuzzing and continuous stress
 
-The current IGES fuzz target exercises container detection, inspection, and
-decode. It does not exercise semantic planning, target-version emission, or
-writer rejection paths.
+The IGES fuzz target parses `CadIr` JSON, selects IGES 5.1, 5.2, or 5.3,
+exercises source-less planning, topology synthesis, unsupported-native
+rejection, inspection, decode, validation, verbatim replay, and edited-
+document regeneration. The smoke workflow runs each fuzz target for 60
+seconds with a 2 GiB RSS limit. The bounded decode and validation gate runs
+separately.
 
 Required closure:
 
-- add writer fuzz coverage for valid and malformed `CadIr` values;
-- cover replay, source-less synthesis, target versions, topology, loss
-  rejection, and unsupported native arenas;
-- record a reproducible fuzz campaign and retain minimized regressions; and
-- run the timeout and validation gates continuously rather than as an
-  environment-only check.
+- run a reproducible writer campaign with the checked-in seeds and the CI
+  resource limit;
+- retain every minimized writer or replay regression as a seed or focused
+  test; and
+- keep the writer campaign and the bounded decode and validation gates in CI.
 
 # Unrecorded format rules
 
