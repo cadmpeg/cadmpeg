@@ -190,6 +190,8 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A pattern relation must be written back from a neutral model, and these members must carry the values the source would have written. The map keys and values are small integers in the range of record indices, so they may be a per-instance record grouping that a writer must rebuild rather than copy.
 
+**Note.** Retain circular-pattern scope record indices `2918`, `3342`, `3752`, `4268`, and `16314` as anchors for the unresolved relation members. These indices do not settle the relation fields or operation semantics.
+
 ### DR-29. `EntityGenesis` value `0x4`
 
 **Question.** What does the `EntityGenesis` value `0x4` mean?
