@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Encoder;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
+
+use crate::writer::Entity;
+use crate::IgesVersion;
 
 mod encode;
 mod roundtrip;
@@ -134,6 +138,69 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
+}
+
+#[test]
+fn target_profiles_cover_every_emitted_entity_form() {
+    let emitted_forms = [
+        (100, 0),
+        (102, 0),
+        (104, 0),
+        (104, 2),
+        (104, 3),
+        (110, 0),
+        (116, 0),
+        (123, 0),
+        (124, 0),
+        (126, 0),
+        (128, 0),
+        (141, 0),
+        (142, 0),
+        (143, 0),
+        (144, 0),
+        (186, 0),
+        (190, 1),
+        (192, 1),
+        (194, 1),
+        (196, 1),
+        (198, 1),
+        (502, 1),
+        (504, 1),
+        (508, 1),
+        (510, 1),
+        (514, 1),
+    ];
+    let entity = |(type_code, form)| Entity {
+        type_code,
+        form,
+        label: "TEST",
+        status: "00000000",
+        parameters: Vec::new(),
+        transform: None,
+    };
+    for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
+        let entities = emitted_forms
+            .iter()
+            .copied()
+            .map(entity)
+            .collect::<Vec<_>>();
+        assert!(ensure_version_support(&entities, version).is_ok());
+    }
+
+    let open_shell = entity((514, 2));
+    for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
+        assert!(matches!(
+            ensure_version_support(std::slice::from_ref(&open_shell), version),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+    assert!(ensure_version_support(std::slice::from_ref(&open_shell), IgesVersion::V5_3).is_ok());
+    for unsupported in [(514, 3), (999, 0)] {
+        assert!(matches!(
+            ensure_version_support(&[entity(unsupported)], IgesVersion::V5_3),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
 }
 
 #[test]

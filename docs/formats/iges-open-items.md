@@ -57,16 +57,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-05. The target version changes one digit only
-
-**Question.** What does `IgesWriteOptions::version` constrain?
-
-**Known.** `writer.rs:295-310` rejects one unsupported Type 514 form for older targets, while `version.global_flag()` changes the Global version field. Other emitted entity families are not checked against the selected target version.
-
-**Need.** We need the entity and form set of each target version, and a refusal when the model requires an entity the target does not define.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `1a6b988e7` added a target entity check, but its coverage and version matrix are not independently established.
-
 ### WR-06. The analytic surface family is fixed with no fallback
 
 **Question.** Which IGES surface entity should a generated file use for each analytic surface?

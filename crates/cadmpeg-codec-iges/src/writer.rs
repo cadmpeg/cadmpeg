@@ -60,6 +60,10 @@ const WRITER_MAXIMUM_LINE_WIDTH: &str = "1.0";
 const WRITER_AUTHOR_NAME: &str = "author";
 const WRITER_AUTHOR_ORGANIZATION: &str = "cadmpeg";
 const WRITER_DRAFTING_STANDARD_FLAG: i64 = 0;
+const WRITER_ENTITY_TYPES: &[u32] = &[
+    100, 102, 104, 110, 116, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194, 196, 198,
+    502, 504, 508, 510, 514,
+];
 
 /// Plan an IGES export, selecting replay only after checking the document
 /// baseline and retained source-image integrity.
@@ -309,22 +313,47 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct TargetProfile {
+    version: crate::IgesVersion,
+}
+
+impl TargetProfile {
+    const fn new(version: crate::IgesVersion) -> Self {
+        Self { version }
+    }
+
+    fn admits(self, entity: &Entity) -> bool {
+        if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
+            return false;
+        }
+        match entity.type_code {
+            100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144 | 186 => {
+                entity.form == 0
+            }
+            104 => matches!(entity.form, 0 | 2 | 3),
+            190 | 192 | 194 | 196 | 198 => entity.form == 1,
+            502 | 504 | 508 | 510 => entity.form == 1,
+            514 => {
+                entity.form == 1 || (entity.form == 2 && self.version == crate::IgesVersion::V5_3)
+            }
+            _ => false,
+        }
+    }
+}
+
 fn ensure_version_support(
     entities: &[Entity],
     version: crate::IgesVersion,
 ) -> Result<(), CodecError> {
-    if version != crate::IgesVersion::V5_3 {
-        if let Some(entity) = entities
-            .iter()
-            .find(|entity| entity.type_code == 514 && entity.form == 2)
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "IGES {} does not define emitted entity Type {} Form {}",
-                version.name(),
-                entity.type_code,
-                entity.form
-            )));
-        }
+    let profile = TargetProfile::new(version);
+    if let Some(entity) = entities.iter().find(|entity| !profile.admits(entity)) {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES {} does not define emitted entity Type {} Form {}",
+            version.name(),
+            entity.type_code,
+            entity.form
+        )));
     }
     Ok(())
 }
