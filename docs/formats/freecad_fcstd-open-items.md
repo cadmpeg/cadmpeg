@@ -62,8 +62,8 @@ side entry and otherwise reads the first entry.
 must reject invalid cardinality or identify the payload entry from the typed value grammar.
 
 **Conflict.** Commit `02c7628b3` removed this item and wrote the one-entry rule into
-`freecad_fcstd.md` without changing the decoder or adding producer-backed evidence. Its existing
-malformed-input test establishes only decoder policy, not producer cardinality.
+`freecad_fcstd.md` without changing the decoder and without tracing the FreeCAD writer path. Its
+existing malformed-input test establishes only decoder policy, not producer cardinality.
 
 **Note.** Reopened by this QA pass. `AR-05` records the separate value-root and side-entry
 association gap.
@@ -87,8 +87,8 @@ a file has one collected side entry, so it passes the current cardinality check 
 transform is read from the first root and the payload from the second. The existing malformed
 test covers two roots that each have a file and therefore does not exercise this mismatch.
 
-**Note.** New item from this QA pass. The specification rule is not producer-backed by the
-current ledger evidence.
+**Note.** New item from this QA pass. The specification rule is not yet established from the
+FreeCAD writer path or from authored multi-root witnesses.
 
 ## 2. GUI properties
 
@@ -108,8 +108,9 @@ and Rotation/PropertyRotation. The authored Sketcher witness also establishes a 
 custom serializers and side-entry use, and validate those values without dropping the native
 record.
 
-**Note.** The headless authoring witness corrects the earlier claim that no usable GUI witness was
-available. The settled subset does not establish the complete module/dynamic registry.
+**Note.** The authored headless GUI witness establishes the settled subset. The complete
+module-owned and dynamic registry is settled by further authored witnesses and by the FreeCAD
+property-editor registration source.
 
 ### GP-02. Other GUI property semantics
 
@@ -122,8 +123,8 @@ that ordered `VisualLayer` records represent per-layer visibility, line pattern,
 GUI records retain view-provider identity and each remaining undefined property's runtime type and
 ordered values.
 
-**Need.** Read the defining source and independent uses for each remaining module-owned or dynamic
-runtime type before transferring it to a neutral presentation field.
+**Need.** Read the defining FreeCAD source and authored witness uses for each remaining
+module-owned or dynamic runtime type before transferring it to a neutral presentation field.
 
 **Note.** Core value semantics and the Sketcher visual-layer subset are now source-backed. The
 remaining provider-specific presentation mapping is open; native retention is not semantic
@@ -164,7 +165,8 @@ property and rejects more than one enclosing property for a string table.
 carriers. Duplicate candidates must be rejected or linked by a producer-defined discriminator.
 
 **Conflict.** Commit `02c7628b3` removed this item and wrote a one-carrier rule into
-`freecad_fcstd.md` without changing the decoder or adding producer-backed evidence. Conservative
+`freecad_fcstd.md` without changing the decoder and without tracing the FreeCAD writer path for the
+element-map carriers. Conservative
 decoder rejection prevents a source-order choice but does not establish the legal cardinality or
 shared ownership rule.
 
@@ -182,8 +184,9 @@ element-map root is the final map node after child maps. Differential authored w
 one OCCT shape identity at one placement, including a reversed use, occupies one indexed position;
 a copied shape at that placement and a shape at a different placement occupy two positions.
 
-**Conflict.** The producer call sites and witnesses do not establish the child traversal order of
-`TopExp::MapShapes` for unequal nested topology. topology_transfer.rs:1554-1598 uses a
+**Conflict.** The child traversal order of `TopExp::MapShapes` for unequal nested topology is not
+yet established from the OCCT map implementation or from authored differential witnesses.
+topology_transfer.rs:1554-1598 uses a
 decoder-owned walk, so its order cannot be assumed to match the producer for those cases.
 
 **Need.** Read the OCCT map implementation or author differential witnesses for remaining unequal
@@ -207,13 +210,13 @@ use the same vertex identity in those two orientations. In authored `NormalEdge.
 endpoint line is `+3 0 -2 0 *` at offset `0x2f8`; in `ClosedEdge.Shape.brp`, it is `+2 0 -2 0 *`
 at offset `0x329`.
 
-**Conflict.** No valid producer-authored degenerate edge is available. The decoder's
+**Conflict.** A valid degenerate edge witness is not yet authored. The decoder's
 topology_transfer.rs:1691-1721 rejection of duplicate orientations or missing endpoint uses is
 not evidence for the producer's malformed-input boundary.
 
-**Need.** Author a valid degenerate edge or read the producer/kernel writer path that defines its
-endpoint uses. Obtain independent evidence for malformed duplicate, missing, and extra endpoint
-forms before assigning their validity.
+**Need.** Author a valid degenerate edge with the headless producer, or read the FreeCAD/OCCT
+writer path that defines its endpoint uses. Author malformed duplicate, missing, and extra endpoint
+witnesses before assigning their validity.
 
 **Note.** This pass settled the normal and closed two-use forms from producer-authored bytes. The
 degenerate and malformed forms remain open.
@@ -231,7 +234,8 @@ for one face use. Authored cylinder, sphere, and torus witnesses serialize `Curv
 
 **Conflict.** topology_transfer.rs:1723-1745 rejects multiple matching representations, but the
 witnesses do not distinguish repeated 3D or polygon carriers from multiple matching pcurves for
-one face use. No producer or kernel rule establishes their uniqueness, equivalence, or precedence.
+one face use. The FreeCAD/OCCT writer path for repeated carriers and for duplicate matching pcurves
+has not been traced, so their uniqueness, equivalence, and precedence remain open.
 
 **Need.** Establish cardinality and precedence for repeated 3D carriers, repeated polygon carriers,
 and multiple matching pcurves for one face use. Select by a serialized role or prove geometric
@@ -296,8 +300,9 @@ must use a stable maximal subset whose targets precede their consumers, or carry
 blocking loss.
 
 **Conflict.** design.rs:679-688 marks all remaining objects cycle-affected, assigns ordinals by
-source order, and design.rs:450-456 removes edges whose targets are not earlier. No producer
-cycle projection establishes that source order and edge discard are the correct neutral result.
+source order, and design.rs:450-456 removes edges whose targets are not earlier. The FreeCAD
+recompute and dependency-ordering source has not been traced, so source order and edge discard are
+not established as the correct neutral result.
 
 **Need.** Define a cycle projection that is stable and preserves the maximal admissible subset, or
 refuse with an explicit loss. Do not source-order a cycle and silently discard its edges.
@@ -317,11 +322,11 @@ carrier instead of the current `GeomPoint` carrier?
 runtime type. `GeomPoint::Save` writes `GeomPoint`; the other registered geometry writers use the
 carrier tags recorded in the specification.
 
-**Need.** Establish a producer source path or independent witness for the historical `Point` tag,
-including the producer version and its value grammar.
+**Need.** Establish the FreeCAD source path or a saved witness document for the historical `Point`
+tag, including the producer version and its value grammar.
 
-**Conflict.** The decoder accepts `Point` as a compatibility carrier for `Part::GeomPoint`, but no
-producer evidence for that alias is recorded.
+**Conflict.** The decoder accepts `Point` as a compatibility carrier for `Part::GeomPoint`. The
+FreeCAD writer history for that alias has not been traced.
 
 **Note.** This pass settled the current producer runtime-name/carrier-tag mapping and rejects a
 registered name paired with another known carrier. The historical point alias remains open.
