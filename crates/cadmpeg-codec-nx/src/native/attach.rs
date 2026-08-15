@@ -2044,6 +2044,11 @@ fn attach_feature_operations(
                 .cloned()
                 .unwrap_or_default();
         }
+        if outputs.is_empty() {
+            if let Some(body) = boolean_target_output(boolean_definition.as_ref()) {
+                outputs.push(body);
+            }
+        }
         let native_primary_body = body_references
             .get(label.id.as_str())
             .copied()
@@ -7289,6 +7294,20 @@ fn boolean_target_writer(
         }
     }
     (Some(native_body), None)
+}
+
+fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyId> {
+    let Some(FeatureDefinition::Combine {
+        target: BodySelection::Resolved { bodies, .. },
+        ..
+    }) = definition
+    else {
+        return None;
+    };
+    let [body] = bodies.as_slice() else {
+        return None;
+    };
+    Some(body.clone())
 }
 
 pub(crate) fn boolean_feature_definition(

@@ -1154,6 +1154,35 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
 }
 
 #[test]
+fn boolean_target_output_requires_one_resolved_segment_body() {
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+
+    let body = BodyId("nx:s0:body#0".into());
+    let definition = FeatureDefinition::Combine {
+        target: BodySelection::Resolved {
+            bodies: vec![body.clone()],
+            native: "target".into(),
+        },
+        tools: BodySelection::Unresolved,
+        op: BooleanOp::Join,
+        keep_tools: false,
+    };
+    assert_eq!(super::boolean_target_output(Some(&definition)), Some(body));
+
+    let ambiguous = FeatureDefinition::Combine {
+        target: BodySelection::Resolved {
+            bodies: vec![BodyId("nx:s0:body#0".into()), BodyId("nx:s0:body#1".into())],
+            native: "target".into(),
+        },
+        tools: BodySelection::Unresolved,
+        op: BooleanOp::Join,
+        keep_tools: false,
+    };
+    assert!(super::boolean_target_output(Some(&ambiguous)).is_none());
+}
+
+#[test]
 fn topology_inferred_hole_axis_is_not_an_authored_direction() {
     use cadmpeg_ir::features::{FeatureDefinition, HolePlacement};
     use cadmpeg_ir::math::{Point3, Vector3};
