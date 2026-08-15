@@ -3163,15 +3163,6 @@ fn attach_feature_operations(
                 &output_kinds,
             )
         });
-        let extract_projection = (label.value == "EXTRACT_BODY")
-            .then(|| {
-                extract_body_feature_definition(
-                    offset_store_bodies_by_operation
-                        .get(label.id.as_str())
-                        .map_or([].as_slice(), Vec::as_slice),
-                )
-            })
-            .flatten();
         let delete_projection = deletes_body
             .then(|| {
                 delete_body_feature_definition(
@@ -3208,7 +3199,6 @@ fn attach_feature_operations(
                 .or(delete_projection)
                 .or(sew_projection)
                 .or(extrude_projection)
-                .or(extract_projection)
                 .or_else(|| blend_projection.map(|(definition, _)| definition))
                 .or_else(|| thicken_projection.map(|(definition, _)| definition))
                 .or_else(|| offset_projection.map(|(definition, _)| definition))
@@ -7355,22 +7345,6 @@ fn delete_body_feature_definition(
         // needs no cross-selection alias proof when it has no segment binding.
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
-    })
-}
-
-/// Project one input-store body as the exact feature-local source of an extract.
-/// Multiple or absent body uses do not establish a source identity.
-fn extract_body_feature_definition(
-    offset_store_bodies: &[(u32, String)],
-) -> Option<FeatureDefinition> {
-    let [(object_index, data_block)] = offset_store_bodies else {
-        return None;
-    };
-    Some(FeatureDefinition::ExtractBody {
-        source: BodySelection::Local {
-            bodies: vec![data_block.clone()],
-            native: format!("nx:om-object-index#{object_index}"),
-        },
     })
 }
 

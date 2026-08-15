@@ -314,24 +314,6 @@ fn nx_delete_body_requires_a_primary_body_field() {
 }
 
 #[test]
-fn nx_extract_body_requires_one_exact_input_store_body() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
-
-    let body = (736, "nx:om-data-blocks-2:block#736".to_string());
-    assert_eq!(
-        super::extract_body_feature_definition(std::slice::from_ref(&body)),
-        Some(FeatureDefinition::ExtractBody {
-            source: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-2:block#736".to_string()],
-                native: "nx:om-object-index#736".to_string(),
-            },
-        })
-    );
-    assert!(super::extract_body_feature_definition(&[]).is_none());
-    assert!(super::extract_body_feature_definition(&[body.clone(), body]).is_none());
-}
-
-#[test]
 fn nx_trim_body_retains_exact_input_store_target_and_tools() {
     use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition};
 
