@@ -826,6 +826,51 @@ fn transfers_shape_and_subshape_binder_construction() {
 }
 
 #[test]
+fn rejects_noncanonical_subshape_binder_context_carrier() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Box" name="Source" id="1"/>
+ <Object type="PartDesign::CoordinateSystem" name="Context" id="2"/>
+ <Object type="PartDesign::SubShapeBinder" name="SubBind" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Context"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="SubBind"><Properties Count="2">
+  <Property name="Support" type="App::PropertyXLinkSubList"><XLinkSubList count="1"><XLink name="Source" sub="Face1"/></XLinkSubList></Property>
+  <Property name="Context" type="App::PropertyXLinkList"><XLinkSubList count="2"><XLink name="Context"/><XLink name="OtherContext"/></XLinkSubList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("noncanonical binder context");
+    let definition = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("SubBind"))
+        .expect("subshape binder feature");
+    assert!(matches!(
+        &definition.definition,
+        FeatureDefinition::Native { kind, .. } if kind == "PartDesign::SubShapeBinder"
+    ));
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(result.report().losses[0].code.namespace, "fcstd");
+    assert_eq!(
+        result.report().losses[0].code.code,
+        "feature.native-kind-retained"
+    );
+    assert_eq!(
+        result.report().losses[0].severity,
+        cadmpeg_ir::Severity::Blocking
+    );
+}
+
+#[test]
 fn transfers_complete_thickness_construction_controls() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">

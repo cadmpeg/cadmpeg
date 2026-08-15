@@ -4313,14 +4313,28 @@ fn binder_definition(
                 intersection: bool_property(properties, "OffsetIntersection").unwrap_or(false),
             })
         };
-        let context = property(properties, "Context")
-            .and_then(|property| property.links.first())
-            .filter(|link| {
-                link.object
-                    .as_deref()
-                    .is_some_and(|object| !object.is_empty())
-            })
-            .and_then(|link| binder_target(link, features));
+        let context_properties = properties
+            .iter()
+            .filter(|property| property.name == "Context")
+            .copied()
+            .collect::<Vec<_>>();
+        let context = match context_properties.as_slice() {
+            [] => None,
+            [property]
+                if property.type_name == "App::PropertyXLink" && property.links.len() <= 1 =>
+            {
+                property
+                    .links
+                    .first()
+                    .filter(|link| {
+                        link.object
+                            .as_deref()
+                            .is_some_and(|object| !object.is_empty())
+                    })
+                    .and_then(|link| binder_target(link, features))
+            }
+            _ => return None,
+        };
         BinderConstruction::SubShape {
             lifecycle: match integer_property(properties, "BindMode").unwrap_or(0) {
                 0 => BinderLifecycle::Synchronized,

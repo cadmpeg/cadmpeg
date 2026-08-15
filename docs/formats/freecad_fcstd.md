@@ -760,6 +760,12 @@ tangent-edge extension, and curvilinear correspondence flag. Standalone sweep li
 solid-versus-sheet result remain explicit. Invalid enumeration values, a zero binormal, or a
 missing auxiliary path leave the operation attributable and native.
 
+PartDesign ShapeBinder and SubShapeBinder operations retain their ordered support links and
+subelement selectors. A SubShapeBinder `Context` property is optional and, when present, is one
+`App::PropertyXLink` carrier with at most one link target. A duplicate `Context` carrier, another
+runtime type, or multiple link targets leaves the binder as an attributable native operation;
+the decoder does not select a target by source order.
+
 Part scale operations retain their source-shape selection and model-origin scale center. Uniform
 mode carries one factor; anisotropic mode carries independent x, y, and z factors. Finite nonzero
 negative factors remain valid reflections. Missing sources, zero factors, and non-finite factors
