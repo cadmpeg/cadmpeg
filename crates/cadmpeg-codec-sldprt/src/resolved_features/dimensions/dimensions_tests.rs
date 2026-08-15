@@ -94,6 +94,50 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 
     assert_eq!(carrier.marker.id, "center");
     assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.construction, Some(false));
+
+    let mut ambiguous_lane = lane.clone();
+    ambiguous_lane.sketch_entities.extend([
+        marker(
+            "second-center",
+            30,
+            Some(60),
+            Some(59),
+            Some([0.020, 0.030]),
+        ),
+        marker("second-radial", 40, Some(59), Some(0), Some([0.023, 0.034])),
+    ]);
+    let ambiguous_markers = ambiguous_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&ambiguous_lane),
+        &ambiguous_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .is_none());
+
+    let mut direct_lane = ambiguous_lane;
+    direct_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
+    let direct_markers = direct_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let direct_carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&direct_lane),
+        &direct_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .expect("explicit circular marker remains a carrier");
+    assert_eq!(direct_carrier.marker.id, "wrong");
+    assert_eq!(direct_carrier.construction, Some(false));
 }
 
 #[test]

@@ -5,7 +5,8 @@ use super::endpoints::{
 };
 use super::markers::{inline_arc_coordinates, marker_native_code, sketch_marker_prefix_at};
 use super::relation_geometry::{
-    declared_entity_handle_circular_marker, implicit_circle_marker, owned_relation_parameters,
+    declared_entity_handle_circular_marker, declared_entity_handle_owner, implicit_circle_marker,
+    owned_relation_parameters, DeclaredEntityHandleOwner,
 };
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
@@ -245,9 +246,21 @@ fn dimensioned_relation_carrier<'a>(
         .entity_ref
         .as_deref()
         .and_then(|id| markers_by_id.get(id).copied());
+    let explicit_circular_marker = explicit.is_some_and(|marker| {
+        matches!(
+            marker.kind,
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+        )
+    });
+    let declared_owner = declared_entity_handle_owner(lanes, operand);
     let declared = declared_entity_handle_circular_marker(lanes, feature, operand, radius);
+    let declared_entity_handle = !matches!(declared_owner, DeclaredEntityHandleOwner::Absent);
     let (marker, encoded_radius) = if let Some((marker, radius)) = declared {
         (marker, Some(radius))
+    } else if declared_entity_handle && !explicit_circular_marker {
+        // A declared handle blocks point-based guessing. An explicit native
+        // line-or-circle or arc marker remains a direct geometry carrier.
+        return None;
     } else {
         match explicit {
             Some(marker)
@@ -305,11 +318,13 @@ fn dimensioned_relation_carrier<'a>(
     }
     let construction = native_dimensioned_circle_construction_state(lanes, feature, marker, radius)
         .or_else(|| {
-            matches!(
-                marker.kind,
-                SketchInputKind::LineOrCircle | SketchInputKind::Arc
-            )
-            .then_some(false)
+            declared_entity_handle.then_some(false).or_else(|| {
+                matches!(
+                    marker.kind,
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                )
+                .then_some(false)
+            })
         });
     Some(DimensionedRelationCarrier {
         marker,
