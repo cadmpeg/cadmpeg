@@ -544,6 +544,7 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         radius,
         length: Some(length),
     })
+    .filter(crate::surface::PositionalCylinderFrame::is_valid)
 }
 
 pub(in super::super) fn reference_cap_bound_round_frame(
@@ -623,7 +624,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
     let [frame] = candidates.as_slice() else {
         return None;
     };
-    Some(*frame)
+    Some(*frame).filter(crate::surface::PositionalCylinderFrame::is_valid)
 }
 
 pub(in super::super) fn transfer_positional_cones(

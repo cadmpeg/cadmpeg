@@ -369,7 +369,7 @@ pub struct PositionalCylinderFrame {
 }
 
 impl PositionalCylinderFrame {
-    fn is_valid(&self) -> bool {
+    pub(crate) fn is_valid(&self) -> bool {
         self.origin
             .into_iter()
             .chain(self.axis)
