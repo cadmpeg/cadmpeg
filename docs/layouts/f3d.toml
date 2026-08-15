@@ -2933,6 +2933,217 @@ source = "spec"
 anchor = "the asset UUID's UTF-16 code-unit count at offset 38"
 
 [[record]]
+name = "coil_legacy_placement_identity_frame"
+kind = "byte"
+section = "3.1"
+anchor = "Its second placement reference is a class-`395` frame paired with class `258` and has a 186-byte span"
+size = 186
+note = "Offsets are relative to the class-395 second placement carrier's primary indexed header. The carrier is the identity form of the legacy eight-reference Coil scope."
+
+[[record.gap]]
+offset = 0
+size = 48
+note = "The indexed carrier header and fixed prologue precede the first marked reference."
+
+[[record.field]]
+name = "leading_reference_marker"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "offset 48 is a marked reference with index zero"
+
+[[record.field]]
+name = "leading_reference_index"
+offset = 49
+type = "u32"
+source = "spec"
+anchor = "offset 48 is a marked reference with index zero"
+
+[[record.gap]]
+offset = 53
+size = 6
+note = "The first marked reference has six zero trailing bytes."
+
+[[record.gap]]
+offset = 59
+size = 17
+note = "The legacy carrier stores zero bytes at offsets 59 through 75."
+
+[[record.field]]
+name = "prologue_value"
+offset = 76
+type = "u32"
+source = "spec"
+anchor = "offset 76 is u32 `2`"
+
+[[record.gap]]
+offset = 80
+size = 4
+note = "The carrier stores zero bytes at offsets 80 through 83."
+
+[[record.field]]
+name = "prologue_flag"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "offset 84 is u32 `1`"
+
+[[record.field]]
+name = "selection_reference_marker"
+offset = 88
+type = "u8"
+source = "spec"
+anchor = "A marked reference at offset 88 names the first placement reference"
+
+[[record.field]]
+name = "selection_record_index"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "A marked reference at offset 88 names the first placement reference"
+
+[[record.gap]]
+offset = 93
+size = 6
+note = "The selection reference has six zero trailing bytes."
+
+[[record.gap]]
+offset = 99
+size = 2
+note = "The carrier stores zero bytes at offsets 99 and 100."
+
+[[record.field]]
+name = "selection_flag"
+offset = 101
+type = "u32"
+source = "spec"
+anchor = "offset 101 is u32 `1`"
+
+[[record.field]]
+name = "auxiliary_reference_marker"
+offset = 105
+type = "u8"
+source = "spec"
+anchor = "A second marked reference at offset 105 is nonzero"
+
+[[record.field]]
+name = "auxiliary_record_index"
+offset = 106
+type = "u32"
+source = "spec"
+anchor = "A second marked reference at offset 105 is nonzero"
+
+[[record.gap]]
+offset = 110
+size = 6
+note = "The auxiliary reference has six zero trailing bytes."
+
+[[record.gap]]
+offset = 116
+size = 4
+note = "The carrier stores zero bytes at offsets 116 through 119."
+
+[[record.field]]
+name = "tail_value"
+offset = 120
+type = "u32"
+source = "spec"
+anchor = "offset 120 is u32 `4`"
+
+[[record.gap]]
+offset = 124
+size = 10
+note = "The carrier stores zero bytes at offsets 124 through 133."
+
+[[record.field]]
+name = "intermediate_selector"
+offset = 134
+type = "u32"
+source = "spec"
+anchor = "offset 134 is u32 `109`"
+
+[[record.field]]
+name = "carrier_scalar"
+offset = 138
+type = "f64"
+source = "spec"
+anchor = "offset 138 is a positive finite f64"
+
+[[record.field]]
+name = "tail_selector"
+offset = 146
+type = "u32"
+source = "spec"
+anchor = "offset 146 is u32 `109`"
+
+[[record.field]]
+name = "successor_reference_marker"
+offset = 150
+type = "u8"
+source = "spec"
+anchor = "Marked references at offsets 150 and 163 name the transform record plus two and plus one"
+
+[[record.field]]
+name = "successor_record_index"
+offset = 151
+type = "u32"
+source = "spec"
+anchor = "Marked references at offsets 150 and 163 name the transform record plus two and plus one"
+
+[[record.gap]]
+offset = 155
+size = 6
+note = "The successor reference has six zero trailing bytes."
+
+[[record.gap]]
+offset = 161
+size = 2
+note = "The carrier stores zero bytes at offsets 161 and 162."
+
+[[record.field]]
+name = "predecessor_reference_marker"
+offset = 163
+type = "u8"
+source = "spec"
+anchor = "Marked references at offsets 150 and 163 name the transform record plus two and plus one"
+
+[[record.field]]
+name = "predecessor_record_index"
+offset = 164
+type = "u32"
+source = "spec"
+anchor = "Marked references at offsets 150 and 163 name the transform record plus two and plus one"
+
+[[record.gap]]
+offset = 168
+size = 6
+note = "The predecessor reference has six zero trailing bytes."
+
+[[record.gap]]
+offset = 174
+size = 1
+note = "The carrier stores zero at offset 174."
+
+[[record.field]]
+name = "owner_reference_marker"
+offset = 175
+type = "u8"
+source = "spec"
+anchor = "the marked reference at offset 175 names the owning Coil scope"
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 176
+type = "u32"
+source = "spec"
+anchor = "the marked reference at offset 175 names the owning Coil scope"
+
+[[record.gap]]
+offset = 180
+size = 6
+note = "The owner reference has six zero trailing bytes."
+
+[[record]]
 name = "coil_compact_placement_identity_frame"
 kind = "byte"
 section = "3.1"

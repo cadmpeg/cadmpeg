@@ -16,6 +16,7 @@ use super::{
     POINT_DATA_TYPE_GUID,
 };
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
     DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
@@ -210,6 +211,91 @@ fn compact_coil_owner_identity_fixture() -> (Vec<u8>, DesignParameterScope, usiz
     (bytes, scope, transform_start)
 }
 
+fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
+    fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+        bytes[offset + 5..offset + 11].fill(0);
+    }
+
+    fn u32_at(bytes: &mut [u8], offset: usize, value: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    let (mut bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
+    bytes.truncate(transform_start);
+    indexed_header(&mut bytes, *b"395", 200);
+    bytes.resize(transform_start + coil_legacy_identity::LEN, 0);
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::LEADING_REFERENCE_MARKER,
+        0,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::PROLOGUE_VALUE,
+        2,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::PROLOGUE_FLAG,
+        1,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::SELECTION_REFERENCE_MARKER,
+        100,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::SELECTION_FLAG,
+        1,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER,
+        350,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::TAIL_VALUE,
+        4,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::INTERMEDIATE_SELECTOR,
+        109,
+    );
+    bytes[transform_start + coil_legacy_identity::CARRIER_SCALAR
+        ..transform_start + coil_legacy_identity::CARRIER_SCALAR + 8]
+        .copy_from_slice(&6.64e-5f64.to_le_bytes());
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::TAIL_SELECTOR,
+        109,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::SUCCESSOR_REFERENCE_MARKER,
+        202,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER,
+        201,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::OWNER_REFERENCE_MARKER,
+        scope.record_index,
+    );
+    indexed_header(&mut bytes, *b"258", 200);
+    scope.class_tag = "393".into();
+    scope.paired_class_tag = "258".into();
+    scope.frame_length = 427;
+    (bytes, scope, transform_start)
+}
+
 fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
     scope.frame_length = 411;
@@ -356,6 +442,53 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
+    );
+}
+
+#[test]
+fn legacy_coil_placement_accepts_identity_frame() {
+    let (bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
+    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+        .expect("legacy Coil placement");
+    assert_eq!(placement.selection_record_index, 100);
+    assert_eq!(placement.transform_record_index, 200);
+    assert_eq!(placement.transform_offset, None);
+    assert_eq!(
+        placement.transform_record_byte_offset,
+        transform_start as u64
+    );
+    assert_eq!(
+        placement.transform,
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+}
+
+#[test]
+fn legacy_coil_placement_requires_exact_identity_carrier() {
+    let (mut bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
+    bytes[transform_start + coil_legacy_identity::TAIL_VALUE] = 5;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (bytes, mut scope, _) = legacy_coil_placement_identity_fixture();
+    scope.class_tag = "432".into();
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (mut bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
+    bytes[transform_start + coil_legacy_identity::SUCCESSOR_RECORD_INDEX] = 203;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
     );
 }
 

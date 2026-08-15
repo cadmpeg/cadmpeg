@@ -986,6 +986,51 @@ Unstated regions:
 - `28..34` (6 B): Its prefix stores zero bytes at offsets 28 through 33.
 - `35..38` (3 B): Its prefix stores zero bytes at offsets 35 through 37.
 
+## `coil_legacy_placement_identity_frame`
+
+Spec §3.1 · layout: byte offsets · size: 186 B
+
+Offsets are relative to the class-395 second placement carrier's primary indexed header. The carrier is the identity form of the legacy eight-reference Coil scope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 48 | 1 | `leading_reference_marker` | `u8` | little | spec | offset 48 is a marked reference with index zero |
+| 49 | 4 | `leading_reference_index` | `u32` | little | spec | offset 48 is a marked reference with index zero |
+| 76 | 4 | `prologue_value` | `u32` | little | spec | offset 76 is u32 `2` |
+| 84 | 4 | `prologue_flag` | `u32` | little | spec | offset 84 is u32 `1` |
+| 88 | 1 | `selection_reference_marker` | `u8` | little | spec | A marked reference at offset 88 names the first placement reference |
+| 89 | 4 | `selection_record_index` | `u32` | little | spec | A marked reference at offset 88 names the first placement reference |
+| 101 | 4 | `selection_flag` | `u32` | little | spec | offset 101 is u32 `1` |
+| 105 | 1 | `auxiliary_reference_marker` | `u8` | little | spec | A second marked reference at offset 105 is nonzero |
+| 106 | 4 | `auxiliary_record_index` | `u32` | little | spec | A second marked reference at offset 105 is nonzero |
+| 120 | 4 | `tail_value` | `u32` | little | spec | offset 120 is u32 `4` |
+| 134 | 4 | `intermediate_selector` | `u32` | little | spec | offset 134 is u32 `109` |
+| 138 | 8 | `carrier_scalar` | `f64` | little | spec | offset 138 is a positive finite f64 |
+| 146 | 4 | `tail_selector` | `u32` | little | spec | offset 146 is u32 `109` |
+| 150 | 1 | `successor_reference_marker` | `u8` | little | spec | Marked references at offsets 150 and 163 name the transform record plus two and plus one |
+| 151 | 4 | `successor_record_index` | `u32` | little | spec | Marked references at offsets 150 and 163 name the transform record plus two and plus one |
+| 163 | 1 | `predecessor_reference_marker` | `u8` | little | spec | Marked references at offsets 150 and 163 name the transform record plus two and plus one |
+| 164 | 4 | `predecessor_record_index` | `u32` | little | spec | Marked references at offsets 150 and 163 name the transform record plus two and plus one |
+| 175 | 1 | `owner_reference_marker` | `u8` | little | spec | the marked reference at offset 175 names the owning Coil scope |
+| 176 | 4 | `owner_scope_record_index` | `u32` | little | spec | the marked reference at offset 175 names the owning Coil scope |
+
+Unstated regions:
+
+- `0..48` (48 B): The indexed carrier header and fixed prologue precede the first marked reference.
+- `53..59` (6 B): The first marked reference has six zero trailing bytes.
+- `59..76` (17 B): The legacy carrier stores zero bytes at offsets 59 through 75.
+- `80..84` (4 B): The carrier stores zero bytes at offsets 80 through 83.
+- `93..99` (6 B): The selection reference has six zero trailing bytes.
+- `99..101` (2 B): The carrier stores zero bytes at offsets 99 and 100.
+- `110..116` (6 B): The auxiliary reference has six zero trailing bytes.
+- `116..120` (4 B): The carrier stores zero bytes at offsets 116 through 119.
+- `124..134` (10 B): The carrier stores zero bytes at offsets 124 through 133.
+- `155..161` (6 B): The successor reference has six zero trailing bytes.
+- `161..163` (2 B): The carrier stores zero bytes at offsets 161 and 162.
+- `168..174` (6 B): The predecessor reference has six zero trailing bytes.
+- `174..175` (1 B): The carrier stores zero at offset 174.
+- `180..186` (6 B): The owner reference has six zero trailing bytes.
+
 ## `coil_compact_placement_identity_frame`
 
 Spec §3.1 · layout: byte offsets · size: 213 B

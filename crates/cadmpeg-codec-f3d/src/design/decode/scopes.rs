@@ -33,6 +33,7 @@ use crate::layout::coil_compact_placement_identity_frame as coil_identity;
 use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;
 use crate::layout::coil_compact_placement_owner_identity_frame as coil_owner_identity;
 use crate::layout::coil_compact_scope_discriminators as coil_compact;
+use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::combine_compact_operation_prefix as combine_compact;
 use crate::layout::combine_extended_reference_operation_prefix as combine_extended;
@@ -5814,8 +5815,9 @@ struct CoilDiscriminators {
 /// span. The 442-byte scope form also has an owner-referenced identity carrier:
 /// it appends a marked reference to the owning scope and has a 233-byte span.
 /// The explicit form has the same fixed envelope plus 128 matrix bytes and a
-/// 341-byte span. A malformed or ambiguous carrier leaves the complete
-/// placement native.
+/// 341-byte span. The legacy 427-byte scope form has a class-395 identity
+/// carrier with a 186-byte span. A malformed or ambiguous carrier leaves the
+/// complete placement native.
 fn exact_coil_placement(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -5825,9 +5827,15 @@ fn exact_coil_placement(
     if scope.kind != "CoilPrimitive" {
         return None;
     }
-    match (scope.frame_length, scope.reference_members.len()) {
-        (411, 7) if matches!(scope.coil_extent, Some(DesignCoilExtent::Spiral)) => {}
-        (432 | 442, 8) => {}
+    match (
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+        scope.frame_length,
+        scope.reference_members.len(),
+    ) {
+        ("393", "258", 427, 8) => {}
+        (_, _, 411, 7) if matches!(scope.coil_extent, Some(DesignCoilExtent::Spiral)) => {}
+        (_, _, 432 | 442, 8) => {}
         _ => return None,
     }
     let selection_record_index = scope.reference_members[0];
@@ -5857,8 +5865,26 @@ fn exact_coil_placement(
     {
         return None;
     }
+    let transform_paired_class_tag =
+        exact_indexed_header_at(bytes, transform_paired, transform_record_index)?;
     let frame_length = transform_paired.checked_sub(transform_start)?;
     let (transform, transform_offset) = match frame_length {
+        coil_legacy_identity::LEN
+            if scope.class_tag == "393"
+                && scope.paired_class_tag == "258"
+                && transform_class_tag == "395"
+                && transform_paired_class_tag == "258"
+                && exact_coil_legacy_identity_frame(
+                    bytes,
+                    transform_start,
+                    transform_paired,
+                    selection_record_index,
+                    transform_record_index,
+                    scope.record_index,
+                ) =>
+        {
+            (identity_matrix(), None)
+        }
         coil_identity::LEN
             if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
                 && bytes.get(
@@ -5952,6 +5978,92 @@ fn exact_coil_placement(
         transform,
         transform_offset,
     })
+}
+
+fn exact_coil_legacy_identity_frame(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    selection_record_index: u32,
+    transform_record_index: u32,
+    scope_record_index: u32,
+) -> bool {
+    let Some(auxiliary_record_index) = marked_record_reference(
+        bytes,
+        start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER,
+    ) else {
+        return false;
+    };
+    paired_at.checked_sub(start) == Some(coil_legacy_identity::LEN)
+        && bytes.get(start + 11..start + coil_legacy_identity::LEADING_REFERENCE_MARKER)
+            == Some(&[0; 37][..])
+        && marked_record_reference(
+            bytes,
+            start + coil_legacy_identity::LEADING_REFERENCE_MARKER,
+        ) == Some(0)
+        && bytes.get(
+            start + coil_legacy_identity::LEADING_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::PROLOGUE_VALUE,
+        ) == Some(&[0; 17][..])
+        && View::u32_le_at(bytes, start + coil_legacy_identity::PROLOGUE_VALUE) == Some(2)
+        && bytes.get(
+            start + coil_legacy_identity::PROLOGUE_VALUE + 4
+                ..start + coil_legacy_identity::PROLOGUE_FLAG,
+        ) == Some(&[0; 4][..])
+        && View::u32_le_at(bytes, start + coil_legacy_identity::PROLOGUE_FLAG) == Some(1)
+        && marked_record_reference(
+            bytes,
+            start + coil_legacy_identity::SELECTION_REFERENCE_MARKER,
+        ) == Some(selection_record_index)
+        && bytes.get(
+            start + coil_legacy_identity::SELECTION_RECORD_INDEX + 4
+                ..start + coil_legacy_identity::SELECTION_REFERENCE_MARKER + 11,
+        ) == Some(&[0; 6][..])
+        && bytes.get(
+            start + coil_legacy_identity::SELECTION_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::SELECTION_FLAG,
+        ) == Some(&[0; 2][..])
+        && View::u32_le_at(bytes, start + coil_legacy_identity::SELECTION_FLAG) == Some(1)
+        && auxiliary_record_index != 0
+        && auxiliary_record_index != selection_record_index
+        && auxiliary_record_index != transform_record_index
+        && auxiliary_record_index != scope_record_index
+        && bytes.get(
+            start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 5
+                ..start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 11,
+        ) == Some(&[0; 6][..])
+        && bytes.get(
+            start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::TAIL_VALUE,
+        ) == Some(&[0; 4][..])
+        && View::u32_le_at(bytes, start + coil_legacy_identity::TAIL_VALUE) == Some(4)
+        && bytes.get(
+            start + coil_legacy_identity::TAIL_VALUE + 4
+                ..start + coil_legacy_identity::INTERMEDIATE_SELECTOR,
+        ) == Some(&[0; 10][..])
+        && View::u32_le_at(bytes, start + coil_legacy_identity::INTERMEDIATE_SELECTOR) == Some(109)
+        && View::f64_le_at(bytes, start + coil_legacy_identity::CARRIER_SCALAR)
+            .is_some_and(|value| value.is_finite() && value > 0.0)
+        && View::u32_le_at(bytes, start + coil_legacy_identity::TAIL_SELECTOR) == Some(109)
+        && marked_record_reference(
+            bytes,
+            start + coil_legacy_identity::SUCCESSOR_REFERENCE_MARKER,
+        ) == transform_record_index.checked_add(2)
+        && bytes.get(
+            start + coil_legacy_identity::SUCCESSOR_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER,
+        ) == Some(&[0; 2][..])
+        && marked_record_reference(
+            bytes,
+            start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER,
+        ) == transform_record_index.checked_add(1)
+        && bytes.get(
+            start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER + 5
+                ..start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER + 11,
+        ) == Some(&[0; 6][..])
+        && bytes.get(start + coil_legacy_identity::OWNER_REFERENCE_MARKER - 1) == Some(&0)
+        && marked_record_reference(bytes, start + coil_legacy_identity::OWNER_REFERENCE_MARKER)
+            == Some(scope_record_index)
 }
 
 fn exact_coil_face_selection(
