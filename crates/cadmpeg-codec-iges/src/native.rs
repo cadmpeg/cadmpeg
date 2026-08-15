@@ -1342,6 +1342,10 @@ pub(crate) fn store(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
+    let trailing_by_directory = by_directory
+        .iter()
+        .map(|(sequence, record)| (*sequence, trailing_pointer_groups(record, &entries)))
+        .collect::<BTreeMap<_, _>>();
     let parameter_resolver = ParameterResolver::new(directory);
     let mut required_back_pointer_members = std::collections::BTreeSet::new();
     for group in directory
@@ -1366,7 +1370,9 @@ pub(crate) fn store(
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
-            let trailing = parameters.and_then(|record| trailing_pointer_groups(record, &entries));
+            let trailing = trailing_by_directory
+                .get(&entry.sequence)
+                .and_then(|groups| groups.as_ref());
             let invalid_trailing = (trailing.is_none()
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
@@ -1374,7 +1380,7 @@ pub(crate) fn store(
                     .and_then(|record| earliest_pointer_group_with_associations(record, &entries))
             })
             .flatten();
-            let edge_trailing = trailing.as_ref().or(invalid_trailing.as_ref());
+            let edge_trailing = trailing.or(invalid_trailing.as_ref());
             let resolved_associations = edge_trailing
                 .as_ref()
                 .into_iter()
@@ -3103,9 +3109,11 @@ pub(crate) fn store(
                     .map(<[u8]>::to_vec),
                 owners: by_directory
                     .iter()
-                    .filter(|(sequence, owner_record)| {
+                    .filter(|(sequence, _owner_record)| {
                         **sequence != entry.sequence
-                            && trailing_pointer_groups(owner_record, &entries)
+                            && trailing_by_directory
+                                .get(sequence)
+                                .and_then(|groups| groups.as_ref())
                                 .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3405,9 +3413,11 @@ pub(crate) fn store(
                 declared_value_count: record.integer(1),
                 owners: by_directory
                     .iter()
-                    .filter(|(sequence, owner)| {
+                    .filter(|(sequence, _owner)| {
                         **sequence != entry.sequence
-                            && trailing_pointer_groups(owner, &entries)
+                            && trailing_by_directory
+                                .get(sequence)
+                                .and_then(|groups| groups.as_ref())
                                 .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3426,8 +3436,10 @@ pub(crate) fn store(
                 .unwrap_or_default();
             let owners = by_directory
                 .iter()
-                .filter(|(_, owner)| {
-                    trailing_pointer_groups(owner, &entries)
+                .filter(|(sequence, _owner)| {
+                    trailing_by_directory
+                        .get(sequence)
+                        .and_then(|groups| groups.as_ref())
                         .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                 })
                 .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3696,7 +3708,9 @@ pub(crate) fn store(
             let annotation_count = record
                 .and_then(|record| record.count(annotation_count_index))
                 .unwrap_or_default();
-            let trailing = record.and_then(|record| trailing_pointer_groups(record, &entries));
+            let trailing = trailing_by_directory
+                .get(&entry.sequence)
+                .and_then(|groups| groups.as_ref());
             let property = |form| {
                 trailing.as_ref().and_then(|groups| {
                     groups.properties.iter().find_map(|sequence| {
