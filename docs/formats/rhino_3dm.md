@@ -1042,9 +1042,9 @@ The extension stream is item byte, payload, next item byte, terminated by item
 zero. Layer visibility and lock state are independent.
 
 The archive layer index is the object-reference key. If two layer records use
-one archive index, component registration assigns a new index to the later
-record. References to the original index therefore resolve to the first
-record.
+one archive index, component registration keeps the original index on the
+first record and assigns a distinct unused index to each later record.
+References to the original index therefore resolve to the first record.
 
 ### 8.4 Rendering attributes
 

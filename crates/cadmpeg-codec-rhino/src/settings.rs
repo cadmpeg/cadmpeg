@@ -1294,7 +1294,6 @@ pub(crate) fn parse_metadata(
     warnings: &mut Vec<String>,
 ) -> DocumentMetadata {
     let mut metadata = DocumentMetadata::default();
-    let mut indexes = BTreeSet::new();
     let mut ids = BTreeSet::new();
     let mut property_singletons = BTreeSet::new();
     let mut setting_singletons = BTreeSet::new();
@@ -1358,12 +1357,6 @@ pub(crate) fn parse_metadata(
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(data, record, archive, writer_version, warnings) {
                     Ok(layer) => {
-                        if !indexes.insert(layer.index) {
-                            warnings.push(format!(
-                                "duplicate layer index {}; first record owns archive references",
-                                layer.index
-                            ));
-                        }
                         if let Some(id) = layer.id {
                             if !ids.insert(id) {
                                 warnings.push(format!(
@@ -1410,6 +1403,7 @@ pub(crate) fn parse_metadata(
             }
         }
     }
+    reassign_duplicate_layer_indices(&mut metadata.layers, warnings);
     metadata.opaque_records = opaque_records;
     let known_ids: BTreeSet<Uuid> = metadata
         .layers
@@ -1427,6 +1421,48 @@ pub(crate) fn parse_metadata(
         }
     }
     metadata
+}
+
+fn reassign_duplicate_layer_indices(layers: &mut [LayerRecord], warnings: &mut Vec<String>) {
+    let mut used = layers
+        .iter()
+        .map(|layer| layer.index)
+        .collect::<BTreeSet<_>>();
+    let mut owners = BTreeSet::new();
+    for layer in layers {
+        let original_index = layer.index;
+        if owners.insert(original_index) {
+            continue;
+        }
+        let new_index = next_layer_index(&used);
+        layer.index = new_index;
+        used.insert(new_index);
+        warnings.push(format!(
+            "duplicate layer index {original_index}; later record assigned new index {new_index}; first record owns archive references"
+        ));
+    }
+}
+
+fn next_layer_index(used: &BTreeSet<i32>) -> i32 {
+    let mut candidate = used
+        .iter()
+        .copied()
+        .filter(|index| *index >= 0)
+        .max()
+        .unwrap_or(-1);
+    while let Some(next) = candidate.checked_add(1) {
+        if !used.contains(&next) {
+            return next;
+        }
+        candidate = next;
+    }
+    let mut candidate = -2;
+    while used.contains(&candidate) {
+        candidate = candidate
+            .checked_sub(1)
+            .expect("finite layer index set leaves an available index");
+    }
+    candidate
 }
 
 fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {

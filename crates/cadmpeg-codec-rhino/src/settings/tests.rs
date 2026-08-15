@@ -398,3 +398,43 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         vec!["duplicate singleton metadata record 0xa0000038; later record wins"]
     );
 }
+
+#[test]
+fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() {
+    let layer = |index| settings::LayerRecord {
+        source: settings::SourceRange { range: 0..1 },
+        version: (1, 15),
+        obsolete_mode: 0,
+        index,
+        iges_level: 0,
+        render_material_index: -1,
+        color: [0, 0, 0, 255],
+        name: String::new(),
+        visible: true,
+        locked: false,
+        id: None,
+        parent_id: None,
+        expanded: None,
+        linetype_index: None,
+        plot_color: None,
+        plot_weight: None,
+        display_material_id: None,
+        no_clipping_planes: None,
+        rendering_range: None,
+        extension_items: Vec::new(),
+        embedded_linetype: None,
+        embedded_section_style: None,
+    };
+    let mut layers = vec![layer(7), layer(7), layer(9), layer(9)];
+    let mut warnings = Vec::new();
+    super::reassign_duplicate_layer_indices(&mut layers, &mut warnings);
+    assert_eq!(
+        layers.iter().map(|layer| layer.index).collect::<Vec<_>>(),
+        vec![7, 10, 9, 11]
+    );
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings[0].contains("duplicate layer index 7"));
+    assert!(warnings[0].contains("assigned new index 10"));
+    assert!(warnings[1].contains("duplicate layer index 9"));
+    assert!(warnings[1].contains("assigned new index 11"));
+}

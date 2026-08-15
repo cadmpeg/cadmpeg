@@ -226,16 +226,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because the closure fixed the neutral loss accounting but promoted one local geometric rule without an independent operand for equal diagonals.
 
-### SW-01. Duplicate layer index resolution
-
-**Question.** Which layer record owns an archive layer index when the index occurs more than once?
-
-**Known.** `settings.rs:1361-1375` retains both records and emits a warning. `objects.rs:1385-1389` maps the first record with `or_insert`. Section 8.3 states that component registration assigns a new index to the later record.
-
-**Need.** Apply the documented new-index rule to the later record, preserve references to the first record, and retain a typed duplicate diagnostic.
-
-**Note.** Reopened because the closure added the first-wins warning but did not implement the documented index reassignment. Reordering duplicate records changes the layer selected by an object reference.
-
 ### SW-02. Duplicate singleton metadata selection
 
 **Question.** Which metadata record owns a singleton property or setting when the file contains more than one?
