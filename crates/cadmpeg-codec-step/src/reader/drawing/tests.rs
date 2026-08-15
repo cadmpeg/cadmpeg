@@ -155,6 +155,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
 #3=SHAPE_ASPECT('feature','',#4,.T.);
 #4=ITEM('shape');
 #5=DRAUGHTING_CALLOUT('Callout',());
+#6=DIMENSIONAL_SIZE(#3,'width');
 #7=ANNOTATION_PLACEHOLDER_OCCURRENCE('placeholder',(),#8,.GPS_DATA.,$);
 #8=ITEM('placeholder geometry');
 #9=DRAUGHTING_MODEL_ITEM_ASSOCIATION('','',#3,#2,#5);
@@ -172,6 +173,15 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         .iter()
         .filter_map(|target| target.target.as_deref())
         .any(|target| target == "step:data:shape_aspect#3"));
+    let drawing_targets = &result
+        .ir()
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arenas["drawing_targets"];
+    assert!(drawing_targets
+        .iter()
+        .any(|record| record.id() == "step:data:shape_aspect#3"));
     assert_eq!(
         model.relationships["associated_items"]
             .iter()
@@ -192,6 +202,8 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         loss.code == StepLossCode::DraughtingSemanticDefinitionUntyped.kind()
             || loss.code == StepLossCode::DraughtingAssociatedItemUntyped.kind()
     }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir()
         .native_unknowns("step")

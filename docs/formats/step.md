@@ -703,8 +703,12 @@ same definition, draughting model, and callout links plus its annotation
 placeholder occurrence. Complex association instances read these attributes
 from their inherited `ITEM_IDENTIFIED_REPRESENTATION_USAGE` partial.
 `DRAUGHTING_CALLOUT` carries an ordered callout-content set. Each drawing
-relationship target transfers when its source record has exactly one neutral
-or named opaque identity. An annotation plane transfers through its plane
+relationship target transfers when its source record has exactly one neutral,
+named opaque, or source-native identity. A terminal source-typed target with no
+neutral identity owns
+an identity-only `NativeRecord` in the STEP `drawing_targets` arena; its
+source id and complete source type remain available for the relationship.
+An annotation plane transfers through its plane
 carrier, and a mapped item transfers through the items of its mapped
 representation, when that wrapper has no identity of its own and the reachable
 carrier graph has exactly one neutral identity and is acyclic. If a source

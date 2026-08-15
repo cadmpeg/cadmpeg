@@ -8,6 +8,7 @@ use std::fmt::Write as _;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::NativeRecord;
 
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
@@ -106,6 +107,14 @@ pub(super) fn decode(
             .or_default()
             .insert(identity.clone());
     }
+    let drawing_target_ids = referenced_target_ids(exchange, &candidates);
+    add_source_typed_targets(
+        ir,
+        exchange,
+        known_typed,
+        &drawing_target_ids,
+        &mut target_identities,
+    );
     let external_documents = exchange
         .references
         .iter()
@@ -194,6 +203,118 @@ pub(super) fn decode(
         losses,
         notes: Vec::new(),
     }
+}
+
+fn referenced_target_ids(exchange: &Exchange, candidates: &[(u64, &str)]) -> BTreeSet<u64> {
+    let mut ids = BTreeSet::new();
+    for &(source_id, name) in candidates {
+        let parameters = source_parameters(&exchange.records[&source_id], name);
+        for &(index, _) in relationship_fields(name) {
+            if let Some(value) = parameters.get(index) {
+                collect_reference_ids(value, &mut ids);
+            }
+        }
+    }
+    for (_, record) in exchange.entities("DRAWING_SHEET_REVISION_USAGE") {
+        let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
+        for value in parameters.iter().take(2) {
+            collect_reference_ids(value, &mut ids);
+        }
+    }
+    for association_id in
+        exchange.matching_entity_ids(|name| DRAWING_ASSOCIATION_TYPES.contains(&name))
+    {
+        let Some(record) = exchange.records.get(&association_id) else {
+            continue;
+        };
+        let Some(parameters) = association_parameters(record) else {
+            continue;
+        };
+        for index in [2, 4] {
+            if let Some(value) = parameters.get(index) {
+                collect_reference_ids(value, &mut ids);
+            }
+        }
+        if record
+            .partials
+            .iter()
+            .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
+        {
+            if let Some(placeholder_id) = association_placeholder_reference(record, parameters) {
+                ids.insert(placeholder_id);
+            }
+        }
+    }
+    ids
+}
+
+fn collect_reference_ids(value: &Value, output: &mut BTreeSet<u64>) {
+    let mut references = Vec::new();
+    collect_references(value, &mut references);
+    output.extend(references);
+}
+
+fn add_source_typed_targets(
+    ir: &mut CadIr,
+    exchange: &Exchange,
+    known_typed: &HashSet<u64>,
+    referenced_ids: &BTreeSet<u64>,
+    target_identities: &mut BTreeMap<u64, BTreeSet<String>>,
+) {
+    let mut native_targets = Vec::new();
+    for &id in referenced_ids {
+        if !known_typed.contains(&id) || target_identities.contains_key(&id) {
+            continue;
+        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        if is_wrapper_record(record, exchange) || is_representation_context(record) {
+            continue;
+        }
+        let identity = opaque_record_id(record).0;
+        let source_type = record
+            .partials
+            .iter()
+            .map(|partial| partial.name.as_str())
+            .collect::<Vec<_>>()
+            .join("+");
+        let mut fields = serde_json::Map::new();
+        fields.insert(
+            "source_id".into(),
+            serde_json::Value::String(format!("#{id}")),
+        );
+        fields.insert("source_type".into(), serde_json::Value::String(source_type));
+        native_targets.push(NativeRecord::new(identity.clone(), fields));
+        target_identities.insert(id, BTreeSet::from([identity]));
+    }
+    if native_targets.is_empty() {
+        return;
+    }
+    let namespace = ir.native.namespace_mut("step");
+    if namespace.version == 0 {
+        namespace.version = 1;
+    }
+    namespace
+        .arenas
+        .entry("drawing_targets".into())
+        .or_default()
+        .extend(native_targets);
+}
+
+fn is_wrapper_record(record: &RawRecord, exchange: &Exchange) -> bool {
+    record
+        .partials
+        .iter()
+        .any(|partial| partial.name == "ANNOTATION_PLANE")
+        || mapped_representation(record, exchange).is_some()
+}
+
+fn is_representation_context(record: &RawRecord) -> bool {
+    record
+        .partials
+        .iter()
+        .any(|partial| partial.name == "REPRESENTATION_CONTEXT")
 }
 
 fn drawing_type(record: &RawRecord) -> Option<&'static str> {
