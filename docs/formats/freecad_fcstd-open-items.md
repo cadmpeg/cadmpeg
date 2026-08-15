@@ -49,6 +49,47 @@ transferring an unregistered side entry to a typed native or neutral record.
 unregistered family fields still need their own writer evidence; native retention is not meaning
 evidence.
 
+### AR-03. Typed geometry side-entry cardinality
+
+**Question.** How many side entries can one `PropertyMeshKernel` or `PropertyPointKernel` property
+reference, and which entry contains the geometry payload?
+
+**Known.** The current specification defines one typed payload per property. Property records
+retain every side-entry request in source order. The current transfer path rejects more than one
+side entry and otherwise reads the first entry.
+
+**Need.** Establish producer cardinality and entry selection for both runtime types. The decoder
+must reject invalid cardinality or identify the payload entry from the typed value grammar.
+
+**Conflict.** Commit `02c7628b3` removed this item and wrote the one-entry rule into
+`freecad_fcstd.md` without changing the decoder or adding producer-backed evidence. Its existing
+malformed-input test establishes only decoder policy, not producer cardinality.
+
+**Note.** Reopened by this QA pass. `AR-05` records the separate value-root and side-entry
+association gap.
+
+### AR-05. Typed geometry value-root association
+
+**Question.** How are multiple `Mesh` or `Points` value roots associated with the one side-entry
+payload and its transform?
+
+**Known.** The specification states one typed value root per property and zero or one file
+reference. `application_geometry.rs:21-61` checks only the number of collected side entries,
+selects the first matching archive entry, and does not validate the value-root count.
+`application_geometry.rs:160-186` selects the first descendant `Points` root carrying `mtrx`.
+`persistence.rs:438-492` retains every descendant value and every file attribute.
+
+**Need.** Establish the producer root/file association for both runtime types. The decoder must
+reject multiple roots or select the payload and transform from one unambiguous typed value.
+
+**Conflict.** A property containing one `Points` root without a file and a later `Points` root with
+a file has one collected side entry, so it passes the current cardinality check while the
+transform is read from the first root and the payload from the second. The existing malformed
+test covers two roots that each have a file and therefore does not exercise this mismatch.
+
+**Note.** New item from this QA pass. The specification rule is not producer-backed by the
+current ledger evidence.
+
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars
@@ -88,7 +129,46 @@ runtime type before transferring it to a neutral presentation field.
 remaining provider-specific presentation mapping is open; native retention is not semantic
 evidence.
 
+### GP-09. Camera position child cardinality
+
+**Question.** Can a persisted GUI camera contain more than one `Position` child, and if so which
+position supplies the camera state?
+
+**Known.** GUI admission requires schema version 1 and exactly one direct `Camera`. The camera
+state retains descendant values, while `gui.rs:492-523` selects the first `Position` value and
+does not check for duplicates. The specification settles optional finite, nonzero position and
+orientation values but not `Position` child cardinality.
+
+**Need.** Establish the producer cardinality and selection rule for camera `Position` children.
+Reject an ambiguous camera or retain an explicitly identified source value before projecting
+camera state.
+
+**Conflict.** Two `Position` children with conflicting coordinates are accepted and the first is
+projected. The second remains in the native value list without a refusal or loss, so source order
+silently decides the neutral camera state.
+
+**Note.** New item from this QA pass.
+
 ## 3. Persistent topology identity
+
+### PT-03. Element-map carrier and owner selection
+
+**Question.** Which `Part`, `ElementMap2`, and property carrier belong to one persistent element
+map when a shape XML contains more than one candidate?
+
+**Known.** Element maps are associated with a shape property and retain their source XML and map
+order. The decoder rejects more than one `Part` or `ElementMap2` carrier in one exact-shape
+property and rejects more than one enclosing property for a string table.
+
+**Need.** Establish the exact producer cardinality and property association for duplicate
+carriers. Duplicate candidates must be rejected or linked by a producer-defined discriminator.
+
+**Conflict.** Commit `02c7628b3` removed this item and wrote a one-carrier rule into
+`freecad_fcstd.md` without changing the decoder or adding producer-backed evidence. Conservative
+decoder rejection prevents a source-order choice but does not establish the legal cardinality or
+shared ownership rule.
+
+**Note.** Reopened by this QA pass.
 
 ### PT-04. Source topology index provenance
 
@@ -246,6 +326,27 @@ producer evidence for that alias is recorded.
 **Note.** This pass settled the current producer runtime-name/carrier-tag mapping and rejects a
 registered name paired with another known carrier. The historical point alias remains open.
 
+### DP-09. Spreadsheet carrier and value-container selection
+
+**Question.** Which property and XML value container supply spreadsheet cells and row or column
+dimensions when more than one candidate matches the spreadsheet selectors?
+
+**Known.** The design registry identifies the spreadsheet runtime types. `design.rs:748-764`
+selects the first property whose type contains `PropertySheet` or whose name is `cells`, then the
+first `Cells` descendant. `design.rs:865-907` selects the first matching column-width or
+row-height property and the first matching dimension container. The specification settles the
+used-cell graph and duplicate-cell validation but not selector cardinality or precedence.
+
+**Need.** Establish the producer property and value-container cardinality and identity for cells,
+column widths, and row heights. Reject ambiguous candidates or select them through an exact
+runtime and container grammar.
+
+**Conflict.** A spreadsheet with two matching properties or two matching value containers is
+accepted and projected from the first match. A vendor-qualified type or a second container can
+therefore change the neutral spreadsheet without an explicit ambiguity result.
+
+**Note.** New item from this QA pass.
+
 ## 6. Product structure
 
 ### PR-03. Product named carrier neutral projection
@@ -292,3 +393,43 @@ persisted index text.
 **Note.** This pass settled the producer carrier grammar, support cardinality, fixed enum table,
 and out-of-range behavior with current source and an authored witness. The neutral spelling is a
 smaller remaining implementation question.
+
+## 9. Persistent graph admission
+
+### PG-05. Extension identity and nested-property ownership
+
+**Question.** What cardinality and identity rule applies to multiple `Extensions` containers or
+same-name `Extension` records under one object, and how are nested property containers owned?
+
+**Known.** `persistence.rs:283-314` validates each `Extensions Count` independently and assigns
+an order starting at zero within each container. `persistence.rs:316-343` binds a nested property
+container to the first extension with the same owner and name. Native validation computes
+extension IDs but checks owner existence without checking extension-ID uniqueness.
+
+**Need.** Establish producer cardinality, name uniqueness, and ordering for extension records, or
+reject duplicate candidates. Bind nested properties by the owning XML record rather than a
+non-unique name lookup.
+
+**Conflict.** Two same-name extensions in separate containers can receive the same generated ID,
+and nested properties for repeated names all bind to the first matching extension. The resulting
+native graph can lose extension ownership while passing the current extension referential checks.
+
+**Note.** New item from this QA pass.
+
+### PG-06. Object property-container cardinality
+
+**Question.** Can one `ObjectData` record contain multiple direct `Properties` containers, and how
+are those containers associated and ordered?
+
+**Known.** Root document properties enforce at most one container. For each object,
+`persistence.rs:316-343` iterates every direct `Properties` child and parses all of them under the
+same object owner. The specification does not settle object-level container cardinality.
+
+**Need.** Establish the producer cardinality and ordering rule for direct object property
+containers. Reject ambiguous containers or retain an association that distinguishes them.
+
+**Conflict.** Multiple direct containers with distinct property names are merged into one owner
+without a container identity or ambiguity finding. Multiple containers can therefore alter source
+ordering and property grammar while remaining accepted.
+
+**Note.** New item from this QA pass.
