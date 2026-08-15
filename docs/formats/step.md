@@ -477,8 +477,9 @@ standalone geometry.
 
 A face has at most one `FACE_OUTER_BOUND`. Other face bounds are not outer
 bounds. When malformed input declares more than one outer bound, the decoder
-retains every loop, keeps the first outer role in source order, marks the
-remaining conflicting roles unspecified, and reports a topology loss.
+omits the containing topology shell without assigning an outer role or
+deriving an implicit face carrier. It retains the source records as opaque and
+reports the malformed face and rejected topology root.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`

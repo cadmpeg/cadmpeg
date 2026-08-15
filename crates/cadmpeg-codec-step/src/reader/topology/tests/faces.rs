@@ -486,67 +486,57 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
 }
 
 #[test]
-fn duplicate_face_outer_bounds_are_reported_without_inventing_inner_roles() {
+fn duplicate_face_outer_bounds_reject_the_containing_topology_in_any_order() {
     use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::topology::Loop;
 
-    let mut ir = unit_cube();
-    let face = ir.model.faces[0].id.clone();
-    let duplicate = LoopId("synthetic:test:loop#duplicate-outer".into());
-    ir.model.loops.push(Loop {
-        id: duplicate.clone(),
-        face: face.clone(),
-        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-        coedges: Vec::new(),
-        vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
-            vertex: ir.model.vertices[0].id.clone(),
-            after: None,
-            pcurves: Vec::new(),
-        }],
-    });
-    ir.model.faces[0].loops.push(duplicate);
+    for duplicate_first in [false, true] {
+        let mut ir = unit_cube();
+        let face = ir.model.faces[0].id.clone();
+        let duplicate = LoopId("synthetic:test:loop#duplicate-outer".into());
+        ir.model.loops.push(Loop {
+            id: duplicate.clone(),
+            face,
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+            coedges: Vec::new(),
+            vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+                vertex: ir.model.vertices[0].id.clone(),
+                after: None,
+                pcurves: Vec::new(),
+            }],
+        });
+        if duplicate_first {
+            ir.model.faces[0].loops.insert(0, duplicate);
+        } else {
+            ir.model.faces[0].loops.push(duplicate);
+        }
 
-    let output = export(&ir);
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(output), &DecodeOptions::default())
-        .expect("decode duplicate outer bounds");
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::FaceMultipleOuterBounds.kind()
-            && loss.message.contains("violates the STEP face-bound rule")
-            && loss
-                .message
-                .contains("marking the remaining 1 roles unspecified")
-    }));
-    let face = &decoded.ir().model.faces[0];
-    let roles = face
-        .loops
-        .iter()
-        .map(|id| {
-            decoded
-                .ir()
-                .model
-                .loops
-                .iter()
-                .find(|loop_| loop_.id == *id)
-                .expect("decoded face loop")
-                .boundary_role
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        roles
+        let output = export(&ir);
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("decode duplicate outer bounds");
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::FaceMultipleOuterBounds.kind()
+                && loss.message.contains("violates the STEP face-bound rule")
+                && loss
+                    .message
+                    .contains("omitting the containing topology shell")
+        }));
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::TopologyRootRejected.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("face with multiple outer bounds")
+        }));
+        assert!(decoded.ir().model.bodies.is_empty());
+        assert!(decoded.ir().model.faces.is_empty());
+        assert!(decoded
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena")
             .iter()
-            .filter(|role| **role == cadmpeg_ir::topology::LoopBoundaryRole::Outer)
-            .count(),
-        1
-    );
-    assert_eq!(
-        roles
-            .iter()
-            .filter(|role| **role == cadmpeg_ir::topology::LoopBoundaryRole::Unspecified)
-            .count(),
-        1
-    );
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+            .any(|record| record.id.0.contains("advanced_face")));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    }
 }
 
 #[test]

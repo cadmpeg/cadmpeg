@@ -1983,6 +1983,29 @@ fn build_one(
                 face_step,
                 "face attributes",
             )?;
+            let outer_bound_count = face_info
+                .bounds
+                .iter()
+                .filter(|bound_step| {
+                    exchange
+                        .records
+                        .get(bound_step)
+                        .is_some_and(|bound| has_type(bound, "FACE_OUTER_BOUND"))
+                })
+                .count();
+            if outer_bound_count > 1 {
+                let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
+                    "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier"
+                ));
+                losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
+                    format: "step".into(),
+                    stream: String::new(),
+                    offset: fr.span.start as u64,
+                    tag: Some("face".into()),
+                }));
+                note_failure(failure, face_step, "face with multiple outer bounds");
+                return None;
+            }
             typed.extend(face_info.typed);
             let face_suffix = if scope_faces {
                 if scope_root {
@@ -2038,7 +2061,6 @@ fn build_one(
                 )
             });
             let mut loop_ids = vec![];
-            let mut outer_bound_count = 0;
             for bound_step in face_info.bounds {
                 let br = require_carrier(
                     exchange.records.get(&bound_step),
@@ -2055,9 +2077,6 @@ fn build_one(
                     note_failure(failure, bound_step, "face bound attributes");
                     return None;
                 };
-                if is_outer_bound {
-                    outer_bound_count += 1;
-                }
                 let loop_step = require_carrier(
                     named_reference(br, bound_type, 1, 0),
                     failure,
@@ -2091,10 +2110,8 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
+                        boundary_role: if is_outer_bound {
                             LoopBoundaryRole::Outer
-                        } else if is_outer_bound {
-                            LoopBoundaryRole::Unspecified
                         } else {
                             LoopBoundaryRole::Inner
                         },
@@ -2111,7 +2128,7 @@ fn build_one(
                             pcurves: Vec::new(),
                         }],
                     });
-                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
+                    loop_ids.push((is_outer_bound, lid));
                     used_v.insert((shell_step, vertex_step));
                     typed.extend([bound_step, loop_step]);
                     continue;
@@ -2200,17 +2217,15 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
+                        boundary_role: if is_outer_bound {
                             LoopBoundaryRole::Outer
-                        } else if is_outer_bound {
-                            LoopBoundaryRole::Unspecified
                         } else {
                             LoopBoundaryRole::Inner
                         },
                         coedges: coedge_ids,
                         vertex_uses: Vec::new(),
                     });
-                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
+                    loop_ids.push((is_outer_bound, lid));
                     typed.insert(bound_step);
                     continue;
                 }
@@ -2391,30 +2406,16 @@ fn build_one(
                 loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary_role: if is_outer_bound && outer_bound_count == 1 {
+                    boundary_role: if is_outer_bound {
                         LoopBoundaryRole::Outer
-                    } else if is_outer_bound {
-                        LoopBoundaryRole::Unspecified
                     } else {
                         LoopBoundaryRole::Inner
                     },
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
                 });
-                loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
+                loop_ids.push((is_outer_bound, lid));
                 typed.extend([bound_step, loop_step]);
-            }
-            if outer_bound_count > 1 {
-                let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
-                        "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; retaining the first outer role and marking the remaining {} roles unspecified",
-                        outer_bound_count - 1
-                    ));
-                losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "step".into(),
-                    stream: String::new(),
-                    offset: fr.span.start as u64,
-                    tag: Some("face".into()),
-                }));
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
             let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
