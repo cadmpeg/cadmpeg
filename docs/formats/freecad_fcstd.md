@@ -594,7 +594,10 @@ views; `TechDraw::DrawProjGroup` and `TechDraw::DrawProjGroupItem` are projectio
 `TechDraw::DrawWeldSymbolPython` are symbols; and `TechDraw::DrawViewImage` is an image. A
 runtime type outside this registry remains an extension drawing with kind `other` and retains its
 exact native record. Drawing property names and registered value grammars provide carrier
-cardinality; projection does not select a carrier by source-order precedence.
+cardinality; projection does not select a carrier by source-order precedence. A page `Template`
+property is one `App::PropertyLink` with at most one target. A page `Views` property is one
+`App::PropertyLinkList` whose targets retain serialized order. Other runtime types do not supply
+page template or page-view carriers.
 
 The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
 are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,

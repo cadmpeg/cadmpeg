@@ -123,6 +123,44 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
 }
 
 #[test]
+fn rejects_noncanonical_page_link_carriers() {
+    for document in [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="TechDraw::DrawPage" name="Page" id="1"/>
+ <Object type="TechDraw::DrawSVGTemplate" name="First" id="2"/>
+ <Object type="TechDraw::DrawSVGTemplate" name="Second" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Page"><Properties Count="1">
+  <Property name="Template" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+</ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="TechDraw::DrawPage" name="Page" id="1"/>
+ <Object type="TechDraw::DrawViewPart" name="View" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Page"><Properties Count="1">
+  <Property name="Views" type="App::PropertyLink"><Link value="View"/></Property>
+ </Properties></Object>
+ <Object name="View"><Properties Count="0"/></Object>
+</ObjectData></Document>"#,
+    ] {
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("noncanonical page link carrier");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn classifies_drawing_runtime_types_exactly() {
     assert_eq!(
         super::classify("TechDraw::DrawPage"),

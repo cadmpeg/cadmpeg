@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
 
@@ -11,7 +12,7 @@ use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord};
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Vec<DrawingRecord> {
+) -> Result<Vec<DrawingRecord>, CodecError> {
     let by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
         |mut map, property| {
@@ -27,17 +28,23 @@ pub(crate) fn transfer(
                 .get(object.id.as_str())
                 .cloned()
                 .unwrap_or_default();
-            DrawingRecord {
+            let (views, template) = if object.type_name == "TechDraw::DrawPage" {
+                let views = typed_links(&owned, "Views", "App::PropertyLinkList")?
+                    .into_iter()
+                    .filter_map(|link| link.object)
+                    .collect();
+                let template = typed_single_link(&owned, "Template", "App::PropertyLink")?
+                    .and_then(|link| link.object);
+                (views, template)
+            } else {
+                (Vec::new(), None)
+            };
+            Ok(DrawingRecord {
                 id: crate::native::native_id("drawing", &object.name),
                 object: object.id.clone(),
                 kind: object.type_name.clone(),
-                views: links(&owned, "Views")
-                    .into_iter()
-                    .filter_map(|link| link.object)
-                    .collect(),
-                template: links(&owned, "Template")
-                    .into_iter()
-                    .find_map(|link| link.object),
+                views,
+                template,
                 sources: ["Source", "References2D", "References3D"]
                     .into_iter()
                     .flat_map(|name| links(&owned, name))
@@ -53,7 +60,7 @@ pub(crate) fn transfer(
                     .flat_map(|property| &property.side_entries)
                     .cloned()
                     .collect(),
-            }
+            })
         })
         .collect()
 }
@@ -197,6 +204,57 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
         .find(|property| property.name == name)
         .map(|property| property.links.clone())
         .unwrap_or_default()
+}
+
+fn typed_links(
+    properties: &[&PropertyRecord],
+    name: &str,
+    type_name: &str,
+) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
+    Ok(typed_property(properties, name, type_name)?
+        .map(|property| property.links.clone())
+        .unwrap_or_default())
+}
+
+fn typed_single_link(
+    properties: &[&PropertyRecord],
+    name: &str,
+    type_name: &str,
+) -> Result<Option<crate::native::LinkTarget>, CodecError> {
+    let Some(property) = typed_property(properties, name, type_name)? else {
+        return Ok(None);
+    };
+    match property.links.as_slice() {
+        [] => Ok(None),
+        [link] => Ok(Some(link.clone())),
+        _ => Err(CodecError::Malformed(format!("{name} has multiple links"))),
+    }
+}
+
+fn typed_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+    type_name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "{name} has duplicate carriers"
+        )));
+    }
+    if property.type_name != type_name {
+        return Err(CodecError::Malformed(format!(
+            "{name} has runtime type {}, expected {type_name}",
+            property.type_name
+        )));
+    }
+    Ok(Some(property))
 }
 
 fn drawing_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
