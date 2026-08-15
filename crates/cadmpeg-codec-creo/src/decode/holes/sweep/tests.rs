@@ -57,3 +57,35 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
         None
     );
 }
+
+#[test]
+fn circular_sweep_requires_an_exact_materialized_surface_roster() {
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(40),
+        table_class_id: 29,
+        entry_ids: Vec::new(),
+        entries: Vec::new(),
+        surface_ids: vec![46, 51],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+
+    assert!(super::has_exact_materialized_surface_roster(
+        &table,
+        [46, 51]
+    ));
+
+    let mut duplicate = table.clone();
+    duplicate.surface_ids.push(51);
+    assert!(!super::has_exact_materialized_surface_roster(
+        &duplicate,
+        [46, 51]
+    ));
+
+    let mut extra = table;
+    extra.surface_ids.push(54);
+    assert!(!super::has_exact_materialized_surface_roster(
+        &extra,
+        [46, 51]
+    ));
+}
