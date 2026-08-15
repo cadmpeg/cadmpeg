@@ -240,6 +240,15 @@ fn scan_groups_connected_nonzero_face_references() {
 }
 
 #[test]
+fn selects_body_count_in_metadata_precedence_order() {
+    assert_eq!(selected_body_count(Some(2), Some(0), 7), Some(2));
+    assert_eq!(selected_body_count(None, Some(0), 7), Some(1));
+    assert_eq!(selected_body_count(None, None, 7), Some(7));
+    assert_eq!(selected_body_count(None, Some(9), 7), None);
+    assert_eq!(selected_body_count(Some(0), None, 7), None);
+}
+
+#[test]
 fn scan_builds_topological_vertex_orbits_and_incidence() {
     let mut payload = visibgeom_payload(0, 2);
     payload.extend_from_slice(
@@ -278,8 +287,7 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
     assert_eq!(incidence.end_vertex_id, Some(2));
 }
 
-#[test]
-fn decode_transfers_closed_plane_intersection_brep() {
+fn closed_plane_intersection_data(geomlists: Option<&[u8]>) -> Vec<u8> {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
     push_generated_plane_row(
         &mut payload,
@@ -329,14 +337,20 @@ fn decode_transfers_closed_plane_intersection_brep() {
         \xe0\x21geoms_affected\0\xf8\x01\x63\
         \xe0\x21edgs_affected\0\xf8\x02\x0a\x0b"
         .to_vec();
-    let data = build_prt(
-        "c",
-        &[
-            ("VisibGeom", payload),
-            ("AllFeatur", allfeatur),
-            ("MdlStatus", b"Round id 4\0".to_vec()),
-        ],
-    );
+    let mut sections = vec![
+        ("VisibGeom", payload),
+        ("AllFeatur", allfeatur),
+        ("MdlStatus", b"Round id 4\0".to_vec()),
+    ];
+    if let Some(geomlists) = geomlists {
+        sections.push(("Geomlists", geomlists.to_vec()));
+    }
+    build_prt("c", &sections)
+}
+
+#[test]
+fn decode_transfers_closed_plane_intersection_brep() {
+    let data = closed_plane_intersection_data(None);
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.planes.local_systems.len(), 4);
     assert_eq!(scan.curves.topology_rows.len(), 6);
@@ -480,4 +494,26 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
+    let data = closed_plane_intersection_data(Some(b"n_bodies\0\x02"));
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.framing.declared_body_count, Some(2));
+    assert_eq!(scan.topology.face_components.len(), 1);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().model;
+    assert!(model.points.is_empty());
+    assert!(model.vertices.is_empty());
+    assert!(model.edges.is_empty());
+    assert!(model.faces.is_empty());
+    assert!(model.loops.is_empty());
+    assert!(model.coedges.is_empty());
+    assert!(model.shells.is_empty());
+    assert!(model.regions.is_empty());
+    assert!(model.bodies.is_empty());
 }

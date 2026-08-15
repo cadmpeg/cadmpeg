@@ -1554,6 +1554,11 @@ Use the following order to select a body count:
 2. `Geomlists.first_quilt_ptr == 0` as a single-body discriminator.
 3. Face-reference adjacency component count when it is the only byte-backed source.
 
+Emit neutral body and shell ownership only when the selected count equals the
+number of complete connected face-reference components admitted to the neutral
+B-rep. A mismatch leaves the native topology records available without a
+neutral body assignment.
+
 ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, joined by `ext_id`.
 
 `feat_outl_info.outline f9 02 03` stores six sequential feature-local scalar

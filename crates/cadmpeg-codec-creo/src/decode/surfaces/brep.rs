@@ -184,6 +184,48 @@ pub(in super::super) fn transfer_native_brep(
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
 
+    let mut face_adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for face_id in eligible_faces.keys() {
+        face_adjacency.entry(*face_id).or_default();
+    }
+    for curve_id in &emitted_curves {
+        let faces = emitted_half_edges
+            .iter()
+            .filter(|half_edge| half_edge.curve_id == *curve_id)
+            .filter_map(|half_edge| half_edges.get(half_edge))
+            .map(|half_edge| half_edge.face_id)
+            .collect::<Vec<_>>();
+        if let [first, second] = faces.as_slice() {
+            if eligible_faces.contains_key(first) && eligible_faces.contains_key(second) {
+                face_adjacency.entry(*first).or_default().insert(*second);
+                face_adjacency.entry(*second).or_default().insert(*first);
+            }
+        }
+    }
+    let mut remaining = face_adjacency.keys().copied().collect::<BTreeSet<_>>();
+    let mut components = Vec::new();
+    while let Some(start) = remaining.pop_first() {
+        let mut component = BTreeSet::from([start]);
+        let mut pending = vec![start];
+        while let Some(face) = pending.pop() {
+            for neighbour in face_adjacency.get(&face).into_iter().flatten() {
+                if remaining.remove(neighbour) {
+                    component.insert(*neighbour);
+                    pending.push(*neighbour);
+                }
+            }
+        }
+        components.push(component);
+    }
+    let selected_body_count = crate::topology::selected_body_count(
+        scan.framing.declared_body_count,
+        scan.framing.first_quilt_ptr,
+        scan.topology.face_components.len(),
+    );
+    if selected_body_count != Some(components.len()) {
+        return (0, 0);
+    }
+
     let solved_point_count = used_vertices.len();
     for vertex_id in used_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
@@ -325,40 +367,6 @@ pub(in super::super) fn transfer_native_brep(
                 }),
             });
         }
-    }
-
-    let mut face_adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for face_id in eligible_faces.keys() {
-        face_adjacency.entry(*face_id).or_default();
-    }
-    for curve_id in &emitted_curves {
-        let faces = emitted_half_edges
-            .iter()
-            .filter(|half_edge| half_edge.curve_id == *curve_id)
-            .filter_map(|half_edge| half_edges.get(half_edge))
-            .map(|half_edge| half_edge.face_id)
-            .collect::<Vec<_>>();
-        if let [first, second] = faces.as_slice() {
-            if eligible_faces.contains_key(first) && eligible_faces.contains_key(second) {
-                face_adjacency.entry(*first).or_default().insert(*second);
-                face_adjacency.entry(*second).or_default().insert(*first);
-            }
-        }
-    }
-    let mut remaining = face_adjacency.keys().copied().collect::<BTreeSet<_>>();
-    let mut components = Vec::new();
-    while let Some(start) = remaining.pop_first() {
-        let mut component = BTreeSet::from([start]);
-        let mut pending = vec![start];
-        while let Some(face) = pending.pop() {
-            for neighbour in face_adjacency.get(&face).into_iter().flatten() {
-                if remaining.remove(neighbour) {
-                    component.insert(*neighbour);
-                    pending.push(*neighbour);
-                }
-            }
-        }
-        components.push(component);
     }
 
     for (component_index, faces) in components.iter().enumerate() {

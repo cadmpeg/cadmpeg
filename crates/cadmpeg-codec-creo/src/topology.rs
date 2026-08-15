@@ -294,6 +294,21 @@ pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     components
 }
 
+/// Select the model body count using the settled metadata precedence.
+pub(crate) fn selected_body_count(
+    declared_body_count: Option<u32>,
+    first_quilt_ptr: Option<u32>,
+    face_component_count: usize,
+) -> Option<usize> {
+    if let Some(count) = declared_body_count.filter(|count| *count > 0) {
+        return usize::try_from(count).ok();
+    }
+    if first_quilt_ptr == Some(0) {
+        return Some(1);
+    }
+    (declared_body_count.is_none() && first_quilt_ptr.is_none()).then_some(face_component_count)
+}
+
 /// Build half-edges and closed loops from uniquely identified curve topology
 /// rows. Repeated curve identifiers define no derived topology because a
 /// half-edge identity cannot distinguish their sides.
