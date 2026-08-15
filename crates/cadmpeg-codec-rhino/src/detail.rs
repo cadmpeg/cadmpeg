@@ -55,45 +55,28 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<Detail, GeometryError> {
     let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive, "detail")?;
-    if next != range.end || !(0..=1).contains(&minor) {
+    if next != range.end || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
             message: format!("unsupported detail version 1.{minor}"),
         });
     }
     let view_start = outer.position();
-    let (view, view_next, view_minor) =
+    let (view, view_next, _view_minor) =
         anonymous(data, view_start, outer.end(), archive, "detail view state")?;
-    if view_minor != 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: view_start,
-            message: format!("unsupported detail view-state version 1.{view_minor}"),
-        });
-    }
     let view_range = view.position()..view.end();
     outer.skip(view_next - outer.position())?;
 
     let boundary_start = outer.position();
-    let (mut boundary, boundary_next, boundary_minor) = anonymous(
+    let (mut boundary, boundary_next, _boundary_minor) = anonymous(
         data,
         boundary_start,
         outer.end(),
         archive,
         "detail boundary",
     )?;
-    if boundary_minor != 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: boundary_start,
-            message: format!("unsupported detail boundary version 1.{boundary_minor}"),
-        });
-    }
     let geometry = crate::surfaces::read_nurbs_curve(&mut boundary, scale)?;
-    if boundary.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            boundary.position(),
-            "detail boundary has trailing bytes",
-        ));
-    }
+    boundary.skip_remaining()?;
     outer.skip(boundary_next - outer.position())?;
     let page_per_model_ratio = if minor >= 1 { outer.f64()? } else { 0.0 };
     if !page_per_model_ratio.is_finite() || page_per_model_ratio < 0.0 {
@@ -102,12 +85,7 @@ pub(crate) fn decode(
             "detail page-to-model ratio is invalid",
         ));
     }
-    if outer.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            outer.position(),
-            "detail has trailing bytes",
-        ));
-    }
+    outer.skip_remaining()?;
     Ok(Detail {
         source_range: range,
         view_range,
@@ -151,12 +129,15 @@ mod tests {
 
     #[test]
     fn decodes_boundary_and_bounds_native_view_state() {
-        let view = anonymous(0, &[7, 8, 9]);
-        let boundary = anonymous(0, &boundary());
+        let view = anonymous(2, &[7, 8, 9]);
+        let mut boundary_body = boundary();
+        boundary_body.extend([0xaa, 0xbb]);
+        let boundary = anonymous(4, &boundary_body);
         let mut content = view;
         content.extend(boundary);
         content.extend(0.5_f64.to_le_bytes());
-        let bytes = anonymous(1, &content);
+        content.extend([0xcc, 0xdd]);
+        let bytes = anonymous(4, &content);
 
         let detail =
             decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).expect("required invariant");

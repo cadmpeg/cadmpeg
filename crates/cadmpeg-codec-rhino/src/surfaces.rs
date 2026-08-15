@@ -173,7 +173,8 @@ fn read_clipping_plane_surface(
         ));
     }
     let mut payload = BoundedReader::new(data, outer.body.start, outer.body.end)?;
-    if payload.i32()? != 1 || payload.i32()? != 0 {
+    let version = (payload.i32()?, payload.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
             outer.body.start,
             "unsupported clipping-plane surface version",
@@ -189,20 +190,10 @@ fn read_clipping_plane_surface(
     let mut plane_reader = BoundedReader::new(data, plane_chunk.body.start, plane_chunk.body.end)?;
     let (geometry, plane_parameterization) =
         read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
-    if plane_reader.remaining() != 0 {
-        return Err(error(
-            plane_reader.position(),
-            "clipping-plane carrier has trailing bytes",
-        ));
-    }
+    plane_reader.skip_remaining()?;
     payload.skip(plane_chunk.next_offset - payload.position())?;
     read_clipping_plane(data, &mut payload, archive)?;
-    if payload.remaining() != 0 {
-        return Err(error(
-            payload.position(),
-            "clipping-plane surface has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(outer.next_offset - reader.position())?;
     Ok(DecodedSurface::Typed {
         geometry,
@@ -229,7 +220,7 @@ fn read_clipping_plane(
         ));
     }
     let minor = payload.i32()?;
-    if !(0..=5).contains(&minor) {
+    if minor < 0 {
         return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping-plane minor version",
@@ -257,12 +248,7 @@ fn read_clipping_plane(
     if minor >= 5 {
         read_clipping_participation(&mut payload)?;
     }
-    if payload.remaining() != 0 {
-        return Err(error(
-            payload.position(),
-            "clipping plane has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(())
 }
@@ -278,7 +264,8 @@ fn read_uuid_list(
         return Err(error(chunk.header_start, "invalid clipping viewport list"));
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if payload.i32()? != 1 || payload.i32()? != 0 {
+    let version = (payload.i32()?, payload.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping viewport-list version",
@@ -286,12 +273,7 @@ fn read_uuid_list(
     }
     let count = checked_count(&mut payload, 16)?;
     payload.skip(count * 16)?;
-    if payload.remaining() != 0 {
-        return Err(error(
-            payload.position(),
-            "clipping viewport list has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(())
 }
@@ -315,6 +297,9 @@ fn read_clipping_participation(reader: &mut BoundedReader<'_>) -> Result<(), Geo
     if item == 13 {
         reader.bool()?;
         item = reader.u8()?;
+    }
+    if item >= 14 {
+        return Ok(());
     }
     if item != 0 {
         return Err(error(
@@ -911,7 +896,7 @@ fn read_plane_surface_with_parameterization(
 ) -> Result<(SurfaceGeometry, PlaneParameterization), GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
-    if version >> 4 != 1 || version & 0x0f > 1 {
+    if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported plane-surface version",
@@ -935,6 +920,7 @@ fn read_plane_surface_with_parameterization(
         normal: vector(native_plane.zaxis),
         u_axis: vector(native_plane.xaxis),
     };
+    reader.skip_remaining()?;
     Ok((
         plane,
         PlaneParameterization {

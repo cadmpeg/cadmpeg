@@ -128,13 +128,27 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 ### RS-01. Later-minor bounded suffixes
 
-**Question.** Which versioned records accept unread fields appended before their bounded end?
+**Question.** Which remaining versioned readers outside sections 7.1, 13.3,
+13.4, 18.3, and 20.2-20.3 accept unread fields appended before their bounded
+end?
 
-**Known.** The global rule at `rhino_3dm.md` §4.2 "A reader consumes the fields defined for the payload major version. A" permits later-minor suffixes. `presentation.rs:611-678`, `771-898`, `935-960`, and `974-1023` still reject non-empty suffixes; other readers have similar local checks.
+**Known.** The global rule at `rhino_3dm.md` §4.2 permits later-minor suffixes.
+The producer-backed readers covered by sections 7.1, 13.3, 13.4, 18.3, and
+20.2-20.3 consume their known prefixes and skip bounded suffixes. Remaining
+versioned readers still have local caps or zero-tail checks, including texture
+mapping, font, text-style, dimension-style, view, object-attribute, and other
+presentation readers.
 
-**Need.** Audit every versioned reader, remove unjustified zero-tail requirements, and document only writer-band ceilings supported by evidence.
+**Need.** For the remaining readers, identify producer-supported minor ceilings
+and suffix fields, then remove unjustified rejection or document a producer-
+backed writer-band ceiling.
 
-**Note.** Reopened because a valid bounded later-minor suffix can make a containing presentation record fail or become opaque.
+**Note.** Narrowed 2026-08-15. `ON_Texture::Read`, `ON_Material::Read`,
+`ON_Material::Internal_ReadV5`, `ON_Group::Internal_ReadV5`, `ON_Light::Read`,
+`ON_Linetype::Read`, `ON_UuidList::Read`, `ON_PlaneSurface::Read`,
+`ON_ClippingPlane::Read`, `ON_ClippingPlaneSurface::Read`, and
+`ON_DetailView::Read` establish the settled subset. The remaining readers need
+the same producer-source audit or an independent witness.
 
 ### SW-03. Mixed instance-member transforms
 

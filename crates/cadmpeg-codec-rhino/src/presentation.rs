@@ -615,7 +615,7 @@ fn parse_texture(
     source_offset: usize,
 ) -> Result<TextureRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
-    if version.0 != 1 || !(0..=2).contains(&version.1) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "texture version is unsupported",
@@ -670,12 +670,7 @@ fn parse_texture(
         None
     };
     let treat_as_linear = (version.1 >= 2).then(|| reader.bool()).transpose()?;
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "texture has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(TextureRecord {
         source_offset: source_offset as u64,
         source_uuid: (!id.is_nil()).then(|| id.to_string()),
@@ -714,7 +709,8 @@ fn texture_array(
         ));
     }
     let mut values = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if (values.i32()?, values.i32()?) != (1, 0) {
+    let version = (values.i32()?, values.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             values.position(),
             "texture array version is unsupported",
@@ -758,12 +754,7 @@ fn texture_array(
         )?);
         values.skip(object.next_offset - values.position())?;
     }
-    if values.remaining() != 0 {
-        return Err(FramingError::structural(
-            values.position(),
-            "texture array has trailing bytes",
-        ));
-    }
+    values.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(textures)
 }
@@ -778,7 +769,7 @@ fn parse_material(
     let framed = data.get(range.start).copied() == Some(0);
     let (mut reader, component, minor, modern) = if framed {
         let (mut reader, version) = anonymous(data, range, archive)?;
-        if version.0 != 1 || version.1 != 0 {
+        if version.0 != 1 || version.1 < 0 {
             return Err(FramingError::structural(
                 reader.position(),
                 "material version is unsupported",
@@ -798,7 +789,7 @@ fn parse_material(
         let chunk = chunk_at(data, outer.position(), outer.end(), archive, false)?;
         let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
         let version = (reader.i32()?, reader.i32()?);
-        if version.0 != 1 || !(0..=6).contains(&version.1) {
+        if version.0 != 1 || version.1 < 0 {
             return Err(FramingError::structural(
                 reader.position(),
                 "legacy material version is unsupported",
@@ -891,12 +882,7 @@ fn parse_material(
     } else {
         None
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "material has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     let key = if component.id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -939,7 +925,7 @@ fn parse_group(
 ) -> Result<GroupRecord, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
-    if packed >> 4 != 1 || packed & 0x0f > 1 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             range.start,
             "group version is unsupported",
@@ -952,12 +938,7 @@ fn parse_group(
     } else {
         None
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "group has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     let key = id
         .filter(|id| !id.is_nil())
         .map_or_else(|| format!("index-{index}"), |id| id.to_string());
@@ -980,7 +961,7 @@ fn parse_light(
 ) -> Result<LightRecord, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
-    if packed >> 4 != 1 || packed & 0x0f > 2 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             range.start,
             "light version is unsupported",
@@ -1015,12 +996,7 @@ fn parse_light(
         spot_exponent = 0.0;
         value
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "light has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     for vector in [&mut location, &mut length, &mut width] {
         for value in vector {
             *value = scaled_coordinate(*value, scale).ok_or_else(|| {
@@ -1108,7 +1084,7 @@ fn parse_linetype(
     source_offset: usize,
 ) -> Result<LinetypeRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
-    let component = if version.0 == 1 && (0..=1).contains(&version.1) {
+    let component = if version.0 == 1 && version.1 >= 0 {
         let index = reader.i32()?;
         let name = utf16(&mut reader)?;
         let value = Component {
@@ -1122,12 +1098,7 @@ fn parse_linetype(
         } else {
             Uuid::nil()
         };
-        if reader.remaining() != 0 {
-            return Err(FramingError::structural(
-                reader.position(),
-                "linetype has trailing bytes",
-            ));
-        }
+        reader.skip_remaining()?;
         return Ok(linetype_record(
             value,
             id,
@@ -1140,7 +1111,7 @@ fn parse_linetype(
             Vec::new(),
             false,
         ));
-    } else if version.0 == 2 && (0..=3).contains(&version.1) {
+    } else if version.0 == 2 && version.1 >= 0 {
         component(data, &mut reader, archive)?
     } else {
         return Err(FramingError::structural(
@@ -1198,12 +1169,16 @@ fn parse_linetype(
         always = reader.bool()?;
         item = reader.u8()?;
     }
-    if item != 0 || reader.remaining() != 0 {
+    if item > 6 {
+        item = 0;
+    }
+    if item != 0 {
         return Err(FramingError::structural(
             reader.position(),
             "linetype extension stream is invalid",
         ));
     }
+    reader.skip_remaining()?;
     let component_id = component.id;
     Ok(linetype_record(
         component,
@@ -2705,10 +2680,11 @@ mod tests {
 
     #[test]
     fn group_preserves_component_identity() {
-        let mut bytes = vec![0x11];
+        let mut bytes = vec![0x1f];
         bytes.extend(7_i32.to_le_bytes());
         bytes.extend(utf16("fixtures"));
         bytes.extend([0x44; 16]);
+        bytes.extend([0xaa, 0xbb]);
         let group = parse_group(&bytes, 0..bytes.len(), 120).expect("required invariant");
         assert_eq!(group.archive_index, 7);
         assert_eq!(group.name, "fixtures");
@@ -2717,7 +2693,7 @@ mod tests {
 
     #[test]
     fn light_scales_spatial_values_but_not_direction_or_angles() {
-        let mut bytes = vec![0x12];
+        let mut bytes = vec![0x1f];
         bytes.extend(1_i32.to_le_bytes());
         bytes.extend(4_i32.to_le_bytes());
         bytes.extend(0.5_f64.to_le_bytes());
@@ -2741,6 +2717,7 @@ mod tests {
             bytes.extend(value.to_le_bytes());
         }
         bytes.extend(0.8_f64.to_le_bytes());
+        bytes.extend([0xaa, 0xbb]);
         let light = parse_light(&bytes, 0..bytes.len(), 10.0, 0, None).expect("required invariant");
         assert_eq!(light.location, [10.0, 20.0, 30.0]);
         assert_eq!(light.direction, [0.0, 0.0, -1.0]);
@@ -2770,7 +2747,14 @@ mod tests {
         body.extend(utf16(""));
         body.extend(0_i32.to_le_bytes());
         body.extend([1, 0]);
-        let inner = anonymous(3, &body);
+        body.push(1);
+        for value in [0.9_f64, 0.8, 1.4] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend([0x33; 16]);
+        body.push(1);
+        body.extend([0xaa, 0xbb]);
+        let inner = anonymous(7, &body);
         let mut bytes = vec![0x20];
         bytes.extend(inner);
         let material = parse_material(
@@ -2799,7 +2783,8 @@ mod tests {
         body.extend(1.0_f64.to_le_bytes());
         body.extend(1_u32.to_le_bytes());
         body.extend([0x66; 16]);
-        let bytes = anonymous(1, &body);
+        body.extend([0xaa, 0xbb]);
+        let bytes = anonymous(15, &body);
         let value = parse_linetype(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0)
             .expect("required invariant");
         assert_eq!(value.name, "dash");

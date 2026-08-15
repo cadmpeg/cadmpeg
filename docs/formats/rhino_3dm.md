@@ -559,10 +559,11 @@ if minor >= 1: i32 record_type
 if minor >= 2: bool copy_on_replace
 ```
 
-An `ON_UuidList` is an anonymous major-1 chunk containing an archive array
-of UUIDs. Descendant order is serialized order. Antecedents identify input
-objects and descendants identify output objects. `record_type` is 0 for update
-history parameters and 1 for feature parameters.
+An `ON_UuidList` is an anonymous major-1 chunk with a nonnegative minor
+version. It contains an archive array of UUIDs; fields after that array are
+skipped at the chunk boundary. Descendant order is serialized order.
+Antecedents identify input objects and descendants identify output objects.
+`record_type` is 0 for update history parameters and 1 for feature parameters.
 
 Each history value is an anonymous major-1 chunk:
 
@@ -1563,7 +1564,7 @@ vector.
 
 ### 13.3 Plane surface
 
-Packed version `1.1`; major 1 is accepted:
+Packed version has major 1 and a nonnegative minor:
 
 ```
 u8 version
@@ -1581,22 +1582,23 @@ increasing. For a parameter `u` and domain `D = [D0,D1]`, the plane coordinate
 is `E0 + (u-D0) × (E1-E0) / (D1-D0)`, where `E = [E0,E1]` is the matching
 extent. The same rule applies to `v`. The evaluated point is the plane origin
 plus the mapped U coordinate times the plane X axis plus the mapped V
-coordinate times the plane Y axis.
+coordinate times the plane Y axis. A reader consumes the known prefix for the
+minor and skips remaining bytes before the bounded payload end.
 
 ### 13.4 Clipping-plane surface
 
 Class UUID `DBC5A584-CE3F-4170-98A8-497069CA5C36` contains an anonymous
-version 1.0 chunk. Its first child is an anonymous chunk containing a plane
-surface payload without an additional child version header. Its second child
-is the clipping-plane record:
+version 1 chunk with a nonnegative minor. Its first child is an anonymous chunk
+containing a plane-surface payload. Its second child is the clipping-plane
+record:
 
 ```text
-anonymous version 1.0
+anonymous version 1.minor
   anonymous plane-surface carrier
   clipping-plane anonymous chunk
 ```
 
-The clipping-plane chunk has major version 1 and minor versions 0 through 5:
+The clipping-plane chunk has major version 1 and a nonnegative minor:
 
 ```text
 ON_UUID first_viewport_id
@@ -1627,6 +1629,8 @@ Minor 5 participation items are ordered and optional:
 |    0 | terminator                                   |
 
 Each item can occur at most once. Present items occur in ascending item order.
+Item codes 14 and above terminate the known participation stream; the
+remaining bytes are skipped at the bounded chunk end.
 
 ### 13.5 Revolution surface
 
@@ -2344,23 +2348,24 @@ ON_2dPoint basepoint
 
 ### 18.3 Detail views
 
-`ON_DetailView` uses an anonymous chunk with major version 1 and minor version
-0 or 1:
+`ON_DetailView` uses an anonymous chunk with major version 1 and a nonnegative
+minor:
 
 ```text
 anonymous detail version 1.minor
-  anonymous view-state version 1.0
+  anonymous view-state version 1.minor
     ON_3dmView payload
-  anonymous boundary version 1.0
+  anonymous boundary version 1.minor
     raw ON_NurbsCurve payload
   if minor >= 1: f64 page-per-model ratio
 ```
 
 The child declarations independently bound extensible view state and boundary
-geometry. The boundary NURBS curve uses the ordinary NURBS curve layout
-without a class wrapper. Its control points use document length conversion.
-The page-per-model ratio is finite and nonnegative; version 1.0 defaults it to
-zero.
+geometry. Each child reader consumes its known prefix and skips remaining bytes
+before that child's bounded end. The boundary NURBS curve uses the ordinary
+NURBS curve layout without a class wrapper. Its control points use document
+length conversion. The page-per-model ratio is finite and nonnegative; detail
+minor 0 defaults it to zero.
 
 ### 18.4 NURBS cages
 
@@ -2921,8 +2926,9 @@ contains no local member geometry.
 
 ### 20.2 Materials, textures, and mappings
 
-A modern material is anonymous version 1.0 followed by model-component
-attributes. An early archive-60 component-attribute child uses anonymous type
+A modern material is an anonymous major-1, nonnegative-minor chunk followed by
+model-component attributes. An early archive-60 component-attribute child uses
+anonymous type
 `0x40008000` and a `u32` presence mask: bits 0 through 4 gate UUID, parent UUID,
 archive index, UTF-16 name, and two component-status integers. Later component
 attributes use `0x40008002` and independent status bytes. The remaining
@@ -2934,12 +2940,19 @@ Before writer version 1 December 2009, transparent RGB `(128,128,128)` is the
 obsolete default and the diffuse color replaces the complete transparent
 color.
 
+The legacy V4 material's inner anonymous chunk also has major 1 and a
+nonnegative minor. Minor 1 adds the obsolete library string; minor 2 adds
+material channels; minor 3 adds shareable and lighting flags; minor 4 adds
+Fresnel fields; minor 5 adds the RDK UUID; and minor 6 adds the diffuse-alpha
+switch. Material readers consume the known prefix and skip remaining bytes
+before the bounded end.
+
 When component attributes omit the archive index, the in-memory index is
 `ON_UNSET_INT_INDEX` (`-2147483647`). Negative index `-1` identifies a live
 system component and is not an absence marker.
 
 Each texture-array element is an `ON_Texture` class wrapper. Its anonymous
-version 1.0 through 1.2 payload is:
+major-1, nonnegative-minor payload is:
 
 ```
 UUID texture ID
@@ -2960,10 +2973,14 @@ minor >= 1: file reference
 minor >= 2: bool treat as linear
 ```
 
-Texture transforms and blend coefficients are dimensionless. Texture mappings
-store mapping and projection enums, primitive and UVW transforms, a primitive
-class object, texture-space enum, and capped flag. Material channels bind a
-material UUID to an integer channel.
+Texture transforms and blend coefficients are dimensionless. Texture readers
+consume the known prefix for the minor and skip remaining bytes before the
+bounded end. The texture-array wrapper is also an anonymous major-1,
+nonnegative-minor chunk; its count and complete class-wrapped elements are the
+known prefix, followed by a bounded suffix. Texture mappings store mapping and
+projection enums, primitive and UVW transforms, a primitive class object,
+texture-space enum, and capped flag. Material channels bind a UUID to an
+integer channel.
 
 ### 20.3 Drafting resources and annotations
 
@@ -2972,6 +2989,16 @@ join styles, width and width units, taper points, and the model-distance flag.
 Segment lengths and widths with model units are length values. Hatch patterns
 store identity, fill type, description, and hatch lines. Hatch-line base,
 offset, and dash values are lengths; angle is radians.
+
+Group and light records use packed major-1 versions. Group minor 0 stores the
+index and name; minor 1 and later add the UUID. Light minor 0 stores the base
+state; minor 1 and later add length and width; minor 2 and later add hotspot.
+Linetype records use anonymous major 1 or 2 versions. Major 1 minor 0 stores
+the index, name, and segments; minor 1 and later add the UUID. Major 2 minor 0
+stores component attributes and segments; minor 1 and later add the ordered
+extension items. Each reader consumes its known prefix and skips remaining
+bytes before the bounded end. Unknown linetype extension codes at or above 7
+terminate the known extension stream.
 
 Text styles use the legacy packed font format through archive 50 and the
 anonymous model-component form in later archives. Font state includes the raw

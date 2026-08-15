@@ -220,11 +220,13 @@ fn clipping_plane_payload(item_order_valid: bool) -> Vec<u8> {
         clipping.extend(0_i32.to_le_bytes());
     }
     clipping.push(0);
+    clipping.extend([0xaa, 0xbb]);
     let clipping = anonymous(5, &clipping);
     let mut outer = 1_i32.to_le_bytes().to_vec();
-    outer.extend(0_i32.to_le_bytes());
+    outer.extend(2_i32.to_le_bytes());
     outer.extend(carrier);
     outer.extend(clipping);
+    outer.extend([0xcc, 0xdd]);
     crc_chunk(0x4000_8000, &outer)
 }
 

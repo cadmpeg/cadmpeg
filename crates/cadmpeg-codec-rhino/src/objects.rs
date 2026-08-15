@@ -994,7 +994,8 @@ pub(crate) fn read_uuid_list(
         ));
     }
     let mut payload = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
-    if payload.i32()? != 1 || payload.i32()? != 0 {
+    let version = (payload.i32()?, payload.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "UUID list version is unsupported",
@@ -1006,12 +1007,7 @@ pub(crate) fn read_uuid_list(
     for _ in 0..bytes / 16 {
         values.push(uuid_reader(&mut payload)?);
     }
-    if payload.remaining() != 0 {
-        return Err(FramingError::structural(
-            payload.position(),
-            "UUID list has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(values)
 }
