@@ -353,6 +353,12 @@ pub(crate) fn project_configuration_sketch_states(
             .filter(|sketch| {
                 sketch.configuration.is_none()
                     || sketch.native_ref.as_deref() == Some(scoped_lanes[0].id.as_str())
+                    || scoped_lanes[0]
+                        .configuration
+                        .as_deref()
+                        .is_some_and(|configuration| {
+                            sketch.configuration.as_deref() == Some(configuration)
+                        })
             })
             .map(|sketch| &sketch.id)
             .collect::<HashSet<_>>();

@@ -572,6 +572,66 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
 }
 
 #[test]
+fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
+    use cadmpeg_ir::features::{
+        ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
+    };
+    use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
+
+    let feature_id = FeatureId("sldprt:model:feature#scoped-spatial".into());
+    let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#scoped-spatial".into());
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(NeutralFeature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: Some("scoped-spatial".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: Some("scoped-spatial-native".into()),
+    });
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch_id.clone(),
+        name: Some("scoped-spatial".into()),
+        configuration: Some("1".into()),
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: Some("supplemental-lane".into()),
+    });
+    let mut configuration =
+        with_configuration_id(design_configuration("configuration", 0, Some(1), None), 1);
+    configuration.feature_states.insert(
+        feature_id.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::SpatialSketch { sketch: None },
+        },
+    );
+    ir.model.configurations.push(configuration);
+
+    let lanes = [feature_input_lane("resolved-lane", Some("1"))];
+    let mut annotations = cadmpeg_ir::Annotations::default();
+    project_configuration_sketch_states(&mut ir, &[], &lanes, &mut annotations);
+
+    assert!(matches!(
+        &ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::SpatialSketch {
+            sketch: Some(projected),
+        } if projected == &sketch_id
+    ));
+}
+
+#[test]
 fn supplemental_edge_paths_project_into_matching_configuration_state() {
     use cadmpeg_ir::features::{
         ChamferGroup, ChamferSpec, ConfigurationFeatureState, DesignConfiguration, EdgeSelection,
