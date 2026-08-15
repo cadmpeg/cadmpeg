@@ -2657,6 +2657,32 @@ minor >= 4: bool sync_face_packing_hash_serials
 minor >= 4: face-packing topology hash record
 ```
 
+The symmetry record is an anonymous major-1 chunk with version at least 1:
+
+```text
+i32 major = 1
+i32 version >= 1
+u8 symmetry_type
+if symmetry_type is 1 through 5:
+  u32 inversion_order
+  u32 cyclic_order
+  UUID symmetry_id
+  anonymous symmetry-transform chunk
+  if version >= 2: u8 coordinate_system
+  if version >= 3: u64 symmetric-object content serial
+  if version >= 4: topology hash record, geometry hash record
+```
+
+Symmetry types are 0 unset, 1 reflection, 2 rotation, 3 alternating
+reflection-and-rotation, 4 inversion, and 5 cyclic. Type 113 is the legacy
+rotation prototype and uses the rotation grammar. Any other type is retained in
+native source data, maps to `Unset`, and causes the reader to skip the remainder
+of the bounded symmetry chunk before continuing the containing SubD record.
+Coordinate systems are 0 unset, 1 object, and 2 world. Any other coordinate
+value is retained in native source data, maps to `Unset`, and does not prevent
+the reader from consuming later versioned fields. Each unknown value emits a
+`container.enumeration-value-degraded` loss.
+
 Every level is anonymous version 1.1:
 
 ```

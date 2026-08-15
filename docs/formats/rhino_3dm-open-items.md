@@ -136,16 +136,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a valid bounded later-minor suffix can make a containing presentation record fail or become opaque.
 
-### RS-05. Unknown SubD symmetry enums
-
-**Question.** What is the fallback for an unknown SubD symmetry type or coordinate-system enum?
-
-**Known.** `subd.rs:1128-1207` rejects symmetry types outside 1 through 5 and coordinate systems above 2. The source reader maps unknown symmetry types to `Unset` and keeps the containing record readable. The global enum rule is at `rhino_3dm.md` §4.2 "Presence and enumeration fields that define a separate numeric grammar retain".
-
-**Need.** Retain unknown enum values natively, map them to the neutral fallback, and emit typed degradation without discarding the containing SubD record.
-
-**Note.** Reopened because an unknown enum currently rejects the candidate instead of following the settled enum policy.
-
 ### SW-03. Mixed instance-member transforms
 
 **Question.** Which entities emitted by one instance-definition member receive the member transform when the member emits both a body carrier and auxiliary geometry?

@@ -922,11 +922,16 @@ fn extended_geometry_json(
             crate::subd::DecodedSubd::Surface {
                 surface,
                 neutral_metadata,
+                enum_diagnostics,
                 ..
             } => serde_json::json!({
                 "kind": "subd",
                 "surface": surface,
                 "neutral_metadata": neutral_metadata,
+                "enum_diagnostics": enum_diagnostics
+                    .into_iter()
+                    .map(crate::subd::SubdEnumDiagnostic::message)
+                    .collect::<Vec<_>>(),
             }),
         }
     } else if crate::extrusion::supported_class(value.class_id) {

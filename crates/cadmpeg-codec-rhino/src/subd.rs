@@ -37,9 +37,34 @@ pub(crate) enum DecodedSubd {
         surface: Box<SubdSurface>,
         /// Whether valid non-cage metadata was retained without neutral-IR mapping.
         neutral_metadata: bool,
+        /// Unknown symmetry enumeration values mapped to their neutral values.
+        enum_diagnostics: Vec<SubdEnumDiagnostic>,
         /// Recoverable nested checksum warnings.
         warnings: Vec<String>,
     },
+}
+
+/// A `SubD` symmetry enum value that has no known neutral-IR variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubdEnumDiagnostic {
+    /// An unknown symmetry type was mapped to `Unset`.
+    SymmetryType(u8),
+    /// An unknown symmetry coordinate system was mapped to `Unset`.
+    SymmetryCoordinateSystem(u8),
+}
+
+impl SubdEnumDiagnostic {
+    /// Returns the typed-loss message for the retained raw value.
+    pub(crate) fn message(self) -> String {
+        match self {
+            Self::SymmetryType(value) => {
+                format!("SubD symmetry type {value} mapped to neutral Unset")
+            }
+            Self::SymmetryCoordinateSystem(value) => {
+                format!("SubD symmetry coordinate system {value} mapped to neutral Unset")
+            }
+        }
+    }
 }
 
 /// A bounded `SubD` payload failure.
@@ -173,13 +198,22 @@ pub(crate) fn decode(
                     message: format!("unsupported SubDimple version {major}.{minor}"),
                 });
             }
-            let (surface, level_count, children) =
-                read_subdimple(&mut child, archive, minor, scale, id, &mut warnings)?;
+            let mut enum_diagnostics = Vec::new();
+            let (surface, level_count, children) = read_subdimple(
+                &mut child,
+                archive,
+                minor,
+                scale,
+                id,
+                &mut enum_diagnostics,
+                &mut warnings,
+            )?;
             finish_chunk_children(&mut reader, &chunk, child, &children, &mut warnings)?;
             finish_payload(&mut reader)?;
             Ok(DecodedSubd::Surface {
                 surface: Box::new(surface),
                 neutral_metadata: minor > 0 || level_count > 1,
+                enum_diagnostics,
                 warnings,
             })
         }
@@ -196,6 +230,7 @@ fn read_subdimple(
     minor: i32,
     scale: f64,
     id: cadmpeg_ir::ids::SubdId,
+    enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Vec<String>,
 ) -> Result<(SubdSurface, usize, Vec<Range<usize>>), SubdError> {
     let level_count = capped_u32(reader, MAX_LEVELS, "SubD level count")?;
@@ -224,7 +259,7 @@ fn read_subdimple(
     }
     if minor >= 2 {
         let start = reader.position();
-        read_symmetry(reader, archive, warnings)?;
+        read_symmetry(reader, archive, enum_diagnostics, warnings)?;
         children.push(start..reader.position());
     }
     if minor >= 3 {
@@ -1128,6 +1163,7 @@ fn read_mapping_tag(
 fn read_symmetry(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD symmetry")?;
@@ -1140,7 +1176,8 @@ fn read_symmetry(
             message: format!("unsupported SubD symmetry version {major}.{version}"),
         });
     }
-    let mut symmetry_type = reader.u8()?;
+    let raw_symmetry_type = reader.u8()?;
+    let mut symmetry_type = raw_symmetry_type;
     let new_rotate_prototype = symmetry_type == 113;
     if new_rotate_prototype {
         symmetry_type = 2;
@@ -1149,10 +1186,8 @@ fn read_symmetry(
         return finish_direct_chunk(parent, &chunk, reader, warnings);
     }
     if !(1..=5).contains(&symmetry_type) {
-        return Err(malformed(
-            reader.position() - 1,
-            "invalid SubD symmetry type",
-        ));
+        enum_diagnostics.push(SubdEnumDiagnostic::SymmetryType(raw_symmetry_type));
+        return finish_direct_chunk(parent, &chunk, reader, warnings);
     }
     reader.u32()?;
     reader.u32()?;
@@ -1191,11 +1226,13 @@ fn read_symmetry(
         _ => unreachable!("symmetry type checked"),
     }
     finish_direct_chunk(&mut reader, &inner, transform, warnings)?;
-    if version >= 2 && reader.u8()? > 2 {
-        return Err(malformed(
-            reader.position() - 1,
-            "invalid SubD symmetry coordinate system",
-        ));
+    if version >= 2 {
+        let coordinate_system = reader.u8()?;
+        if coordinate_system > 2 {
+            enum_diagnostics.push(SubdEnumDiagnostic::SymmetryCoordinateSystem(
+                coordinate_system,
+            ));
+        }
     }
     if version >= 3 {
         reader.u64()?;

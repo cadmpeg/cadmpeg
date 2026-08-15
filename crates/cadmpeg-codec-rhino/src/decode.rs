@@ -2155,10 +2155,15 @@ impl<'a> DecodeContext<'a> {
             Ok(crate::subd::DecodedSubd::Surface {
                 surface,
                 neutral_metadata,
+                enum_diagnostics,
                 warnings,
             }) => {
                 for warning in warnings {
                     self.scan_warning(source_order, &warning);
+                }
+                for diagnostic in enum_diagnostics {
+                    self.typed_losses
+                        .push(RhinoLossCode::EnumerationValueDegraded.note(diagnostic.message()));
                 }
                 if neutral_metadata {
                     self.scan_warning(
