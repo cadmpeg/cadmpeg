@@ -266,6 +266,37 @@ pub(super) fn relation_constraint_is_inactive(
             };
             !same_dimension_length(measured, expected.0)
         }
+        SketchConstraintDefinition::RepeatedRadius { entities, .. }
+        | SketchConstraintDefinition::RepeatedDiameter { entities, .. } => {
+            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            else {
+                return true;
+            };
+            let diameter = matches!(
+                definition,
+                SketchConstraintDefinition::RepeatedDiameter { .. }
+            );
+            let Some(radii) = entities
+                .iter()
+                .map(entity)
+                .map(|entity| {
+                    let entity = entity?;
+                    match entity.geometry {
+                        SketchGeometry::Circle { radius, .. }
+                        | SketchGeometry::Arc { radius, .. } => Some(radius.0),
+                        _ => None,
+                    }
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                return false;
+            };
+            !radii.into_iter().all(|radius| {
+                let measured = if diameter { radius * 2.0 } else { radius };
+                same_dimension_length(measured, expected.0)
+            })
+        }
         _ => false,
     }
 }
@@ -708,6 +739,25 @@ pub(super) fn typed_relation_definition(
             })
         }
         CircleDiameter => {
+            if let Some(entities) =
+                repeated_dimensioned_circular_entities(relation, parameter, sketch, sketch_entities)
+            {
+                return Some(match parameter.display {
+                    Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
+                        SketchConstraintDefinition::RepeatedRadius {
+                            entities,
+                            parameter: parameter_id,
+                        }
+                    }
+                    Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
+                        SketchConstraintDefinition::RepeatedDiameter {
+                            entities,
+                            parameter: parameter_id,
+                        }
+                    }
+                    None => return None,
+                });
+            }
             let resolved_entity = sketch_entities
                 .iter()
                 .find(|entity| {
@@ -781,6 +831,45 @@ pub(super) fn typed_relation_definition(
             }
         }
     }
+}
+
+fn repeated_dimensioned_circular_entities(
+    relation: &FeatureInputRelationInstance,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+) -> Option<Vec<SketchEntityId>> {
+    let parameter_native_ref = parameter.native_ref.as_deref()?;
+    if relation.parameter_scalar_ref.as_deref() != Some(parameter_native_ref) {
+        return None;
+    }
+    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let expected_radius = match parameter.display {
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        None => return None,
+    };
+    if !(expected_radius.is_finite() && expected_radius > 0.0) {
+        return None;
+    }
+    let entities = sketch_entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch && entity.geometry_ref.as_deref() == Some(parameter_native_ref)
+        })
+        .filter_map(|entity| {
+            let radius = match entity.geometry {
+                SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
+                    radius.0
+                }
+                _ => return None,
+            };
+            same_dimension_length(radius, expected_radius).then(|| entity.id.clone())
+        })
+        .collect::<Vec<_>>();
+    (entities.len() >= 2).then_some(entities)
 }
 
 // Reduce a set of candidate locus pairs to the sole survivor: order the pairs
