@@ -4,8 +4,8 @@
 use super::blend::{
     blend_boundary_parameter_from_support_pcurve, blend_surface_definition,
     blend_surface_parameters_for_fit_with_grid, blend_surface_point_inner_with_index,
-    closest_spine_parameter, decoded_surface_point_inner, model_curve_point, model_curve_tangent,
-    BlendParameterGrid, BoundaryInverseTarget,
+    closest_spine_parameter_with_index, decoded_surface_point_inner, model_curve_point_with_index,
+    model_curve_tangent_with_index, BlendParameterGrid, BoundaryInverseTarget,
 };
 use super::offset::{
     lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index, point_distance,
@@ -357,7 +357,6 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
             let pcurves: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
                 orient_tolerant_intersection_pcurve_with_index(
                     &model_index,
-                    ir,
                     &procedural.curve,
                     &supports[side],
                     &carriers[side].geometry,
@@ -424,14 +423,13 @@ pub(crate) fn orient_tolerant_intersection_pcurve(
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     orient_tolerant_intersection_pcurve_with_index(
-        &index, ir, curve, support, pcurve, range, endpoints, tolerance,
+        &index, curve, support, pcurve, range, endpoints, tolerance,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn orient_tolerant_intersection_pcurve_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     curve: &CurveId,
     support: &SurfaceId,
     pcurve: &PcurveGeometry,
@@ -455,7 +453,7 @@ fn orient_tolerant_intersection_pcurve_with_index(
         (false, true) => reverse_pcurve_over_range(pcurve, range),
         (true, true) => {
             let reversed = reverse_pcurve_over_range(pcurve, range)?;
-            let curve_tangent = model_curve_tangent(ir, curve, range[0])?;
+            let curve_tangent = model_curve_tangent_with_index(index, curve, range[0])?;
             let alignment = |candidate: &PcurveGeometry| {
                 let uv = pcurve_uv(candidate, range[0])?;
                 let uv_tangent = pcurve_tangent(candidate, range[0])?;
@@ -1338,7 +1336,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         let Some(expected) = decoded_surface_point_inner(index, surface, uv.u, uv.v, 0) else {
             return false;
         };
-        let Some(actual) = model_curve_point(ir, curve, parameter) else {
+        let Some(actual) = model_curve_point_with_index(index, curve, parameter) else {
             return false;
         };
         let error = point_distance(expected, actual);
@@ -1821,7 +1819,7 @@ pub(crate) fn transferred_pcurve_sample(
 ) -> Option<TransferredPcurveSample> {
     let source_uv = pcurve_uv(source_pcurve, parameter)?;
     let point = decoded_surface_point_inner(index, source_surface, source_uv.u, source_uv.v, 0)
-        .or_else(|| model_curve_point(ir, curve, parameter))?;
+        .or_else(|| model_curve_point_with_index(index, curve, parameter))?;
     let target_uv = blend_boundary_parameter_from_support_pcurve(
         index,
         ir,
@@ -1850,7 +1848,13 @@ pub(crate) fn transferred_pcurve_sample(
     })?;
     (decoded_surface_point_inner(index, target_surface, target_uv.u, target_uv.v, 0)
         .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
-        || blend_boundary_spine_geometry_matches(ir, target_surface, target_uv, point, tolerance))
+        || blend_boundary_spine_geometry_matches_with_index(
+            index,
+            target_surface,
+            target_uv,
+            point,
+            tolerance,
+        ))
     .then_some((parameter, target_uv, point))
 }
 
@@ -1888,28 +1892,32 @@ pub(crate) fn blend_boundary_parameter_from_support_spine_with_index(
     let [boundary] = matches.as_slice() else {
         return None;
     };
-    let parameter = closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u))?;
+    let parameter =
+        closest_spine_parameter_with_index(index, &spine, point, seed.map(|seed| seed.u))?;
     let parameters = Point2::new(parameter, *boundary as f64);
     (blend_surface_point_inner_with_index(index, blend, parameters.u, parameters.v, 0)
         .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
-        || blend_boundary_spine_geometry_matches(ir, blend, parameters, point, tolerance))
+        || blend_boundary_spine_geometry_matches_with_index(
+            index, blend, parameters, point, tolerance,
+        ))
     .then_some(parameters)
 }
 
-pub(crate) fn blend_boundary_spine_geometry_matches(
-    ir: &CadIr,
+pub(crate) fn blend_boundary_spine_geometry_matches_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     parameters: Point2,
     point: Point3,
     tolerance: f64,
 ) -> bool {
+    let ir = index.ir();
     if parameters.v.to_bits() != 0.0f64.to_bits() && parameters.v.to_bits() != 1.0f64.to_bits() {
         return false;
     }
     let Some((_, spine, radius, _)) = blend_surface_definition(ir, blend) else {
         return false;
     };
-    let Some(center) = model_curve_point(ir, &spine, parameters.u) else {
+    let Some(center) = model_curve_point_with_index(index, &spine, parameters.u) else {
         return false;
     };
     let radial = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
@@ -1920,7 +1928,7 @@ pub(crate) fn blend_boundary_spine_geometry_matches(
     let Some(radial) = unit_vector(radial) else {
         return false;
     };
-    let Some(tangent) = model_curve_tangent(ir, &spine, parameters.u) else {
+    let Some(tangent) = model_curve_tangent_with_index(index, &spine, parameters.u) else {
         return false;
     };
     let angular_tolerance = (tolerance / radius).max(1.0e-8);
@@ -1968,14 +1976,14 @@ pub(crate) fn append_transferred_pcurve_segment(
         };
         let Some(source_point) =
             decoded_surface_point_inner(index, source_surface, source_uv.u, source_uv.v, 0)
-                .or_else(|| model_curve_point(ir, curve, parameter))
+                .or_else(|| model_curve_point_with_index(index, curve, parameter))
         else {
             return false;
         };
         decoded_surface_point_inner(index, target_surface, uv.u, uv.v, 0)
             .is_some_and(|target_point| point_distance(source_point, target_point) <= tolerance)
-            || blend_boundary_spine_geometry_matches(
-                ir,
+            || blend_boundary_spine_geometry_matches_with_index(
+                index,
                 target_surface,
                 uv,
                 source_point,

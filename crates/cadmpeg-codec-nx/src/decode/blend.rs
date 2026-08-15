@@ -116,8 +116,8 @@ pub(crate) fn blend_surface_parameters_inner(
             return Some(parameters);
         }
     }
-    let angular =
-        closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u)).and_then(|u| {
+    let angular = closest_spine_parameter_with_index(index, &spine, point, seed.map(|seed| seed.u))
+        .and_then(|u| {
             let (center, tangent, first, second, _) =
                 blend_surface_frame_with_index(index, surface, u, depth + 1)?;
             let radial = unit_vector(Vector3::new(
@@ -194,8 +194,8 @@ pub(crate) fn blend_surface_parameters_inner(
     }
     if let Some(fit_tolerance) = fit_tolerance {
         let boundary_parameters = [0usize, 1usize].map(|boundary| {
-            blend_boundary_parameter(
-                ir,
+            blend_boundary_parameter_with_index(
+                index,
                 surface,
                 point,
                 boundary,
@@ -244,7 +244,7 @@ pub(crate) fn blend_surface_parameter_grid_with_index(
     (depth < 32).then_some(())?;
     let ir = index.ir();
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
-    let curve = ir.model.curves.iter().find(|curve| curve.id == spine)?;
+    let curve = index.curves(spine.0.as_str())?;
     let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         return None;
     };
@@ -323,11 +323,8 @@ pub(crate) fn refine_blend_surface_parameters_with_index(
     (depth < 32).then_some(())?;
     let ir = index.ir();
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
-    let u_domain = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == spine)
+    let u_domain = index
+        .curves(spine.0.as_str())
         .and_then(|curve| match &curve.geometry {
             CurveGeometry::Nurbs(nurbs) => {
                 let degree = usize::try_from(nurbs.degree).ok()?;
@@ -520,11 +517,7 @@ pub(crate) fn blend_surface_u_derivative_with_index(
     (depth < 32).then_some(())?;
     let ir = index.ir();
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
-    let carrier = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| candidate.id == spine)?;
+    let carrier = index.curves(spine.0.as_str())?;
     let center = curve_point(&carrier.geometry, u)?;
     let velocity = curve_tangent(&carrier.geometry, u)?;
     let acceleration = curve_second_derivative(&carrier.geometry, u)?;
@@ -689,8 +682,8 @@ pub(crate) fn blend_surface_frame_with_index(
     (depth < 32).then_some(())?;
     let ir = index.ir();
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
-    let center = model_curve_point(ir, &spine, u)?;
-    let tangent = model_curve_tangent(ir, &spine, u)?;
+    let center = model_curve_point_with_index(index, &spine, u)?;
+    let tangent = model_curve_tangent_with_index(index, &spine, u)?;
     let first = spine_contact_direction_with_index(
         index,
         &supports[0],
@@ -737,17 +730,6 @@ pub(crate) fn spine_contact_direction_with_index(
     ))
 }
 
-pub(crate) fn blend_boundary_point(
-    ir: &CadIr,
-    surface: &SurfaceId,
-    parameter: f64,
-    boundary: usize,
-    depth: usize,
-) -> Option<Point3> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    blend_boundary_point_with_index(&index, surface, parameter, boundary, depth)
-}
-
 pub(crate) fn blend_boundary_point_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -768,8 +750,8 @@ pub(crate) fn blend_boundary_point_with_index(
     )
 }
 
-pub(crate) fn blend_boundary_parameter(
-    ir: &CadIr,
+pub(crate) fn blend_boundary_parameter_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     boundary: usize,
@@ -778,11 +760,12 @@ pub(crate) fn blend_boundary_parameter(
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
+    let ir = index.ir();
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
     // A circular blend's u parameter is its spine parameter. Invert that
     // defining carrier directly, then certify the requested boundary point.
-    closest_spine_parameter(ir, &spine, point, seed).filter(|parameter| {
-        blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
+    closest_spine_parameter_with_index(index, &spine, point, seed).filter(|parameter| {
+        blend_boundary_point_with_index(index, surface, *parameter, boundary, depth + 1)
             .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
     })
 }
@@ -1862,7 +1845,7 @@ pub(crate) fn blend_surface_contact_direction(
     (depth < 32).then_some(())?;
     let ir = index.ir();
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
-    let u = closest_spine_parameter(ir, &spine, point, None)?;
+    let u = closest_spine_parameter_with_index(index, &spine, point, None)?;
     let frame = blend_surface_frame_with_index(index, surface, u, depth + 1)?;
     let radial = unit_vector(Vector3::new(
         point.x - frame.0.x,
@@ -1892,35 +1875,42 @@ pub(crate) fn blend_surface_contact_direction(
     ))
 }
 
-pub(crate) fn model_curve_point(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Point3> {
-    let carrier = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| &candidate.id == curve)?;
+pub(crate) fn model_curve_point_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    curve: &CurveId,
+    parameter: f64,
+) -> Option<Point3> {
+    let carrier = index.curves(curve.0.as_str())?;
     curve_point(&carrier.geometry, parameter)
 }
 
-pub(crate) fn model_curve_tangent(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Vector3> {
-    let carrier = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| &candidate.id == curve)?;
+pub(crate) fn model_curve_tangent_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    curve: &CurveId,
+    parameter: f64,
+) -> Option<Vector3> {
+    let carrier = index.curves(curve.0.as_str())?;
     unit_vector(curve_tangent(&carrier.geometry, parameter)?)
 }
 
+#[cfg(test)]
 pub(crate) fn closest_spine_parameter(
     ir: &CadIr,
     curve: &CurveId,
     point: Point3,
     seed: Option<f64>,
 ) -> Option<f64> {
-    let carrier = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| &candidate.id == curve)?;
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    closest_spine_parameter_with_index(&index, curve, point, seed)
+}
+
+pub(crate) fn closest_spine_parameter_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    curve: &CurveId,
+    point: Point3,
+    seed: Option<f64>,
+) -> Option<f64> {
+    let carrier = index.curves(curve.0.as_str())?;
     match &carrier.geometry {
         CurveGeometry::Line { origin, direction } => Some(
             (point.x - origin.x) * direction.x

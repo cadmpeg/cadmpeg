@@ -68,8 +68,8 @@ pub(crate) use pcurves::blend_boundary_parameter_from_support_spine;
 #[allow(unused_imports)]
 pub(crate) use pcurves::{
     append_transferred_pcurve_segment, attach_tolerant_edge_intersections,
-    blend_boundary_parameter_from_support_spine_with_index, blend_boundary_spine_geometry_matches,
-    boundary_curve_affine_breaks, complete_exact_boundary_intersection_pcurves,
+    blend_boundary_parameter_from_support_spine_with_index, boundary_curve_affine_breaks,
+    complete_exact_boundary_intersection_pcurves,
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_pcurves_from_opposite_charts,
     complete_intersection_supports_from_edge_incidence,
@@ -134,28 +134,30 @@ pub(crate) use support_uv::{
 };
 
 mod blend;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use blend::closest_spine_parameter;
 #[allow(unused_imports)]
 pub(crate) use blend::{
     add_bernstein_polynomials, analytic_surface_offset, bernstein_product, bezier_spans,
-    binomial_coefficient, blend_boundary_parameter, blend_boundary_parameter_from_support_pcurve,
-    blend_boundary_point, blend_boundary_point_with_index, blend_contact_offset_matches,
-    blend_surface_contact_direction, blend_surface_definition, blend_surface_frame_with_index,
-    blend_surface_offset, blend_surface_parameter_grid_with_index,
-    blend_surface_parameters_for_fit_with_grid, blend_surface_parameters_from_grid_for_fit,
-    blend_surface_parameters_inner, blend_surface_point_from_frame,
-    blend_surface_point_inner_with_index, blend_surface_u_derivative_with_index,
-    canonical_periodic_parameter, closest_blend_surface_grid_parameters,
-    closest_nurbs_curve_parameter, closest_parameter_candidates, closest_pcurve_parameters,
-    closest_periodic_analytic_curve_parameter, closest_spine_parameter,
-    coarse_blend_surface_parameters_with_index, constant_surface_offset_between,
-    decoded_surface_point_inner, homogeneous_pcurve_spans, homogeneous_residual_distance,
-    insert_homogeneous_curve_knot, lift_periodic_parameters, model_curve_point,
-    model_curve_tangent, polynomial_roots_in_unit_interval, polynomial_value,
-    rational_squared_distance_derivative, real_polynomial_roots,
-    refine_blend_surface_parameters_with_index, rodrigues_rotate, scalar_bernstein_sign_variations,
-    scalar_bezier_roots, scalar_bezier_value, signed_angle, spine_contact_direction_with_index,
-    spine_contact_pcurve, spine_contact_point_with_index, stationary_rational_distance_candidates,
-    subdivide_scalar_bezier_span, subtract_bernstein_polynomials, sum_bernstein_polynomials,
+    binomial_coefficient, blend_boundary_parameter_from_support_pcurve,
+    blend_boundary_point_with_index, blend_contact_offset_matches, blend_surface_contact_direction,
+    blend_surface_definition, blend_surface_frame_with_index, blend_surface_offset,
+    blend_surface_parameter_grid_with_index, blend_surface_parameters_for_fit_with_grid,
+    blend_surface_parameters_from_grid_for_fit, blend_surface_parameters_inner,
+    blend_surface_point_from_frame, blend_surface_point_inner_with_index,
+    blend_surface_u_derivative_with_index, canonical_periodic_parameter,
+    closest_blend_surface_grid_parameters, closest_nurbs_curve_parameter,
+    closest_parameter_candidates, closest_pcurve_parameters,
+    closest_periodic_analytic_curve_parameter, coarse_blend_surface_parameters_with_index,
+    constant_surface_offset_between, decoded_surface_point_inner, homogeneous_pcurve_spans,
+    homogeneous_residual_distance, insert_homogeneous_curve_knot, lift_periodic_parameters,
+    polynomial_roots_in_unit_interval, polynomial_value, rational_squared_distance_derivative,
+    real_polynomial_roots, refine_blend_surface_parameters_with_index, rodrigues_rotate,
+    scalar_bernstein_sign_variations, scalar_bezier_roots, scalar_bezier_value, signed_angle,
+    spine_contact_direction_with_index, spine_contact_pcurve, spine_contact_point_with_index,
+    stationary_rational_distance_candidates, subdivide_scalar_bezier_span,
+    subtract_bernstein_polynomials, sum_bernstein_polynomials,
     surface_contact_direction_with_index, surface_offset_lineage, BezierSpan,
     BlendContactDerivativeContext, BlendParameterGrid, BlendSurfaceFrame, BoundaryInverseTarget,
     HomogeneousCurveSpans, ScalarBezierRoots, ScalarBezierSpan,
