@@ -86,7 +86,15 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         })();
         let resolved = carrier_intersection_curve(first, second)
             .and_then(|(geometry, tag)| {
-                resolve_curve_candidates(analytic_curve_branches(&geometry, tag), points)
+                let candidates = analytic_curve_branches(&geometry, tag);
+                resolve_curve_candidates(candidates.clone(), points).or_else(|| {
+                    // A nonparallel plane pair has one exact infinite carrier line.
+                    // Its endpoint domain is only a finite-edge witness and can be
+                    // supplied by a one-sided pcurve on an unresolved adjacent face.
+                    (tag == "plane_intersection_line")
+                        .then(|| resolve_curve_candidates(candidates, None))
+                        .flatten()
+                })
             })
             .or_else(|| {
                 let candidates = multi_component_intersection_candidates(first, second);
@@ -262,4 +270,158 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{CurveId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
+
+    use super::transfer_carrier_intersection_curves;
+    use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
+    use crate::{container, curve, surface};
+
+    #[test]
+    fn plane_intersection_survives_inconsistent_endpoint_witness() {
+        let mut scan = container::scan_bytes(Vec::new());
+        scan.surfaces.rows = [1_u32, 2, 3]
+            .into_iter()
+            .map(|id| surface::SurfaceRow {
+                id,
+                type_byte: surface::SurfaceKind::Plane.canonical_type_byte(),
+                kind: surface::SurfaceKind::Plane,
+                feature_id: 0,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 0,
+            })
+            .collect();
+        scan.curves.topology_rows = vec![curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 0,
+            feature_id: 0,
+            directions: [0x01, 0xf6],
+            faces: [1, 2],
+            next_edges: [10, 10],
+            offset: 0,
+        }];
+        scan.curves.pcurves = vec![curve::PcurveEndpoints {
+            curve_id: 10,
+            faces: [1, 3],
+            face_0_endpoints: [[0.0, 1.0], [1.0, 1.0]],
+            face_1_endpoints: [[0.0, 0.0], [1.0, 0.0]],
+            offset: 0,
+        }];
+        scan.topology.half_edges = vec![
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 10,
+                    side: 0,
+                },
+                face_id: 1,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 10,
+                    side: 1,
+                },
+                face_id: 2,
+                next: None,
+            },
+        ];
+        scan.topology.vertices = vec![
+            TopologicalVertex {
+                id: 1,
+                half_edges: vec![HalfEdgeId {
+                    curve_id: 10,
+                    side: 0,
+                }],
+            },
+            TopologicalVertex {
+                id: 2,
+                half_edges: vec![HalfEdgeId {
+                    curve_id: 10,
+                    side: 1,
+                }],
+            },
+        ];
+        scan.topology.half_edge_vertex_incidence = vec![
+            HalfEdgeVertexIncidence {
+                half_edge: HalfEdgeId {
+                    curve_id: 10,
+                    side: 0,
+                },
+                start_vertex_id: 1,
+                end_vertex_id: Some(2),
+            },
+            HalfEdgeVertexIncidence {
+                half_edge: HalfEdgeId {
+                    curve_id: 10,
+                    side: 1,
+                },
+                start_vertex_id: 2,
+                end_vertex_id: Some(1),
+            },
+        ];
+
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 2.0, 0.0),
+                    normal: Vector3::new(0.0, 1.0, 0.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#3".to_string()),
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            },
+        ]);
+
+        let transferred = transfer_carrier_intersection_curves(
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &BTreeSet::new(),
+        );
+        assert_eq!(
+            transferred,
+            BTreeSet::from([CurveId("creo:visibgeom:curve#10".to_string())])
+        );
+        assert!(matches!(
+            ir.model
+                .curves
+                .iter()
+                .find(|curve| curve.id == CurveId("creo:visibgeom:curve#10".to_string()))
+                .map(|curve| &curve.geometry),
+            Some(CurveGeometry::Line { origin, direction })
+                if origin.x == 0.0
+                    && origin.y == 2.0
+                    && origin.z == 0.0
+                    && direction.x == 1.0
+                    && direction.y == 0.0
+                    && direction.z == 0.0
+        ));
+    }
 }
