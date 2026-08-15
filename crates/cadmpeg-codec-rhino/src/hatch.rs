@@ -253,12 +253,34 @@ pub(crate) fn apply_userdata(
     scale: f64,
     hatch: &mut Hatch,
 ) -> Result<(), GeometryError> {
-    let Some(extra) = userdata
+    let mut last_basepoint = None;
+    let mut first_error = None;
+    for extra in userdata
         .iter()
-        .find(|value| value.class_uuid == V5_HATCH_EXTRA)
-    else {
+        .filter(|value| value.class_uuid == V5_HATCH_EXTRA)
+    {
+        match parse_userdata(data, extra, scale) {
+            Ok(basepoint) => last_basepoint = Some(basepoint),
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    if let Some(basepoint) = last_basepoint {
+        hatch.basepoint = basepoint;
         return Ok(());
-    };
+    }
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn parse_userdata(
+    data: &[u8],
+    extra: &UserdataDescriptor,
+    scale: f64,
+) -> Result<[f64; 2], GeometryError> {
     let mut reader = crate::chunks::BoundedReader::new(
         data,
         extra.payload_range.start,
@@ -279,8 +301,7 @@ pub(crate) fn apply_userdata(
             GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
         })?,
     ];
-    hatch.basepoint = basepoint;
-    Ok(())
+    Ok(basepoint)
 }
 
 #[cfg(test)]

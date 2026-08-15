@@ -1107,7 +1107,7 @@ impl<'a> DecodeContext<'a> {
         if duplicate_count > 1 {
             self.typed_losses.push(
                 RhinoLossCode::DuplicateRecordResolved.note(format!(
-                    "hatch object at offset {} has {duplicate_count} matching userdata records; first serialized record wins",
+                    "hatch object at offset {} has {duplicate_count} matching userdata records; last valid serialized record wins",
                     object.range.start
                 )),
             );
