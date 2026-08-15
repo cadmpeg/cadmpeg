@@ -1569,7 +1569,12 @@ minor >= 1:
 ```
 
 Version 1.0 uses domains as extents. Domains and extents are independent; the
-domain controls parameterization.
+domain controls parameterization. Every interval is finite and strictly
+increasing. For a parameter `u` and domain `D = [D0,D1]`, the plane coordinate
+is `E0 + (u-D0) × (E1-E0) / (D1-D0)`, where `E = [E0,E1]` is the matching
+extent. The same rule applies to `v`. The evaluated point is the plane origin
+plus the mapped U coordinate times the plane X axis plus the mapped V
+coordinate times the plane Y axis.
 
 ### 13.4 Clipping-plane surface
 

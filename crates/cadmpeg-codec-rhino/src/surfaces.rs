@@ -5,7 +5,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -55,6 +55,8 @@ pub(crate) enum DecodedSurface {
         geometry: SurfaceGeometry,
         /// Whether native coordinates were scaled or reconstructed.
         derived: bool,
+        /// Source parameter mapping for a plane surface.
+        plane_parameterization: Option<PlaneParameterization>,
     },
     /// A solved native procedural surface and its ordered child trees.
     Procedural {
@@ -65,6 +67,25 @@ pub(crate) enum DecodedSurface {
         /// Ordered embedded child curves.
         children: Vec<DecodedCurve>,
     },
+}
+
+/// Affine map from a plane surface's source parameter domain to its physical
+/// plane extents.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlaneParameterization {
+    pub(crate) u_domain: [f64; 2],
+    pub(crate) v_domain: [f64; 2],
+    pub(crate) u_extents: [f64; 2],
+    pub(crate) v_extents: [f64; 2],
+}
+
+impl PlaneParameterization {
+    pub(crate) fn map_point(self, point: Point2) -> Point2 {
+        Point2::new(
+            map_parameter(point.u, self.u_domain, self.u_extents),
+            map_parameter(point.v, self.v_domain, self.v_extents),
+        )
+    }
 }
 
 /// Native procedural fields before deterministic child IDs are assigned.
@@ -106,12 +127,15 @@ pub(crate) fn decode(
         DecodedSurface::Typed {
             geometry: SurfaceGeometry::Nurbs(read_nurbs_surface(&mut reader, scale)?),
             derived: true,
+            plane_parameterization: None,
         }
     } else if class == PLANE_SURFACE {
-        let geometry = read_plane_surface(&mut reader, scale)?;
+        let (geometry, plane_parameterization) =
+            read_plane_surface_with_parameterization(&mut reader, scale)?;
         DecodedSurface::Typed {
             geometry,
             derived: scale != 1.0,
+            plane_parameterization: Some(plane_parameterization),
         }
     } else if class == CLIPPING_PLANE_SURFACE {
         read_clipping_plane_surface(data, &mut reader, scale, archive)?
@@ -163,7 +187,8 @@ fn read_clipping_plane_surface(
         ));
     }
     let mut plane_reader = BoundedReader::new(data, plane_chunk.body.start, plane_chunk.body.end)?;
-    let geometry = read_plane_surface(&mut plane_reader, scale)?;
+    let (geometry, plane_parameterization) =
+        read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
     if plane_reader.remaining() != 0 {
         return Err(error(
             plane_reader.position(),
@@ -182,6 +207,7 @@ fn read_clipping_plane_surface(
     Ok(DecodedSurface::Typed {
         geometry,
         derived: scale != 1.0,
+        plane_parameterization: Some(plane_parameterization),
     })
 }
 
@@ -879,10 +905,10 @@ pub(crate) fn read_nurbs_surface(
     })
 }
 
-fn read_plane_surface(
+fn read_plane_surface_with_parameterization(
     reader: &mut BoundedReader<'_>,
     scale: f64,
-) -> Result<SurfaceGeometry, GeometryError> {
+) -> Result<(SurfaceGeometry, PlaneParameterization), GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f > 1 {
@@ -903,14 +929,25 @@ fn read_plane_surface(
     } else {
         (domain, v_domain)
     };
-    let _ = (u_extents, v_extents);
     let plane = SurfaceGeometry::Plane {
         origin: scale_native_point(native_plane.origin, scale)
             .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
         normal: vector(native_plane.zaxis),
         u_axis: vector(native_plane.xaxis),
     };
-    Ok(plane)
+    Ok((
+        plane,
+        PlaneParameterization {
+            u_domain: domain,
+            v_domain,
+            u_extents,
+            v_extents,
+        },
+    ))
+}
+
+fn map_parameter(value: f64, domain: [f64; 2], extents: [f64; 2]) -> f64 {
+    extents[0] + (value - domain[0]) * (extents[1] - extents[0]) / (domain[1] - domain[0])
 }
 
 fn read_knots(reader: &mut BoundedReader<'_>, count: usize) -> Result<Vec<f64>, GeometryError> {

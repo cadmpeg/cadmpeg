@@ -5,7 +5,7 @@ use super::*;
 use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::test_support::test_dump::*;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 fn push_i32(bytes: &mut Vec<u8>, value: i32) {
     bytes.extend(value.to_le_bytes());
@@ -243,6 +243,7 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
     let DecodedSurface::Typed {
         geometry: SurfaceGeometry::Plane { origin, .. },
         derived,
+        ..
     } = decoded
     else {
         panic!("typed plane carrier");
@@ -439,7 +440,8 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
     for version in [0x10, 0x11] {
         let bytes = plane_payload(version, false, false);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        let plane = read_plane_surface(&mut reader, 1.0).expect("required invariant");
+        let (plane, _) =
+            read_plane_surface_with_parameterization(&mut reader, 1.0).expect("required invariant");
         assert_eq!(reader.remaining(), 0);
         assert!(matches!(
             plane,
@@ -449,8 +451,20 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
     for (bad_frame, bad_range) in [(true, false), (false, true)] {
         let bytes = plane_payload(0x11, bad_frame, bad_range);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(read_plane_surface(&mut reader, 1.0).is_err());
+        assert!(read_plane_surface_with_parameterization(&mut reader, 1.0).is_err());
     }
+}
+
+#[test]
+fn plane_parameterization_maps_domain_to_physical_extents() {
+    let bytes = plane_payload(0x11, false, false);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let (_, parameterization) =
+        read_plane_surface_with_parameterization(&mut reader, 1.0).expect("plane surface");
+    assert_eq!(
+        parameterization.map_point(Point2::new(0.25, 2.5)),
+        Point2::new(4.25, 6.5)
+    );
 }
 
 #[test]
