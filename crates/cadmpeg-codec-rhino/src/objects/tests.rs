@@ -28,6 +28,7 @@ fn parses_fixed_attributes_through_every_minor_gate() {
             0..bytes.len(),
             100..100 + bytes.len(),
             ArchiveVersion::V4,
+            None,
             &mut Vec::new(),
         )
         .unwrap_or_else(|error| panic!("minor {minor}: {error}"));
@@ -50,6 +51,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..hidden.len(),
         0..hidden.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -61,6 +63,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..locked.len(),
         0..locked.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -72,6 +75,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..definition.len(),
         0..definition.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -86,10 +90,42 @@ fn fixed_explicit_visibility_overrides_hidden_mode_default() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
     assert!(parsed.visible);
+}
+
+#[test]
+fn object_attribute_booleans_use_writer_version_strictness() {
+    let bytes = tagged_attributes(&[(11, vec![2])], 0);
+    let legacy = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        Some(201_708_239),
+        &mut Vec::new(),
+    )
+    .expect("legacy Boolean remains permissive");
+    assert!(legacy.visible);
+
+    for writer_version in [201_708_240_i64, 2_348_836_140_i64] {
+        let error = crate::objects::parse_attributes(
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            Some(writer_version),
+            &mut Vec::new(),
+        )
+        .expect_err("modern Boolean must be canonical");
+        assert!(matches!(
+            error,
+            crate::chunks::FramingError::Structural { .. }
+        ));
+    }
 }
 
 #[test]
@@ -178,6 +214,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             0..minimum.len(),
             0..minimum.len(),
             ArchiveVersion::V8,
+            None,
             &mut Vec::new(),
         )
         .unwrap_or_else(|error| panic!("item {item} failed at minor {gate}: {error}"));
@@ -187,6 +224,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             0..latest.len(),
             0..latest.len(),
             ArchiveVersion::V8,
+            None,
             &mut Vec::new(),
         )
         .unwrap_or_else(|error| panic!("item {item} failed at minor 13: {error}"));
@@ -203,6 +241,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
                     0..preceding.len(),
                     0..preceding.len(),
                     ArchiveVersion::V8,
+                    None,
                     &mut Vec::new(),
                 )
                 .is_err(),
@@ -216,6 +255,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         0..bytes.len(),
         10..10 + bytes.len(),
         ArchiveVersion::V8,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -241,6 +281,7 @@ fn tagged_attributes_reject_unknown_items_gates_and_missing_terminator() {
                 0..bytes.len(),
                 0..bytes.len(),
                 ArchiveVersion::V8,
+                None,
                 &mut Vec::new()
             )
             .is_err(),
@@ -254,6 +295,7 @@ fn tagged_attributes_reject_unknown_items_gates_and_missing_terminator() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V8,
+        None,
         &mut Vec::new()
     )
     .is_err());
@@ -263,6 +305,7 @@ fn tagged_attributes_reject_unknown_items_gates_and_missing_terminator() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V8,
+        None,
         &mut Vec::new()
     )
     .is_err());
@@ -276,6 +319,7 @@ fn tagged_attributes_reject_nonfinite_numeric_items() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V8,
+        None,
         &mut Vec::new()
     )
     .is_err());
@@ -317,6 +361,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         0..fixed_attributes(1, 0, None).len(),
         0..fixed_attributes(1, 0, None).len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -372,6 +417,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");

@@ -614,6 +614,7 @@ pub(crate) fn parse_attributes(
     body_range: Range<usize>,
     source_range: Range<usize>,
     archive: ArchiveVersion,
+    writer_version: Option<i64>,
     warnings: &mut Vec<String>,
 ) -> Result<ObjectAttributes, FramingError> {
     let mut reader = crate::chunks::BoundedReader::new(bytes, body_range.start, body_range.end)?;
@@ -655,7 +656,7 @@ pub(crate) fn parse_attributes(
             Vec::new()
         };
         let visible = if version.1 >= 2 {
-            reader.bool()?
+            reader.bool_with_writer_version(writer_version)?
         } else {
             object_mode & 0x0f != HIDDEN_OBJECT_MODE
         };
@@ -884,7 +885,7 @@ pub(crate) fn parse_attributes(
             }
             9 => attributes.decoration = i32::from(reader.u8()?),
             10 => attributes.wire_density = reader.i32()?,
-            11 => attributes.visible = reader.bool()?,
+            11 => attributes.visible = reader.bool_with_writer_version(writer_version)?,
             12 => attributes.object_mode = reader.u8()?,
             13 => attributes.color_source = reader.u8()?,
             14 => attributes.plot_color_source = reader.u8()?,
@@ -918,7 +919,7 @@ pub(crate) fn parse_attributes(
             26 => attributes.line_join_style = reader.u8()?,
             27 => attributes.clip_participation_source = reader.u8()?,
             28 => {
-                attributes.clipping_proof = reader.bool()?;
+                attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
                 attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
             }
             29 => attributes.section_attributes_source = reader.u8()?,
@@ -939,7 +940,10 @@ pub(crate) fn parse_attributes(
                 attributes.hatch_background =
                     reader.take(4)?.try_into().expect("color width checked");
             }
-            35 => attributes.hatch_boundary_visible = reader.bool()?,
+            35 => {
+                attributes.hatch_boundary_visible =
+                    reader.bool_with_writer_version(writer_version)?;
+            }
             36 => attributes.object_frame = Some(settings::xform(&mut reader)?),
             37 => attributes.section_fill_rule = reader.u8()?,
             38 => {
@@ -959,7 +963,10 @@ pub(crate) fn parse_attributes(
                 )?);
             }
             40 => attributes.clipping_plane_label_style = reader.u8()?,
-            41 => attributes.selective_clipping_list = reader.bool()?,
+            41 => {
+                attributes.selective_clipping_list =
+                    reader.bool_with_writer_version(writer_version)?;
+            }
             _ => unreachable!(),
         }
     }
@@ -1159,6 +1166,7 @@ pub(crate) fn parse_object_record(
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
+    writer_version: Option<i64>,
     global_warnings: &mut Vec<String>,
 ) -> Result<ObjectDescriptor, FramingError> {
     let mut warnings = Vec::new();
@@ -1307,6 +1315,7 @@ pub(crate) fn parse_object_record(
                 .clone()
                 .unwrap_or_else(|| body_range.clone()),
             archive,
+            writer_version,
             &mut warnings,
         ) {
             Ok(value) => Some(value),

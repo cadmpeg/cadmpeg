@@ -434,6 +434,19 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         let mut records = Vec::new();
         let mut table_record_count = 0_usize;
         let mut object_typecodes = BTreeMap::new();
+        let writer_version = if table_base(chunk.typecode) == TCODE_OBJECTS {
+            tables
+                .iter()
+                .rev()
+                .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
+                .flat_map(|table| table.records.iter().rev())
+                .find_map(|record| {
+                    (record.typecode == TCODE_WRITER_VERSION && record.short)
+                        .then_some(record.value)
+                })
+        } else {
+            None
+        };
         let mut child_offset = chunk.body.start;
         let mut terminated = false;
         while child_offset < chunk.body.end {
@@ -492,7 +505,13 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
-                let descriptor = match parse_object_record(data, &record, archive, &mut warnings) {
+                let descriptor = match parse_object_record(
+                    data,
+                    &record,
+                    archive,
+                    writer_version,
+                    &mut warnings,
+                ) {
                     Ok(descriptor) => descriptor,
                     Err(error) => {
                         warnings.push(format!(

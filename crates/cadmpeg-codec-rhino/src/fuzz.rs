@@ -94,6 +94,7 @@ pub fn object_record(data: &[u8]) {
         data,
         &record,
         selected_archive(data[0]),
+        None,
         &mut warnings,
     );
 }

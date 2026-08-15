@@ -136,16 +136,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a valid bounded later-minor suffix can make a containing presentation record fail or become opaque.
 
-### RS-04. Strict boolean validation in object attributes
-
-**Question.** Are object-attribute boolean fields validated against the writer-version strictness threshold?
-
-**Known.** `objects.rs:612-618` does not receive `writer_version`; tagged items at `objects.rs:887`, `921`, `942`, and `962` use permissive `reader.bool()`. The settled threshold is specified at `rhino_3dm.md` §4.2 "Stored Boolean fields use one byte. `0x00` is false and `0x01` is true. When"; the source reader rejects noncanonical values for modern writers.
-
-**Need.** Thread writer-version context into object-attribute parsing and apply strict validation to each affected boolean field.
-
-**Note.** Reopened because a modern archive containing byte `0x02` is currently accepted as true instead of rejected as malformed.
-
 ### RS-05. Unknown SubD symmetry enums
 
 **Question.** What is the fallback for an unknown SubD symmetry type or coordinate-system enum?
