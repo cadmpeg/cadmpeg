@@ -2569,6 +2569,90 @@ mod tests {
         );
     }
 
+    #[test]
+    fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
+        use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, PointId, ShellId, SurfaceId, VertexId};
+        use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
+
+        let body = Body {
+            id: BodyId("sldprt:brep:body#11".into()),
+            kind: BodyKind::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let face = Face {
+            id: FaceId("sldprt:brep:face#22".into()),
+            shell: ShellId("sldprt:brep:shell#1".into()),
+            surface: SurfaceId("sldprt:brep:surf#22".into()),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let edge = Edge {
+            id: EdgeId("sldprt:brep:edge#33".into()),
+            curve: None,
+            start: VertexId("sldprt:brep:vertex#1".into()),
+            end: VertexId("sldprt:brep:vertex#2".into()),
+            param_range: None,
+            tolerance: None,
+        };
+        let vertex = Vertex {
+            id: VertexId("sldprt:brep:vertex#44".into()),
+            point: PointId("sldprt:brep:point#44".into()),
+            tolerance: None,
+        };
+        let index = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+        );
+
+        assert_eq!(
+            index.resolve("schema-a:11"),
+            Some(PmiTarget::Body {
+                body: body.id.clone(),
+            })
+        );
+        assert_eq!(
+            index.resolve("schema-b:22"),
+            Some(PmiTarget::Face {
+                face: face.id.clone(),
+            })
+        );
+        assert_eq!(
+            index.resolve("schema-c:33"),
+            Some(PmiTarget::Edge {
+                edge: edge.id.clone(),
+            })
+        );
+        assert_eq!(
+            index.resolve("schema-d:44"),
+            Some(PmiTarget::Vertex {
+                vertex: vertex.id.clone(),
+            })
+        );
+        assert!(index.resolve("schema-e:not-a-number").is_none());
+        assert!(index.resolve("11").is_none());
+
+        let collision = Face {
+            id: FaceId("sldprt:brep:face#11".into()),
+            ..face
+        };
+        let index = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            &[collision],
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+        );
+        assert!(index.resolve("schema-f:11").is_none());
+    }
+
     fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
         bytes.push(u8::try_from(value.len()).expect("fixture Pascal string"));
         bytes.extend_from_slice(value.as_bytes());
