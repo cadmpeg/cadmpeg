@@ -413,14 +413,17 @@ unknown TechDraw subclasses available through their complete native object/prope
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and
-independent-body semantics. Object dependency links establish construction dependencies, and a
-feature's cached shape property links its neutral operation to every transferred result body from
-that payload. PartDesign body containers are structural history nodes: their group links establish
-ordered feature-tree membership and reciprocal parentage, while the tip link identifies one owned
-member as the active result. Suppressed, active, frozen, invalid, touched, mapping, support, and
-visibility properties remain individually named state rather than being collapsed into one enabled
-flag. Validation rejects duplicate members, inconsistent parentage, missing members, and an active
-tip outside the body's ordered membership.
+independent-body semantics. A profile uses one scalar `PropertyLink` or `PropertyLinkSub` carrier
+from the `Profile`, `Sketch`, `Base`, or `Source` compatibility names. A link-list carrier,
+multiple targets, or more than one populated compatibility name is not resolved by source order;
+a linkless profile remains the native profile property. Object dependency links establish
+construction dependencies, and a feature's cached shape property links its neutral operation to
+every transferred result body from that payload. PartDesign body containers are structural
+history nodes: their group links establish ordered feature-tree membership and reciprocal
+parentage, while the tip link identifies one owned member as the active result. Suppressed, active,
+frozen, invalid, touched, mapping, support, and visibility properties remain individually named
+state rather than being collapsed into one enabled flag. Validation rejects duplicate members,
+inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a

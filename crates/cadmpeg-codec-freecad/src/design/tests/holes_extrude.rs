@@ -505,6 +505,54 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
 }
 
 #[test]
+fn rejects_ambiguous_profile_carriers_without_selecting_a_sketch() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Sketcher::SketchObject" name="SketchA" id="1"/>
+ <Object type="Sketcher::SketchObject" name="SketchB" id="2"/>
+ <Object type="PartDesign::Pad" name="MultipleTargets" id="3"/>
+ <Object type="PartDesign::Pad" name="CompetingAliases" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="SketchA"><Properties Count="0"/></Object>
+ <Object name="SketchB"><Properties Count="0"/></Object>
+ <Object name="MultipleTargets"><Properties Count="2">
+  <Property name="Profile" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="SketchA" sub=""/><Link obj="SketchB" sub=""/></LinkSubList></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
+ </Properties></Object>
+ <Object name="CompetingAliases"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="SketchA"/></Property>
+  <Property name="Sketch" type="App::PropertyLink"><Link value="SketchB"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("ambiguous profile carriers");
+    for name in ["MultipleTargets", "CompetingAliases"] {
+        let feature = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("pad feature");
+        assert!(matches!(
+            &feature.definition,
+            FeatureDefinition::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+                ..
+            } if profile.ends_with(":Profile")
+        ));
+    }
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn transfers_partdesign_mixed_extrusion_side_controls() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">

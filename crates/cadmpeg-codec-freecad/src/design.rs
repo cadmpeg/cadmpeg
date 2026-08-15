@@ -2538,16 +2538,24 @@ fn profile_ref(
 }
 
 fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
-    ["Profile", "Sketch", "Base", "Source"]
-        .iter()
-        .find_map(|name| {
-            let property = property(properties, name)?;
-            let target = property
-                .links
-                .iter()
-                .find_map(|link| link.object.as_deref())?;
-            (!target.is_empty()).then_some((property, target))
-        })
+    let mut selected = None;
+    for name in ["Profile", "Sketch", "Base", "Source"] {
+        let Some(property) = property(properties, name) else {
+            continue;
+        };
+        let Some(link) = scalar_link(property) else {
+            if name == "Base" && !is_link_property_type(property.type_name.as_str()) {
+                continue;
+            }
+            return None;
+        };
+        let target = link.object.as_deref()?;
+        if target.is_empty() || selected.is_some() {
+            return None;
+        }
+        selected = Some((property, target));
+    }
+    selected
 }
 
 fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
@@ -4830,6 +4838,21 @@ fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str
 fn singular_reference_link(
     property: &PropertyRecord,
 ) -> Option<(&crate::native::LinkTarget, Option<&str>)> {
+    let link = scalar_link(property)?;
+    let object = link.object.as_deref()?;
+    if object.is_empty() {
+        return None;
+    }
+    let selectors = link_selectors(link).collect::<Vec<_>>();
+    let selector = match selectors.as_slice() {
+        [] => None,
+        [selector] => Some(*selector),
+        _ => return None,
+    };
+    Some((link, selector))
+}
+
+fn scalar_link(property: &PropertyRecord) -> Option<&crate::native::LinkTarget> {
     if !matches!(
         property.type_name.as_str(),
         "App::PropertyLink"
@@ -4846,17 +4869,34 @@ fn singular_reference_link(
     let [link] = property.links.as_slice() else {
         return None;
     };
-    let object = link.object.as_deref()?;
-    if object.is_empty() {
-        return None;
-    }
-    let selectors = link_selectors(link).collect::<Vec<_>>();
-    let selector = match selectors.as_slice() {
-        [] => None,
-        [selector] => Some(*selector),
-        _ => return None,
-    };
-    Some((link, selector))
+    Some(link)
+}
+
+fn is_link_property_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyLink"
+            | "App::PropertyLinkChild"
+            | "App::PropertyLinkGlobal"
+            | "App::PropertyLinkHidden"
+            | "App::PropertyLinkList"
+            | "App::PropertyLinkListChild"
+            | "App::PropertyLinkListGlobal"
+            | "App::PropertyLinkListHidden"
+            | "App::PropertyLinkSub"
+            | "App::PropertyLinkSubChild"
+            | "App::PropertyLinkSubGlobal"
+            | "App::PropertyLinkSubHidden"
+            | "App::PropertyLinkSubList"
+            | "App::PropertyLinkSubListChild"
+            | "App::PropertyLinkSubListGlobal"
+            | "App::PropertyLinkSubListHidden"
+            | "App::PropertyXLink"
+            | "App::PropertyXLinkList"
+            | "App::PropertyXLinkSub"
+            | "App::PropertyXLinkSubHidden"
+            | "App::PropertyXLinkSubList"
+    )
 }
 
 fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
