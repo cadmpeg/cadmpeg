@@ -366,7 +366,11 @@ object and grounding frame. Other joints retain the persisted enumeration family
 targets with each target's ordered subelement path, and both connector-local frames. Angular,
 linear, limit-enable, detach, and suppression values remain independently named parameters. Nested
 `Sub` elements belong to their enclosing cross-link and are not separate object references. Joint
-Python proxy payloads remain inert native properties; decoding never imports their module.
+Python proxy payloads remain inert native properties; decoding never imports their module. A joint
+has exactly one kind carrier: `ObjectToGround` or `JointType`. Both carriers are invalid. A
+`JointType` property has exactly one selected `Integer`; its zero-based index selects the matching
+ordered `Enum` value when present, and an out-of-range index remains the numeric native family.
+Each named scalar joint parameter has at most one root value; duplicate values are invalid.
 
 CADIR assembly joints resolve local connector objects to component ids while retaining exact
 object and persistent subelement paths. Fixed, revolute, slider, cylindrical, ball, distance,

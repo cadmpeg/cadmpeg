@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointId, JointKind, JointLimits, JointOperand, Occurrence,
 };
@@ -12,7 +13,7 @@ use cadmpeg_ir::transform::Transform;
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Vec<JointRecord> {
+) -> Result<Vec<JointRecord>, CodecError> {
     let by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
         |mut map, property| {
@@ -26,13 +27,16 @@ pub(crate) fn transfer(
             .get(object.id.as_str())
             .cloned()
             .unwrap_or_default();
-        let grounded = owned
-            .iter()
-            .any(|property| property.name == "ObjectToGround");
-        let joint_type = owned
-            .iter()
-            .find(|property| property.name == "JointType")
-            .and_then(|property| enumeration_value(property));
+        let grounded_property = unique_property(&owned, "ObjectToGround")?;
+        let joint_type_property = unique_property(&owned, "JointType")?;
+        if grounded_property.is_some() && joint_type_property.is_some() {
+            return Err(CodecError::Malformed(format!(
+                "joint object {} carries both ObjectToGround and JointType",
+                object.id
+            )));
+        }
+        let grounded = grounded_property.is_some();
+        let joint_type = joint_type_property.map(enumeration_value).transpose()?;
         if !grounded && joint_type.is_none() {
             continue;
         }
@@ -93,16 +97,13 @@ pub(crate) fn transfer(
                         | "Suppressed"
                 )
             })
-            .filter_map(|property| {
-                Some((
-                    property.name.clone(),
-                    property
-                        .values
-                        .iter()
-                        .find_map(|value| value.attributes.get("value"))?
-                        .clone(),
-                ))
+            .map(|property| {
+                scalar_parameter(property)
+                    .map(|value| value.map(|value| (property.name.clone(), value)))
             })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect::<BTreeMap<_, _>>();
         output.push(JointRecord {
             id: crate::native::native_id("joint", &object.name),
@@ -118,7 +119,7 @@ pub(crate) fn transfer(
             parameters,
         });
     }
-    output
+    Ok(output)
 }
 
 pub(crate) fn transfer_neutral(
@@ -263,23 +264,72 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-fn enumeration_value(property: &PropertyRecord) -> Option<String> {
-    let index = property
+fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
+    let integers = property
         .values
         .iter()
-        .find(|value| value.tag == "Integer")?
+        .filter(|value| value.tag == "Integer")
+        .collect::<Vec<_>>();
+    let [integer] = integers.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "joint enumeration property {} requires one Integer value",
+            property.id
+        )));
+    };
+    let index = integer
         .attributes
-        .get("value")?
+        .get("value")
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "joint enumeration property {} has no Integer value",
+                property.id
+            ))
+        })?
         .parse::<usize>()
-        .ok()?;
-    property
+        .map_err(|_| {
+            CodecError::Malformed(format!(
+                "joint enumeration property {} has an invalid Integer value",
+                property.id
+            ))
+        })?;
+    Ok(property
         .values
         .iter()
         .filter(|value| value.tag == "Enum")
         .nth(index)
         .and_then(|value| value.attributes.get("value"))
         .cloned()
-        .or_else(|| Some(index.to_string()))
+        .unwrap_or_else(|| index.to_string()))
+}
+
+fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+    match property.values.as_slice() {
+        [] => Ok(None),
+        [value] => Ok(value.attributes.get("value").cloned()),
+        _ => Err(CodecError::Malformed(format!(
+            "joint parameter property {} has multiple values",
+            property.id
+        ))),
+    }
+}
+
+fn unique_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "joint property {name} occurs more than once"
+        )));
+    }
+    Ok(Some(property))
 }
 
 fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkTarget> {
@@ -470,5 +520,38 @@ pub(crate) mod tests {
         assert_eq!(joint.frames[0].rows[2][3], 9.0);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
+    }
+
+    #[test]
+    fn rejects_ambiguous_joint_kind_and_scalar_carriers() {
+        let documents = [
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="3">
+<Property name="ObjectToGround" type="App::PropertyLink"><Link value="Base"/></Property>
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="1">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="2">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        ];
+        for document in documents {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
     }
 }

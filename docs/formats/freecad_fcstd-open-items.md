@@ -28,7 +28,6 @@ These items have a Conflict part and need a decision.
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
 - AT-01. Attachment frame carrier precedence
-- JN-01. Joint kind and enumeration carrier selection
 
 ## 1. Auxiliary records
 
@@ -188,15 +187,3 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 **Need.** We must establish the FreeCAD attachment composition and property cardinality. The decoder must compose or reject conflicting carriers according to that rule.
 
 **Note.** The precedence is explicit; no producer rule for the neutral effective frame was found.
-
-### JN-01. Joint kind and enumeration carrier selection
-
-**Question.** Which joint property and value carrier define the joint kind when `ObjectToGround`, `JointType`, repeated values, or both integer and enum values are present?
-
-**Known.** Joint records retain the source properties, links, placements, offsets, and parameter values.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/joint.rs:29-36` gives `ObjectToGround` precedence over `JointType`. `enumeration_value` at `:266-283` takes the first `Integer` and the nth `Enum`; property and parameter helpers also take first matches. A record with both grounded and joint-type carriers, or duplicate enumeration values, changes kind and operands with source order.
-
-**Need.** We must establish joint runtime grammars, carrier cardinality, and grounded/joint-type precedence from FreeCAD source or independent saved documents.
-
-**Note.** The selection is direct, but the producer may forbid the conflicting forms.
