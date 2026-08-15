@@ -69,6 +69,24 @@ pub(super) fn decode(
             Some((id, *formations.get(&parameters.get(2)?.reference()?)?))
         })
         .collect::<BTreeMap<_, _>>();
+    let mut definitions_by_product_in_source_order = definitions.iter().fold(
+        BTreeMap::<u64, Vec<u64>>::new(),
+        |mut definitions_by_product, (&definition, &product)| {
+            definitions_by_product
+                .entry(product)
+                .or_default()
+                .push(definition);
+            definitions_by_product
+        },
+    );
+    for definitions in definitions_by_product_in_source_order.values_mut() {
+        definitions.sort_by_key(|definition| {
+            exchange
+                .records
+                .get(definition)
+                .map_or(usize::MAX, |record| record.span.start)
+        });
+    }
     let mut definition_descriptions = BTreeMap::<u64, String>::new();
     for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
         let Some(parameters) = product_definition_parameters(record) else {
@@ -154,10 +172,10 @@ pub(super) fn decode(
                 )
             })
             .filter(|description| !description.is_empty());
-        let product_definitions = definitions
-            .iter()
-            .filter_map(|(&definition, &product)| (product == step_id).then_some(definition))
-            .collect::<Vec<_>>();
+        let product_definitions = definitions_by_product_in_source_order
+            .get(&step_id)
+            .cloned()
+            .unwrap_or_default();
         let definition_count = definition_counts.get(&step_id).copied().unwrap_or(0);
         let definition_iter = if product_definitions.is_empty() {
             vec![None]

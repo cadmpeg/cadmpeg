@@ -68,9 +68,9 @@ fn presentation_layer_expands_all_product_definition_views() {
 #3=PRODUCT('P','Part','',(#2));
 #4=PRODUCT_DEFINITION_FORMATION('v1','',#3);
 #5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
-#6=PRODUCT_DEFINITION('design view','',#4,#5);
-#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
 #8=PRODUCT_DEFINITION('manufacturing view','',#7,#5);
+#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
+#6=PRODUCT_DEFINITION('design view','',#4,#5);
 #9=PRESENTATION_LAYER_ASSIGNMENT('definition views','',(#3));",
     );
 
