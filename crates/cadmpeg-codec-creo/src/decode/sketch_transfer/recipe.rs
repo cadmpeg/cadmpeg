@@ -96,12 +96,12 @@ pub(in super::super) fn feature_is_first_material_operation(
             .filter(|transform| transform.feature_id == Some(candidate))
             .collect::<Vec<_>>();
         let [transform] = transforms.as_slice() else {
-            return false;
+            continue;
         };
         let Some(definition) =
             unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
-            return false;
+            continue;
         };
         material_definition_offsets.push((candidate, definition.offset));
     }

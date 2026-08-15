@@ -14,9 +14,10 @@ use crate::decode::sketch::{
 };
 use crate::decode::sketch_transfer::{
     current_feature_operation, current_feature_recipe, current_feature_recipe_parent,
-    first_material_feature_by_definition_order, reconcile_constraint_entity_references,
-    reconcile_constraint_parameter_reference, resolved_feature_schema_class_from_classes,
-    row_feature_schema_classes, unique_feature_revolution_extent_kind,
+    feature_is_first_material_operation, first_material_feature_by_definition_order,
+    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
+    resolved_feature_schema_class_from_classes, row_feature_schema_classes,
+    unique_feature_revolution_extent_kind,
 };
 use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
 use crate::decode::uniqueness::{
@@ -1752,6 +1753,80 @@ fn material_base_body_uses_bounded_definition_order() {
         10,
         &[(20, 200)]
     ));
+}
+
+#[test]
+fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
+    let operation = |feature_id, root_schema_class, recipe| crate::feature::FeatureOperation {
+        feature_id,
+        kind: "Sweep".to_string(),
+        display_name_stored: false,
+        stored_name: None,
+        stored_name_bytes: None,
+        identifier_keyword: None,
+        stored_name_prefix: None,
+        recipe,
+        recipe_conflict: false,
+        display_state_conflict: false,
+        root_schema_class,
+        parent_feature_id: None,
+        offset: feature_id as usize,
+        state_offset: feature_id as usize,
+    };
+    let definition = |id, section_offset, offset| crate::feature::FeatureDefinition {
+        id,
+        owner_feature_id: Some(id),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: Some(crate::feature::FeatureSection3d {
+            sketch_plane_entity_id: None,
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_rows: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: section_offset,
+        }),
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset,
+    };
+    let transform = |definition_id, feature_id, offset| crate::placement::FeatureSectionTransform {
+        definition_id,
+        feature_id: Some(feature_id),
+        origin: [0.0; 3],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset,
+    };
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.operations.extend([
+        operation(
+            10,
+            Some(917),
+            Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
+        ),
+        operation(20, Some(917), None),
+        operation(30, Some(917), None),
+    ]);
+    scan.features.definitions.push(definition(10, 101, 100));
+    scan.features
+        .section_transforms
+        .extend([transform(10, 10, 101), transform(30, 30, 302)]);
+
+    assert!(feature_is_first_material_operation(&scan, 10));
+    assert!(!feature_is_first_material_operation(&scan, 20));
+    assert!(!feature_is_first_material_operation(&scan, 30));
 }
 
 #[test]
