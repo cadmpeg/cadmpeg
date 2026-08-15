@@ -597,7 +597,15 @@ list. A multiple-inheritance complex instance uses the parameters of its
 `PRODUCT_DEFINITION` or `PRODUCT_DEFINITION_FORMATION` partial. Product
 records use the parameters of their `PRODUCT` partial. A presentation layer
 item that references a `PRODUCT` expands to every CADIR product-definition
-view derived from that product, in source-definition order.
+view derived from that product, in source-definition order. A
+`PRESENTATION_LAYER_ASSIGNMENT` is the carrier for layer membership and layer
+visibility. `INVISIBILITY` targeting that assignment sets the layer's
+`visible=false`; it does not hide the assigned model or presentation items.
+The writer emits one assignment and a layer-targeted `INVISIBILITY` for each
+emitted hidden layer on schemas that support visibility. A target schema that
+does not support `INVISIBILITY` reports
+`presentation.hidden-layer-visibility-unsupported`, and a hidden layer with no
+emitted assignment reports `presentation.hidden-layer-omitted`.
 
 A shape representation contains at least one representation item. In a
 complex instance, its name, item list, and context use the populated

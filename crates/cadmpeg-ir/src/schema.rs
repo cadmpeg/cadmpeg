@@ -569,7 +569,7 @@ impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,
     id.0;
-    id, name, description, items
+    id, name, description, visible, items
 );
 
 #[cfg(test)]

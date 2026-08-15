@@ -936,6 +936,36 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
 }
 
 #[test]
+fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#hidden".into()),
+        name: "hidden layer".into(),
+        description: None,
+        visible: Some(false),
+        items: vec![PresentationItem::Body { body }],
+    });
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap203Edition1,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("report-mode AP203e1 layer write");
+    assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::HiddenPresentationLayerVisibilityUnsupported.kind()
+    }));
+}
+
+#[test]
 pub(crate) fn rejected_step_write_detects_incomplete_datum_system() {
     use cadmpeg_ir::ids::PmiId;
     use cadmpeg_ir::pmi::PmiDefinition;

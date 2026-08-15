@@ -128,6 +128,8 @@ pub enum StepLossCode {
     HiddenBodyVisibilityUnsupported,
     /// Hidden appearance binding visibility assignments are unsupported by the target schema.
     HiddenAppearanceVisibilityUnsupported,
+    /// Hidden presentation layer visibility assignments are unsupported by the target schema.
+    HiddenPresentationLayerVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
     /// Tessellations require an AP242 target.
@@ -170,6 +172,8 @@ pub enum StepLossCode {
     WireRegionMissingShell,
     /// Hidden bodies had no emitted STEP item and were omitted from INVISIBILITY.
     HiddenBodyOmitted,
+    /// Hidden presentation layers had no emitted STEP assignment and were omitted from INVISIBILITY.
+    HiddenPresentationLayerOmitted,
     /// Appearance bindings reference missing appearance assets.
     AppearanceBindingMissingAsset,
     /// Appearance bindings reference appearances without a base color.
@@ -327,6 +331,7 @@ impl StepLossCode {
         Self::BodyNonRigidTransform,
         Self::HiddenBodyVisibilityUnsupported,
         Self::HiddenAppearanceVisibilityUnsupported,
+        Self::HiddenPresentationLayerVisibilityUnsupported,
         Self::WireShellFreeVertices,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
@@ -348,6 +353,7 @@ impl StepLossCode {
         Self::WireRegionNoConnectedEdgeSet,
         Self::WireRegionMissingShell,
         Self::HiddenBodyOmitted,
+        Self::HiddenPresentationLayerOmitted,
         Self::AppearanceBindingMissingAsset,
         Self::AppearanceBindingNoBaseColor,
         Self::CoedgePcurveNoGeometry,
@@ -468,6 +474,9 @@ impl StepLossCode {
             Self::HiddenAppearanceVisibilityUnsupported => {
                 "presentation.hidden-appearance-visibility-unsupported"
             }
+            Self::HiddenPresentationLayerVisibilityUnsupported => {
+                "presentation.hidden-layer-visibility-unsupported"
+            }
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
@@ -491,6 +500,7 @@ impl StepLossCode {
             Self::WireRegionNoConnectedEdgeSet => "topology.wire-region-no-connected-edge-set",
             Self::WireRegionMissingShell => "topology.wire-region-missing-shell",
             Self::HiddenBodyOmitted => "body.hidden-omitted",
+            Self::HiddenPresentationLayerOmitted => "presentation.hidden-layer-omitted",
             Self::AppearanceBindingMissingAsset => "appearance.binding-missing-asset",
             Self::AppearanceBindingNoBaseColor => "appearance.binding-no-base-color",
             Self::CoedgePcurveNoGeometry => "pcurve.coedge-no-geometry",
@@ -623,6 +633,8 @@ impl StepLossCode {
             | Self::LayerItemWithoutCarrier
             | Self::HiddenBodyVisibilityUnsupported
             | Self::HiddenAppearanceVisibilityUnsupported
+            | Self::HiddenPresentationLayerVisibilityUnsupported
+            | Self::HiddenPresentationLayerOmitted
             | Self::TessellationFeatureEdges
             | Self::TessellationCornerNormals
             | Self::TessellationTriangleGroups
@@ -822,6 +834,7 @@ mod tests {
                 "body.non-rigid-transform",
                 "body.hidden-visibility-unsupported",
                 "presentation.hidden-appearance-visibility-unsupported",
+                "presentation.hidden-layer-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
@@ -843,6 +856,7 @@ mod tests {
                 "topology.wire-region-no-connected-edge-set",
                 "topology.wire-region-missing-shell",
                 "body.hidden-omitted",
+                "presentation.hidden-layer-omitted",
                 "appearance.binding-missing-asset",
                 "appearance.binding-no-base-color",
                 "pcurve.coedge-no-geometry",

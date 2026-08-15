@@ -177,6 +177,7 @@ pub(crate) struct Builder<'a> {
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
     hidden_appearance_items: Vec<Ref>,
+    hidden_presentation_layer_items: Vec<Ref>,
     unstyled_colors: usize,
     unwritten_geometry_carriers: BTreeSet<String>,
     unwritten_pcurve_carriers: BTreeSet<String>,
@@ -185,6 +186,7 @@ pub(crate) struct Builder<'a> {
     empty_wire_regions: BTreeSet<String>,
     missing_wire_shells: BTreeSet<(String, String)>,
     hidden_bodies_without_items: BTreeSet<String>,
+    hidden_presentation_layers_without_items: BTreeSet<String>,
     dangling_appearance_bindings: BTreeSet<(String, String)>,
     colorless_appearance_bindings: BTreeSet<(String, String)>,
     written_pmi: usize,
@@ -329,6 +331,7 @@ impl<'a> Builder<'a> {
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             hidden_appearance_items: Vec::new(),
+            hidden_presentation_layer_items: Vec::new(),
             unstyled_colors: 0,
             unwritten_geometry_carriers: BTreeSet::new(),
             unwritten_pcurve_carriers: BTreeSet::new(),
@@ -337,6 +340,7 @@ impl<'a> Builder<'a> {
             empty_wire_regions: BTreeSet::new(),
             missing_wire_shells: BTreeSet::new(),
             hidden_bodies_without_items: BTreeSet::new(),
+            hidden_presentation_layers_without_items: BTreeSet::new(),
             dangling_appearance_bindings: BTreeSet::new(),
             colorless_appearance_bindings: BTreeSet::new(),
             written_pmi: 0,
@@ -432,6 +436,7 @@ impl<'a> Builder<'a> {
         self.emit_appearance_visibility();
         self.emit_pmi(context);
         self.emit_layers();
+        self.emit_layer_visibility();
         self.note_unrepresented();
     }
 
@@ -901,8 +906,13 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if !assigned.is_empty() {
-                self.emitter.emit(
+            if assigned.is_empty() {
+                if layer.visible == Some(false) {
+                    self.hidden_presentation_layers_without_items
+                        .insert(layer.id.0);
+                }
+            } else {
+                let assignment = self.emitter.emit(
                     "PRESENTATION_LAYER_ASSIGNMENT",
                     &format!(
                         "{},{},{}",
@@ -911,6 +921,9 @@ impl<'a> Builder<'a> {
                         refs(&assigned)
                     ),
                 );
+                if layer.visible == Some(false) {
+                    self.hidden_presentation_layer_items.push(assignment);
+                }
             }
         }
     }
@@ -1541,6 +1554,33 @@ impl<'a> Builder<'a> {
         if !self.hidden_appearance_items.is_empty() {
             self.emitter
                 .emit("INVISIBILITY", &refs(&self.hidden_appearance_items));
+        }
+    }
+
+    fn emit_layer_visibility(&mut self) {
+        let hidden_layers = self
+            .ir
+            .model
+            .presentation_layers
+            .iter()
+            .filter(|layer| layer.visible == Some(false))
+            .count();
+        if hidden_layers == 0 {
+            return;
+        }
+        if !self.schema.supports_visibility() {
+            self.loss(
+                StepLossCode::HiddenPresentationLayerVisibilityUnsupported,
+                format!(
+                    "{hidden_layers} hidden presentation layer visibility assignment(s) are unsupported by {}",
+                    self.schema.file_schema()
+                ),
+            );
+            return;
+        }
+        if !self.hidden_presentation_layer_items.is_empty() {
+            self.emitter
+                .emit("INVISIBILITY", &refs(&self.hidden_presentation_layer_items));
         }
     }
 
@@ -3682,6 +3722,21 @@ impl<'a> Builder<'a> {
                 format!(
                     "{} hidden body/bodies had no emitted STEP item and were omitted from INVISIBILITY: {bodies}",
                     self.hidden_bodies_without_items.len()
+                ),
+            );
+        }
+        if !self.hidden_presentation_layers_without_items.is_empty() {
+            let layers = self
+                .hidden_presentation_layers_without_items
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                StepLossCode::HiddenPresentationLayerOmitted,
+                format!(
+                    "{} hidden presentation layer(s) had no emitted STEP assignment and were omitted from INVISIBILITY: {layers}",
+                    self.hidden_presentation_layers_without_items.len()
                 ),
             );
         }

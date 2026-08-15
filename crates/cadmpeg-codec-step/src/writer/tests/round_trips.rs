@@ -708,6 +708,43 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
 }
 
 #[test]
+fn writer_round_trips_presentation_layer_visibility() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#hidden".into()),
+        name: "hidden layer".into(),
+        description: Some("layer visibility".into()),
+        visible: Some(false),
+        items: vec![PresentationItem::Body { body }],
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write hidden presentation layer");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('hidden layer','layer visibility',"));
+    assert!(text.contains("INVISIBILITY"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode hidden presentation layer");
+    let layer = decoded
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "hidden layer")
+        .expect("decoded hidden presentation layer");
+    assert_eq!(layer.visible, Some(false));
+    assert_ne!(decoded.ir().model.bodies[0].visible, Some(false));
+}
+
+#[test]
 fn analytic_surfaces_map_to_their_step_entities() {
     // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![

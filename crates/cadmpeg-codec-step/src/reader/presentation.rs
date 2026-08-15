@@ -95,7 +95,8 @@ pub(super) fn decode(
     };
     let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
-    let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>)>::new();
+    let mut hidden_layer_ids = BTreeSet::new();
+    let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
     for (&id, record) in &exchange.records {
         if !has_partial(record, "INVISIBILITY") {
             continue;
@@ -107,7 +108,17 @@ pub(super) fn decode(
         };
         let mut supported = true;
         let mut style_targets = BTreeSet::new();
+        let mut layer_targets = BTreeSet::new();
         for target in items.iter().filter_map(ValueExt::reference) {
+            if exchange
+                .records
+                .get(&target)
+                .is_some_and(|record| has_partial(record, "PRESENTATION_LAYER_ASSIGNMENT"))
+            {
+                hidden_layer_ids.insert(target);
+                layer_targets.insert(target);
+                continue;
+            }
             if exchange
                 .records
                 .get(&target)
@@ -133,10 +144,10 @@ pub(super) fn decode(
                 supported = false;
             }
         }
-        if style_targets.is_empty() && supported {
+        if style_targets.is_empty() && layer_targets.is_empty() && supported {
             typed.insert(id);
-        } else if !style_targets.is_empty() {
-            deferred_invisibility.insert(id, (supported, style_targets));
+        } else if !style_targets.is_empty() || !layer_targets.is_empty() {
+            deferred_invisibility.insert(id, (supported, style_targets, layer_targets));
         }
     }
     for (&layer_id, layer) in &exchange.records {
@@ -210,6 +221,7 @@ pub(super) fn decode(
             id: LayerId(StepIdentity::presentation("layer", layer_id)),
             name,
             description,
+            visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items,
         });
         typed.insert(layer_id);
@@ -431,7 +443,7 @@ pub(super) fn decode(
         typed.extend(color_cache.keys().map(|(id, _)| *id));
         typed.insert(color_id);
     }
-    for (invisibility_id, (mut supported, style_targets)) in deferred_invisibility {
+    for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
             let source_id = format!("#{style_id}");
             let mut matched = false;
@@ -444,6 +456,23 @@ pub(super) fn decode(
             if !matched {
                 warnings.push(format!(
                     "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
+                ));
+                supported = false;
+            }
+        }
+        for layer_id in layer_targets {
+            let expected_id = StepIdentity::presentation("layer", layer_id);
+            let mut matched = false;
+            for layer in &mut ir.model.presentation_layers {
+                if layer.id.0 == expected_id {
+                    layer.visible = Some(false);
+                    matched = true;
+                    break;
+                }
+            }
+            if !matched {
+                warnings.push(format!(
+                    "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
                 ));
                 supported = false;
             }
@@ -552,17 +581,6 @@ fn collect_invisible_body_ids(
         styled_item_parts(record)
             .and_then(|parts| parts.target.reference())
             .into_iter()
-            .collect::<Vec<_>>()
-    } else if record
-        .partials
-        .iter()
-        .any(|partial| partial.name == "PRESENTATION_LAYER_ASSIGNMENT")
-    {
-        partial_parameter(record, "PRESENTATION_LAYER_ASSIGNMENT", 2)
-            .and_then(ValueExt::list)
-            .into_iter()
-            .flatten()
-            .filter_map(ValueExt::reference)
             .collect::<Vec<_>>()
     } else if record
         .partials

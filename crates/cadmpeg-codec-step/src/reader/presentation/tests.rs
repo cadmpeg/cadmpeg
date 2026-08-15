@@ -633,6 +633,35 @@ fn styled_item_invisibility_is_binding_scoped() {
 }
 
 #[test]
+fn presentation_layer_invisibility_is_layer_scoped() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('layer point',(0.,0.,0.));
+#2=PRESENTATION_LAYER_ASSIGNMENT('hidden layer','',(#1));
+#3=INVISIBILITY((#2));",
+    );
+    let layer = result
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "hidden layer")
+        .expect("hidden presentation layer");
+    assert_eq!(layer.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #3 targets unsupported item #2")
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#3"));
+}
+
+#[test]
 fn presentation_records_retain_non_color_geometry_owners() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -891,6 +920,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
         id: LayerId("test:layer#body".into()),
         name: "all body regions".into(),
         description: None,
+        visible: None,
         items: vec![PresentationItem::Body { body }],
     });
 
@@ -1206,6 +1236,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
         id: LayerId("test:layer#point".to_string()),
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
+        visible: None,
         items: vec![PresentationItem::Point { point }],
     });
 
@@ -1325,6 +1356,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         id: LayerId("test:layer#mixed".into()),
         name: "mixed layer".into(),
         description: None,
+        visible: None,
         items: vec![
             PresentationItem::Product {
                 product: parent_product,

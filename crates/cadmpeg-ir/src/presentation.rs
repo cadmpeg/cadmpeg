@@ -190,6 +190,9 @@ pub struct PresentationLayer {
     /// Optional layer description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Explicit layer visibility; `false` means the layer is hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
     /// Assigned items in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<PresentationItem>,
@@ -210,6 +213,7 @@ mod tests {
             id: LayerId("test:presentation:layer#construction".into()),
             name: "construction".into(),
             description: None,
+            visible: None,
             items: vec![PresentationItem::Source {
                 source_id: "#42".into(),
             }],
@@ -225,6 +229,7 @@ mod tests {
             id: LayerId("test:presentation:layer#missing".into()),
             name: "missing".into(),
             description: None,
+            visible: None,
             items: vec![PresentationItem::Face {
                 face: FaceId("test:model:face#missing".into()),
             }],
