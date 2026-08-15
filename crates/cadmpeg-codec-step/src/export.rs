@@ -2567,6 +2567,22 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn pmi_target_ref(&self, target: &PmiTarget) -> Option<Ref> {
+        match target {
+            PmiTarget::Body { body } => self
+                .body_step_refs
+                .get(body.as_str())
+                .copied()
+                .or_else(|| self.body_shape_refs.get(body.as_str()).copied()),
+            PmiTarget::Face { face } => self.face_step_refs.get(face.as_str()).copied(),
+            PmiTarget::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
+            PmiTarget::Vertex { vertex } => self.vertex_refs.get(vertex.as_str()).copied(),
+            PmiTarget::Product { .. }
+            | PmiTarget::Occurrence { .. }
+            | PmiTarget::ShapeAspect { .. } => None,
+        }
+    }
+
     fn emit_pmi(&mut self, context: Ref) {
         if self.ir.model.pmi.is_empty() || !self.schema.supports_semantic_pmi() {
             return;
@@ -2602,11 +2618,57 @@ impl<'a> Builder<'a> {
                 }
             })
         };
+        let mut target_items = Vec::new();
+        for annotation in &annotations {
+            if matches!(&annotation.definition, PmiDefinition::Presentation { .. }) {
+                continue;
+            }
+            for target in &annotation.targets {
+                if let Some(target_ref) = self.pmi_target_ref(target) {
+                    if !target_items.contains(&target_ref) {
+                        target_items.push(target_ref);
+                    }
+                }
+            }
+        }
+        let target_representation = (!target_items.is_empty()).then(|| {
+            self.emitter.emit(
+                "SHAPE_REPRESENTATION",
+                &format!("'PMI geometric targets',{},{context}", refs(&target_items)),
+            )
+        });
+        let mut targets_exact_by_annotation = HashMap::new();
+        for annotation in &annotations {
+            let semantic = !matches!(&annotation.definition, PmiDefinition::Presentation { .. });
+            let definition = target_ref(annotation).unwrap_or(fallback_aspect);
+            let mut exact = true;
+            for target in &annotation.targets {
+                let Some(identified_item) = self.pmi_target_ref(target) else {
+                    if !matches!(target, PmiTarget::ShapeAspect { .. }) {
+                        exact = false;
+                    }
+                    continue;
+                };
+                let Some(used_representation) = target_representation else {
+                    exact = false;
+                    continue;
+                };
+                if semantic {
+                    self.emitter.emit(
+                        "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+                        &format!("'','',{definition},{used_representation},{identified_item}"),
+                    );
+                } else {
+                    exact = false;
+                }
+            }
+            targets_exact_by_annotation.insert(annotation.id.clone(), exact);
+        }
         let targets_exact = |annotation: &cadmpeg_ir::PmiAnnotation| {
-            annotation
-                .targets
-                .iter()
-                .all(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+            targets_exact_by_annotation
+                .get(&annotation.id)
+                .copied()
+                .unwrap_or(false)
         };
 
         for annotation in &annotations {

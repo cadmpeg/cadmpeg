@@ -306,7 +306,13 @@ fn decode_exchange_mode(
     let mut tessellation =
         tessellation::decode(exchange, &geometry.value, &topology.value, &mut session.ir);
     session.charge_stage("step_pmi_decode")?;
-    let mut pmi = pmi::decode(exchange, &geometry.value, &mut session.ir, session.ctx);
+    let mut pmi = pmi::decode(
+        exchange,
+        &geometry.value,
+        &topology.value,
+        &mut session.ir,
+        session.ctx,
+    );
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
         exchange,

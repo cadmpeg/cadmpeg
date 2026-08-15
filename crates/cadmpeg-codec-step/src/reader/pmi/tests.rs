@@ -904,3 +904,84 @@ fn complex_datum_reads_identification_from_its_named_partial() {
         }]
     );
 }
+
+#[test]
+fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
+    use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiTarget};
+
+    let source =
+        String::from_utf8(include_bytes!("../../../tests/fixtures/ap203_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "ENDSEC;\nEND-ISO-10303-21;",
+                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\nENDSEC;\nEND-ISO-10303-21;",
+            );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode geometric item usage");
+    let dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#41")
+        .expect("dimension annotation");
+    assert!(matches!(
+        dimension.definition,
+        PmiDefinition::Dimension {
+            dimension: DimensionKind::Diameter,
+            ..
+        }
+    ));
+    assert!(dimension.targets.contains(&PmiTarget::ShapeAspect {
+        source_id: "#39".into()
+    }));
+    assert!(dimension.targets.contains(&PmiTarget::Face {
+        face: cadmpeg_ir::ids::FaceId("step:data:face#29".into())
+    }));
+    assert!(dimension.targets.contains(&PmiTarget::Vertex {
+        vertex: cadmpeg_ir::ids::VertexId("step:data:vertex#6".into())
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| {
+            matches!(
+                record.id.0.as_str(),
+                "step:data:geometric_item_specific_usage#43"
+                    | "step:data:geometric_item_specific_usage#44"
+            )
+        }));
+
+    let mut output = Vec::new();
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write geometric item usage");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
+    assert!(String::from_utf8_lossy(&output).contains("GEOMETRIC_ITEM_SPECIFIC_USAGE"));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written geometric item usage");
+    let roundtripped_dimension = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("diameter"))
+        .expect("roundtripped dimension");
+    assert!(roundtripped_dimension.targets.iter().any(|target| matches!(
+        target,
+        PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
+    )));
+}

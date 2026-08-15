@@ -690,6 +690,11 @@ A unique item named `nominal value` supplies the nominal. When that name is
 absent, exactly one measure item supplies the nominal; multiple unnamed items
 are ambiguous and do not supply one. Complex measure records referenced by a
 characteristic representation remain typed measure carriers.
+`GEOMETRIC_ITEM_SPECIFIC_USAGE` resolves a shape-aspect definition, including a
+definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
+topology item. A resolved face, edge, vertex, or body is added as a typed PMI
+target while the source shape-aspect target remains. An unresolved usage remains
+source-native with its identity and links.
 Geometric validation properties read area, volume, and centroid values through
 inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
 `MEASURE_WITH_UNIT` partials. Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes and

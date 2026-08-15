@@ -19,6 +19,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
 use super::geometry::GeometryData;
+use super::topology::TopologyData;
 use super::StageOutcome;
 
 struct MeasureContext<'a> {
@@ -31,6 +32,7 @@ struct MeasureContext<'a> {
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
+    topology: &TopologyData,
     ir: &mut CadIr,
     ctx: Option<&DecodeContext<'_>>,
 ) -> StageOutcome<()> {
@@ -572,6 +574,15 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
+    resolve_geometric_item_usages(
+        exchange,
+        topology,
+        &shape_aspects,
+        &annotations,
+        ir,
+        &mut typed,
+    );
+
     let targeted_aspects = ir
         .model
         .pmi
@@ -642,6 +653,140 @@ fn mark_characteristic_representations(
             );
         }
     }
+}
+
+fn resolve_geometric_item_usages(
+    exchange: &Exchange,
+    topology: &TopologyData,
+    shape_aspects: &BTreeSet<u64>,
+    annotations: &BTreeMap<u64, usize>,
+    ir: &mut CadIr,
+    typed: &mut HashSet<u64>,
+) {
+    let mut aspect_annotations = BTreeMap::<u64, BTreeSet<usize>>::new();
+    for (&annotation_id, &annotation_index) in annotations {
+        if shape_aspects.contains(&annotation_id) {
+            aspect_annotations
+                .entry(annotation_id)
+                .or_default()
+                .insert(annotation_index);
+        }
+        let Some(record) = exchange.records.get(&annotation_id) else {
+            continue;
+        };
+        for reference in all_parameters(record).flat_map(references) {
+            if shape_aspects.contains(&reference) {
+                aspect_annotations
+                    .entry(reference)
+                    .or_default()
+                    .insert(annotation_index);
+            }
+        }
+    }
+
+    let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for record in exchange.records.values() {
+        let Some(partial) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "SHAPE_ASPECT_RELATIONSHIP")
+        else {
+            continue;
+        };
+        let Some(relating) = partial.parameters.get(2).and_then(first_reference) else {
+            continue;
+        };
+        let Some(related) = partial.parameters.get(3).and_then(first_reference) else {
+            continue;
+        };
+        relationship_aspects
+            .entry(relating)
+            .or_default()
+            .insert(related);
+        relationship_aspects
+            .entry(related)
+            .or_default()
+            .insert(relating);
+    }
+
+    for record in exchange.records.values() {
+        let Some(partial) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE")
+        else {
+            continue;
+        };
+        let Some(definition) = partial.parameters.get(2).and_then(first_reference) else {
+            continue;
+        };
+        let Some(identified_item) = partial.parameters.get(4).and_then(first_reference) else {
+            continue;
+        };
+        let mut annotation_indices = aspect_annotations
+            .get(&definition)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(aspects) = relationship_aspects.get(&definition) {
+            for aspect in aspects {
+                annotation_indices.extend(
+                    aspect_annotations
+                        .get(aspect)
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
+            }
+        }
+        if annotation_indices.is_empty() {
+            continue;
+        }
+        let targets = topology_targets(identified_item, topology);
+        if targets.is_empty() {
+            continue;
+        }
+        for annotation_index in annotation_indices {
+            let annotation = &mut ir.model.pmi[annotation_index];
+            for target in &targets {
+                if !annotation.targets.contains(target) {
+                    annotation.targets.push(target.clone());
+                }
+            }
+        }
+        typed.insert(record.id);
+    }
+}
+
+fn topology_targets(id: u64, topology: &TopologyData) -> Vec<PmiTarget> {
+    let mut targets = Vec::new();
+    for body in topology.body_by_root.get(&id).into_iter().flatten() {
+        push_target(&mut targets, PmiTarget::Body { body: body.clone() });
+    }
+    for face in topology.faces_by_source.get(&id).into_iter().flatten() {
+        push_target(&mut targets, PmiTarget::Face { face: face.clone() });
+    }
+    for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
+        push_target(&mut targets, PmiTarget::Edge { edge: edge.clone() });
+    }
+    for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
+        push_target(
+            &mut targets,
+            PmiTarget::Vertex {
+                vertex: vertex.clone(),
+            },
+        );
+    }
+    targets
+}
+
+fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
+    if !targets.contains(&target) {
+        targets.push(target);
+    }
+}
+
+fn first_reference(value: &Value) -> Option<u64> {
+    references(value).into_iter().next()
 }
 
 fn datum_references(
