@@ -20,6 +20,8 @@ use crate::object_graph::ObjectPayload;
 use crate::test_support::*;
 use crate::CatiaCodec;
 
+mod reference_planes;
+
 fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
     CatiaDesignObject {
         id: id.to_string(),
@@ -1955,8 +1957,14 @@ fn visualization_values_do_not_assert_missing_design_intent() {
 }
 
 #[test]
-fn decode_does_not_promote_operation_field_class_names_to_features() {
-    for class in ["Groove", "GSMHelix", "CircPattern_RadialNumber"] {
+fn decode_does_not_promote_field_class_names_to_features() {
+    for class in [
+        "Groove",
+        "GSMHelix",
+        "CircPattern_RadialNumber",
+        "GSMPlaneAngle",
+        "GSMPlaneOffset",
+    ] {
         let decoded = CatiaCodec
             .decode(
                 &mut Cursor::new(standard_catpart_with_design_class(class)),

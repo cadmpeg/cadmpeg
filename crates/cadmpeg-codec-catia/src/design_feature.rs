@@ -25,6 +25,7 @@ pub(crate) struct DesignFeatureTransfer {
     pub(crate) native_operation_definition_value_records: HashSet<String>,
     pub(crate) native_operation_definition_chain_value_records: HashSet<String>,
     pub(crate) principal_plane_records: HashSet<String>,
+    pub(crate) reference_plane_records: HashSet<String>,
     pub(crate) sketch_owner_records: HashSet<String>,
 }
 
@@ -32,6 +33,7 @@ impl DesignFeatureTransfer {
     pub(crate) fn consumed_records(&self) -> HashSet<String> {
         self.principal_plane_records
             .union(&self.sketch_owner_records)
+            .chain(self.reference_plane_records.iter())
             .chain(self.native_operation_records.iter())
             .chain(self.native_operation_definition_value_records.iter())
             .chain(self.native_operation_definition_chain_value_records.iter())
@@ -520,15 +522,24 @@ pub(crate) fn transfer_design_features(
     {
         let plane_candidate = principal_plane_candidate(object, &records);
         let sketch_owner = sketch_candidate(object, &records);
+        let reference_plane = reference_plane_candidate(object, &records);
         let native_operation = native_operation_candidate(object, &records);
-        match (plane_candidate, sketch_owner, native_operation) {
-            (Some(candidate), None, None) => {
+        match (
+            plane_candidate,
+            sketch_owner,
+            reference_plane,
+            native_operation,
+        ) {
+            (Some(candidate), None, None, None) => {
                 transfer_principal_plane(ir, &mut transfer, candidate);
             }
-            (None, Some(owner_record), None) => {
+            (None, Some(owner_record), None, None) => {
                 transfer_sketch(ir, &mut transfer, object, owner_record);
             }
-            (None, None, Some(candidate)) => {
+            (None, None, Some(candidate), None) => {
+                transfer_reference_plane(ir, &mut transfer, &candidate);
+            }
+            (None, None, None, Some(candidate)) => {
                 transfer_native_operation(
                     ir,
                     &mut transfer,
@@ -538,12 +549,11 @@ pub(crate) fn transfer_design_features(
                     &native_operation_object_ids,
                 );
             }
-            (Some(_), Some(_), _) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => {
+            _ => {
                 // One object cannot safely occupy two neutral feature identities.
                 // Leave all declarations unresolved so the feature-id map cannot
                 // overwrite one transfer with another.
             }
-            (None, None, None) => {}
         }
     }
 
@@ -583,6 +593,34 @@ fn transfer_principal_plane(
             .into_iter()
             .map(|record| record.id.clone()),
     );
+}
+
+fn transfer_reference_plane(
+    ir: &mut CadIr,
+    transfer: &mut DesignFeatureTransfer,
+    candidate: &ReferencePlaneCandidate<'_>,
+) {
+    let object = candidate.object;
+    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some(candidate.kind.to_string()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPlaneUnresolved,
+        native_ref: Some(object.id.clone()),
+    });
+    transfer.feature_ids.insert(object.id.clone(), feature_id);
+    transfer
+        .reference_plane_records
+        .insert(candidate.owner_record.id.clone());
 }
 
 fn transfer_sketch(
@@ -630,6 +668,31 @@ struct NativeOperationCandidate<'a> {
     object: &'a CatiaDesignObject,
     owner_record: &'a CatiaObjectRecord,
     kind: &'a str,
+}
+
+struct ReferencePlaneCandidate<'a> {
+    object: &'a CatiaDesignObject,
+    owner_record: &'a CatiaObjectRecord,
+    kind: &'a str,
+}
+
+fn reference_plane_candidate<'a>(
+    object: &'a CatiaDesignObject,
+    records: &HashMap<&str, &'a CatiaObjectRecord>,
+) -> Option<ReferencePlaneCandidate<'a>> {
+    let owner_class = object.owner_class.as_ref()?;
+    is_admitted_native_reference_plane_class(&owner_class.name).then_some(())?;
+    let owner_record_id = object.owner_record.as_deref()?;
+    let owner_record = records.get(owner_record_id).copied()?;
+    (owner_record.class_name.as_deref() == Some(owner_class.name.as_str())
+        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
+        && owner_record.entity_id == Some(object.owner_entity_id)
+        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
+    .then_some(ReferencePlaneCandidate {
+        object,
+        owner_record,
+        kind: owner_class.name.as_str(),
+    })
 }
 
 fn native_operation_candidate<'a>(
@@ -694,6 +757,10 @@ pub(crate) fn is_admitted_native_operation_class(name: &str) -> bool {
             | "CircPattern_RadialNumber"
             | "Sweep_ThickThin1"
     )
+}
+
+pub(crate) fn is_admitted_native_reference_plane_class(name: &str) -> bool {
+    matches!(name, "GSMPlaneAngle" | "GSMPlaneOffset")
 }
 
 fn transfer_native_operation(

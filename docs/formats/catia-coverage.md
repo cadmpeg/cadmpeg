@@ -343,6 +343,11 @@ current levels require those matrices and representative fixtures.
   history node with the design object's first-field byte offset as its source
   history ordinal. Schema fields named `PRTSketch` or `Sketch` do not establish
   sketch instances.
+- Exact separator-form owner declarations for `GSMPlaneAngle` and
+  `GSMPlaneOffset` transfer unresolved constructed-reference-plane family nodes
+  with source order, identity, and structural parent linkage. The transfer does
+  not assign support, angle, signed offset, normal, in-plane frame, or
+  construction dependencies; this slice does not raise the CATIA score.
 - Exact separator-form owner declarations for the admitted operation classes
   `EdgeFillet`, `Prism_EndLimit_Length`, `Prism_ThickThin1`,
   `Prism_ThickThin2`, `Revol_ThickThin1`, `Sweep_ThickThin1`, and
