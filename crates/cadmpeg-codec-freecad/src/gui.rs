@@ -67,10 +67,19 @@ pub(crate) fn transfer(
         .children()
         .filter(|node| node.has_tag_name("Camera"))
         .count();
-    if schema_version == Some(1) && camera_count != 1 {
-        return Err(CodecError::Malformed(format!(
+    let camera_error = if schema_version != Some(1) {
+        Some(format!(
+            "GuiDocument.xml supports only schema 1, found {schema_version:?}"
+        ))
+    } else if camera_count != 1 {
+        Some(format!(
             "GuiDocument.xml schema 1 requires one Camera record, found {camera_count}"
-        )));
+        ))
+    } else {
+        None
+    };
+    if let Some(message) = camera_error {
+        return Err(CodecError::Malformed(message));
     }
     let states = root
         .children()

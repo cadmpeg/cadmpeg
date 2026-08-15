@@ -119,6 +119,7 @@ fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui_documents = [
         r#"<Document schemaVersion="1"><ViewProviderData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="first"/><Camera settings="second"/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera><Position x="NaN" y="1" z="2"/></Camera></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera><Position x="0" y="0" z="0"/></Camera></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera orientation="NaN 0 0 1"/></Document>"#,

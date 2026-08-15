@@ -87,22 +87,6 @@ neutral presentation field.
 **Note.** Native retention is not semantic evidence. An unregistered property can still have
 neutral meaning; the closure does not establish that every such type is opaque.
 
-### GP-08. GUI camera cardinality for accepted schema values
-
-**Question.** What camera cardinality applies when GuiDocument.xml declares a schema other than
-schema 1?
-
-**Known.** FreeCAD Document.cpp writes SchemaVersion="1" and one Camera element. Schema 1
-requires exactly one direct Camera in the decoder.
-
-**Conflict.** gui.rs:66-74 applies the cardinality check only when schema_version is 1.
-gui.rs:376-390 then creates a neutral camera only when exactly one Camera exists and otherwise
-silently stores no camera. A canonical schema value other than 1 with two cameras is accepted,
-retains both native states, and drops the neutral camera without a loss.
-
-**Need.** Reject unsupported GUI schema values or define and preserve camera cardinality for each
-accepted schema. Do not turn multiple serialized cameras into an absent neutral camera.
-
 ## 3. Persistent topology identity
 
 ### PT-04. Source topology index provenance
