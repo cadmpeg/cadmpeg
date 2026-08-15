@@ -1954,6 +1954,15 @@ polycurve segment are two-dimensional curve payloads in extrusion profile
 coordinates. Profile coordinates use document length conversion before the
 profile frame places them at the trimmed path endpoints.
 
+The profile orientation is the sign of its oriented area in the profile plane.
+The outer boundary is positive and every inner boundary is negative. A
+nonperiodic boundary is closed when its evaluated endpoints are coincident by
+the archive point-coincidence rule; a periodic boundary is closed by its
+periodic flag. Analytic and compound profile curves use their exact NURBS
+representation for this rule. A single open outer boundary has orientation
+zero and is valid only without caps. Multiple boundaries must be closed and
+must have the outer-then-inner orientation sequence above.
+
 ## 17. SubD
 
 `ON_SubD` begins with a one-byte SubDimple presence flag. Zero is empty; one is

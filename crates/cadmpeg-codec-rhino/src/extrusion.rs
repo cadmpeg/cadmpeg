@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 
+use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -19,6 +20,8 @@ pub(crate) const ON_EXTRUSION: Uuid = Uuid::from_canonical([
 const ANONYMOUS: u32 = 0x4000_8000;
 const UNIT_TOLERANCE: f64 = 1.0e-10;
 const MITER_Z_MINIMUM: f64 = 1.0 / 64.0;
+const CLOSURE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
+const CLOSURE_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
 
 /// One exact profile boundary at both effective path ends.
 #[derive(Debug, Clone)]
@@ -323,42 +326,98 @@ fn split_profiles(
 }
 
 fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, GeometryError> {
-    if curve.compound.is_some() {
-        return Err(error(
-            offset,
-            "nested profile orientation cannot be established exactly",
-        ));
+    let curve = exact_nurbs(curve, offset)?;
+    if curve.control_points.len() < 2 || curve.degree == 0 {
+        return Err(error(offset, "extrusion profile closure is degenerate"));
     }
-    match &curve.geometry {
-        CurveGeometry::Circle { axis, .. } if axis.x == 0.0 && axis.y == 0.0 && axis.z != 0.0 => {
-            Ok(if axis.z > 0.0 { 1 } else { -1 })
-        }
-        CurveGeometry::Nurbs(curve)
-            if curve.degree == 1 && !curve.periodic && curve.control_points.len() >= 2 =>
-        {
-            if curve.control_points.first() != curve.control_points.last() {
-                return Ok(0);
-            }
-            if curve.control_points.len() < 4 {
-                return Err(error(offset, "extrusion profile closure is degenerate"));
-            }
-            let mut twice_area = 0.0;
-            for segment in curve.control_points.windows(2) {
-                if segment[0].z != 0.0 || segment[1].z != 0.0 {
-                    return Err(error(offset, "extrusion profile is not in the XY plane"));
-                }
-                twice_area += segment[0].x * segment[1].y - segment[1].x * segment[0].y;
-            }
-            if !twice_area.is_finite() || twice_area == 0.0 {
-                return Err(error(offset, "extrusion profile orientation is degenerate"));
-            }
-            Ok(if twice_area > 0.0 { 1 } else { -1 })
-        }
-        _ => Err(error(
-            offset,
-            "extrusion profile closure and orientation are not exactly representable",
-        )),
+    if curve.control_points.iter().any(|point| point.z != 0.0) {
+        return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
+    let domain = nurbs_curve_parameter_domain(&curve)
+        .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))?;
+    let start = evaluate_profile_point(&curve, domain[0], offset)?;
+    let end = evaluate_profile_point(&curve, domain[1], offset)?;
+    if !curve.periodic && !points_coincident(start, end) {
+        return Ok(0);
+    }
+
+    let degree = usize::try_from(curve.degree)
+        .map_err(|_| error(offset, "extrusion profile degree is too large"))?;
+    let span_count = curve
+        .knots
+        .windows(2)
+        .filter(|pair| pair[0] < pair[1] && pair[1] > domain[0] && pair[0] < domain[1])
+        .count();
+    if span_count == 0 {
+        return Err(error(offset, "extrusion profile has no nonempty spans"));
+    }
+    let mut samples_per_span = degree.max(4);
+    while span_count.checked_mul(samples_per_span).ok_or_else(|| {
+        error(
+            offset,
+            "extrusion profile orientation sample count overflow",
+        )
+    })? < 17
+    {
+        samples_per_span = samples_per_span.checked_mul(2).ok_or_else(|| {
+            error(
+                offset,
+                "extrusion profile orientation sample count overflow",
+            )
+        })?;
+    }
+
+    let mut previous = start;
+    let mut twice_area = 0.0;
+    for pair in curve.knots.windows(2) {
+        let span_start = pair[0].max(domain[0]);
+        let span_end = pair[1].min(domain[1]);
+        if span_start >= span_end {
+            continue;
+        }
+        for sample in 1..=samples_per_span {
+            let fraction = sample as f64 / samples_per_span as f64;
+            let parameter = span_start + fraction * (span_end - span_start);
+            let current = evaluate_profile_point(&curve, parameter, offset)?;
+            twice_area += (previous.x - current.x) * (previous.y + current.y);
+            previous = current;
+        }
+    }
+    twice_area += (previous.x - start.x) * (previous.y + start.y);
+    if !twice_area.is_finite() || twice_area == 0.0 {
+        return Err(error(offset, "extrusion profile orientation is degenerate"));
+    }
+    Ok(if twice_area > 0.0 { 1 } else { -1 })
+}
+
+fn evaluate_profile_point(
+    curve: &NurbsCurve,
+    parameter: f64,
+    offset: usize,
+) -> Result<Point3, GeometryError> {
+    nurbs_curve_point(
+        curve.degree,
+        &curve.knots,
+        &curve.control_points,
+        curve.weights.as_deref(),
+        parameter,
+    )
+    .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    .ok_or_else(|| error(offset, "extrusion profile cannot be evaluated"))
+}
+
+fn points_coincident(first: Point3, second: Point3) -> bool {
+    [
+        (first.x, second.x),
+        (first.y, second.y),
+        (first.z, second.z),
+    ]
+    .into_iter()
+    .all(|(a, b)| {
+        let difference = (a - b).abs();
+        difference <= CLOSURE_ABSOLUTE_TOLERANCE
+            || difference <= (a.abs() + b.abs()) * CLOSURE_RELATIVE_TOLERANCE
+    })
 }
 
 fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
@@ -1033,6 +1092,47 @@ pub(crate) mod tests {
         }
     }
 
+    fn decoded_quadratic_circle(clockwise: bool) -> DecodedCurve {
+        let radius = 2.0;
+        let mut points = vec![
+            Point3::new(radius, 0.0, 0.0),
+            Point3::new(radius, radius, 0.0),
+            Point3::new(0.0, radius, 0.0),
+            Point3::new(-radius, radius, 0.0),
+            Point3::new(-radius, 0.0, 0.0),
+            Point3::new(-radius, -radius, 0.0),
+            Point3::new(0.0, -radius, 0.0),
+            Point3::new(radius, -radius, 0.0),
+            Point3::new(radius, CLOSURE_ABSOLUTE_TOLERANCE / 2.0, 0.0),
+        ];
+        let mut weights = vec![
+            1.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            1.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            1.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            1.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            1.0,
+        ];
+        if clockwise {
+            points.reverse();
+            weights.reverse();
+        }
+        DecodedCurve {
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+                control_points: points,
+                weights: Some(weights),
+                periodic: false,
+            }),
+            compound: None,
+            warnings: Vec::new(),
+        }
+    }
+
     #[test]
     fn anonymous_versions_1_0_through_1_3_apply_exact_gates_and_defaults() {
         for minor in 0..=3 {
@@ -1108,7 +1208,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn orientation_is_exact_only_for_closed_nondegenerate_supported_profiles() {
+    fn orientation_supports_polygon_rational_and_open_profiles() {
         assert_eq!(
             exact_orientation(&decoded_polygon(false, true), 0).expect("required invariant"),
             1
@@ -1120,6 +1220,14 @@ pub(crate) mod tests {
         assert_eq!(
             exact_orientation(&decoded_polygon(false, false), 0).expect("required invariant"),
             0
+        );
+        assert_eq!(
+            exact_orientation(&decoded_quadratic_circle(false), 0).expect("required invariant"),
+            1
+        );
+        assert_eq!(
+            exact_orientation(&decoded_quadratic_circle(true), 0).expect("required invariant"),
+            -1
         );
         let mut off_plane = decoded_polygon(false, true);
         let CurveGeometry::Nurbs(curve) = &mut off_plane.geometry else {
