@@ -345,6 +345,16 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -
     }
 }
 
+fn base_feature_body_selection_is_resolved(
+    selection: &cadmpeg_ir::features::BodySelection,
+) -> bool {
+    body_selection_is_resolved(selection)
+        || matches!(
+            selection,
+            cadmpeg_ir::features::BodySelection::Resolved { bodies, .. } if bodies.is_empty()
+        )
+}
+
 fn point_is_finite(point: &cadmpeg_ir::math::Point3) -> bool {
     [point.x, point.y, point.z].into_iter().all(f64::is_finite)
 }
@@ -716,9 +726,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
         FeatureDefinition::SketchBlockInstance { block, .. } => block.is_none(),
         FeatureDefinition::Form { cages } => cages.is_empty(),
-        FeatureDefinition::BaseFeature { bodies } | FeatureDefinition::InsertBodies { bodies } => {
-            !body_selection_is_resolved(bodies)
+        FeatureDefinition::BaseFeature { bodies } => {
+            !base_feature_body_selection_is_resolved(bodies)
         }
+        FeatureDefinition::InsertBodies { bodies } => !body_selection_is_resolved(bodies),
         FeatureDefinition::Shell {
             bodies,
             removed_faces,

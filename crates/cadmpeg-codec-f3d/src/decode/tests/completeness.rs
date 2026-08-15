@@ -27,6 +27,33 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
 }
 
 #[test]
+fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: Vec::new(),
+                native: "native:base-feature".into(),
+            },
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Native("native:base-feature".into()),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::InsertBodies {
+            bodies: BodySelection::Resolved {
+                bodies: Vec::new(),
+                native: "native:insert-bodies".into(),
+            },
+        }
+    ));
+}
+
+#[test]
 fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     use cadmpeg_ir::features::{
         AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition, Length,
