@@ -41,7 +41,7 @@ pub(crate) fn transfer(
     payloads: &[ShapePayloadRecord],
     entries: &[EntryRecord],
     program_version: Option<&str>,
-) -> Result<(), CodecError> {
+) -> Result<BTreeSet<String>, CodecError> {
     let properties_by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
         |mut map, property| {
@@ -87,7 +87,7 @@ pub(crate) fn transfer(
         .iter()
         .map(|candidate| (feature_id(candidate), candidate.order))
         .collect::<HashMap<_, _>>();
-    let feature_ordinals = feature_ordinals(
+    let (feature_ordinals, cycle_affected) = feature_ordinals(
         objects,
         &properties_by_owner,
         &parent_by_member,
@@ -108,7 +108,7 @@ pub(crate) fn transfer(
             .cloned()
             .unwrap_or_default();
         let id = feature_id(object);
-        let definition = if is_spreadsheet(&object.type_name) {
+        let mut definition = if is_spreadsheet(&object.type_name) {
             ir.model.spreadsheets.push(append_spreadsheet(
                 &mut ir.model.parameters,
                 object,
@@ -392,6 +392,13 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             }
         };
+        if cycle_affected.contains(object.id.as_str()) {
+            definition = FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            };
+        }
         let semantic_dependencies = match &definition {
             FeatureDefinition::Pattern { seeds, .. } => seeds
                 .iter()
@@ -481,7 +488,7 @@ pub(crate) fn transfer(
         });
     }
     bind_parameter_dependencies(&mut ir.model.parameters, objects);
-    Ok(())
+    Ok(cycle_affected)
 }
 
 fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
@@ -567,7 +574,7 @@ fn feature_ordinals<'a>(
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
     source_order: &HashMap<FeatureId, usize>,
-) -> HashMap<&'a str, u64> {
+) -> (HashMap<&'a str, u64>, BTreeSet<String>) {
     let design_objects = objects
         .iter()
         .filter(|object| is_design_object(&object.type_name))
@@ -591,6 +598,7 @@ fn feature_ordinals<'a>(
     source_ordinals.sort_unstable();
     let mut emitted = BTreeSet::new();
     let mut ordinals = HashMap::new();
+    let mut cycle_affected = BTreeSet::new();
 
     while emitted.len() < design_objects.len() {
         let next = design_objects
@@ -665,20 +673,26 @@ fn feature_ordinals<'a>(
                     .all(|(_, dependency)| emitted.contains(dependency))
             })
             .min_by_key(|object| object.order);
-        let next = next.unwrap_or_else(|| {
-            design_objects
+        let next = if let Some(next) = next {
+            next
+        } else {
+            let remaining = design_objects
                 .iter()
                 .copied()
                 .filter(|object| !emitted.contains(object.id.as_str()))
+                .collect::<Vec<_>>();
+            cycle_affected.extend(remaining.iter().map(|object| object.id.clone()));
+            remaining
+                .into_iter()
                 .min_by_key(|object| object.order)
                 .expect("the loop has at least one un-emitted design object")
-        });
+        };
         let ordinal = source_ordinals[ordinals.len()];
         emitted.insert(next.id.as_str());
         ordinals.insert(next.id.as_str(), ordinal);
     }
 
-    ordinals
+    (ordinals, cycle_affected)
 }
 
 /// Wrap an operation in its shape-refinement and boolean-tolerance controls.
@@ -5064,17 +5078,19 @@ fn is_datum(kind: &str) -> bool {
     )
 }
 fn is_extrusion(kind: &str) -> bool {
-    kind.contains("PartDesign::Pad")
-        || kind.contains("PartDesign::Pocket")
-        || kind.contains("Part::Extrusion")
+    matches!(
+        kind,
+        "PartDesign::Pad" | "PartDesign::Pocket" | "Part::Extrusion"
+    )
 }
 fn is_hole(kind: &str) -> bool {
     kind == "PartDesign::Hole"
 }
 fn is_revolution(kind: &str) -> bool {
-    kind.contains("PartDesign::Revolution")
-        || kind.contains("PartDesign::Groove")
-        || kind.contains("Part::Revolution")
+    matches!(
+        kind,
+        "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
+    )
 }
 fn is_primitive(kind: &str) -> bool {
     [
@@ -5183,10 +5199,10 @@ fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
 fn is_body(kind: &str) -> bool {
-    kind.contains("PartDesign::Body")
+    kind == "PartDesign::Body"
 }
 fn is_spreadsheet(kind: &str) -> bool {
-    kind.contains("Spreadsheet::Sheet")
+    kind == "Spreadsheet::Sheet"
 }
 fn is_design_object(kind: &str) -> bool {
     is_spreadsheet(kind)

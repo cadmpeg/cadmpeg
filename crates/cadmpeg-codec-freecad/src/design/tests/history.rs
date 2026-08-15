@@ -137,17 +137,25 @@ fn rejects_noncanonical_feature_base_carriers() {
 }
 
 #[test]
-fn keeps_extension_dress_ups_out_of_exact_design_dispatch() {
+fn keeps_extension_types_out_of_exact_design_dispatch() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
+<Objects Count="7">
 <Object type="Part::Fillet" name="PartFillet"/>
 <Object type="PartDesign::Fillet" name="DesignFillet"/>
 <Object type="Vendor::Fillet" name="VendorFillet"/>
+<Object type="Vendor::PartDesign::PadLike" name="PadLike"/>
+<Object type="Vendor::PartDesign::RevolutionLike" name="RevolutionLike"/>
+<Object type="Vendor::PartDesign::BodyLike" name="BodyLike"/>
+<Object type="Vendor::Spreadsheet::SheetLike" name="SheetLike"/>
 </Objects>
-<ObjectData Count="3">
+<ObjectData Count="7">
 <Object name="PartFillet"><Properties Count="0"/></Object>
 <Object name="DesignFillet"><Properties Count="0"/></Object>
 <Object name="VendorFillet"><Properties Count="0"/></Object>
+<Object name="PadLike"><Properties Count="0"/></Object>
+<Object name="RevolutionLike"><Properties Count="0"/></Object>
+<Object name="BodyLike"><Properties Count="0"/></Object>
+<Object name="SheetLike"><Properties Count="0"/></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
@@ -165,6 +173,10 @@ fn keeps_extension_dress_ups_out_of_exact_design_dispatch() {
     assert!(feature_names.contains(&"PartFillet"));
     assert!(feature_names.contains(&"DesignFillet"));
     assert!(!feature_names.contains(&"VendorFillet"));
+    assert!(!feature_names.contains(&"PadLike"));
+    assert!(!feature_names.contains(&"RevolutionLike"));
+    assert!(!feature_names.contains(&"BodyLike"));
+    assert!(!feature_names.contains(&"SheetLike"));
     assert_valid_document(result.ir());
 }
 
@@ -671,8 +683,20 @@ fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
     assert_eq!(features.len(), 2);
     assert_eq!(features[0].ordinal, 0);
     assert_eq!(features[1].ordinal, 1);
+    assert!(features
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
     assert!(features[0].dependencies.is_empty());
     assert_eq!(features[1].dependencies, [features[0].id.clone()]);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .count(),
+        2
+    );
     let objects = result
         .ir()
         .native

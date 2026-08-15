@@ -651,6 +651,10 @@ are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
 the semantic-annotation arena. The core registry has no semantic datum or geometric-tolerance
 runtime type.
 
+`TechDraw::DrawViewSpreadsheet` is a model view, not a semantic annotation. `DrawViewArch`,
+`DrawViewDraft`, and `DrawViewCollection` are drawing extension records with no semantic annotation
+kind. Datums and geometric-tolerance application objects likewise remain native application records.
+
 `App::Annotation` uses `LabelText` and `Position`. `App::AnnotationLabel` uses `LabelText` and
 `TextPosition`. TechDraw text, dimension, balloon, leader, and symbol records use the inherited `X`
 and `Y` pair as their optional position; one coordinate without the other is invalid. TechDraw
@@ -776,8 +780,16 @@ assignment; their source declaration order does not filter them. Neutral feature
 stable dependency order and use source order as the tie-break rule. Forward profile, base-feature,
 and pattern-seed links also precede
 their consumers. Body child lists are structural membership, not body inputs. If the native graph
-contains a dependency or parent cycle, the native graph retains it. The neutral graph uses the
-stable maximal subset whose targets precede their consumers.
+contains a dependency, parent, or expression cycle, the native graph retains it.
+When ordinal assignment has no ready object, every remaining cycle-affected history object receives
+a native feature definition and one blocking `feature.cyclic-history` loss. Its neutral dependency
+list retains only edges whose targets precede the consumer; the native graph remains authoritative.
+
+Design dispatch uses exact runtime names. `PartDesign::Pad`, `PartDesign::Pocket`, and
+`Part::Extrusion` are extrusions; `PartDesign::Revolution`, `PartDesign::Groove`, and
+`Part::Revolution` are revolutions; `PartDesign::Body` is a body container; and
+`Spreadsheet::Sheet` is a spreadsheet. Substrings and vendor-qualified variants do not select
+these families.
 
 Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
 PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path

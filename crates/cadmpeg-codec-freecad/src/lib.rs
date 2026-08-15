@@ -34,7 +34,7 @@ mod product;
 mod topology_transfer;
 mod writer;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -1143,6 +1143,7 @@ impl CodecBackend for FcstdCodec {
         let mut ir = CadIr::empty(Units::default());
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
+        let mut cycle_affected_design_objects = BTreeSet::new();
         ir.source = Some(SourceMeta {
             format: "fcstd".into(),
             attributes,
@@ -1267,7 +1268,7 @@ impl CodecBackend for FcstdCodec {
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
             let topology_occurrences =
                 topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
-            design::transfer(
+            cycle_affected_design_objects = design::transfer(
                 &mut ir,
                 &graph.objects,
                 &graph.properties,
@@ -1394,7 +1395,7 @@ impl CodecBackend for FcstdCodec {
         let losses = if options.container_only {
             Vec::new()
         } else {
-            semantic_losses(&ir)
+            semantic_losses(&ir, &cycle_affected_design_objects)
         };
         ctx.admit_entities(
             ir.model.entity_count() as u64,
@@ -1438,7 +1439,7 @@ impl Encoder for FcstdCodec {
     }
 }
 
-fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
+fn semantic_losses(ir: &CadIr, cycle_affected_design_objects: &BTreeSet<String>) -> Vec<LossNote> {
     let mut losses = ir
         .model
         .features
@@ -1454,11 +1455,27 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             else {
                 return None;
             };
-            Some(
-                FreecadLossCode::FeatureNativeKindRetained
-                    .note(format!(
+            let cycle_affected = feature
+                .native_ref
+                .as_ref()
+                .is_some_and(|id| cycle_affected_design_objects.contains(id));
+            let (code, message) = if cycle_affected {
+                (
+                    FreecadLossCode::FeatureCyclicHistory,
+                    format!(
+                        "FCStd design operation {kind} is retained natively because history ordering is cycle-affected"
+                    ),
+                )
+            } else {
+                (
+                    FreecadLossCode::FeatureNativeKindRetained,
+                    format!(
                         "FCStd design operation {kind} is retained natively but has no neutral semantics"
-                    ))
+                    ),
+                )
+            };
+            Some(
+                code.note(message)
                     .with_provenance(cadmpeg_ir::SourceProvenance {
                         format: "fcstd".into(),
                         stream: "Document.xml".into(),

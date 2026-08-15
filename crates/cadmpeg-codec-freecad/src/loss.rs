@@ -21,6 +21,8 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FreecadLossCode {
+    /// Feature history cannot enter a neutral definition because its ordering is cyclic.
+    FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
     FeatureNativeKindRetained,
     /// Sketch geometry record retains a native kind without solved geometry.
@@ -33,6 +35,7 @@ impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     pub const ALL: &'static [FreecadLossCode] = &[
+        Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
@@ -42,6 +45,7 @@ impl FreecadLossCode {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNativeConstraint => "sketch.native-constraint",
@@ -52,7 +56,8 @@ impl FreecadLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::FeatureNativeKindRetained
+            Self::FeatureCyclicHistory
+            | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
         }
@@ -60,7 +65,9 @@ impl FreecadLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::FeatureNativeKindRetained => LossTaxonomy::FeatureHistoryRetained,
+            Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::SketchNativeGeometry | Self::SketchNativeConstraint => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -105,6 +112,7 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "sketch.native-geometry",
                 "sketch.native-constraint",
