@@ -696,6 +696,85 @@ fn repeated_child_uses_without_owned_placements_remain_unresolved() {
 }
 
 #[test]
+fn mapped_child_unique_per_parent_uses_parent_local_uniqueness() {
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('ROOT','Root assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('root definition','',#4,#5);
+#7=PRODUCT_DEFINITION_SHAPE('','',#6);
+#8=PRODUCT('PARENT-A','Parent A','',(#2));
+#9=PRODUCT_DEFINITION_FORMATION('','',#8);
+#10=PRODUCT_DEFINITION('parent A definition','',#9,#5);
+#11=PRODUCT_DEFINITION_SHAPE('','',#10);
+#12=PRODUCT('PARENT-B','Parent B','',(#2));
+#13=PRODUCT_DEFINITION_FORMATION('','',#12);
+#14=PRODUCT_DEFINITION('parent B definition','',#13,#5);
+#15=PRODUCT_DEFINITION_SHAPE('','',#14);
+#16=PRODUCT('CHILD','Child','',(#2));
+#17=PRODUCT_DEFINITION_FORMATION('','',#16);
+#18=PRODUCT_DEFINITION('child definition','',#17,#5);
+#19=PRODUCT_DEFINITION_SHAPE('','',#18);
+#20=NEXT_ASSEMBLY_USAGE_OCCURRENCE('a','Child A','',#10,#18,$);
+#21=NEXT_ASSEMBLY_USAGE_OCCURRENCE('b','Child B','',#14,#18,$);
+#22=NEXT_ASSEMBLY_USAGE_OCCURRENCE('pa','Parent A','',#6,#10,$);
+#23=NEXT_ASSEMBLY_USAGE_OCCURRENCE('pb','Parent B','',#6,#14,$);
+#30=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#31=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#30)) REPRESENTATION_CONTEXT('model','3D'));
+#32=SHAPE_REPRESENTATION('root',(#53,#55),#31);
+#33=SHAPE_REPRESENTATION('parent A',(#57),#31);
+#34=SHAPE_REPRESENTATION('parent B',(#59),#31);
+#35=SHAPE_REPRESENTATION('child',(),#31);
+#36=SHAPE_DEFINITION_REPRESENTATION(#7,#32);
+#37=SHAPE_DEFINITION_REPRESENTATION(#11,#33);
+#38=SHAPE_DEFINITION_REPRESENTATION(#15,#34);
+#39=SHAPE_DEFINITION_REPRESENTATION(#19,#35);
+#40=CARTESIAN_POINT('',(0.,0.,0.));
+#41=CARTESIAN_POINT('',(100.,0.,0.));
+#42=CARTESIAN_POINT('',(200.,0.,0.));
+#43=CARTESIAN_POINT('',(10.,0.,0.));
+#44=CARTESIAN_POINT('',(20.,0.,0.));
+#45=DIRECTION('',(0.,0.,1.));
+#46=DIRECTION('',(1.,0.,0.));
+#47=AXIS2_PLACEMENT_3D('',#40,#45,#46);
+#48=AXIS2_PLACEMENT_3D('',#41,#45,#46);
+#49=AXIS2_PLACEMENT_3D('',#42,#45,#46);
+#50=AXIS2_PLACEMENT_3D('',#43,#45,#46);
+#51=AXIS2_PLACEMENT_3D('',#44,#45,#46);
+#52=REPRESENTATION_MAP(#47,#33);
+#53=MAPPED_ITEM('Parent A',#52,#48);
+#54=REPRESENTATION_MAP(#47,#34);
+#55=MAPPED_ITEM('Parent B',#54,#49);
+#56=REPRESENTATION_MAP(#47,#35);
+#57=MAPPED_ITEM('Child A',#56,#50);
+#58=REPRESENTATION_MAP(#47,#35);
+#59=MAPPED_ITEM('Child B',#58,#51);",
+    );
+
+    let children = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.name.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(children.len(), 4);
+    assert!(children.iter().any(|occurrence| {
+        occurrence.name.as_deref() == Some("Child A") && occurrence.transform.rows[0][3] == 10.0
+    }));
+    assert!(children.iter().any(|occurrence| {
+        occurrence.name.as_deref() == Some("Child B") && occurrence.transform.rows[0][3] == 20.0
+    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+}
+
+#[test]
 pub(crate) fn repeated_subassembly_instances_each_receive_the_subtree() {
     use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 

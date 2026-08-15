@@ -804,9 +804,11 @@ fn occurrence_placements(
         &definition_representations,
         &mut result,
     );
-    let mut usage_counts = BTreeMap::<u64, usize>::new();
+    let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
     for usage in usages.values() {
-        *usage_counts.entry(usage.child_definition).or_default() += 1;
+        *sibling_usage_counts
+            .entry((usage.parent_definition, usage.child_definition))
+            .or_default() += 1;
     }
     for (&usage_id, usage) in usages {
         if result.contains_key(&usage_id) {
@@ -847,8 +849,9 @@ fn occurrence_placements(
                 }
             }
         }
-        let matching_usages = usage_counts[&usage.child_definition];
-        if matching_usages == 1 && placements.len() == 1 {
+        let sibling_usage_count =
+            sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
+        if sibling_usage_count == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
         } else if !placements.is_empty() {
             warnings.push(format!(
