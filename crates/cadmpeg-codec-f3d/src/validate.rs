@@ -1810,7 +1810,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .iter()
                     .flat_map(|reference| reference.candidate_faces.iter().cloned())
                     .collect::<Vec<_>>();
-                faces.sort_by_key(|face| face.0.clone());
+                faces.sort_by(|a, b| a.0.cmp(&b.0));
                 faces.dedup();
                 (!faces.is_empty()).then_some((operand, faces))
             })

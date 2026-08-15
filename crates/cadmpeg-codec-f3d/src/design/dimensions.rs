@@ -1137,7 +1137,7 @@ fn project_all_dimension_constraints(
             native_ref: Some(companion.id.clone()),
         })
     }));
-    constraints.sort_by_key(|constraint| constraint.id.clone());
+    constraints.sort_by(|a, b| a.id.cmp(&b.id));
     constraints
 }
 

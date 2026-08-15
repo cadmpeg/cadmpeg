@@ -67,7 +67,7 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
             }
         }
     }
-    out.sort_by_key(|parameter| parameter.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -403,7 +403,7 @@ pub fn decode_parameter_owners(
         }
         out.push(owner);
     }
-    out.sort_by_key(|owner| owner.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -668,7 +668,7 @@ pub fn decode_parameter_companions(
         companion.payload_byte_offset += header.byte_offset;
         out.push(companion);
     }
-    out.sort_by_key(|companion| companion.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 

@@ -114,7 +114,7 @@ pub fn project_sketch_design(
             native_ref: Some(placement.id.clone()),
         })
         .collect::<Vec<_>>();
-    sketches.sort_by_key(|sketch| sketch.id.clone());
+    sketches.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut entities = points
         .iter()
@@ -252,7 +252,7 @@ pub fn project_sketch_design(
             },
         })
     }));
-    entities.sort_by_key(|entity| entity.id.clone());
+    entities.sort_by(|a, b| a.id.cmp(&b.id));
     for sketch in &mut sketches {
         sketch.profiles = closed_sketch_profiles(&sketch.id, &entities, linear_tolerance);
     }
@@ -543,7 +543,7 @@ pub fn project_spatial_sketch_design(
             },
         })
     }));
-    entities.sort_by_key(|entity| entity.id.clone());
+    entities.sort_by(|a, b| a.id.cmp(&b.id));
     let spatial_ids = entities
         .iter()
         .map(|entity| entity.sketch.clone())
@@ -566,7 +566,7 @@ pub fn project_spatial_sketch_design(
             }
         })
         .collect::<Vec<_>>();
-    sketches.sort_by_key(|sketch| sketch.id.clone());
+    sketches.sort_by(|a, b| a.id.cmp(&b.id));
     (sketches, entities)
 }
 
@@ -800,7 +800,7 @@ pub fn project_spatial_sketch_constraints(
             })
         })
         .collect::<Vec<_>>();
-    constraints.sort_by_key(|constraint| constraint.id.clone());
+    constraints.sort_by(|a, b| a.id.cmp(&b.id));
     constraints
 }
 

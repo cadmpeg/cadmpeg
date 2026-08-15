@@ -231,7 +231,7 @@ pub fn project_sketch_constraints(
         })
     });
     let mut constraints = projected_constraints.collect::<Vec<_>>();
-    constraints.sort_by_key(|constraint| constraint.id.clone());
+    constraints.sort_by(|a, b| a.id.cmp(&b.id));
     constraints
 }
 

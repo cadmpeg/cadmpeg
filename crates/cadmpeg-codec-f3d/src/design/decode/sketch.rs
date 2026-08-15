@@ -237,7 +237,7 @@ pub fn decode_sketch_placements(
             .get(&(stream.to_owned(), placement.entity_suffix))
             .cloned();
     }
-    out.sort_by_key(|placement| placement.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1144,7 +1144,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             });
         }
     }
-    out.sort_by_key(|entity| entity.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1218,7 +1218,7 @@ fn decode_headers_for_indices(
             }
         }
     }
-    out.sort_by_key(|record| record.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -2882,7 +2882,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
             });
         }
     }
-    out.sort_by_key(|surface| surface.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 

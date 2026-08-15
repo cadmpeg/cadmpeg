@@ -2608,11 +2608,11 @@ impl<'a> F3dDecodeSession<'a> {
         self.ir
             .model
             .sketch_constraints
-            .sort_by_key(|constraint| constraint.id.clone());
+            .sort_by(|a, b| a.id.cmp(&b.id));
         self.ir
             .model
             .spatial_sketch_constraints
-            .sort_by_key(|constraint| constraint.id.clone());
+            .sort_by(|a, b| a.id.cmp(&b.id));
         Ok(())
     }
 
@@ -3835,9 +3835,7 @@ fn extend_related_design_records(
         "f3d progress related-first-sort-start headers={}",
         native.design_record_headers.len()
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     eprintln!("f3d progress related-first-sort-done");
     native.design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
         scan,
@@ -3878,9 +3876,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
             scan,
@@ -3983,9 +3979,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     eprintln!("f3d progress profile-call-start");
     crate::design::decode::operands::bind_sketch_profiles(
         scan,
@@ -4083,7 +4077,10 @@ fn extend_related_design_records(
             ))
         })
         .collect::<std::collections::HashSet<_>>();
-    eprintln!("f3d progress related-second-start indices={}", indices.len());
+    eprintln!(
+        "f3d progress related-second-start indices={}",
+        indices.len()
+    );
     native.design_record_headers.extend(
         crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
@@ -4094,9 +4091,7 @@ fn extend_related_design_records(
             }),
     );
     eprintln!("f3d progress related-second-done");
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     crate::design::decode::operands::bind_construction_operand_trailing_records(
         scan,
         &mut native.design_construction_operand_groups,
@@ -4212,9 +4207,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_extrude_selection_members =
         crate::design::decode::operands::decode_extrude_selection_members(
             scan,

@@ -2723,7 +2723,7 @@ pub(crate) fn closed_sketch_profiles(
         .filter_map(|entity| sketch_entity_endpoints(entity).map(|ends| (entity, ends)))
         .collect::<Vec<_>>();
     if edges.is_empty() {
-        profiles.sort_by_key(|profile| profile[0].entity.clone());
+        profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
         return profiles;
     }
 
@@ -2767,7 +2767,7 @@ pub(crate) fn closed_sketch_profiles(
         adjacency.entry(end).or_default().push(edge);
     }
     for incident in adjacency.values_mut() {
-        incident.sort_by_key(|edge| edges[*edge].0.id.clone());
+        incident.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
     }
 
     let Ok(mut visited) =
@@ -2776,7 +2776,7 @@ pub(crate) fn closed_sketch_profiles(
         return Vec::new();
     };
     let mut order = (0..edges.len()).collect::<Vec<_>>();
-    order.sort_by_key(|edge| edges[*edge].0.id.clone());
+    order.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
     for first_edge in order {
         if visited[first_edge] {
             continue;
@@ -2832,7 +2832,7 @@ pub(crate) fn closed_sketch_profiles(
             continue;
         }
 
-        component.sort_by_key(|edge| edges[*edge].0.id.clone());
+        component.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
         let first_edge = component[0];
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
@@ -2863,7 +2863,7 @@ pub(crate) fn closed_sketch_profiles(
             profiles.push(profile);
         }
     }
-    profiles.sort_by_key(|profile| profile[0].entity.clone());
+    profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
     profiles
 }
 
@@ -2930,7 +2930,7 @@ fn branched_line_profiles(
         .iter()
         .flat_map(|edge| [edge * 2, edge * 2 + 1])
         .collect::<Vec<_>>();
-    starts.sort_by_key(|half_edge| (edges[*half_edge / 2].0.id.clone(), half_edge % 2));
+    starts.sort_by(|a, b| (&edges[*a / 2].0.id, *a % 2).cmp(&(&edges[*b / 2].0.id, *b % 2)));
     for start in starts {
         if visited.contains(&start) {
             continue;

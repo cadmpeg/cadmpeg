@@ -37,8 +37,8 @@ pub fn decode_canvas_images(
                 .filter_map(|scope| parse_canvas_image(bytes, &entry.name, scope)),
         );
     }
-    images.sort_by_key(|image| image.id.clone());
-    images.dedup_by_key(|image| image.id.clone());
+    images.sort_by(|a, b| a.id.cmp(&b.id));
+    images.dedup_by(|a, b| a.id == b.id);
     Ok(images)
 }
 
@@ -114,7 +114,7 @@ pub fn project_canvas_images(
             opacity: Some(f64::from(image.opacity)),
         };
     }
-    assets.sort_by_key(|asset| asset.id.clone());
+    assets.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(assets)
 }
 

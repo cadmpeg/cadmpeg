@@ -1448,7 +1448,7 @@ pub fn project_parameter_design_with_edge_identities(
             }
         }
     }
-    features.sort_by_key(|feature| feature.id.clone());
+    features.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut parameters = native
         .iter()
@@ -1623,7 +1623,7 @@ pub fn project_parameter_design_with_edge_identities(
         );
     }
     ensure_feature_dependencies_precede(&features)?;
-    parameters.sort_by_key(|parameter| parameter.id.clone());
+    parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok((features, parameters))
 }
 
@@ -3943,7 +3943,11 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
                     })
                 })
                 .collect::<Vec<_>>();
-            ready.sort_by_key(|index| (parameters[*index].ordinal, parameters[*index].id.clone()));
+            ready.sort_by(|a, b| {
+                let pa = &parameters[*a];
+                let pb = &parameters[*b];
+                pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
+            });
             if ready.is_empty() {
                 let breaker = *unresolved
                     .iter()
@@ -6723,7 +6727,7 @@ pub(crate) fn closed_spatial_sketch_profiles(
                 .collect(),
         });
     }
-    profiles.sort_by_key(|profile| profile.boundary[0].entity.clone());
+    profiles.sort_by(|a, b| a.boundary[0].entity.cmp(&b.boundary[0].entity));
     profiles
 }
 
