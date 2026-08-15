@@ -1651,6 +1651,7 @@ fn configuration_source_needs_update(
 }
 
 fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative) -> usize {
+    use crate::classification::{classify, native_object_class};
     use crate::records::FeatureInputClassRole;
 
     let mut source_counts = BTreeMap::<u32, usize>::new();
@@ -1708,7 +1709,24 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
         .filter(|(lane, class, name)| {
             let source_bound = name.object_id.is_some_and(|id| {
                 source_counts.get(&id).copied() == Some(1)
-                    && binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
+                    && (binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
+                        || native_object_class(&class.name)
+                            .feature
+                            .is_some_and(|expected| {
+                                native
+                                    .feature_histories
+                                    .iter()
+                                    .flat_map(|history| &history.features)
+                                    .any(|feature| {
+                                        feature
+                                            .source_id
+                                            .as_deref()
+                                            .and_then(|source| source.parse::<u32>().ok())
+                                            == Some(id)
+                                            && feature.input_class.is_none()
+                                            && classify(feature) == Some(expected)
+                                    })
+                            }))
             });
             let name_bound = named_binding_counts
                 .get(&(lane.id.as_str(), name.id.as_str(), class.name.as_str()))
