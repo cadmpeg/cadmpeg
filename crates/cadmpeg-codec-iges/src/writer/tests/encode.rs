@@ -1847,6 +1847,46 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
 }
 
 #[test]
+fn encode_type_186_uses_ordered_region_shell_roles() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let region = &mut ir.model.regions[0];
+    let source_outer = region.shells[0].clone();
+    let source_void = region.shells[1].clone();
+    region.shells.reverse();
+
+    let (exterior, voids) = crate::writer::solid_shell_roles(region).unwrap();
+    assert_eq!(exterior, &source_void);
+    assert_eq!(voids, std::slice::from_ref(&source_outer));
+
+    let entities = crate::writer::brep_entities(&ir).unwrap();
+    let shell_indices = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| (entity.type_code == 514).then_some(index))
+        .collect::<Vec<_>>();
+    assert_eq!(shell_indices.len(), 2);
+    let solid = entities
+        .iter()
+        .find(|entity| entity.type_code == 186)
+        .unwrap();
+    let expected = format!(
+        "186,{},1,1,{},1;",
+        crate::writer::reference_marker(shell_indices[0]),
+        crate::writer::reference_marker(shell_indices[1])
+    );
+    assert_eq!(
+        String::from_utf8(solid.parameters.clone()).unwrap(),
+        expected
+    );
+}
+
+#[test]
 fn encode_nurbs_declares_actual_planarity_and_closedness() {
     let cases = [
         (

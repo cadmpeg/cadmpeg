@@ -15,12 +15,12 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::ids::{PointId, VertexId};
+use cadmpeg_ir::ids::{PointId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
     CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, WritePath,
 };
-use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Sense};
+use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Region, Sense};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
@@ -312,6 +312,25 @@ fn ensure_version_support(
     Ok(())
 }
 
+fn solid_shell_roles(region: &Region) -> Result<(&ShellId, &[ShellId]), CodecError> {
+    let (exterior, voids) = region.shells.split_first().ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "IGES solid region {} has no exterior shell",
+            region.id
+        ))
+    })?;
+    let mut distinct = std::collections::BTreeSet::new();
+    for shell_id in &region.shells {
+        if !distinct.insert(shell_id.as_str()) {
+            return Err(CodecError::Malformed(format!(
+                "IGES solid region {} repeats shell {}",
+                region.id, shell_id
+            )));
+        }
+    }
+    Ok((exterior, voids))
+}
+
 fn has_trimmed_sheet_topology(ir: &CadIr) -> bool {
     !ir.model.faces.is_empty()
         || !ir.model.loops.is_empty()
@@ -494,6 +513,9 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                 "IGES region {} is not a nonempty region of body {}",
                 region.id, body.id
             )));
+        }
+        if body.kind == BodyKind::Solid {
+            let _ = solid_shell_roles(region)?;
         }
         if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
             return Err(CodecError::NotImplemented(format!(
@@ -1482,18 +1504,13 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             shell_indices.insert(shell.id.as_str(), index);
         }
         if body.kind == BodyKind::Solid {
-            let exterior_shell = region.exterior_shell().ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "IGES solid region {} has no exterior shell",
-                    region.id
-                ))
-            })?;
+            let (exterior_shell, void_shells) = solid_shell_roles(region)?;
             let mut parameters = format!(
                 "186,{},1,{}",
                 reference_marker(shell_indices[exterior_shell.as_str()]),
-                region.void_shells().count()
+                void_shells.len()
             );
-            for void_shell in region.void_shells() {
+            for void_shell in void_shells {
                 let _ = write!(
                     parameters,
                     ",{},1",

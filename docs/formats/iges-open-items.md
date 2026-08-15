@@ -57,16 +57,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-03. The Type 186 outer shell is the first shell by position
-
-**Question.** Which shell of a region is the exterior shell?
-
-**Known.** `cadmpeg-ir/src/topology.rs:97-110` documents ordered shells and `Region::exterior_shell()` returns `self.shells.first()`. `writer.rs:1442-1457` uses that accessor for Type 186. No validation proves containment, orientation, or producer ordering.
-
-**Need.** We need the exterior shell identified from geometry, an explicit source role, or a validated IR invariant. List position alone must not invert a solid.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `46a71f68c` introduced the IR wording, accessor, writer use, and tests together. This is promotion to an IR invariant, not evidence that all producers supply the order.
-
 ### WR-04. Global fields are a fixed string
 
 **Question.** Which Global values must a generated file compute from the model?
