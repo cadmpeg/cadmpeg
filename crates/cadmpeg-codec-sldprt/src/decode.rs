@@ -3988,45 +3988,6 @@ fn assign_configuration_bodies(
             }
         }
     }
-    // Some single-configuration files omit the active configuration name and
-    // the native SourceIndex. A native configuration slot matching the sole
-    // remaining partition provides an unambiguous identity; bind that
-    // partition before fabricating an inferred configuration.
-    if active_name.is_none() && partition_map.len() == 1 {
-        let source_index = *partition_map
-            .keys()
-            .next()
-            .expect("one unbound configuration partition remains");
-        let native_configurations = ir
-            .model
-            .configurations
-            .iter()
-            .filter(|configuration| {
-                configuration.native_ref.is_some()
-                    && configuration.source_index.is_none()
-                    && configuration
-                        .properties
-                        .get("id")
-                        .and_then(|value| value.parse::<u32>().ok())
-                        == Some(source_index)
-            })
-            .count();
-        if ir.model.configurations.len() == 1 && native_configurations == 1 {
-            let (source_index, bodies) = partition_map
-                .pop_first()
-                .expect("one unbound configuration partition remains");
-            let configuration = ir
-                .model
-                .configurations
-                .iter_mut()
-                .find(|configuration| {
-                    configuration.native_ref.is_some() && configuration.source_index.is_none()
-                })
-                .expect("one native configuration remains unbound");
-            configuration.source_index = Some(source_index);
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
-        }
-    }
     for (source_index, bodies) in partition_map {
         let ordinal = ir
             .model
