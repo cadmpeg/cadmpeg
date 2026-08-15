@@ -471,12 +471,18 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ));
         }
     }
-    if attachments != attachment::transfer(&objects, &properties) {
-        findings.push(finding(
+    match attachment::transfer(&objects, &properties) {
+        Ok(expected) if attachments != expected => findings.push(finding(
             Check::NativeLinks,
             "FCStd attachment graph does not match the application property graph",
             None,
-        ));
+        )),
+        Err(error) => findings.push(finding(
+            Check::NativeLinks,
+            format!("FCStd attachment properties are malformed: {error}"),
+            None,
+        )),
+        _ => {}
     }
     let gui_provider_ids = gui_providers
         .iter()
@@ -1202,10 +1208,8 @@ impl CodecBackend for FcstdCodec {
                 "applications",
                 &application::transfer(&graph.objects, &graph.properties, &entry_records),
             )?;
-            namespace.set_arena(
-                "attachments",
-                &attachment::transfer(&graph.objects, &graph.properties),
-            )?;
+            let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
+            namespace.set_arena("attachments", &attachments)?;
             let mut curve_transfer = brep::transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer = brep::transfer_text_surfaces(
                 &shape_payloads,

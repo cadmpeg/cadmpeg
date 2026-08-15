@@ -653,7 +653,9 @@ Native namespace version 11 adds attachment records. Support links retain ordere
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
 `AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it
 is present and otherwise the offset; the decoder never multiplies both speculatively. Validation
-checks support identity, finite matrices, and this effective-frame rule.
+checks support identity, finite matrices, and this effective-frame rule. Each named attachment
+carrier occurs at most once. `MapMode` has at most one text value, and each placement carrier has
+at most one `PropertyPlacement` value. Duplicate carriers or values are malformed.
 
 Native namespace version 12 adds one carrier-census record per exact-shape payload. Census records
 identify text versus binary framing, the declared topology version, recursive carrier-family

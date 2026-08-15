@@ -26,7 +26,6 @@ These items have a Conflict part and need a decision.
 - XT-03. Non-manifold radial order
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
-- AT-01. Attachment frame carrier precedence
 
 ## 1. Auxiliary records
 
@@ -160,17 +159,3 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 **Need.** We must establish the endpoint equivalence rule and the admissible profile topology. An ambiguous junction must use constraint identity, an explicit source order rule, or an attributable refusal instead of a first match.
 
 **Note.** Commit `e024f02dd` added ambiguity handling and a scale formula, but the boundary still rests on an uncited constant. Exact and synthetic ambiguous cases do not verify the numeric boundary.
-
-## 6. Attachment and assembly
-
-### AT-01. Attachment frame carrier precedence
-
-**Question.** How do `Placement` and `AttachmentOffset` combine when both are present, and which property/value is authoritative when repeated?
-
-**Known.** Attachment records retain support, map mode, placement, offset, and an effective frame.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/attachment.rs:23-39` assigns `effective_frame = placement.or(offset)`, so `AttachmentOffset` is ignored whenever `Placement` exists. The property helper at `:23-27` and value helper at `:45-53` also take first matches. Two valid carriers can therefore produce a different neutral frame after source reordering.
-
-**Need.** We must establish the FreeCAD attachment composition and property cardinality. The decoder must compose or reject conflicting carriers according to that rule.
-
-**Note.** The precedence is explicit; no producer rule for the neutral effective frame was found.
