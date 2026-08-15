@@ -2475,11 +2475,11 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
         );
-        crate::design::profile_select::bind_loft_sketch_selections(
+        crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
             scan,
             &self.native.design_construction_operand_groups,
             &self.native.design_record_headers,
-            &crate::design::profile_select::LoftSketchResolution {
+            &crate::design::profile_select::SketchProfileResolution {
                 entities: &self.native.design_entity_headers,
                 entity_selection_operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,

@@ -1658,8 +1658,9 @@ pub(crate) fn selection_containing_points(
         .map(|region| ResolvedProfileSelection::Regions(vec![region]))
 }
 
-/// Solved sketch records used to bind Loft section and guide selections.
-pub(crate) struct LoftSketchResolution<'a> {
+/// Solved sketch records used to bind Loft and Revolve profile operands and
+/// Loft guide selections.
+pub(crate) struct SketchProfileResolution<'a> {
     pub(crate) entities: &'a [DesignEntityHeader],
     pub(crate) entity_selection_operands: &'a [DesignEntitySelectionOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
@@ -1672,7 +1673,7 @@ pub(crate) struct LoftSketchResolution<'a> {
     pub(crate) angular_tolerance: f64,
 }
 
-impl<'a> LoftSketchResolution<'a> {
+impl<'a> SketchProfileResolution<'a> {
     fn path_resolution(&self) -> EntitySelectionPathResolution<'a> {
         EntitySelectionPathResolution {
             operands: self.entity_selection_operands,
@@ -1838,7 +1839,7 @@ fn resolve_entity_selection_path(
 /// curves from a Sketch.
 fn resolved_loft_entity_selection_path(
     group: &DesignConstructionOperandGroup,
-    resolution: &LoftSketchResolution<'_>,
+    resolution: &SketchProfileResolution<'_>,
 ) -> Option<cadmpeg_ir::features::PathRef> {
     if !matches!(group.role, 0x5_0000_0000 | 0x7_0000_0000) {
         return None;
@@ -1926,7 +1927,7 @@ fn resolved_spatial_sketch_profile_regions(
     stream: &str,
     profile: &DesignSketchProfileOperand,
     spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
-    resolution: &LoftSketchResolution<'_>,
+    resolution: &SketchProfileResolution<'_>,
 ) -> Option<Vec<u32>> {
     let Some(selection) = profile.region_selection.as_ref() else {
         if spatial_sketch.profiles.is_empty() {
@@ -2024,11 +2025,11 @@ fn spatial_profile_containing_entity(
     u32::try_from(index).ok()
 }
 
-pub(crate) fn bind_loft_sketch_selections(
+pub(crate) fn bind_loft_and_revolve_sketch_selections(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
-    resolution: &LoftSketchResolution<'_>,
+    resolution: &SketchProfileResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftSection, PathRef, ProfileRef};
@@ -2218,6 +2219,18 @@ pub(crate) fn bind_loft_sketch_selections(
                 *centerline = Some(path.clone());
             }
         }
+    }
+    for feature in features.iter_mut() {
+        let FeatureDefinition::Revolve { construction, .. } = &mut feature.definition else {
+            continue;
+        };
+        let Some(ProfileRef::Native(native)) = construction.profile.as_ref() else {
+            continue;
+        };
+        let Some(profile) = resolved_profiles.get(native) else {
+            continue;
+        };
+        construction.profile = Some(profile.clone());
     }
     Ok(())
 }

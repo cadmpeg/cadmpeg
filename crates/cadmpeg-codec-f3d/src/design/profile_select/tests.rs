@@ -142,8 +142,8 @@ fn planar_resolution<'a>(
     curve_identities: &'a [SketchCurveIdentity],
     sketches: &'a [Sketch],
     sketch_entities: &'a [SketchEntity],
-) -> LoftSketchResolution<'a> {
-    LoftSketchResolution {
+) -> SketchProfileResolution<'a> {
+    SketchProfileResolution {
         entities: &[],
         entity_selection_operands: operands,
         placements,
@@ -655,7 +655,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         paired_byte_offset: 0,
     };
     let placements = [placement];
-    let resolution = LoftSketchResolution {
+    let resolution = SketchProfileResolution {
         entities: &[],
         entity_selection_operands: &[],
         placements: &placements,
@@ -710,7 +710,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         unreachable!()
     };
     center.x = 0.1;
-    let noncoincident_resolution = LoftSketchResolution {
+    let noncoincident_resolution = SketchProfileResolution {
         spatial_sketch_entities: &noncoincident_entities,
         ..resolution
     };
