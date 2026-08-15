@@ -1253,7 +1253,7 @@ pub(crate) mod coil_long_scope_fixed_prologue {
 /// Spec §3.1. Record length 128 B.
 ///
 /// ```text
-/// The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the containing 578-byte form carries it only in the new-body envelope.
+/// The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the 572-byte form carries Boolean operations and the 578-byte form carries new body.
 /// ```
 pub(crate) mod coil_long_scope_matrix {
     /// Record length in bytes. Spec §3.1.

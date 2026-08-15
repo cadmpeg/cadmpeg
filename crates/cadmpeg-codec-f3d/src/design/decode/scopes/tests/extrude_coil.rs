@@ -970,7 +970,8 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010];
         let kind = "CoilPrimitive";
         let kind_length = 4 + kind.encode_utf16().count() * 2;
-        let kind_at = frame_length - 78 - kind_length;
+        let tail_length = if frame_length == 572 { 76 } else { 78 };
+        let kind_at = frame_length - tail_length - kind_length;
         let reference_count_at = kind_at - 4 - 4 - reference_members.len() * 11;
         let mut bytes = vec![0; reference_count_at];
         bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -982,7 +983,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             bytes[offset] = 1;
             bytes[offset + 1..offset + 5].copy_from_slice(&target.to_le_bytes());
         }
-        if frame_length == 578 {
+        if matches!(frame_length, 572 | 578) {
             let matrix: [f64; 16] = [
                 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             ];
@@ -998,7 +999,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
         }
         bytes.extend_from_slice(&310u32.to_le_bytes());
         lp_utf16(&mut bytes, kind);
-        let mut tail = [0; 78];
+        let mut tail = vec![0; tail_length];
         tail[0..4].copy_from_slice(&1u32.to_le_bytes());
         tail[31..35].copy_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&tail);
@@ -1047,4 +1048,24 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     );
+
+    for (operation, expected) in [
+        (1, DesignExtrudeOperation::Join),
+        (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+    ] {
+        let boolean = scope(572, operation);
+        assert_eq!(boolean.coil_operation, Some(expected));
+        let transform = boolean.coil_transform.expect("572-byte Coil placement");
+        assert_eq!(transform.transform_offset, 77);
+        assert_eq!(
+            transform.transform,
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        );
+    }
 }

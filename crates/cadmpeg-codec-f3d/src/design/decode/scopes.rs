@@ -6064,7 +6064,7 @@ fn exact_long_coil_discriminators(
         return None;
     }
     let frame_length = paired_at.checked_sub(start)?;
-    if !matches!(frame_length, 450 | 578)
+    if !matches!(frame_length, 450 | 572 | 578)
         || bytes.get(
             start.checked_add(coil_long::ZERO_RUN_11)?..start.checked_add(coil_long::OPERATION)?,
         )? != [0; 11]
@@ -6076,12 +6076,16 @@ fn exact_long_coil_discriminators(
     {
         return None;
     }
+    let matrix_form = matches!(frame_length, 572 | 578) && exact_long_coil_matrix(bytes, start);
     let operation_value = View::u32_le_at(bytes, start.checked_add(coil_long::OPERATION)?)?;
     let operation = match (frame_length, operation_value) {
         (450, 1) => DesignExtrudeOperation::Join,
         (450, 2) => DesignExtrudeOperation::Cut,
         (450, 3) => DesignExtrudeOperation::Intersect,
-        (578, 2) if exact_long_coil_matrix(bytes, start) => DesignExtrudeOperation::NewBody,
+        (572, 1) if matrix_form => DesignExtrudeOperation::Join,
+        (572, 2) if matrix_form => DesignExtrudeOperation::Cut,
+        (572, 3) if matrix_form => DesignExtrudeOperation::Intersect,
+        (578, 2) if matrix_form => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
     Some(CoilDiscriminators {
@@ -6119,7 +6123,7 @@ fn exact_long_coil_transform(
 ) -> Option<crate::records::DesignCoilTransform> {
     if kind != "CoilPrimitive"
         || reference_members.len() != 10
-        || paired_at.checked_sub(start)? != 578
+        || !matches!(paired_at.checked_sub(start)?, 572 | 578)
     {
         return None;
     }

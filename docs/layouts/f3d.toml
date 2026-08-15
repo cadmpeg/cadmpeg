@@ -2597,7 +2597,7 @@ anchor = "Offset 107 selects the section shape"
 name = "coil_long_scope_fixed_prologue"
 kind = "byte"
 section = "3.1"
-anchor = "The ten-reference `CoilPrimitive` form has either a 450-byte or a 578-byte scope frame."
+anchor = "The ten-reference `CoilPrimitive` form has a 450-byte Boolean, a 572-byte matrix Boolean, or a 578-byte matrix new-body scope frame."
 size = 52
 note = "Offsets are relative to the primary indexed scope header. The two marked references repeat ordered-reference ordinals four and eight; their target records are dynamic indexed records."
 
@@ -2613,7 +2613,7 @@ name = "zero_run_11"
 offset = 11
 type = "bytes[11]"
 source = "spec"
-anchor = "Both forms store eleven zero bytes at offsets 11 through 21"
+anchor = "All forms store eleven zero bytes at offsets 11 through 21"
 
 [[record.field]]
 name = "operation"
@@ -2647,9 +2647,9 @@ anchor = "Marked references at offsets 30 and 41 repeat the fifth and ninth orde
 name = "coil_long_scope_matrix"
 kind = "byte"
 section = "3.1"
-anchor = "The 578-byte form maps offset 22 value `2` to new body and stores a finite 16-value f64 matrix at offset 77"
+anchor = "The 572-byte form stores a finite 16-value f64 matrix at offset 77 for Boolean operations, and the 578-byte form stores the same matrix for new body"
 size = 128
-note = "The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the containing 578-byte form carries it only in the new-body envelope."
+note = "The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the 572-byte form carries Boolean operations and the 578-byte form carries new body."
 
 [[record.field]]
 name = "matrix"

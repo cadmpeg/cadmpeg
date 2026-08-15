@@ -884,7 +884,7 @@ Offsets are relative to the primary indexed scope header. The two marked referen
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte indexed header |
-| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | Both forms store eleven zero bytes at offsets 11 through 21 |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | All forms store eleven zero bytes at offsets 11 through 21 |
 | 22 | 4 | `operation` | `u32` | little | spec | a u32 at offset 22 |
 | 26 | 4 | `structural_constant` | `u32` | little | spec | u32 `1` at offset 26 |
 | 30 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references. |
@@ -894,7 +894,7 @@ Offsets are relative to the primary indexed scope header. The two marked referen
 
 Spec §3.1 · layout: byte offsets · size: 128 B
 
-The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the containing 578-byte form carries it only in the new-body envelope.
+The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the 572-byte form carries Boolean operations and the 578-byte form carries new body.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
