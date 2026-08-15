@@ -34,6 +34,15 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 use super::*;
 
 #[test]
+fn zero_join_tolerance_requires_exact_endpoint_equality() {
+    let left = Point3::new(1.0, 2.0, 3.0);
+    let right = Point3::new(1.0, 2.0, 3.0 + f64::EPSILON * 4.0);
+
+    assert!(close_with_tolerance(left, left, Some(0.0)));
+    assert!(!close_with_tolerance(left, right, Some(0.0)));
+}
+
+#[test]
 fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
     let error = IgesCodec
         .decode(

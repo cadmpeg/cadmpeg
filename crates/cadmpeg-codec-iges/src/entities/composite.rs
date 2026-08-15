@@ -726,12 +726,12 @@ fn close(left: Point3, right: Point3) -> bool {
 }
 
 fn close_with_tolerance(left: Point3, right: Point3, tolerance: Option<f64>) -> bool {
-    tolerance
-        .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
-        .map_or_else(
-            || close(left, right),
-            |tolerance| left.distance(right) <= tolerance,
-        )
+    match tolerance {
+        Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => {
+            left.distance(right) <= tolerance
+        }
+        _ => close(left, right),
+    }
 }
 
 fn curve_endpoints(
