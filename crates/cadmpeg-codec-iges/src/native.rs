@@ -4422,48 +4422,45 @@ pub(crate) fn store(
     }
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
-    namespace.set_arena("cards", &cards)?;
-    namespace.set_arena("entities", &entities)?;
-    namespace.set_arena("directions", &directions)?;
-    namespace.set_arena("transformations", &transforms)?;
-    namespace.set_arena("copious_data", &copious_data)?;
-    namespace.set_arena("colors", &colors)?;
-    namespace.set_arena("display_attributes", &display_attributes)?;
-    namespace.set_arena("line_fonts", &line_fonts)?;
-    namespace.set_arena("text_templates", &text_templates)?;
-    namespace.set_arena("text_fonts", &text_fonts)?;
-    namespace.set_arena("definition_levels", &definition_levels)?;
-    namespace.set_arena("primitive_solids", &primitive_solids)?;
-    namespace.set_arena("procedural_solids", &procedural_solids)?;
-    namespace.set_arena("boolean_trees", &boolean_trees)?;
-    namespace.set_arena("selected_components", &selected_components)?;
-    namespace.set_arena("solid_assemblies", &solid_assemblies)?;
-    namespace.set_arena("solid_instances", &solid_instances)?;
-    namespace.set_arena("subfigure_definitions", &subfigure_definitions)?;
-    namespace.set_arena("subfigure_instances", &subfigure_instances)?;
-    namespace.set_arena("network_definitions", &network_definitions)?;
-    namespace.set_arena("network_instances", &network_instances)?;
-    namespace.set_arena("connect_points", &connect_points)?;
-    namespace.set_arena("rectangular_arrays", &rectangular_arrays)?;
-    namespace.set_arena("circular_arrays", &circular_arrays)?;
-    namespace.set_arena("external_references", &external_references)?;
-    namespace.set_arena("groups", &groups)?;
-    namespace.set_arena("associativities", &associativities)?;
-    namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
-    namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
-    namespace.set_arena("product_properties", &product_properties)?;
-    namespace.set_arena("properties", &properties)?;
-    namespace.set_arena("units_data", &units_data)?;
-    namespace.set_arena("views", &views)?;
-    namespace.set_arena("view_visibility", &view_visibility)?;
-    namespace.set_arena("segmented_visibility", &segmented_visibility)?;
-    namespace.set_arena("drawings", &drawings)?;
-    namespace.set_arena("annotations", &annotations)?;
-    namespace.set_arena("product_occurrences", &product_occurrences)?;
-    namespace.set_arena(
-        "product_occurrence_expansion",
-        &product_occurrence_expansion,
-    )?;
+    namespace.set_arena_from("cards", cards)?;
+    namespace.set_arena_from("entities", entities)?;
+    namespace.set_arena_from("directions", directions)?;
+    namespace.set_arena_from("transformations", transforms)?;
+    namespace.set_arena_from("copious_data", copious_data)?;
+    namespace.set_arena_from("colors", colors)?;
+    namespace.set_arena_from("display_attributes", display_attributes)?;
+    namespace.set_arena_from("line_fonts", line_fonts)?;
+    namespace.set_arena_from("text_templates", text_templates)?;
+    namespace.set_arena_from("text_fonts", text_fonts)?;
+    namespace.set_arena_from("definition_levels", definition_levels)?;
+    namespace.set_arena_from("primitive_solids", primitive_solids)?;
+    namespace.set_arena_from("procedural_solids", procedural_solids)?;
+    namespace.set_arena_from("boolean_trees", boolean_trees)?;
+    namespace.set_arena_from("selected_components", selected_components)?;
+    namespace.set_arena_from("solid_assemblies", solid_assemblies)?;
+    namespace.set_arena_from("solid_instances", solid_instances)?;
+    namespace.set_arena_from("subfigure_definitions", subfigure_definitions)?;
+    namespace.set_arena_from("subfigure_instances", subfigure_instances)?;
+    namespace.set_arena_from("network_definitions", network_definitions)?;
+    namespace.set_arena_from("network_instances", network_instances)?;
+    namespace.set_arena_from("connect_points", connect_points)?;
+    namespace.set_arena_from("rectangular_arrays", rectangular_arrays)?;
+    namespace.set_arena_from("circular_arrays", circular_arrays)?;
+    namespace.set_arena_from("external_references", external_references)?;
+    namespace.set_arena_from("groups", groups)?;
+    namespace.set_arena_from("associativities", associativities)?;
+    namespace.set_arena_from("attribute_table_definitions", attribute_table_definitions)?;
+    namespace.set_arena_from("attribute_table_instances", attribute_table_instances)?;
+    namespace.set_arena_from("product_properties", product_properties)?;
+    namespace.set_arena_from("properties", properties)?;
+    namespace.set_arena_from("units_data", units_data)?;
+    namespace.set_arena_from("views", views)?;
+    namespace.set_arena_from("view_visibility", view_visibility)?;
+    namespace.set_arena_from("segmented_visibility", segmented_visibility)?;
+    namespace.set_arena_from("drawings", drawings)?;
+    namespace.set_arena_from("annotations", annotations)?;
+    namespace.set_arena_from("product_occurrences", product_occurrences)?;
+    namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
     Ok(ProductOccurrenceExpansion {
         output_truncated,
         depth_truncated,
