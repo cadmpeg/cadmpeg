@@ -1124,6 +1124,21 @@ pub(crate) fn bind_feature_body_selections(
             }
             continue;
         }
+        if let FeatureDefinition::Scale { bodies, .. } = &mut feature.definition {
+            if let Some(previous_state_id) = scope.previous_history_state_id {
+                bind_body_recipe_body_selection(
+                    bodies,
+                    &feature_id,
+                    previous_state_id,
+                    scope,
+                    groups,
+                    body_recipe_operands,
+                );
+            } else {
+                bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+            }
+            continue;
+        }
         let (bodies, proof) = match &mut feature.definition {
             FeatureDefinition::MoveBody { bodies, .. } => {
                 (bodies, BodySelectionProof::TopologyStableRevision)

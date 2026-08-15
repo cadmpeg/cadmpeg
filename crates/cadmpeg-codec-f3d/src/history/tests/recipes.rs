@@ -855,7 +855,9 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
 
 #[test]
 fn direct_body_recipe_selection_resolves_compact_coil_target() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, ScaleCenter, ScaleFactors,
+    };
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
@@ -1034,6 +1036,30 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             native: vec![native],
         }
     );
+
+    let mut feature = Feature::new(
+        FeatureId("f3d:feature#scale".into()),
+        0,
+        FeatureDefinition::Scale {
+            bodies: BodySelection::Native(group_id.into()),
+            center: Some(ScaleCenter::ModelOrigin),
+            factors: ScaleFactors {
+                uniform: Some(1.5),
+                x: None,
+                y: None,
+                z: None,
+            },
+        },
+    );
+    feature.native_ref = Some(scope.id.clone());
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Scale {
+            bodies: BodySelection::Resolved { ref bodies, ref native },
+            ..
+        } if bodies == &[body.id] && native == group_id
+    ));
 }
 
 #[test]
