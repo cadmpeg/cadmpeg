@@ -125,6 +125,60 @@ Parsed by:
 | 29 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
 | 35 | 4 | `local_ordinal` | `u32` | little | spec | `u32 local_ordinal` |
 
+## `design_parameter_owner_legacy_68`
+
+Spec §3.1 · layout: byte offsets · size: 68 B
+
+Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte indexed header |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes |
+| 19 | 1 | `first_marker` | `u8` | little | spec | `u8 1` |
+| 20 | 13 | `zero_run_13` | `bytes[13]` | little | spec | thirteen zero bytes |
+| 33 | 1 | `parameter_marker` | `u8` | little | spec | `u8 1 + u32 parameter_record_index` |
+| 34 | 4 | `parameter_record_index` | `u32` | little | spec | `u8 1 + u32 parameter_record_index` |
+| 38 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
+| 44 | 4 | `owned_ordinal` | `u32` | little | spec | `u32 owned_ordinal` |
+| 48 | 7 | `zero_run_7` | `bytes[7]` | little | spec | seven zero bytes |
+| 55 | 1 | `companion_marker` | `u8` | little | spec | `u8 1 + u32 companion_record_index` |
+| 56 | 4 | `companion_record_index` | `u32` | little | spec | `u8 1 + u32 companion_record_index` |
+| 60 | 8 | `zero_run_8_tail` | `bytes[8]` | little | spec | eight zero bytes |
+
+## `design_parameter_owner_legacy_88`
+
+Spec §3.1 · layout: byte offsets · size: 88 B
+
+Offsets are relative to the legacy parameter-owner primary header. The scalar and local-ordinal lanes are absent.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte indexed header |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | the same prefix through `owned_ordinal` |
+| 19 | 1 | `first_marker` | `u8` | little | spec | the same prefix through `owned_ordinal` |
+| 20 | 13 | `zero_run_13` | `bytes[13]` | little | spec | the same prefix through `owned_ordinal` |
+| 33 | 1 | `parameter_marker` | `u8` | little | spec | the same prefix through `owned_ordinal` |
+| 34 | 4 | `parameter_record_index` | `u32` | little | spec | the same prefix through `owned_ordinal` |
+| 38 | 6 | `zero_run_6` | `bytes[6]` | little | spec | the same prefix through `owned_ordinal` |
+| 44 | 4 | `owned_ordinal` | `u32` | little | spec | the same prefix through `owned_ordinal` |
+| 48 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes |
+| 52 | 1 | `scope_marker` | `u8` | little | spec | `u8 1 + u32 scope_record_index` |
+| 53 | 4 | `scope_record_index` | `u32` | little | spec | `u8 1 + u32 scope_record_index` |
+| 57 | 8 | `zero_run_8_between_scopes` | `bytes[8]` | little | spec | eight zero bytes |
+| 65 | 1 | `companion_marker` | `u8` | little | spec | `u8 1 + u32 companion_record_index` |
+| 66 | 4 | `companion_record_index` | `u32` | little | spec | `u8 1 + u32 companion_record_index` |
+| 70 | 7 | `zero_run_7` | `bytes[7]` | little | spec | seven zero bytes |
+| 77 | 1 | `repeated_scope_marker` | `u8` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
+| 78 | 4 | `repeated_scope_record_index` | `u32` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
+| 82 | 6 | `zero_run_6_tail` | `bytes[6]` | little | spec | a six-byte zero trailer |
+
 ## `scale_modern_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 79 B

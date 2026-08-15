@@ -7,6 +7,8 @@ use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::ids::{self, native_stream};
+use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
+use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
@@ -370,8 +372,22 @@ pub fn decode_parameter_owners(
         let frame = bytes
             .get(at..end)
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
-        let mut owner = parse_parameter_owner(frame)
-            .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?;
+        let (mut owner, evaluated_value_is_absolute) =
+            if let Some(owner) = parse_parameter_owner(frame) {
+                (owner, false)
+            } else if let Some(mut owner) =
+                parse_legacy_parameter_owner_68(frame, parameter.evaluated_value)
+            {
+                owner.evaluated_value_offset = parameter.evaluated_value_offset;
+                (owner, true)
+            } else if let Some(mut owner) =
+                parse_legacy_parameter_owner_88(frame, parameter.evaluated_value)
+            {
+                owner.evaluated_value_offset = parameter.evaluated_value_offset;
+                (owner, true)
+            } else {
+                return Err(malformed("does not match the parameter-owner grammar"));
+            };
         if owner.record_index != owner_index
             || owner.parameter_record_index != parameter.record_index
         {
@@ -379,10 +395,12 @@ pub fn decode_parameter_owners(
         }
         owner.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
         owner.byte_offset = header.byte_offset;
-        owner.evaluated_value_offset = owner
-            .evaluated_value_offset
-            .checked_add(header.byte_offset)
-            .ok_or_else(|| malformed("evaluated-value offset overflows u64"))?;
+        if !evaluated_value_is_absolute {
+            owner.evaluated_value_offset = owner
+                .evaluated_value_offset
+                .checked_add(header.byte_offset)
+                .ok_or_else(|| malformed("evaluated-value offset overflows u64"))?;
+        }
         out.push(owner);
     }
     out.sort_by_key(|owner| owner.id.clone());
@@ -487,6 +505,122 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
         variant,
+        companion_record_index,
+    })
+}
+
+/// Parse the legacy owner envelope whose scope and scalar lanes are absent.
+///
+/// The class admission is intentional. A short frame is not enough to select
+/// this grammar because older class tags also occur on modern owner records.
+pub(crate) fn parse_legacy_parameter_owner_68(
+    frame: &[u8],
+    evaluated_value: f64,
+) -> Option<DesignParameterOwner> {
+    let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if !matches!(class_tag.as_str(), "284" | "282" | "336" | "325" | "297")
+        || frame.len() != legacy_owner_68::LEN
+        || after_tag != indexed_header::RECORD_INDEX
+        || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER) != Some(&[0; 8])
+        || frame.get(legacy_owner_68::FIRST_MARKER) != Some(&1)
+        || frame.get(legacy_owner_68::ZERO_RUN_13..legacy_owner_68::PARAMETER_MARKER)
+            != Some(&[0; 13])
+        || frame.get(legacy_owner_68::PARAMETER_MARKER) != Some(&1)
+        || frame.get(legacy_owner_68::ZERO_RUN_6..legacy_owner_68::OWNED_ORDINAL) != Some(&[0; 6])
+        || frame.get(legacy_owner_68::ZERO_RUN_7..legacy_owner_68::COMPANION_MARKER)
+            != Some(&[0; 7])
+        || frame.get(legacy_owner_68::COMPANION_MARKER) != Some(&1)
+        || frame.get(legacy_owner_68::ZERO_RUN_8_TAIL..legacy_owner_68::LEN) != Some(&[0; 8])
+    {
+        return None;
+    }
+    let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
+    let parameter_record_index = View::u32_le_at(frame, legacy_owner_68::PARAMETER_RECORD_INDEX)?;
+    let companion_record_index = View::u32_le_at(frame, legacy_owner_68::COMPANION_RECORD_INDEX)?;
+    let consecutive = |first: u32, second: u32, third: u32| {
+        first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
+    };
+    if !evaluated_value.is_finite()
+        || !consecutive(record_index, parameter_record_index, companion_record_index)
+    {
+        return None;
+    }
+    Some(DesignParameterOwner {
+        id: String::new(),
+        byte_offset: 0,
+        frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
+        class_tag,
+        record_index,
+        scope_record_index: 0,
+        local_ordinal: 0,
+        evaluated_value,
+        evaluated_value_offset: 0,
+        parameter_record_index,
+        owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
+        variant: None,
+        companion_record_index,
+    })
+}
+
+/// Parse the legacy owner envelope whose scope is repeated in the suffix but
+/// whose scalar and local-ordinal lanes are absent.
+pub(crate) fn parse_legacy_parameter_owner_88(
+    frame: &[u8],
+    evaluated_value: f64,
+) -> Option<DesignParameterOwner> {
+    let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if !matches!(class_tag.as_str(), "284" | "282" | "336" | "325" | "297")
+        || frame.len() != legacy_owner_88::LEN
+        || after_tag != indexed_header::RECORD_INDEX
+        || frame.get(legacy_owner_88::ZERO_RUN_8..legacy_owner_88::FIRST_MARKER) != Some(&[0; 8])
+        || frame.get(legacy_owner_88::FIRST_MARKER) != Some(&1)
+        || frame.get(legacy_owner_88::ZERO_RUN_13..legacy_owner_88::PARAMETER_MARKER)
+            != Some(&[0; 13])
+        || frame.get(legacy_owner_88::PARAMETER_MARKER) != Some(&1)
+        || frame.get(legacy_owner_88::ZERO_RUN_6..legacy_owner_88::OWNED_ORDINAL) != Some(&[0; 6])
+        || frame.get(legacy_owner_88::ZERO_RUN_4..legacy_owner_88::SCOPE_MARKER) != Some(&[0; 4])
+        || frame.get(legacy_owner_88::SCOPE_MARKER) != Some(&1)
+        || frame.get(legacy_owner_88::ZERO_RUN_8_BETWEEN_SCOPES..legacy_owner_88::COMPANION_MARKER)
+            != Some(&[0; 8])
+        || frame.get(legacy_owner_88::COMPANION_MARKER) != Some(&1)
+        || frame.get(legacy_owner_88::ZERO_RUN_7..legacy_owner_88::REPEATED_SCOPE_MARKER)
+            != Some(&[0; 7])
+        || frame.get(legacy_owner_88::REPEATED_SCOPE_MARKER) != Some(&1)
+        || frame.get(legacy_owner_88::ZERO_RUN_6_TAIL..legacy_owner_88::LEN) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
+    let parameter_record_index = View::u32_le_at(frame, legacy_owner_88::PARAMETER_RECORD_INDEX)?;
+    let scope_record_index = View::u32_le_at(frame, legacy_owner_88::SCOPE_RECORD_INDEX)?;
+    if scope_record_index == 0
+        || View::u32_le_at(frame, legacy_owner_88::REPEATED_SCOPE_RECORD_INDEX)?
+            != scope_record_index
+    {
+        return None;
+    }
+    let companion_record_index = View::u32_le_at(frame, legacy_owner_88::COMPANION_RECORD_INDEX)?;
+    let consecutive = |first: u32, second: u32, third: u32| {
+        first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
+    };
+    if !evaluated_value.is_finite()
+        || !consecutive(record_index, parameter_record_index, companion_record_index)
+    {
+        return None;
+    }
+    Some(DesignParameterOwner {
+        id: String::new(),
+        byte_offset: 0,
+        frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
+        class_tag,
+        record_index,
+        scope_record_index,
+        local_ordinal: 0,
+        evaluated_value,
+        evaluated_value_offset: 0,
+        parameter_record_index,
+        owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
+        variant: None,
         companion_record_index,
     })
 }

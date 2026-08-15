@@ -11,7 +11,10 @@ use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
 
-use super::{parse_design_parameter, parse_parameter_companion, parse_parameter_owner};
+use super::{
+    parse_design_parameter, parse_legacy_parameter_owner_68, parse_legacy_parameter_owner_88,
+    parse_parameter_companion, parse_parameter_owner,
+};
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
 use crate::records::DesignParameterKind;
 use crate::test_support::*;
@@ -261,6 +264,33 @@ fn compact_parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn legacy_parameter_owner_68_frame(class_tag: &str) -> Vec<u8> {
+    let mut frame = vec![0; 68];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(class_tag.as_bytes());
+    frame[7..11].copy_from_slice(&100u32.to_le_bytes());
+    frame[19] = 1;
+    frame[33] = 1;
+    frame[34..38].copy_from_slice(&101u32.to_le_bytes());
+    frame[44..48].copy_from_slice(&290u32.to_le_bytes());
+    frame[55] = 1;
+    frame[56..60].copy_from_slice(&102u32.to_le_bytes());
+    frame
+}
+
+fn legacy_parameter_owner_88_frame(class_tag: &str) -> Vec<u8> {
+    let mut frame = legacy_parameter_owner_68_frame(class_tag);
+    frame.resize(88, 0);
+    frame[48..52].fill(0);
+    frame[52] = 1;
+    frame[53..57].copy_from_slice(&77u32.to_le_bytes());
+    frame[65] = 1;
+    frame[66..70].copy_from_slice(&102u32.to_le_bytes());
+    frame[77] = 1;
+    frame[78..82].copy_from_slice(&77u32.to_le_bytes());
+    frame
+}
+
 fn counted_parameter_owner_frame() -> Vec<u8> {
     let mut frame = vec![0; 101];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -477,6 +507,56 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
     assert_eq!(parsed.evaluated_value_offset, 41);
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
+    let parsed = parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame("284"), 0.0)
+        .expect("legacy 68-byte parameter owner");
+    assert_eq!(parsed.frame_length, 68);
+    assert_eq!(parsed.class_tag, "284");
+    assert_eq!(parsed.record_index, 100);
+    assert_eq!(parsed.parameter_record_index, 101);
+    assert_eq!(parsed.companion_record_index, 102);
+    assert_eq!(parsed.scope_record_index, 0);
+    assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.owned_ordinal, 290);
+    assert_eq!(parsed.evaluated_value, 0.0);
+
+    for class_tag in ["282", "336", "325", "297"] {
+        assert!(
+            parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame(class_tag), 1.25)
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
+    assert!(
+        parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame("291"), 1.0).is_none()
+    );
+
+    let mut malformed = legacy_parameter_owner_68_frame("284");
+    malformed[55] = 0;
+    assert!(parse_legacy_parameter_owner_68(&malformed, 1.0).is_none());
+}
+
+#[test]
+fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
+    let parsed = parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame("284"), 2.5)
+        .expect("legacy 88-byte parameter owner");
+    assert_eq!(parsed.frame_length, 88);
+    assert_eq!(parsed.scope_record_index, 77);
+    assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.owned_ordinal, 290);
+    assert_eq!(parsed.parameter_record_index, 101);
+    assert_eq!(parsed.companion_record_index, 102);
+    assert_eq!(parsed.evaluated_value, 2.5);
+
+    let mut mismatched = legacy_parameter_owner_88_frame("284");
+    mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
+    assert!(parse_legacy_parameter_owner_88(&mismatched, 2.5).is_none());
 }
 
 #[test]

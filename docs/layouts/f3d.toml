@@ -322,6 +322,234 @@ source = "spec"
 anchor = "`u32 local_ordinal`"
 
 [[record]]
+name = "design_parameter_owner_legacy_68"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The admitted legacy 68-byte owner form is a separate grammar"
+size = 68
+note = "Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+
+[[record.field]]
+name = "first_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "`u8 1`"
+
+[[record.field]]
+name = "zero_run_13"
+offset = 20
+type = "bytes[13]"
+source = "spec"
+anchor = "thirteen zero bytes"
+
+[[record.field]]
+name = "parameter_marker"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "`u8 1 + u32 parameter_record_index`"
+
+[[record.field]]
+name = "parameter_record_index"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "`u8 1 + u32 parameter_record_index`"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 38
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "owned_ordinal"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "`u32 owned_ordinal`"
+
+[[record.field]]
+name = "zero_run_7"
+offset = 48
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes"
+
+[[record.field]]
+name = "companion_marker"
+offset = 55
+type = "u8"
+source = "spec"
+anchor = "`u8 1 + u32 companion_record_index`"
+
+[[record.field]]
+name = "companion_record_index"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "`u8 1 + u32 companion_record_index`"
+
+[[record.field]]
+name = "zero_run_8_tail"
+offset = 60
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+
+[[record]]
+name = "design_parameter_owner_legacy_88"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The admitted legacy 88-byte owner form uses the same prefix through `owned_ordinal`"
+size = 88
+note = "Offsets are relative to the legacy parameter-owner primary header. The scalar and local-ordinal lanes are absent."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "the same prefix through `owned_ordinal`"
+
+[[record.field]]
+name = "first_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "the same prefix through `owned_ordinal`"
+
+[[record.field]]
+name = "zero_run_13"
+offset = 20
+type = "bytes[13]"
+source = "spec"
+anchor = "the same prefix through `owned_ordinal`"
+
+[[record.field]]
+name = "parameter_marker"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "the same prefix through `owned_ordinal`"
+
+[[record.field]]
+name = "parameter_record_index"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "the same prefix through `owned_ordinal`"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 38
+type = "bytes[6]"
+source = "spec"
+anchor = "the same prefix through `owned_ordinal`"
+
+[[record.field]]
+name = "owned_ordinal"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "the same prefix through `owned_ordinal`"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 48
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes"
+
+[[record.field]]
+name = "scope_marker"
+offset = 52
+type = "u8"
+source = "spec"
+anchor = "`u8 1 + u32 scope_record_index`"
+
+[[record.field]]
+name = "scope_record_index"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "`u8 1 + u32 scope_record_index`"
+
+[[record.field]]
+name = "zero_run_8_between_scopes"
+offset = 57
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+
+[[record.field]]
+name = "companion_marker"
+offset = 65
+type = "u8"
+source = "spec"
+anchor = "`u8 1 + u32 companion_record_index`"
+
+[[record.field]]
+name = "companion_record_index"
+offset = 66
+type = "u32"
+source = "spec"
+anchor = "`u8 1 + u32 companion_record_index`"
+
+[[record.field]]
+name = "zero_run_7"
+offset = 70
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes"
+
+[[record.field]]
+name = "repeated_scope_marker"
+offset = 77
+type = "u8"
+source = "spec"
+anchor = "`u8 1 + u32 scope_record_index` with a six-byte zero trailer"
+
+[[record.field]]
+name = "repeated_scope_record_index"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "`u8 1 + u32 scope_record_index` with a six-byte zero trailer"
+
+[[record.field]]
+name = "zero_run_6_tail"
+offset = 82
+type = "bytes[6]"
+source = "spec"
+anchor = "a six-byte zero trailer"
+
+[[record]]
 name = "scale_modern_operation_prefix"
 kind = "byte"
 section = "3.1"

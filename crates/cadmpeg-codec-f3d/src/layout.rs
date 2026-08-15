@@ -146,6 +146,90 @@ pub(crate) mod design_parameter_owner_prefix {
     pub(crate) const LOCAL_ORDINAL: usize = 35;
 }
 
+/// Byte offsets for the `design_parameter_owner_legacy_68` record.
+///
+/// Spec §3.1. Record length 68 B.
+///
+/// ```text
+/// Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent.
+/// ```
+pub(crate) mod design_parameter_owner_legacy_68 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 68;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `first_marker` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MARKER: usize = 19;
+    /// Offset of `zero_run_13` (`bytes[13]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_13: usize = 20;
+    /// Offset of `parameter_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_MARKER: usize = 33;
+    /// Offset of `parameter_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_RECORD_INDEX: usize = 34;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 38;
+    /// Offset of `owned_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNED_ORDINAL: usize = 44;
+    /// Offset of `zero_run_7` (`bytes[7]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_7: usize = 48;
+    /// Offset of `companion_marker` (`u8`). Spec §3.1.
+    pub(crate) const COMPANION_MARKER: usize = 55;
+    /// Offset of `companion_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPANION_RECORD_INDEX: usize = 56;
+    /// Offset of `zero_run_8_tail` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8_TAIL: usize = 60;
+}
+
+/// Byte offsets for the `design_parameter_owner_legacy_88` record.
+///
+/// Spec §3.1. Record length 88 B.
+///
+/// ```text
+/// Offsets are relative to the legacy parameter-owner primary header. The scalar and local-ordinal lanes are absent.
+/// ```
+pub(crate) mod design_parameter_owner_legacy_88 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 88;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `first_marker` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MARKER: usize = 19;
+    /// Offset of `zero_run_13` (`bytes[13]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_13: usize = 20;
+    /// Offset of `parameter_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_MARKER: usize = 33;
+    /// Offset of `parameter_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_RECORD_INDEX: usize = 34;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 38;
+    /// Offset of `owned_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNED_ORDINAL: usize = 44;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 48;
+    /// Offset of `scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_MARKER: usize = 52;
+    /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCOPE_RECORD_INDEX: usize = 53;
+    /// Offset of `zero_run_8_between_scopes` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8_BETWEEN_SCOPES: usize = 57;
+    /// Offset of `companion_marker` (`u8`). Spec §3.1.
+    pub(crate) const COMPANION_MARKER: usize = 65;
+    /// Offset of `companion_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPANION_RECORD_INDEX: usize = 66;
+    /// Offset of `zero_run_7` (`bytes[7]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_7: usize = 70;
+    /// Offset of `repeated_scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const REPEATED_SCOPE_MARKER: usize = 77;
+    /// Offset of `repeated_scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_SCOPE_RECORD_INDEX: usize = 78;
+    /// Offset of `zero_run_6_tail` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6_TAIL: usize = 82;
+}
+
 /// Byte offsets for the `scale_modern_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 79 B.
