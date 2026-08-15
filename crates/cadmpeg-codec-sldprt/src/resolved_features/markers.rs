@@ -463,6 +463,9 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 terminal_extended_profile_point_coordinates(payload, offset);
             let compact_geometry_locus_point =
                 compact_geometry_locus_point_coordinates(payload, offset);
+            let shifted_geometry_handle = shifted_geometry_handle_coordinates(payload, offset);
+            let shifted_geometry_locus = shifted_geometry_handle
+                .or_else(|| shifted_geometry_locus_coordinates(payload, offset));
             let inline_arc = inline_arc_coordinates(payload, offset);
             let coordinates_m = linked_point
                 .map(|(coordinates, _)| coordinates)
@@ -477,6 +480,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 .or(compact_legacy_profile_point)
                 .or(terminal_profile_point)
                 .or(compact_geometry_locus_point)
+                .or(shifted_geometry_locus)
                 .or_else(|| inline_arc.map(|[center, _, _]| center))
                 .or_else(|| marker_coordinates(payload, offset));
             let kind = if slot_curve_and_center_indices(payload, offset).is_some() {
@@ -496,6 +500,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 || compact_legacy_profile_point.is_some()
                 || terminal_profile_point.is_some()
                 || compact_geometry_locus_point.is_some()
+                || shifted_geometry_handle.is_some()
                 || linked_point.is_some()
                 || coordinates_m.is_some()
                     && (compact_legacy_profile_vertex(payload, offset)
@@ -879,6 +884,9 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     }
     if let Some([center, _, _]) = inline_arc_coordinates(payload, offset) {
         return Some(center);
+    }
+    if let Some(coordinates) = shifted_geometry_locus_coordinates(payload, offset) {
+        return Some(coordinates);
     }
     if geometry_locus_profile_vertex(payload, offset)
         && payload.get(offset + 56..offset + 58) == Some(&[0x1e, 0x00])
@@ -2010,6 +2018,56 @@ fn compact_geometry_locus_point_coordinates(payload: &[u8], offset: usize) -> Op
         return None;
     }
     finite_coordinate_pair(payload, offset + 58)
+}
+
+fn shifted_geometry_locus_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    // This compact geometry-locus family moves the coordinate tag and pair eight
+    // bytes past the ordinary linked-point positions. The framed trailer is part
+    // of the discriminator: unlocated handles share the header but carry no pair.
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || !matches!(marker_native_code(payload, offset), Some(0..=2))
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || !matches!(
+            payload.get(offset + 29..offset + 31),
+            Some([0x00 | 0x01, 0x00])
+        )
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+        || !matches!(
+            payload.get(offset + 64..offset + 66),
+            Some([0x12 | 0x13 | 0x16, 0x00])
+        )
+    {
+        return None;
+    }
+    let valid_record = [(142, 92), (146, 92), (162, 112), (177, 127), (178, 128)]
+        .into_iter()
+        .any(|(length, sentinel)| {
+            payload.get(offset + sentinel..offset + sentinel + 4) == Some(&[0xfe, 0xff, 0xff, 0xff])
+                && sketch_marker_prefix_at(payload, offset.saturating_add(length))
+        });
+    if !valid_record {
+        return None;
+    }
+    finite_coordinate_pair(payload, offset + 66)
+}
+
+fn shifted_geometry_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    let coordinates = shifted_geometry_locus_coordinates(payload, offset)?;
+    let code = marker_native_code(payload, offset)?;
+    let line_handle = code == 2
+        && payload.get(offset + 84..offset + 86) == Some(&2u16.to_le_bytes())
+        && payload.get(offset + 86..offset + 92) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
+        && payload.get(offset + 92..offset + 104) == Some(b"sgLineHandle");
+    let arc_handle = code == 1
+        && payload.get(offset + 84..offset + 86) == Some(&2u16.to_le_bytes())
+        && payload.get(offset + 98..offset + 104) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0b, 0x00])
+        && payload.get(offset + 104..offset + 115) == Some(b"sgArcHandle");
+    (line_handle || arc_handle).then_some(coordinates)
 }
 
 fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
