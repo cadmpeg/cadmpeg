@@ -132,6 +132,52 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
 }
 
 #[test]
+fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
+    const EPS_ENDPOINT_STORAGE: f64 = 1.0e-12;
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(conic_arc_file(
+                1,
+                b"104,0.25,0,1,0,0,-1,0,2.0005,0,0,1.0005;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.is_empty());
+    assert_eq!(result.ir().model.points.len(), 2);
+    let start = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.position.x > 2.0)
+        .expect("decoded start endpoint");
+    let end = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.position.y > 1.0)
+        .expect("decoded terminate endpoint");
+    assert!((start.position.x - 2.0005).abs() < EPS_ENDPOINT_STORAGE);
+    assert!((end.position.y - 1.0005).abs() < EPS_ENDPOINT_STORAGE);
+    let range = result.ir().model.edges[0]
+        .param_range
+        .expect("fixture has a bounded conic range");
+    let geometry = &result.ir().model.curves[0].geometry;
+    let evaluated_start = cadmpeg_ir::eval::curve_point(geometry, range[0])
+        .expect("coefficient-defined carrier evaluates at its start");
+    let evaluated_end = cadmpeg_ir::eval::curve_point(geometry, range[1])
+        .expect("coefficient-defined carrier evaluates at its end");
+    assert!(start.position.distance(evaluated_start) > 0.0);
+    assert!(end.position.distance(evaluated_end) > 0.0);
+    assert!(start.position.distance(evaluated_start) <= 0.001);
+    assert!(end.position.distance(evaluated_end) <= 0.001);
+}
+
+#[test]
 fn decode_applies_the_scale_relative_standard_position_gate() {
     for (cross_term, decoded) in [
         (super::CONIC_STANDARD_POSITION_RELATIVE_EPSILON, true),

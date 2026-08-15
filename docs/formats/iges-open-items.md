@@ -121,16 +121,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2731411c2` centralized domains and added self-authored coverage; it did not verify the mapping against the format or independent producer files.
 
-### GE-09. Type 104 endpoints are not tested against the conic
-
-**Question.** Must Type 104 endpoint coordinates agree with the conic parameters, and what tolerance applies?
-
-**Known.** `geometry.rs` uses the endpoint values and accepts agreement within the Global minimum resolution. The current tests use matching or project-bracketed values.
-
-**Need.** We need the source authority between the analytic coefficients and endpoint fields, and the tolerance for disagreement.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `2ac641864` added endpoint validation, but no independent evidence establishes the authority or tolerance.
-
 ### GE-12. Type 126 property flags against the values
 
 **Question.** Which Type 126 representation flags are authoritative when they disagree with the values?

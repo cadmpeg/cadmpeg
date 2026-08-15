@@ -80,6 +80,14 @@ fn add_bounded_curve(
     edge
 }
 
+fn endpoint_agrees_with_coefficient_carrier(
+    endpoint: Point3,
+    evaluated: Point3,
+    resolution: f64,
+) -> bool {
+    endpoint.distance(evaluated) <= resolution
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -387,14 +395,14 @@ pub(super) fn project(
             continue;
         };
         let resolution = global.minimum_resolution_mm();
-        if start.distance(evaluated_start) > resolution {
+        if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start, resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic start point disagrees with the evaluated carrier beyond the minimum resolution",
             ));
             continue;
         }
-        if end.distance(evaluated_end) > resolution {
+        if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end, resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic terminate point disagrees with the evaluated carrier beyond the minimum resolution",
