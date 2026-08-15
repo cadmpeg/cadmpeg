@@ -1004,6 +1004,188 @@ pub struct IndexedSection<'a> {
     pub records: Vec<EntityRecord<'a>>,
 }
 
+/// Byte ranges needed to materialize one indexed section without rescanning
+/// the containing payload.
+#[derive(Debug, Clone, Copy)]
+struct IndexedByteRange {
+    start: usize,
+    end: usize,
+}
+
+/// One cached declaration range in an indexed section.
+#[derive(Debug, Clone, Copy)]
+struct IndexedDefinitionLayout {
+    offset: usize,
+    name_len: usize,
+    trailing_code: u8,
+    registry_suffix: Option<IndexedByteRange>,
+}
+
+/// One cached entity-record range in an indexed section.
+#[derive(Debug, Clone, Copy)]
+struct IndexedRecordLayout {
+    object_id: Option<u32>,
+    object_id_offset: Option<usize>,
+    bytes: IndexedByteRange,
+}
+
+/// Cached indexed-section layout owned by a parsed container.
+#[derive(Debug, Clone)]
+pub(crate) struct IndexedSectionLayout {
+    base: usize,
+    entity_index_offset: usize,
+    pub(crate) object_id_table_offset: usize,
+    types: Vec<IndexedDefinitionLayout>,
+    fields: Vec<IndexedDefinitionLayout>,
+    control: Option<IndexedRecordLayout>,
+    column_storage: Option<IndexedByteRange>,
+    records: Vec<IndexedRecordLayout>,
+}
+
+impl IndexedSectionLayout {
+    fn from_section(section: &IndexedSection<'_>) -> Self {
+        let types = section
+            .types
+            .iter()
+            .enumerate()
+            .map(|(index, definition)| IndexedDefinitionLayout {
+                offset: definition.offset,
+                name_len: definition.name.len(),
+                trailing_code: definition.trailing_code,
+                registry_suffix: (index + 1 < section.types.len()).then(|| IndexedByteRange {
+                    start: definition.offset + definition.name.len() + 2,
+                    end: section.types[index + 1].offset,
+                }),
+            })
+            .collect();
+        let fields = section
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(index, definition)| IndexedDefinitionLayout {
+                offset: definition.offset,
+                name_len: definition.name.len(),
+                trailing_code: definition.trailing_code,
+                registry_suffix: (index + 1 < section.fields.len()).then(|| IndexedByteRange {
+                    start: definition.offset + definition.name.len() + 2,
+                    end: section.fields[index + 1].offset,
+                }),
+            })
+            .collect();
+        let record_layout = |record: &EntityRecord<'_>| IndexedRecordLayout {
+            object_id: record.object_id,
+            object_id_offset: record.object_id_offset,
+            bytes: IndexedByteRange {
+                start: record.offset,
+                end: record.offset + record.bytes.len(),
+            },
+        };
+        let control = section.control.as_ref().map(record_layout);
+        let column_storage = section.column_storage.map(|storage| {
+            let start = section
+                .records
+                .first()
+                .expect("offset-only indexed section has records")
+                .offset;
+            IndexedByteRange {
+                start,
+                end: start + storage.len(),
+            }
+        });
+        Self {
+            base: section.base,
+            entity_index_offset: section.entity_index_offset,
+            object_id_table_offset: section.object_id_table_offset,
+            types,
+            fields,
+            control,
+            column_storage,
+            records: section.records.iter().map(record_layout).collect(),
+        }
+    }
+
+    pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> IndexedSection<'a> {
+        let materialize_record = |layout: &IndexedRecordLayout| EntityRecord {
+            object_id: layout.object_id,
+            object_id_offset: layout.object_id_offset,
+            offset: layout.bytes.start,
+            bytes: bytes
+                .get(layout.bytes.start..layout.bytes.end)
+                .expect("cached indexed record remains in source"),
+        };
+        IndexedSection {
+            base: self.base,
+            entity_index_offset: self.entity_index_offset,
+            object_id_table_offset: self.object_id_table_offset,
+            types: self
+                .types
+                .iter()
+                .map(|layout| materialize_type_definition(bytes, layout))
+                .collect(),
+            fields: self
+                .fields
+                .iter()
+                .map(|layout| materialize_field_definition(bytes, layout))
+                .collect(),
+            control: self.control.as_ref().map(materialize_record),
+            column_storage: self.column_storage.map(|range| {
+                bytes
+                    .get(range.start..range.end)
+                    .expect("cached indexed column storage remains in source")
+            }),
+            records: self.records.iter().map(materialize_record).collect(),
+        }
+    }
+}
+
+fn materialize_registry_suffix(bytes: &[u8], range: Option<IndexedByteRange>) -> &[u8] {
+    range.map_or(&bytes[..0], |range| {
+        bytes
+            .get(range.start..range.end)
+            .expect("cached indexed registry suffix remains in source")
+    })
+}
+
+fn materialize_type_definition<'a>(
+    bytes: &'a [u8],
+    layout: &IndexedDefinitionLayout,
+) -> TypeDefinition<'a> {
+    let name_start = layout.offset + 1;
+    let name_end = name_start + layout.name_len;
+    let name = std::str::from_utf8(
+        bytes
+            .get(name_start..name_end)
+            .expect("cached indexed declaration name remains in source"),
+    )
+    .expect("cached indexed declaration name remains UTF-8");
+    TypeDefinition {
+        offset: layout.offset,
+        name,
+        trailing_code: layout.trailing_code,
+        registry_suffix: materialize_registry_suffix(bytes, layout.registry_suffix),
+    }
+}
+
+fn materialize_field_definition<'a>(
+    bytes: &'a [u8],
+    layout: &IndexedDefinitionLayout,
+) -> FieldDefinition<'a> {
+    let name_start = layout.offset + 1;
+    let name_end = name_start + layout.name_len;
+    let name = std::str::from_utf8(
+        bytes
+            .get(name_start..name_end)
+            .expect("cached indexed declaration name remains in source"),
+    )
+    .expect("cached indexed declaration name remains UTF-8");
+    FieldDefinition {
+        offset: layout.offset,
+        name,
+        trailing_code: layout.trailing_code,
+        registry_suffix: materialize_registry_suffix(bytes, layout.registry_suffix),
+    }
+}
+
 /// One size-framed NX object-model section.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section<'a> {
@@ -5681,6 +5863,15 @@ pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
 pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
     let mut out = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
+    let product_record_ranges = (0..bytes.len())
+        .filter_map(|offset| {
+            let suffix = bytes.get(offset..)?;
+            is_product_record(suffix).then_some(())?;
+            let text_length = usize::from(*suffix.get(2)?).checked_sub(2)?;
+            let record_len = 3usize.checked_add(text_length)?.checked_add(1)?;
+            Some((offset, offset.checked_add(record_len)?))
+        })
+        .collect::<Vec<_>>();
     for table in 0..bytes.len().saturating_sub(4) {
         let Some(count) = View::u32_le_at(bytes, table).map(|value| value as usize) else {
             continue;
@@ -5810,8 +6001,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         {
             continue;
         }
-        let product_record_count = root_record_count(&bytes[offsets[0]..offsets[1]])
-            + root_record_count(&bytes[offsets[1]..offsets[2]]);
+        let product_record_count = product_record_ranges
+            .iter()
+            .filter(|(start, end)| {
+                (offsets[0] <= *start && *end <= offsets[1])
+                    || (offsets[1] <= *start && *end <= offsets[2])
+            })
+            .count();
         if product_record_count != 1 || !seen_record_starts.insert(offsets[1]) {
             continue;
         }
@@ -5843,10 +6039,12 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
     out
 }
 
-fn root_record_count(bytes: &[u8]) -> usize {
-    (0..bytes.len())
-        .filter(|offset| is_product_record(&bytes[*offset..]))
-        .count()
+/// Parse indexed sections once and retain only their source ranges.
+pub(crate) fn indexed_section_layouts(bytes: &[u8]) -> Vec<IndexedSectionLayout> {
+    indexed_sections(bytes)
+        .iter()
+        .map(IndexedSectionLayout::from_section)
+        .collect()
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.

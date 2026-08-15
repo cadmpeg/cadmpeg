@@ -3986,6 +3986,7 @@ mod tests {
                 region: Region::Footer,
                 file_span: Some((0, data.len() as u64)),
             }],
+            indexed_section_layouts: std::sync::OnceLock::new(),
         };
         let indices = super::display_jt_indices(&container);
         assert_eq!(indices[0].version, 9);
@@ -4078,6 +4079,7 @@ mod tests {
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
             entries: Vec::new(),
+            indexed_section_layouts: std::sync::OnceLock::new(),
         };
         let segment = DisplayJtSegment {
             id: "segment".to_string(),
@@ -4169,6 +4171,7 @@ mod tests {
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
             entries: Vec::new(),
+            indexed_section_layouts: std::sync::OnceLock::new(),
         };
         let scene = DisplayJtSegment {
             id: "scene".into(),
@@ -5067,6 +5070,7 @@ mod tests {
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
             entries: Vec::new(),
+            indexed_section_layouts: std::sync::OnceLock::new(),
         };
         let elements = [DisplayJtShapeLodElement {
             id: "shape-lod".into(),

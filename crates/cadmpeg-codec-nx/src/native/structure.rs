@@ -398,6 +398,7 @@ mod tests {
                 region: Region::Header,
                 file_span: Some((0, len)),
             }],
+            indexed_section_layouts: std::sync::OnceLock::new(),
         }
     }
 

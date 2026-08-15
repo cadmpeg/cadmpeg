@@ -1182,6 +1182,18 @@ fn om_offset_only_index_bounds_storage_blocks() {
 }
 
 #[test]
+fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
+    for bytes in [indexed_om_section(), offset_only_indexed_om_section()] {
+        let section = super::indexed_sections(&bytes)
+            .into_iter()
+            .next()
+            .expect("indexed fixture has one section");
+        let layout = super::IndexedSectionLayout::from_section(&section);
+        assert_eq!(layout.materialize(&bytes), section);
+    }
+}
+
+#[test]
 fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     let bytes = control_root_offset_only_indexed_om_section();
     let sections = super::indexed_sections(&bytes);
@@ -1197,6 +1209,26 @@ fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     assert_eq!(sections[0].records.len(), 2);
     assert_eq!(sections[0].records[0].bytes, &[0; 32]);
     assert_eq!(sections[0].numeric_expressions()[0].name, "length");
+}
+
+#[test]
+fn om_offset_only_index_ignores_product_marker_crossing_record_boundary() {
+    use cadmpeg_core::decode::View;
+
+    let mut bytes = control_root_offset_only_indexed_om_section();
+    let class_name = b"UGS::ModlFeature";
+    let class_start = bytes
+        .windows(class_name.len())
+        .position(|window| window == class_name)
+        .expect("class declaration");
+    let index_start = class_start + class_name.len() + 1;
+    let first = usize::try_from(View::u32_le_at(&bytes, index_start + 4).unwrap()).unwrap();
+    let product = b"\x04\x01\x0eNX 2027.3102\0";
+    let split = 3;
+    bytes[first - split..first].copy_from_slice(&product[..split]);
+    bytes[first..first + product.len() - split].copy_from_slice(&product[split..]);
+
+    assert_eq!(super::indexed_sections(&bytes).len(), 1);
 }
 
 #[test]

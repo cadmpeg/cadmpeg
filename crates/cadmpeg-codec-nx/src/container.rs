@@ -7,6 +7,7 @@
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::{bounded_len, View};
@@ -313,25 +314,38 @@ impl Container<'_> {
 
     /// Locate indexed NX object-model sections in catalogued file entries.
     pub fn indexed_om_sections(&self) -> Vec<(&DirEntry, crate::om::IndexedSection<'_>)> {
-        let mut out = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for entry in &self.entries {
-            let Some((offset, size)) = entry.file_span else {
-                continue;
-            };
-            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-                continue;
-            };
-            let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
-                continue;
-            };
-            for section in crate::om::indexed_sections(payload) {
-                if seen.insert((offset, section.object_id_table_offset)) {
-                    out.push((entry, section));
+        let layouts = self.indexed_section_layouts.get_or_init(|| {
+            let mut layouts = Vec::new();
+            let mut seen = std::collections::BTreeSet::new();
+            for (entry_index, entry) in self.entries.iter().enumerate() {
+                let Some((offset, size)) = entry.file_span else {
+                    continue;
+                };
+                let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size))
+                else {
+                    continue;
+                };
+                let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
+                    continue;
+                };
+                for layout in crate::om::indexed_section_layouts(payload) {
+                    if seen.insert((offset, layout.object_id_table_offset)) {
+                        layouts.push((entry_index, layout));
+                    }
                 }
             }
-        }
-        out
+            layouts
+        });
+        layouts
+            .iter()
+            .filter_map(|(entry_index, layout)| {
+                let entry = self.entries.get(*entry_index)?;
+                let (offset, size) = entry.file_span?;
+                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                let payload = self.data.get(offset..offset.saturating_add(size))?;
+                Some((entry, layout.materialize(payload)))
+            })
+            .collect()
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
@@ -658,6 +672,8 @@ pub struct Container<'a> {
     pub footer_fingerprint: [u8; 4],
     /// Enumerated directory entries from both regions, in serialized order.
     pub entries: Vec<DirEntry>,
+    /// Cached source ranges for indexed object-model sections.
+    pub(crate) indexed_section_layouts: OnceLock<Vec<(usize, crate::om::IndexedSectionLayout)>>,
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
@@ -754,6 +770,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         footer_entry_count,
         footer_fingerprint,
         entries,
+        indexed_section_layouts: OnceLock::new(),
     })
 }
 

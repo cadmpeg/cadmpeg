@@ -335,6 +335,7 @@ mod tests {
                 footer_entry_count: 0,
                 footer_fingerprint: [0; 4],
                 entries: Vec::new(),
+                indexed_section_layouts: std::sync::OnceLock::new(),
             },
             streams: vec![crate::parasolid::Stream {
                 file_offset: 0,
