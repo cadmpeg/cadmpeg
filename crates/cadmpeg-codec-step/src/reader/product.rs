@@ -33,6 +33,12 @@ const PRODUCT_DEFINITION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION",
     "PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
 ];
+const DRAWING_ITEM_OWNER_TYPES: &[&str] = &[
+    "DRAWING_SHEET_REVISION",
+    "PRESENTATION_VIEW",
+    "DRAUGHTING_MODEL",
+    "DRAUGHTING_CALLOUT",
+];
 
 pub(super) struct ProductData {
     pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
@@ -535,8 +541,12 @@ fn apply_body_placements(
         .collect::<BTreeMap<_, _>>();
     let mut representation_cache = BTreeMap::new();
     let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
+    let drawing_owned_items = drawing_owned_items(exchange);
     for (id, item) in exchange.entities("MAPPED_ITEM") {
         if item.partial("MAPPED_ITEM").is_none() {
+            continue;
+        }
+        if drawing_owned_items.contains(&id) {
             continue;
         }
         let Some((representation, origin, target)) = mapped_item_definition(item, exchange) else {
@@ -596,6 +606,41 @@ fn apply_body_placements(
                     )));
             }
         }
+    }
+}
+
+fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
+    let mut items = BTreeSet::new();
+    for record in exchange.records.values() {
+        let drawing_owner = record
+            .partials
+            .iter()
+            .any(|partial| DRAWING_ITEM_OWNER_TYPES.contains(&partial.name.as_str()));
+        if drawing_owner {
+            for value in record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+            {
+                collect_references(value, &mut items);
+            }
+        }
+    }
+    items
+}
+
+fn collect_references(value: &Value, references: &mut BTreeSet<u64>) {
+    match value {
+        Value::Reference(id) => {
+            references.insert(*id);
+        }
+        Value::List(values) => {
+            for value in values {
+                collect_references(value, references);
+            }
+        }
+        Value::Typed(_, value) => collect_references(value, references),
+        _ => {}
     }
 }
 
