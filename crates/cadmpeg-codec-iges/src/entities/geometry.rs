@@ -1046,20 +1046,20 @@ pub(crate) fn project_geometry(
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
-    let copious = super::copious::project(ir, directory, parameters, global, ctx);
+    let copious = super::copious::project(ir, directory, parameters, global, ctx)?;
     handled.extend(copious.handled);
     decoded.extend(copious.decoded);
     losses.extend(copious.losses);
     wire_edges.extend(copious.wire_edges);
     free_vertices.extend(copious.free_vertices);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
-    let splines = super::splines::project(ir, directory, parameters, global, ctx);
+    let splines = super::splines::project(ir, directory, parameters, global, ctx)?;
     handled.extend(splines.handled);
     decoded.extend(splines.decoded);
     losses.extend(splines.losses);
     wire_edges.extend(splines.wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
-    let composites = super::composite::project(ir, directory, parameters, global, ctx);
+    let composites = super::composite::project(ir, directory, parameters, global, ctx)?;
     handled.extend(composites.handled);
     decoded.extend(composites.decoded);
     losses.extend(composites.losses);
@@ -1082,7 +1082,7 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_analytic_surfaces",
     )?;
-    let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx);
+    let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx)?;
     handled.extend(surfaces.handled);
     decoded.extend(surfaces.decoded);
     losses.extend(surfaces.losses);

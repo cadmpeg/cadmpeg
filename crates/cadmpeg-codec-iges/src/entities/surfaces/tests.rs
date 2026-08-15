@@ -33,6 +33,31 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 use super::angular_basis;
 
 #[test]
+fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 128,
+                form: 0,
+                label: "SURFACE".into(),
+                status: "00000000",
+                parameters: "128,1000,1000,1,1,0,0,0,0,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_surface_poles")
+                && limit.limit == 1_000_000
+                && limit.used == 1_000_000
+                && limit.additional == 2_001
+    ));
+}
+
+#[test]
 fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
     let basis = angular_basis(0.0, std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13)
         .expect("a near-full finite sweep has an exact rational basis");

@@ -34,6 +34,31 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 use super::*;
 
 #[test]
+fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 102,
+                form: 0,
+                label: "COMPOSIT".into(),
+                status: "00000000",
+                parameters: "102,100001;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_composite_children")
+                && limit.limit == 100_000
+                && limit.used == 100_000
+                && limit.additional == 1
+    ));
+}
+
+#[test]
 fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     let curve_id = CurveId("line".into());
     let mut ir = CadIr::empty(Units::default());
