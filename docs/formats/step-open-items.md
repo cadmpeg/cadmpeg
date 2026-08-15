@@ -250,23 +250,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### CE-01. ZIP container layout
-
-**Known.** A conforming Part 21 ZIP container uses PKZIP 2.04g stored or
-Deflate entries and contains one exact root member named `ISO-10303.p21` at
-the archive root. All other members are subsidiaries. The reader enumerates
-each member's name, compression, CRC, sizes, and physical offsets, rejects a
-missing root, unsupported compression, unsafe member path, duplicate name, or
-encrypted entry, and decodes the root as the Part 21 exchange structure.
-
-**Question.** Which ZIP entries, names, metadata, and relationships form an edition-3 exchange container?
-
-`step.md` §1 "Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use" through `step.md` §1 "Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use" identify a ZIP container as distinct from a clear-text Part 21 exchange structure. `step.md` §2 "A clear-text exchange structure uses this outer grammar:" defines the clear-text outer grammar.
-
-**Need.** We must know the layout to locate and identify each exchange resource in the container.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### UD-01. User-defined entity semantics
 
 **Known.** Part 21 does not assign semantics to a user-defined entity

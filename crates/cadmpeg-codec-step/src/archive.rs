@@ -40,6 +40,11 @@ pub(crate) fn open_root<'a>(
     let archive = ArchiveSnapshot::new(root)?;
     for entry in archive.entries() {
         validate_entry_name(&entry.name)?;
+        if entry.uses_utf8_name_encoding() {
+            return Err(CodecError::Malformed(
+                "STEP ZIP uses prohibited Unicode filename support".into(),
+            ));
+        }
         if entry.compression == EntryCompression::Zstd {
             return Err(CodecError::NotImplemented(
                 "STEP ZIP requires PKZIP 2.04g stored or Deflate entries".into(),

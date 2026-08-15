@@ -51,7 +51,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::ids::StepIdentity;
 use crate::test_support::{decode_inline, export};
@@ -71,6 +71,70 @@ fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
         std::io::Write::write_all(&mut writer, bytes).unwrap();
     }
     writer.finish().unwrap().into_inner()
+}
+
+fn duplicate_first_central_record(mut bytes: Vec<u8>) -> Vec<u8> {
+    let end = bytes
+        .windows(4)
+        .rposition(|signature| signature == b"PK\x05\x06")
+        .expect("ZIP end record");
+    let central_start = u32::from_le_bytes(bytes[end + 16..end + 20].try_into().unwrap()) as usize;
+    let name_len = u16::from_le_bytes(
+        bytes[central_start + 28..central_start + 30]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let extra_len = u16::from_le_bytes(
+        bytes[central_start + 30..central_start + 32]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let comment_len = u16::from_le_bytes(
+        bytes[central_start + 32..central_start + 34]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let record_len = 46 + name_len + extra_len + comment_len;
+    let record = bytes[central_start..central_start + record_len].to_vec();
+    let central_end = end;
+    bytes.splice(central_end..central_end, record.iter().copied());
+    let new_end = end + record_len;
+    let count = u16::from_le_bytes(bytes[new_end + 10..new_end + 12].try_into().unwrap());
+    bytes[new_end + 8..new_end + 10].copy_from_slice(&(count + 1).to_le_bytes());
+    bytes[new_end + 10..new_end + 12].copy_from_slice(&(count + 1).to_le_bytes());
+    let size = u32::from_le_bytes(bytes[new_end + 12..new_end + 16].try_into().unwrap());
+    bytes[new_end + 12..new_end + 16].copy_from_slice(&(size + record_len as u32).to_le_bytes());
+    bytes
+}
+
+fn mark_entries_encrypted(mut bytes: Vec<u8>) -> Vec<u8> {
+    let locations = {
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        (0..archive.len())
+            .map(|index| {
+                let file = archive.by_index(index).unwrap();
+                (
+                    file.header_start() as usize,
+                    file.central_header_start() as usize,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    for (local, central) in locations {
+        let local_flags = u16::from_le_bytes(bytes[local + 6..local + 8].try_into().unwrap()) | 1;
+        bytes[local + 6..local + 8].copy_from_slice(&local_flags.to_le_bytes());
+        let central_flags =
+            u16::from_le_bytes(bytes[central + 8..central + 10].try_into().unwrap()) | 1;
+        bytes[central + 8..central + 10].copy_from_slice(&central_flags.to_le_bytes());
+    }
+    bytes
+}
+
+fn corrupt_first_payload(mut bytes: Vec<u8>) -> Vec<u8> {
+    let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+    let data_start = archive.by_index(0).unwrap().data_start().unwrap() as usize;
+    bytes[data_start] ^= 1;
+    bytes
 }
 
 #[test]
@@ -208,6 +272,48 @@ fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
     assert!(matches!(
         codec.inspect(&mut Cursor::new(zstd), &InspectOptions::default()),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
+
+    let unicode_name = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Stored),
+        ("π-preview.bin", b"ancillary", CompressionMethod::Stored),
+    ]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(unicode_name), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let duplicate_name = duplicate_first_central_record(step_zip(&[(
+        "ISO-10303.p21",
+        root,
+        CompressionMethod::Stored,
+    )]));
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(duplicate_name), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let encrypted = mark_entries_encrypted(step_zip(&[(
+        "ISO-10303.p21",
+        root,
+        CompressionMethod::Stored,
+    )]));
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(encrypted), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let checksum_mismatch = corrupt_first_payload(step_zip(&[(
+        "ISO-10303.p21",
+        root,
+        CompressionMethod::Stored,
+    )]));
+    assert!(matches!(
+        codec.inspect(
+            &mut Cursor::new(checksum_mismatch),
+            &InspectOptions::default()
+        ),
+        Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
 
