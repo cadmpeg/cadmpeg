@@ -540,6 +540,7 @@ pub(super) fn compact_surface_selections(
                 &cylinder_reference_tokens,
             )
             .into_iter()
+            .chain(cosmetic_thread_component_references(lane, start, end))
             .chain(lane.classes.iter().filter_map(|class| {
                 let offset = usize::try_from(class.offset).ok()?;
                 (class.name == "moCompFace_c" && (start..end).contains(&offset))
@@ -907,6 +908,59 @@ pub(super) fn cosmetic_thread_cylinder_references(
         .find_map(|offset| cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset))
         .into_iter()
         .collect()
+}
+
+/// Decode direct component-edge references owned by a cosmetic-thread object.
+///
+/// Some native lanes carry the selected cylindrical support as a `moCompEdge_c`
+/// child instead of wrapping the same component path in `moCylinderRef_w`.
+/// Restrict the scan to that child class and keep the normal single-candidate
+/// check in `compact_surface_selections`; unrelated compact vectors in the
+/// thread's other children must not become face selections.
+pub(super) fn cosmetic_thread_component_references(
+    lane: &FeatureInputLane,
+    object_start: usize,
+    object_end: usize,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let mut class_ranges = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moCompEdge_c")
+        .filter_map(|class| {
+            let class_offset = usize::try_from(class.offset).ok()?;
+            if !(object_start..object_end).contains(&class_offset) {
+                return None;
+            }
+            let body = class_offset.checked_add(6 + class.name.len())?;
+            let next_class = lane
+                .classes
+                .iter()
+                .filter_map(|candidate| usize::try_from(candidate.offset).ok())
+                .filter(|offset| *offset > class_offset && *offset < object_end)
+                .min()
+                .unwrap_or(object_end);
+            (body < next_class).then_some(body..next_class)
+        })
+        .collect::<Vec<_>>();
+    class_ranges.sort_by_key(|range| range.start);
+
+    let mut references = class_ranges
+        .into_iter()
+        .flat_map(|range| {
+            range.filter(|marker| {
+                lane.native_payload
+                    .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                    == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+            })
+        })
+        .filter_map(|marker| {
+            compact_edge_component_path_at(&lane.native_payload, marker)
+                .map(|components| (marker, components))
+        })
+        .collect::<Vec<_>>();
+    references.sort_by_key(|(marker, _)| *marker);
+    references.dedup_by_key(|(marker, _)| *marker);
+    references
 }
 
 pub(super) fn cosmetic_thread_cylinder_marker_reference(

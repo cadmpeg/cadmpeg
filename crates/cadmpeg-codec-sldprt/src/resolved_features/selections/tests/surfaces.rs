@@ -485,6 +485,69 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
 }
 
 #[test]
+fn cosmetic_thread_reads_a_direct_component_edge_reference() {
+    let class_name = "moCompEdge_c";
+    let class_offset = 40;
+    let body_offset = class_offset + 6 + class_name.len();
+    let marker = body_offset + 36;
+    let mut payload = vec![0; marker + 18];
+    payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..body_offset].copy_from_slice(class_name.as_bytes());
+    payload[marker - 12..marker - 8].copy_from_slice(&2u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+    let signature = [0x00, 0x81, 0x03, 0x01, 42, 0, 0, 0, 0x63, 0x18, 0x58, 0x69];
+    let first = marker + 18;
+    payload.resize(first + 48, 0);
+    payload[first..first + 4].copy_from_slice(&[0x3d, 0x80, 0, 0]);
+    payload[first + 4..first + 16].copy_from_slice(&signature);
+    payload[first + 16..first + 20].copy_from_slice(&2u32.to_le_bytes());
+    let second = first + 28;
+    payload[second..second + 4].copy_from_slice(&[0x4a, 0x80, 0, 0]);
+    payload[second + 4..second + 16].copy_from_slice(&signature);
+    payload[second + 16..second + 20].copy_from_slice(&3u32.to_le_bytes());
+
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "component-edge".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Reference,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let references = cosmetic_thread_component_references(&lane, 0, lane.native_payload.len());
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].0, marker);
+    assert_eq!(
+        references[0]
+            .1
+            .iter()
+            .map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [Some(2), Some(3)]
+    );
+}
+
+#[test]
 fn component_face_reference_accepts_both_nested_body_flags() {
     let body_offset = 30;
     let nested_marker =
