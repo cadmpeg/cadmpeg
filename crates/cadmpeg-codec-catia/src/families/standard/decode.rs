@@ -3691,8 +3691,6 @@ fn attach_standard_topology(
     let mut mesh_search_exhausted = false;
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
-    } else if fbb_only {
-        return Err(StandardTopologyFailure::NoTopologySolution);
     } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
         fbb::parse_standard_endpoints_with_edge_classes(
             spine,
@@ -3704,7 +3702,14 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        let branch_groups = standard_curve_branch_groups(&supports, options);
+        // FBB-only rows are complete boundary runs. Their table-scoped handle
+        // quotient, not standard-row allocation rank, is the incidence source.
+        // Keep the generic mesh solver's admitted domains intact for this route.
+        let branch_groups = if fbb_only {
+            Vec::new()
+        } else {
+            standard_curve_branch_groups(&supports, options)
+        };
         let initial_assignment = options
             .iter()
             .map(|candidates| {
@@ -3715,13 +3720,17 @@ fn attach_standard_topology(
                 }
             })
             .collect::<Vec<_>>();
-        let solver_options = standard_curve_branch_candidates_after_partial_assignment(
-            &supports,
-            options,
-            &branch_groups,
-            &initial_assignment,
-            Some(work_budget),
-        )?;
+        let solver_options = if fbb_only {
+            options.clone()
+        } else {
+            standard_curve_branch_candidates_after_partial_assignment(
+                &supports,
+                options,
+                &branch_groups,
+                &initial_assignment,
+                Some(work_budget),
+            )?
+        };
         let mut branch_preferred_edges = vec![false; options.len()];
         for edge in branch_groups
             .iter()
@@ -3729,8 +3738,8 @@ fn attach_standard_topology(
         {
             branch_preferred_edges[edge] = true;
         }
-        let branch_assignment_dependencies =
-            standard_curve_branch_assignment_dependencies(&supports, &branch_groups);
+        let branch_assignment_dependencies = (!fbb_only)
+            .then(|| standard_curve_branch_assignment_dependencies(&supports, &branch_groups));
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             spine,
             &edge_faces,
@@ -3738,24 +3747,26 @@ fn attach_standard_topology(
             &edge_classes,
             &circle_constraint_edges,
             &branch_preferred_edges,
-            Some(&branch_assignment_dependencies),
+            branch_assignment_dependencies.as_deref(),
             work_budget,
             |pairs| {
-                standard_curve_branch_assignment_is_ranked(
-                    &supports,
-                    &solver_options,
-                    &branch_groups,
-                    pairs,
-                    Some(work_budget),
-                ) && standard_circle_pair_solution_is_simple(
-                    ir,
-                    bindings,
-                    &surface_indices,
-                    brep,
-                    &supports,
-                    &solver_options,
-                    pairs,
-                )
+                (fbb_only
+                    || standard_curve_branch_assignment_is_ranked(
+                        &supports,
+                        &solver_options,
+                        &branch_groups,
+                        pairs,
+                        Some(work_budget),
+                    ))
+                    && standard_circle_pair_solution_is_simple(
+                        ir,
+                        bindings,
+                        &surface_indices,
+                        brep,
+                        &supports,
+                        &solver_options,
+                        pairs,
+                    )
             },
         );
         let has_circle_preference = circle_constraint_edges
@@ -3775,16 +3786,17 @@ fn attach_standard_topology(
                     &edge_classes,
                     &unconstrained,
                     &branch_preferred_edges,
-                    Some(&branch_assignment_dependencies),
+                    branch_assignment_dependencies.as_deref(),
                     work_budget,
                     |pairs| {
-                        standard_curve_branch_assignment_is_ranked(
-                            &supports,
-                            &solver_options,
-                            &branch_groups,
-                            pairs,
-                            Some(work_budget),
-                        )
+                        fbb_only
+                            || standard_curve_branch_assignment_is_ranked(
+                                &supports,
+                                &solver_options,
+                                &branch_groups,
+                                pairs,
+                                Some(work_budget),
+                            )
                     },
                 )
             })

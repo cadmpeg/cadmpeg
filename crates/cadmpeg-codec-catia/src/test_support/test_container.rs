@@ -4,7 +4,10 @@
 #![allow(clippy::unwrap_used)]
 use crate::container::{DIR_MAGIC, OUTER_MAGIC};
 
-use super::test_topology::{fbb_only_quad_surface_stream, fbb_only_quad_topology_stream};
+use super::test_topology::{
+    fbb_only_quad_surface_stream, fbb_only_quad_topology_stream,
+    fbb_only_quad_unmatched_edge_topology_stream,
+};
 use super::{be32, be_f32, le_f32, le_f64};
 
 pub(crate) fn summary_preview_segment() -> Vec<u8> {
@@ -62,6 +65,13 @@ pub(crate) fn outer_body_catpart(body: &[u8]) -> Vec<u8> {
 pub(crate) fn fbb_only_quad_catpart() -> Vec<u8> {
     standard_catpart_from_streams(
         &fbb_only_quad_topology_stream(),
+        &fbb_only_quad_surface_stream(),
+    )
+}
+
+pub(crate) fn fbb_only_quad_unmatched_edge_catpart() -> Vec<u8> {
+    standard_catpart_from_streams(
+        &fbb_only_quad_unmatched_edge_topology_stream(),
         &fbb_only_quad_surface_stream(),
     )
 }

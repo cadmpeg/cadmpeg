@@ -99,6 +99,18 @@ pub(crate) fn fbb_only_quad_topology_stream() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn fbb_only_quad_unmatched_edge_topology_stream() -> Vec<u8> {
+    let mut bytes = fbb_only_quad_topology_stream();
+    let row_header = bytes
+        .windows(5)
+        .position(|window| window == [0x01, 0x01, 0x02, 0x02, 0x03])
+        .expect("first FBB edge table");
+    for (offset, handle) in (row_header + 5..row_header + 11).zip([0u8, 20, 0, 21, 0, 22]) {
+        bytes[offset] = handle;
+    }
+    bytes
+}
+
 pub(crate) fn fbb_only_quad_surface_stream() -> Vec<u8> {
     let mut bytes = vec![0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
     bytes.resize(49, 0);
