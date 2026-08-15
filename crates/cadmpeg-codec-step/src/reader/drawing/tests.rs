@@ -54,6 +54,9 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     assert!(view.relationships["items"]
         .iter()
         .any(|target| { target.target.as_deref() == Some("step:data:item#5") }));
+    assert!(view.relationships["presentation_context"]
+        .iter()
+        .any(|target| { target.target.as_deref() == Some("step:data:representation_context#3") }));
     assert_eq!(view.parameters["presentation_context"], "#3");
 
     let model = result
@@ -81,6 +84,7 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     assert!(result.report().losses.iter().all(|loss| {
         loss.code != StepLossCode::DrawingSheetRevisionUnresolved.kind()
             && loss.code != StepLossCode::DrawingRevisionSheetUnresolved.kind()
+            && loss.code != StepLossCode::DrawingRelationshipUntypedTarget.kind()
     }));
 
     let mut output = Vec::new();
@@ -369,6 +373,45 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
             && (loss.message.contains("#5") || loss.message.contains("#10"))
+    }));
+}
+
+#[test]
+fn drawing_relationships_retain_unresolved_wrapper_identity() {
+    let result = decode_inline(
+        "#1=REPRESENTATION_CONTEXT('','');
+#2=ITEM('opaque');
+#3=REPRESENTATION('unresolved mapped',(#2),#1);
+#4=CARTESIAN_POINT('',(0.,0.,0.));
+#5=DIRECTION('',(0.,0.,1.));
+#6=AXIS2_PLACEMENT_3D('',#4,#5,$);
+#7=REPRESENTATION_MAP(#6,#3);
+#8=MAPPED_ITEM('unresolved mapped item',#7,#6);
+#9=DRAUGHTING_MODEL('Unresolved mapped model',(#8),#1);",
+    );
+
+    let model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.parameters.get("name") == Some(&"Unresolved mapped model".into()))
+        .expect("unresolved mapped drawing model");
+    assert!(model.relationships["items"]
+        .iter()
+        .any(|target| target.target.as_deref() == Some("step:data:mapped_item#8")));
+    let drawing_targets = &result
+        .ir()
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arenas["drawing_targets"];
+    assert!(drawing_targets
+        .iter()
+        .any(|record| record.id() == "step:data:mapped_item#8"));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
+            && loss.message.contains("#8")
     }));
 }
 
