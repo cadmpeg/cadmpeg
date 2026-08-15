@@ -950,12 +950,14 @@ fn complex_datum_reads_identification_from_its_named_partial() {
 fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     use cadmpeg_ir::pmi::{DatumTargetForm, DimensionKind, PmiDefinition, PmiTarget};
 
+    const EPS_POINT_COORDINATE: f64 = 1e-12;
+
     let source =
         String::from_utf8(include_bytes!("../../../tests/fixtures/ap203_sheet.p21").to_vec())
             .expect("fixture is UTF-8")
             .replace(
                 "ENDSEC;\nEND-ISO-10303-21;",
-                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\nENDSEC;\nEND-ISO-10303-21;",
+                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\nENDSEC;\nEND-ISO-10303-21;",
             );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -994,6 +996,8 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
                 "step:data:geometric_item_specific_usage#43"
                     | "step:data:geometric_item_specific_usage#44"
                     | "step:data:geometric_item_specific_usage#46"
+                    | "step:data:geometric_item_specific_usage#49"
+                    | "step:data:geometric_item_specific_usage#53"
             )
         }));
     let datum_target = result
@@ -1015,6 +1019,33 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         target,
         PmiTarget::Face { face } if face.as_str() == "step:data:face#29"
     )));
+    assert!(matches!(
+        &datum_target.definition,
+        PmiDefinition::DatumTarget { basis, .. }
+            if basis.contains(&PmiTarget::ShapeAspect {
+                source_id: "#47".into()
+            })
+    ));
+    let point_dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("point dimension"))
+        .expect("point dimension annotation");
+    assert!(point_dimension.targets.contains(&PmiTarget::Point {
+        point: "step:data:point#50".into()
+    }));
+    let point = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#50")
+        .expect("isolated PMI point");
+    assert!((point.position.x - 1.0).abs() < EPS_POINT_COORDINATE);
+    assert!((point.position.y - 2.0).abs() < EPS_POINT_COORDINATE);
+    assert!((point.position.z - 3.0).abs() < EPS_POINT_COORDINATE);
 
     let mut output = Vec::new();
     let report = write_step(
@@ -1030,8 +1061,10 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
-    assert!(String::from_utf8_lossy(&output).contains("GEOMETRIC_ITEM_SPECIFIC_USAGE"));
-    assert!(String::from_utf8_lossy(&output).contains("DATUM_TARGET("));
+    let output_text = String::from_utf8_lossy(&output);
+    assert!(output_text.contains("GEOMETRIC_ITEM_SPECIFIC_USAGE"));
+    assert!(output_text.contains("DATUM_TARGET("));
+    assert!(output_text.contains("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"));
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written geometric item usage");
@@ -1060,6 +1093,24 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
             target,
             PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
         )));
+    assert!(matches!(
+        &roundtripped_datum_target.definition,
+        PmiDefinition::DatumTarget { basis, .. }
+            if basis
+                .iter()
+                .any(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+    ));
+    let roundtripped_point_dimension = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("point dimension"))
+        .expect("roundtripped point dimension");
+    assert!(roundtripped_point_dimension
+        .targets
+        .iter()
+        .any(|target| matches!(target, PmiTarget::Point { .. })));
 }
 
 #[test]

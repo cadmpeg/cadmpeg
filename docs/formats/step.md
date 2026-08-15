@@ -699,8 +699,12 @@ source-native with its identity and links.
 definitions with their target form and identification, while their source
 shape-aspect identity remains a PMI target. Standard placed-target forms are
 point, line, rectangle, circle, and circular curve; another source description
-is retained as an `Other` form. `FEATURE_FOR_DATUM_TARGET_RELATIONSHIP` remains
-source-native because the neutral PMI model has no relationship field.
+is retained as an `Other` form. A `FEATURE_FOR_DATUM_TARGET_RELATIONSHIP` whose
+related shape aspect is a datum target transfers its relating shape aspect into
+the datum target basis; the writer emits the relationship for each shape-aspect
+basis target. A relationship without a resolvable datum target remains
+source-native. Geometric-item usages whose identified item is a Cartesian point
+transfer that point as a typed PMI target.
 Geometric validation properties read area, volume, and centroid values through
 inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
 `MEASURE_WITH_UNIT` partials. Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes and

@@ -2645,6 +2645,22 @@ impl<'a> Builder<'a> {
                 });
             }
         }
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget { basis, .. } = &annotation.definition else {
+                continue;
+            };
+            for target in basis {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    continue;
+                };
+                aspects.entry(source_id.clone()).or_insert_with(|| {
+                    self.emitter.emit(
+                        "SHAPE_ASPECT",
+                        &format!("{},'',{pds},.T.", string(source_id)),
+                    )
+                });
+            }
+        }
         let mut datum_target_refs = HashMap::<cadmpeg_ir::ids::PmiId, Ref>::new();
         for annotation in &annotations {
             let PmiDefinition::DatumTarget {
@@ -2664,6 +2680,32 @@ impl<'a> Builder<'a> {
             let target_ref = target_ref
                 .unwrap_or_else(|| self.emit_datum_target(pds, annotation, form, identification));
             datum_target_refs.insert(annotation.id.clone(), target_ref);
+        }
+        let mut datum_target_basis_exact = HashMap::<cadmpeg_ir::ids::PmiId, bool>::new();
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget { basis, .. } = &annotation.definition else {
+                continue;
+            };
+            let Some(&datum_target) = datum_target_refs.get(&annotation.id) else {
+                datum_target_basis_exact.insert(annotation.id.clone(), false);
+                continue;
+            };
+            let mut exact = true;
+            for target in basis {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    exact = false;
+                    continue;
+                };
+                let Some(basis_ref) = aspects.get(source_id).copied() else {
+                    exact = false;
+                    continue;
+                };
+                self.emitter.emit(
+                    "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP",
+                    &format!("'','',{basis_ref},{datum_target}"),
+                );
+            }
+            datum_target_basis_exact.insert(annotation.id.clone(), exact);
         }
         let fallback_aspect = self
             .emitter
@@ -2724,6 +2766,12 @@ impl<'a> Builder<'a> {
                 } else {
                     exact = false;
                 }
+            }
+            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
+                exact &= datum_target_basis_exact
+                    .get(&annotation.id)
+                    .copied()
+                    .unwrap_or(false);
             }
             targets_exact_by_annotation.insert(annotation.id.clone(), exact);
         }

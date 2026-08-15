@@ -626,9 +626,12 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
+    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
+    let points_by_source = point_sources(ir);
     resolve_geometric_item_usages(
         exchange,
         topology,
+        &points_by_source,
         &shape_aspects,
         &annotations,
         ir,
@@ -707,9 +710,39 @@ fn mark_characteristic_representations(
     }
 }
 
+fn resolve_feature_for_datum_target_relationships(
+    exchange: &Exchange,
+    annotations: &BTreeMap<u64, usize>,
+    ir: &mut CadIr,
+    typed: &mut HashSet<u64>,
+) {
+    for (id, record) in exchange.entities("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP") {
+        let Some((relating, related)) = relationship_endpoints(record) else {
+            continue;
+        };
+        let Some(&annotation_index) = annotations.get(&related) else {
+            continue;
+        };
+        let Some(annotation) = ir.model.pmi.get_mut(annotation_index) else {
+            continue;
+        };
+        let PmiDefinition::DatumTarget { basis, .. } = &mut annotation.definition else {
+            continue;
+        };
+        push_target(
+            basis,
+            PmiTarget::ShapeAspect {
+                source_id: format!("#{relating}"),
+            },
+        );
+        typed.extend([id, relating]);
+    }
+}
+
 fn resolve_geometric_item_usages(
     exchange: &Exchange,
     topology: &TopologyData,
+    points_by_source: &BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>,
     shape_aspects: &BTreeSet<u64>,
     annotations: &BTreeMap<u64, usize>,
     ir: &mut CadIr,
@@ -738,17 +771,7 @@ fn resolve_geometric_item_usages(
 
     let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
     for record in exchange.records.values() {
-        let Some(partial) = record
-            .partials
-            .iter()
-            .find(|partial| partial.name == "SHAPE_ASPECT_RELATIONSHIP")
-        else {
-            continue;
-        };
-        let Some(relating) = partial.parameters.get(2).and_then(first_reference) else {
-            continue;
-        };
-        let Some(related) = partial.parameters.get(3).and_then(first_reference) else {
+        let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
         };
         relationship_aspects
@@ -793,7 +816,7 @@ fn resolve_geometric_item_usages(
         if annotation_indices.is_empty() {
             continue;
         }
-        let targets = topology_targets(identified_item, topology);
+        let targets = topology_targets(identified_item, topology, points_by_source);
         if targets.is_empty() {
             continue;
         }
@@ -809,7 +832,11 @@ fn resolve_geometric_item_usages(
     }
 }
 
-fn topology_targets(id: u64, topology: &TopologyData) -> Vec<PmiTarget> {
+fn topology_targets(
+    id: u64,
+    topology: &TopologyData,
+    points_by_source: &BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>,
+) -> Vec<PmiTarget> {
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
         push_target(&mut targets, PmiTarget::Body { body: body.clone() });
@@ -828,6 +855,14 @@ fn topology_targets(id: u64, topology: &TopologyData) -> Vec<PmiTarget> {
             },
         );
     }
+    for point in points_by_source.get(&id).into_iter().flatten() {
+        push_target(
+            &mut targets,
+            PmiTarget::Point {
+                point: point.clone(),
+            },
+        );
+    }
     targets
 }
 
@@ -839,6 +874,40 @@ fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
 
 fn first_reference(value: &Value) -> Option<u64> {
     references(value).into_iter().next()
+}
+
+fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
+    let parameters = record.partials.iter().find_map(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
+        )
+        .then_some(partial.parameters.as_slice())
+    })?;
+    Some((
+        parameters.get(2).and_then(first_reference)?,
+        parameters.get(3).and_then(first_reference)?,
+    ))
+}
+
+fn point_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>> {
+    let mut points = BTreeMap::new();
+    for point in &ir.model.points {
+        let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
+            continue;
+        };
+        points
+            .entry(source)
+            .or_insert_with(Vec::new)
+            .push(point.id.clone());
+    }
+    points
+}
+
+fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
+    let suffix = identity.strip_prefix(&format!("step:data:{kind}#"))?;
+    let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
+    suffix.split('-').next()?.parse().ok()
 }
 
 fn datum_references(

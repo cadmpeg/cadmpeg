@@ -462,6 +462,22 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             }
             point_carriers.extend(references.into_iter().filter(|id| points.contains_key(id)));
         }
+        if let Some(item) = record
+            .partials
+            .iter()
+            .find(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "GEOMETRIC_ITEM_SPECIFIC_USAGE" | "ITEM_IDENTIFIED_REPRESENTATION_USAGE"
+                )
+            })
+            .and_then(|partial| partial.parameters.get(4))
+            .and_then(Value::reference)
+        {
+            if points.contains_key(&item) {
+                point_carriers.insert(item);
+            }
+        }
         if let Some(id) = super::presentation::styled_item_target(record) {
             if points.contains_key(&id) {
                 point_carriers.insert(id);
