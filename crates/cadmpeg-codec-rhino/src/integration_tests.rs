@@ -693,4 +693,42 @@ fn opennurbs_object_walk_and_transfer_floor() {
             Some((version, expected_supported, expected_total))
         );
     }
+
+    for version in [50, 60, 70, 80] {
+        let archive_version = match version {
+            50 => RhinoArchiveVersion::V5,
+            60 => RhinoArchiveVersion::V6,
+            70 => RhinoArchiveVersion::V7,
+            80 => RhinoArchiveVersion::V8,
+            _ => unreachable!("supported writer version table"),
+        };
+        let mut point_ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        point_ir.model.points.push(cadmpeg_ir::topology::Point {
+            id: cadmpeg_ir::ids::PointId("integration:writer-point#0".into()),
+            position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
+            source_object: None,
+        });
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(archive_version)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &point_ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("write codec point witness");
+        let path = generated.join(format!("codec-writer-v{version}-point.3dm"));
+        fs::write(&path, bytes).expect("write codec point witness file");
+
+        let witness = Command::new(&reader)
+            .arg(&path)
+            .output()
+            .expect("run example_read on codec writer witness");
+        assert!(
+            witness.status.success(),
+            "example_read refused {}",
+            path.display()
+        );
+        assert_eq!(oracle_object_count(&witness.stdout), 1);
+        assert_eq!(decode_counts(&path), Some((version, 1, 1)));
+    }
 }

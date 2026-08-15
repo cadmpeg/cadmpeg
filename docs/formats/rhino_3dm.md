@@ -427,6 +427,13 @@ version.
 | class data      | `0x0002fffc` |
 | class end       | `0x82027fff` |
 
+The class-data body is owned by the class grammar. It is not a flat sequence
+of child chunks: direct fields can occur before, between, and after complete
+nested chunks. A class reader consumes each nested chunk at the field that
+owns it and validates the declared boundary there. A class wrapper scanner
+must not apply one flat child-chunk or checksum range to the complete
+class-data body.
+
 ### 6.5 Object-type filter bitfield
 
 `TCODE_OBJECT_RECORD_TYPE` is a short chunk whose value is a `u32` bitfield.
@@ -3050,3 +3057,9 @@ record remains opaque.
 
 Opaque records do not select neutral fields or partial typed state. Retained
 bytes, when present, cover the complete record boundary.
+
+Typed transfer is atomic per object record. A class UUID selects a payload
+grammar, but it does not by itself admit the object. All positional slots,
+cross-record references, finite-value gates, and topology invariants required
+by that grammar must pass. If one required invariant fails, the complete
+object record remains opaque and no partial typed topology is committed.
