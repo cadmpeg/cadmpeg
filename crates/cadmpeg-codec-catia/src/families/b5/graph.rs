@@ -4471,49 +4471,26 @@ pub(crate) fn records_from_frames_budgeted(
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
 ) -> Vec<B5Record> {
-    let mut records = framed_records(bytes, frames);
+    let (mut records, candidates) = framed_records_and_dependency_candidates(bytes, frames, budget);
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
     let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
     let mut admitted = HashSet::new();
-    let mut candidates = None;
     loop {
         pending.retain(|object_id| !existing.contains(object_id) && !admitted.contains(object_id));
         if pending.is_empty() {
             break;
         }
-        let candidates = candidates.get_or_insert_with(|| {
-            if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
-                return HashMap::new();
-            }
-            let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-            for frame in frames {
-                if !is_reference_dependency_class(frame.family, frame.class) {
-                    continue;
-                }
-                let Some(candidate) = record_from_frame(bytes, frame) else {
-                    continue;
-                };
-                candidates
-                    .entry(frame.object_id)
-                    .and_modify(|slot| {
-                        if slot.as_ref().is_some_and(|existing| {
-                            existing.family != candidate.family
-                                || existing.class != candidate.class
-                                || existing.payload != candidate.payload
-                        }) {
-                            *slot = None;
-                        }
-                    })
-                    .or_insert(Some(candidate));
-            }
-            candidates
-        });
         if budget.is_some_and(|budget| !budget.charge_by(pending.len())) {
             break;
         }
         let mut found = pending
             .iter()
-            .filter_map(|object_id| candidates.get(object_id).and_then(Option::as_ref).cloned())
+            .filter_map(|object_id| {
+                candidates
+                    .get(object_id)
+                    .and_then(Option::as_ref)
+                    .and_then(|frame| record_from_frame(bytes, frame))
+            })
             .collect::<Vec<_>>();
         if found.is_empty() {
             break;
@@ -4529,6 +4506,74 @@ pub(crate) fn records_from_frames_budgeted(
     records
 }
 
+/// Build the topology records and the exact dependency index in one frame
+/// pass. The two views used to scan the same frame slice independently, which
+/// spent the bounded selection budget twice before dependency closure began.
+fn framed_records_and_dependency_candidates(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+    budget: Option<&WorkBudget<'_>>,
+) -> (Vec<B5Record>, HashMap<u32, Option<ObjectFrame>>) {
+    if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
+        return (Vec::new(), HashMap::new());
+    }
+
+    let mut records = Vec::<(usize, B5Record)>::new();
+    let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
+    let mut candidates = HashMap::<u32, Option<ObjectFrame>>::new();
+    for frame in frames {
+        let Some(record) = record_from_frame(bytes, frame) else {
+            continue;
+        };
+        if is_reference_dependency_class(frame.family, frame.class) {
+            candidates
+                .entry(frame.object_id)
+                .and_modify(|slot| {
+                    if slot
+                        .as_ref()
+                        .is_some_and(|existing| !same_object_frame(bytes, existing, frame))
+                    {
+                        *slot = None;
+                    }
+                })
+                .or_insert(Some(*frame));
+        }
+        if !((frame.family == 0xb5 && is_topology_class(frame.class))
+            || (frame.family == 0xa8 && matches!(frame.class, 0x34 | 0x62)))
+        {
+            continue;
+        }
+        if seen
+            .get(&frame.object_id)
+            .is_some_and(|(seen_class, seen_payload)| {
+                *seen_class == record.class && *seen_payload == record.payload
+            })
+        {
+            continue;
+        }
+        seen.insert(frame.object_id, (record.class, record.payload.clone()));
+        records.push((frame.end, record));
+    }
+    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
+        left_end
+            .cmp(right_end)
+            .then_with(|| right.offset.cmp(&left.offset))
+    });
+    (
+        records.into_iter().map(|(_, record)| record).collect(),
+        candidates,
+    )
+}
+
+fn same_object_frame(bytes: &[u8], left: &ObjectFrame, right: &ObjectFrame) -> bool {
+    left.family == right.family
+        && left.class == right.class
+        && bytes
+            .get(left.start..left.end)
+            .zip(bytes.get(right.start..right.end))
+            .is_some_and(|(left, right)| left == right)
+}
+
 fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
     let header = if frame.family == 0xa8 { 11 } else { 8 };
     Some(B5Record {
@@ -4542,6 +4587,7 @@ fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
     })
 }
 
+#[cfg(test)]
 fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
