@@ -148,6 +148,10 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 
     assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
 
+    let transferred_plane_row = scan.surfaces.rows.pop().expect("support plane row");
+    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+    scan.surfaces.rows.push(transferred_plane_row);
+
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 31,
         origin: [0.0, 0.0, 0.0],

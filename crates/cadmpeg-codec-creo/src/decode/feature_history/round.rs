@@ -703,9 +703,22 @@ pub(in super::super) fn chamfer_constant_distance(
             .iter()
             .filter(|row| row.id == *id)
             .collect::<Vec<_>>();
-        let row = match rows.as_slice() {
-            [] => continue,
-            [row] => *row,
+        let is_support_plane = match rows.as_slice() {
+            [] => {
+                let model_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
+                let model_surfaces = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| surface.id == model_id)
+                    .collect::<Vec<_>>();
+                match model_surfaces.as_slice() {
+                    [] => false,
+                    [surface] => matches!(&surface.geometry, SurfaceGeometry::Plane { .. }),
+                    _ => return None,
+                }
+            }
+            [row] => row.kind == crate::surface::SurfaceKind::Plane,
             _ if rows
                 .iter()
                 .any(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
@@ -714,7 +727,7 @@ pub(in super::super) fn chamfer_constant_distance(
             }
             _ => continue,
         };
-        if row.kind != crate::surface::SurfaceKind::Plane || !support_plane_ids.insert(*id) {
+        if !is_support_plane || !support_plane_ids.insert(*id) {
             continue;
         }
         let plane = reconciled_model_plane(&local_planes, ir, *id)?;
