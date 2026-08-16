@@ -4444,9 +4444,9 @@ note = "The placement carrier tail is retained as a named opaque carrier."
 name = "work_plane_legacy_325_matrix_frame"
 kind = "byte"
 section = "3.1"
-anchor = "The class-308/257, class-380/262, and class-431/257 placement frames use a second 325-byte layout"
+anchor = "The class-308/257, class-320/258, class-380/262, and class-431/257 placement frames use a second 325-byte layout"
 size = 325
-note = "Offsets are relative to any of the class-308, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 262, and 257 respectively."
+note = "Offsets are relative to any of the class-308, class-320, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 258, 262, and 257 respectively."
 
 [[record.gap]]
 offset = 0
@@ -4463,7 +4463,7 @@ name = "matrix"
 offset = 49
 type = "f64[16]"
 source = "spec"
-anchor = "The class-308/257, class-380/262, and class-431/257 placement frames use a second 325-byte layout"
+anchor = "The class-308/257, class-320/258, class-380/262, and class-431/257 placement frames use a second 325-byte layout"
 
 [[record.gap]]
 offset = 177
