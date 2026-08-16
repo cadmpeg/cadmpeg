@@ -81,3 +81,22 @@ fn complex_document_dependency_records_use_inherited_fields() {
                 || record.id.0 == "step:data:document_reference#3"
         }));
 }
+
+#[test]
+fn document_reference_source_is_metadata_not_a_part21_uri_base() {
+    let result = decode_inline(
+        "#1=DOCUMENT_TYPE('manual');
+#2=DOCUMENT('DOC-1','Drawing','',#1);
+#3=(APPLIED_DOCUMENT_REFERENCE() DOCUMENT_REFERENCE(#2,'../other.p21#drawing'));",
+    );
+
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external document DOC-1 (Drawing) from ../other.p21#drawing".into()));
+    assert!(!result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note.contains("internal resource")));
+}

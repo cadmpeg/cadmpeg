@@ -51,6 +51,38 @@ fn parser_accepts_external_instance_references_in_edition_three() {
 }
 
 #[test]
+fn parser_keeps_standalone_external_uri_references_until_caller_resolution() {
+    let source = include_bytes!("data/er01_reference_resolution.p21");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("ER-01 URI witness");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        exchange
+            .references
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.uri.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("#10", "#local_entity"),
+            ("@11", "#local_value"),
+            ("#12", "external/../part.p21#target"),
+            ("#13", "external.p21"),
+            ("#14", "#97c6e1f0-3544-11e5-a2cb-0800200c9a66"),
+        ]
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(2),
+            crate::parse::Value::Real(3.0),
+            crate::parse::Value::Reference(12),
+            crate::parse::Value::Omitted,
+            crate::parse::Value::Reference(14),
+        ]
+    );
+}
+
+#[test]
 fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#2;ENDSEC;REFERENCE;#10=<#shape>;ENDSEC;DATA;#1=ITEM(#10);#2=TARGET();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("local entity reference");

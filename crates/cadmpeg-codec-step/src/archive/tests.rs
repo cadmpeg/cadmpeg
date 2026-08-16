@@ -10,6 +10,7 @@ fn resolves_archive_relative_uris_and_fragments() {
         resolve_uri(ROOT_NAME, "parts/child.p21#target").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/child.p21".into(),
+            query: None,
             fragment: Some("target".into()),
         }
     );
@@ -17,12 +18,29 @@ fn resolves_archive_relative_uris_and_fragments() {
         resolve_uri("parts/child.p21", "../shared.p21#value").unwrap(),
         ReferenceTarget::Internal {
             member: "shared.p21".into(),
+            query: None,
             fragment: Some("value".into()),
         }
     );
     assert_eq!(
         resolve_uri(ROOT_NAME, "https://example.invalid/part.p21#root").unwrap(),
         ReferenceTarget::External
+    );
+    assert_eq!(
+        resolve_uri("parts/sub/child.p21", "./../shared.p21#value").unwrap(),
+        ReferenceTarget::Internal {
+            member: "parts/shared.p21".into(),
+            query: None,
+            fragment: Some("value".into()),
+        }
+    );
+    assert_eq!(
+        resolve_uri(ROOT_NAME, "parts/child.p21?query=../outside#target").unwrap(),
+        ReferenceTarget::Internal {
+            member: "parts/child.p21".into(),
+            query: Some("query=../outside".into()),
+            fragment: Some("target".into()),
+        }
     );
 }
 
@@ -156,7 +174,7 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
 
 #[test]
 fn codec_resolves_root_references_relative_to_the_archive_directory() {
-    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21?query=../outside#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let bytes = step_zip(&[
         ("ISO-10303.p21", root, CompressionMethod::Stored),
         ("parts/child.p21", b"child", CompressionMethod::Stored),
@@ -168,7 +186,7 @@ fn codec_resolves_root_references_relative_to_the_archive_directory() {
     assert!(summary
         .notes
         .iter()
-        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+        .any(|note| note == "internal resource #10 -> parts/child.p21?query=../outside#target"));
 
     let missing = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Stored)]);
     assert!(matches!(

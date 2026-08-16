@@ -257,18 +257,53 @@ omitted inherited `name` attributes are repaired. A cycle is a structural
 error. Resource references in tag values use the same recursive resolution
 rules as anchor values.
 
-REFERENCE entries bind an external entity or value occurrence name to a resource URI. Resource names and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
+REFERENCE entries bind an external entity or value occurrence name to a
+resource URI. Resource names and URIs are delimited by `<` and `>`; external
+names use `#id` or `@id`. A resource URI meets the IETF URI requirements of
+RFC 2396. Relative URI resolution requires an absolute base. The Part 21
+exchange structure does not encode a transport base for a standalone file;
+the retrieval context or the caller supplies that base. URI parsing separates
+the path, query, and fragment components before relative path resolution.
+`.` and `..` have special meaning only as complete path components. URI
+equivalence and normalization beyond relative path resolution are
+scheme-dependent and are not a Part 21 rule.
+
 Entity and value occurrence integers are unique across both prefixes, and
 neither may collide with a local DATA entity instance. A URI without a
 fragment resolves to `$`. A fragment-only URI whose fragment is not a UUID
 resolves to the same-named local ANCHOR; a missing local anchor resolves to
 `$`. A fragment-only UUID requires a resource locator or registry. A URI with
 a resource path is resolved against that resource; its fragment must identify
-an ANCHOR that supplies an entity for a `#id` occurrence or a value for an
-`@id` occurrence. If an ANCHOR forwards another URI, resolution repeats, and a
-failed or cyclic resolution produces `$`. A resource path or UUID that cannot
-be obtained remains an external dependency until the caller supplies resource
-access. External occurrence names do not create local DATA entity identities.
+an `ANCHOR` that supplies an entity for a `#id` occurrence or a value for an
+`@id` occurrence. If an `ANCHOR` forwards another URI, resolution repeats, and a
+failed or cyclic resolution produces `$`. A numeric fragment in a URI with a
+resource path identifies the same-numbered entity instance for edition-1 or
+edition-2 compatibility. A resource path or UUID that cannot be obtained
+remains an external dependency until the caller supplies resource access.
+External occurrence names do not create local DATA entity identities.
+
+For a URI used inside a Part 21 ZIP archive, Annex A.4 resolves every relative
+address against the directory of the referencing member. The path component
+selects the archive member; `.` components are removed, `..` components move
+to the parent member directory, and a path that would leave the archive is
+invalid. Query and fragment components remain URI components and are not part
+of the member name. Only `ISO-10303.p21` is addressable from outside the
+archive. Annex A.5 applies the same root-directory rule to a directory that
+contains `ISO-10303.p21`.
+
+The `DOCUMENT_REFERENCE.source` attribute is an ISO 10303-41 `label` stating
+the origination of the assigned document. It is application metadata, not a
+Part 21 resource URI and not a base for URI resolution.
+
+CADIR decision: the codec receives an exchange byte stream and has no
+transport URI or resource provider. It resolves local non-UUID fragment
+references and performs the bounded ZIP member-path operation above. It keeps
+the exact URI and external occurrence for a resource path or UUID until a
+caller supplies resource access. It does not use `FILE_NAME.name`,
+`DOCUMENT_REFERENCE.source`, the process working directory, or DATA order as a
+base. For archive lookup it applies only path-component dot-segment
+processing; it does not normalize the scheme, authority, query, fragment, or
+percent encoding.
 Each SIGNATURE section follows the exchange terminator. Its content is a
 detached CMS `SignedData` object as defined by RFC 5652, encoded as RFC 4648
 Base64. Digest and signature algorithm identifiers are inside that object, not

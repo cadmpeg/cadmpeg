@@ -18,24 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-01. URI resolution
-
-**Question.** Which base URI and normalization rules apply to each relative URI in a REFERENCE section or a document-reference entity?
-
-**Known.** A Part 21 resource is an IETF URI. A fragment-only URI whose
-fragment is not a UUID selects the same-named local ANCHOR. A URI with a
-resource path is relative to the resource that contains the reference; in a
-ZIP archive, Annex A.4 makes that the directory of the referencing member and
-forbids traversal above the archive root. A standalone file's transport base
-URI is not encoded in Part 21. Application document-reference attributes do
-not define a Part 21 base URI.
-
-**Note.** Local fragment resolution is implemented. The base URI for a
-standalone input, URI normalization supplied by its transport, and the
-interpretation of application document-reference paths remain caller policy.
-
-**Need.** We must know the rules to identify the external resource that a relative URI selects.
-
 ### ER-02. Resource access
 
 **Question.** Which retrieval and authentication procedure applies to each external resource URI?
