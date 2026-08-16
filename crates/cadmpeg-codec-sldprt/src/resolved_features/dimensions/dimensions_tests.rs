@@ -141,6 +141,149 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 }
 
 #[test]
+fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witness() {
+    let kind = FeatureInputOperandKind::Native(0x8452);
+    let operand = FeatureInputOperand {
+        offset: 100,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 0,
+        entity_ref: None,
+    };
+    let marker = |id: &str, offset, marker_kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: u32::try_from(offset).unwrap(),
+        offset,
+        object_index: None,
+        local_id: None,
+        kind: marker_kind,
+        state_value: None,
+        coordinates_m: Some(coordinates_m),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let lane = |circular_kind| FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 112,
+            name: "sgEntHandle".into(),
+            role: FeatureInputClassRole::SketchEntity,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: operand.reference_ref.clone(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: operand.offset,
+            kind,
+            class_ref: Some("class".into()),
+            object_index: 0,
+        }],
+        sketch_entities: vec![
+            marker("circular", 10, circular_kind, [0.010, 0.020]),
+            marker("radial", 20, SketchInputKind::Point, [0.013, 0.024]),
+        ],
+    };
+
+    for circular_kind in [SketchInputKind::Arc, SketchInputKind::LineOrCircle] {
+        let lane = lane(circular_kind);
+        let markers_by_id = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        let carrier = dimensioned_relation_carrier(
+            std::slice::from_ref(&lane),
+            &markers_by_id,
+            "feature",
+            &operand,
+            5.0,
+        )
+        .expect("unlinked declared entity-handle carrier");
+
+        assert_eq!(carrier.marker.id, "circular");
+        assert_eq!(carrier.center, [0.010, 0.020]);
+        assert!(matches!(
+            carrier.curve,
+            Some(DimensionedCurveNative::Circle {
+                center: [0.010, 0.020]
+            })
+        ));
+        assert_eq!(carrier.construction, Some(false));
+    }
+
+    let mut missing_witness_lane = lane(SketchInputKind::LineOrCircle);
+    missing_witness_lane.sketch_entities.pop();
+    let missing_witness_markers = missing_witness_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&missing_witness_lane),
+        &missing_witness_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .is_none());
+
+    let point_operand = FeatureInputOperand {
+        entity_ref: Some("radial".into()),
+        ..operand.clone()
+    };
+    let point_lane = lane(SketchInputKind::Arc);
+    let point_markers = point_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let point_carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&point_lane),
+        &point_markers,
+        "feature",
+        &point_operand,
+        5.0,
+    )
+    .expect("point-resolved entity handle carrier");
+    assert_eq!(point_carrier.marker.id, "circular");
+
+    let mut ambiguous_lane = lane(SketchInputKind::Arc);
+    ambiguous_lane.sketch_entities.extend([
+        marker("second-circular", 30, SketchInputKind::Arc, [0.020, 0.030]),
+        marker("second-radial", 40, SketchInputKind::Point, [0.023, 0.034]),
+    ]);
+    let ambiguous_markers = ambiguous_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&ambiguous_lane),
+        &ambiguous_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .is_none());
+}
+
+#[test]
 fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
     let sketch = Sketch {
         id: SketchId("sketch".into()),

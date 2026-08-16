@@ -873,6 +873,34 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     else {
         return None;
     };
+    let mut candidates = declared_entity_handle_linked_pairs(lane, feature)
+        .into_iter()
+        .filter_map(|[center, radial]| {
+            let [cu, cv] = center.coordinates_m?;
+            let [ru, rv] = radial.coordinates_m?;
+            let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+            same_dimension_length(radius, expected_radius).then_some((center, radius))
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+pub(super) fn declared_entity_handle_has_linked_pair(
+    lanes: &[FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+) -> bool {
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return false;
+    };
+    !declared_entity_handle_linked_pairs(lane, feature).is_empty()
+}
+
+fn declared_entity_handle_linked_pairs<'a>(
+    lane: &'a FeatureInputLane,
+    feature: &str,
+) -> Vec<[&'a SketchInputEntity; 2]> {
     let mut markers = lane
         .sketch_entities
         .iter()
@@ -889,30 +917,28 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
         })
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset);
-    let mut candidates = markers.windows(2).filter_map(|pair| {
-        let [center, radial] = pair else {
-            unreachable!("slice windows have the requested length")
-        };
-        if !matches!(
-            radial.kind,
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-        ) {
-            return None;
-        }
-        let center_local_id = center.local_id?;
-        if center_local_id == 0
-            || radial.object_index != Some(center_local_id)
-            || radial.local_id != Some(0)
-        {
-            return None;
-        }
-        let [cu, cv] = center.coordinates_m?;
-        let [ru, rv] = radial.coordinates_m?;
-        let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-        same_dimension_length(radius, expected_radius).then_some((*center, radius))
-    });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+    markers
+        .windows(2)
+        .filter_map(|pair| {
+            let [center, radial] = pair else {
+                unreachable!("slice windows have the requested length")
+            };
+            if !matches!(
+                radial.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                return None;
+            }
+            let center_local_id = center.local_id?;
+            if center_local_id == 0
+                || radial.object_index != Some(center_local_id)
+                || radial.local_id != Some(0)
+            {
+                return None;
+            }
+            Some([*center, *radial])
+        })
+        .collect()
 }
 
 pub(crate) fn project_relation_bindings(
