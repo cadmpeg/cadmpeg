@@ -45,6 +45,8 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::Units;
 use std::collections::BTreeMap;
 
+const EPS_FULL_TURN: f64 = 1e-12;
+
 #[test]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let sketch_id = SketchId("creo:model:sketch#spline".to_string());
@@ -944,6 +946,26 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             }) if profile == "creo:featdefs:sketch#822"
         ));
     }
+
+    scan.features
+        .revolution_extents
+        .push(crate::feature::FeatureRevolutionExtent {
+            feature_id: 822,
+            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
+            offset: 1,
+        });
+    assert!(matches!(
+        named_feature_definition(&scan, &ir, 822, "Revolve"),
+        Some(IrFeatureDefinition::Revolve {
+            construction: RevolutionConstruction {
+                extent: Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+                    termination: Termination::Angle { angle: Angle(value) },
+                }),
+                ..
+            },
+            ..
+        }) if (value - std::f64::consts::TAU).abs() < EPS_FULL_TURN
+    ));
 
     let sketch = SketchId("creo:model:sketch#822".to_string());
     ir.model.sketches.push(Sketch {

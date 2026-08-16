@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Named and referenced feature definitions.
 
-use super::super::sketch_transfer::{feature_recipe_effect, feature_schema_class};
+use super::super::sketch_transfer::{
+    feature_recipe_effect, feature_revolution_extent, feature_schema_class,
+};
 use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
     feature_reference_name, filled_surface_feature_definition, knit_surface_feature_definition,
@@ -182,7 +184,7 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
         construction: RevolutionConstruction {
             profile: unique_feature_profile_ref(scan, ir, feature_id),
             axis: None,
-            extent: None,
+            extent: feature_revolution_extent(scan, feature_id),
             axis_reference: None,
             solid: None,
             face_maker_class: None,
