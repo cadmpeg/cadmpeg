@@ -148,6 +148,12 @@ accepts modern anonymous major-1 fonts, applies the minor 0 through 6 field
 gates, and ends at the font chunk boundary; its modern writer emits minor 6
 and its Windows LOGFONT name is a `TCODE_UTF8_STRING_CHUNK` with a format byte.
 The legacy V5 font branch remains a packed 1.2 record with its own minor gates.
+`ON_DimStyle::Write` emits anonymous version 1.9 after the model-component
+attributes and the fixed minor-0 prefix. `ON_DimStyle::Read` accepts major 1,
+applies the minor 1 through 9 gates for the scale-value, font, text-mask, and
+control fields, and ends at the anonymous chunk boundary for later minors.
+The Rust dimension-style reader mirrors that prefix, each gate, and the later-
+minor boundary.
 Remaining strict rules are writer-band ceilings, direct readers with other
 version families, tagged item streams with explicit terminators, or versioned
 readers whose exact producer field gates have not yet been characterized
@@ -161,7 +167,9 @@ independent witness that distinguishes an appendable suffix from a changed
 layout. Remove only rejection not required by that evidence.
 
 **Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
-settled; the residual is the explicit writer-band/tagged/direct-reader audit.
+settled; the dimension-style reader is now source-backed through its minor-9
+prefix and later-minor boundary. The residual is the explicit
+writer-band/tagged/direct-reader audit.
 
 ### TE-01. Class-specific transfer differential evidence
 

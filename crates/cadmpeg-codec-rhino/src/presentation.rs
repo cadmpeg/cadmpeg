@@ -2749,6 +2749,115 @@ mod tests {
         bytes
     }
 
+    fn future_dimension_style_chunk() -> Vec<u8> {
+        let mut body = model_attributes_chunk(7, "dimension style");
+        for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend(1_u32.to_le_bytes());
+        body.extend(2_u32.to_le_bytes());
+        body.extend(3_u32.to_le_bytes());
+        body.extend(4_i32.to_le_bytes());
+        body.extend(5_i32.to_le_bytes());
+        body.extend((-1_i32).to_le_bytes());
+        body.extend(1.0_f64.to_le_bytes());
+        body.push(1);
+        body.extend(1.5_f64.to_le_bytes());
+        body.extend(6_u32.to_le_bytes());
+        body.extend(7_i32.to_le_bytes());
+        for value in ["<", ">", "[", "]"] {
+            body.extend(utf16(value));
+        }
+        body.extend(8.0_f64.to_le_bytes());
+        body.extend([0, 1]);
+        body.extend([0x11; 16]);
+        body.extend(9_u32.to_le_bytes());
+        body.push(0);
+        body.extend(10_u32.to_le_bytes());
+        body.extend(11_i32.to_le_bytes());
+        for value in [12.0_f64, 13.0, 14.0] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend(15.0_f64.to_le_bytes());
+        body.push(1);
+        body.extend(16_u32.to_le_bytes());
+        body.extend([17, 18, 19, 20]);
+        body.extend(21.0_f64.to_le_bytes());
+        body.extend(22_i32.to_le_bytes());
+        body.extend([0x22; 16]);
+        body.extend([23, 24, 25, 26]);
+        for color in [
+            [27, 28, 29, 30],
+            [31, 32, 33, 34],
+            [35, 36, 37, 38],
+            [39, 40, 41, 42],
+        ] {
+            body.extend(color);
+        }
+        body.extend([43, 44, 45, 46]);
+        for color in [
+            [47, 48, 49, 50],
+            [51, 52, 53, 54],
+            [55, 56, 57, 58],
+            [59, 60, 61, 62],
+        ] {
+            body.extend(color);
+        }
+        body.extend([63, 64]);
+        for value in [65.0_f64, 66.0, 67.0] {
+            body.extend(value.to_le_bytes());
+        }
+        body.push(1);
+        body.extend(68.0_f64.to_le_bytes());
+        body.extend(69_i32.to_le_bytes());
+        body.extend(70.0_f64.to_le_bytes());
+        body.extend([0, 1]);
+        body.extend(71_i32.to_le_bytes());
+        body.extend(72_i32.to_le_bytes());
+        body.extend(73.0_f64.to_le_bytes());
+        body.extend(74_u32.to_le_bytes());
+        for value in [75.0_f64, 76.0, 77.0] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend([78_u32, 79, 80, 81].into_iter().flat_map(u32::to_le_bytes));
+        body.push(1);
+        body.extend([82_u32, 83, 84].into_iter().flat_map(u32::to_le_bytes));
+        body.extend([0x66; 16]);
+        body.extend([0x77; 16]);
+        body.extend([0x88; 16]);
+
+        body.extend(
+            [85_u32, 86, 87, 88, 89]
+                .into_iter()
+                .flat_map(u32::to_le_bytes),
+        );
+        body.extend(90.0_f64.to_le_bytes());
+        body.push(1);
+        body.extend(91.0_f64.to_le_bytes());
+        body.extend([90_u32, 91].into_iter().flat_map(u32::to_le_bytes));
+        body.push(1);
+        body.push(0);
+        body.extend(anonymous(0, &[]));
+        body.extend(92_u32.to_le_bytes());
+        body.extend(anonymous(0, &[]));
+        body.extend(anonymous(0, &[]));
+        for value in 93_u32..105 {
+            body.extend(value.to_le_bytes());
+        }
+        body.push(1);
+        body.extend(
+            [105_u32, 106, 107, 108, 109]
+                .into_iter()
+                .flat_map(u32::to_le_bytes),
+        );
+        body.extend(110_u32.to_le_bytes());
+        body.extend(111_u32.to_le_bytes());
+        body.push(1);
+        body.extend(112_u32.to_le_bytes());
+        body.extend([0xaa, 0xbb]);
+        anonymous(10, &body)
+    }
+
     fn embedded_bitmap_payload(minor: u8, id: Uuid, compression_method: i32) -> Vec<u8> {
         let mut bytes = vec![0x10 | minor];
         bytes.extend(utf16("image.png"));
@@ -3069,6 +3178,22 @@ mod tests {
         assert_eq!(value.source_uuid, Some(id.to_string()));
         assert_eq!(value.font.windows_logfont_name, "Arial");
         assert_eq!(value.source_offset, 99);
+    }
+
+    #[test]
+    fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
+        let bytes = future_dimension_style_chunk();
+        let value = parse_dimension_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 1.0, 321)
+            .expect("dimension style with future minor");
+        assert_eq!(value.archive_index, Some(7));
+        assert_eq!(value.name, "dimension style");
+        assert_eq!(value.extension_line_extension_mm, 1.0);
+        assert_eq!(value.controls["decimal_separator"], serde_json::json!(112));
+        assert_eq!(
+            value.controls["dimension_length_display"],
+            serde_json::json!(107)
+        );
+        assert_eq!(value.source_offset, 321);
     }
 
     #[test]

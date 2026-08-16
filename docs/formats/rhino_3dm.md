@@ -3306,18 +3306,101 @@ the chunk boundary supplies its length. Font point size is not a model length.
 The modern font reader accepts later minor values, consumes the known prefix,
 and leaves the remaining bytes to the font chunk boundary.
 
-Dimension-style anonymous versions 1.0 through 1.9 store the common size,
-format, resolution, prefix, suffix, alternate-unit, suppression, and parent
-fields followed by field-override bits; tolerance values; baseline and text
-mask state; scale and source style; display and plot colors, sources, and
-weights; fixed extension length; text rotation; arrow suppression and custom
-arrow UUIDs; leader curve, landing, content-angle, and alignment state; scale
-value, font, and text-mask child chunks; text locations, alignments,
-orientations, and angle styles; primary and alternate unit/display modes;
-center-mark style; dimension-line, text-fit, and arrow-fit controls; and the
-decimal separator. Sizes, baseline spacing, fixed extension length, leader
-landing length, and plot weights are length values. Scale factors, rotations,
-fractions, rounding values, colors, enums, and override bits are not scaled.
+Dimension-style records use an anonymous major-1 chunk. The writer emits
+minor 9. The common minor-0 prefix after model-component attributes is:
+
+```text
+7 × f64 model lengths: extension-line extension, extension-line offset,
+  arrow size, leader arrow size, center-mark size, text gap, text height
+u32 obsolete text-display mode
+u32 angle format
+u32 obsolete length format
+i32 angle resolution
+i32 length resolution
+i32 text-style index
+f64 length factor
+bool alternate dimensions enabled
+f64 alternate length factor
+u32 obsolete alternate length format
+i32 alternate length resolution
+4 × UTF-16 prefix, suffix, alternate prefix, alternate suffix
+f64 dimension-line extension
+bool suppress extension line 1
+bool suppress extension line 2
+UUID parent dimension style
+u32 legacy field-override parent count
+bool field-override array present
+if present: bool array field overrides
+u32 tolerance format
+i32 tolerance resolution
+3 × f64 upper tolerance, lower tolerance, tolerance text-height scale
+f64 baseline spacing
+bool draw legacy text mask
+u32 legacy mask fill type
+color legacy mask color
+f64 dimension scale
+i32 dimension-scale source
+UUID source dimension style
+4 × u8 line-color source
+4 × color line colors
+4 × u8 line-plot-color source
+4 × color line plot colors
+2 × u8 plot-weight source
+2 × f64 plot weights
+f64 fixed extension length
+bool fixed extension length enabled
+f64 text rotation
+i32 alternate tolerance resolution
+f64 tolerance text-height fraction
+2 × bool suppress arrow 1, suppress arrow 2
+i32 text-move leader mode
+i32 arc-length symbol
+f64 stack text-height fraction
+u32 stack format
+3 × f64 alternate rounding, rounding, angular rounding
+4 × u32 alternate zero suppression, obsolete tolerance zero suppression,
+  zero suppression, angular zero suppression
+bool alternate text below main text
+3 × u32 arrow type 1, arrow type 2, leader arrow type
+3 × UUID arrow block IDs
+```
+
+The text-style index is the V5 referenced index in V1–V5 archives and is the
+unset `i32` value in V6 and later archives. A `color` is four channel bytes.
+The three child chunks and later fields are appended in minor gates:
+
+```text
+minor >= 1:
+  u32 obsolete leader content type
+  2 × u32 obsolete text and leader vertical alignment
+  2 × u32 leader content angle style and leader curve type
+  f64 leader content angle
+  bool leader has landing
+  f64 leader landing length
+  2 × u32 obsolete text and leader horizontal alignment
+  2 × bool draw forward, signed ordinate
+  anonymous scale-value child
+  u32 dimension-style unit system
+minor >= 2: anonymous font-characteristics child
+minor >= 3: anonymous text-mask child
+minor >= 4: 12 × u32 text locations, alignments, orientations, and angle styles;
+  bool text underlined
+minor >= 5: 2 × u32 obsolete primary and alternate dimension unit systems
+minor >= 6: 2 × u32 primary and alternate dimension length-display modes
+minor >= 7: u32 center-mark style
+minor >= 8: bool force dimension line; u32 text fit; u32 arrow fit
+minor >= 9: u32 decimal separator
+```
+
+The scale-value, font-characteristics, and text-mask values are anonymous
+child chunks and are bounded independently. A major-1 reader consumes the
+minor-0 prefix and each gate through minor 9. For a minor greater than 9 it
+does not interpret later fields; it leaves those bytes to the containing
+anonymous chunk boundary. A non-major-1 chunk is rejected.
+
+Sizes, baseline spacing, fixed extension length, leader landing length, and
+plot weights are length values. Scale factors, rotations, fractions, rounding
+values, colors, enums, and override bits are not scaled.
 
 Section-style anonymous records use major 1. Minor 1 is the current writer
 version; later minor values retain the known model-component prefix and
