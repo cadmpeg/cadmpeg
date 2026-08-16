@@ -822,6 +822,25 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
 }
 
 #[test]
+fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
+    let payload = b"\xe3protextrude\0Extrude id 7\0\xe3cutextrude\0Extrude id 7\0";
+
+    let states = operation_states(payload);
+    assert_eq!(states.len(), 2);
+    assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+    assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
+
+    let current_operations = operations(payload);
+    let [current] = current_operations.as_slice() else {
+        panic!("one consensus operation");
+    };
+    assert_eq!(current.kind, "Extrude");
+    assert!(current.display_state_conflict);
+    assert!(current.recipe_conflict);
+    assert_eq!(current.recipe, None);
+}
+
+#[test]
 fn binds_depdb_recipe_records_to_compact_feature_ids() {
     let payload = b"\xe3K\xc3\xb6rper ID 247\0\xe3\
             \xf7\x3b\x80\xf7\x83\x95\xf6\x20Drehen 1\0\xf6\0protrevolve\0\
