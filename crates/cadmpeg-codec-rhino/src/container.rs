@@ -191,8 +191,22 @@ fn checksum_warning(
 ) -> Result<Option<String>, CodecError> {
     let chunk = chunk_at(data, offset, parent_end, archive, false).map_err(framing_error)?;
     let status = if typecode & TCODE_TABLE != 0
-        || matches!(typecode, TCODE_OBJECT_RECORD | TCODE_LAYER_RECORD)
-    {
+        || matches!(
+            typecode,
+            TCODE_OBJECT_RECORD
+                | TCODE_BITMAP_RECORD
+                | TCODE_MATERIAL_RECORD
+                | TCODE_LAYER_RECORD
+                | TCODE_LIGHT_RECORD
+                | TCODE_GROUP_RECORD
+                | TCODE_OBSOLETE_LAYERSET_RECORD
+                | TCODE_FONT_RECORD
+                | TCODE_DIMSTYLE_RECORD
+                | TCODE_HATCH_PATTERN_RECORD
+                | TCODE_LINETYPE_RECORD
+                | TCODE_TEXTURE_MAPPING_RECORD
+                | TCODE_HISTORY_RECORD
+        ) {
         crate::chunks::verify_checksum_ranges(data, &chunk, &[])
     } else if matches!(
         typecode,

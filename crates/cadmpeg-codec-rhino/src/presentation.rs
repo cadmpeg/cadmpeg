@@ -8,10 +8,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
-use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{Record, Scan};
 use crate::loss::RhinoLossCode;
-use crate::objects::parse_class_wrapper;
+use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::utf16;
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -45,6 +45,12 @@ const LINETYPE: Uuid = Uuid::from_canonical([
 const DIMSTYLE: Uuid = Uuid::from_canonical([
     0x67, 0xaa, 0x51, 0xa5, 0x79, 0x1d, 0x4b, 0xec, 0x8a, 0xed, 0xd2, 0x3b, 0x46, 0x2b, 0x6f, 0x87,
 ]);
+const V5_DIMSTYLE: Uuid = Uuid::from_canonical([
+    0x81, 0xbd, 0x83, 0xd5, 0x71, 0x20, 0x41, 0xc4, 0x9a, 0x57, 0xc4, 0x49, 0x33, 0x6f, 0xf1, 0x2c,
+]);
+const DIMSTYLE_EXTRA: Uuid = Uuid::from_canonical([
+    0x51, 0x3f, 0xde, 0x53, 0x72, 0x84, 0x40, 0x65, 0x86, 0x01, 0x06, 0xce, 0xa8, 0xb2, 0x8d, 0x6f,
+]);
 const EMBEDDED_BITMAP: Uuid = Uuid::from_canonical([
     0x77, 0x2e, 0x6f, 0xc1, 0xb1, 0x7b, 0x4f, 0xc4, 0x8f, 0x54, 0x5f, 0xda, 0x51, 0x1d, 0x76, 0xd2,
 ]);
@@ -63,6 +69,7 @@ const TEXT_STYLE: Uuid = Uuid::from_canonical([
 const TEXTURE: Uuid = Uuid::from_canonical([
     0xd6, 0xff, 0x10, 0x6d, 0x32, 0x9b, 0x4f, 0x29, 0x97, 0xe2, 0xfd, 0x28, 0x2a, 0x61, 0x80, 0x20,
 ]);
+const MAX_DIMSTYLE_EXTRA_FIELDS: usize = 1 << 16;
 
 #[derive(Debug)]
 struct Component {
@@ -259,6 +266,26 @@ struct DimensionStyleRecord {
     suppress_extension_line_2: bool,
     parent_style_uuid: Option<String>,
     controls: BTreeMap<String, serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    v5_extra: Option<V5DimensionStyleExtraRecord>,
+}
+
+#[derive(Debug, Serialize)]
+struct V5DimensionStyleExtraRecord {
+    parent_style_uuid: Option<String>,
+    valid_fields: Vec<bool>,
+    tolerance_style: i32,
+    tolerance_resolution: i32,
+    tolerance_upper_value: f64,
+    tolerance_lower_value: f64,
+    tolerance_height_scale: f64,
+    baseline_spacing_mm: f64,
+    draw_text_mask: bool,
+    mask_color_source: i32,
+    mask_color: [u8; 4],
+    dimension_scale: f64,
+    dimension_scale_source: i32,
+    source_style_uuid: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -597,6 +624,23 @@ fn class_data(
         ));
     }
     Ok(class.class_data_range)
+}
+
+fn class_data_with_userdata(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+    expected: Uuid,
+) -> Result<(Range<usize>, Vec<UserdataDescriptor>), FramingError> {
+    let (class, userdata) =
+        parse_class_wrapper_with_userdata(data, record.body.clone(), archive, &mut Vec::new())?;
+    if class.class_uuid != expected {
+        return Err(FramingError::structural(
+            record.range.start,
+            "table record has the wrong class",
+        ));
+    }
+    Ok((class.class_data_range, userdata))
 }
 
 fn parse_texture(
@@ -1613,6 +1657,267 @@ fn dimension_style_controls(
     Ok(values)
 }
 
+fn parse_v5_dimension_style_extra(
+    data: &[u8],
+    extra: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    scale: f64,
+) -> Result<V5DimensionStyleExtraRecord, FramingError> {
+    let (mut reader, version) = anonymous(data, extra.payload_range.clone(), archive)?;
+    if version.0 != 1 || version.1 < 0 {
+        return Err(FramingError::structural(
+            reader.position() - 8,
+            "V5 dimension-style extra version is unsupported",
+        ));
+    }
+    let parent_style_uuid = uuid(&mut reader)?;
+    let count_offset = reader.position();
+    let count = reader.i32()?;
+    let byte_count = checked_count_bytes(
+        count,
+        1,
+        reader.remaining(),
+        MAX_DIMSTYLE_EXTRA_FIELDS,
+        count_offset,
+    )?;
+    let valid_fields = reader
+        .take(byte_count)?
+        .iter()
+        .map(|value| *value != 0)
+        .collect();
+    let tolerance_style = reader.i32()?;
+    let tolerance_resolution = reader.i32()?;
+    let tolerance_upper_value = read_finite(&mut reader, "tolerance upper value")?;
+    let tolerance_lower_value = read_finite(&mut reader, "tolerance lower value")?;
+    let tolerance_height_scale = read_finite(&mut reader, "tolerance height scale")?;
+    let baseline_spacing_mm = scaled_length(&mut reader, scale, "baseline spacing")?;
+    let (draw_text_mask, mask_color_source, mask_color) = if version.1 >= 1 {
+        (reader.bool()?, reader.i32()?, reader.array()?)
+    } else {
+        (false, 0, [255, 255, 255, 0])
+    };
+    let (dimension_scale, dimension_scale_source) = if version.1 >= 2 {
+        (read_finite(&mut reader, "dimension scale")?, reader.i32()?)
+    } else {
+        (1.0, 0)
+    };
+    let source_style_uuid = if version.1 >= 3 {
+        uuid(&mut reader)?
+    } else {
+        Uuid::nil()
+    };
+    reader.skip_remaining()?;
+    Ok(V5DimensionStyleExtraRecord {
+        parent_style_uuid: (!parent_style_uuid.is_nil()).then(|| parent_style_uuid.to_string()),
+        valid_fields,
+        tolerance_style,
+        tolerance_resolution,
+        tolerance_upper_value,
+        tolerance_lower_value,
+        tolerance_height_scale,
+        baseline_spacing_mm,
+        draw_text_mask,
+        mask_color_source,
+        mask_color,
+        dimension_scale,
+        dimension_scale_source,
+        source_style_uuid: (!source_style_uuid.is_nil()).then(|| source_style_uuid.to_string()),
+    })
+}
+
+fn parse_v5_dimension_style(
+    data: &[u8],
+    range: Range<usize>,
+    scale: f64,
+    source_offset: usize,
+    extra: Option<V5DimensionStyleExtraRecord>,
+) -> Result<DimensionStyleRecord, FramingError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    let packed = reader.u8()?;
+    let major = packed >> 4;
+    let minor = packed & 0x0f;
+    if major != 1 {
+        return Err(FramingError::structural(
+            range.start,
+            "V5 dimension-style version is unsupported",
+        ));
+    }
+    let archive_index = reader.i32()?;
+    let name = utf16(&mut reader)?;
+    let extension_line_extension_mm =
+        scaled_length(&mut reader, scale, "extension-line extension")?;
+    let extension_line_offset_mm = scaled_length(&mut reader, scale, "extension-line offset")?;
+    let arrow_size_mm = scaled_length(&mut reader, scale, "arrow size")?;
+    let center_mark_size_mm = scaled_length(&mut reader, scale, "center-mark size")?;
+    let text_gap_mm = scaled_length(&mut reader, scale, "text gap")?;
+    let text_display_mode = reader.u32()?;
+    let arrow_type = reader.i32()?;
+    let angular_units = reader.i32()?;
+    let length_format = reader.u32()?;
+    let angle_format = reader.u32()?;
+    let length_resolution = reader.i32()?;
+    let angle_resolution = reader.i32()?;
+    let text_style_index = reader.i32()?;
+    let text_height_mm = if minor >= 1 {
+        scaled_length(&mut reader, scale, "text height")?
+    } else {
+        scale
+    };
+    let mut controls = BTreeMap::new();
+    controls.insert(
+        "v5_version".to_string(),
+        serde_json::json!({ "major": major, "minor": minor }),
+    );
+    controls.insert("v5_arrow_type".to_string(), serde_json::json!(arrow_type));
+    controls.insert(
+        "v5_angular_units".to_string(),
+        serde_json::json!(angular_units),
+    );
+    let (
+        length_factor,
+        alternate_enabled,
+        alternate_length_factor,
+        alternate_length_format,
+        alternate_length_resolution,
+        prefix,
+        suffix,
+        alternate_prefix,
+        alternate_suffix,
+    ) = if minor >= 2 {
+        let length_factor = read_finite(&mut reader, "length factor")?;
+        let prefix = utf16(&mut reader)?;
+        let suffix = utf16(&mut reader)?;
+        let alternate_enabled = reader.bool()?;
+        let alternate_length_factor = read_finite(&mut reader, "alternate length factor")?;
+        let alternate_length_format = reader.u32()?;
+        let alternate_length_resolution = reader.i32()?;
+        let alternate_angle_format = reader.u32()?;
+        let alternate_angle_resolution = reader.i32()?;
+        let alternate_prefix = utf16(&mut reader)?;
+        let alternate_suffix = utf16(&mut reader)?;
+        let unused = reader.u32()?;
+        controls.insert(
+            "v5_length_factor".to_string(),
+            serde_json::json!(length_factor),
+        );
+        controls.insert(
+            "v5_alternate_angle_format".to_string(),
+            serde_json::json!(alternate_angle_format),
+        );
+        controls.insert(
+            "v5_alternate_angle_resolution".to_string(),
+            serde_json::json!(alternate_angle_resolution),
+        );
+        controls.insert("v5_unused".to_string(), serde_json::json!(unused));
+        (
+            length_factor,
+            alternate_enabled,
+            alternate_length_factor,
+            alternate_length_format,
+            alternate_length_resolution,
+            prefix,
+            suffix,
+            alternate_prefix,
+            alternate_suffix,
+        )
+    } else {
+        (
+            1.0,
+            false,
+            1.0,
+            0,
+            2,
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        )
+    };
+    let id = if minor >= 3 {
+        uuid(&mut reader)?
+    } else {
+        Uuid::nil()
+    };
+    let dimension_line_extension_mm = if minor >= 4 {
+        scaled_length(&mut reader, scale, "dimension-line extension")?
+    } else {
+        0.0
+    };
+    let (
+        leader_arrow_size_mm,
+        leader_arrow_type,
+        suppress_extension_line_1,
+        suppress_extension_line_2,
+    ) = if minor >= 5 {
+        (
+            scaled_length(&mut reader, scale, "leader arrow size")?,
+            reader.i32()?,
+            reader.bool()?,
+            reader.bool()?,
+        )
+    } else {
+        (scale, 0, false, false)
+    };
+    reader.skip_remaining()?;
+    controls.insert(
+        "v5_leader_arrow_type".to_string(),
+        serde_json::json!(leader_arrow_type),
+    );
+    let parent_style_uuid = extra
+        .as_ref()
+        .and_then(|value| value.parent_style_uuid.clone());
+    if let Some(value) = extra.as_ref() {
+        controls.insert(
+            "v5_extra_dimension_scale".to_string(),
+            serde_json::json!(value.dimension_scale),
+        );
+        controls.insert(
+            "v5_extra_dimension_scale_source".to_string(),
+            serde_json::json!(value.dimension_scale_source),
+        );
+    }
+    let key = if id.is_nil() {
+        format!("record-{source_offset}")
+    } else {
+        id.to_string()
+    };
+    Ok(DimensionStyleRecord {
+        id: format!("rhino:presentation:dimension_style#{key}"),
+        source_offset: source_offset as u64,
+        archive_index: Some(archive_index),
+        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        name,
+        extension_line_extension_mm,
+        extension_line_offset_mm,
+        arrow_size_mm,
+        leader_arrow_size_mm,
+        center_mark_size_mm,
+        text_gap_mm,
+        text_height_mm,
+        text_display_mode,
+        angle_format,
+        length_format,
+        angle_resolution,
+        length_resolution,
+        text_style_index,
+        length_factor,
+        alternate_enabled,
+        alternate_length_factor,
+        alternate_length_format,
+        alternate_length_resolution,
+        prefix,
+        suffix,
+        alternate_prefix,
+        alternate_suffix,
+        dimension_line_extension_mm,
+        suppress_extension_line_1,
+        suppress_extension_line_2,
+        parent_style_uuid,
+        controls,
+        v5_extra: extra,
+    })
+}
+
 fn parse_dimension_style(
     data: &[u8],
     range: Range<usize>,
@@ -1695,6 +2000,7 @@ fn parse_dimension_style(
         suppress_extension_line_2,
         parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
         controls,
+        v5_extra: None,
     })
 }
 
@@ -2357,7 +2663,45 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                     }
                 }
             } else if table_type == DIMSTYLE_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, DIMSTYLE) {
+                if scan.archive.value() < 60 {
+                    if let Ok((range, userdata)) =
+                        class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE)
+                    {
+                        let extra = userdata.into_iter().find(|value| {
+                            value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA
+                        });
+                        let extra = match extra {
+                            Some(value) => match parse_v5_dimension_style_extra(
+                                scan.data,
+                                &value,
+                                scan.archive,
+                                scale,
+                            ) {
+                                Ok(extra) => Some(extra),
+                                Err(error) => {
+                                    losses.push(RhinoLossCode::PresentationRecordDropped.note(
+                                        format!(
+                                            "V5 dimension-style userdata at offset {} could not be transferred: {error}",
+                                            record.range.start
+                                        ),
+                                    ));
+                                    None
+                                }
+                            },
+                            None => None,
+                        };
+                        if let Ok(value) = parse_v5_dimension_style(
+                            scan.data,
+                            range,
+                            scale,
+                            record.range.start,
+                            extra,
+                        ) {
+                            dimension_styles.push(value);
+                            parsed = true;
+                        }
+                    }
+                } else if let Ok(range) = class_data(scan.data, record, scan.archive, DIMSTYLE) {
                     if let Ok(value) = parse_dimension_style(
                         scan.data,
                         range,
@@ -2854,6 +3198,64 @@ mod tests {
         anonymous(10, &body)
     }
 
+    fn v5_dimension_style_chunk() -> Vec<u8> {
+        let mut bytes = vec![0x15];
+        bytes.extend(7_i32.to_le_bytes());
+        bytes.extend(utf16("legacy dimension style"));
+        for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(6_u32.to_le_bytes());
+        bytes.extend(7_i32.to_le_bytes());
+        bytes.extend(8_i32.to_le_bytes());
+        bytes.extend(9_u32.to_le_bytes());
+        bytes.extend(10_u32.to_le_bytes());
+        bytes.extend(11_i32.to_le_bytes());
+        bytes.extend(12_i32.to_le_bytes());
+        bytes.extend(13_i32.to_le_bytes());
+        bytes.extend(14.0_f64.to_le_bytes());
+        bytes.extend(15.0_f64.to_le_bytes());
+        bytes.extend(utf16("<"));
+        bytes.extend(utf16(">"));
+        bytes.push(1);
+        bytes.extend(16.0_f64.to_le_bytes());
+        bytes.extend(17_u32.to_le_bytes());
+        bytes.extend(18_i32.to_le_bytes());
+        bytes.extend(19_u32.to_le_bytes());
+        bytes.extend(20_i32.to_le_bytes());
+        bytes.extend(utf16("["));
+        bytes.extend(utf16("]"));
+        bytes.extend(21_u32.to_le_bytes());
+        bytes.extend([0x33; 16]);
+        bytes.extend(22.0_f64.to_le_bytes());
+        bytes.extend(23.0_f64.to_le_bytes());
+        bytes.extend(24_i32.to_le_bytes());
+        bytes.extend([1, 0]);
+        bytes.extend([0xaa, 0xbb]);
+        bytes
+    }
+
+    fn v5_dimension_style_extra_chunk() -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend([0x11; 16]);
+        body.extend(3_i32.to_le_bytes());
+        body.extend([0, 1, 2]);
+        body.extend(3_i32.to_le_bytes());
+        body.extend(4_i32.to_le_bytes());
+        body.extend(0.25_f64.to_le_bytes());
+        body.extend((-0.125_f64).to_le_bytes());
+        body.extend(1.25_f64.to_le_bytes());
+        body.extend(2.5_f64.to_le_bytes());
+        body.push(1);
+        body.extend(2_i32.to_le_bytes());
+        body.extend([11, 22, 33, 44]);
+        body.extend(1.75_f64.to_le_bytes());
+        body.extend(2_i32.to_le_bytes());
+        body.extend([0x22; 16]);
+        body.extend([0xcc, 0xdd]);
+        anonymous(3, &body)
+    }
+
     fn embedded_bitmap_payload(minor: u8, id: Uuid, compression_method: i32) -> Vec<u8> {
         let mut bytes = vec![0x10 | minor];
         bytes.extend(utf16("image.png"));
@@ -3190,6 +3592,84 @@ mod tests {
             serde_json::json!(107)
         );
         assert_eq!(value.source_offset, 321);
+    }
+
+    #[test]
+    fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
+        let base = v5_dimension_style_chunk();
+        let extra_bytes = v5_dimension_style_extra_chunk();
+        let descriptor = UserdataDescriptor {
+            range: 0..extra_bytes.len(),
+            version: (2, 2),
+            class_uuid: DIMSTYLE_EXTRA,
+            item_uuid: DIMSTYLE_EXTRA,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: 0..extra_bytes.len(),
+            unknown_version: false,
+        };
+        let extra =
+            parse_v5_dimension_style_extra(&extra_bytes, &descriptor, ArchiveVersion::V5, 2.0)
+                .expect("V5 dimension-style extra");
+        assert_eq!(extra.valid_fields, vec![false, true, true]);
+        assert_eq!(extra.baseline_spacing_mm, 5.0);
+        assert_eq!(extra.mask_color, [11, 22, 33, 44]);
+        assert_eq!(
+            extra.source_style_uuid,
+            Some(Uuid::from_canonical([0x22; 16]).to_string())
+        );
+
+        let value = parse_v5_dimension_style(&base, 0..base.len(), 2.0, 321, Some(extra))
+            .expect("V5 dimension style");
+        assert_eq!(value.archive_index, Some(7));
+        assert_eq!(value.name, "legacy dimension style");
+        assert_eq!(value.extension_line_extension_mm, 2.0);
+        assert_eq!(value.center_mark_size_mm, 8.0);
+        assert_eq!(value.text_height_mm, 28.0);
+        assert_eq!(value.leader_arrow_size_mm, 46.0);
+        assert_eq!(value.length_factor, 15.0);
+        assert_eq!(value.alternate_length_format, 17);
+        assert_eq!(
+            value.parent_style_uuid,
+            Some(Uuid::from_canonical([0x11; 16]).to_string())
+        );
+        assert_eq!(value.controls["v5_arrow_type"], serde_json::json!(7));
+        assert_eq!(
+            value.source_uuid,
+            Some(Uuid::from_canonical([0x33; 16]).to_string())
+        );
+        assert!(value.v5_extra.is_some());
+
+        let mut minor_zero_body = Vec::new();
+        minor_zero_body.extend([0; 16]);
+        minor_zero_body.extend(0_i32.to_le_bytes());
+        minor_zero_body.extend(0_i32.to_le_bytes());
+        minor_zero_body.extend(4_i32.to_le_bytes());
+        minor_zero_body.extend(0.0_f64.to_le_bytes());
+        minor_zero_body.extend(0.0_f64.to_le_bytes());
+        minor_zero_body.extend(1.0_f64.to_le_bytes());
+        minor_zero_body.extend(1.0_f64.to_le_bytes());
+        minor_zero_body.extend([0xee, 0xff]);
+        let minor_zero = anonymous(0, &minor_zero_body);
+        let mut minor_zero_descriptor = descriptor;
+        minor_zero_descriptor.payload_range = 0..minor_zero.len();
+        let minor_zero = parse_v5_dimension_style_extra(
+            &minor_zero,
+            &minor_zero_descriptor,
+            ArchiveVersion::V5,
+            2.0,
+        )
+        .expect("V5 dimension-style extra minor zero");
+        assert_eq!(minor_zero.mask_color, [255, 255, 255, 0]);
+        assert_eq!(minor_zero.dimension_scale, 1.0);
+
+        let mut invalid = base;
+        invalid[0] = 0x25;
+        assert!(parse_v5_dimension_style(&invalid, 0..invalid.len(), 1.0, 322, None).is_err());
     }
 
     #[test]

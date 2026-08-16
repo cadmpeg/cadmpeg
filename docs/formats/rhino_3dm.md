@@ -1559,6 +1559,8 @@ failure make the buffer invalid.
 | `ON_InstanceDefinition`  | `26F8BFF6-2618-417F-A158-153D64A94989` |
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
 | `ON_3dmObjectAttributes` | `A828C015-09F5-477C-8665-F0482F5D6996` |
+| `ON_DimStyle`             | `67AA51A5-791D-4BEC-8AED-D23B462B6F87` |
+| `ON_V5x_DimStyle`         | `81BD83D5-7120-41C4-9A57-C449336FF12C` |
 
 These registered legacy identities use the current class payload layout:
 
@@ -3464,6 +3466,98 @@ followed by the remaining UTF-8 bytes. It has no string count or terminator;
 the chunk boundary supplies its length. Font point size is not a model length.
 The modern font reader accepts later minor values, consumes the known prefix,
 and leaves the remaining bytes to the font chunk boundary.
+
+Archives below version 60 use class UUID `81BD83D5-7120-41C4-9A57-C449336FF12C`
+(`ON_V5x_DimStyle`) for dimension-style table records. Its class-data body is
+not anonymous and begins with packed version `1.5`, with the major in the high
+nibble and the minor in the low nibble:
+
+```text
+u8 packed version
+i32 referenced dimension-style index
+UTF-16 name
+5 × f64 model lengths: extension-line extension, extension-line offset,
+  arrow size, center-mark size, text gap
+u32 obsolete text-display mode
+i32 arrow type
+i32 angular units
+i32 length format
+i32 angle format
+i32 length resolution
+i32 angle resolution
+i32 legacy text-style index
+if minor >= 1: f64 model text height
+if minor >= 2:
+  f64 length factor
+  UTF-16 prefix
+  UTF-16 suffix
+  bool alternate dimensions enabled
+  f64 alternate length factor
+  i32 alternate length format
+  i32 alternate length resolution
+  i32 alternate angle format
+  i32 alternate angle resolution
+  UTF-16 alternate prefix
+  UTF-16 alternate suffix
+  i32 unused value
+if minor >= 3: UUID dimension-style ID
+if minor >= 4: f64 model dimension-line extension
+if minor >= 5:
+  f64 model leader arrow size
+  i32 leader arrow type
+  bool suppress extension line 1
+  bool suppress extension line 2
+```
+
+The writer uses defaults for fields omitted by a minor gate: text height 1,
+length factor 1, alternate dimensions disabled, alternate length factor 1,
+alternate formats 0, alternate resolutions 2, empty strings, dimension-line
+extension 0, leader arrow size 1, leader arrow type 0, and both suppression
+flags false. The class writer multiplies the model-length fields by the
+dimension scale for archive versions below 5; the V5 archive writes the model
+values directly. The class UUID is followed by the ordinary class-data and
+class-end framing. A V5 or V50 writer also attaches class userdata with class
+and item UUID `513FDE53-7284-4065-8601-06CEA8B28D6F`, application UUID
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and an anonymous version 1.3 payload
+written by `ON_DimStyleExtra`:
+
+```text
+outer anonymous userdata child
+  anonymous version 1.3
+    UUID parent dimension style
+    i32 valid-field count
+    count × u8 valid-field values
+    i32 tolerance format
+    i32 tolerance resolution
+    f64 upper tolerance
+    f64 lower tolerance
+    f64 tolerance text-height scale
+    f64 baseline spacing
+    if minor >= 1:
+      bool draw legacy text mask
+      i32 legacy mask color source
+      4 × u8 legacy mask color
+    if minor >= 2:
+      f64 dimension scale
+      i32 dimension-scale source
+    if minor >= 3: UUID source dimension style
+```
+
+The extra writer multiplies baseline spacing by dimension scale for archive
+versions below 5 and writes the dimension scale as 1; it writes both values
+directly for V5. `ON_DimStyleExtra::DeleteAfterRead` applies the parent UUID,
+valid-field bits, tolerance fields, mask fields, dimension scale, and source
+dimension-style UUID to the V5 style. It does not copy baseline spacing into
+the V5 style. The V5 reader retains the extra as a nested native source record;
+its valid-field bytes, tolerance values, mask bytes, dimension scale, and
+source UUID are not inferred from the packed class-data prefix.
+When the mask gate is absent, its source default color is white with raw bytes
+`[255,255,255,0]`; absent dimension-scale fields default to `1.0` and source
+`0`.
+
+If the packed ID is absent or nil, the CADIR decision is to use the table
+record offset for the native record identity and leave `source_uuid` absent;
+the decoder does not fabricate the UUID that openNURBS creates at read time.
 
 Dimension-style records use an anonymous major-1 chunk. The writer emits
 minor 9. The common minor-0 prefix after model-component attributes is:

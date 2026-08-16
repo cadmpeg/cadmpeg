@@ -142,13 +142,20 @@ version 60 and later. Its class and item UUID is
 chunks. The Rhino decoder maps its type, scaled endpoints, repeat, and ordered
 RGBA stops to the hatch feature's native `gradient` parameter while retaining
 the source object record because neutral hatch fill geometry is not produced.
+The V5 `ON_DimStyleExtra` class userdata is also settled. V5 and V50
+dimension-style records use `ON_V5x_DimStyle` class UUID
+`81BD83D5-7120-41C4-9A57-C449336FF12C`; its packed 1.5 class-data prefix and
+the nested anonymous 1.3 `ON_DimStyleExtra` payload are defined in section
+20.3. The extra class and item UUID is
+`513FDE53-7284-4065-8601-06CEA8B28D6F`, and the decoder retains its source
+fields under the native dimension-style record.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
-**Note.** Narrowed 2026-08-16. Generic header and boundary semantics and the
-built-in hatch gradient userdata are settled; other future class-specific
-payload semantics remain open.
+**Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
+built-in hatch gradient userdata, and the V5 dimension-style extra are settled;
+other future class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 
@@ -176,6 +183,13 @@ applies the minor 1 through 9 gates for the scale-value, font, text-mask, and
 control fields, and ends at the anonymous chunk boundary for later minors.
 The Rust dimension-style reader mirrors that prefix, each gate, and the later-
 minor boundary.
+`ON_BinaryArchive::Internal_Write3dmDimStyle` selects `ON_V5x_DimStyle` for
+archives below version 60. `ON_V5x_DimStyle::Write_v5` and
+`Internal_Read_v5` use the packed 1.5 prefix defined in section 20.3; minor
+gates 1 through 5 are bounded by the class-data chunk. `ON_DimStyleExtra::Write`
+and `Read` use the nested anonymous 1.3 payload and its minor 1 through 3
+gates. The Rust V5 reader mirrors both grammars and preserves a bounded suffix
+after each known prefix.
 `ON_RenderingAttributes::Write/Read` is the layer form: the writer emits
 anonymous version 1.0 with a material-reference array, and the major-1 reader
 consumes that array without a minor gate. `ON_ObjectRenderingAttributes` is the
