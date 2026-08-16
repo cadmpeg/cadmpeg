@@ -1504,15 +1504,31 @@ fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
         .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
 }
 
-fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
+fn surface_curve_parameters(record: &RawRecord) -> Option<&[Value]> {
     if record.partials.len() == 1 {
-        return record.parameter(2).and_then(refs);
+        let name = record.simple_name()?;
+        if !matches!(name, "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE") {
+            return None;
+        }
+        return Some(&record.partials.first()?.parameters);
     }
     record
         .partial("SURFACE_CURVE")
         .or_else(|| record.partial("SEAM_CURVE"))
         .or_else(|| record.partial("INTERSECTION_CURVE"))
-        .and_then(|partial| partial.parameters.iter().find_map(refs))
+        .map(|partial| partial.parameters.as_slice())
+}
+
+fn surface_curve_attributes(record: &RawRecord) -> Option<(u64, Vec<u64>)> {
+    let parameters = surface_curve_parameters(record)?;
+    let offset = usize::from(record.partials.len() == 1);
+    let curve_3d = parameters.get(offset).and_then(ValueExt::reference)?;
+    let associated_geometry = parameters.get(offset + 1).and_then(refs)?;
+    match parameters.get(offset + 2).and_then(ValueExt::enumeration)? {
+        "CURVE_3D" | "PCURVE_S1" | "PCURVE_S2" => {}
+        _ => return None,
+    }
+    Some((curve_3d, associated_geometry))
 }
 
 fn edge_vertices(record: &RawRecord) -> Option<(u64, u64)> {
@@ -2329,11 +2345,11 @@ fn build_one(
                                             }
                                             (Some(curve), Some(surface), _) => {
                                                 StepLossCode::PcurveAssociationAmbiguous.note(format!(
-                                                    "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                                    "curve #{curve} associates {n} pcurves with surface #{surface}; the source does not identify one pcurve for this edge use, so the coedge has no pcurve"
                                                 ))
                                             }
                                             _ => StepLossCode::PcurveCandidatesCarrierUnresolved.note(format!(
-                                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no source relation identifies one pcurve, so the coedge has no pcurve"
                                                 )),
                                         };
                                     losses.push(note);
@@ -3015,36 +3031,62 @@ fn associated_pcurves(
     let Some(curve) = exchange.records.get(&curve_step) else {
         return Vec::new();
     };
-    if !curve.partials.iter().any(|partial| {
-        matches!(
-            partial.name.as_str(),
-            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
-        )
-    }) {
-        return Vec::new();
+    if has_type(curve, "PCURVE") {
+        let pcurve_id = PcurveId(StepIdentity::data("pcurve", curve_step));
+        if entity_parameter(curve, "PCURVE", 1)
+            .and_then(ValueExt::reference)
+            .is_some_and(|basis| basis == surface_step)
+            && decoded_pcurves.contains(&pcurve_id)
+        {
+            return vec![pcurve_id];
+        }
     }
-    let Some(pcurves) = surface_curve_pcurves(curve) else {
-        return Vec::new();
+
+    let surface_curves = if surface_curve_parameters(curve).is_some() {
+        vec![(curve_step, curve)]
+    } else {
+        exchange
+            .records
+            .iter()
+            .filter(|(_, candidate)| surface_curve_parameters(candidate).is_some())
+            .filter(|(_, candidate)| surface_curve_basis(candidate) == Some(curve_step))
+            .map(|(source_step, candidate)| (*source_step, candidate))
+            .collect()
     };
-    pcurves
+
+    // ISO 10303-42 edge_curve_pcurves returns a SET; one pcurve referenced by
+    // multiple source surface curves is still one edge-use candidate.
+    let candidates = surface_curves
         .into_iter()
-        .filter_map(|pcurve_step| {
-            let pcurve = exchange.records.get(&pcurve_step)?;
-            let pcurve_id = PcurveId(StepIdentity::data("pcurve", pcurve_step));
-            (has_type(pcurve, "PCURVE")
-                && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
-                && decoded_pcurves.contains(&pcurve_id))
-            .then_some(pcurve_id)
+        .flat_map(|(_, curve)| {
+            let Some((_, associated_geometry)) = surface_curve_attributes(curve) else {
+                return Vec::new();
+            };
+            associated_geometry
+                .into_iter()
+                .filter_map(move |pcurve_step| {
+                    let pcurve = exchange.records.get(&pcurve_step)?;
+                    let pcurve_id = PcurveId(StepIdentity::data("pcurve", pcurve_step));
+                    (has_type(pcurve, "PCURVE")
+                        && entity_parameter(pcurve, "PCURVE", 1)
+                            .and_then(ValueExt::reference)
+                            .is_some_and(|basis| basis == surface_step)
+                        && decoded_pcurves.contains(&pcurve_id))
+                    .then_some(pcurve_id)
+                })
+                .collect::<Vec<_>>()
         })
-        .collect()
+        .collect::<BTreeSet<_>>();
+    candidates.into_iter().collect()
 }
 
-/// Select one same-surface pcurve when its mapped carrier has a unique
-/// endpoint-continuous fit to the oriented edge. Multiple pcurves are common
-/// on seam and intersection curves; list order is not a geometric rule.
-/// Distinct candidates that tie remain unresolved, while candidates that map
-/// to the same model-space locus are equivalent carriers and may be reduced
-/// to one deterministic identity.
+/// Select the pcurve identified by STEP source relationships.
+///
+/// `basis_surface` identifies the face carrier. When source association
+/// leaves more than one pcurve on that surface, ISO 10303-42 requires
+/// parametric connectivity to identify the oriented-edge use. The CADIR
+/// admission policy refuses that case instead of inferring a branch from
+/// numerical samples.
 struct SelectedPcurve {
     id: PcurveId,
     geometry: PcurveGeometry,
@@ -3378,103 +3420,41 @@ fn select_associated_pcurve(
         .get(&edge.end)
         .and_then(|vertex| point_positions.get(vertex.point))
         .copied()?;
-    let fits = candidates
+    if candidates.len() != 1 {
+        return None;
+    }
+    let candidate = candidates.first()?;
+    let pcurve = ir
+        .model
+        .pcurves
         .iter()
-        .map(|candidate| {
-            let pcurve = ir
-                .model
-                .pcurves
-                .iter()
-                .find(|pcurve| pcurve.id == *candidate)?;
-
-            let variants =
-                pcurve_parameterization_variants(&index, &surface_id, &pcurve.geometry, start, end);
-            variants
-                .into_iter()
-                .filter_map(|geometry| {
-                    let endpoint =
-                        pcurve_endpoint_fit(&index, &surface_id, &geometry, &surface, start, end);
-                    let endpoint = endpoint?;
-                    Some(PcurveCandidateFit { geometry, endpoint })
-                })
-                .min_by(|left, right| left.endpoint.score.total_cmp(&right.endpoint.score))
+        .find(|pcurve| pcurve.id == *candidate)?;
+    let variants =
+        pcurve_parameterization_variants(&index, &surface_id, &pcurve.geometry, start, end);
+    let fit = variants
+        .into_iter()
+        .filter_map(|geometry| {
+            let endpoint =
+                pcurve_endpoint_fit(&index, &surface_id, &geometry, &surface, start, end)?;
+            Some(PcurveCandidateFit { geometry, endpoint })
         })
-        .collect::<Option<Vec<_>>>();
-    let fits = fits?;
-    let scores = fits
-        .iter()
-        .map(|fit| fit.endpoint.score)
-        .collect::<Vec<_>>();
-    let (best_index, &best) = scores
-        .iter()
-        .enumerate()
-        .min_by(|(_, left), (_, right)| left.total_cmp(right))?;
+        .min_by(|left, right| left.endpoint.score.total_cmp(&right.endpoint.score))?;
+    let best = fit.endpoint.score;
     let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear);
     if !best.is_finite() || !bound.is_finite() || best > bound {
         return None;
     }
-    let selected = |candidate_index: usize| {
-        let fit = &fits[candidate_index];
-        let parameter_range = pcurve_declared_parameter_range(&fit.geometry).and_then(|range| {
-            let declared = pcurve_declared_endpoint_fit(
-                &index,
-                &surface_id,
-                &fit.geometry,
-                range,
-                start,
-                end,
-            )?;
-            (declared.is_finite() && declared > bound)
-                .then_some([fit.endpoint.start_parameter, fit.endpoint.end_parameter])
-        });
-        Some(SelectedPcurve {
-            id: candidates[candidate_index].clone(),
-            geometry: fit.geometry.clone(),
-            parameter_range,
-        })
+    let parameter_range = pcurve_declared_parameter_range(&fit.geometry).and_then(|range| {
+        let declared =
+            pcurve_declared_endpoint_fit(&index, &surface_id, &fit.geometry, range, start, end)?;
+        (declared.is_finite() && declared > bound)
+            .then_some([fit.endpoint.start_parameter, fit.endpoint.end_parameter])
+    });
+    let selected = SelectedPcurve {
+        id: candidate.clone(),
+        geometry: fit.geometry,
+        parameter_range,
     };
-    let tie_tolerance = 1.0e-9_f64.max(best * 1.0e-9);
-    let equally_good = scores
-        .iter()
-        .filter(|score| (**score - best).abs() <= tie_tolerance)
-        .count();
-    let equivalent_ties = scores
-        .iter()
-        .enumerate()
-        .filter(|(_, score)| (**score - best).abs() <= tie_tolerance)
-        .all(|(candidate_index, _)| {
-            if candidate_index == best_index {
-                return true;
-            }
-            pcurve_loci_equivalent(
-                &index,
-                &surface_id,
-                &fits[best_index].geometry,
-                [
-                    fits[best_index].endpoint.start_parameter,
-                    fits[best_index].endpoint.end_parameter,
-                ],
-                &fits[candidate_index].geometry,
-                [
-                    fits[candidate_index].endpoint.start_parameter,
-                    fits[candidate_index].endpoint.end_parameter,
-                ],
-                COINCIDENCE_TOLERANCE.max(ir.tolerances.linear),
-            )
-        });
-    let selected_index = if equally_good == 1 {
-        best_index
-    } else if equivalent_ties {
-        candidates
-            .iter()
-            .enumerate()
-            .find(|(candidate_index, _)| (scores[*candidate_index] - best).abs() <= tie_tolerance)
-            .map(|(candidate_index, _)| candidate_index)
-            .expect("tied candidate set is non-empty")
-    } else {
-        return None;
-    };
-    let selected = selected(selected_index)?;
     drop(index);
     Some(selected)
 }
@@ -3707,54 +3687,6 @@ fn mapped_pcurve_closest(
         parameter = candidate;
     }
     best.is_finite().then_some((best, best_parameter))
-}
-
-fn pcurve_loci_equivalent(
-    index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    left: &PcurveGeometry,
-    left_parameters: [f64; 2],
-    right: &PcurveGeometry,
-    right_parameters: [f64; 2],
-    tolerance: f64,
-) -> bool {
-    if !tolerance.is_finite() || tolerance < 0.0 {
-        return false;
-    }
-    let left_points = pcurve_locus_samples(index, surface_id, left, left_parameters);
-    let right_points = pcurve_locus_samples(index, surface_id, right, right_parameters);
-    let (Some(left_points), Some(right_points)) = (left_points, right_points) else {
-        return false;
-    };
-    directed_sample_distance(&left_points, &right_points) <= tolerance
-        && directed_sample_distance(&right_points, &left_points) <= tolerance
-}
-
-fn pcurve_locus_samples(
-    index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    geometry: &PcurveGeometry,
-    parameters: [f64; 2],
-) -> Option<Vec<Point3>> {
-    const SAMPLE_COUNT: usize = 33;
-    (0..SAMPLE_COUNT)
-        .map(|sample| {
-            let fraction = sample as f64 / (SAMPLE_COUNT - 1) as f64;
-            let parameter = parameters[0] + (parameters[1] - parameters[0]) * fraction;
-            let uv = pcurve_uv(geometry, parameter)?;
-            surface_selection_point(index, surface_id, uv.u, uv.v)
-        })
-        .collect()
-}
-
-fn directed_sample_distance(from: &[Point3], to: &[Point3]) -> f64 {
-    from.iter()
-        .map(|point| {
-            to.iter()
-                .map(|candidate| point.distance(*candidate))
-                .fold(f64::INFINITY, f64::min)
-        })
-        .fold(0.0, f64::max)
 }
 
 fn pcurve_selection_seeds(
@@ -4441,11 +4373,20 @@ impl RecordExt for RawRecord {
     }
 }
 trait ValueExt {
+    fn enumeration(&self) -> Option<&str>;
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
     fn logical(&self) -> Option<bool>;
 }
 impl ValueExt for Value {
+    fn enumeration(&self) -> Option<&str> {
+        if let Value::Enumeration(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
     fn reference(&self) -> Option<u64> {
         if let Value::Reference(id) = self {
             Some(*id)

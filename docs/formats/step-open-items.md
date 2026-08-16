@@ -206,33 +206,6 @@ cannot produce a valid/invalid result.
 
 ## 5. Topology and pcurve decisions
 
-### TP-09. Pcurve endpoint and tied-locus verification
-
-**Question.** What evidence proves that a non-seam pcurve candidate is the
-correct edge carrier, and that tied candidates have the same model-space
-locus?
-
-**Known.** `select_associated_pcurve` scores candidate endpoint fits and
-accepts the lowest finite score within tolerance
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:3623-3747`). A tie is
-declared from a relative score threshold, and `pcurve_loci_equivalent`
-compares 33 samples in each direction before the first tied candidate is
-selected. The search uses a finite seed set and a bounded iterative closest
-point calculation.
-
-**Note.** TP-02 records the semantic selection rule, but this implementation
-does not prove a global minimum or a global locus equivalence. A pcurve with
-an unsampled endpoint minimum, or two distinct curves that meet at the sample
-points and diverge between them, can pass the acceptance checks. The first
-tied candidate then depends on candidate order. This item records the
-verification gap rather than treating the numerical heuristic as STEP
-semantics.
-
-**Need.** We need multi-pcurve witness files, authored with an available
-exporter or taken from a public corpus, and an exact inverse or
-interval/adaptive proof for endpoint fit and locus equivalence, including
-reordered, near-tied, and crossing candidates.
-
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation

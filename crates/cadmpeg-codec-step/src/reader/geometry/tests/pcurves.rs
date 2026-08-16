@@ -482,7 +482,76 @@ fn seam_source_with_one_endpoint_continuous_candidate() -> String {
 }
 
 #[test]
-fn equivalent_seam_pcurve_candidates_select_one_carrier() {
+fn multiple_same_surface_pcurves_are_not_selected_by_master_representation() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp09_master_s1.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode same-surface pcurve witness");
+
+    let uses = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .map(|use_| use_.pcurve.as_str())
+        .collect::<Vec<_>>();
+    assert!(uses.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("source does not identify one pcurve")
+    }));
+}
+
+#[test]
+fn reordered_same_surface_candidates_remain_unresolved() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp09_master_s1_reordered.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered same-surface pcurve witness");
+
+    let uses = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .map(|use_| use_.pcurve.as_str())
+        .collect::<Vec<_>>();
+    assert!(uses.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("source does not identify one pcurve")
+    }));
+}
+
+#[test]
+fn curve3d_master_refuses_near_tied_same_surface_candidates() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp09_curve3d_near_tie.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode near-tied pcurve witness");
+
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("source does not identify one pcurve")
+    }));
+}
+
+#[test]
+fn ordinary_edge_does_not_select_a_seam_curve_branch() {
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(equivalent_seam_source()),
@@ -490,18 +559,16 @@ fn equivalent_seam_pcurve_candidates_select_one_carrier() {
         )
         .expect("decode equivalent seam pcurves");
 
-    let coedge = decoded
+    assert!(decoded
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| !coedge.pcurves.is_empty())
-        .expect("equivalent seam coedge");
-    assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
-    assert!(decoded.report().losses.iter().all(|loss| !loss
-        .message
-        .contains("no unique endpoint-continuous pcurve selects one")));
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("source does not identify one pcurve")
+    }));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -537,12 +604,12 @@ fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
     assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
     assert_eq!(
         losses[0].message,
-        "curve #57 associates 2 pcurves with surface #28; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+        "curve #57 associates 2 pcurves with surface #28; the source does not identify one pcurve for this edge use, so the coedge has no pcurve"
     );
 }
 
 #[test]
-fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
+fn ordinary_edge_does_not_use_endpoint_fit_to_select_a_seam_branch() {
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(seam_source_with_one_endpoint_continuous_candidate()),
@@ -550,18 +617,16 @@ fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
         )
         .expect("decode endpoint-continuous seam pcurve");
 
-    let coedge = decoded
+    assert!(decoded
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| !coedge.pcurves.is_empty())
-        .expect("seam coedge");
-    assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
-    assert!(decoded.report().losses.iter().all(|loss| !loss
-        .message
-        .contains("no unique endpoint-continuous pcurve selects one")));
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("source does not identify one pcurve")
+    }));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -582,6 +647,57 @@ fn an_unambiguous_pcurve_still_binds() {
             .iter()
             .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
     }));
+}
+
+#[test]
+fn indirect_surface_curve_association_binds_a_plain_edge_curve() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#19=EDGE_CURVE('',#6,#7,#57,.T.);",
+                "#19=EDGE_CURVE('',#6,#7,#16,.T.);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode indirect surface-curve association");
+
+    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+}
+
+#[test]
+fn repeated_surface_curve_association_deduplicates_one_pcurve() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#19=EDGE_CURVE('',#6,#7,#57,.T.);",
+                "#19=EDGE_CURVE('',#6,#7,#16,.T.);",
+            )
+            .replace(
+                "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+                "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);\n#70=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode repeated surface-curve association");
+
+    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| { !loss.message.contains("source does not identify one pcurve") }));
 }
 
 #[test]

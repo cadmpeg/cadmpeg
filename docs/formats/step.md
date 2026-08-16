@@ -367,7 +367,10 @@ changes model-space location and dimensions only. Deferred curve dependencies
 resolve by graph fixpoint, including forward and nested replicas. Composite-
 curve segments retain order, same-sense, transition continuity, and carrier
 identity. A curve construction that references a `SURFACE_CURVE` uses its
-3D `curve_3d` carrier for geometry and parameterization.
+3D `curve_3d` carrier for model-space geometry. CADIR decision: the edge model
+keeps the `curve_3d` parameterization and stores a selected pcurve-use
+parameterization separately. This does not replace the STEP
+`master_representation` rule for the `SURFACE_CURVE` itself.
 
 The endpoint vertices of an `EDGE_CURVE` trim its curve carrier. A
 non-periodic carrier has an increasing parameter interval from the start
@@ -412,8 +415,9 @@ unit. `CIRCLE` and `ELLIPSE` use the representation plane-angle unit.
 `PARABOLA`, `HYPERBOLA`, `POLYLINE`, and the B-spline curve family use their
 stored dimensionless parameters. A `CURVE_REPLICA`, `TRIMMED_CURVE`, or
 `OFFSET_CURVE_3D` inherits the parameterization of its parent. A
-`SURFACE_CURVE` uses the parameterization of its `curve_3d` carrier; its
-associated pcurve remains in the support surface's chart. A composite
+`SURFACE_CURVE` takes its source parameterization from
+`master_representation`: `curve_3d`, the first pcurve, or the second pcurve;
+its associated pcurve remains in the support surface's chart. A composite
 directrix has a piecewise accumulated parameterization and has no single
 affine scale. Unsupported directrix forms and composite directrices remain
 opaque for typed pcurve conversion.
@@ -513,14 +517,31 @@ An unsupported 2D representation stays opaque and remains detached from the
 coedge. A `SEAM_EDGE` uses its explicit pcurve reference only when that
 reference belongs to the edge's `SEAM_CURVE` associated geometry and the face
 surface. The reader does not replace an invalid reference with a guessed
-branch. For a non-seam source curve with multiple pcurve candidates on its
-owning surface, the decoder maps each candidate through that surface and
-selects it when one candidate has a unique endpoint-continuous fit for the
-coedge. If several candidates tie, the decoder compares their mapped loci
-over the endpoint interval. Candidates with equivalent model-space loci are
-one semantic carrier and the first source candidate is retained. Distinct
-tied or otherwise unresolved candidates remain detached and produce a
-topology loss.
+branch. ISO 10303-42 §5.2.2.1 defines three pcurve association routes: a
+direct pcurve edge geometry, the pcurves in a `SURFACE_CURVE` associated
+geometry list, and the pcurves in every `SURFACE_CURVE` whose `curve_3d` is
+the edge geometry. A pcurve is a candidate for an edge use only when its
+`basis_surface` is the face geometry. `master_representation` selects the
+preferred `curve_3d`, first pcurve, or second pcurve for the
+`SURFACE_CURVE` parameterization; it does not select a pcurve for an oriented
+edge use. If source filtering leaves one pcurve on the face surface, that
+pcurve is the edge-use carrier. If two or more pcurves remain on that surface,
+ISO 10303-42 §5.2.2.1 requires parametric connectivity to assign one to the
+oriented edge. Candidates from several source `SURFACE_CURVE` records have the
+same unresolved per-use case. The CADIR admission rule detaches both cases
+and records a topology loss. A `SEAM_CURVE` with no `SEAM_EDGE` branch is
+detached for the same reason. Candidate order and the master field are not
+fallback selectors. The reader does not rank endpoint distances to choose
+among source candidates or assert sampled locus equivalence.
+
+ISO 10303-42 §4.5.49 IP1 and IP2 require the 3D curve and associated pcurves
+to represent the same point set and sense, while §5.2.2.1 identifies
+parametric connectivity as the rule for assigning same-surface candidates to
+an oriented edge. The source does not define a numerical proof algorithm.
+The reader therefore performs its bounded endpoint admission only after source
+association leaves one carrier; it cannot change the carrier identity. An
+unresolved admission leaves the optional pcurve detached. No finite sample
+set is treated as proof of mathematical locus equality.
 
 The source pcurve carrier is immutable. A chart variant derived from one
 coedge's endpoint fit is a use-scoped pcurve carrier. The coedge owns that
