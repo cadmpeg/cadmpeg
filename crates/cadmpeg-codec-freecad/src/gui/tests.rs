@@ -140,6 +140,28 @@ fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
 }
 
 #[test]
+fn rejects_duplicate_camera_position_values() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="0"><!-- no providers --></ViewProviderData>
+<Camera><Position x="1" y="2" z="3"/><Position x="4" y="5" z="6"/></Camera></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("duplicate camera positions");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("multiple Position values")
+    ));
+}
+
+#[test]
 fn rejects_ambiguous_gui_containers_and_names() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>

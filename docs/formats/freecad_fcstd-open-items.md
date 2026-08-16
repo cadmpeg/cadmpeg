@@ -89,26 +89,6 @@ module-owned or dynamic runtime type before transferring it to a neutral present
 remaining provider-specific presentation mapping is open; native retention is not semantic
 evidence.
 
-### GP-09. Camera position child cardinality
-
-**Question.** Can a persisted GUI camera contain more than one `Position` child, and if so which
-position supplies the camera state?
-
-**Known.** GUI admission requires schema version 1 and exactly one direct `Camera`. The camera
-state retains descendant values, while `gui.rs:492-523` selects the first `Position` value and
-does not check for duplicates. The specification settles optional finite, nonzero position and
-orientation values but not `Position` child cardinality.
-
-**Need.** Establish the producer cardinality and selection rule for camera `Position` children.
-Reject an ambiguous camera or retain an explicitly identified source value before projecting
-camera state.
-
-**Conflict.** Two `Position` children with conflicting coordinates are accepted and the first is
-projected. The second remains in the native value list without a refusal or loss, so source order
-silently decides the neutral camera state.
-
-**Note.** New item from this QA pass.
-
 ## 3. Persistent topology identity
 
 ### PT-03. Element-map carrier and owner selection

@@ -490,7 +490,17 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
 }
 
 fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError> {
-    let position_value = state.values.iter().find(|value| value.tag == "Position");
+    let position_values = state
+        .values
+        .iter()
+        .filter(|value| value.tag == "Position")
+        .collect::<Vec<_>>();
+    if position_values.len() > 1 {
+        return Err(CodecError::Malformed(
+            "GUI camera has multiple Position values".into(),
+        ));
+    }
+    let position_value = position_values.into_iter().next();
     let position = position_value
         .map(|value| vector3(&value.attributes))
         .transpose()

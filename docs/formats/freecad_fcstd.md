@@ -517,10 +517,12 @@ one document presentation record; a headless archive produces none. The GUI root
 canonical `SchemaVersion` attribute only; the lowercase alias is invalid. The neutral document record
 contains the schema version, one camera, ordered document state, and resolved display-asset
 references. GUI schema 1 has exactly one direct `Camera` element. Its `settings` attribute is the
-serialized camera state. GUI schema 1 does not serialize an active view; an `active` root attribute
-or an `ActiveView` element remains source state and does not set the neutral active view. A decoded
-camera position and orientation are optional derived fields and must be finite and nonzero when
-present. Each view-provider record contains
+serialized camera state. That state is one Inventor `SoCamera` node with one `position` field. A decoded
+camera has at most one `Position` value; duplicate `Position` values are malformed, and a sole
+value supplies the neutral position. GUI schema 1 does not serialize an active view; an `active`
+root attribute or an `ActiveView` element remains source state and does not set the neutral active
+view. A decoded camera position and orientation are optional derived fields and must be finite and
+nonzero when present. Each view-provider record contains
 its resolved application object, source order, tree expansion and visibility state, display and
 selection modes, nonnegative line and point sizes, and exact-name fallback properties. References,
 orders, and numeric invariants are validated independently of the FCStd native namespace.
