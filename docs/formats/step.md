@@ -37,6 +37,27 @@ namespace for entity elements, and a configured `iso_10303_28_terse` unit of
 serialization. Its `id`, `ref`, and accessor attributes are results of that
 schema and configuration, not universal Part 28 record syntax.
 
+Part 28 graph mapping is schema-bound. For the selected binding, the derived
+XML Schema declares the entity and value elements, complex-entity structure,
+accessor names, aggregate representation, and identity constraints. The
+default/base binding and the public terse binding use `id` for a referenceable
+instance and `ref` or an IDREF sequence for a reference. The XML identity is
+local to the XML unit of serialization. It is not a Part 21 numeric `#`
+occurrence. Scalar and defined values can be element content, attributes, or
+typed wrapper elements. Aggregate values can be sequences of values, child
+elements, or references. The selected configuration determines these forms.
+The [AP238 Part 28 witness](https://steptools.com/docs/cislib/demos/geometry_out_p28.html)
+shows entity references, aggregate values, typed value wrappers, and
+`exp:complexEntity` instances in one binding.
+
+XML Schema validation enforces the selected XML declarations, data types,
+cardinalities, and identity constraints. EXPRESS `WHERE`, `UNIQUE`, inverse,
+derived, and subtype semantics remain governed by the EXPRESS model. Part 28
+does not define a universal mapping from a derived XML Schema back to EXPRESS.
+An adapter therefore needs the exact governing EXPRESS schema, Part 28
+configuration, and derived XML Schema before it can resolve the XML values and
+references into an entity graph or evaluate EXPRESS invariants.
+
 The 2003 technical specification used DTD and late-binding forms. The 2007
 XML-Schema revision is not upward compatible with that grammar. A 2003 DTD
 document is not a 2007 Part 28 document.
@@ -59,8 +80,10 @@ not infer the governing AP, EXPRESS schema, configuration, target namespace,
 or derived XML Schema from the XML root, namespace, `schema` attribute,
 `xsi:schemaLocation`, or filename. A future Part 28 adapter must receive
 those exact inputs, validate the XML against the selected derived schema, and
-then apply the schema-specific graph mapping. No Part 28 XML element or
-reference enters the Part 21 CADIR graph implicitly.
+then apply the schema-specific graph mapping. The current codec does not
+admit any Part 28 XML `id`, `ref`, aggregate, value, or complex-entity
+construct to the Part 21 CADIR graph. No Part 28 XML element or reference
+enters the Part 21 CADIR graph implicitly.
 
 An AP242 BO-Model XML document uses the XML Schema for its BO-Model edition.
 The edition-1 schema has target namespace

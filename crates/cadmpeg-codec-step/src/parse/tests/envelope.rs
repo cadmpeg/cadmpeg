@@ -468,6 +468,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     for xml in [
         include_bytes!("data/ce03_part28_ap214_terse.xml").as_slice(),
         include_bytes!("data/ce03_part28_ap214_uos.xml").as_slice(),
+        include_bytes!("data/ce04_part28_ap238_graph.xml").as_slice(),
     ] {
         assert_eq!(codec.detect(xml), Confidence::Medium);
         assert!(matches!(

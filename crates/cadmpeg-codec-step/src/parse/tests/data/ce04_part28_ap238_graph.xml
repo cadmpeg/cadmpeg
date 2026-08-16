@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<iso_10303_28_terse
+    xmlns="urn:oid:1.0.10303.238.1.0.1"
+    xmlns:exp="urn:oid:1.0.10303.28.2.1.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    schema="integrated_cnc_schema">
+  <exp:header>
+    <exp:name>CE-04 AP238 graph witness</exp:name>
+    <exp:preprocessor_version>cadmpeg witness</exp:preprocessor_version>
+  </exp:header>
+  <Axis2_placement_3d id="id1" Name="frame" Location="id2" Axis="id3"/>
+  <Cartesian_point id="id2" Name="origin" Coordinates="0 0 0"/>
+  <Direction id="id3" Name="normal" Direction_ratios="0 0 1"/>
+  <Shape_representation_with_units id="id4" Name="" Items="id1 id2" Context_of_items="id5"/>
+  <exp:complexEntity id="id5" entities="geometric_representation_context global_unit_assigned_context">
+    <Representation_context Context_identifier="CE04" Context_type="3D"/>
+    <Geometric_representation_context Coordinate_space_dimension="3"/>
+    <Global_unit_assigned_context>
+      <Units>
+        <exp:complexEntity ref="id6" xsi:nil="true"/>
+      </Units>
+    </Global_unit_assigned_context>
+  </exp:complexEntity>
+  <exp:complexEntity id="id6" entities="si_unit solid_angle_unit">
+    <Named_unit/>
+    <Si_unit Name="radian"/>
+    <Solid_angle_unit/>
+  </exp:complexEntity>
+</iso_10303_28_terse>

@@ -22,20 +22,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-04. Part 28 graph mapping
-
-**Question.** How does each Part 28 XML construct map to the entity graph and invariants in `step.md`?
-
-**Known.** ISO 10303-28 defines the mapping from EXPRESS entities and values
-to XML elements, attributes, namespaces, and references. The mapping is
-schema-driven; it is not a second universal Part 21 record grammar.
-
-**Note.** Applying the mapping needs the exact AP schema, XML schema version,
-and a mapping implementation for every supported construct. No such Part 28
-input or IR adapter exists in this codec.
-
-**Need.** We must know the mapping to apply schema decoding to a Part 28 exchange structure.
-
 ### CE-05. Part 26 binary grammar
 
 **Question.** What HDF5 layout represents an AP203, AP214, or AP242 exchange structure in Part 26?

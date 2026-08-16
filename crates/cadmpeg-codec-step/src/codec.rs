@@ -353,6 +353,10 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
             "STEP Part 28 XML encoding".into(),
         ));
     }
+    // CE-04: Part 28 has no universal XML-to-EXPRESS inverse. Its `id`,
+    // `ref`, aggregate, and complex-entity forms gain graph meaning only
+    // from the selected EXPRESS schema, configuration, and derived XML
+    // Schema. Do not let an XML identity become a Part 21 `#` occurrence.
     // BM-02: alternate XML remains outside the Part 21 graph; no implicit
     // sidecar composition occurs here.
     if is_ap242_bo_model_xml(bytes) {
