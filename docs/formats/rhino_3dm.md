@@ -4117,7 +4117,10 @@ version-1.7 current-component UUIDs without assigning a field boundary.
 The settings-attributes reader requires major version 1, applies the gates
 above, and consumes any remaining bytes at the outer
 `TCODE_SETTINGS_ATTRIBUTES` boundary. The outer record is admitted in the
-settings table for archive versions 4 and later.
+settings table for archive versions 4 and later. Its CRC covers every direct
+body byte, including the direct custom-render-mesh fields, the six version-1.7
+UUIDs, and any direct suffix. It excludes the complete page-units,
+earth-anchor, IO-settings, and SubD-display anonymous child chunks.
 
 ### 20.5 Byte partition and opaque identity
 

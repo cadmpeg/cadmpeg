@@ -436,6 +436,48 @@ fn legacy_render_settings_crc_covers_direct_body() {
 }
 
 #[test]
+fn settings_attributes_crc_excludes_all_nested_children() {
+    let archive = ArchiveVersion::V5;
+    let mut body = vec![0x17];
+    body.extend(1.0_f64.to_le_bytes());
+    body.extend([1, 2, 3, 4]);
+    body.extend(0_i32.to_le_bytes());
+    body.extend((-1_i32).to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    let mut children = Vec::new();
+    let child = anonymous_chunk(archive, 0, &[]);
+    let start = body.len();
+    body.extend(child);
+    children.push(start..body.len());
+    body.extend([0; 16]);
+    body.extend([0; 24]);
+    let child = anonymous_chunk(archive, 2, &[]);
+    let start = body.len();
+    body.extend(child);
+    children.push(start..body.len());
+    body.push(0);
+    let child = anonymous_chunk(archive, 0, &[]);
+    let start = body.len();
+    body.extend(child);
+    children.push(start..body.len());
+    body.push(0x15);
+    body.extend([0; 111]);
+    let child = anonymous_chunk(archive, 3, &[]);
+    let start = body.len();
+    body.extend(child);
+    children.push(start..body.len());
+    body.extend([0; 16 * 6]);
+    body.extend([0xde, 0xad]);
+    let record = crc_chunk_excluding(archive, 0x2000_8134, &body, &children);
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8134, 0, record.len(), archive)
+            .expect("settings-attributes checksum framing"),
+        None
+    );
+}
+
+#[test]
 fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
     let archive = ArchiveVersion::V5;
     let record = crc_chunk(archive, 0x2000_803e, &[0; 24]);

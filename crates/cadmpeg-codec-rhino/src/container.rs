@@ -216,6 +216,12 @@ fn checksum_warning(
         };
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
+        let Ok(children) = settings_attributes_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
     }
@@ -240,9 +246,20 @@ fn mesh_checksum_children(
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    Ok(mesh_subd_checksum_child(data, &mut reader, archive)?
+        .into_iter()
+        .collect())
+}
+
+/// Skips the direct mesh-parameter prefix and returns its nested `SubD` child.
+fn mesh_subd_checksum_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Option<std::ops::Range<usize>>, FramingError> {
     let packed_version = reader.u8()?;
     if packed_version >> 4 != 1 || packed_version & 0x0f < 5 {
-        return Ok(Vec::new());
+        return Ok(None);
     }
 
     for _ in 0..5 {
@@ -264,14 +281,12 @@ fn mesh_checksum_children(
     reader.u8()?;
     reader.bool()?;
 
-    let child = chunk_at(data, reader.position(), chunk.body.end, archive, false)?;
-    if child.typecode != TCODE_ANONYMOUS || child.short {
-        return Err(FramingError::structural(
-            reader.position(),
-            "mesh SubD display parameters must be an anonymous chunk",
-        ));
-    }
-    Ok(vec![child.range()])
+    Ok(Some(take_anonymous_checksum_child(
+        data,
+        reader,
+        archive,
+        "mesh SubD display parameters",
+    )?))
 }
 
 /// Returns the modern anonymous render-settings child, when present.
@@ -287,14 +302,93 @@ fn render_settings_checksum_children(
     if View::u32_le_at(data, chunk.body.start) != Some(TCODE_ANONYMOUS) {
         return Ok(Vec::new());
     }
-    let child = chunk_at(data, chunk.body.start, chunk.body.end, archive, false)?;
-    if child.short {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    Ok(vec![take_anonymous_checksum_child(
+        data,
+        &mut reader,
+        archive,
+        "modern render settings",
+    )?])
+}
+
+/// Returns the complete nested chunks in a settings-attributes body.
+fn settings_attributes_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let packed_version = reader.u8()?;
+    if packed_version >> 4 != 1 {
+        return Ok(Vec::new());
+    }
+    reader.f64()?;
+    reader.take(4)?;
+    for _ in 0..3 {
+        reader.i32()?;
+    }
+
+    let minor = packed_version & 0x0f;
+    let mut children = Vec::new();
+    if minor >= 1 {
+        children.push(take_anonymous_checksum_child(
+            data,
+            &mut reader,
+            archive,
+            "settings-attributes page units",
+        )?);
+    }
+    if minor >= 2 {
+        reader.skip(16)?;
+    }
+    if minor >= 3 {
+        reader.skip(24)?;
+        children.push(take_anonymous_checksum_child(
+            data,
+            &mut reader,
+            archive,
+            "settings-attributes earth anchor",
+        )?);
+    }
+    if minor >= 4 {
+        reader.bool()?;
+    }
+    if minor >= 5 {
+        children.push(take_anonymous_checksum_child(
+            data,
+            &mut reader,
+            archive,
+            "settings-attributes IO settings",
+        )?);
+    }
+    if minor >= 6 {
+        if let Some(child) = mesh_subd_checksum_child(data, &mut reader, archive)? {
+            children.push(child);
+        }
+    }
+    if minor >= 7 {
+        reader.skip(16 * 6)?;
+    }
+    Ok(children)
+}
+
+/// Takes one long anonymous child and records its complete range.
+fn take_anonymous_checksum_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    label: &str,
+) -> Result<std::ops::Range<usize>, FramingError> {
+    let start = reader.position();
+    let child = chunk_at(data, start, reader.end(), archive, false)?;
+    if child.typecode != TCODE_ANONYMOUS || child.short {
         return Err(FramingError::structural(
-            chunk.body.start,
-            "modern render settings must be an anonymous long chunk",
+            start,
+            format!("{label} must be an anonymous long chunk"),
         ));
     }
-    Ok(vec![child.range()])
+    reader.skip(child.next_offset - start)?;
+    Ok(child.range())
 }
 
 /// Returns the complete nested chunks after a counted view-list prefix.

@@ -191,6 +191,10 @@ SubD-display, and custom-mesh readers have source-defined major-1 field
 prefixes; the custom-mesh body is direct and has no boundary before the
 version-1.7 UUIDs. The Rust settings reader now decodes this complete
 source-defined prefix and skips only the outer settings-attributes suffix.
+The settings-attributes outer CRC covers direct body bytes and excludes the
+complete page-units, earth-anchor, IO-settings, and SubD-display anonymous
+children; direct custom-mesh bytes, the six UUIDs, and a direct suffix remain
+covered.
 `ON_3dmSettings::Write_v2/Read_v2` also place the direct packed-1.5
 `ON_MeshParameters` body in `TCODE_SETTINGS_RENDERMESH` and
 `TCODE_SETTINGS_ANALYSISMESH`. Those enclosing records provide the suffix
@@ -257,8 +261,8 @@ settled; annotation settings, grid defaults, units/tolerances, plugin list,
 settings attributes, render-mesh, analysis-mesh, render-settings, render
 settings userdata, the current-selector records, and the V1 settings
 presentation stream are now source-backed through their known prefixes,
-child types, stream markers, version gates, mesh outer-CRC ranges, and modern
-render-settings outer-CRC range. The
+child types, stream markers, version gates, settings-attributes, mesh, and
+modern render-settings outer-CRC ranges. The
 historical unused settings
 record and the three counted view-list wrappers are also source-backed through
 the same evidence.
