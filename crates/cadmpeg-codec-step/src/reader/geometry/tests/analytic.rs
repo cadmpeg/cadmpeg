@@ -35,6 +35,7 @@ use crate::{
 
 const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
 const EPS_APLL_POINT: f64 = 1.0e-12;
+const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
     let CurveGeometry::Polyline {
@@ -273,6 +274,47 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp03_directrix_parameter_scales.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode directrix parameter scale witness");
+
+    let line_pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#19")
+        .expect("line-directrix pcurve");
+    let PcurveGeometry::Line { direction, .. } = &line_pcurve.geometry else {
+        panic!("line-directrix witness did not retain a line pcurve");
+    };
+    assert!((direction.u - 10.0).abs() < EPS_TP03_PARAMETER_SCALE);
+    assert!(direction.v.abs() < EPS_TP03_PARAMETER_SCALE);
+
+    let revolution_pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#29")
+        .expect("circle-directrix pcurve");
+    let PcurveGeometry::Line { direction, .. } = &revolution_pcurve.geometry else {
+        panic!("circle-directrix witness did not retain a line pcurve");
+    };
+    let degree_to_radian = std::f64::consts::PI / 180.0;
+    assert!((direction.u - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
+    assert!((direction.v - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
+
+    assert_eq!(decoded.ir().model.procedural_surfaces.len(), 2);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

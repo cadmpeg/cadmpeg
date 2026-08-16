@@ -234,28 +234,3 @@ scope rule, plus a multi-view witness file that shows whether all views
 are targets, one view is authoritative, or the reference is ambiguous.
 
 QA audit: reopened after reviewing closing commit 4878c68ea. The closing commit preserves an ambiguous target and records a loss. This is safe refusal behavior, not evidence of which source identity a multi-view drawing reference owns.
-
-### TP-03. Non-planar pcurve units
-
-**Question.** Which scale does each pcurve axis use for elementary and swept
-support surfaces, including the directrix and extrusion-vector cases?
-
-**Known.** ISO 10303-42 defines a pcurve in its support surface's `(u,v)`
-parameter space. The current reader applies representation scales and the
-surface table in `crates/cadmpeg-codec-step/src/reader/geometry.rs:4432-4614`:
-planes use length/length, cylinders and cones use angle/length, spheres and
-toruses use angle/angle, NURBS uses dimensionless axes, and swept surfaces
-derive axes from the directrix. The source curve scale table is at
-`geometry.rs:207-303`.
-
-**Note.** The later implementation adds a scale table and preserves unknown
-procedural cases, but the directrix parameter mapping for every supported curve
-kind is still an implementation assumption. The source equation alone does
-not establish each curve's native parameter units. This item remains open.
-
-**Need.** We need a parameter-scale table that preserves the source
-parameterization and vector magnitudes for every supported directrix and
-surface wrapper, derived from the ISO 10303-42 equations and checked against
-exporter-authored witness files, before this rule is settled.
-
-QA audit: reopened after reviewing closing commit cbbbe401b. The closing commit adds a parameter-scale table and synthetic scale tests, but directrix parameterization and unsupported curve families still rely on implementation assumptions.

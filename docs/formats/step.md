@@ -667,18 +667,33 @@ values use the affine map. Revolution U is preserved without scale or offset.
 A variant that fails these checks remains opaque; the native pcurve is not
 rewritten.
 
-The neutral chart conversion for a swept surface preserves the parameterization
-of each defining equation. A linear-extrusion U coordinate uses the directrix
-scale. For a `LINE` directrix, that scale is the directrix `VECTOR` magnitude
-times its length-unit conversion. `CIRCLE` and `ELLIPSE` directrices use the
-plane-angle conversion. `PARABOLA`, `HYPERBOLA`, `POLYLINE`, and B-spline
-directrices use dimensionless parameters. A curve replica, trim, or offset
-inherits its defining curve scale. A linear-extrusion V coordinate is
-dimensionless because the extrusion vector is already stored in document
-length units; its scale is one. A revolution U coordinate uses plane-angle
-conversion and its V coordinate uses the directrix scale. A composite
-directrix whose parameterization has no single affine scale does not admit
-typed pcurve conversion and remains opaque.
+ISO 10303-42:2021 §4.5.57 defines every surface parameter as an independent
+dimensionless value. The neutral chart conversion preserves the
+parameterization of each defining equation while converting those values into
+the IR carrier coordinates. A linear-extrusion U coordinate uses the directrix
+scale. For a `LINE` directrix, §4.5.24 makes the `VECTOR` magnitude part of the
+line parameterization, so that scale is the directrix vector magnitude times
+its length-unit conversion. `CIRCLE` and `ELLIPSE` directrices use the
+plane-angle conversion from §§4.5.26–4.5.27. `PARABOLA` and `HYPERBOLA` use
+the dimensionless parameters in their trigonometric and hyperbolic equations;
+`POLYLINE` uses its integer segment parameter from §4.5.33; and the B-spline
+family uses its stored knot parameters. These directrix scales are one for
+those non-linear and piecewise parameterizations. A `CURVE_REPLICA` takes its
+parameterization from its parent, a `TRIMMED_CURVE` translates or reverses
+the parent parameter without changing its scale, and an `OFFSET_CURVE_3D`
+takes its parameterization from its basis curve. A `SURFACE_CURVE` uses its
+`curve_3d` parameterization.
+
+A linear-extrusion V coordinate is dimensionless because §4.5.67 makes the
+extrusion vector's magnitude part of the vector already stored in document
+length units; its scale is one. A revolution U coordinate uses the current
+plane-angle conversion from §4.5.68 and its V coordinate uses the directrix
+scale. The reader supports the line, circle, ellipse, parabola, hyperbola,
+polyline, B-spline, and parameter-inheriting carrier forms above. A composite
+directrix has the accumulated, piecewise parameterization of §4.5.44 rather
+than one affine scale; CADIR therefore leaves it opaque for typed pcurve
+conversion. An unsupported analytic or procedural directrix likewise remains
+opaque and never receives an assumed unit scale.
 
 ISO 10303-42:2021 §4.5.47 defines `PCURVE` as the composition `g(f(t))`,
 where `f(t)` is the referenced two-dimensional curve in the parameter space of
