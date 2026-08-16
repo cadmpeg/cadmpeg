@@ -151,7 +151,10 @@ The legacy V5 font branch remains a packed 1.2 record with its own minor gates.
 Remaining strict rules are writer-band ceilings, direct readers with other
 version families, tagged item streams with explicit terminators, or versioned
 readers whose exact producer field gates have not yet been characterized
-individually.
+individually. `ON_TextStyle::Read` consumes the model-component, description,
+font, UUID, and name prefix for modern anonymous version 1.1 and then closes
+the bounded chunk; the Rust wrapper test proves that a future outer minor does
+not swallow the post-font identity fields.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed

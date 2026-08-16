@@ -2714,6 +2714,41 @@ mod tests {
         bytes
     }
 
+    fn modern_font_chunk(minor: i32, suffix: &[u8]) -> Vec<u8> {
+        let mut body = 0x1234_5678_u32.to_le_bytes().to_vec();
+        body.extend(wide_string_chunk("Arial"));
+        body.extend(utf16("ArialMT"));
+        body.extend(utf16("Arial Regular"));
+        body.extend(400_i32.to_le_bytes());
+        body.extend(0.5_f64.to_le_bytes());
+        body.extend(12.0_f64.to_le_bytes());
+        body.push(0);
+        body.extend(utf16("Arial"));
+        for value in [
+            "en-US", "ArialMT", "ArialMT", "Arial", "Arial", "Arial", "Arial", "Regular", "Regular",
+        ] {
+            body.extend(utf16(value));
+        }
+        body.extend(panose_chunk());
+        body.push(2);
+        body.extend(suffix);
+        anonymous(minor, &body)
+    }
+
+    fn model_attributes_chunk(index: i32, name: &str) -> Vec<u8> {
+        let mut payload = 1_i32.to_le_bytes().to_vec();
+        payload.extend(0_i32.to_le_bytes());
+        payload.extend([0, 2, 0, 1]);
+        payload.extend(index.to_le_bytes());
+        payload.push(1);
+        payload.extend(utf16(name));
+        payload.extend(crc32fast::hash(&payload).to_le_bytes());
+        let mut bytes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
+        bytes.extend((payload.len() as i64).to_le_bytes());
+        bytes.extend(payload);
+        bytes
+    }
+
     fn embedded_bitmap_payload(minor: u8, id: Uuid, compression_method: i32) -> Vec<u8> {
         let mut bytes = vec![0x10 | minor];
         bytes.extend(utf16("image.png"));
@@ -2995,24 +3030,7 @@ mod tests {
 
     #[test]
     fn modern_font_matches_producer_wide_string_and_future_suffix() {
-        let mut body = 0x1234_5678_u32.to_le_bytes().to_vec();
-        body.extend(wide_string_chunk("Arial"));
-        body.extend(utf16("ArialMT"));
-        body.extend(utf16("Arial Regular"));
-        body.extend(400_i32.to_le_bytes());
-        body.extend(0.5_f64.to_le_bytes());
-        body.extend(12.0_f64.to_le_bytes());
-        body.push(0);
-        body.extend(utf16("Arial"));
-        for value in [
-            "en-US", "ArialMT", "ArialMT", "Arial", "Arial", "Arial", "Arial", "Regular", "Regular",
-        ] {
-            body.extend(utf16(value));
-        }
-        body.extend(panose_chunk());
-        body.push(2);
-        body.extend([0xaa, 0xbb]);
-        let bytes = anonymous(7, &body);
+        let bytes = modern_font_chunk(7, &[0xaa, 0xbb]);
         let value = parse_font(
             &bytes,
             &mut BoundedReader::new(&bytes, 0, bytes.len()).unwrap(),
@@ -3026,6 +3044,31 @@ mod tests {
         assert_eq!(value.family_name, "Arial");
         assert_eq!(value.panose, Some([2, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
         assert_eq!(value.quartet_member, Some(2));
+    }
+
+    #[test]
+    fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
+        let id = Uuid::from_canonical([
+            0x73, 0x8f, 0x5c, 0x29, 0x7f, 0x42, 0x4c, 0x89, 0xa4, 0xf5, 0x34, 0x0a, 0x2d, 0x88,
+            0xc1, 0x10,
+        ]);
+        let mut body = model_attributes_chunk(7, "Arial style");
+        body.push(1);
+        body.extend(utf16("ArialMT"));
+        body.push(1);
+        body.extend(modern_font_chunk(7, &[0xcc, 0xdd]));
+        body.extend(id.to_wire());
+        body.extend(utf16("Arial style"));
+        body.extend([0xee, 0xff]);
+        let bytes = anonymous(2, &body);
+        let value = parse_text_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, None, false, 99)
+            .expect("modern text style with future suffixes");
+        assert_eq!(value.archive_index, Some(7));
+        assert_eq!(value.name, "Arial style");
+        assert_eq!(value.font_description, "ArialMT");
+        assert_eq!(value.source_uuid, Some(id.to_string()));
+        assert_eq!(value.font.windows_logfont_name, "Arial");
+        assert_eq!(value.source_offset, 99);
     }
 
     #[test]
