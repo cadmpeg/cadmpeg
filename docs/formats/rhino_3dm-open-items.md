@@ -167,14 +167,21 @@ UUID is `C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 20.3 defines its
 anonymous version-1.0 payload with two model-length extension-line offsets.
 The decoder applies the values to V5 angular dimensions after unit scaling and
 uses the source `-1.0` absent sentinel.
+The built-in `ON_OBSOLETE_V5_TextExtra` class userdata is also settled. Its
+class and item UUID is `D90490A5-DB86-49F8-BDA1-9080B1F4E976`, its application
+UUID is `C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 7.2.2 defines its
+anonymous version-1.0 payload with the parent text UUID, mask flag, color
+source, RGBA color bytes, and dimensionless border offset factor. The decoder
+retains those fields under the owning V5 text annotation.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
 built-in hatch gradient userdata, the V5 dimension-style extra, and
-`ON_UserStringList`, `ON__LayerExtensions`, and `ON_AngularDimension2Extra`
-are settled; other future class-specific payload semantics remain open.
+`ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`, and
+`ON_OBSOLETE_V5_TextExtra` are settled; other future class-specific payload
+semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

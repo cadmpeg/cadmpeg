@@ -33,6 +33,8 @@ pub enum RhinoLossCode {
     IntegrityFailure,
     /// A framed presentation record could not be transferred.
     PresentationRecordDropped,
+    /// A recognized annotation userdata payload could not be typed.
+    AnnotationUserdataDropped,
     /// Mesh n-gon grouping is not represented in neutral tessellation.
     MeshNgonGroupingDropped,
     /// A stored enumeration value was retained but could not select a neutral value.
@@ -103,6 +105,7 @@ impl RhinoLossCode {
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
+        Self::AnnotationUserdataDropped,
         Self::MeshNgonGroupingDropped,
         Self::EnumerationValueDegraded,
         Self::RedundantFieldRepaired,
@@ -143,6 +146,7 @@ impl RhinoLossCode {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
             Self::EnumerationValueDegraded => "container.enumeration-value-degraded",
             Self::RedundantFieldRepaired => "container.redundant-field-repaired",
@@ -194,6 +198,7 @@ impl RhinoLossCode {
             | Self::ContainerInstanceDefinitionDegraded
             | Self::ObjectFramingUndecodable
             | Self::ObjectDecodeDiagnostic
+            | Self::AnnotationUserdataDropped
             | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
             | Self::ReferenceMemberAmbiguous => LossTaxonomy::DecodeDiagnostic,
@@ -274,6 +279,7 @@ mod tests {
                 "container.scan-diagnostic",
                 "container.integrity-failure",
                 "presentation.record-dropped",
+                "annotation.userdata-dropped",
                 "mesh.ngon-grouping-dropped",
                 "container.enumeration-value-degraded",
                 "container.redundant-field-repaired",

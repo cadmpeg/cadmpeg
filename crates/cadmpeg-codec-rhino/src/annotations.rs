@@ -2,10 +2,13 @@
 //! General Rhino text, leader, and text-dot annotations.
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
+use crate::loss::RhinoLossCode;
+use crate::objects::UserdataDescriptor;
 use crate::settings::{utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -24,6 +27,9 @@ const LEGACY_LEADER: Uuid = Uuid::from_canonical([
 ]);
 const TEXT_DOT: Uuid = Uuid::from_canonical([
     0x74, 0x19, 0x83, 0x02, 0xcd, 0xf4, 0x4f, 0x95, 0x96, 0x09, 0x6d, 0x68, 0x4f, 0x22, 0xab, 0x37,
+]);
+const V5_TEXT_EXTRA: Uuid = Uuid::from_canonical([
+    0xd9, 0x04, 0x90, 0xa5, 0xdb, 0x86, 0x49, 0xf8, 0xbd, 0xa1, 0x90, 0x80, 0xb1, 0xf4, 0xe9, 0x76,
 ]);
 
 #[derive(Debug, Serialize)]
@@ -53,8 +59,19 @@ struct AnnotationRecord {
     legacy_style_index: Option<i32>,
     legacy_text_height: Option<f64>,
     legacy_justification: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    v5_text_extra: Option<V5TextExtraRecord>,
     leader_points: Vec<[f64; 2]>,
     links: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct V5TextExtraRecord {
+    parent_text_uuid: Option<String>,
+    draw_mask: bool,
+    mask_color_source: i32,
+    mask_color: [u8; 4],
+    border_offset_factor: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -101,6 +118,37 @@ fn anonymous(
         ));
     }
     Ok(reader)
+}
+
+fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
+    Ok(Uuid::from_wire(reader.array()?))
+}
+
+fn parse_v5_text_extra(
+    data: &[u8],
+    extra: &UserdataDescriptor,
+    archive: ArchiveVersion,
+) -> Result<V5TextExtraRecord, FramingError> {
+    let mut reader = anonymous(data, extra.payload_range.clone(), archive, 0)?;
+    let parent_text_uuid = uuid(&mut reader)?;
+    let draw_mask = reader.bool()?;
+    let mask_color_source = reader.i32()?;
+    let mask_color = reader.array()?;
+    let border_offset_factor = reader.f64()?;
+    if !border_offset_factor.is_finite() {
+        return Err(FramingError::structural(
+            reader.position() - 8,
+            "V5 text mask border offset is not finite",
+        ));
+    }
+    reader.skip_remaining()?;
+    Ok(V5TextExtraRecord {
+        parent_text_uuid: (!parent_text_uuid.is_nil()).then(|| parent_text_uuid.to_string()),
+        draw_mask,
+        mask_color_source,
+        mask_color,
+        border_offset_factor,
+    })
 }
 
 fn scaled_plane(mut plane: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
@@ -244,7 +292,7 @@ fn decode_dot(
 }
 
 /// Projects every supported general annotation into stable native records.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let Some(scale) = scan
         .metadata
         .settings
@@ -252,8 +300,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         .as_ref()
         .and_then(|units| units.millimeters_per_unit)
     else {
-        return;
+        return Vec::new();
     };
+    let mut losses = Vec::new();
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
@@ -273,6 +322,22 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
             || Uuid::nil().to_string(),
             |identity| identity.object_id.to_string(),
         );
+        let mut v5_text_extra = None;
+        if matches!(object.class_uuid, TEXT | LEGACY_TEXT) {
+            if let Some(extra) = object.userdata.iter().find(|userdata| {
+                userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
+            }) {
+                match parse_v5_text_extra(scan.data, extra, scan.archive) {
+                    Ok(value) => v5_text_extra = Some(value),
+                    Err(error) => {
+                        losses.push(RhinoLossCode::AnnotationUserdataDropped.note(format!(
+                            "V5 text-extra userdata at offset {} could not be transferred: {error}",
+                            extra.range.start
+                        )));
+                    }
+                }
+            }
+        }
         if matches!(object.class_uuid, TEXT | LEADER) {
             let leader = object.class_uuid == LEADER;
             let Ok((value, points)) = decode_annotation(
@@ -310,6 +375,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                 legacy_style_index: None,
                 legacy_text_height: None,
                 legacy_justification: None,
+                v5_text_extra,
                 leader_points: points,
                 links: vec![link],
             });
@@ -349,6 +415,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                 legacy_style_index: Some(value.dimstyle_index),
                 legacy_text_height: Some(value.text_height),
                 legacy_justification: Some(value.justification),
+                v5_text_extra,
                 leader_points: value.points,
                 links: vec![link],
             });
@@ -372,12 +439,17 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     namespace
         .set_arena("text_dots", &dots)
         .expect("Rhino text dots serialize");
+    losses
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_dot, decode_legacy_annotation, ANONYMOUS};
+    use super::{
+        decode_dot, decode_legacy_annotation, parse_v5_text_extra, ANONYMOUS, V5_TEXT_EXTRA,
+    };
     use crate::chunks::ArchiveVersion;
+    use crate::objects::UserdataDescriptor;
+    use crate::wire::Uuid;
 
     fn utf16(value: &str) -> Vec<u8> {
         let mut units = value.encode_utf16().collect::<Vec<_>>();
@@ -482,5 +554,41 @@ mod tests {
         assert_eq!(value.dimstyle_index, -1);
         assert_eq!(value.justification, (1 << 18) | 1);
         assert!(!value.allow_text_scaling);
+    }
+
+    #[test]
+    fn v5_text_extra_reads_mask_fields_without_unit_scaling() {
+        let parent = Uuid::from_canonical([
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd,
+            0xee, 0xff,
+        ]);
+        let mut payload = parent.to_wire().to_vec();
+        payload.push(1);
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0x11, 0x22, 0x33, 0x44]);
+        payload.extend(0.375_f64.to_le_bytes());
+        payload.extend([0xaa, 0xbb]);
+        let bytes = anonymous(0, &payload);
+        let descriptor = UserdataDescriptor {
+            range: 0..bytes.len(),
+            version: (2, 2),
+            class_uuid: V5_TEXT_EXTRA,
+            item_uuid: V5_TEXT_EXTRA,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: 0..bytes.len(),
+            unknown_version: false,
+        };
+        let value = parse_v5_text_extra(&bytes, &descriptor, ArchiveVersion::V8)
+            .expect("valid V5 text extra");
+        assert_eq!(value.parent_text_uuid, Some(parent.to_string()));
+        assert!(value.draw_mask);
+        assert_eq!(value.mask_color_source, 1);
+        assert_eq!(value.mask_color, [0x11, 0x22, 0x33, 0x44]);
+        assert_eq!(value.border_offset_factor, 0.375);
     }
 }

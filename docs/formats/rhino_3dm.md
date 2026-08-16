@@ -765,6 +765,40 @@ that entry's key and position. A null or empty value removes the first
 matching entry. A new nonempty key appends an entry. The serialized list keeps
 the resulting order.
 
+#### 7.2.2 `ON_OBSOLETE_V5_TextExtra`
+
+The built-in `ON_OBSOLETE_V5_TextExtra` class uses class UUID and item UUID
+`D90490A5-DB86-49F8-BDA1-9080B1F4E976`. Its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`. Its userdata payload is the body of
+the outer anonymous userdata child from section 7.2. The body contains one
+anonymous major-1, minor-0 child:
+
+```text
+UUID parent text
+bool draw text mask
+i32 mask color source
+4 × u8 mask color (red, green, blue, alpha)
+f64 border offset factor
+```
+
+The parent UUID is nil when no parent text identity is assigned. Mask color
+source `0` selects the viewport background and source `1` selects the stored
+mask color. The setter writes every other source value as `0`; the reader
+retains the stored `i32`. The border offset factor is dimensionless. For a V5
+text object, the mask border extends each side of the tight text rectangle by
+the factor multiplied by the text height. The reader consumes the known
+fields through the anonymous boundary and skips later minor-version suffix
+bytes. The OpenNURBS 5 application UUID retains this userdata when a V6 model
+is saved as V5. The V4 model-save compatibility filter excludes it; the
+class-wrapper grammar itself remains valid for any archive band.
+
+CADIR maps a matching class-userdata item on a V5 text object to the
+annotation's `v5_text_extra` native value. A nil parent UUID becomes null. The
+mask color remains four RGBA bytes and the border offset remains a
+dimensionless factor; neither is unit-scaled. A malformed recognized payload
+retains the annotation record, omits `v5_text_extra`, and emits an
+`annotation.userdata-dropped` decode loss.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -3795,6 +3829,12 @@ transform, followed by an anonymous payload version 1.0 and two model-length
 extension-line origin offset. The OpenNURBS 5 application UUID is used so a
 V6 save-as-V5 retains this item; V4 does not write it. When the userdata is
 absent, both offsets are `-1.0`. A negative offset disables the override.
+
+V5 text objects may carry `ON_OBSOLETE_V5_TextExtra` userdata as defined in
+section 7.2.2. Its mask settings are text-object state, not a neutral
+annotation field. During V5-to-modern conversion, OpenNURBS applies the
+factor multiplied by the V5 text height as the modern mask border and maps
+color source `0` to viewport background and source `1` to the stored color.
 
 The V5 text-style record stores packed version 1.2, the archive index, a
 UTF-16 description, 64 fixed `u16` Windows LOGFONT face-name slots, and, for
