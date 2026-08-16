@@ -439,26 +439,6 @@ geometry loss instead of selecting by source order.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### UM-03. SI prefix on plane-angle units
-
-**Question.** What STEP rule establishes si prefix on plane-angle units?
-
-**Known.** An SI prefix applies to a plane-angle `SI_UNIT` before the
-unit is converted to radians. An omitted prefix has factor 1.
-
-`step.md` §8 "SI prefixes apply before conversion-based-unit
-factors." states the rule without restriction to a unit kind.
-
-The angular unit resolver reads the optional prefix in parameter 0,
-uses the same SI prefix factors as the length resolver, and multiplies the
-resulting factor into conversion-based-unit factors. The rule is covered by
-the parser-level `MILLI` and omitted-prefix regression cases in
-`reader/geometry.rs`.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-01. Angular parameter unit repair
 
 **Question.** What STEP rule establishes angular parameter unit repair?

@@ -361,9 +361,16 @@ optional value. `*` denotes a derived attribute. An empty aggregate uses an
 empty list. Select and typed-parameter wrappers remain available to schema
 accessors.
 
-Length values convert to millimetres. Plane-angle values remain radians. SI
-prefixes apply before conversion-based-unit factors. Conversion-based units
-form an acyclic chain that ends in a dimensional base unit. ISO 10303-43
+Length values convert to millimetres. Plane-angle values convert to radians.
+`PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all
+dimensional exponents of `PLANE_ANGLE_UNIT` are zero. An `SI_UNIT` has an
+optional `prefix`; the prefix is the ratio to its `name`, and omitted prefix
+has ratio one. A plane-angle SI unit names `RADIAN`. A
+`CONVERSION_BASED_UNIT` multiplies its conversion-factor value by the
+recursively resolved unit component, so a plane-angle conversion chain ends
+at the radian SI unit and includes its SI prefix and every conversion factor.
+Conversion-based units form an acyclic chain that ends in a dimensional base
+unit. ISO 10303-43
 defines uncertainty at three scopes. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`
 applies to representations that share its context,
 `UNCERTAINTY_ASSIGNED_REPRESENTATION` applies to the items collected by one
