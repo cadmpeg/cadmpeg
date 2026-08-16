@@ -172,6 +172,28 @@ the wrong topology map without a malformed-record refusal.
 
 **Note.** New hostile-sweep finding.
 
+### PT-06. Element-map compatibility-marker admission
+
+**Question.** Must a non-empty `ElementMap2` carrier have the compatibility `ElementMap` marker
+immediately before it, and what is the malformed result when that marker is absent?
+
+**Known.** The specification requires one compatibility `ElementMap` marker followed by one
+`ElementMap2` carrier for non-empty metadata, while an empty map uses the marker alone. The
+element-map transfer at `element_map.rs:86-141` finds one `Part` and one `ElementMap2` through
+descendant lookup, reads the `ElementMap` version attribute from `Part`, and never checks for the
+compatibility marker or its adjacency.
+
+**Need.** Bind the map to the direct shape property and require the marker-plus-carrier sequence
+for non-empty maps. Reject or retain a nested, missing, or non-adjacent marker without assigning
+the map to neutral topology.
+
+**Conflict.** A property containing `<Part .../><ElementMap2 ...>` is parsed into an
+`ElementMapRecord` and can supply persistent topology names even though the required
+compatibility marker is absent. Adding or removing that marker changes neutral identity without a
+refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
 ## 4. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection
@@ -317,6 +339,86 @@ nested control or its spelling therefore changes neutral state without a refusal
 
 **Note.** New hostile-sweep finding.
 
+### DP-12. Sketch placement zero-axis fallback
+
+**Question.** Is a zero-length axis-angle axis a valid sketch placement when its angle is zero?
+
+**Known.** The specification rejects an invalid axis-angle rotation as a sketch frame. In
+`design.rs:1511-1573`, `placement_frame` converts an `A` carrier with a zero axis and zero angle
+to the identity quaternion; `validate_sketch_placement` at `design.rs:1575-1595` accepts the
+result because the frame is present.
+
+**Need.** Reject a zero-length axis for every axis-angle sketch placement, including zero angle,
+or retain the affected sketch or datum operation as native with an attributable loss.
+
+**Conflict.** A `Placement` or `AttachmentOffset` with finite position, `A=0`, and
+`Ox=Oy=Oz=0` becomes an identity sketch frame instead of remaining invalid. The neutral frame
+therefore changes without a refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
+### DP-13. ExternalGeo cached-carrier prefix admission
+
+**Question.** Which leading `ExternalGeo` records are reserved, and how must the cached-carrier
+list correspond to `ExternalGeometry` links?
+
+**Known.** `design.rs:1214-1227` validates the declared count against direct `Geometry` children,
+then scans all descendant `Geometry` records and unconditionally skips two before pairing the
+remaining records with `ExternalGeometry` links. FreeCAD's sketch representation reserves two
+leading external-geometry slots, while the specification requires any supplied cached carrier to
+define the solved external entity.
+
+**Need.** Validate the reserved prefix, direct list framing, cache cardinality, and link/cache
+ordinal correspondence before emitting external sketch entities. Reject malformed short or
+misframed lists instead of treating an ignored cache as absent.
+
+**Conflict.** A `GeometryList count="1"` containing one valid cached `Circle` passes the count
+check, but `.skip(2)` drops it; a corresponding link is then emitted as an unresolved external
+reference. A supplied solved carrier is ignored without a refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
+### DP-14. Sketch constraint family-code default
+
+**Question.** How does constraint transfer distinguish an absent or malformed family code from an
+explicit disabled constraint?
+
+**Known.** The specification retains the persisted constraint family code and leaves invalid or
+future families native. `design.rs:1680-1686` parses `Constrain@Type` with
+`int_attr(...).unwrap_or(0)`, and `neutral_constraint` at `design.rs:2057-2071` interprets code `0`
+as `Disabled`.
+
+**Need.** Require a present integer family code, preserve explicit code `0` as its own value, and
+retain missing or malformed codes as attributable native relations.
+
+**Conflict.** `<Constrain First="0" FirstPos="0"/>` or `Type="bad"` defaults to code `0` and
+projects a neutral `Disabled` constraint. A malformed relation therefore changes neutral state
+without a refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
+### DP-15. Design operation selector fallback
+
+**Question.** How are absent and malformed design operation mode or flag properties distinguished
+before selecting a neutral operation family?
+
+**Known.** `design.rs:3898-3918` extracts the first parseable generic value attribute without a
+runtime-type or direct-root gate. Callers default an absent or malformed selector at
+`design.rs:2809`, `3309`, `3334`, `4061`, `4310`, and `4336` before choosing revolution,
+extrusion, boolean, hole, or other operation modes. The specification requires invalid modes to
+remain attributable native operations.
+
+**Need.** Validate each named selector's runtime type, direct root, cardinality, and value before
+applying a legacy absent-property default. A present malformed selector must leave the operation
+native or produce an attributable refusal.
+
+**Conflict.** A `PartDesign::Boolean` with a valid source group and a nonnumeric `Type` carrier
+defaults to `Join`; a malformed `PartDesign::Revolution` mode similarly defaults to angular
+termination. Replacing the malformed carrier with a valid explicit mode changes neutral semantics
+without a refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
 ## 6. Semantic annotations
 
 ### SA-03. Annotation value-root framing and attribute selection
@@ -364,6 +466,26 @@ attribute changes the result from `1` to `2` instead of making the contradictory
 
 **Note.** New hostile-sweep finding.
 
+### DG-06. Non-page template relationship admission
+
+**Question.** Which drawing runtime types may populate the neutral page-template field?
+
+**Known.** `drawing.rs:32-45` extracts typed `Views` and `Template` carriers only for page
+objects, but `drawing.rs:66-70` retains every link-valued property as a relationship. Neutral
+transfer at `drawing.rs:175-190` then reads any relationship named `Template` for every registered
+drawing record. The specification limits page template carriers to pages and states that other
+runtime types do not supply them.
+
+**Need.** Gate neutral `Drawing.template` extraction on the page runtime kind. Retain a non-page
+`Template` relationship as native relationship data without interpreting it as page membership.
+
+**Conflict.** A registered non-page view with an `App::PropertyLink` named `Template` targeting a
+registered template populates `Drawing.template`, although the source type cannot own a page
+template carrier. An unrelated link property therefore changes a neutral page field without a
+refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
 ## 8. Product structure
 
 ### PR-04. Product placement zero-axis fallback
@@ -402,6 +524,27 @@ each product metadata carrier before projecting it into a definition or BOM fiel
 or value order and change a neutral label, description, part number, or BOM field. A wrong or
 malformed carrier is instead omitted silently, so product identity changes without native
 retention or a loss.
+
+**Note.** New hostile-sweep finding.
+
+### PR-06. Mixed placement-representation cardinality
+
+**Question.** Are partial quaternion or axis-angle representations malformed when the other
+representation is complete?
+
+**Known.** The specification requires complete position plus either complete quaternion or
+axis-angle components; missing components are malformed, and a complete quaternion is
+authoritative when both representations are present. `product.rs:1019-1070` selects axis-angle
+whenever `A` is present and otherwise selects quaternion whenever all four quaternion names are
+present, without checking the non-selected representation for partial components.
+
+**Need.** Validate both representation groups when their attributes are present. Accept a complete
+authoritative representation only when the other group is absent or complete, and reject partial
+or non-finite components consistently for product, attachment, and joint frames.
+
+**Conflict.** `Q0` plus complete `A/Ox/Oy/Oz` is accepted by the axis-angle branch, while complete
+`Q0..Q3` plus an incomplete axis group is accepted by the quaternion branch. Missing components
+therefore change product, attachment, or joint frames without a refusal or loss.
 
 **Note.** New hostile-sweep finding.
 
