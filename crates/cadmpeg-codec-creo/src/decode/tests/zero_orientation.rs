@@ -752,6 +752,42 @@ fn conflicting_section_sweep_names_remain_unresolved() {
 }
 
 #[test]
+fn conflicting_display_states_do_not_select_reference_family() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 822,
+            kind: "Native Feature".to_string(),
+            display_name_stored: false,
+            stored_name: None,
+            stored_name_bytes: None,
+            identifier_keyword: None,
+            stored_name_prefix: None,
+            recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: true,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .reference_names
+        .push(crate::feature::FeatureReferenceName {
+            feature_id: 822,
+            name: "Thicken 1".to_string(),
+            name_bytes: b"Thicken 1".to_vec(),
+            own_reference_id: 1,
+            reference_type: 0,
+            offset: 0,
+        });
+    let ir = CadIr::empty(Units::default());
+
+    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
+}
+
+#[test]
 fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
     let spline = crate::feature::FeatureSavedSpline {
         entity_id: Some(7),

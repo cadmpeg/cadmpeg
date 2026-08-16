@@ -2,8 +2,8 @@
 //! Named and referenced feature definitions.
 
 use super::super::sketch_transfer::{
-    feature_recipe_effect, feature_revolution_extent, feature_schema_class,
-    feature_section_sweep_semantics_conflict,
+    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
+    feature_schema_class, feature_section_sweep_semantics_conflict,
 };
 use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
@@ -145,6 +145,12 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
     named_feature_definition(scan, ir, feature_id, kind).or_else(|| {
+        if kind == "Native Feature"
+            && current_feature_operation(&scan.features.operations, feature_id)
+                .is_some_and(|operation| operation.display_state_conflict)
+        {
+            return None;
+        }
         feature_reference_name(scan, feature_id)
             .filter(|reference_name| *reference_name != kind)
             .and_then(|reference_name| {
