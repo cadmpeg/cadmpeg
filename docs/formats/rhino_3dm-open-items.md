@@ -459,7 +459,15 @@ render settings in `TCODE_SETTINGS_RENDER`. `ON_3dmRenderSettings` has a
 source-backed direct legacy body with version range 100–199 and gates at 101,
 102, and 103, and a modern anonymous major-1 body with gates at minors 1, 2,
 and 3. `ON_3dmAnnotationSettings` has packed major-1 bodies with writer minor
-2 through V5 and minor 4 from V6, gating scaling fields at minors 1 through 4.
+2 for archive versions below 60 and minor 4 for archive version 60 and later.
+Its fixed base prefix writes dimension units as a `u32`; the writer hard-codes
+the dimension-scale field to `1.0`. Minor 1 gates world-view text scale and the
+V5 annotation flag, minor 2 gates world-view hatch scale and the hatch flag,
+minor 3 gates model/layout scaling, and minor 4 gates the dimension-layer
+Boolean and UUID. V4/V5/V6 witness files with non-default base fields and all
+gated fields confirmed the writer bands and the source read defaults; the Rust
+owner test also covers a non-nil dimension-layer UUID and a future minor
+suffix.
 `ON_3dmConstructionPlaneGridDefaults` has a packed major-1 body with no minor
 field gates. `ON_BinaryArchive::BeginRead3dmChunk` requires a nonnegative
 modern minor. The Rust document-settings reader now consumes both complete

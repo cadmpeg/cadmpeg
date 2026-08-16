@@ -167,7 +167,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
 
 #[test]
 fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
-    for minor in 0..=4 {
+    for minor in 0..=5 {
         let bytes = annotation_body(minor);
         let value = annotation_settings(&bytes, 0..bytes.len(), 19, 2.0)
             .expect("annotation settings packed version");
@@ -175,6 +175,11 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
         assert_eq!(value.source_offset, 19);
         assert_eq!(value.dimension_scale, 1.0);
         assert_eq!(value.text_height_mm, 5.0);
+        assert_eq!(value.extension_line_extension_mm, 7.0);
+        assert_eq!(value.extension_line_offset_mm, 9.0);
+        assert_eq!(value.arrow_length_mm, 11.0);
+        assert_eq!(value.arrow_width_mm, 13.0);
+        assert_eq!(value.center_mark_mm, 15.0);
         assert_eq!(value.dimension_units, 2);
         assert_eq!(value.font_face, "WitnessFace");
         assert_eq!(value.world_view_text_scale, (minor >= 1).then_some(1.25));
@@ -192,6 +197,19 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
         assert_eq!(value.use_dimension_layer, (minor >= 4).then_some(true));
         assert_eq!(value.dimension_layer_uuid, None);
     }
+
+    let mut bytes = annotation_body(4);
+    let uuid_offset = bytes.len() - 2 - 16;
+    bytes[uuid_offset..uuid_offset + 16].copy_from_slice(&[
+        0x40, 0x30, 0x20, 0x10, 0x60, 0x50, 0x80, 0x70, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0,
+        0x01,
+    ]);
+    let value = annotation_settings(&bytes, 0..bytes.len(), 19, 1.0)
+        .expect("annotation settings dimension-layer UUID");
+    assert_eq!(
+        value.dimension_layer_uuid.as_deref(),
+        Some("10203040-5060-7080-90a0-b0c0d0e0f001")
+    );
 }
 
 #[test]

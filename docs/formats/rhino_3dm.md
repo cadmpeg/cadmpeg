@@ -5418,7 +5418,7 @@ Global annotation settings are the direct body of
 u8 packed version = 1.minor
 7 × f64: dimension scale, text height, extension-line extension,
   extension-line offset, arrow length, arrow width, center mark
-i32 dimension unit system
+u32 dimension unit system
 i32 arrow type
 i32 angular units
 i32 length format
@@ -5432,15 +5432,29 @@ if minor >= 3: u8 model-space scaling flag, u8 layout-space scaling flag
 if minor >= 4: bool use dimension layer, ON_UUID dimension-layer identity
 ```
 
-The writer emits minor 2 through archive V5 and minor 4 for V6 and later.
-Major version 1 is the reader's admitted family. Dimension units use the
-values in section 8.2. The stored arrow type is the `ON_Arrowhead` enum ordinal
-minus 2, so 0 is a solid triangle. Angular units are 0 degrees and 1 radians.
-Length-format values are 0 decimal, 1 fractional, and 2 feet-and-inches; other
-values select model units. Angle-format values are 0 decimal degrees, 1
-degrees-minutes-seconds, 2 radians, and 3 gradians. Resolution is interpreted
-according to the selected length format. The dimension-layer identity is used
-only when its flag is true; a nil identity selects the current layer.
+The writer emits minor 2 when the archive version is below 60 and minor 4 when
+the archive version is 60 or later. It writes `1.0` for dimension scale even
+when the in-memory dimension-scale value differs. Major version 1 is the
+reader's admitted family. Dimension units use the values in section 8.2. The
+six base dimensions after dimension scale are document-length values; CADIR
+transfers them to millimeters with the model unit scale. Dimension scale and
+the world-view and hatch scale values are dimensionless. The stored arrow type
+is the `ON_Arrowhead` enum ordinal minus 2, so 0 is a solid triangle. Angular
+units are 0 degrees and 1 radians. Length-format value 2 selects feet-and-
+inches; all other values select model-unit display. Angle-format values are 0
+decimal degrees, 1 degrees-minutes-seconds, 2 radians, and 3 gradians.
+Resolution is interpreted according to the selected length format. The
+dimension-layer identity is used only when its flag is true; a nil identity
+selects the current layer.
+
+When a minor version omits a field, OpenNURBS initializes its runtime value
+from the archive band: pre-V5 files disable annotation, model-space, layout-
+space, and hatch scaling; V5 and later files enable annotation, model-space,
+and layout-space scaling and disable hatch scaling. A minor-1 annotation flag
+also sets the layout-space flag; a minor-3 layout-space flag then replaces that
+value. `CADIR decision:` omitted fields are `null` in the native
+annotation-settings record rather than synthesized from the archive-band
+runtime default.
 
 Grid defaults are the direct body of `TCODE_SETTINGS_GRID_DEFAULTS`:
 
