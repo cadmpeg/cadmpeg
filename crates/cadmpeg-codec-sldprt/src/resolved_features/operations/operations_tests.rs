@@ -258,6 +258,22 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         feature_inline_operation_fields(&lane, &name),
         Some((0x01ca, 2))
     );
+
+    // A compact continuation may retain either secondary family word.
+    lane.native_payload[trailer + 16..trailer + 40].fill(0);
+    lane.native_payload[trailer + 20..trailer + 22].copy_from_slice(&0x00b3u16.to_le_bytes());
+    lane.native_payload[trailer + 22..trailer + 24].copy_from_slice(&[1, 0]);
+    lane.native_payload[trailer + 24..trailer + 28].copy_from_slice(&0x0252u32.to_le_bytes());
+    lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x0097u16.to_le_bytes());
+    assert_eq!(
+        feature_inline_operation_fields(&lane, &name),
+        Some((0x01ca, 2))
+    );
+    lane.native_payload[trailer + 20..trailer + 22].copy_from_slice(&0x00b2u16.to_le_bytes());
+    assert_eq!(
+        feature_inline_operation_fields(&lane, &name),
+        Some((0x01ca, 2))
+    );
 }
 
 #[test]

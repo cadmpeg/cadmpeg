@@ -270,6 +270,17 @@ pub(super) fn feature_inline_operation_fields(
                             == [1, 0, 0, 0, 0, 0, 0, 0])
                     && suffix[sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX..]
                         != [0, 0])
+                    // A compact continuation retains a secondary family word
+                    // in the first two bytes before the marker.
+                    || (suffix[..4] == [0; 4]
+                        && matches!(
+                            View::u16_le_at(suffix, 4),
+                            Some(0x00b2 | 0x00b3)
+                        )
+                        && suffix[6..8] == [1, 0]
+                        && suffix[8..12] != [0; 4]
+                        && suffix[12..22] == [0; 10]
+                        && suffix[22..24] != [0, 0])
                     || (suffix[..4] == [0, 0, 1, 0]
                         && suffix[4..8] != [0; 4]
                         && suffix[8..18] == [0; 10]
