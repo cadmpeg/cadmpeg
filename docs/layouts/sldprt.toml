@@ -3719,7 +3719,7 @@ section = "2"
 anchor = "native value u32 `2`, profile locus `04 00 02 00`"
 size = 142
 endianness = "little"
-note = "The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line."
+note = "The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line. A four-byte separator may follow the 142-byte body before the next sketch marker."
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
 
 [[record.field]]

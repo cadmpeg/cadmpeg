@@ -53,6 +53,19 @@ fn compact_legacy_142_profile_curve_selects_arc_or_line_from_radii() {
         SketchInputKind::Arc
     );
 
+    let mut separated = vec![0; 146 + LEGACY_SKETCH_MARKER.len()];
+    separated[..142].copy_from_slice(&arc[..142]);
+    separated[142..146].copy_from_slice(&[1, 0, 0, 0]);
+    separated[146..].copy_from_slice(LEGACY_SKETCH_MARKER);
+    assert_eq!(
+        compact_legacy_142_profile_curve_coordinates(&separated, 0),
+        Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
+    );
+    assert_eq!(
+        inline_arc_coordinates(&separated, 0),
+        Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
+    );
+
     let line = compact_legacy_142_profile_curve_payload(
         [0x12, 0x00],
         [10.0, 10.0],

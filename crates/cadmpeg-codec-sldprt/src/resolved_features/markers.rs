@@ -1457,6 +1457,10 @@ pub(super) fn compact_legacy_142_profile_curve_coordinates(
 ) -> Option<[[f64; 2]; 3]> {
     let end = offset.checked_add(legacy_142::LEN)?;
     let record = payload.get(offset..end)?;
+    let next_marker = sketch_marker_prefix_at(payload, end)
+        || end
+            .checked_add(4)
+            .is_some_and(|next| sketch_marker_prefix_at(payload, next));
     if record.get(legacy_142::MARKER..legacy_142::HEADER) != Some(LEGACY_SKETCH_MARKER)
         || record.get(legacy_142::HEADER..legacy_142::SHARED_SELECTOR) != Some(&[0xff; 8])
         || record.get(legacy_142::SHARED_SELECTOR..legacy_142::NATIVE_KIND)
@@ -1482,7 +1486,7 @@ pub(super) fn compact_legacy_142_profile_curve_coordinates(
         || record.get(legacy_142::BODY_KIND..legacy_142::BODY_KIND + 4)
             != Some(&legacy_142::BODY_KIND_VALUE.to_le_bytes())
         || record.get(legacy_142::BODY_KIND + 4..legacy_142::VARIANT) != Some(&[0; 6])
-        || !sketch_marker_prefix_at(payload, end)
+        || !next_marker
     {
         return None;
     }

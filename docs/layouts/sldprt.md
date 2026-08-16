@@ -1000,7 +1000,7 @@ Unstated regions:
 
 Spec §2 · layout: byte offsets · size: 142 B
 
-The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line.
+The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line. A four-byte separator may follow the 142-byte body before the next sketch marker.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
