@@ -653,6 +653,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     bind_schema_32001_faces(entities, &mut out);
     let ambiguous_body_assignments = bind_schema_33103_faces(entities, &mut out);
     if out.is_empty() {
+        out.extend(keyed_disc14_disc12_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc14_bodies(&by_attr));
     }
     if out.is_empty() {
@@ -3998,6 +4001,227 @@ fn disc1c_disc0c_terminal_face_root_body(
             }],
         }],
     }]
+}
+
+fn keyed_disc14_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let chains = keyed_forward_chain_candidates(by_attr);
+    let matching_chains = chains
+        .iter()
+        .filter_map(|chain| {
+            chain
+                .windows(4)
+                .find(|window| {
+                    matches!(
+                        window,
+                        [first, second, third, fourth]
+                            if first.disc == 0x0014
+                                && first.flo() == 2
+                                && second.disc == 0x0012
+                                && second.flo() == 1
+                                && third.disc == 0x0010
+                                && third.flo() == 2
+                                && fourth.disc == 0x0004
+                                && fourth.flo() == 2
+                    )
+                })
+                .map(|window| (chain, window))
+        })
+        .collect::<Vec<_>>();
+    let [(chain, window)] = matching_chains.as_slice() else {
+        return Vec::new();
+    };
+    let canonical_faces = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x000e && record.flo() == 1)
+        .collect::<Vec<_>>();
+    if canonical_faces.is_empty() {
+        return Vec::new();
+    }
+    let is_companion = |record: &EntityRecord| {
+        record.flo() == 1
+            && matches!(
+                record.disc,
+                0x0010 | 0x0012 | 0x0014 | 0x0016 | 0x0018 | 0x001a | 0x001c | 0x001e
+            )
+    };
+    let is_use_node = |record: &EntityRecord| {
+        record.flo() == 4
+            && matches!(
+                record.disc,
+                0x001a | 0x001c | 0x001e | 0x0020 | 0x0022 | 0x0024
+            )
+    };
+    let has_companion_link =
+        |record: &EntityRecord| record.refs.get(1).is_some_and(|attr| *attr > 1);
+    let keyed_companion = |face: &EntityRecord| {
+        let key = face.refs.first().copied().filter(|attr| *attr > 1)?;
+        let candidates = by_attr
+            .values()
+            .copied()
+            .filter(|record| {
+                is_companion(record)
+                    && record.refs.first() == Some(&key)
+                    && has_companion_link(record)
+            })
+            .collect::<Vec<_>>();
+        let [companion] = candidates.as_slice() else {
+            return None;
+        };
+        Some(*companion)
+    };
+    let face_use = |face: &EntityRecord| {
+        let linked = face.refs.get(1).and_then(|attr| by_attr.get(attr)).copied();
+        if let Some(linked) = linked {
+            if is_companion(linked) && has_companion_link(linked) {
+                return Some(linked);
+            }
+            if linked.flo() == 2
+                && matches!(linked.disc, 0x000e | 0x0014 | 0x001a | 0x001c)
+                && linked.refs.get(2) == Some(&face.attr)
+            {
+                let companion = linked
+                    .refs
+                    .get(1)
+                    .and_then(|attr| by_attr.get(attr))
+                    .copied();
+                if companion
+                    .is_some_and(|record| is_companion(record) && has_companion_link(record))
+                {
+                    return companion;
+                }
+            }
+        }
+        keyed_companion(face)
+    };
+    let face_use_attrs = canonical_faces
+        .iter()
+        .filter_map(|face| face_use(face).map(|record| record.attr))
+        .collect::<HashSet<_>>();
+    let use_nodes = by_attr
+        .values()
+        .filter(|record| is_use_node(record))
+        .count();
+    if face_use_attrs.len() != canonical_faces.len() || use_nodes < canonical_faces.len() {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    let root = chain[0];
+    let shell = window[0];
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
+}
+
+fn keyed_forward_chain_candidates<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+) -> Vec<Vec<&'a EntityRecord>> {
+    let mut candidates = Vec::new();
+    for root in by_attr.values().copied().filter(|record| {
+        record.flo() == 2
+            && record.refs.first().is_some_and(|key| *key > 1)
+            && record.refs.get(1).is_none_or(|attr| *attr <= 1)
+            && record.refs.get(2).is_some_and(|attr| *attr > 1)
+    }) {
+        let key = root.refs[0];
+        let mut chain = vec![root];
+        let mut previous = root.attr;
+        let mut next = root.refs[2];
+        let mut seen = HashSet::from([root.attr]);
+        let mut valid = true;
+        while next > 1 {
+            let Some(record) = by_attr.get(&next).copied() else {
+                valid = false;
+                break;
+            };
+            if !seen.insert(record.attr)
+                || record.refs.first() != Some(&key)
+                || record.refs.get(1) != Some(&previous)
+            {
+                valid = false;
+                break;
+            }
+            chain.push(record);
+            previous = record.attr;
+            next = record.refs.get(2).copied().unwrap_or(0);
+        }
+        if valid && chain.len() >= 5 {
+            candidates.push(chain);
+        }
+    }
+    candidates
+}
+
+#[cfg(test)]
+mod keyed_tests {
+    use super::{keyed_disc14_disc12_face_root_body, EntityRecord};
+    use std::collections::HashMap;
+
+    fn record(attr: u16, disc: u16, flags: u32, refs: [u16; 6]) -> EntityRecord {
+        EntityRecord {
+            attr,
+            flags,
+            seq: u32::from(attr),
+            disc,
+            refs: refs.to_vec(),
+            offset: usize::from(attr),
+            end: usize::from(attr) + 26,
+        }
+    }
+
+    fn index(records: &[EntityRecord]) -> HashMap<u16, &EntityRecord> {
+        records.iter().map(|record| (record.attr, record)).collect()
+    }
+
+    #[test]
+    fn disc14_disc12_keyed_lattice_owns_direct_intermediate_and_keyed_faces() {
+        let mut records = vec![
+            record(10, 0x1e, 2, [3, 1, 11, 1, 1, 1]),
+            record(11, 0x1c, 2, [3, 10, 12, 1, 1, 1]),
+            record(12, 0x18, 2, [3, 11, 13, 1, 1, 1]),
+            record(13, 0x14, 2, [3, 12, 14, 1, 1, 1]),
+            record(14, 0x12, 1, [3, 13, 15, 1, 1, 1]),
+            record(15, 0x10, 2, [3, 14, 16, 1, 1, 1]),
+            record(16, 0x04, 2, [3, 15, 1, 1, 1, 1]),
+            record(20, 0x0e, 1, [1, 30, 1, 1, 1, 1]),
+            record(30, 0x16, 1, [1, 40, 20, 1, 1, 1]),
+            record(21, 0x0e, 1, [1, 31, 1, 1, 1, 1]),
+            record(31, 0x0e, 2, [1, 32, 21, 1, 1, 1]),
+            record(32, 0x1a, 1, [1, 41, 31, 1, 1, 1]),
+            record(22, 0x0e, 1, [50, 99, 1, 1, 1, 1]),
+            record(33, 0x1c, 1, [50, 42, 1, 1, 1, 1]),
+            record(40, 0x1c, 4, [1; 6]),
+            record(41, 0x1e, 4, [1; 6]),
+            record(42, 0x22, 4, [1; 6]),
+            record(60, 0x20, 2, [7, 1, 61, 1, 1, 1]),
+            record(61, 0x1e, 2, [7, 60, 62, 1, 1, 1]),
+            record(62, 0x1c, 2, [7, 61, 63, 1, 1, 1]),
+            record(63, 0x18, 2, [7, 62, 64, 1, 1, 1]),
+            record(64, 0x16, 2, [7, 63, 1, 1, 1, 1]),
+        ];
+        let bodies = keyed_disc14_disc12_face_root_body(&index(&records));
+        let [body] = bodies.as_slice() else {
+            panic!("one keyed disc14-disc12 body");
+        };
+        assert_eq!((body.attr, body.regions[0].shells[0].attr), (10, 13));
+        assert!(body.refs.contains(&20) && body.refs.contains(&42));
+
+        records[10].refs[2] = 1;
+        assert!(keyed_disc14_disc12_face_root_body(&index(&records)).is_empty());
+    }
 }
 
 fn sparse_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
