@@ -440,6 +440,11 @@ fn rejects_ambiguous_persistence_carriers() {
         r#"<Document SchemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/><ObjectData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><ObjectDeps Name="B" Count="0"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="2"><Property name="Same" type="App::PropertyString"/><Property name="Same" type="App::PropertyString"/></Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="0"/><Extensions Count="0"/><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="2"><Extension type="Vendor::First" name="Same"/><Extension type="Vendor::Second" name="Same"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="2"><Extension type="Vendor::Same" name="First"/><Extension type="Vendor::Same" name="Second"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Properties Count="0"/><Extensions Count="0"/></Object></ObjectData></Document>"#,
     ];
 
     for document in cases {
@@ -451,6 +456,77 @@ fn rejects_ambiguous_persistence_carriers() {
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
+}
+
+#[test]
+fn binds_nested_extension_properties_to_their_enclosing_record() {
+    let document = r#"<Document SchemaVersion="4">
+<Objects Count="1"><Object type="App::Feature" name="A"/></Objects>
+<ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="2">
+<Extension type="Vendor::First" name="First"><Properties Count="1"><Property name="FirstValue" type="App::PropertyString"><String value="first"/></Property></Properties></Extension>
+<Extension type="Vendor::Second" name="Second"><Properties Count="1"><Property name="SecondValue" type="App::PropertyString"><String value="second"/></Property></Properties></Extension>
+</Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let graph = crate::persistence::parse(document.as_bytes()).expect("extension graph");
+    let first = graph
+        .extensions
+        .iter()
+        .find(|extension| extension.name == "First")
+        .expect("first extension");
+    let second = graph
+        .extensions
+        .iter()
+        .find(|extension| extension.name == "Second")
+        .expect("second extension");
+    assert_eq!(
+        graph
+            .properties
+            .iter()
+            .find(|property| property.name == "FirstValue")
+            .expect("first property")
+            .owner,
+        first.id
+    );
+    assert_eq!(
+        graph
+            .properties
+            .iter()
+            .find(|property| property.name == "SecondValue")
+            .expect("second property")
+            .owner,
+        second.id
+    );
+}
+
+#[test]
+fn native_validation_rejects_duplicate_extension_identity() {
+    let document = r#"<Document SchemaVersion="4">
+<Objects Count="1"><Object type="App::Feature" name="A"/></Objects>
+<ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="1"><Extension type="Vendor::Extension" name="Extension"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("extension graph");
+    let mut corrupted = result.ir().clone();
+    let mut extensions = corrupted
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ExtensionRecord>("extensions")
+        .expect("extensions")
+        .clone();
+    extensions.push(extensions[0].clone());
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("extensions", &extensions)
+        .expect("replace extensions");
+    let findings = crate::validate_native(&corrupted);
+    assert!(findings.iter().any(|finding| {
+        finding.message.contains("duplicate FCStd native identity")
+            || finding.message.contains("duplicates extension name")
+    }));
 }
 
 #[test]

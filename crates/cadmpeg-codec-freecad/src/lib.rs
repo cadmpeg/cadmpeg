@@ -280,7 +280,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|record| record.id.as_str())
         .collect::<HashSet<_>>();
-    if object_ids.len() != objects.len() || property_ids.len() != properties.len() {
+    if object_ids.len() != objects.len()
+        || property_ids.len() != properties.len()
+        || extension_ids.len() != extensions.len()
+    {
         findings.push(finding(
             Check::Identity,
             "duplicate FCStd native identity",
@@ -704,11 +707,33 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             None,
         ));
     }
+    let mut extension_names = HashSet::new();
+    let mut extension_types = HashSet::new();
     for extension in &extensions {
         if !object_ids.contains(extension.owner.as_str()) {
             findings.push(finding(
                 Check::ReferentialIntegrity,
                 format!("{} has missing owner {}", extension.id, extension.owner),
+                Some(extension.id.clone()),
+            ));
+        }
+        if !extension_names.insert((extension.owner.as_str(), extension.name.as_str())) {
+            findings.push(finding(
+                Check::Identity,
+                format!(
+                    "{} duplicates extension name {}",
+                    extension.id, extension.name
+                ),
+                Some(extension.id.clone()),
+            ));
+        }
+        if !extension_types.insert((extension.owner.as_str(), extension.type_name.as_str())) {
+            findings.push(finding(
+                Check::Identity,
+                format!(
+                    "{} duplicates extension type {}",
+                    extension.id, extension.type_name
+                ),
                 Some(extension.id.clone()),
             ));
         }

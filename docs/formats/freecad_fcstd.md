@@ -66,6 +66,13 @@ Each provider has one direct `Properties` container, and direct property names a
 that container. Registered GUI property types define the cardinality of their value elements;
 unregistered properties retain their ordered values without semantic dispatch.
 
+Each `ObjectData` object has at most one direct `Extensions` container and at most one direct
+`Properties` container. When both are present, `Extensions` precedes `Properties`. An extension
+container's `Count` equals its `Extension` records. Extension names and runtime types are unique
+per owning object. A nested `Properties` container belongs to its enclosing `Extension` record;
+ownership is not selected by extension name. Duplicate direct containers, extension names, and
+extension runtime types are malformed.
+
 In schema 2, `Features.Count` equals the number of `Feature` declarations. Each declaration has a
 unique `name` and a `type`. `FeatureData.Count` equals the number of `Feature` value records. Each
 value record has a unique `name`. Declaration and value-record name sets are equal. Declaration

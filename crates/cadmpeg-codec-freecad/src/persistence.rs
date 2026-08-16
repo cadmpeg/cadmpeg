@@ -280,10 +280,44 @@ pub fn parse_with_context(
         let data = data_by_name.get(&object.name).ok_or_else(|| {
             CodecError::Malformed(format!("missing ObjectData for {}", object.name))
         })?;
-        for extensions_node in data
+        let children = data
             .children()
+            .filter(roxmltree::Node::is_element)
+            .collect::<Vec<_>>();
+        let extension_containers = children
+            .iter()
             .filter(|node| node.has_tag_name("Extensions"))
+            .copied()
+            .collect::<Vec<_>>();
+        if extension_containers.len() > 1 {
+            return Err(malformed(format!(
+                "object {} has multiple direct Extensions containers",
+                object.id
+            )));
+        }
+        let property_containers = children
+            .iter()
+            .filter(|node| node.has_tag_name("Properties"))
+            .copied()
+            .collect::<Vec<_>>();
+        if property_containers.len() > 1 {
+            return Err(malformed(format!(
+                "object {} has multiple direct Properties containers",
+                object.id
+            )));
+        }
+        if let (Some(extensions), Some(properties)) =
+            (extension_containers.first(), property_containers.first())
         {
+            if extensions.range().start > properties.range().start {
+                return Err(malformed(format!(
+                    "object {} writes Properties before Extensions",
+                    object.id
+                )));
+            }
+        }
+        let mut extension_ids_by_start = HashMap::new();
+        if let Some(extensions_node) = extension_containers.first() {
             let nodes = extensions_node
                 .children()
                 .filter(|node| node.has_tag_name("Extension"))
@@ -301,46 +335,58 @@ pub fn parse_with_context(
                     object.id
                 )));
             }
+            let mut extension_names = HashSet::new();
+            let mut extension_types = HashSet::new();
             for (order, node) in nodes.into_iter().enumerate() {
                 let name = required_attr(node, "name")?;
+                let type_name = required_attr(node, "type")?;
+                if !extension_names.insert(name.clone()) {
+                    return Err(malformed(format!(
+                        "duplicate extension name {name} for {}",
+                        object.id
+                    )));
+                }
+                if !extension_types.insert(type_name.clone()) {
+                    return Err(malformed(format!(
+                        "duplicate extension type {type_name} for {}",
+                        object.id
+                    )));
+                }
+                let id = extension_id(&object.id, &name, order);
+                extension_ids_by_start.insert(node.range().start, id.clone());
                 extensions.push(ExtensionRecord {
-                    id: extension_id(&object.id, &name, order),
+                    id,
                     owner: object.id.clone(),
                     name,
-                    type_name: required_attr(node, "type")?,
+                    type_name,
                     order,
                     raw_xml: text[node.range()].to_owned(),
                 });
             }
         }
-        let containers = data
-            .children()
-            .filter(|node| node.has_tag_name("Properties"))
-            .chain(
-                data.children()
-                    .filter(|node| node.has_tag_name("Extensions"))
-                    .flat_map(|node| {
-                        node.children()
-                            .filter(|child| child.has_tag_name("Extension"))
-                    })
-                    .flat_map(|node| {
-                        node.children()
-                            .filter(|child| child.has_tag_name("Properties"))
-                    }),
-            );
-        for container in containers {
-            let property_owner = container
-                .ancestors()
-                .find(|ancestor| ancestor.has_tag_name("Extension"))
-                .and_then(|extension| {
-                    let name = extension.attribute("name")?;
-                    extensions
-                        .iter()
-                        .find(|record| record.owner == object.id && record.name == name)
-                        .map(|record| record.id.clone())
-                })
-                .unwrap_or_else(|| object.id.clone());
-            parse_properties(text, container, &property_owner, &mut properties, ctx)?;
+        for container in property_containers {
+            parse_properties(text, container, &object.id, &mut properties, ctx)?;
+        }
+        if let Some(extensions_node) = extension_containers.first() {
+            for extension in extensions_node
+                .children()
+                .filter(|node| node.has_tag_name("Extension"))
+            {
+                let extension_id = extension_ids_by_start
+                    .get(&extension.range().start)
+                    .ok_or_else(|| {
+                        malformed(format!(
+                            "extension under {} has no native identity",
+                            object.id
+                        ))
+                    })?;
+                for container in extension
+                    .children()
+                    .filter(|node| node.has_tag_name("Properties"))
+                {
+                    parse_properties(text, container, extension_id, &mut properties, ctx)?;
+                }
+            }
         }
     }
     for property in &mut properties {
@@ -808,6 +854,10 @@ fn unique_section<'a, 'input>(
 
 fn object_id(name: &str) -> String {
     crate::native::native_id("object", name)
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
 }
 
 fn extension_id(owner: &str, name: &str, order: usize) -> String {
