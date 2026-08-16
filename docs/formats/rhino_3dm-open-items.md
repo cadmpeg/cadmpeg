@@ -511,6 +511,15 @@ at archive 60, adding the section 20.1 file-reference child at minor 4.
 at archive 60, adding the same child at minor 2; the separate legacy wallpaper
 child carries only the UTF-16 path. The Rust image readers now mirror these
 writer bands and minor gates.
+`ON_BinaryArchive::Write3dmLight` and `Read3dmLight` use an `ON_Light` class
+wrapper followed by optional light-record attributes, optional attribute
+userdata, and a short light-record-end marker. The light class-data writer
+emits packed version 1.2; its major-1 prefix contains the enabled flag, style,
+intensity, watts, three colors, direction, location, degree-valued spot angle,
+spot exponent, attenuation, shadow intensity, archive index, UUID, name,
+length, width, and hotspot. The length and width fields are minor 1 gates and
+the hotspot is a minor 2 gate. The Rust light-table decoder bounds the class
+wrapper separately from those record children.
 The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
 major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
 `ON_3dmApplication` reads its three strings without a major/minor gate; all
@@ -564,15 +573,24 @@ committed transfer fixtures, and which byte-level fields cause each difference?
 
 **Known.** The public source and example-file comparison establishes aggregate
 source floors and class admission, while the synthesized tier covers a point
-and structured objects. It does not preserve an independent byte-level,
-class-by-class differential witness for every affected class.
+and structured objects. The `ON_Light` class is now independently covered by
+V4, V5, and V6 OpenNURBS witnesses. Its class wrapper, light-record child
+boundary, packed 1.2 payload, document-unit scaling, degree-valued spot angle,
+and explicit-hotspot versus exponent-sentinel representations are settled;
+the Rust native record preserves those raw fields.
 
-**Need.** For each affected class, an independent witness file and a byte-level
-differential report that names the field, accepted or rejected outcome, and
-typed or opaque transfer result.
+**Need.** For each remaining affected class, an independent witness file and a
+byte-level differential report that names the field, accepted or rejected
+outcome, and typed or opaque transfer result.
 
 **Note.** Narrowed 2026-08-16. Aggregate floors and decoder tests do not answer
-the per-class field question.
+the per-class field question. The light-class remainder is closed by the
+OpenNURBS writer/reader trace in `opennurbs_light.cpp` and
+`opennurbs_archive.cpp`, the authored V4/V5/V6 light witnesses, the
+`cadmpeg inspect` class-data and raw-field reads, and the owner tests
+`light_table_class_data_stops_before_record_children`,
+`light_scales_spatial_values_but_not_direction_or_angles`, and
+`light_preserves_unset_hotspot_for_exponent_interface`.
 
 ### FV-06. Later major payload admission
 

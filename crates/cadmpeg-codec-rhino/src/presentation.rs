@@ -213,7 +213,7 @@ struct LightRecord {
     specular: [u8; 4],
     direction: [f64; 3],
     location: [f64; 3],
-    spot_angle_radians: f64,
+    spot_angle_degrees: f64,
     spot_exponent: f64,
     attenuation: [f64; 3],
     shadow_intensity: f64,
@@ -1037,6 +1037,28 @@ fn class_data(
     Ok(class.class_data_range)
 }
 
+fn class_data_prefix(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+    expected: Uuid,
+) -> Result<Range<usize>, FramingError> {
+    let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
+    let class = parse_class_wrapper(
+        data,
+        wrapper.header_start..wrapper.next_offset,
+        archive,
+        &mut Vec::new(),
+    )?;
+    if class.class_uuid != expected {
+        return Err(FramingError::structural(
+            record.range.start,
+            "table record has the wrong class",
+        ));
+    }
+    Ok(class.class_data_range)
+}
+
 fn class_data_with_userdata(
     data: &[u8],
     record: &Record,
@@ -1424,7 +1446,7 @@ fn parse_light(
     let specular = reader.array()?;
     let direction = finite3(&mut reader, "light direction")?;
     let mut location = finite3(&mut reader, "light location")?;
-    let spot_angle_radians = read_finite(&mut reader, "spot angle")?;
+    let spot_angle_degrees = read_finite(&mut reader, "spot angle")?;
     let mut spot_exponent = read_finite(&mut reader, "spot exponent")?;
     let attenuation = finite3(&mut reader, "light attenuation")?;
     let shadow_intensity = read_finite(&mut reader, "shadow intensity")?;
@@ -1472,7 +1494,7 @@ fn parse_light(
         specular,
         direction,
         location,
-        spot_angle_radians,
+        spot_angle_degrees,
         spot_exponent,
         attenuation,
         shadow_intensity,
@@ -3074,7 +3096,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                     }
                 }
             } else if table_type == LIGHT_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, LIGHT) {
+                if let Ok(range) = class_data_prefix(scan.data, record, scan.archive, LIGHT) {
                     if let Ok(light) =
                         parse_light(scan.data, range, scale, record.range.start, None)
                     {
@@ -3843,6 +3865,34 @@ mod tests {
     }
 
     #[test]
+    fn light_table_class_data_stops_before_record_children() {
+        let archive = ArchiveVersion::V5;
+        let payload = [0x12, 0xaa, 0xbb];
+        let mut body =
+            crate::test_support::test_dump::class_wrapper(archive, LIGHT.to_wire(), &payload);
+        body.extend(crate::test_support::test_dump::crc_chunk(
+            archive,
+            0x0200_8061,
+            &[],
+        ));
+        body.extend(crate::test_support::test_dump::short_chunk(
+            archive,
+            0x8200_006f,
+            0,
+        ));
+        let record = Record {
+            typecode: 0x2000_8060,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+
+        let range = class_data_prefix(&body, &record, archive, LIGHT).expect("light class");
+        assert_eq!(&body[range], payload);
+    }
+
+    #[test]
     fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
         let id = Uuid::from_canonical([
             0x77, 0x2e, 0x6f, 0xc1, 0xb1, 0x7b, 0x4f, 0xc4, 0x8f, 0x54, 0x5f, 0xda, 0x51, 0x1d,
@@ -4307,9 +4357,8 @@ mod tests {
         assert_eq!(group.source_offset, 120);
     }
 
-    #[test]
-    fn light_scales_spatial_values_but_not_direction_or_angles() {
-        let mut bytes = vec![0x1f];
+    fn light_payload(packed: u8, hotspot: f64) -> Vec<u8> {
+        let mut bytes = vec![packed];
         bytes.extend(1_i32.to_le_bytes());
         bytes.extend(4_i32.to_le_bytes());
         bytes.extend(0.5_f64.to_le_bytes());
@@ -4332,13 +4381,30 @@ mod tests {
         for value in [4.0_f64, 0.0, 0.0, 0.0, 5.0, 0.0] {
             bytes.extend(value.to_le_bytes());
         }
-        bytes.extend(0.8_f64.to_le_bytes());
+        bytes.extend(hotspot.to_le_bytes());
         bytes.extend([0xaa, 0xbb]);
+        bytes
+    }
+
+    #[test]
+    fn light_scales_spatial_values_but_not_direction_or_angles() {
+        let bytes = light_payload(0x1f, 0.8);
         let light = parse_light(&bytes, 0..bytes.len(), 10.0, 0, None).expect("required invariant");
         assert_eq!(light.location, [10.0, 20.0, 30.0]);
         assert_eq!(light.direction, [0.0, 0.0, -1.0]);
         assert_eq!(light.length, [40.0, 0.0, 0.0]);
-        assert_eq!(light.spot_angle_radians, 0.25);
+        assert_eq!(light.spot_angle_degrees, 0.25);
+        assert_eq!(light.spot_exponent, 16.0);
+        assert_eq!(light.hotspot, 0.8);
+    }
+
+    #[test]
+    fn light_preserves_unset_hotspot_for_exponent_interface() {
+        let bytes = light_payload(0x12, -1.234_321_012_343_21e308);
+        let light = parse_light(&bytes, 0..bytes.len(), 1.0, 0, None).expect("required invariant");
+        assert_eq!(light.spot_angle_degrees, 0.25);
+        assert_eq!(light.spot_exponent, 16.0);
+        assert_eq!(light.hotspot, -1.234_321_012_343_21e308);
     }
 
     #[test]

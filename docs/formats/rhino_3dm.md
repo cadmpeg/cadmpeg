@@ -356,6 +356,9 @@ document termination.
 | material record            | `0x20008040` |
 | layer record               | `0x20008050` |
 | light record               | `0x20008060` |
+| light record attributes    | `0x02008061` |
+| light attributes userdata  | `0x02000062` |
+| light record end           | `0x8200006f` |
 | group record               | `0x20008073` |
 | font record                | `0x20008074` |
 | dimstyle record            | `0x20008075` |
@@ -4516,8 +4519,80 @@ store identity, fill type, description, and hatch lines. Hatch-line base,
 offset, and dash values are lengths; angle is radians.
 
 Group and light records use packed major-1 versions. Group minor 0 stores the
-index and name; minor 1 and later add the UUID. Light minor 0 stores the base
-state; minor 1 and later add length and width; minor 2 and later add hotspot.
+index and name; minor 1 and later add the UUID. Each reader accepts only major
+1 and skips fields after its known prefix at the class-data boundary.
+
+The light class UUID is
+`85A08513-F383-11D3-BFE7-0010830122F0`. A light table record is:
+
+```text
+LIGHT_RECORD long
+  OPENNURBS_CLASS long
+    OPENNURBS_CLASS_UUID long: UUID and CRC
+    OPENNURBS_CLASS_DATA long: light payload
+    zero or more CLASS_USERDATA chunks
+    OPENNURBS_CLASS_END short, value 0
+  optional LIGHT_RECORD_ATTRIBUTES long: ON_3dmObjectAttributes body
+  optional LIGHT_RECORD_ATTRIBUTES_USERDATA long:
+    zero or more CLASS_USERDATA chunks
+    OPENNURBS_CLASS_END short, value 0
+  LIGHT_RECORD_END short, value 0
+```
+
+The light class-data payload is:
+
+```text
+packed version 1.minor
+i32 enabled                                      // nonzero means enabled
+i32 style
+f64 intensity
+f64 watts
+ON_Color ambient                                 // 4 bytes
+ON_Color diffuse                                 // 4 bytes
+ON_Color specular                                // 4 bytes
+3 × f64 direction
+3 × f64 location
+f64 spot angle in degrees
+f64 spot exponent
+3 × f64 attenuation
+f64 shadow intensity
+i32 archive light index
+UUID light ID
+UTF-16 light name
+if minor >= 1: 3 × f64 length, 3 × f64 width
+if minor >= 2: f64 hotspot
+```
+
+The class writer emits version 1.2. `style` values are 0 unknown, 4 camera
+directional, 5 camera point, 6 camera spot, 7 world directional, 8 world
+point, 9 world spot, 10 ambient, 11 world linear, and 12 world rectangular.
+Location is ignored for directional and ambient lights. Direction is ignored
+for point and ambient lights. Length is used only by linear and rectangular
+lights; width is used only by rectangular lights. Location, length, and width
+use document length units. Direction and attenuation are dimensionless. The
+attenuation factor at distance `d` is
+`1 / (attenuation[0] + d * attenuation[1] + d² * attenuation[2])` for styles
+that use attenuation. Intensity 0 is off, 1 is 100 percent, values above 1
+are permitted for high-dynamic-range renderers, and watts 0 means that fixture
+power is unused. Shadow intensity 0 disables shadow casting and 1 produces a
+full black shadow.
+
+The spot angle is stored in degrees and ranges from 0 through 90. The spot
+exponent ranges from 0 through 128, with 0 uniform and 128 highly focused.
+The hotspot field ranges from 0 through 1. `ON_UNSET_VALUE`, encoded as
+`-1.23432101234321e+308`, selects the exponent interface instead of an
+explicit hotspot. In that mode the effective hotspot is derived from the
+stored exponent and angle by the OpenNURBS spotlight relation
+`cos(h × angle)^exponent = 0.7071067811865475`; an explicit hotspot selects
+the hotspot interface. For minor 0 and 1, the file has no hotspot field: the
+reader derives `clamp(1 - exponent / 128, 0, 1)` and clears the stored
+exponent. The native light record preserves the raw angle, exponent, and
+hotspot fields, including the sentinel.
+
+The same class-data payload is used when `ON_Light` appears in an object
+record; the object record then uses the common object-attributes and
+object-record-end children instead of the light-table children.
+
 Linetype records use anonymous major 1 or 2 versions. Major 1 minor 0 stores
 the index, name, and segments; minor 1 and later add the UUID. Major 2 minor 0
 stores component attributes and segments; minor 1 and later add the ordered
