@@ -919,19 +919,56 @@ values use the same fallback and emit the enumeration loss. The complete
 differential, including the source-validity corrections and inspect commands,
 is `/home/pcurve/side2/tmp/agent-rhino-l9-20260816/brep_differential.txt`.
 
+The Brep mesh-cache carrier is independently covered by
+`ON_Brep::Write`/`Read` and the render/analysis save flags in
+`/home/pcurve/side2/opennurbs/opennurbs_brep_io.cpp:742-782` and
+`/home/pcurve/side2/opennurbs/opennurbs_archive.cpp:7188-7245`. Each face
+slot writes one presence byte followed by a polymorphic `ON_Mesh`; the
+render and analysis arrays are independent and the `ON_Mesh` class UUID is
+`4ED7D4E4-E947-11D3-BFE5-0010830122F0`. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/brep_mesh_witness.cpp` writes
+one source-valid triangle into each cache slot for V4, V50, V6, and inch V6.
+`cadmpeg inspect find` finds twelve `ON_Mesh` wrappers in each file, and
+source readback preserves six render and six analysis meshes. Rust decode and
+validation transfer twelve tessellations with the authored triangle topology;
+the inch differential scales vertex coordinates by 25.4 and leaves the mesh
+indices and render/analysis distinction unchanged.
+
+The region-topology carrier is independently covered by
+`ON_V5_BrepRegionTopologyUserData::Write`/`Read`/`DeleteAfterRead`,
+`ON_Brep::Internal_AttachV5RegionTopologyAsUserData`, and
+`ON_BrepRegionTopology::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_brep_region.cpp:27-204,880-930,972-992`
+and the inline call in
+`/home/pcurve/side2/opennurbs/opennurbs_brep_io.cpp:1130-1160`. V5 writes
+the topology as userdata only for archive version 50 when the face-side
+count is exactly twice the face count; V6 writes the same face-side and
+region arrays in the Brep minor-3 inline wrapper. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/brep_region_witness.cpp`
+creates six face pairs, one infinite region, and one bounded region. The
+V50 file contains the region-topology class and item UUIDs; the V6 file
+contains the inline arrays and no userdata carrier; V4 contains neither
+automatic carrier. Rust decode selects the V50 userdata or V6 inline
+carrier, emits one region and one shell in each carrier-bearing file, and
+validation reports no findings. The carrier precedence and invalid-optional
+degradation are therefore byte-backed in sections 7.2.5, 15.5, and 19.4.
+
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
 outcome, and typed or opaque transfer result. The direct analytic Brep and
-solid-state slice is settled; Brep mesh-cache and region-topology carriers,
-legacy major-2 payloads, and untested trim and loop variants still need their
-own producer evidence and transfer checks.
+solid-state, mesh-cache, and region-topology slices are settled. Legacy
+major-2 payloads and untested trim and loop variants still need their own
+producer evidence and transfer checks.
 
 **Note.** Narrowed 2026-08-17. Aggregate floors and decoder tests do not answer
 the per-class field question. The direct analytic Brep and solid-state slice
 is closed by the source traces, the two authored witnesses, the V4/V50/V6 and
 inch `cadmpeg inspect` and validation results, and the focused body-kind owner
-test. Brep optional mesh, region, legacy-major, trim, and loop variants remain
-active. The light-class remainder is closed by the
+test. The mesh-cache and region-topology carrier slices are closed by their
+source writer/reader traces, the authored V4/V50/V6 witnesses, the UUID and
+payload `cadmpeg inspect` results, source readback, and Rust decode/validation
+results recorded above. Legacy-major, trim, and loop variants remain active.
+The light-class remainder is closed by the
 OpenNURBS writer/reader trace in `opennurbs_light.cpp` and
 `opennurbs_archive.cpp`, the authored V4/V5/V6 light witnesses, the
 `cadmpeg inspect` class-data and raw-field reads, and the owner tests
