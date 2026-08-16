@@ -231,22 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### TP-02. Seam pcurve selection
-
-**Question.** What STEP rule establishes seam pcurve selection?
-
-**Known.** A `SEAM_EDGE` supplies the authoritative pcurve reference. The
-reference must be a decoded `PCURVE` in the edge's `SEAM_CURVE` associated
-geometry and on the coedge's face surface. The reader does not replace an
-invalid seam reference with an endpoint or serialization-order guess. A
-non-seam oriented edge uses endpoint continuity only when one same-surface
-pcurve is selected, or when tied candidates have the same model-space locus;
-distinct unresolved candidates remain detached and produce a topology loss.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### TP-05. Partial solid and tolerant point carriers
 
 **Question.** What STEP rule establishes partial solid and tolerant point carriers?

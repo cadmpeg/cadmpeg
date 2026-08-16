@@ -774,19 +774,31 @@ cycles and graphs at depth 256 or greater remain opaque; the recursion guard
 releases its active record on every return path. An unrecognized composite 2D
 carrier remains opaque rather than becoming an approximate pcurve.
 An unsupported 2D representation stays opaque and remains detached from the
-coedge. A `SEAM_EDGE` uses its explicit pcurve reference only when that
-reference belongs to the edge's `SEAM_CURVE` associated geometry and the face
-surface. The reader does not replace an invalid reference with a guessed
-branch. For a non-seam source curve with multiple pcurve candidates on its
-owning surface, the decoder maps each candidate through that surface and
-selects it when one candidate has a unique endpoint-continuous fit for the
-coedge. If several candidates tie, the decoder compares their mapped loci
-over the endpoint interval with adaptive subdivision. Candidates with
-equivalent model-space loci are one semantic carrier and the candidate with
-the lowest STEP identity is retained. A declared pcurve trim is the endpoint
-witness when it maps to both edge vertices; a stale declared trim can be
-replaced by an independently inverted edge interval. Distinct tied or
-otherwise unresolved candidates remain detached and produce a topology loss.
+coedge. ISO 10303-42:2021 §5.5.7 defines `SEAM_EDGE` as an `ORIENTED_EDGE`
+with a `pcurve_reference`; its WR1 requires an `EDGE_CURVE` whose geometry is
+a `SEAM_CURVE`, and its WR2 requires the reference to be one of that seam
+curve's `associated_geometry` pcurves. The inherited edge orientation refers
+to the edge element, not to the pcurve sense. Sections §4.5.47 and §4.5.49
+define the pcurve basis surface and require a seam curve's two pcurves to lie
+on the same surface. Section §5.2.2.1 and function §5.6.4 define the pcurve
+set associated with an edge curve: match a candidate's basis surface to the
+face surface, and when multiple candidates share that surface, check their
+connectivity in parameter space. A non-seam edge has no source field that
+selects one of those candidates.
+
+CADIR decision: a typed `SEAM_EDGE` uses its explicit pcurve only when the
+reference is decoded, is a member of the edge's `SEAM_CURVE` associated
+geometry, and has the coedge face surface as its basis. An invalid reference
+does not fall back to another pcurve; the coedge remains without a pcurve and
+reports a loss. For a non-seam edge with multiple same-surface candidates, the
+reader maps each candidate through that surface and accepts a unique
+endpoint-continuous fit. If several candidates tie, adaptive subdivision
+compares their mapped loci over the endpoint interval. Equivalent loci are
+one neutral carrier and the lowest STEP identity is retained; distinct tied
+or otherwise unresolved candidates remain detached and produce a topology
+loss. A declared pcurve trim is the endpoint witness when it maps to both edge
+vertices; a stale declared trim can be replaced by an independently inverted
+edge interval. Candidate list order does not select a non-seam carrier.
 
 ISO 10303-42 defines `SURFACE_CURVE.associated_geometry` as a list of one or
 two `PCURVE` or surface references. A selected pcurve identifies its basis

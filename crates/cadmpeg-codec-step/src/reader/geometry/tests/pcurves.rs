@@ -611,6 +611,82 @@ fn equivalent_seam_pcurve_candidates_select_one_carrier() {
 }
 
 #[test]
+fn seam_edge_uses_its_explicit_pcurve_reference() {
+    let source = include_bytes!("data/tp02_seam_edge_selection.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode seam edge selection witness");
+    let coedge = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.as_str().contains("#22"))
+        .expect("SEAM_EDGE coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#69");
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind() }));
+
+    let reordered_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
+            "#57=SEAM_CURVE('',#16,(#69,#56),.PCURVE_S1.);",
+        );
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(reordered_source),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered seam edge selection witness");
+    let reordered_coedge = reordered
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.as_str().contains("#22"))
+        .expect("reordered SEAM_EDGE coedge");
+    assert_eq!(
+        reordered_coedge.pcurves[0].pcurve.as_str(),
+        "step:data:pcurve#69"
+    );
+}
+
+#[test]
+fn invalid_seam_edge_reference_does_not_fall_back_to_another_pcurve() {
+    let source = String::from_utf8(include_bytes!("data/tp02_seam_edge_selection.p21").to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#22=SEAM_EDGE('',*,*,#19,.T.,#69);",
+            "#22=SEAM_EDGE('',*,*,#19,.T.,#70);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#70=PCURVE('',#28,#55);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode invalid seam edge reference witness");
+    let coedge = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.as_str().contains("#22"))
+        .expect("invalid SEAM_EDGE coedge");
+    assert!(coedge.pcurves.is_empty());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind()));
+}
+
+#[test]
 fn equivalent_seam_pcurve_selection_is_independent_of_candidate_order() {
     let source = equivalent_seam_source().replace(
         "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
