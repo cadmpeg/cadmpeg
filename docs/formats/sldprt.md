@@ -1277,6 +1277,8 @@ The disc1c-root layout uses one `0x1c/flo2` root with a slot-1 sentinel and the 
 
 The disc1c-disc12-face layout uses one `0x1c/flo2` root with a slot-1 sentinel and the chain `0x1c.slot2 -> 0x1a/flo2 -> 0x18/flo2 -> 0x12/flo1 -> 0x10/flo2 -> 0x04/flo2`; the terminal `0x04` slot 2 is a sentinel. The `0x18` record is the shell root. The site contains equal nonzero populations of canonical `0x0e/flo1` faces and `0x1e/flo4` use nodes. A complete chain and equal populations assign every canonical face in the site to that shell.
 
+The disc1c-disc16-disc12-face layout uses one `0x1c/flo2` root with a slot-1 sentinel and the chain `0x1c.slot2 -> 0x18/flo2 -> 0x16/flo2 -> 0x12/flo1 -> 0x10/flo2 -> 0x04/flo2`; the terminal `0x04` slot 2 is a sentinel. The `0x16` record is the shell root. The site contains equal nonzero populations of canonical `0x0e/flo1` faces, `0x14/flo1` face-use records, and `0x1a/flo4` use nodes. A complete chain and equal populations assign every canonical face in the site to that shell.
+
 A canonical face that no explicit body relation claims has no recoverable body identity. The decoder withholds that face and all of its dependent topology, and reports the count as a topology loss. It does not assign the face by geometric connectivity or to the first body.
 
 The direct-shell layout uses one `0x1a/flo2` region with a slot-1 sentinel and the chain `0x1a.slot2 -> 0x16`, `0x16.slot2 -> 0x12`, `0x12.slot2 -> 0x10`, `0x10.slot2 -> 0x0e`, and `0x0e.slot2 -> 0x0c`. The `0x16` record is the shell root. A complete chain assigns every canonical disc14 face in the site to that shell.

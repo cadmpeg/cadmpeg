@@ -674,6 +674,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1c_disc12_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1c_disc16_disc12_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(direct_shell_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -2761,6 +2764,73 @@ fn disc1c_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<Bo
     }]
 }
 
+fn disc1c_disc16_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let roots = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x001c && record.flo() == 2)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Vec::new();
+    };
+    if root.refs.get(1).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+    let follows = |record: &EntityRecord, disc: u16, flo: u8| {
+        record
+            .refs
+            .get(2)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|next| next.disc == disc && next.flo() == flo)
+    };
+    let Some(shell) = follows(root, 0x0018, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_16) = follows(shell, 0x0016, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_12) = follows(disc_16, 0x0012, 1) else {
+        return Vec::new();
+    };
+    let Some(disc_10) = follows(disc_12, 0x0010, 2) else {
+        return Vec::new();
+    };
+    let Some(terminal) = follows(disc_10, 0x0004, 2) else {
+        return Vec::new();
+    };
+    if terminal.refs.get(2).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+    let count = |disc: u16, flo: u8| {
+        by_attr
+            .values()
+            .filter(|record| record.disc == disc && record.flo() == flo)
+            .count()
+    };
+    let faces = count(0x000e, 1);
+    if faces == 0 || faces != count(0x0014, 1) || faces != count(0x001a, 4) {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
+}
+
 fn sparse_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let regions = by_attr
         .values()
@@ -3829,6 +3899,36 @@ mod tests {
         };
         assert_eq!(body.attr, 10);
         assert_eq!(body.regions[0].shells[0].attr, 12);
+        assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    }
+
+    #[test]
+    fn disc1c_disc16_disc12_face_root_lattice_owns_the_site() {
+        let records = [
+            flo2(10, 0x1c, [3, 1, 11, 1, 1, 1]),
+            flo2(11, 0x18, [3, 10, 12, 1, 1, 1]),
+            flo2(12, 0x16, [3, 11, 13, 1, 1, 1]),
+            record(13, 0x12, [3, 12, 14, 1, 1, 1]),
+            flo2(14, 0x10, [3, 13, 15, 1, 1, 1]),
+            flo2(15, 0x04, [3, 14, 1, 1, 1, 1]),
+            record(20, 0x0e, [1; 6]),
+            record(21, 0x0e, [1; 6]),
+            record(30, 0x14, [1; 6]),
+            record(31, 0x14, [1; 6]),
+            flo4(40, 0x1a, [1; 6]),
+            flo4(41, 0x1a, [1; 6]),
+        ];
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = disc1c_disc16_disc12_face_root_body(&by_attr);
+        let [body] = bodies.as_slice() else {
+            panic!("one disc1c-disc16-disc12-face-root body");
+        };
+        assert_eq!(body.attr, 10);
+        assert_eq!(body.regions[0].shells[0].attr, 11);
         assert!(body.refs.contains(&20) && body.refs.contains(&21));
     }
 
