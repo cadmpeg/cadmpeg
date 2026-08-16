@@ -3,9 +3,11 @@
 
 use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
+use std::ops::Range;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
-use crate::container::Scan;
+use crate::container::{Record, Scan};
+use crate::objects::{parse_userdata, UserdataDescriptor};
 use crate::settings::utf16;
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -13,7 +15,18 @@ const SETTINGS_TABLE: u32 = 0x1000_0015;
 const ANNOTATION_SETTINGS: u32 = 0x2000_8034;
 const GRID_DEFAULTS: u32 = 0x2000_803f;
 const RENDER_SETTINGS: u32 = 0x2000_803d;
+const RENDER_USERDATA: u32 = 0x2000_8136;
 const ANONYMOUS: u32 = 0x4000_8000;
+const CLASS_USERDATA: u32 = 0x0002_7ffd;
+const CLASS_END: u32 = 0x8002_7fff;
+
+#[derive(Debug, PartialEq, Eq)]
+struct RenderUserdataDescriptor {
+    source: Range<usize>,
+    items: Vec<UserdataDescriptor>,
+    unknown_chunks: Vec<Range<usize>>,
+    suffix: Range<usize>,
+}
 
 #[derive(Debug, Serialize)]
 struct RevisionRecord {
@@ -421,6 +434,65 @@ fn render_settings(
     })
 }
 
+fn render_userdata(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<RenderUserdataDescriptor, FramingError> {
+    let mut offset = record.body.start;
+    let mut items = Vec::new();
+    let mut unknown_chunks = Vec::new();
+    while offset < record.body.end {
+        let chunk = chunk_at(data, offset, record.body.end, archive, false)?;
+        match chunk.typecode {
+            CLASS_USERDATA => {
+                if chunk.short {
+                    return Err(FramingError::structural(
+                        chunk.header_start,
+                        "render userdata item must be a long chunk",
+                    ));
+                }
+                let mut checksum_warnings = Vec::new();
+                items.push(parse_userdata(
+                    data,
+                    &chunk,
+                    archive,
+                    &mut checksum_warnings,
+                )?);
+                offset = chunk.next_offset;
+            }
+            CLASS_END => {
+                if !chunk.short || chunk.value != 0 {
+                    return Err(FramingError::structural(
+                        chunk.header_start,
+                        "render userdata class end must be a short zero chunk",
+                    ));
+                }
+                return Ok(RenderUserdataDescriptor {
+                    source: record.range.clone(),
+                    items,
+                    unknown_chunks,
+                    suffix: chunk.next_offset..record.body.end,
+                });
+            }
+            0 => {
+                return Err(FramingError::structural(
+                    chunk.header_start,
+                    "render userdata contains a zero typecode",
+                ));
+            }
+            _ => {
+                unknown_chunks.push(chunk.range());
+                offset = chunk.next_offset;
+            }
+        }
+    }
+    Err(FramingError::structural(
+        record.body.end,
+        "render userdata is missing its class end",
+    ))
+}
+
 /// Installs complete typed document-level metadata and named setting records.
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let properties = &scan.metadata.properties;
@@ -509,6 +581,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
+    let mut render_settings_seen = false;
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
             continue;
@@ -528,7 +601,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                     scan.archive,
                     scale,
                 )
-                .map(|value| renders.push(value))
+                .map(|value| {
+                    renders.push(value);
+                    render_settings_seen = true;
+                })
+            } else if record.typecode == RENDER_USERDATA && render_settings_seen {
+                render_userdata(scan.data, record, scan.archive).map(|_| ())
             } else {
                 continue;
             };

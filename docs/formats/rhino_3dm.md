@@ -426,7 +426,7 @@ version.
 | userdata header | `0x0002fff9` |
 | class UUID      | `0x0002fffb` |
 | class data      | `0x0002fffc` |
-| class end       | `0x82027fff` |
+| class end       | `0x80027fff` |
 
 The class-data body is owned by the class grammar. It is not a flat sequence
 of child chunks: direct fields can occur before, between, and after complete
@@ -3746,6 +3746,19 @@ only nonnegative minor versions. A legacy reader rejects versions outside
 100–199. A reader consumes only the fields admitted by these gates. Remaining
 bytes in a modern body end at the anonymous chunk boundary; remaining bytes in
 a legacy body end at the containing `TCODE_SETTINGS_RENDER` record boundary.
+
+When the archive version is at least 60 and the render-settings object has
+writable userdata, the writer places `TCODE_SETTINGS_RENDER_USERDATA`
+immediately after `TCODE_SETTINGS_RENDER`. The record is a CRC-bearing long
+chunk. Its body is the class-userdata stream from section 7.2, followed by a
+short zero `TCODE_OPENNURBS_CLASS_END` marker. Each item is a long
+`TCODE_OPENNURBS_CLASS_USERDATA` chunk. The writer emits userdata version 2.2,
+the version-2 header child, and one bounded anonymous payload child. A reader
+invokes this stream only after it has successfully read the preceding render
+settings record; otherwise it skips the record. Unknown nonzero child chunks
+are skipped. The class-end marker stops the stream, and any remaining bytes
+through the containing record boundary are a suffix. The anonymous payload is
+owned by the userdata class and has no common field grammar.
 
 The `TCODE_SETTINGS_PLUGINLIST` record is a CRC-bearing long settings record.
 The writer emits it first in the settings stream only for archive versions 4

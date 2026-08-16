@@ -1,6 +1,12 @@
-use super::{annotation_settings, grid_defaults, render_settings, ANONYMOUS};
+use super::{
+    annotation_settings, grid_defaults, render_settings, render_userdata, ANONYMOUS, CLASS_END,
+    CLASS_USERDATA,
+};
 use crate::chunks::ArchiveVersion;
-use crate::test_support::test_dump::{crc_chunk, utf16_bytes};
+use crate::test_support::test_dump::{
+    anonymous_chunk, crc_chunk, long_chunk, metadata_record, short_chunk, utf16_bytes,
+};
+use crate::wire::Uuid;
 
 fn push_i32(bytes: &mut Vec<u8>, value: i32) {
     bytes.extend(value.to_le_bytes());
@@ -236,4 +242,70 @@ fn modern_render_settings_rejects_negative_minor() {
     assert!(error
         .to_string()
         .contains("render-settings version is unsupported"));
+}
+
+#[test]
+fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
+    let archive = ArchiveVersion::V8;
+    let class_uuid = Uuid::from_wire((1_u8..=16).collect::<Vec<_>>().try_into().expect("UUID"));
+    let item_uuid = Uuid::from_wire((17_u8..=32).collect::<Vec<_>>().try_into().expect("UUID"));
+    let application_uuid =
+        Uuid::from_wire((33_u8..=48).collect::<Vec<_>>().try_into().expect("UUID"));
+
+    let mut header_body = class_uuid.to_wire().to_vec();
+    header_body.extend(item_uuid.to_wire());
+    header_body.extend(1_i32.to_le_bytes());
+    for value in [1.0_f64; 16] {
+        header_body.extend(value.to_le_bytes());
+    }
+    header_body.extend(application_uuid.to_wire());
+    header_body.push(0);
+    header_body.extend(60_i32.to_le_bytes());
+    header_body.extend(202_400_i32.to_le_bytes());
+    header_body.extend([0xde, 0xad]);
+    let header = crc_chunk(archive, 0x0002_fff9, &header_body);
+    let payload = anonymous_chunk(archive, 4, &[0x51, 0x52, 0xbe, 0xef]);
+    let mut major_two_body = vec![0x2f];
+    major_two_body.extend(header);
+    major_two_body.extend(payload);
+    major_two_body.extend([0xca, 0xfe]);
+    let major_two = long_chunk(archive, CLASS_USERDATA, &major_two_body);
+
+    let mut major_one_body = vec![0x10];
+    major_one_body.extend(class_uuid.to_wire());
+    major_one_body.extend(item_uuid.to_wire());
+    major_one_body.extend(2_i32.to_le_bytes());
+    major_one_body.extend([0_u8; 16 * 8]);
+    major_one_body.extend(anonymous_chunk(archive, 0, &[0x61, 0x62]));
+    let major_one = long_chunk(archive, CLASS_USERDATA, &major_one_body);
+
+    let mut body = major_two;
+    body.extend(long_chunk(archive, 0x4000_1234, &[0xaa, 0xbb]));
+    body.extend(major_one);
+    body.extend(short_chunk(archive, CLASS_END, 0));
+    body.extend([0xfa, 0xce]);
+    let (data, record) = metadata_record(0x2000_8136, body);
+    let descriptor = render_userdata(&data, &record, archive).expect("render userdata");
+
+    assert_eq!(descriptor.source, record.range);
+    assert_eq!(descriptor.items.len(), 2);
+    assert_eq!(descriptor.unknown_chunks.len(), 1);
+    assert_eq!(descriptor.suffix, data.len() - 2..data.len());
+    let modern = &descriptor.items[0];
+    assert_eq!(modern.version, (2, 15));
+    assert_eq!(modern.class_uuid, class_uuid);
+    assert_eq!(modern.item_uuid, item_uuid);
+    assert_eq!(modern.copy_count, 1);
+    assert_eq!(modern.application_uuid, Some(application_uuid));
+    assert_eq!(modern.last_saved_as_goo, Some(false));
+    assert_eq!(modern.archive_version, Some(60));
+    assert_eq!(modern.writer_version, Some(202_400));
+    assert!(!modern.payload_range.is_empty());
+    let legacy = &descriptor.items[1];
+    assert_eq!(legacy.version, (1, 0));
+    assert_eq!(legacy.copy_count, 2);
+    assert_eq!(legacy.application_uuid, None);
+    assert_eq!(legacy.last_saved_as_goo, None);
+    assert_eq!(legacy.archive_version, None);
+    assert_eq!(legacy.writer_version, None);
 }

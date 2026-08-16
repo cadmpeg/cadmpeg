@@ -204,6 +204,14 @@ identity and executable fields, eight developer strings at minor 1, and three
 platform/SDK integers at minor 2. Both the list and each reference have
 bounded ends, so later minors can be skipped independently. The Rust settings
 reader now retains the complete known reference fields and both boundaries.
+`ON_3dmSettings::Write_v2/Read_v2` places and consumes
+`TCODE_SETTINGS_RENDER_USERDATA` only after a successful render-settings body
+in archive version 60 or later. Its outer reader consumes repeated standard
+class-userdata chunks through a short class-end marker, skips unknown nonzero
+children, and leaves a later outer suffix at the settings-record boundary.
+The Rust document-data reader now recognizes this wrapper and reuses the
+source-defined major-1/major-2 userdata header parser; the anonymous payload
+remains class-owned.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
@@ -211,9 +219,9 @@ layout. Remove only rejection not required by that evidence.
 
 **Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
 settled; annotation settings, grid defaults, units/tolerances, plugin list,
-settings attributes, render-mesh, analysis-mesh, dimension-style, and
-render-settings readers are now source-backed through their known prefixes and
-version gates.
+settings attributes, render-mesh, analysis-mesh, render-settings, and the
+render-settings userdata wrapper are now source-backed through their known
+prefixes, stream markers, and version gates.
 The residual is the explicit
 writer-band/tagged/direct-reader audit for readers not yet characterized.
 

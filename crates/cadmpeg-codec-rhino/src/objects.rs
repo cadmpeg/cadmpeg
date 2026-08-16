@@ -429,7 +429,8 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     ))
 }
 
-fn parse_userdata(
+/// Parses one class-userdata chunk shared by object and render-settings wrappers.
+pub(crate) fn parse_userdata(
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
