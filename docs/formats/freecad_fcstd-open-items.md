@@ -91,31 +91,6 @@ evidence.
 
 ## 3. Persistent topology identity
 
-### PT-04. Source topology index provenance
-
-**Question.** What OCCT identity and traversal rules determine whether repeated placed roots or
-equal shape-plus-location occurrences receive one shared or multiple indexed-map positions?
-
-**Known.** FreeCAD assigns non-root topology positions through `TopExp::MapShapes` into a
-`TopTools::IndexedMapOfShape`; root-shape positions use `TopoDS_Iterator` order. Part's
-`TopoShapeExpansion` walks those one-based positions and binds element-map names to them. The
-element-map root is the final map node after child maps. Differential authored witnesses show that
-one OCCT shape identity at one placement, including a reversed use, occupies one indexed position;
-a copied shape at that placement and a shape at a different placement occupy two positions.
-
-**Conflict.** The child traversal order of `TopExp::MapShapes` for unequal nested topology is not
-yet established from the OCCT map implementation or from authored differential witnesses.
-topology_transfer.rs:1554-1598 uses a
-decoder-owned walk, so its order cannot be assumed to match the producer for those cases.
-
-**Need.** Read the OCCT map implementation or author differential witnesses for remaining unequal
-nested topology. Nested compound evidence settles direct-child order and recursion; non-compound
-unequal traversal and any unproven equality cases remain.
-
-**Note.** Three authored nested-compound permutations establish persisted child order and
-depth-first recursion, and match the topology-transfer walk. The item remains narrowed because
-simple nested solids do not establish every OCCT topology class or equality case.
-
 ## 4. Exact-topology transfer
 
 ## 5. Design projection
