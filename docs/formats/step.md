@@ -74,7 +74,12 @@ Space, the explicit `\N\` and `\F\` print-control directives, and comments
 separate tokens. The `/*` delimiter starts a comment, and `*/` ends it.
 Comment delimiters form non-nesting pairs. ASCII control octets are ignored
 when processing the exchange structure, including when they occur inside a
-token. A leading byte-order mark is not Part 21 whitespace and is invalid. The print-control directives are ignored in effective string and
+token. Detection skips leading ASCII control octets, spaces, print-control
+directives, and complete comments, then matches the opening
+`ISO-10303-21;` token while ignoring ASCII control octets inside that token.
+An incomplete leading comment or a leading byte-order mark does not identify
+an exchange structure; a byte-order mark is not Part 21 whitespace and is
+invalid. The print-control directives are ignored in effective string and
 binary contents and are forbidden in resources, ANCHOR sections, and
 REFERENCE sections. String and binary literals retain the other source bytes
 needed for escape decoding.
@@ -110,10 +115,11 @@ tag_name      = (letter | "_") (letter | digit | "_")*
 ```
 
 Keywords and entity names use ASCII letters, digits, underscore, and hyphen.
-User-defined names begin with `!` where the grammar admits them. Keywords
-ignore ASCII case. Canonical spelling uses uppercase. Anchor tag names preserve
-source case and use letters, digits, and underscore; a tag name cannot begin
-with a digit.
+User-defined names begin with `!` where the grammar admits them. Canonical
+keyword spelling uses uppercase. CADIR decision: the reader matches keywords
+and the opening token without ASCII case, as a recovery tolerance. Anchor tag
+names preserve source case and use letters, digits, and underscore; a tag name
+cannot begin with a digit.
 
 Numeric `#` and `@` occurrences require at least one nonzero digit. Leading
 zeroes are accepted and removed from the stored integer. Entity and value

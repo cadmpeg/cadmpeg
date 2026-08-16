@@ -858,28 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### EL-02. Exchange-structure detection
-
-**Question.** What STEP rule establishes exchange-structure detection?
-
-**Known.** Detection skips leading Part 21 whitespace and complete comments
-and compares the `ISO-10303-21;` keyword sequence without ASCII case. A byte
-order mark is not Part 21 whitespace and remains invalid.
-
-`step.md` §2 gives the outer grammar and applies whitespace and
-comments at token boundaries. `step.md` §3 "ignore ASCII case. Canonical
-spelling uses uppercase." makes keywords case-insensitive, and the lexer
-implements that.
-
-`detect`, `inspect`, and semantic decode apply the same leading
-trivia and case-insensitive magic check as the parser. An incomplete leading
-comment is not a recognized exchange; the parser reports it as malformed when
-the input is forced to STEP.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### EL-03. Enumeration name characters
 
 **Question.** What STEP rule establishes enumeration name characters?

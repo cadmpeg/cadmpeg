@@ -236,24 +236,43 @@ impl CodecBackend for StepCodec {
 fn starts_with_step_magic(bytes: &[u8]) -> bool {
     let mut at = 0;
     loop {
-        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+        while bytes
+            .get(at)
+            .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
+        {
             at += 1;
         }
-        if bytes.get(at..at + 2) != Some(b"/*") {
-            break;
+        if bytes.get(at..at + 2) == Some(b"/*") {
+            at += 2;
+            let Some(relative_end) = bytes[at..].windows(2).position(|window| window == b"*/")
+            else {
+                return false;
+            };
+            at += relative_end + 2;
+            continue;
         }
-        let Some(relative_end) = bytes[at + 2..]
-            .windows(2)
-            .position(|window| window == b"*/")
-        else {
-            return false;
-        };
-        at += relative_end + 4;
+        if bytes
+            .get(at..at + 3)
+            .is_some_and(|prefix| prefix == b"\\N\\" || prefix == b"\\F\\")
+        {
+            at += 3;
+            continue;
+        }
+        break;
     }
-    let magic = b"ISO-10303-21;";
-    bytes
-        .get(at..at + magic.len())
-        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(magic))
+    for &expected_byte in b"ISO-10303-21;" {
+        while bytes.get(at).is_some_and(u8::is_ascii_control) {
+            at += 1;
+        }
+        if !bytes
+            .get(at)
+            .is_some_and(|byte| byte.eq_ignore_ascii_case(&expected_byte))
+        {
+            return false;
+        }
+        at += 1;
+    }
+    true
 }
 
 fn inspect_zip(
@@ -379,4 +398,29 @@ fn is_part28_xml(bytes: &[u8]) -> bool {
             || lower
                 .windows(21)
                 .any(|window| window == b"iso:std:iso:10303:-28"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+
+    use super::{starts_with_step_magic, StepCodec};
+
+    #[test]
+    fn detects_magic_after_ignored_controls_and_inside_token() {
+        let source = b"\0 /* leading comment */ \\N\\ ISO-10303-\n21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let codec = StepCodec::default();
+
+        assert!(starts_with_step_magic(source));
+        assert_eq!(codec.detect(source), Confidence::High);
+        codec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode Part 21 with ignored framing octets");
+
+        let with_bom = [b"\xEF\xBB\xBF".as_slice(), source].concat();
+        assert_eq!(codec.detect(&with_bom), Confidence::No);
+        assert!(!starts_with_step_magic(b"/* incomplete ISO-10303-21;"));
+    }
 }
