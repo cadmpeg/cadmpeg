@@ -655,6 +655,12 @@ pub(crate) fn section_equation_scalar_equality_components(
     }
 
     let mut adjacency = BTreeMap::<SectionScalarVariable, BTreeSet<SectionScalarVariable>>::new();
+    let mut deferred_function_five = Vec::<(
+        SectionScalarVariable,
+        SectionScalarVariable,
+        SectionScalarVariable,
+        Option<f64>,
+    )>::new();
     for equation in equations
         .rows
         .iter()
@@ -688,10 +694,17 @@ pub(crate) fn section_equation_scalar_equality_components(
             if first.variable_type != 6
                 || second.variable_type != 6
                 || selector.variable_type != 5
-                || selector.value != Some(0.0)
+                || first.key == second.key
             {
                 continue;
             }
+            deferred_function_five.push((
+                (first.variable_type, first.key),
+                (second.variable_type, second.key),
+                (selector.variable_type, selector.key),
+                selector.value,
+            ));
+            continue;
         }
         if first.variable_type != second.variable_type
             || matches!(first.variable_type, 1 | 2)
@@ -705,6 +718,27 @@ pub(crate) fn section_equation_scalar_equality_components(
         adjacency.entry(second).or_default().insert(first);
     }
 
+    let base_components = scalar_equality_components(&adjacency);
+    let base_values = scalar_equality_values_for_components(&variables.rows, &base_components);
+    for (first, second, selector, stored_selector) in deferred_function_five {
+        let equality_value = base_values.get(&selector).copied().unwrap_or(Ok(None));
+        if !matches!(
+            equality_value
+                .ok()
+                .and_then(|value| reconcile_equation_value(stored_selector, value).ok()),
+            Some(Some(value)) if value == 0.0
+        ) {
+            continue;
+        }
+        adjacency.entry(first).or_default().insert(second);
+        adjacency.entry(second).or_default().insert(first);
+    }
+    scalar_equality_components(&adjacency)
+}
+
+fn scalar_equality_components(
+    adjacency: &BTreeMap<SectionScalarVariable, BTreeSet<SectionScalarVariable>>,
+) -> Vec<BTreeSet<SectionScalarVariable>> {
     let mut remaining = adjacency.keys().copied().collect::<BTreeSet<_>>();
     let mut components = Vec::new();
     while let Some(seed) = remaining.pop_first() {
@@ -726,6 +760,55 @@ pub(crate) fn section_equation_scalar_equality_components(
         components.push(component);
     }
     components
+}
+
+fn scalar_equality_values_for_components(
+    rows: &[crate::feature::FeatureVariableRow],
+    components: &[BTreeSet<SectionScalarVariable>],
+) -> BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>> {
+    let mut values = BTreeMap::<SectionScalarVariable, Vec<f64>>::new();
+    let mut invalid = BTreeSet::<SectionScalarVariable>::new();
+    for row in rows {
+        if matches!(row.variable_type, 1 | 2) {
+            continue;
+        }
+        let variable = (row.variable_type, row.key);
+        match row.value {
+            Some(value) if value.is_finite() => values.entry(variable).or_default().push(value),
+            Some(_) => {
+                invalid.insert(variable);
+            }
+            None => {}
+        }
+    }
+
+    let mut resolved = BTreeMap::new();
+    for component in components {
+        let value = if component.iter().any(|variable| invalid.contains(variable)) {
+            Err(())
+        } else {
+            let component_values = component
+                .iter()
+                .flat_map(|variable| values.get(variable).into_iter().flatten().copied())
+                .collect::<Vec<_>>();
+            match component_values.first().copied() {
+                None => Ok(None),
+                Some(first) => {
+                    let scale = component_values
+                        .iter()
+                        .map(|value| value.abs())
+                        .fold(1.0, f64::max);
+                    component_values
+                        .iter()
+                        .all(|value| (*value - first).abs() <= EPS_SCALAR_EQUALITY * scale)
+                        .then_some(Some(first))
+                        .ok_or(())
+                }
+            }
+        };
+        resolved.extend(component.iter().copied().map(|variable| (variable, value)));
+    }
+    resolved
 }
 
 pub(crate) fn section_equation_scalar_equalities(
@@ -750,49 +833,8 @@ pub(crate) fn section_equation_scalar_equality_values(
     else {
         return BTreeMap::new();
     };
-    let mut values = BTreeMap::<SectionScalarVariable, Vec<f64>>::new();
-    let mut invalid = BTreeSet::<SectionScalarVariable>::new();
-    for row in &variables.rows {
-        if matches!(row.variable_type, 1 | 2) {
-            continue;
-        }
-        let variable = (row.variable_type, row.key);
-        match row.value {
-            Some(value) if value.is_finite() => values.entry(variable).or_default().push(value),
-            Some(_) => {
-                invalid.insert(variable);
-            }
-            None => {}
-        }
-    }
-
-    let mut resolved = BTreeMap::new();
-    for component in section_equation_scalar_equality_components(definition) {
-        let value = if component.iter().any(|variable| invalid.contains(variable)) {
-            Err(())
-        } else {
-            let component_values = component
-                .iter()
-                .flat_map(|variable| values.get(variable).into_iter().flatten().copied())
-                .collect::<Vec<_>>();
-            match component_values.first().copied() {
-                None => Ok(None),
-                Some(first) => {
-                    let scale = component_values
-                        .iter()
-                        .map(|value| value.abs())
-                        .fold(1.0, f64::max);
-                    component_values
-                        .iter()
-                        .all(|value| (*value - first).abs() <= EPS_SCALAR_EQUALITY * scale)
-                        .then_some(Some(first))
-                        .ok_or(())
-                }
-            }
-        };
-        resolved.extend(component.into_iter().map(|variable| (variable, value)));
-    }
-    resolved
+    let components = section_equation_scalar_equality_components(definition);
+    scalar_equality_values_for_components(&variables.rows, &components)
 }
 
 #[derive(Clone, Copy)]

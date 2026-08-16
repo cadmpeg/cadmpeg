@@ -6,7 +6,8 @@ use crate::decode::sketch::{
     section_equation_equal_length_constraint_rows,
     section_equation_function_forty_three_axis_distance_values,
     section_equation_function_sixteen_angle_difference_values,
-    section_equation_point_on_line_constraint_rows,
+    section_equation_point_on_line_constraint_rows, section_equation_scalar_equalities,
+    section_equation_scalar_equality_components,
 };
 use std::collections::BTreeSet;
 
@@ -273,4 +274,34 @@ fn zero_sentinel_equations_reconcile_scalar_equalities() {
         &BTreeSet::new()
     )
     .is_empty());
+}
+
+#[test]
+fn function_five_accepts_a_zero_selector_proved_by_scalar_equality() {
+    let definition = definition(
+        &equation_body(&[(1, 5, &[0, 1, 2]), (2, 2, &[2, 3])]),
+        vec![
+            row(6, 10, None),
+            row(6, 11, Some(2.0)),
+            row(5, 20, None),
+            row(5, 21, Some(0.0)),
+        ],
+    );
+    let components = section_equation_scalar_equality_components(&definition);
+    assert!(components
+        .iter()
+        .any(|component| { component == &BTreeSet::from([(6, 10), (6, 11)]) }));
+    assert_eq!(
+        section_equation_scalar_equalities(&definition).get(&(6, 10)),
+        Some(&2.0)
+    );
+
+    let mut conflicting_selector = definition;
+    conflicting_selector
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows[2]
+        .value = Some(1.0);
+    assert!(!section_equation_scalar_equalities(&conflicting_selector).contains_key(&(6, 10)));
 }

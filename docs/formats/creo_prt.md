@@ -1665,8 +1665,9 @@ coordinate type, or an ambiguous point key leaves the equation native.
 Function `5` has a direct scalar-equality form with two type-6 rows followed by
 a type-5 selector row whose resolved scalar value is zero. The first two scalar
 values are equal. A finite value on either type-6 row supplies a missing value on the
-other row. Conflicting finite values, a missing or nonzero selector, another
-type sequence, or an inactive solver incidence leaves this form native.
+other row. Conflicting finite values, a missing selector, a nonzero resolved
+selector, another type sequence, or an inactive solver incidence leaves this
+form native.
 Function `33` has nine argument slots. The first eight slots are four type-1 and
 type-2 coordinate pairs. The first two pairs identify one endpoint pair and the
 next two pairs identify the other. The final row has type `7` and resolved scalar

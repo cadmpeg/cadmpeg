@@ -61,7 +61,9 @@ fixtures, scores above L1 remain blocked.
   emitted loci. Function-forty-three equations transfer as typed horizontal-
   or vertical-distance constraints when their unique dimension parameter
   agrees with the solved one-axis coordinate difference and both point keys
-  resolve to emitted loci.
+  resolve to emitted loci. Function-five scalar-equality rows join the scalar
+  equality graph when their type-five selector has a stored or independently
+  reconciled zero value.
 - Function-two type-3/type-0 radius equations transfer as typed radius
   constraints when the radius key binds to unique emitted arc or circle
   entities and the complete type-3 dimension agrees with the equation scalar;
