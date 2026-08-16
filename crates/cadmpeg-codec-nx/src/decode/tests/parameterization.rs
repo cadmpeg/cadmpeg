@@ -1225,6 +1225,91 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
 }
 
 #[test]
+fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
+    use cadmpeg_ir::ids::ProceduralCurveId;
+    use cadmpeg_ir::math::Point3;
+
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
+    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let template = result.ir().model.procedural_curves[0].clone();
+    let mut successful = template.clone();
+    let successful_id = ProceduralCurveId("synthetic:support-uv-success".into());
+    successful.id = successful_id.clone();
+    let mut failed = template;
+    let failed_id = ProceduralCurveId("synthetic:support-uv-failure".into());
+    failed.id = failed_id.clone();
+    for procedural in [&mut successful, &mut failed] {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
+        else {
+            panic!("typed intersection");
+        };
+        context.sides[0].pcurve = None;
+    }
+    result
+        .ir_mut()
+        .model
+        .procedural_curves
+        .extend([successful, failed]);
+
+    let pending = vec![
+        (
+            successful_id,
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.01, 0.0, 0.0)],
+            vec![0.0, 0.01],
+            0.01,
+            [None, None],
+        ),
+        (
+            failed_id,
+            vec![
+                Point3::new(100.0, 100.0, 100.0),
+                Point3::new(100.01, 100.0, 100.0),
+            ],
+            vec![0.0, 0.01],
+            0.01,
+            [None, None],
+        ),
+    ];
+    let support_budget = cadmpeg_core::decode::WorkBudget::new(10);
+    let geometry_budget = cadmpeg_core::decode::WorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    crate::decode::support_uv::complete_support_uv_with_budget(
+        &mut result.ir_mut(),
+        &pending,
+        &support_budget,
+        &geometry_budget,
+    );
+
+    let successful = result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| procedural.id.0 == "synthetic:support-uv-success")
+        .unwrap();
+    let failed = result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| procedural.id.0 == "synthetic:support-uv-failure")
+        .unwrap();
+    let missing = |procedural: &cadmpeg_ir::geometry::ProceduralCurve| {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            panic!("typed intersection");
+        };
+        context.sides[0].pcurve.is_none()
+    };
+    assert!(!missing(successful));
+    assert!(missing(failed));
+    assert_eq!(support_budget.remaining(), 6);
+}
+
+#[test]
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =

@@ -350,12 +350,22 @@ pub(super) fn complete_support_uv_with_budget(
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
+    // A failed fit can become solvable when its opposite lane is filled by an
+    // earlier wave. Keep that dependency as the retry key; repeating the same
+    // failed inverse after unrelated progress only burns the model-wide cap.
+    let mut failed_attempts = BTreeMap::<(ProceduralCurveId, usize), Option<PcurveGeometry>>::new();
     loop {
         let before = pending_support_lanes_requiring_completion(ir, pending);
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
-        complete_support_uv_wave(ir, pending, support_budget, geometry_budget);
+        complete_support_uv_wave(
+            ir,
+            pending,
+            support_budget,
+            geometry_budget,
+            &mut failed_attempts,
+        );
         let after = pending_support_lanes_requiring_completion(ir, pending);
         if after >= before || support_uv_budget_exhausted(support_budget) {
             break;
@@ -457,6 +467,7 @@ fn complete_support_uv_wave(
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
+    failed_attempts: &mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
 ) {
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
@@ -486,6 +497,14 @@ fn complete_support_uv_wave(
             let Some(surface_id) = &context.sides[side].surface else {
                 continue;
             };
+            let attempt_key = (procedural_id.clone(), side);
+            let source_pcurve = context.sides[1 - side].pcurve.as_ref();
+            if failed_attempts
+                .get(&attempt_key)
+                .is_some_and(|previous| previous.as_ref() == source_pcurve)
+            {
+                continue;
+            }
             let Some(surface) = model_index.surfaces(surface_id.0.as_str()) else {
                 continue;
             };
@@ -624,6 +643,7 @@ fn complete_support_uv_wave(
                 uv.push(parameters);
             }
             if uv.len() != points.len() {
+                failed_attempts.insert(attempt_key, source_pcurve.cloned());
                 continue;
             }
             if matches!(
@@ -662,6 +682,8 @@ fn complete_support_uv_wave(
                     },
                     effective_fit_tolerance,
                 ));
+            } else {
+                failed_attempts.insert(attempt_key, source_pcurve.cloned());
             }
         }
     }
