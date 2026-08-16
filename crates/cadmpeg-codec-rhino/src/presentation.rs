@@ -4296,6 +4296,10 @@ mod tests {
             value.controls["dimension_length_display"],
             serde_json::json!(107)
         );
+        assert_eq!(
+            value.controls["font_characteristics"]["byte_len"],
+            serde_json::json!(24)
+        );
         assert_eq!(value.source_offset, 321);
     }
 

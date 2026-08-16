@@ -678,6 +678,15 @@ also establishes the CADIR conversion boundary: legacy and print-distance
 segments remain print millimeters, while true model-distance segments use the
 document millimeters-per-unit scale; width and taper values retain their unit
 selector.
+The `ON_TextStyle`/`ON_DimStyle` table transition is independently covered by
+V4, V50, and V6 model witnesses. Below archive version 60, the writer emits
+one compatibility font-table record per dimension style, and the dimension
+style stores its legacy text-style reference; the Rust decoder transfers that
+record as a typed `text_styles` entry. At archive version 60, the font table is
+empty, the dimension-style text-style index is unset, and the modern
+font-characteristics child is retained as bounded source metadata under the
+owning dimension style. The source-defined font child grammar is the same
+anonymous `ON_Font` grammar used by modern text styles.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -716,6 +725,16 @@ inch-unit differential witnesses, the `cadmpeg inspect` table/class-data and
 segment-tag reads, the three-version `cadmpeg query item` results, and the
 owner tests `legacy_linetype_preserves_print_lengths_and_wire_segment_tags` and
 `modern_linetype_scales_only_model_distance_segments`.
+The font/dimension-style slice is closed by
+`ON_BinaryArchive::EndWrite3dmDimStyleTable`/`BeginRead3dmDimStyleTable`,
+`ON_DimStyle::Write`/`Read`, `ON_TextStyle::Write`/`Read`, and
+`ON_Font::Write`/`WriteV5`, the rebuilt OpenNURBS
+`dimension_style_model_witness` outputs
+`dimension-style-current-font-v4.3dm`, `dimension-style-current-font-v50.3dm`,
+and `dimension-style-current-font-v60.3dm`, `cadmpeg inspect` reads showing
+font-record headers at V4/V50 and none at V6 plus the V6 anonymous 1.6 font
+child, the three-version `cadmpeg query item` results, and the owner test
+`dimension_style_future_minor_preserves_known_prefix_and_suffix`.
 
 ### FV-06. Later major payload admission
 

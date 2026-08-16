@@ -5096,6 +5096,25 @@ description becomes the PostScript name only when it is nonempty, is not
 `Default`, and the archive runtime is Apple or the writer version is later
 than 23 February 2018.
 
+The font and dimension-style tables are a compatibility pair. The writer
+opens `TCODE_FONT_TABLE` for every archive version. For an archive below
+version 60 it writes one font record for each archived dimension style, using
+that style's font characteristics and copying its name and archive index into
+the compatibility `ON_TextStyle`; the table is then closed before the
+dimension-style table is written. For archive version 60 and later the font
+table is empty. The dimension-style writer instead writes the unset `i32`
+text-style index and, at minor 2 and later, writes the same font-characteristics
+payload as an anonymous `ON_Font` child. The dimension-style reader loads the
+legacy font table before reading dimension styles and resolves the legacy
+index from that table; its modern reader reads the bounded font child.
+
+CADIR decision: legacy font-table records are typed `text_styles` records.
+The modern font child remains a bounded child of its owning `dimension_styles`
+record under `controls.font_characteristics`, represented by its source offset,
+byte length, and SHA-256. CADIR does not create a second text-style identity
+for this embedded resource. The child uses the font grammar above, and its
+complete source record remains available through native-record fidelity.
+
 ### 20.4 Views and document presentation
 
 A version-1 settings stream is a flat sequence after the 32-byte file header
