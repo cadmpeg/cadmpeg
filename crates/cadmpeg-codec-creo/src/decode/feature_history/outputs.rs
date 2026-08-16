@@ -10,7 +10,7 @@ use super::super::uniqueness::unique_feature_definition_for_transform;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,6 +20,18 @@ pub(in super::super) fn feature_output_bodies(
     ir: &CadIr,
     feature_id: u32,
 ) -> Vec<BodyId> {
+    feature_output_bodies_with_history(scan, ir, feature_id, &mut BTreeSet::new())
+}
+
+fn feature_output_bodies_with_history(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    visiting: &mut BTreeSet<u32>,
+) -> Vec<BodyId> {
+    if !visiting.insert(feature_id) {
+        return Vec::new();
+    }
     let affected_geometry = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
@@ -48,6 +60,9 @@ pub(in super::super) fn feature_output_bodies(
     let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
     let edge_outputs = match feature_edge_selection(scan, ir, feature_id) {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges),
+        Some(EdgeSelection::Generated { edges, .. }) => {
+            generated_edge_output_bodies(scan, ir, &edges, visiting)
+        }
         _ => Vec::new(),
     };
     if edge_outputs.is_empty() {
@@ -72,6 +87,32 @@ pub(in super::super) fn feature_output_bodies(
         }
     } else {
         for body in edge_outputs {
+            if !outputs.contains(&body) {
+                outputs.push(body);
+            }
+        }
+    }
+    visiting.remove(&feature_id);
+    outputs
+}
+
+fn generated_edge_output_bodies(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    edges: &[GeneratedEdgeRef],
+    visiting: &mut BTreeSet<u32>,
+) -> Vec<BodyId> {
+    let mut outputs = Vec::new();
+    for edge in edges {
+        let Some(producer_id) = edge
+            .feature
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        for body in feature_output_bodies_with_history(scan, ir, producer_id, visiting) {
             if !outputs.contains(&body) {
                 outputs.push(body);
             }
@@ -634,3 +675,6 @@ pub(in super::super) fn feature_source_properties(
     }
     properties
 }
+
+#[cfg(test)]
+mod tests;
