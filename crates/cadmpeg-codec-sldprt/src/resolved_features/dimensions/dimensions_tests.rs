@@ -431,14 +431,15 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .iter()
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    let unbound_carrier = dimensioned_relation_carrier(
         std::slice::from_ref(&lane),
         &unbound_markers,
         "feature",
         &unbound_operand,
         5.0,
     )
-    .is_none());
+    .expect("scoped child declaration remains authoritative without operand identity");
+    assert_eq!(unbound_carrier.marker.id, "arc");
 
     let mut multiple_declared = lane.clone();
     multiple_declared.classes.push(FeatureInputClass {

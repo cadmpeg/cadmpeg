@@ -877,16 +877,14 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     let pairs = declared_entity_handle_pairs(lane, feature);
     if let [child_pair] = child_pairs.as_slice() {
         // The relation operand identifies the radial child when present. Use
-        // that identity to ignore unrelated linked pairs in the same feature;
-        // without it, require the whole handle to remain unambiguous.
+        // that identity to reject a mismatched child. The scoped child
+        // declaration already identifies this pair, so unrelated linked
+        // pairs in the same feature do not make it ambiguous.
         let operand_identifies_child = operand
             .entity_ref
             .as_deref()
             .is_some_and(|entity_ref| child_pair[1].id == entity_ref);
         if operand.entity_ref.is_some() && !operand_identifies_child {
-            return None;
-        }
-        if operand.entity_ref.is_none() && pairs.len() != 1 {
             return None;
         }
         let [center, radial] = *child_pair;
