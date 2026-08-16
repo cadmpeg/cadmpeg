@@ -112,6 +112,67 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
 }
 
 #[test]
+fn parses_plugin_list_entries_and_bounded_future_minors() {
+    let archive = ArchiveVersion::V8;
+    let plugin_payload = |minor: i32, detailed: bool| {
+        let mut body = (1_u8..=16).collect::<Vec<_>>();
+        body.extend(7_i32.to_le_bytes());
+        body.extend(utf16_bytes("WitnessPlugin"));
+        body.extend(utf16_bytes("4.5.6"));
+        body.extend(utf16_bytes("witness-plugin.rhp"));
+        if detailed {
+            for value in [
+                "Witness Org",
+                "1 Test Street",
+                "NO",
+                "+47 12345678",
+                "dev@example.test",
+                "https://example.test/plugin",
+                "https://example.test/update",
+                "+47 87654321",
+            ] {
+                body.extend(utf16_bytes(value));
+            }
+            body.extend(2_i32.to_le_bytes());
+            body.extend(202_400_i32.to_le_bytes());
+            body.extend(3_i32.to_le_bytes());
+        }
+        if minor > 2 {
+            body.extend([0xbe, 0xef]);
+        }
+        anonymous_chunk(archive, minor, &body)
+    };
+
+    let mut body = vec![0x1f];
+    body.extend(2_i32.to_le_bytes());
+    body.extend(plugin_payload(15, true));
+    body.extend(plugin_payload(0, false));
+    body.extend([0xde, 0xad]);
+
+    let (data, record) = metadata_record(0x2000_8135, body);
+    let list = settings::parse_plugin_list(&data, &record, archive).expect("plugin list");
+    assert_eq!(list.version, (1, 15));
+    assert_eq!(list.plugins.len(), 2);
+    let plugin = &list.plugins[0];
+    assert_eq!(plugin.version, (1, 15));
+    assert_eq!(
+        plugin.plugin_id,
+        Uuid::from_wire((1_u8..=16).collect::<Vec<_>>().try_into().expect("UUID"))
+    );
+    assert_eq!(plugin.plugin_type, 7);
+    assert_eq!(plugin.name, "WitnessPlugin");
+    assert_eq!(plugin.version_string, "4.5.6");
+    assert_eq!(plugin.filename, "witness-plugin.rhp");
+    assert_eq!(plugin.developer_email.as_deref(), Some("dev@example.test"));
+    assert_eq!(plugin.platform, Some(2));
+    assert_eq!(plugin.sdk_version, Some(202_400));
+    assert_eq!(plugin.sdk_service_release, Some(3));
+    assert_eq!(list.plugins[1].version, (1, 0));
+    assert!(list.plugins[1].developer_email.is_none());
+    assert!(list.plugins[1].platform.is_none());
+}
+
+#[test]
 fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
     let archive = ArchiveVersion::V8;
     let mut body = vec![0x1f];

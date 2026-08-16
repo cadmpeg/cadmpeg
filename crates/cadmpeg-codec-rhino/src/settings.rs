@@ -25,6 +25,7 @@ const APPLICATION: u32 = 0x2000_8024;
 const WRITER_VERSION: u32 = 0xa000_0026;
 const AS_FILE_NAME: u32 = 0x2000_8027;
 const UNITS: u32 = 0x2000_8031;
+const PLUGIN_LIST: u32 = 0x2000_8135;
 const RENDER_MESH: u32 = 0x2000_8032;
 const ANALYSIS_MESH: u32 = 0x2000_8033;
 const CURRENT_LAYER: u32 = 0xa000_0038;
@@ -226,6 +227,60 @@ pub(crate) struct UnitsAndTolerances {
     pub(crate) source: SourceRange,
 }
 
+/// One plugin reference stored in the settings plugin list.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct PluginReference {
+    /// Complete anonymous-chunk source range.
+    pub(crate) source: SourceRange,
+    /// Anonymous chunk version.
+    pub(crate) version: (i32, i32),
+    /// Plugin identity.
+    pub(crate) plugin_id: Uuid,
+    /// Rhino plugin-type enum ordinal.
+    pub(crate) plugin_type: i32,
+    /// Plugin display name.
+    pub(crate) name: String,
+    /// Plugin version string.
+    pub(crate) version_string: String,
+    /// Plugin executable filename.
+    pub(crate) filename: String,
+    /// Developer organization.
+    pub(crate) developer_organization: Option<String>,
+    /// Developer address.
+    pub(crate) developer_address: Option<String>,
+    /// Developer country.
+    pub(crate) developer_country: Option<String>,
+    /// Developer phone.
+    pub(crate) developer_phone: Option<String>,
+    /// Developer email.
+    pub(crate) developer_email: Option<String>,
+    /// Developer website.
+    pub(crate) developer_website: Option<String>,
+    /// Developer update URL.
+    pub(crate) developer_update_url: Option<String>,
+    /// Developer fax.
+    pub(crate) developer_fax: Option<String>,
+    /// Plugin platform: 0 unknown, 1 C++, 2 .NET.
+    pub(crate) platform: Option<i32>,
+    /// Plugin SDK version component.
+    pub(crate) sdk_version: Option<i32>,
+    /// Plugin SDK service-release component.
+    pub(crate) sdk_service_release: Option<i32>,
+}
+
+/// The settings plugin list and its bounded entries.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct PluginList {
+    /// Complete source range.
+    pub(crate) source: SourceRange,
+    /// Packed list version.
+    pub(crate) version: (u8, u8),
+    /// Plugin references.
+    pub(crate) plugins: Vec<PluginReference>,
+}
+
 /// Earth-location anchor nested in the settings-attributes record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EarthAnchorPoint {
@@ -419,6 +474,8 @@ pub(crate) struct DocumentSettings {
     pub(crate) model_url: Option<String>,
     /// Units and tolerances.
     pub(crate) units: Option<UnitsAndTolerances>,
+    /// Plugins that may have saved userdata in the file.
+    pub(crate) plugin_list: Option<PluginList>,
     /// Settings attributes.
     pub(crate) attributes: Option<SettingsAttributes>,
     /// Render-mesh settings.
@@ -953,6 +1010,125 @@ fn anonymous_version(
         ));
     }
     Ok(version)
+}
+
+fn parse_plugin_reference<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<PluginReference, FramingError> {
+    let (mut payload, range) = anonymous_payload(data, reader, archive, "plugin reference")?;
+    let version = anonymous_version(&mut payload, "plugin reference")?;
+    let plugin_id = uuid(&mut payload)?;
+    let plugin_type = payload.i32()?;
+    let name = utf16(&mut payload)?;
+    let version_string = utf16(&mut payload)?;
+    let filename = utf16(&mut payload)?;
+    let (
+        developer_organization,
+        developer_address,
+        developer_country,
+        developer_phone,
+        developer_email,
+        developer_website,
+        developer_update_url,
+        developer_fax,
+        platform,
+        sdk_version,
+        sdk_service_release,
+    ) = if version.1 >= 1 {
+        let developer_organization = utf16(&mut payload)?;
+        let developer_address = utf16(&mut payload)?;
+        let developer_country = utf16(&mut payload)?;
+        let developer_phone = utf16(&mut payload)?;
+        let developer_email = utf16(&mut payload)?;
+        let developer_website = utf16(&mut payload)?;
+        let developer_update_url = utf16(&mut payload)?;
+        let developer_fax = utf16(&mut payload)?;
+        let (platform, sdk_version, sdk_service_release) = if version.1 >= 2 {
+            (
+                Some(payload.i32()?),
+                Some(payload.i32()?),
+                Some(payload.i32()?),
+            )
+        } else {
+            (None, None, None)
+        };
+        (
+            Some(developer_organization),
+            Some(developer_address),
+            Some(developer_country),
+            Some(developer_phone),
+            Some(developer_email),
+            Some(developer_website),
+            Some(developer_update_url),
+            Some(developer_fax),
+            platform,
+            sdk_version,
+            sdk_service_release,
+        )
+    } else {
+        (
+            None, None, None, None, None, None, None, None, None, None, None,
+        )
+    };
+    finish(&mut payload, "plugin reference")?;
+    Ok(PluginReference {
+        source: SourceRange { range },
+        version,
+        plugin_id,
+        plugin_type,
+        name,
+        version_string,
+        filename,
+        developer_organization,
+        developer_address,
+        developer_country,
+        developer_phone,
+        developer_email,
+        developer_website,
+        developer_update_url,
+        developer_fax,
+        platform,
+        sdk_version,
+        sdk_service_release,
+    })
+}
+
+pub(crate) fn parse_plugin_list(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<PluginList, FramingError> {
+    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let version = packed(&mut reader)?;
+    if version.0 != 1 {
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported plugin-list version",
+        ));
+    }
+    let count_offset = reader.position();
+    let count = reader.i32()?;
+    let count = crate::chunks::checked_count_bytes(
+        count,
+        1,
+        reader.remaining(),
+        MAX_ARRAY_ITEMS,
+        count_offset,
+    )?;
+    let mut plugins = Vec::with_capacity(count);
+    for _ in 0..count {
+        plugins.push(parse_plugin_reference(data, &mut reader, archive)?);
+    }
+    finish(&mut reader, "plugin list")?;
+    Ok(PluginList {
+        source: SourceRange {
+            range: record.range.clone(),
+        },
+        version,
+        plugins,
+    })
 }
 
 fn parse_earth_anchor<'a>(
@@ -1915,7 +2091,8 @@ pub(crate) fn parse_metadata(
                 ),
                 SETTINGS => matches!(
                     record.typecode,
-                    UNITS
+                    PLUGIN_LIST
+                        | UNITS
                         | RENDER_MESH
                         | ANALYSIS_MESH
                         | ATTRIBUTES
@@ -2089,6 +2266,9 @@ pub(crate) fn parse_setting(
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
     match record.typecode {
+        PLUGIN_LIST => {
+            parse_plugin_list(data, record, archive).map(|value| settings.plugin_list = Some(value))
+        }
         UNITS => parse_units(data, record).map(|value| settings.units = Some(value)),
         RENDER_MESH => parse_mesh_record(data, record, archive)
             .map(|value| settings.render_mesh_settings = Some(value)),

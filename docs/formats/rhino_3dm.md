@@ -3747,6 +3747,55 @@ only nonnegative minor versions. A legacy reader rejects versions outside
 bytes in a modern body end at the anonymous chunk boundary; remaining bytes in
 a legacy body end at the containing `TCODE_SETTINGS_RENDER` record boundary.
 
+The `TCODE_SETTINGS_PLUGINLIST` record is a CRC-bearing long settings record.
+The writer emits it first in the settings stream only for archive versions 4
+and later, and only when at least one plugin reference is present. Its known
+body is:
+
+```text
+u8 packed version = 1.minor
+i32 plugin-reference count
+count × TCODE_ANONYMOUS_CHUNK plugin-reference record
+```
+
+The writer emits outer version `1.0`. The reader requires major version 1 and
+accepts every nonnegative minor. The count is nonnegative. A plugin reference
+is an anonymous CRC-bearing long chunk with this body:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor
+ON_UUID plugin identity
+i32 plugin-type enum ordinal
+UTF-16 plugin name
+UTF-16 plugin version
+UTF-16 plugin executable filename
+if minor >= 1:
+  UTF-16 developer organization
+  UTF-16 developer address
+  UTF-16 developer country
+  UTF-16 developer phone
+  UTF-16 developer email
+  UTF-16 developer website
+  UTF-16 developer update URL
+  UTF-16 developer fax
+if minor >= 2:
+  i32 plugin platform
+  i32 plugin SDK version
+  i32 plugin SDK service release
+```
+
+The plugin-reference writer emits version `1.2`. Its reader requires major
+version 1 and accepts every nonnegative minor. The plugin identity identifies
+the application plugin whose userdata may be present in the file. The
+plugin-type field is the Rhino plugin-type ordinal. Platform values are 0
+unknown, 1 C++, and 2 .NET. The SDK fields are the version and service-release
+components used by the plugin SDK. The filename is the executable filename;
+the remaining strings are developer contact fields. Each reference ends at
+its anonymous chunk boundary, and the list ends at the outer
+`TCODE_SETTINGS_PLUGINLIST` boundary, so later minor suffixes are skipped at
+their respective boundaries.
+
 The `TCODE_SETTINGS_ATTRIBUTES` record is a CRC-bearing long settings record.
 Its writer emits packed version `1.7`. The known direct body is:
 
