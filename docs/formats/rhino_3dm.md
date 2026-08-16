@@ -2329,6 +2329,24 @@ ID; minor 1 and later include the 4×4 object transform, followed by any
 bounded suffix bytes. All mapping counts are nonnegative. Every child chunk
 has its own CRC and ends within its containing rendering-attributes chunk.
 
+CADIR transfers the layer material-reference array to
+`native.rhino.layers[].rendering_materials`. It transfers the object
+material-reference array to
+`native.rhino.object_presentation[].rendering_materials`, the mapping-reference
+array to `rendering_mappings`, and each mapping channel to `channels`. A
+mapping reference has `plugin_uuid`; a channel has `mapping_channel_id`,
+`mapping_uuid`, and, for channel minor at least 1, `object_transform`. The
+transform is the sixteen source doubles in row-major 4×4 order. Nil UUIDs are
+retained as the UUID string.
+
+CADIR decision: object `casts_shadows` and `receives_shadows` are emitted only
+when their source byte is false; an omitted field has the source default true.
+`advanced_texture_preview` is emitted only when its source byte is true; an
+omitted field has the source default false. A rendering-attributes child with
+an older minor that does not carry a field leaves that field omitted. The
+source byte is retained even though the OpenNURBS reader does not enable
+advanced texture preview from it.
+
 ## 9. Object attributes
 
 ### 9.1 V3 and V4 fixed attributes

@@ -763,7 +763,17 @@ fn rendering_attributes_parse_object_mapping_and_future_suffix() {
     let mut mapping_body = uuid_bytes();
     mapping_body.extend(1_i32.to_le_bytes());
     mapping_body.extend(channel);
-    let mapping = anonymous_chunk(ArchiveVersion::V8, 0, &mapping_body);
+    let mut mapping_payload = 1_i32.to_le_bytes().to_vec();
+    mapping_payload.extend(0_i32.to_le_bytes());
+    let channel_start = mapping_payload.len() + 16 + 4;
+    mapping_payload.extend(mapping_body);
+    #[allow(clippy::single_range_in_vec_init)] // One nested mapping-channel range.
+    let mapping = crc_chunk_excluding(
+        ArchiveVersion::V8,
+        0x4000_8000,
+        &mapping_payload,
+        &[channel_start..mapping_payload.len()],
+    );
 
     let mut rendering_body = vec![1, 0, 0, 0, 4, 0, 0, 0];
     rendering_body.extend(0_i32.to_le_bytes());

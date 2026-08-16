@@ -697,6 +697,19 @@ IGES level, item 34, and normalized per-viewport entries; it bounds and
 validates item 35 while retaining the complete layer record for source
 fidelity.
 
+The rendering-attributes transfer slice is independently covered by the
+authored V4, V50, and V6 point witnesses. `ON_RenderingAttributes::Write/Read`
+defines the layer material-reference array. `ON_ObjectRenderingAttributes::Write/Read`
+defines the object material and mapping-reference arrays, the shadow flags,
+and the advanced-preview byte. `ON_MappingRef::Write/Read` and
+`ON_MappingChannel::Write/Read` define the plug-in UUID, channel ID, mapping
+UUID, and row-major 16-double object transform. The mapping-reference CRC
+covers its direct fields and excludes each nested channel; the outer
+rendering-attributes and object-attributes CRCs likewise exclude complete
+nested children. The Rust presentation record transfers material references,
+mapping references and channels, and the three non-default object flags using
+the CADIR fields defined in section 8.4.
+
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
 outcome, and typed or opaque transfer result.
@@ -773,6 +786,21 @@ The witness initially omitted the referenced material and linetype components;
 OpenNURBS therefore resolved their layer references to `-1`. Adding the
 components and using their assigned manifest indices produced the final
 reference-bearing witness. That harness correction is not format evidence.
+
+The rendering-attributes slice is closed by
+`ON_RenderingAttributes::Write`/`Read`,
+`ON_ObjectRenderingAttributes::Write`/`Read`, `ON_MappingRef::Write`/`Read`,
+and `ON_MappingChannel::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_material.cpp`, the authored witness
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/rendering_attributes_witness.cpp`
+and its V4/V50/V6 files, `cadmpeg inspect` reads of the mapping and channel
+headers and 16 transform doubles, the rebuilt `example_read` outputs for all
+three archives, the three-version `cadmpeg query item` output showing the
+material reference, mapping channel, translation transform, false shadow
+flags, and true advanced-preview flag, and the owner tests
+`object_rendering_attributes_consume_mapping_reference_and_channel`,
+`rendering_attributes_parse_object_mapping_and_future_suffix`, and
+`rendering_attributes_transfer_mapping_channels_and_flags`.
 
 ### FV-06. Later major payload admission
 

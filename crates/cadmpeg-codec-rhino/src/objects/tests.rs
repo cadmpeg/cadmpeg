@@ -296,6 +296,42 @@ fn object_rendering_attributes_require_minor_one() {
 }
 
 #[test]
+fn object_rendering_attributes_consume_mapping_reference_and_channel() {
+    let mut channel_body = 7_i32.to_le_bytes().to_vec();
+    channel_body.extend(uuid_bytes());
+    channel_body.extend(
+        [
+            1.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.25, -2.5, 3.75, 1.0,
+        ]
+        .into_iter()
+        .flat_map(f64::to_le_bytes),
+    );
+    let channel = anonymous_chunk(ArchiveVersion::V8, 1, &channel_body);
+    let mut mapping_body = uuid_bytes();
+    mapping_body.extend(1_i32.to_le_bytes());
+    mapping_body.extend(channel);
+    let mapping = anonymous_chunk(ArchiveVersion::V8, 0, &mapping_body);
+    let mut rendering = vec![1, 0, 0, 0, 3, 0, 0, 0];
+    rendering.extend(0_i32.to_le_bytes());
+    rendering.extend(1_i32.to_le_bytes());
+    rendering.extend(mapping);
+    rendering.extend([0, 0, 0]);
+    let rendering = crc_chunk(ArchiveVersion::V8, 0x4000_8000, &rendering);
+    let bytes = tagged_attributes(&[(5, rendering)], 0);
+
+    let parsed = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .expect("mapping reference and channel have source-shaped framing");
+    assert!(parsed.rendering_range.is_some());
+}
+
+#[test]
 fn tagged_attributes_reject_bad_gates_and_missing_terminator() {
     for (minor, item) in [(0, 22), (1, 23), (2, 27), (8, 36), (12, 41)] {
         let bytes = tagged_attributes(&[(item, vec![0])], minor);

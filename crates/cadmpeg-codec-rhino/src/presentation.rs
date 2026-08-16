@@ -433,6 +433,29 @@ struct RenderingMaterialReference {
 }
 
 #[derive(Debug, Serialize)]
+struct RenderingMappingChannel {
+    mapping_channel_id: i32,
+    mapping_uuid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object_transform: Option<[[f64; 4]; 4]>,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderingMappingReference {
+    plugin_uuid: String,
+    channels: Vec<RenderingMappingChannel>,
+}
+
+#[derive(Debug, Default)]
+struct RenderingAttributesPresentation {
+    materials: Vec<RenderingMaterialReference>,
+    mappings: Vec<RenderingMappingReference>,
+    casts_shadows: Option<bool>,
+    receives_shadows: Option<bool>,
+    advanced_texture_preview: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
 struct MeshModifiersRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     displacement: Option<DisplacementRecord>,
@@ -724,6 +747,14 @@ struct ObjectPresentationRecord {
     section_fill_rule: u8,
     clipping_plane_label_style: u8,
     rendering_materials: Vec<RenderingMaterialReference>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    rendering_mappings: Vec<RenderingMappingReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    casts_shadows: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receives_shadows: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    advanced_texture_preview: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     user_strings: Vec<UserStringRecord>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -2885,34 +2916,35 @@ fn parse_texture_mapping(
     })
 }
 
-fn rendering_materials(
+fn rendering_attributes(
     data: &[u8],
     range: Option<Range<usize>>,
     archive: ArchiveVersion,
-) -> Result<Vec<RenderingMaterialReference>, FramingError> {
+    kind: settings::RenderingAttributesKind,
+) -> Result<RenderingAttributesPresentation, FramingError> {
     let Some(range) = range else {
-        return Ok(Vec::new());
+        return Ok(RenderingAttributesPresentation::default());
     };
     (|| {
         let (mut reader, version) = anonymous(data, range, archive)?;
-        if version.0 != 1 {
+        if version.0 != 1
+            || version.1 < 0
+            || (matches!(kind, settings::RenderingAttributesKind::Object) && version.1 < 1)
+        {
             return Err(FramingError::structural(
                 reader.position(),
                 "rendering-attributes version is unsupported",
             ));
         }
-        let count = reader.i32()?;
-        let count = usize::try_from(count).map_err(|_| {
-            FramingError::structural(reader.position() - 4, "negative rendering-material count")
-        })?;
-        if count > 1 << 16 {
-            return Err(FramingError::structural(
-                reader.position() - 4,
-                "rendering-material count exceeds limit",
-            ));
-        }
-        let mut values = Vec::new();
-        for _ in 0..count {
+        let material_count = checked_count_bytes(
+            reader.i32()?,
+            1,
+            reader.remaining(),
+            1 << 16,
+            reader.position() - 4,
+        )?;
+        let mut presentation = RenderingAttributesPresentation::default();
+        for _ in 0..material_count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             let parsed = (|| {
                 let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
@@ -2948,11 +2980,86 @@ fn rendering_materials(
                     material_source,
                 })
             })();
-            values.push(parsed?);
+            presentation.materials.push(parsed?);
             reader.skip(chunk.next_offset - reader.position())?;
         }
+        if matches!(kind, settings::RenderingAttributesKind::Object) {
+            let mapping_count = checked_count_bytes(
+                reader.i32()?,
+                1,
+                reader.remaining(),
+                1 << 16,
+                reader.position() - 4,
+            )?;
+            for _ in 0..mapping_count {
+                let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+                let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+                if value.i32()? != 1 {
+                    return Err(FramingError::structural(
+                        value.position() - 4,
+                        "rendering mapping version is unsupported",
+                    ));
+                }
+                let _minor = value.i32()?;
+                let plugin_uuid = uuid(&mut value)?.to_string();
+                let channel_count = checked_count_bytes(
+                    value.i32()?,
+                    1,
+                    value.remaining(),
+                    1 << 16,
+                    value.position() - 4,
+                )?;
+                let mut channels = Vec::with_capacity(channel_count);
+                for _ in 0..channel_count {
+                    let channel = chunk_at(data, value.position(), value.end(), archive, false)?;
+                    let mut channel_value =
+                        BoundedReader::new(data, channel.body.start, channel.body.end)?;
+                    if channel_value.i32()? != 1 {
+                        return Err(FramingError::structural(
+                            channel_value.position() - 4,
+                            "rendering mapping channel version is unsupported",
+                        ));
+                    }
+                    let channel_minor = channel_value.i32()?;
+                    let mapping_channel_id = channel_value.i32()?;
+                    let mapping_uuid = uuid(&mut channel_value)?.to_string();
+                    let object_transform = if channel_minor >= 1 {
+                        Some(xform(&mut channel_value)?)
+                    } else {
+                        None
+                    };
+                    channel_value.skip_remaining()?;
+                    channels.push(RenderingMappingChannel {
+                        mapping_channel_id,
+                        mapping_uuid,
+                        object_transform,
+                    });
+                    value.skip(channel.next_offset - value.position())?;
+                }
+                value.skip_remaining()?;
+                presentation.mappings.push(RenderingMappingReference {
+                    plugin_uuid,
+                    channels,
+                });
+                reader.skip(chunk.next_offset - reader.position())?;
+            }
+        }
+        if matches!(kind, settings::RenderingAttributesKind::Object) && version.1 >= 2 {
+            if !reader.bool()? {
+                presentation.casts_shadows = Some(false);
+            }
+            if !reader.bool()? {
+                presentation.receives_shadows = Some(false);
+            }
+        }
+        if matches!(kind, settings::RenderingAttributesKind::Object)
+            && version.1 >= 3
+            && reader.bool()?
+        {
+            presentation.advanced_texture_preview = Some(true);
+        }
         reader.skip_remaining()?;
-        Ok(values)
+        Ok(presentation)
     })()
 }
 
@@ -3425,15 +3532,19 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
             } else {
                 identity.object_id.to_string()
             };
-            let rendering_materials =
-                rendering_materials(scan.data, attributes.rendering_range.clone(), scan.archive)
-                    .unwrap_or_else(|error| {
-                        losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
-                    "object rendering materials at offset {} could not be transferred: {error}",
+            let rendering = rendering_attributes(
+                scan.data,
+                attributes.rendering_range.clone(),
+                scan.archive,
+                settings::RenderingAttributesKind::Object,
+            )
+            .unwrap_or_else(|error| {
+                losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "object rendering attributes at offset {} could not be transferred: {error}",
                     object.range.start
                 )));
-                        Vec::new()
-                    });
+                RenderingAttributesPresentation::default()
+            });
             let (user_strings, attribute_user_strings) = first_user_string_records(
                 scan.data,
                 scan.archive,
@@ -3487,7 +3598,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 hatch_boundary_visible: attributes.hatch_boundary_visible,
                 section_fill_rule: attributes.section_fill_rule,
                 clipping_plane_label_style: attributes.clipping_plane_label_style,
-                rendering_materials,
+                rendering_materials: rendering.materials,
+                rendering_mappings: rendering.mappings,
+                casts_shadows: rendering.casts_shadows,
+                receives_shadows: rendering.receives_shadows,
+                advanced_texture_preview: rendering.advanced_texture_preview,
                 user_strings,
                 attribute_user_strings,
                 custom_render_mesh: attributes.custom_render_mesh.clone(),
@@ -3513,15 +3628,19 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 || format!("index-{}-offset-{}", layer.index, layer.source.range.start),
                 |id| id.to_string(),
             );
-        let rendering_materials =
-            rendering_materials(scan.data, layer.rendering_range.clone(), scan.archive)
-                .unwrap_or_else(|error| {
-                    losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
-                        "layer rendering materials at offset {} could not be transferred: {error}",
-                        layer.source.range.start
-                    )));
-                    Vec::new()
-                });
+        let rendering = rendering_attributes(
+            scan.data,
+            layer.rendering_range.clone(),
+            scan.archive,
+            settings::RenderingAttributesKind::Layer,
+        )
+        .unwrap_or_else(|error| {
+            losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                "layer rendering attributes at offset {} could not be transferred: {error}",
+                layer.source.range.start
+            )));
+            RenderingAttributesPresentation::default()
+        });
         layers.push(LayerPresentationRecord {
             id: format!("rhino:presentation:layer#{key}"),
             source_offset: layer.source.range.start as u64,
@@ -3547,7 +3666,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 .map(|id| id.to_string()),
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
             visible_in_new_details: layer.visible_in_new_details,
-            rendering_materials,
+            rendering_materials: rendering.materials,
             per_viewport_settings: layer
                 .per_viewport_settings
                 .iter()
@@ -4724,6 +4843,51 @@ mod tests {
         let error = parse_legacy_rdk_material_instance_id(&bytes, 0..bytes.len())
             .expect_err("malformed legacy XML");
         assert!(matches!(error, FramingError::Structural { .. }));
+    }
+
+    #[test]
+    fn rendering_attributes_transfer_mapping_channels_and_flags() {
+        let mut channel_body = 7_i32.to_le_bytes().to_vec();
+        channel_body.extend([0x11; 16]);
+        channel_body.extend((0..16).flat_map(|value| f64::from(value).to_le_bytes()));
+        let channel = anonymous(1, &channel_body);
+        let mut mapping_body = vec![0x22; 16];
+        mapping_body.extend(1_i32.to_le_bytes());
+        mapping_body.extend(channel);
+        let mapping = anonymous(0, &mapping_body);
+        let mut rendering_body = 0_i32.to_le_bytes().to_vec();
+        rendering_body.extend(1_i32.to_le_bytes());
+        rendering_body.extend(mapping);
+        rendering_body.extend([0, 0, 1]);
+        let bytes = anonymous(3, &rendering_body);
+
+        let value = rendering_attributes(
+            &bytes,
+            Some(0..bytes.len()),
+            ArchiveVersion::V8,
+            settings::RenderingAttributesKind::Object,
+        )
+        .expect("object rendering attributes");
+        assert!(value.materials.is_empty());
+        assert_eq!(value.mappings.len(), 1);
+        assert_eq!(
+            value.mappings[0].plugin_uuid,
+            Uuid::from_wire([0x22; 16]).to_string()
+        );
+        assert_eq!(value.mappings[0].channels.len(), 1);
+        assert_eq!(value.mappings[0].channels[0].mapping_channel_id, 7);
+        assert_eq!(
+            value.mappings[0].channels[0].mapping_uuid,
+            Uuid::from_wire([0x11; 16]).to_string()
+        );
+        let transform = value.mappings[0].channels[0]
+            .object_transform
+            .expect("minor-one mapping transform");
+        assert_eq!(transform[0][0], 0.0);
+        assert_eq!(transform[3][3], 15.0);
+        assert_eq!(value.casts_shadows, Some(false));
+        assert_eq!(value.receives_shadows, Some(false));
+        assert_eq!(value.advanced_texture_preview, Some(true));
     }
 
     #[test]

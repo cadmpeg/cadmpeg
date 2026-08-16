@@ -1439,6 +1439,7 @@ pub(crate) fn parse_object_record(
     }
     let mut attributes_range = None;
     let mut attributes_body_range = None;
+    let mut attributes_chunk = None;
     let mut attributes_userdata_range = None;
     let mut attributes_userdata_body_range = None;
     let mut history = None;
@@ -1462,9 +1463,7 @@ pub(crate) fn parse_object_record(
         match item.typecode {
             OBJECT_RECORD_ATTRIBUTES if phase == 0 => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES)?;
-                if let Some(note) = checksum_warning(bytes, &item)? {
-                    warnings.push(note);
-                }
+                attributes_chunk = Some(item.clone());
                 attributes_range = Some(item.range());
                 attributes_body_range = Some(item.body.clone());
                 phase = 1;
@@ -1533,6 +1532,16 @@ pub(crate) fn parse_object_record(
                 }
             }
         });
+    if let Some(item) = attributes_chunk.as_ref() {
+        let children = attributes
+            .as_ref()
+            .and_then(|value| value.rendering_range.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        if let Some(note) = checksum_warning_excluding(bytes, item, &children)? {
+            warnings.push(note);
+        }
+    }
     let attributes_userdata = attributes_userdata_body_range
         .as_ref()
         .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))

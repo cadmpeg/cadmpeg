@@ -1736,12 +1736,11 @@ pub(crate) fn parse_rendering_attributes(
                     "rendering mapping reference must be anonymous",
                 ));
             }
-            if let Some(warning) = checksum_warning(data, &mapping)? {
-                warnings.push(warning);
-            }
             let mut mapping_payload =
                 BoundedReader::new(data, mapping.body.start, mapping.body.end)?;
-            if mapping_payload.i32()? != 1 {
+            let mapping_major = mapping_payload.i32()?;
+            let _mapping_minor = mapping_payload.i32()?;
+            if mapping_major != 1 {
                 return Err(FramingError::structural(
                     mapping_payload.position() - 4,
                     "unsupported rendering mapping reference version",
@@ -1755,6 +1754,7 @@ pub(crate) fn parse_rendering_attributes(
                 MAX_ARRAY_ITEMS,
                 mapping_payload.position(),
             )?;
+            let mut channels = Vec::with_capacity(channel_count);
             for _ in 0..channel_count {
                 let channel = crate::chunks::chunk_at(
                     data,
@@ -1784,8 +1784,12 @@ pub(crate) fn parse_rendering_attributes(
                 }
                 channel_payload.skip_remaining()?;
                 mapping_payload.skip(channel.next_offset - mapping_payload.position())?;
+                channels.push(channel.range());
             }
             mapping_payload.skip_remaining()?;
+            if let Some(warning) = checksum_warning_excluding(data, &mapping, &channels)? {
+                warnings.push(warning);
+            }
             children.push(mapping.range());
             payload.skip(mapping.next_offset - payload.position())?;
         }
