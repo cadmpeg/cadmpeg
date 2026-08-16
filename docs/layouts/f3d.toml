@@ -5370,3 +5370,110 @@ anchor = "sixteen row-major f64 values begin at offset 48"
 offset = 176
 size = 77
 note = "The transform record's native tail precedes the same-index paired header at offset 253."
+
+[[record]]
+name = "legacy_body_group_frame_123"
+kind = "byte"
+section = "3.1"
+anchor = "The legacy body-group frame is keyed by its primary and paired class tags"
+size = 123
+note = "Offsets are relative to the primary indexed header for the one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 00 01, and 00 01 respectively."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`byte_offset` anchors the primary indexed header"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "The common prefix has ten zero bytes after the indexed header."
+
+[[record.field]]
+name = "member_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "u32 member_count"
+
+[[record.field]]
+name = "member_reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "the member reference run"
+
+[[record.gap]]
+offset = 36
+size = 17
+note = "The one-member envelope has two null auxiliary references, a one-entry trailing count, and its trailing reference."
+
+[[record.field]]
+name = "role"
+offset = 53
+type = "u64"
+source = "spec"
+anchor = "a u64 role with low word zero"
+
+[[record.gap]]
+offset = 61
+size = 10
+note = "Ten zero bytes follow the role."
+
+[[record.field]]
+name = "opaque_ordinal"
+offset = 71
+type = "u32"
+source = "spec"
+anchor = "u32 opaque_ordinal"
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 75
+type = "f64"
+source = "spec"
+anchor = "one finite f64 opaque scalar"
+
+[[record.field]]
+name = "repeated_ordinal"
+offset = 83
+type = "u32"
+source = "spec"
+anchor = "a second copy of `opaque_ordinal`"
+
+[[record.field]]
+name = "n_plus_2_reference"
+offset = 87
+type = "bytes[11]"
+source = "spec"
+anchor = "a reference to `N+2`"
+
+[[record.field]]
+name = "tail_discriminant"
+offset = 98
+type = "bytes[2]"
+source = "spec"
+anchor = "a two-byte discriminant"
+
+[[record.field]]
+name = "n_plus_1_reference"
+offset = 100
+type = "bytes[11]"
+source = "spec"
+anchor = "a reference to `N+1`"
+
+[[record.field]]
+name = "tail_zero"
+offset = 111
+type = "u8"
+source = "spec"
+anchor = "byte `0`"
+
+[[record.field]]
+name = "owning_scope_reference"
+offset = 112
+type = "bytes[11]"
+source = "spec"
+anchor = "a reference to the owning scope"

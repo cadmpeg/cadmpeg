@@ -1380,6 +1380,11 @@ pub(crate) fn parse_construction_operand_group(
             }
         }
     }
+    if let Some(legacy_tail) = legacy_body_group_tail(bytes, scope, header, cursor, opaque_index) {
+        if closed.replace(legacy_tail).is_some() {
+            return Unclosed;
+        }
+    }
     let Some((variant, paired_at, paired_class_tag)) = closed else {
         return Unclosed;
     };
@@ -1441,6 +1446,56 @@ pub(crate) fn parse_construction_operand_group(
         paired_class_tag,
         paired_byte_offset,
     }))
+}
+
+/// Read the legacy Move/RemoveBody tail whose two flag bytes have no
+/// terminating zero. The class and feature gates keep this admission separate
+/// from the terminated flag-block grammar used by other construction groups.
+fn legacy_body_group_tail(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    header: &DesignRecordHeader,
+    cursor: usize,
+    opaque_index: u32,
+) -> Option<(bool, usize, String)> {
+    let body_scope = design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
+        || scope.kind == "RemoveBody";
+    let (flag_pair, variant) = match header.class_tag.as_str() {
+        "257" | "323" | "338" if body_scope => ([1, 1], true),
+        "282" | "302" if body_scope => ([0, 1], false),
+        _ => return None,
+    };
+    let mut tail = cursor;
+    if View::u32_le_at(bytes, tail)? != opaque_index {
+        return None;
+    }
+    tail += 4;
+    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+        != header.record_index.checked_add(2)
+    {
+        return None;
+    }
+    if bytes.get(tail..tail + 2) != Some(&flag_pair) {
+        return None;
+    }
+    tail += 2;
+    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+        != header.record_index.checked_add(1)
+    {
+        return None;
+    }
+    if bytes.get(tail) != Some(&0) {
+        return None;
+    }
+    tail += 1;
+    if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
+        return None;
+    }
+    let (paired_class_tag, after_tag) = lp_ascii_filtered(bytes, tail, 3..=3, u8::is_ascii_digit)?;
+    if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
+        return None;
+    }
+    Some((variant, tail, paired_class_tag))
 }
 
 /// Bind exact typed records selected by construction-group trailing runs.

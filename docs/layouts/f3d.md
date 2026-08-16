@@ -1758,6 +1758,33 @@ Unstated regions:
 - `11..43` (32 B): Offsets 11 through 42 are zero.
 - `176..253` (77 B): The transform record's native tail precedes the same-index paired header at offset 253.
 
+## `legacy_body_group_frame_123`
+
+Spec §3.1 · layout: byte offsets · size: 123 B
+
+Offsets are relative to the primary indexed header for the one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 00 01, and 00 01 respectively.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | `byte_offset` anchors the primary indexed header |
+| 21 | 4 | `member_count` | `u32` | little | spec | u32 member_count |
+| 25 | 11 | `member_reference` | `bytes[11]` | little | spec | the member reference run |
+| 53 | 8 | `role` | `u64` | little | spec | a u64 role with low word zero |
+| 71 | 4 | `opaque_ordinal` | `u32` | little | spec | u32 opaque_ordinal |
+| 75 | 8 | `opaque_scalar` | `f64` | little | spec | one finite f64 opaque scalar |
+| 83 | 4 | `repeated_ordinal` | `u32` | little | spec | a second copy of `opaque_ordinal` |
+| 87 | 11 | `n_plus_2_reference` | `bytes[11]` | little | spec | a reference to `N+2` |
+| 98 | 2 | `tail_discriminant` | `bytes[2]` | little | spec | a two-byte discriminant |
+| 100 | 11 | `n_plus_1_reference` | `bytes[11]` | little | spec | a reference to `N+1` |
+| 111 | 1 | `tail_zero` | `u8` | little | spec | byte `0` |
+| 112 | 11 | `owning_scope_reference` | `bytes[11]` | little | spec | a reference to the owning scope |
+
+Unstated regions:
+
+- `11..21` (10 B): The common prefix has ten zero bytes after the indexed header.
+- `36..53` (17 B): The one-member envelope has two null auxiliary references, a one-entry trailing count, and its trailing reference.
+- `61..71` (10 B): Ten zero bytes follow the role.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

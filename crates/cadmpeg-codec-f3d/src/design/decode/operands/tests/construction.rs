@@ -836,6 +836,83 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 }
 
 #[test]
+fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
+    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn reference(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+
+    for (ordinal, (class_tag, scope_kind)) in [
+        ("323", "Move"),
+        ("257", "Move"),
+        ("338", "RemoveBody"),
+        ("282", "Move"),
+        ("302", "Move"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let scope_record_index = 12 + u32::try_from(ordinal).expect("small test ordinal");
+        let group_record_index = 100 + 4 * u32::try_from(ordinal).expect("small test ordinal");
+        let frame_at = 0;
+        let mut bytes = Vec::new();
+        header(
+            &mut bytes,
+            class_tag.as_bytes().try_into().expect("three-digit class"),
+            group_record_index,
+        );
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut bytes, group_record_index + 3);
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&180u32.to_le_bytes());
+        bytes.extend_from_slice(&0.125f64.to_le_bytes());
+        bytes.extend_from_slice(&180u32.to_le_bytes());
+        reference(&mut bytes, group_record_index + 2);
+        let flag_pair = matches!(class_tag, "282" | "302")
+            .then_some([0, 1])
+            .unwrap_or([1, 1]);
+        bytes.extend_from_slice(&flag_pair);
+        reference(&mut bytes, group_record_index + 1);
+        bytes.push(0);
+        reference(&mut bytes, scope_record_index);
+        let paired_at = bytes.len();
+        header(&mut bytes, *b"262", group_record_index);
+
+        let mut scope = DesignParameterScope::empty(
+            &format!("f3d:test:legacy-body-group#{scope_record_index}"),
+            scope_kind,
+            scope_record_index,
+        );
+        scope.reference_members = vec![group_record_index];
+        let record = DesignRecordHeader {
+            id: format!("f3d:test:legacy-body-record#{group_record_index}"),
+            byte_offset: frame_at,
+            class_tag: class_tag.to_owned(),
+            record_index: group_record_index,
+        };
+        let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
+            .complete()
+            .expect("legacy body construction group");
+
+        assert_eq!(group.members, [group_record_index + 3]);
+        assert_eq!(group.role, 0x0000_0004_0000_0000);
+        assert_eq!(group.frame.variant, flag_pair == [1, 1]);
+        assert_eq!(group.paired_byte_offset, paired_at as u64);
+    }
+}
+
+#[test]
 fn construction_operand_trailing_transform_has_exact_affine_frame() {
     let record_index = 300u32;
     let mut bytes = Vec::new();

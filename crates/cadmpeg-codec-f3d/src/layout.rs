@@ -2295,3 +2295,39 @@ pub(crate) mod move_transform_frame_253 {
     /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const TRANSFORM: usize = 48;
 }
+
+/// Byte offsets for the `legacy_body_group_frame_123` record.
+///
+/// Spec §3.1. Record length 123 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header for the one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 00 01, and 00 01 respectively.
+/// ```
+pub(crate) mod legacy_body_group_frame_123 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 123;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 21;
+    /// Offset of `member_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MEMBER_REFERENCE: usize = 25;
+    /// Offset of `role` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const ROLE: usize = 53;
+    /// Offset of `opaque_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_ORDINAL: usize = 71;
+    /// Offset of `opaque_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_SCALAR: usize = 75;
+    /// Offset of `repeated_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_ORDINAL: usize = 83;
+    /// Offset of `n_plus_2_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const N_PLUS_2_REFERENCE: usize = 87;
+    /// Offset of `tail_discriminant` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TAIL_DISCRIMINANT: usize = 98;
+    /// Offset of `n_plus_1_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const N_PLUS_1_REFERENCE: usize = 100;
+    /// Offset of `tail_zero` (`u8`). Spec §3.1.
+    pub(crate) const TAIL_ZERO: usize = 111;
+    /// Offset of `owning_scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNING_SCOPE_REFERENCE: usize = 112;
+}
