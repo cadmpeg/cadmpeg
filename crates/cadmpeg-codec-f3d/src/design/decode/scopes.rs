@@ -27,6 +27,7 @@ use crate::layout::base_feature_body_snapshot_prefix as snapshot;
 use crate::layout::base_feature_body_snapshot_scope_prefix as snapshot_scope;
 use crate::layout::base_feature_compact_repeated_body_entry as compact_entry;
 use crate::layout::base_feature_compact_result_body_count as compact_count;
+use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
@@ -3174,6 +3175,62 @@ pub(crate) fn exact_base_feature_construction(
             result_fields: Vec::new(),
         });
     }
+    let legacy_409_262 = scope.class_tag == "409" && scope.paired_class_tag == "262";
+    if legacy_409_262 && scope.frame_length == 258 {
+        if scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset) {
+            return None;
+        }
+        let metadata_record = u32::try_from(View::u64_le_at(
+            bytes,
+            start + legacy_zero_body::SHARED_METADATA_RECORD,
+        )?)
+        .ok()?;
+        if bytes
+            .get(start + legacy_zero_body::ZERO_RUN_9..start + legacy_zero_body::ZERO_BODY_MARKER)?
+            != [0; 9]
+            || bytes.get(start + legacy_zero_body::ZERO_BODY_MARKER) != Some(&1)
+            || bytes.get(
+                start + legacy_zero_body::ZERO_RUN_11
+                    ..start + legacy_zero_body::SHARED_METADATA_MARKER,
+            )? != [0; 11]
+            || bytes.get(start + legacy_zero_body::SHARED_METADATA_MARKER) != Some(&1)
+            || scope.reference_members.as_slice() != [metadata_record]
+        {
+            return None;
+        }
+        let uuid_offset = usize::try_from(scope.kind_offset).ok()?.checked_sub(102)?;
+        if uuid_offset < start + legacy_zero_body::ZERO_PADDING_8 {
+            return None;
+        }
+        if !bytes
+            .get(start + legacy_zero_body::ZERO_PADDING_8..uuid_offset)?
+            .iter()
+            .all(|byte| *byte == 0)
+        {
+            return None;
+        }
+        return Some(DesignBaseFeatureConstruction::ResultBodies {
+            body_entity_suffixes: Vec::new(),
+            body_entity_suffix_offsets: Vec::new(),
+            body_entity_fields: Vec::new(),
+            body_reference_records: Vec::new(),
+            body_reference_record_offsets: Vec::new(),
+            body_reference_fields: Vec::new(),
+            repeated_reference_fields: Vec::new(),
+            metadata_record,
+            metadata_record_offset: scope.byte_offset
+                + u64::try_from(legacy_zero_body::SHARED_METADATA_RECORD).ok()?,
+            metadata_field: bytes
+                .get(
+                    start + legacy_zero_body::SHARED_METADATA_FIELD
+                        ..start + legacy_zero_body::ZERO_PADDING_8,
+                )?
+                .to_vec(),
+            result_records: Vec::new(),
+            result_record_offsets: Vec::new(),
+            result_fields: Vec::new(),
+        });
+    }
     if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
         || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
     {
@@ -3188,7 +3245,10 @@ pub(crate) fn exact_base_feature_construction(
         return None;
     }
     let body_count = combined_count / 2;
-    let expanded = scope.class_tag == "384" && scope.paired_class_tag == "264";
+    let expanded = matches!(
+        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+        ("384", "264") | ("409", "262")
+    );
     let compact = matches!(
         (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
         ("420", "258") | ("452", "266")
@@ -3313,11 +3373,11 @@ pub(crate) fn exact_base_feature_construction(
         cursor += 11;
     }
     let uuid_offset = usize::try_from(scope.kind_offset).ok()?.checked_sub(102)?;
-    (cursor <= uuid_offset
+    let admitted = cursor <= uuid_offset
         && bytes
             .get(cursor..uuid_offset)
-            .is_some_and(|padding| padding.iter().all(|byte| *byte == 0)))
-    .then_some(DesignBaseFeatureConstruction::ResultBodies {
+            .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
+    admitted.then_some(DesignBaseFeatureConstruction::ResultBodies {
         body_entity_suffixes,
         body_entity_suffix_offsets,
         body_entity_fields,

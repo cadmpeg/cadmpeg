@@ -1040,6 +1040,26 @@ Offsets are relative to the primary indexed header. The two parallel 15-byte bod
 | 19 | 1 | `body_count_marker` | `u8` | little | spec | byte 19 is `0x01` |
 | 20 | 4 | `combined_body_reference_count` | `u32` | little | spec | offset 20 stores u32 `2N` |
 
+## `base_feature_legacy_zero_body`
+
+Spec §3.1 · layout: byte offsets · size: 55 B
+
+Offsets are relative to the class-409 primary indexed header. The shared metadata record is the only retained body-snapshot reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | offsets 11 through 19 zero |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 `u8 1` |
+| 21 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 21 through 31 zero |
+| 32 | 1 | `shared_metadata_marker` | `u8` | little | spec | offset 32 the shared-metadata marker |
+| 33 | 8 | `shared_metadata_record` | `u64` | little | spec | offset 33 its u64 record index |
+| 41 | 6 | `shared_metadata_field` | `bytes[6]` | little | spec | offset 41 the six-byte field |
+| 47 | 8 | `zero_padding_8` | `bytes[8]` | little | spec | offsets 47 through 54 zero |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the class-409 zero-body payload.
+
 ## `base_feature_result_body_entry`
 
 Spec §3.1 · layout: byte offsets · size: 15 B

@@ -1428,6 +1428,32 @@ pub(crate) mod base_feature_result_body_prefix {
     pub(crate) const COMBINED_BODY_REFERENCE_COUNT: usize = 20;
 }
 
+/// Byte offsets for the `base_feature_legacy_zero_body` record.
+///
+/// Spec §3.1. Record length 55 B.
+///
+/// ```text
+/// Offsets are relative to the class-409 primary indexed header. The shared metadata record is the only retained body-snapshot reference.
+/// ```
+pub(crate) mod base_feature_legacy_zero_body {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 55;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `zero_body_marker` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BODY_MARKER: usize = 20;
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 21;
+    /// Offset of `shared_metadata_marker` (`u8`). Spec §3.1.
+    pub(crate) const SHARED_METADATA_MARKER: usize = 32;
+    /// Offset of `shared_metadata_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SHARED_METADATA_RECORD: usize = 33;
+    /// Offset of `shared_metadata_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const SHARED_METADATA_FIELD: usize = 41;
+    /// Offset of `zero_padding_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_PADDING_8: usize = 47;
+}
+
 /// Byte offsets for the `base_feature_result_body_entry` record.
 ///
 /// Spec §3.1. Record length 15 B.
