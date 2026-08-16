@@ -5357,21 +5357,17 @@ fn standard_curve_branch_candidates_after_partial_assignment(
     if supports.len() != candidates.len() || candidates.len() != assignment.len() {
         return None;
     }
-    if let Some(budget) = budget {
-        let candidate_count = candidates.iter().map(Vec::len).sum::<usize>();
-        let work = groups
-            .len()
-            .checked_mul(supports.len().saturating_add(candidate_count))?;
-        if !budget.charge_by(work) {
-            return None;
-        }
-    }
     let mut constrained = candidates.to_vec();
     for StandardCurveBranchGroup {
         edges: group,
         faces,
     } in groups
     {
+        if let Some(budget) = budget {
+            if !budget.charge_by(supports.len().max(1)) {
+                return None;
+            }
+        }
         let frontiers = faces.map(|face| {
             let complete = supports.iter().enumerate().all(|(edge, support)| {
                 group.contains(&edge)
@@ -5399,6 +5395,15 @@ fn standard_curve_branch_candidates_after_partial_assignment(
         };
         if left != right || left.len() != group.len().saturating_mul(2) {
             continue;
+        }
+        if let Some(budget) = budget {
+            let candidate_count = group
+                .iter()
+                .map(|edge| candidates[*edge].len())
+                .sum::<usize>();
+            if !budget.charge_by(candidate_count.max(1)) {
+                return None;
+            }
         }
         let mut group_constrained = group
             .iter()

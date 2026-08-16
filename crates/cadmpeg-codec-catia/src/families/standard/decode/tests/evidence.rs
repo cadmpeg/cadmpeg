@@ -1393,6 +1393,42 @@ fn standard_branch_ranking_stops_when_its_work_budget_is_exhausted() {
 }
 
 #[test]
+fn standard_branch_ranking_defers_candidate_work_until_frontier_completion() {
+    let supports = [[0, 1], [0, 1], [1, 2], [1, 2]]
+        .into_iter()
+        .enumerate()
+        .map(|(tag, faces)| StandardCurveSupport {
+            pos: tag,
+            tag: tag as u32,
+            faces,
+            geometry: StandardCurveGeometry::Line,
+        })
+        .collect::<Vec<_>>();
+    let first_domain = vec![[0, 2], [0, 3], [1, 2], [1, 3]];
+    let second_domain = vec![[4, 6], [4, 7], [5, 6], [5, 7]];
+    let candidates = [
+        first_domain.clone(),
+        first_domain,
+        second_domain.clone(),
+        second_domain,
+    ];
+    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let budget = WorkBudget::new(8);
+
+    assert_eq!(
+        standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            &candidates,
+            &groups,
+            &[None, None, None, None],
+            Some(&budget),
+        ),
+        Some(candidates.to_vec())
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
 fn standard_branch_group_binding_ignores_empty_unrelated_domains() {
     let supports = [
         StandardCurveSupport {
