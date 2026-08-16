@@ -484,14 +484,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must define the topology join from the retained compact edge identity to the final B-rep edge before projecting the selected edge.
 
-### DI-27. Component-surface-body reconciliation
-
-**Question.** How does a face selected by an `moCompSurfaceBody_c` path map to a face in the final B-rep?
-
-**Known.** The path identifies a generated feature-local face. `sldprt.md` §4.2 "Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]`" defines final B-rep face identities.
-
-**Need.** We must know the mapping to bind the selected surface-body faces.
-
 ### DI-28. Unbound general-curve references
 
 **Question.** How does a general-curve-reference form select geometry when it has no component-profile source record and no immediately preceding unique profile feature?

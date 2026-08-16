@@ -465,11 +465,19 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
     let surfaces = HashMap::from([(&surface.id, &surface)]);
     let mut selection = FaceSelection::Native("component-path".into());
     let origin = Point3::new(0.0, 0.0, 5.0);
+    let face_ids = HashMap::new();
+    let surface_selection_faces = SurfaceSelectionFaceBindings::new();
+    let face_selection_context = FaceSelectionContext {
+        ids: &face_ids,
+        feature_ref: None,
+        surface_selection_faces: &surface_selection_faces,
+    };
 
     resolve_offset_plane_face_selection(
         &mut selection,
         origin,
         Vector3::new(0.0, 0.0, 1.0),
+        &face_selection_context,
         std::slice::from_ref(&face),
         &surfaces,
     );

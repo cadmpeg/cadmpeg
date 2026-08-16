@@ -2415,14 +2415,19 @@ fn build_geometry_ir(
         &ir.model.shells,
         &ir.model.regions,
     );
+    let topology_selection_inputs = crate::history::TopologySelectionInputs {
+        bodies: &ir.model.bodies,
+        faces: &ir.model.faces,
+        surfaces: &ir.model.surfaces,
+        edges: &ir.model.edges,
+        curves: &ir.model.curves,
+        lanes: &native.feature_input_lanes,
+        face_identities: &face_identities,
+    };
     crate::history::bind_topology_selections(
         &mut ir.model.features,
         &histories,
-        &ir.model.bodies,
-        &ir.model.faces,
-        &ir.model.surfaces,
-        &ir.model.edges,
-        &ir.model.curves,
+        &topology_selection_inputs,
     );
     crate::resolved_features::bindings::bind_mirror_surface_planes(
         &mut ir.model.features,
