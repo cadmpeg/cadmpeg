@@ -337,6 +337,33 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             )
         })
         .collect::<HashMap<_, _>>();
+    // A zero-distance offset with an explicit feature reference is a geometric
+    // alias. Collapse only that provenance chain; independent coincident
+    // planes remain distinct candidates and stay ambiguous.
+    let zero_offset_parents = features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(reference)),
+                distance,
+            } = &feature.definition
+            else {
+                return None;
+            };
+            same_scalar(distance.0, 0.0).then_some((feature.id.clone(), reference.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let canonical_plane_id = |id: &str| {
+        let mut current = FeatureId(id.to_owned());
+        let mut visited = HashSet::new();
+        while visited.insert(current.clone()) {
+            let Some(parent) = zero_offset_parents.get(&current).cloned() else {
+                break;
+            };
+            current = parent;
+        }
+        current
+    };
     for feature in features.iter_mut() {
         let explicit_native_reference = feature.source_properties.contains_key("Reference")
             || feature.source_properties.contains_key("Plane");
@@ -475,7 +502,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 }
                 let history = history_key(feature)?;
                 let serialized_reference_frame = serialized_reference_frame(feature);
-                let mut candidates = features
+                let candidates = features
                     .iter()
                     .filter(|candidate| {
                         candidate.ordinal < feature.ordinal
@@ -525,10 +552,15 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                         (same_scalar(tangent.norm(), 0.0)
                             && same_scalar(signed_distance.abs(), distance.0.abs()))
                         .then_some((
-                            candidate.id.clone(),
+                            canonical_plane_id(candidate.id.as_str()),
                             distance.0.abs().copysign(signed_distance),
                         ))
                     });
+                let mut candidates_by_root = HashMap::new();
+                for (candidate, distance) in candidates {
+                    candidates_by_root.entry(candidate).or_insert(distance);
+                }
+                let mut candidates = candidates_by_root.into_iter();
                 let candidate = candidates.next()?;
                 candidates.next().is_none().then_some((index, candidate))
             })

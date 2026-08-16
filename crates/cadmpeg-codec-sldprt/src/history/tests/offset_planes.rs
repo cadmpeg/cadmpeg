@@ -149,6 +149,84 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
 }
 
 #[test]
+fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
+    let mut base = cadmpeg_ir::features::Feature::new(
+        "base".into(),
+        0,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, -1.0),
+        },
+    );
+    base.native_ref = Some("sldprt:history:feature#0:base".into());
+
+    let mut alias = cadmpeg_ir::features::Feature::new(
+        "alias".into(),
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(base.id.clone())),
+            distance: Length(0.0),
+        },
+    );
+    alias.native_ref = Some("sldprt:history:feature#0:alias".into());
+    alias
+        .source_properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    alias
+        .source_properties
+        .insert("Normal".into(), "1,0,0".into());
+    alias
+        .source_properties
+        .insert("UAxis".into(), "0,0,-1".into());
+
+    let mut offset = cadmpeg_ir::features::Feature::new(
+        "offset".into(),
+        2,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            }),
+            distance: Length(6.0),
+        },
+    );
+    offset.native_ref = Some("sldprt:history:feature#0:offset".into());
+    offset
+        .source_properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset
+        .source_properties
+        .insert("Normal".into(), "1,0,0".into());
+    offset
+        .source_properties
+        .insert("UAxis".into(), "0,0,-1".into());
+    offset
+        .source_properties
+        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
+    offset
+        .source_properties
+        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
+    offset
+        .source_properties
+        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+
+    let mut features = vec![base, alias, offset];
+    bind_offset_plane_references(&mut features);
+
+    assert!(matches!(
+        &features[2].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            distance: Length(6.0),
+        } if reference == &features[0].id
+    ));
+    assert_eq!(features[2].dependencies, [features[0].id.clone()]);
+}
+
+#[test]
 fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     let mut offset = cadmpeg_ir::features::Feature::new(
         "offset".into(),
