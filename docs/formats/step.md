@@ -760,6 +760,28 @@ the assignment has no resolvable colour. `INVISIBILITY` targeting a styled item
 sets `visible=false` on every appearance binding for that styled-item identity;
 targeting a base styled item also hides bindings emitted for its overriding
 styled items.
+
+ISO 10303-46 makes `presentation_style_assignment.styles` a SET. Its WR1
+forbids repeating a style type except `EXTERNALLY_DEFINED_STYLE` and
+`SURFACE_STYLE_USAGE`; WR2 permits at most two `SURFACE_STYLE_USAGE` values;
+WR3 requires two such values to apply to opposite surface sides.
+`surface_side_style.styles` contains at most one value of each style type, and
+`surface_style_rendering_with_properties.properties` contains at most one
+value of each property type. A valid assignment therefore has no two
+same-side surface renderings or two transparency values to rank. Distinct
+surface sides are handled by the CADIR side projection above. The format does
+not define a color or transparency precedence for other applicable style
+characteristics.
+
+CADIR decision: the scalar surface projection ranks the side policy before
+color. It does not use alpha to choose between different RGB colors. Equal-
+rank candidates with different RGB colors leave the scalar color unset, retain
+the source style graph as named opaque data, and produce
+`presentation.conflicting-scalar-colors`. When equal-rank candidates have the
+same RGB color, the projection retains the lower alpha so a rendering
+transparency property is not lost beside an opaque fill color. Independent
+effective styled items retain separate appearance bindings.
+
 Visibility remains binding-level and does not change visibility on a shared
 geometry carrier. The writer emits binding-specific `INVISIBILITY` records for
 emitted hidden styled items on schemas that support visibility; unsupported

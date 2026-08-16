@@ -981,16 +981,16 @@ struct ColorCandidate {
 #[derive(Clone)]
 enum ColorResolution {
     Candidate(ColorCandidate),
-    Ambiguous { rank: u8, alpha: f32 },
+    Ambiguous { rank: u8 },
 }
 
 type CachedColor = Option<ColorResolution>;
 
 impl ColorResolution {
-    fn priority(&self) -> (u8, f32) {
+    fn priority(&self) -> u8 {
         match self {
-            Self::Candidate(candidate) => (candidate.rank, candidate.color.a),
-            Self::Ambiguous { rank, alpha } => (*rank, *alpha),
+            Self::Candidate(candidate) => candidate.rank,
+            Self::Ambiguous { rank } => *rank,
         }
     }
 
@@ -1002,10 +1002,8 @@ impl ColorResolution {
             }
             Self::Ambiguous {
                 rank: candidate_rank,
-                alpha,
             } => Self::Ambiguous {
                 rank: candidate_rank.max(rank),
-                alpha,
             },
         }
     }
@@ -1019,9 +1017,7 @@ fn combine_color_resolutions(
     let mut ambiguous = false;
     for resolution in resolutions {
         let priority = resolution.priority();
-        let replace = best_priority.is_none_or(|current: (u8, f32)| {
-            priority.0 > current.0 || (priority.0 == current.0 && priority.1 < current.1)
-        });
+        let replace = best_priority.is_none_or(|current| priority > current);
         if replace {
             let is_ambiguous = matches!(&resolution, ColorResolution::Ambiguous { .. });
             best_priority = Some(priority);
@@ -1039,9 +1035,14 @@ fn combine_color_resolutions(
                         ambiguous = true;
                         continue;
                     };
-                    if current.color != candidate.color {
+                    let same_rgb = current.color.r == candidate.color.r
+                        && current.color.g == candidate.color.g
+                        && current.color.b == candidate.color.b;
+                    if !same_rgb {
                         ambiguous = true;
-                    } else if candidate.id < current.id {
+                    } else if candidate.color.a < current.color.a
+                        || (candidate.color.a == current.color.a && candidate.id < current.id)
+                    {
                         *current = candidate;
                     }
                 }
@@ -1049,9 +1050,9 @@ fn combine_color_resolutions(
             }
         }
     }
-    let (rank, alpha) = best_priority?;
+    let rank = best_priority?;
     if ambiguous {
-        Some(ColorResolution::Ambiguous { rank, alpha })
+        Some(ColorResolution::Ambiguous { rank })
     } else {
         best.map(ColorResolution::Candidate)
     }
@@ -1228,9 +1229,7 @@ fn find_color(
             Some(ColorResolution::Candidate(candidate)) => {
                 candidate.color.a = (1.0 - transparency) as f32;
             }
-            Some(ColorResolution::Ambiguous { alpha, .. }) => {
-                *alpha = (1.0 - transparency) as f32;
-            }
+            Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}
         }
     }

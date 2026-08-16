@@ -506,22 +506,24 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
 }
 
 #[test]
-fn equal_precedence_style_colors_do_not_select_by_source_order() {
+fn same_type_surface_colors_do_not_select_by_alpha_or_source_order() {
     let source = "#1=COLOUR_RGB('red',1.,0.,0.);
 #2=COLOUR_RGB('blue',0.,0.,1.);
-#3=SURFACE_STYLE_RENDERING(#1,$,$,$,$,$);
-#4=SURFACE_STYLE_RENDERING(#2,$,$,$,$,$);
-#5=PRESENTATION_STYLE_ASSIGNMENT((#3,#4));
-#6=STYLED_ITEM('',(#5),#7);
-#7=(ADVANCED_FACE() FACE_SURFACE());";
-    let reordered = source.replace("(#3,#4)", "(#4,#3)");
+#3=SURFACE_STYLE_TRANSPARENT(0.25);
+#4=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#1,(#3));
+#5=SURFACE_STYLE_TRANSPARENT(0.75);
+#6=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#2,(#5));
+#7=PRESENTATION_STYLE_ASSIGNMENT((#4,#6));
+#8=STYLED_ITEM('',(#7),#9);
+#9=(ADVANCED_FACE() FACE_SURFACE());";
+    let reordered = source.replace("(#4,#6)", "(#6,#4)");
 
     for input in [source, reordered.as_str()] {
         let result = decode_inline(input);
         assert!(result.ir().model.appearance_bindings.is_empty());
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::ConflictingScalarColors.kind()
-                && loss.message.contains("STYLED_ITEM #6")
+                && loss.message.contains("STYLED_ITEM #8")
                 && loss.message.contains("equal-precedence")
         }));
         assert!(result

@@ -858,32 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-09. Multiple same-domain style assignments
-
-**Question.** How does one STYLED_ITEM select among multiple valid same-domain style assignments?
-
-**Known.** `crates/cadmpeg-codec-step/src/reader/presentation.rs:271-350`
-flattens style references and resolves them through `find_color`. The
-combiner at `presentation.rs:1083-1127` ranks candidates by surface-side rank
-and alpha. Distinct colors at equal rank and equal alpha become an ambiguity,
-and the caller records `ConflictingScalarColors` without selecting a scalar
-color. Distinct colors at equal side rank but different alpha still use alpha
-as a tiebreak. The specification says source order does not select a scalar
-color, but it does not establish this alpha precedence or a complete rule for
-conflicting assignments within one style graph.
-
-**Need.** We need a witness file with two same-domain, equal-precedence colors on one styled item and a reordered copy, plus the source rule for conflicting assignments. The file must also cover same-rank colors with distinct transparency to establish whether alpha can rank colors.
-
-**Note.** QA audit: reopened after reviewing closing commit `857867aaf`. The
-closing code removes first-candidate selection only for equal side rank and
-equal alpha, and the test at `crates/cadmpeg-codec-step/src/reader/presentation/tests.rs:508-534`
-is authored with that code. A conservative ambiguity loss is not evidence of
-the source precedence rule. If two valid same-domain renderings have the same
-surface side but different transparency and distinct colors, `ColorResolution::priority`
-selects the lower alpha before conflict detection; no STEP rule in the current
-specification establishes that hue selection. The equal-alpha case now refuses
-and records a loss, but the full assignment question remains open.
-
 ### UM-04. Document fallback unit identity
 
 **Question.** Which unit context and unit occurrence supply the document
