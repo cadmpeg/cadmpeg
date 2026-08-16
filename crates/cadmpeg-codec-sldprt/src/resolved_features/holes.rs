@@ -1525,6 +1525,30 @@ fn hole_position_feature<'a>(
     position_features.next().is_none().then_some(position)
 }
 
+/// Whether a hole has a configuration-local position source in the supplied
+/// lanes. A lane without this carrier inherits the document hole placements;
+/// a lane with one must retain unresolved placement state when projection
+/// cannot establish its authored loci.
+pub(crate) fn hole_position_carrier_present(
+    feature: &cadmpeg_ir::features::Feature,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> bool {
+    let Some(native_ref) = feature.native_ref.as_deref() else {
+        return false;
+    };
+    let Some(native) = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|candidate| candidate.id == native_ref)
+    else {
+        return false;
+    };
+    lanes
+        .iter()
+        .any(|lane| hole_position_sketch_source(native, lane).is_some())
+}
+
 pub(crate) fn project_spatial_hole_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     spatial_sketches: &[SpatialSketch],

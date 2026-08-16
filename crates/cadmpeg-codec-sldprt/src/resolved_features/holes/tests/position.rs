@@ -26,6 +26,23 @@ use crate::records::{
 };
 
 #[test]
+fn hole_position_carrier_presence_requires_a_serialized_position_source() {
+    let history = native_history();
+    let hole = model_hole();
+
+    assert!(!hole_position_carrier_present(
+        &hole,
+        std::slice::from_ref(&history),
+        &[lane()]
+    ));
+    assert!(hole_position_carrier_present(
+        &hole,
+        &[history],
+        &[lane_with_position_reference(12)],
+    ));
+}
+
+#[test]
 fn compact_position_graph_selects_the_unique_bore_loci() {
     use FeatureInputRelationFamily::{
         PointPointDistance, PointPointHorizontalDistance, PointPointVerticalDistance,

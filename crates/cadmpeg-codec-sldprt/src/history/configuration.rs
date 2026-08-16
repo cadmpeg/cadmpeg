@@ -178,6 +178,12 @@ pub(crate) fn project_configuration_design_states(
         lanes,
         form_padding,
     );
+    let base_definitions = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.clone(), feature.definition.clone()))
+        .collect::<HashMap<_, _>>();
     for configuration in &mut ir.model.configurations {
         configuration.parameter_values.clear();
         configuration.feature_states.clear();
@@ -260,7 +266,26 @@ pub(crate) fn project_configuration_design_states(
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         ir.model.configurations[configuration_index].feature_states = features
             .into_iter()
-            .map(|feature| {
+            .map(|mut feature| {
+                if let Some(base_definition) = base_definitions.get(&feature.id) {
+                    // A scoped lane without a serialized position carrier has
+                    // no independent hole-locus state. Reuse neutral hole
+                    // semantics instead of turning an absent local record
+                    // into an authored unresolved override.
+                    let carrierless_hole =
+                        matches!(feature.definition, FeatureDefinition::Hole { .. })
+                            && !crate::resolved_features::holes::hole_position_carrier_present(
+                                &feature,
+                                histories,
+                                scoped_lanes,
+                            );
+                    if carrierless_hole {
+                        inherit_configuration_shared_semantics(
+                            &mut feature.definition,
+                            base_definition,
+                        );
+                    }
+                }
                 (
                     feature.id,
                     cadmpeg_ir::features::ConfigurationFeatureState {
@@ -689,42 +714,91 @@ pub(crate) fn inherit_configuration_shared_semantics(
         return;
     }
     let FeatureDefinition::Hole {
+        profile,
+        profile_filter,
         face,
+        position,
+        direction,
         placements,
         kind,
+        exit_kind,
         diameter,
         extent,
-        ..
+        bottom,
+        taper_angle,
+        specification,
+        allow_multi_profile_faces,
     } = definition
     else {
         return;
     };
     let FeatureDefinition::Hole {
+        profile: base_profile,
+        profile_filter: base_profile_filter,
         face: base_face,
+        position: base_position,
+        direction: base_direction,
         placements: base_placements,
         kind: base_kind,
+        exit_kind: base_exit_kind,
         diameter: base_diameter,
         extent: base_extent,
-        ..
+        bottom: base_bottom,
+        taper_angle: base_taper_angle,
+        specification: base_specification,
+        allow_multi_profile_faces: base_allow_multi_profile_faces,
     } = base_definition
     else {
         return;
     };
     let missing_construction = diameter.is_none() && extent.is_none();
-    if face.is_none() {
+    let missing_face = face
+        .as_ref()
+        .is_none_or(|face| !complete_configuration_face_selection(face));
+    if missing_face {
         face.clone_from(base_face);
+    }
+    if profile.is_none() {
+        profile.clone_from(base_profile);
+    }
+    if profile_filter.is_none() {
+        profile_filter.clone_from(base_profile_filter);
+    }
+    if position.is_none() {
+        position.clone_from(base_position);
+    }
+    if direction.is_none() {
+        direction.clone_from(base_direction);
     }
     if placements.is_empty() {
         placements.clone_from(base_placements);
     }
-    if missing_construction {
+    if missing_construction || matches!(kind, HoleKind::Unresolved { .. }) {
         kind.clone_from(base_kind);
+    }
+    if exit_kind.is_none() || matches!(exit_kind, Some(HoleKind::Unresolved { .. })) {
+        exit_kind.clone_from(base_exit_kind);
     }
     if diameter.is_none() {
         diameter.clone_from(base_diameter);
     }
-    if extent.is_none() {
+    if extent
+        .as_ref()
+        .is_none_or(|extent| matches!(extent, Termination::Unresolved))
+    {
         extent.clone_from(base_extent);
+    }
+    if bottom.is_none() {
+        bottom.clone_from(base_bottom);
+    }
+    if taper_angle.is_none() {
+        taper_angle.clone_from(base_taper_angle);
+    }
+    if specification.is_none() {
+        specification.clone_from(base_specification);
+    }
+    if allow_multi_profile_faces.is_none() {
+        allow_multi_profile_faces.clone_from(base_allow_multi_profile_faces);
     }
 }
 
