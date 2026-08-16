@@ -734,6 +734,13 @@ counts, U/V/W knot vectors, and ordered control net are settled. The Rust
 decoder transfers the complete nonrational cage state to native feature
 parameters and properties, converting only spatial control coordinates and
 retaining the source object for the native lattice boundary.
+The `ON_MorphControl` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its modern anonymous 2.1 variant-3 payload, bounded
+start-transform and end-cage children, sorted captive UUID list, spherical
+localizer, option fields, and class boundary are settled. The Rust decoder
+transfers the complete witnessed cage variant, resolves the captive-object
+link, converts spatial values and transform translations, and retains the
+source object because it does not apply the deformation.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -895,6 +902,30 @@ reports the same nonrational 2x2x2 cage and first/last control points
 points in V4/V50/V6; the inch result converts them to the corresponding
 millimeter values while retaining knots. The owner `cage` tests continue to
 gate rational weights and future-minor suffix handling.
+
+The morph-control slice is closed by `ON_MorphControl::Read`/`Write` in
+`/home/pcurve/side2/opennurbs/opennurbs_nurbsvolume.cpp:2540-2765`,
+`ON_Localizer::Read`/`Write` in
+`/home/pcurve/side2/opennurbs/opennurbs_morph.cpp:81-180`, and
+`ON_UuidList::Read`/`Write` in
+`/home/pcurve/side2/opennurbs/opennurbs_array.cpp:793-871`, the authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/morph_object_witness.cpp`,
+and its V4/V50/V6 plus inch-unit V6 outputs. `cadmpeg inspect` finds the
+morph class UUID at V4 `0x9c1`, V50 `0xa71`, V6 `0xaaa`, and inch V6 `0xab4`;
+the V4 class-data child starts at `0x9d5`, the outer anonymous payload is
+version `2.1` at `0x9e5`, the variant is `3` at `0x9ed`, the start-transform
+child begins at `0x9f1`, the end-control child at `0xa85`, the nested cage at
+`0xa95`, the captive UUID list at `0xbbd`, and the localizer list at `0xbe5`.
+The source readback reports the same transform, captive UUID, spherical
+localizer `(type 1, point [7,8,9], interval [5,2])`, tolerance `0.75`, and
+option flags in all four files. Final V4/V50/V6 query results transfer the
+same cage, transform, localizer, captive-object link, and options; inch V6
+converts end control points, localizer point and interval, transform
+translation, and tolerance by `25.4` while retaining transform linear terms,
+knots, and vectors. The existing `morph` owner tests gate the bounded cage,
+transform, localizer, future-minor, and major-rejection paths. This change
+closes this slice; the docs gate and pre-commit workspace gate remain to be
+run.
 
 ### FV-06. Later major payload admission
 

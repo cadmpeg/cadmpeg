@@ -3963,8 +3963,10 @@ if minor >= 1:
 Variant 1 stores a raw `ON_NurbsCurve` in each control chunk. Variant 2 stores
 a raw `ON_NurbsSurface` in each control chunk. Variant 3 stores an `ON_Xform`
 in the start chunk and one complete anonymous `ON_NurbsCage` in the end chunk.
-The UUID list is `i32 count` followed by that many UUID values. The localizer
-list is `i32 count` followed by that many localizer chunks.
+The UUID list is an anonymous major-1 chunk containing an archive array of
+UUIDs. `ON_UuidList::Write` sorts the active UUIDs before writing; the reader
+also normalizes the list after reading. The localizer list is an anonymous
+major-1 chunk containing `i32 count` followed by that many localizer chunks.
 
 Each localizer is anonymous version 1.0:
 
@@ -3982,14 +3984,24 @@ anonymous optional-surface version 1.0
 ```
 
 Localizer types are 0 none, 1 sphere, 2 plane, 3 cylinder, 4 curve, 5 surface,
-and 6 distance. Control points, localizer points, localizer distance intervals,
-transform translation coefficients, and tolerance use document length
-conversion. Vectors, transform linear coefficients, knots, parameters, and
-weights are unscaled. Tolerance is finite and nonnegative.
+and 6 distance. The OpenNURBS reader maps an unrecognized type value to type
+0. Control points, localizer points, localizer distance intervals, transform
+translation coefficients, and tolerance use document length conversion.
+Vectors, transform linear coefficients, knots, parameters, and weights are
+unscaled. Tolerance is finite and nonnegative.
 
 Legacy morph-control major version 1 is the cage variant. Its field order is a
 complete NURBS cage, captive UUID list, and start `ON_Xform`. It has no
 localizers and defaults tolerance and both option flags to zero or false.
+
+CADIR creates one native `morph_control` feature. Its parameters retain the
+variant, sorted captive UUIDs, tolerance, quick-preview flag, preserve-
+structure flag, and any resolved captive-object links. Variant 1 retains the
+start and end NURBS curves; variant 2 retains the start and end NURBS surfaces;
+variant 3 retains the start transform and end cage. Each localizer retains its
+type, point, vector, distance interval, and optional curve or surface. The
+deformation is not applied to captive objects: the source morph object remains
+retained for native fidelity and emits `morph.deformation-not-applied`.
 
 ## 19. Exact gates and invariants
 
