@@ -1089,6 +1089,8 @@ fn attach_feature_operations(
     let delete_reference_fields = features.feature_delete_reference_fields.as_slice();
     let delete_construction_payloads = features.feature_delete_construction_payloads.as_slice();
     let pattern_references = features.feature_pattern_references.as_slice();
+    let pattern_counted_reference_lanes =
+        features.feature_pattern_counted_reference_lanes.as_slice();
     let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
     let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
     let pattern_construction_fixed_lanes =
@@ -1377,6 +1379,10 @@ fn attach_feature_operations(
         });
     let pattern_references_by_operation =
         records_by_operation(pattern_references, |reference| &reference.operation_label);
+    let pattern_counted_reference_lanes_by_operation =
+        records_by_operation(pattern_counted_reference_lanes, |lane| {
+            &lane.operation_label
+        });
     let pattern_construction_payloads_by_operation =
         records_by_operation(pattern_construction_payloads, |payload| {
             &payload.operation_label
@@ -2600,6 +2606,16 @@ fn attach_feature_operations(
             source_properties.insert(
                 "pattern_construction_payload".to_string(),
                 payload.id.clone(),
+            );
+        }
+        for lane in pattern_counted_reference_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                "pattern_counted_reference_lane".to_string(),
+                lane.id.clone(),
             );
         }
         for value in pattern_construction_strings_by_operation

@@ -1408,6 +1408,17 @@ pub struct PatternPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Exact counted non-null reference lane in a `Pattern Feature` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatternPayloadCountedReferenceLane {
+    /// Absolute offset of the opening `01, count` field.
+    pub offset: usize,
+    /// Serialized count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered non-null object references after the count.
+    pub references: Vec<PayloadObjectReference>,
+}
+
 /// Exact two-group reference graph in an `FSET` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FsetPayloadReferenceGraph {
@@ -2961,6 +2972,58 @@ pub fn pattern_payload_references(
         return None;
     };
     Some(field.clone())
+}
+
+/// Decode the unique exactly terminated counted reference lane in a bounded
+/// `Pattern Feature` payload without assigning its reference roles.
+pub fn pattern_payload_counted_reference_lane(
+    record: OperationRecord<'_>,
+) -> Option<PatternPayloadCountedReferenceLane> {
+    const TRAILER: [u8; 19] = [
+        0x00, 0x00, 0x00, 0x37, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x38, 0xff, 0x01, 0xff, 0xff,
+        0xff, 0xff, 0x01, 0xff,
+    ];
+    if record.label.value != "Pattern Feature" {
+        return None;
+    }
+    let decode = |start: usize| {
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let reference_count = usize::from(declared_count - 1);
+        let references_start = start.checked_add(2)?;
+        cadmpeg_core::decode::bounded_len(
+            u64::from(declared_count - 1),
+            2,
+            record.payload.len().saturating_sub(references_start),
+        )?;
+        let mut at = references_start;
+        let mut references = Vec::with_capacity(reference_count);
+        for _ in 0..reference_count {
+            let offset = at;
+            let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+            at = at.checked_add(width)?;
+            references.push(PayloadObjectReference {
+                offset: record.payload_offset + offset,
+                object_index,
+                raw_object_index: record.payload[offset..at].to_vec(),
+            });
+        }
+        let trailer_end = at.checked_add(TRAILER.len())?;
+        (record.payload.get(at..trailer_end) == Some(&TRAILER)).then_some(())?;
+        Some(PatternPayloadCountedReferenceLane {
+            offset: record.payload_offset + start,
+            declared_count,
+            references,
+        })
+    };
+    let matches = (0..record.payload.len())
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
 }
 
 /// Decode the unique exactly bounded two-group reference graph in an `FSET`

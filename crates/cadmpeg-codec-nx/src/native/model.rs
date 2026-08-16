@@ -174,6 +174,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_delete_reference_fields: Vec<FeatureDeleteReferenceField>,
     pub(crate) feature_delete_construction_payloads: Vec<FeatureDeleteConstructionPayload>,
     pub(crate) feature_pattern_references: Vec<FeaturePatternReference>,
+    pub(crate) feature_pattern_counted_reference_lanes: Vec<FeaturePatternCountedReferenceLane>,
     pub(crate) feature_pattern_construction_payloads: Vec<FeaturePatternConstructionPayload>,
     pub(crate) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
     pub(crate) feature_pattern_construction_fixed_lanes: Vec<FeaturePatternConstructionFixedLane>,
@@ -679,6 +680,8 @@ impl NativeModel {
         let feature_delete_construction_payloads =
             feature_delete_construction_payloads(container, &feature_delete_reference_fields);
         let feature_pattern_references = feature_pattern_references(container);
+        let feature_pattern_counted_reference_lanes =
+            feature_pattern_counted_reference_lanes(container);
         let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
             container,
             &feature_operation_labels,
@@ -1089,6 +1092,7 @@ impl NativeModel {
                 feature_delete_reference_fields,
                 feature_delete_construction_payloads,
                 feature_pattern_references,
+                feature_pattern_counted_reference_lanes,
                 feature_pattern_construction_payloads,
                 feature_pattern_construction_strings,
                 feature_pattern_construction_fixed_lanes,

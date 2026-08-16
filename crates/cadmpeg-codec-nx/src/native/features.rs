@@ -1587,6 +1587,27 @@ pub struct FeaturePatternReference {
     pub source_offset: u64,
 }
 
+/// Exact counted reference lane carried by a bounded `Pattern Feature` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeaturePatternCountedReferenceLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `Pattern Feature` operation label.
+    pub operation_label: String,
+    /// Serialized count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered serialized object indices.
+    pub object_indices: Vec<u32>,
+    /// Exact variable-width object-index tokens in lane order.
+    pub raw_object_indices: Vec<Vec<u8>>,
+    /// Independently resolved offset-store blocks; unresolved entries are `None`.
+    pub data_blocks: Vec<Option<String>>,
+    /// Absolute source offset of the opening `01, count` field.
+    pub source_offset: u64,
+    /// Absolute source offsets of the object-index tokens.
+    pub object_index_source_offsets: Vec<u64>,
+}
+
 /// Exact logical payload reconstructed from an ordered pattern-reference graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePatternConstructionPayload {
@@ -6202,6 +6223,54 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
         },
     );
     references
+}
+
+/// Decode and resolve the exact counted reference lane in `Pattern Feature`
+/// payloads without assigning roles to its references.
+pub fn feature_pattern_counted_reference_lanes(
+    container: &Container,
+) -> Vec<FeaturePatternCountedReferenceLane> {
+    let indexed = container.indexed_om_sections();
+    let mut lanes = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(lane) = crate::om::pattern_payload_counted_reference_lane(record) else {
+                return;
+            };
+            lanes.push(FeaturePatternCountedReferenceLane {
+                id: format!(
+                    "nx:feature-history:pattern-counted-reference-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                declared_count: lane.declared_count,
+                object_indices: lane
+                    .references
+                    .iter()
+                    .map(|reference| reference.object_index)
+                    .collect(),
+                raw_object_indices: lane
+                    .references
+                    .iter()
+                    .map(|reference| reference.raw_object_index.clone())
+                    .collect(),
+                data_blocks: lane
+                    .references
+                    .iter()
+                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index))
+                    .collect(),
+                source_offset: entry_offset + lane.offset as u64,
+                object_index_source_offsets: lane
+                    .references
+                    .iter()
+                    .map(|reference| entry_offset + reference.offset as u64)
+                    .collect(),
+            });
+        },
+    );
+    lanes
 }
 
 /// Reconstruct ordered logical payloads from complete pattern-reference graphs.

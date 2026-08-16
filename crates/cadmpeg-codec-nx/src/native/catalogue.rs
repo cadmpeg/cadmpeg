@@ -2465,6 +2465,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_pattern_counted_reference_lanes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_counted_reference_lanes, r, ns),
+        len: |m| m.features.feature_pattern_counted_reference_lanes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_pattern_construction_payloads",
         tag: None,
         exactness: Exactness::ByteExact,
