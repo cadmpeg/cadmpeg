@@ -298,7 +298,7 @@ impl<'a> Lexer<'a> {
             b'<' => self.resource()?,
             b'.' if self
                 .next_non_ignored(self.at + 1)
-                .is_some_and(|byte| byte.is_ascii_alphabetic()) =>
+                .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_') =>
             {
                 self.enumeration()?
             }
@@ -477,9 +477,11 @@ impl<'a> Lexer<'a> {
         self.at += 1;
         self.skip_ignored();
         let name_start = self.at;
-        while self.input.get(self.at).is_some_and(|b| {
-            b.is_ascii_alphanumeric() || matches!(*b, b'_' | b'-') || b.is_ascii_control()
-        }) {
+        while self
+            .input
+            .get(self.at)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_' || b.is_ascii_control())
+        {
             self.at += 1;
         }
         self.skip_ignored();

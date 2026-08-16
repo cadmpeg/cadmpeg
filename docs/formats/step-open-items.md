@@ -858,24 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### EL-03. Enumeration name characters
-
-**Question.** What STEP rule establishes enumeration name characters?
-
-**Known.** An enumeration name begins with an ASCII letter and accepts
-ASCII letters, digits, underscore, and hyphen until its closing dot.
-
-`step.md` §3 gives `enumeration = "." standard_name "."` and
-`standard_name = letter (letter | digit | "_" | "-")*`.
-
-The lexer applies the same `standard_name` character class to
-enumerations and entity names. A name without its closing dot remains a lexical
-error.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### EL-04. Signature section boundary
 
 **Question.** What STEP rule establishes signature section boundary?

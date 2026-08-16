@@ -104,7 +104,7 @@ real          = sign? ((digit+ "." digit* exponent?)
                        | (digit+ exponent ".")
                        | (digit+ exponent))
 exponent      = ("E" | "e" | "D" | "d") sign? digit+
-enumeration   = "." standard_name "."
+enumeration   = "." (letter | "_") (letter | digit | "_")* "."
 string        = "'" string_item* "'"
 binary        = '"' indicator hex_digit* '"'
 indicator     = "0" | "1" | "2" | "3"
@@ -120,6 +120,10 @@ keyword spelling uses uppercase. CADIR decision: the reader matches keywords
 and the opening token without ASCII case, as a recovery tolerance. Anchor tag
 names preserve source case and use letters, digits, and underscore; a tag name
 cannot begin with a digit.
+
+Enumeration names begin with an ASCII letter or underscore and continue with
+ASCII letters, digits, or underscore. The reader converts ASCII lowercase to
+uppercase. A hyphen is not an enumeration character.
 
 Numeric `#` and `@` occurrences require at least one nonzero digit. Leading
 zeroes are accepted and removed from the stored integer. Entity and value
