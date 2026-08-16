@@ -47,6 +47,8 @@ The format-authoritative numeric rules are Global real-token representation inte
 
 Global strings are Hollerith strings containing printable ASCII characters. Spaces, parameter delimiters, and record delimiters are valid string data. A control byte or a non-ASCII byte makes the Global record malformed. Accepted sender-product and native-file-name strings become the corresponding source attributes.
 
+Global Hollerith values are unlimited-length ASCII strings; spaces and both delimiters are data, and ASCII controls `0x00` through `0x1F` and `0x7F` are forbidden by [IGES 5.3 §2.2.2.3](https://paulbourke.net/dataformats/iges/IGES.pdf). The decoder rejects non-ASCII and control bytes in Global Hollerith payloads and retains the complete original byte image in source fidelity.
+
 ## Directory Entry section
 
 Each Directory Entry contains twenty fixed eight-byte fields across two cards. Blank numeric fields have their field-defined default. Nonblank numeric fields are right-aligned signed decimal integers.

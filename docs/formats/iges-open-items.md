@@ -47,16 +47,6 @@ from a conformant file.
 
 ## 2. Global metadata
 
-### GL-04. Byte encoding of Global Hollerith values
-
-**Question.** What character encoding do Global Hollerith values use?
-
-**Known.** `global.rs:90-101` rejects non-ASCII and control bytes in Hollerith payloads. `global.rs:562-571` exposes selected values only after UTF-8 conversion; raw source bytes remain in the retained source image. The Global section of `iges.md` states the counted-byte rule but does not identify a character-set authority for all Global text fields.
-
-**Need.** We need the permitted character set and a retention rule for non-UTF-8 values. Raw-byte preservation does not decide whether a producer's byte sequence is valid IGES text.
-
-**Note.** Reopened by the 2026-08-16 audit. Raw-byte retention and tests establish storage behavior, not the format character-set rule.
-
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ### DR-04. One malformed subfigure definition blocks every inferred occurrence root
