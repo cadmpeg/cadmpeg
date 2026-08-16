@@ -45,16 +45,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-04. A physical line longer than 80 bytes
-
-**Question.** How does a physical line with more than 80 payload bytes divide into records?
-
-**Known.** IGES 5.3 §§2.2 and 2.2.4.6 define 80-column Fixed ASCII cards and permit unsequenced data after the Terminate section. `card.rs:162-208` accepts an overlong line when its first 80-byte header is `T`, emits the card, and retains the remainder as an unsequenced physical record. `card/tests.rs:171-187` asserts this behavior. The Physical representation section of `iges.md` records the same split.
-
-**Need.** Establish whether the post-Terminate remainder may share the physical line that contains the Terminate card, or must be a following unsequenced line. Classify the split as an IGES rule or as a CADIR recovery rule.
-
-**Note.** The 2026-08-16 closure audit reopened PH-04. Commit `11321f89c` used the fixed-line and post-Terminate clauses plus a synthesized witness, but those clauses do not state the same-line division explicitly. The next probe must use the primary wording and an exporter-authored witness, then mark any receiver recovery policy as CADIR in the specification.
-
 ## 2. Global metadata
 
 ## 3. Directory fields, the reference graph, and the native arenas

@@ -174,6 +174,20 @@ fn terminate_card_remainder_is_retained_after_terminate() {
     let line_end = bytes.len() - 1;
     bytes.insert(line_end, b'x');
 
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes.as_slice()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    let post_terminate = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "post-terminate")
+        .unwrap();
+    assert_eq!(post_terminate.role, "retained-trailing-records");
+    assert_eq!(post_terminate.attributes["records"], "1");
+
     let result = IgesCodec
         .decode(
             &mut Cursor::new(bytes.as_slice()),
