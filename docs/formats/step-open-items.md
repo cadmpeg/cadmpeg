@@ -144,16 +144,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** QA audit: commit `ed6dd2432` closed this item by declaring the bounded heuristic a CADIR admission rule. Naming the limits does not prove the selected candidate or settle the verification gap.
 
-### TP-10. Duplicate outer-bound disposition
-
-**Question.** What source-native or CADIR result preserves a malformed face that has multiple `FACE_OUTER_BOUND` records?
-
-**Known.** Part 42 prohibits multiple outer bounds. The reader records a loss and omits the containing topology shell.
-
-**Need.** We need an explicit neutral preservation model or independent malformed-input policy that verifies the intended disposition without selecting by order.
-
-**Note.** QA audit: commit `f5fb728e1` closed this item after adding reordered refusal tests. Conservative shell omission is not a format answer for malformed input.
-
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation

@@ -662,6 +662,8 @@ fn duplicate_face_outer_bounds_reject_the_containing_topology_in_any_order() {
 
 #[test]
 fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
+    use std::collections::{BTreeMap, BTreeSet};
+
     for input in [
         include_bytes!("data/tp10_duplicate_outer_first.p21").as_slice(),
         include_bytes!("data/tp10_duplicate_outer_reordered.p21").as_slice(),
@@ -683,12 +685,79 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
         assert!(decoded.ir().model.bodies.is_empty());
         assert!(decoded.ir().model.faces.is_empty());
         assert!(decoded.ir().model.surfaces.is_empty());
-        assert!(decoded
+        let unknowns = decoded
             .ir()
             .native_unknowns("step")
-            .expect("STEP native namespace")
+            .expect("STEP native namespace");
+        let ids = unknowns
             .iter()
-            .any(|record| record.id.0.ends_with("#10")));
+            .map(|record| record.id.0.clone())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            ids,
+            BTreeSet::from([
+                "step:data:face#10".to_string(),
+                "step:data:face_outer_bound#7".to_string(),
+                "step:data:face_outer_bound#9".to_string(),
+                "step:data:manifold_surface_shape_representation#13".to_string(),
+                "step:data:open_shell#11".to_string(),
+                "step:data:poly_loop#6".to_string(),
+                "step:data:poly_loop#8".to_string(),
+                "step:data:shell_based_surface_model#12".to_string(),
+            ])
+        );
+        let links = unknowns
+            .iter()
+            .map(|record| (record.id.0.clone(), record.links.clone()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            links,
+            BTreeMap::from([
+                (
+                    "step:data:face#10".to_string(),
+                    vec![
+                        "step:data:face_outer_bound#7".to_string(),
+                        "step:data:face_outer_bound#9".to_string(),
+                    ],
+                ),
+                (
+                    "step:data:face_outer_bound#7".to_string(),
+                    vec!["step:data:poly_loop#6".to_string()],
+                ),
+                (
+                    "step:data:face_outer_bound#9".to_string(),
+                    vec!["step:data:poly_loop#8".to_string()],
+                ),
+                (
+                    "step:data:manifold_surface_shape_representation#13".to_string(),
+                    vec!["step:data:shell_based_surface_model#12".to_string()],
+                ),
+                (
+                    "step:data:open_shell#11".to_string(),
+                    vec!["step:data:face#10".to_string()],
+                ),
+                (
+                    "step:data:poly_loop#6".to_string(),
+                    vec![
+                        "step:data:point#3".to_string(),
+                        "step:data:point#4".to_string(),
+                        "step:data:point#5".to_string(),
+                    ],
+                ),
+                (
+                    "step:data:poly_loop#8".to_string(),
+                    vec![
+                        "step:data:point#3".to_string(),
+                        "step:data:point#4".to_string(),
+                        "step:data:point#5".to_string(),
+                    ],
+                ),
+                (
+                    "step:data:shell_based_surface_model#12".to_string(),
+                    vec!["step:data:open_shell#11".to_string()],
+                ),
+            ])
+        );
     }
 }
 

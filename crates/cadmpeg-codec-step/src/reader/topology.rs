@@ -2008,7 +2008,7 @@ fn build_one(
                 .count();
             if outer_bound_count > 1 {
                 let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
-                    "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier"
+                    "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier and retaining the source face, bounds, loops, and enclosing records as opaque"
                 ));
                 losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
                     format: "step".into(),
