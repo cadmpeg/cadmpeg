@@ -399,6 +399,13 @@ item = "cadmpeg_ir::sketches::{SketchDistancePair,SketchConstraintDefinition::Eq
 reason = "Creo function 33 transfers equality of two endpoint-pair distances as a typed sketch relation"
 
 [[change]]
+commit = "cf9f7389c38cfa62d51608542d68f10d4e03b85d"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance"
+reason = "Creo function 0 transfers complete polar endpoint displacement as a typed sketch relation"
+
+[[change]]
 commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
 crate = "cadmpeg-core"
 kind = "deletion"

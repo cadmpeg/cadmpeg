@@ -11,6 +11,10 @@ use super::equations_coordinate::{
     SectionCoordinateEquation, SectionCoordinateVariable,
 };
 
+const EPS_RADIAL_VALUE: f64 = 1e-9;
+const EPS_RADIAL_ANGLE: f64 = 1e-9;
+const EPS_RADIAL_ZERO: f64 = 1e-12;
+
 pub(crate) fn section_equation_coordinate_equalities(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -561,12 +565,15 @@ pub(crate) struct SectionRadialConstraint {
     pub(crate) angle: (u32, u32),
     pub(crate) radius_value: Option<f64>,
     pub(crate) angle_value: Option<f64>,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 impl SectionRadialConstraint {
     pub(crate) fn offset(self) -> Option<[f64; 2]> {
         let radius = self.radius_value?;
-        if radius.abs() <= 1e-12 {
+        if radius.abs() <= EPS_RADIAL_ZERO {
             return Some([0.0; 2]);
         }
         let angle = self.angle_value?;
@@ -575,6 +582,17 @@ impl SectionRadialConstraint {
 }
 
 pub(crate) fn section_equation_radial_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionRadialConstraint> {
+    section_equation_radial_constraint_rows(definition, coordinates, ambiguous_point_ids)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .collect()
+}
+
+pub(crate) fn section_equation_radial_constraint_rows(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -600,7 +618,6 @@ pub(crate) fn section_equation_radial_constraints(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6)
         .filter_map(|equation| {
             let [
@@ -644,35 +661,42 @@ pub(crate) fn section_equation_radial_constraints(
                 Some(_) => return None,
                 None => None,
             };
-            let first_point = coordinates.get(&first_u.key).and_then(|point| {
-                Some([point[0]?, point[1]?])
-            });
-            let second_point = coordinates.get(&second_u.key).and_then(|point| {
-                Some([point[0]?, point[1]?])
-            });
-            if let (Some(first), Some(second)) = (first_point, second_point) {
-                if !first.into_iter().chain(second).all(f64::is_finite) {
-                    return None;
-                }
-                let delta = [second[0] - first[0], second[1] - first[1]];
-                let distance = delta[0].hypot(delta[1]);
-                let scale = distance
-                    .abs()
-                    .max(radius_value.unwrap_or(0.0).abs())
-                    .max(1.0);
-                if radius_value.is_some_and(|value| (value - distance).abs() > 1e-9 * scale) {
-                    return None;
-                }
-                radius_value.get_or_insert(distance);
-                if distance > 1e-12 {
-                    let derived_angle = delta[1].atan2(delta[0]);
-                    if angle_value.is_some_and(|value| {
-                        let difference = (value - derived_angle).rem_euclid(std::f64::consts::TAU);
-                        difference.min(std::f64::consts::TAU - difference) > 1e-9
-                    }) {
+            let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+            if active {
+                let first_point = coordinates.get(&first_u.key).and_then(|point| {
+                    Some([point[0]?, point[1]?])
+                });
+                let second_point = coordinates.get(&second_u.key).and_then(|point| {
+                    Some([point[0]?, point[1]?])
+                });
+                if let (Some(first), Some(second)) = (first_point, second_point) {
+                    if !first.into_iter().chain(second).all(f64::is_finite) {
                         return None;
                     }
-                    angle_value.get_or_insert(derived_angle);
+                    let delta = [second[0] - first[0], second[1] - first[1]];
+                    let distance = delta[0].hypot(delta[1]);
+                    let scale = distance
+                        .abs()
+                        .max(radius_value.unwrap_or(0.0).abs())
+                        .max(1.0);
+                    if radius_value
+                        .is_some_and(|value| (value - distance).abs() > EPS_RADIAL_VALUE * scale)
+                    {
+                        return None;
+                    }
+                    radius_value.get_or_insert(distance);
+                    if distance > EPS_RADIAL_ZERO {
+                        let derived_angle = delta[1].atan2(delta[0]);
+                        if angle_value.is_some_and(|value| {
+                            let difference =
+                                (value - derived_angle).rem_euclid(std::f64::consts::TAU);
+                            difference.min(std::f64::consts::TAU - difference)
+                                > EPS_RADIAL_ANGLE
+                        }) {
+                            return None;
+                        }
+                        angle_value.get_or_insert(derived_angle);
+                    }
                 }
             }
             Some(SectionRadialConstraint {
@@ -682,6 +706,9 @@ pub(crate) fn section_equation_radial_constraints(
                 angle: (angle.variable_type, angle.key),
                 radius_value,
                 angle_value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active,
             })
         })
         .collect()

@@ -57,6 +57,36 @@ pub(in super::super) fn section_point_locus(
         .collect::<Vec<_>>();
     candidates.extend(
         segments
+            .rows
+            .iter()
+            .filter(|segment| {
+                unique_entities.contains(&segment.external_id)
+                    && segment.kind == crate::feature::FeatureSegmentKind::Arc
+                    && segment.center_id == Some(point_id)
+            })
+            .map(|segment| {
+                (
+                    segment.offset,
+                    SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)),
+                )
+            }),
+    );
+    candidates.extend(
+        segments
+            .circle_rows
+            .iter()
+            .filter(|segment| {
+                unique_entities.contains(&segment.external_id) && segment.center_id == point_id
+            })
+            .map(|segment| {
+                (
+                    segment.offset,
+                    SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)),
+                )
+            }),
+    );
+    candidates.extend(
+        segments
             .point_rows
             .iter()
             .filter(|segment| {
@@ -1196,5 +1226,58 @@ mod tests {
                 offset: 40,
             });
         assert_eq!(section_point_locus(&ambiguous, &sketch, 7), None);
+    }
+
+    #[test]
+    fn circular_segment_centers_supply_center_loci() {
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 1,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Arc,
+                    directions: [None; 3],
+                    point_ids: [1, 2],
+                    center_id: Some(3),
+                    arc_orientation: Some(0),
+                    vertical_horizontal: None,
+                    radius_ref: Some(4),
+                    radius2_ref: None,
+                    external_id: 30,
+                    body: Vec::new(),
+                    offset: 10,
+                }],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId("creo:model:sketch#917".to_string());
+        assert_eq!(
+            section_point_locus(&definition, &sketch, 3),
+            Some(SketchLocus::Center(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:30".to_string(),
+            )))
+        );
     }
 }

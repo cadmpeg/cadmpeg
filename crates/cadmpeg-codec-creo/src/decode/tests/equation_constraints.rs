@@ -4,9 +4,10 @@
 use crate::decode::sketch_transfer::{
     section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
     section_equation_native_constraints, section_equation_point_on_line_constraints,
-    section_equation_radius_dimension_constraints, section_equation_unsigned_distance_constraints,
+    section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,
+    section_equation_unsigned_distance_constraints,
 };
-use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchDistancePair, SketchEntityId, SketchLocus,
 };
@@ -245,6 +246,133 @@ fn equation_function_two_emits_radius_dimension_constraint() {
         offset: 899,
     });
     let disabled_constraints = section_equation_radius_dimension_constraints(&disabled, &sketch);
+    assert_eq!(disabled_constraints.len(), 1);
+    assert_eq!(disabled_constraints[0].0.active, Some(false));
+}
+
+#[test]
+fn equation_function_zero_emits_polar_distance_constraint() {
+    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let line = |external_id, point_ids| crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: external_id as usize,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x00\xf8\x06\x00\x01\x02\x03\x04\x05\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 6,
+            entity_ref: None,
+            rows: vec![
+                variable(1, 1, Some(0.0)),
+                variable(2, 1, Some(0.0)),
+                variable(1, 2, Some(0.0)),
+                variable(2, 2, Some(2.0)),
+                variable(3, 9, Some(2.0)),
+                variable(6, 10, Some(std::f64::consts::FRAC_PI_2)),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 2,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![line(10, [1, 3]), line(11, [2, 4])],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let constraints = section_equation_polar_distance_constraints(&definition, &sketch);
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].1, 28);
+    assert_eq!(constraints[0].0.active, Some(true));
+    assert_eq!(
+        constraints[0].0.definition,
+        SketchConstraintDefinition::PolarDistance {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into(),)),
+            distance: Length(2.0),
+            angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+            distance_parameter: None,
+        }
+    );
+
+    let mut disabled = definition;
+    disabled.relations = Some(crate::feature::FeatureRelationTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: Vec::new(),
+        skamps: vec![crate::feature::FeatureSkamp {
+            id: 900,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: Vec::new(),
+            offset: 900,
+        }],
+        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 901,
+            offset: 900,
+        }),
+        triples: vec![crate::feature::FeatureRelationTriple {
+            relation_id: None,
+            equation_id: Some(1),
+            skamp_id: Some(900),
+            offset: 902,
+        }],
+        triples_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 903,
+            offset: 902,
+        }),
+        offset: 899,
+    });
+    let disabled_constraints = section_equation_polar_distance_constraints(&disabled, &sketch);
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }

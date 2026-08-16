@@ -1175,6 +1175,23 @@ pub enum SketchConstraintDefinition {
         /// Driving distance parameter.
         parameter: ParameterId,
     },
+    /// A second locus is displaced from the first by a polar sketch-space
+    /// distance and direction.
+    PolarDistance {
+        /// Origin locus of the displacement.
+        first: SketchLocus,
+        /// Displaced locus.
+        second: SketchLocus,
+        /// Non-negative displacement length in model units.
+        distance: Length,
+        /// Direction from the sketch-u axis; absent when the displacement is
+        /// zero and therefore has no defined direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<Angle>,
+        /// Driving distance parameter, when the source supplies one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance_parameter: Option<ParameterId>,
+    },
     /// Two explicit Euclidean locus pairs have equal separation.
     EqualDistance {
         /// First measured locus pair.

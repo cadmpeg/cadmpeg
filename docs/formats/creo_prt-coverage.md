@@ -66,6 +66,10 @@ fixtures, scores above L1 remain blocked.
   constraints when the radius key binds to unique emitted arc or circle
   entities and the complete type-3 dimension agrees with the equation scalar;
   solver activity is retained.
+- Function-zero equations transfer as typed polar-distance constraints when
+  both point loci and finite radial and angular values reconcile. Zero-length
+  rows omit the undefined direction, and a reconciled type-3 radius dimension
+  remains attached as the driving distance parameter.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots

@@ -108,6 +108,7 @@ pub(crate) struct SectionUnsignedCoordinateDistance {
 
 #[derive(Clone, Copy)]
 pub(crate) struct SectionRadiusDimension {
+    pub(crate) radius_variable: SectionScalarVariable,
     pub(crate) radius: u32,
     pub(crate) scalar: SectionScalarVariable,
     pub(crate) value: f64,
@@ -276,6 +277,7 @@ pub(crate) fn section_equation_radius_dimensions(
             }
             let value = section_equation_dimension_scalar_value(scalar, dimension_value, true)?;
             Some(SectionRadiusDimension {
+                radius_variable: (radius.variable_type, radius.key),
                 radius: radius.key,
                 scalar: (scalar.variable_type, scalar.key),
                 value,

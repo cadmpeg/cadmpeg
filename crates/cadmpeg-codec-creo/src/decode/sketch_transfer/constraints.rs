@@ -8,10 +8,10 @@ use super::super::feature_history::{
 use super::super::sketch::{
     approximately_equal, resolved_section_coordinates,
     section_equation_function_forty_three_axis_distance_rows,
-    section_equation_point_on_line_constraint_rows, section_equation_radius_dimensions,
-    section_equation_unsigned_coordinate_distance_rows, section_line_fixed_coordinate,
-    section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
-    unique_section_skamp_segment,
+    section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
+    section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
+    section_line_fixed_coordinate, section_linear_distance_coordinate, section_segment_rows,
+    section_type5_radius_arc, unique_section_skamp_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
@@ -20,12 +20,14 @@ use super::{
     unique_section_segment_external_ids,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair,
     SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+const EPS_POLAR_ZERO: f64 = 1e-12;
 
 pub(in super::super) fn section_segment_verhor_definition(
     segment: &crate::feature::FeatureSegment,
@@ -95,6 +97,7 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::SameCoordinate { first, second, .. }
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinition::PolarDistance { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
             locus_emitted(first) && locus_emitted(second)
@@ -181,6 +184,17 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
                 .is_some_and(|parameter| !emitted.contains(parameter))
             {
                 *parameter = None;
+            }
+            true
+        }
+        SketchConstraintDefinition::PolarDistance {
+            distance_parameter, ..
+        } => {
+            if distance_parameter
+                .as_ref()
+                .is_some_and(|parameter| !emitted.contains(parameter))
+            {
+                *distance_parameter = None;
             }
             true
         }
@@ -729,6 +743,95 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
         ))
     })
     .collect()
+}
+
+pub(in super::super) fn section_equation_polar_distance_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let coordinates = resolved_section_coordinates(definition);
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .filter(|variables| variables.is_complete())
+        .map(|variables| variables.reconciled_points().1)
+        .unwrap_or_default();
+    let mut dimension_parameters = BTreeMap::<(u32, u32), Option<ParameterId>>::new();
+    if let Some(dimensions) = definition.dimensions.as_ref() {
+        for equation in section_equation_radius_dimensions(definition) {
+            let Some(ordinal) = usize::try_from(equation.scalar.1).ok() else {
+                continue;
+            };
+            let Some((dimension, parameter)) =
+                resolved_feature_dimension_parameter(sketch, dimensions, ordinal)
+            else {
+                continue;
+            };
+            if dimension.dimension_type != 3
+                || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
+                || !dimension
+                    .value
+                    .is_some_and(|value| value.is_finite() && value > 0.0)
+                || !approximately_equal(dimension.value.unwrap_or_default(), equation.value)
+            {
+                continue;
+            }
+            for variable in [equation.radius_variable, equation.scalar] {
+                let slot = dimension_parameters
+                    .entry(variable)
+                    .or_insert_with(|| Some(parameter.clone()));
+                if slot.as_ref() != Some(&parameter) {
+                    *slot = None;
+                }
+            }
+        }
+    }
+    section_equation_radial_constraint_rows(definition, &coordinates, &ambiguous_point_ids)
+        .into_iter()
+        .filter_map(|equation| {
+            let distance = equation.radius_value?;
+            if !distance.is_finite() || distance < 0.0 {
+                return None;
+            }
+            let angle = if distance <= EPS_POLAR_ZERO {
+                None
+            } else {
+                Some(Angle(equation.angle_value?))
+            };
+            let first = section_point_locus(definition, sketch, equation.first)?;
+            let second = section_point_locus(definition, sketch, equation.second)?;
+            let distance_parameter = dimension_parameters
+                .get(&equation.radius)
+                .and_then(Clone::clone);
+            Some((
+                SketchConstraint {
+                    id: sketch_constraint_id(
+                        sketch,
+                        format_args!("equation:{}", equation.equation_id),
+                    ),
+                    sketch: sketch.clone(),
+                    definition: SketchConstraintDefinition::PolarDistance {
+                        first,
+                        second,
+                        distance: Length(distance),
+                        angle,
+                        distance_parameter,
+                    },
+                    name: None,
+                    driving: None,
+                    active: Some(equation.active),
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
+                    native_ref: Some(sketch_native_ref(sketch)),
+                },
+                equation.offset,
+            ))
+        })
+        .collect()
 }
 
 pub(in super::super) fn section_equation_native_constraints(

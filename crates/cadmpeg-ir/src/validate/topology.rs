@@ -1656,6 +1656,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 second,
                 parameter,
             }
+            | Definition::PolarDistance {
+                first,
+                second,
+                distance_parameter: Some(parameter),
+                ..
+            }
             | Definition::HorizontalDistance {
                 first,
                 second,
@@ -1668,6 +1674,15 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 Some(parameter.0.as_str()),
+            ),
+            Definition::PolarDistance {
+                first,
+                second,
+                distance_parameter: None,
+                ..
+            } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
             ),
             Definition::EqualDistance { first, second } => (
                 vec![

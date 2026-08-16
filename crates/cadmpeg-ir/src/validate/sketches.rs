@@ -11,6 +11,8 @@ use crate::sketches::{
 use std::collections::{HashMap, HashSet};
 
 const EPS_EQUAL_DISTANCE: f64 = 1.0e-9;
+const EPS_POLAR_ANGLE: f64 = 1.0e-9;
+const EPS_POLAR_ZERO: f64 = 1.0e-12;
 
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
     findings.push(Finding {
@@ -1448,6 +1450,56 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .max(EPS_EQUAL_DISTANCE * (1.0 + first.abs().max(second.abs())))
                     })
             }
+            Constraint::PolarDistance {
+                first,
+                second,
+                distance,
+                angle,
+                distance_parameter,
+            } => {
+                let measured_points =
+                    sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
+                let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
+                    let measured = distance2(*first, *second);
+                    (measured - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_POLAR_ANGLE * (1.0 + measured.abs().max(distance.0)))
+                });
+                let angle_matches = match (distance.0 <= EPS_POLAR_ZERO, angle.as_ref()) {
+                    (true, None) => true,
+                    (false, Some(angle)) => {
+                        angle.0.is_finite()
+                            && measured_points.as_ref().is_none_or(|(first, second)| {
+                                let measured = (second.v - first.v).atan2(second.u - first.u);
+                                let difference =
+                                    (angle.0 - measured).rem_euclid(std::f64::consts::TAU);
+                                difference.min(std::f64::consts::TAU - difference)
+                                    <= EPS_POLAR_ANGLE
+                            })
+                    }
+                    _ => false,
+                };
+                let parameter_matches = distance_parameter.as_ref().is_none_or(|parameter| {
+                    let Some(Some(crate::features::ParameterValue::Length(value))) =
+                        parameter_values.get(parameter)
+                    else {
+                        return false;
+                    };
+                    let expected = value.0.abs();
+                    (expected - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.0)))
+                });
+                distance.0.is_finite()
+                    && distance.0 >= 0.0
+                    && distance_matches
+                    && angle_matches
+                    && parameter_matches
+            }
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();
                 !measurements.is_empty()
@@ -1895,6 +1947,7 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
         Constraint::Midpoint { point, .. } | Constraint::PointOnObject { point, .. } => vec![point],
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
+        | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => vec![first, second],
         Constraint::EqualDistance { first, second } => {
