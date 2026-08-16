@@ -6683,27 +6683,12 @@ fn resolve_fixed_mesh_endpoint_pairs(
             return MeshEndpointResolve::Rejected;
         }
     }
-    let face_equations = possible_face_equations(&assignment_domains);
-    let Some(face_choices) = possible_face_choices_with_limit(
-        &assignment_domains,
-        &face_equations,
-        MAX_MESH_CONSTRAINT_OPERATIONS,
-    ) else {
-        return MeshEndpointResolve::Exhausted;
-    };
-    let Ok(face_work) = alloc_filled(
-        assignment_domains.len(),
-        Some(1),
-        "catia_fixed_mesh_face_work",
-    ) else {
-        return MeshEndpointResolve::Rejected;
-    };
     let mut search = MeshSelectionSearch {
         assignments: &assignment_domains,
         #[cfg(test)]
-        possible_face_equations: face_equations,
-        possible_face_choices: face_choices,
-        face_work,
+        possible_face_equations: Vec::new(),
+        possible_face_choices: Vec::new(),
+        face_work: Vec::new(),
         edge_candidates,
         edge_rows,
         vertex_points,
