@@ -506,15 +506,18 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
         start: Point2::new(0.0, 2.0),
         end: Point2::new(0.0, 6.0),
     };
+    let entities = [first_line, second_line];
+    let definition =
+        typed_marker_relation_definition_in_sketch(&relation, &sketch, &entities, &markers, &loci)
+            .expect("typed parallel relation");
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
-            &relation,
-            &sketch,
-            &[first_line, second_line],
-            &markers,
-            &loci,
-        ),
-        Some(SketchConstraintDefinition::Native { .. })
+        definition,
+        SketchConstraintDefinition::Parallel { .. }
+    ));
+    assert!(marker_relation_is_inactive(
+        &relation,
+        &definition,
+        &entities,
     ));
 }
 

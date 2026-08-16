@@ -563,21 +563,18 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 return Some(native());
             };
             if !sketch_entities.is_empty() {
-                let Some(first_entity) = sketch_entities
+                let Some(_first_entity) = sketch_entities
                     .iter()
                     .find(|candidate| candidate.id == *first)
                 else {
                     return Some(native());
                 };
-                let Some(second_entity) = sketch_entities
+                let Some(_second_entity) = sketch_entities
                     .iter()
                     .find(|candidate| candidate.id == *second)
                 else {
                     return Some(native());
                 };
-                if !binary_relation_matches_evaluated_geometry(kind, first_entity, second_entity) {
-                    return Some(native());
-                }
             }
             match kind {
                 Parallel => SketchConstraintDefinition::Parallel {
@@ -1460,6 +1457,31 @@ fn typed_axis_relation_is_inactive(
     }
 }
 
+fn typed_binary_relation_is_inactive(
+    kind: crate::records::SketchRelationKind,
+    definition: &SketchConstraintDefinition,
+    sketch_entities: &[SketchEntity],
+) -> Option<bool> {
+    use crate::records::SketchRelationKind::{
+        Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
+    };
+    let ((Parallel, SketchConstraintDefinition::Parallel { first, second })
+    | (Perpendicular, SketchConstraintDefinition::Perpendicular { first, second })
+    | (Tangent, SketchConstraintDefinition::Tangent { first, second })
+    | (Equal, SketchConstraintDefinition::Equal { first, second })
+    | (Collinear, SketchConstraintDefinition::Collinear { first, second })
+    | (Concentric, SketchConstraintDefinition::Concentric { first, second })
+    | (Coradial, SketchConstraintDefinition::Coradial { first, second })) = (kind, definition)
+    else {
+        return None;
+    };
+    let first = sketch_entities.iter().find(|entity| entity.id == *first)?;
+    let second = sketch_entities.iter().find(|entity| entity.id == *second)?;
+    Some(!binary_relation_matches_evaluated_geometry(
+        kind, first, second,
+    ))
+}
+
 pub(super) fn marker_relation_is_inactive(
     marker: &SketchInputEntity,
     definition: &SketchConstraintDefinition,
@@ -1475,6 +1497,9 @@ pub(super) fn marker_relation_is_inactive(
         return false;
     };
     if let Some(inactive) = typed_axis_relation_is_inactive(definition, sketch_entities) {
+        return inactive;
+    }
+    if let Some(inactive) = typed_binary_relation_is_inactive(kind, definition, sketch_entities) {
         return inactive;
     }
     if let SketchConstraintDefinition::CoincidentLoci { loci } = definition {
