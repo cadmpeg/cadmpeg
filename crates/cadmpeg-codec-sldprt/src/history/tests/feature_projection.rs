@@ -88,6 +88,30 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
 }
 
 #[test]
+fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
+    let mut feature = feature("sldprt:history:feature#1:2", Some("12"), 2);
+    feature.xml_tag = "Extrusion".into();
+    feature.input_class = Some("moExtrusion_c".into());
+    feature.content = vec![FeatureContent::Dimension("m".into())];
+    feature.parameters.insert("m".into(), "6.4".into());
+
+    assert!(matches!(
+        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
+        Some(FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.4)
+                    },
+                    ..
+                }
+            },
+            ..
+        })
+    ));
+}
+
+#[test]
 fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
     let mut profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
     profile.xml_tag = "Sketch".into();

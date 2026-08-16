@@ -60,6 +60,8 @@ pub(crate) fn project_extrude(
     let legacy_history_extrusion = feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
         && source_depth.is_some();
+    let implicit_modern_blind =
+        feature.input_class.as_deref() == Some("moExtrusion_c") && source_dimensions.len() == 1;
     let legacy_profile = legacy_history_extrusion
         .then(|| {
             let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
@@ -126,7 +128,8 @@ pub(crate) fn project_extrude(
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
             && !feature.parameters.contains_key("D1")
-            && !legacy_history_extrusion =>
+            && !legacy_history_extrusion
+            && !implicit_modern_blind =>
         {
             one_sided(Termination::Unresolved)
         }
