@@ -754,6 +754,8 @@ pub(in super::super) fn section_skamp_curve_entity(
     }
     let is_curve = section_skamp_is_line(definition, item)
         || unique_bounded_curve_segment(definition, item.entity_id).is_some()
+        || unique_section_incidence_curve_family(definition, item.entity_id)
+            == Some(SectionEntityIncidenceFamily::BoundedCurve)
         || section_skamp_is_circular(definition, item)
         || matches!(
             solver_only_section_entity_family(definition, item.entity_id),
@@ -1321,7 +1323,7 @@ mod tests {
             outlines: Vec::new(),
             variables: None,
             segments: Some(crate::feature::FeatureSegmentTable {
-                declared_count: 2,
+                declared_count: 3,
                 has_elided_prototype: false,
                 entity_ref: None,
                 rows: Vec::new(),
@@ -1331,7 +1333,7 @@ mod tests {
                 reference_line_rows: Vec::new(),
                 bounded_curve_rows: Vec::new(),
                 conic_rows: Vec::new(),
-                opaque_rows: vec![opaque(101), opaque(102)],
+                opaque_rows: vec![opaque(101), opaque(102), opaque(103)],
                 offset: 0,
             }),
             trim_entities: None,
@@ -1386,9 +1388,23 @@ mod tests {
                             },
                         ],
                     ),
+                    skamp(
+                        4,
+                        0,
+                        vec![
+                            crate::feature::FeatureSkampItem {
+                                entity_id: 103,
+                                sense: 2,
+                            },
+                            crate::feature::FeatureSkampItem {
+                                entity_id: 204,
+                                sense: 0,
+                            },
+                        ],
+                    ),
                 ],
                 skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                    declared_count: 3,
+                    declared_count: 4,
                     entity_ref: 1,
                     offset: 0,
                 }),
@@ -1418,6 +1434,20 @@ mod tests {
             Some(SectionEntityIncidenceFamily::Arc)
         );
         assert!(section_skamp_is_arc(&definition, &arc));
+        let bounded_curve = crate::feature::FeatureSkampItem {
+            entity_id: 103,
+            sense: 0,
+        };
+        assert_eq!(
+            unique_section_incidence_curve_family(&definition, 103),
+            Some(SectionEntityIncidenceFamily::BoundedCurve)
+        );
+        assert_eq!(
+            section_skamp_curve_entity(&definition, &sketch, &bounded_curve),
+            Some(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:103".to_string(),
+            ))
+        );
         assert_eq!(
             section_skamp_locus(
                 &definition,
