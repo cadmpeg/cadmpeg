@@ -413,6 +413,13 @@ item = "cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue"
 reason = "Creo function 6 transfers fixed Euclidean locus distance as a typed sketch relation"
 
 [[change]]
+commit = "ca8f2d138a4e18a61ade036a5af1210602f96d3a"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::{PointCoordinateValues,MidpointCoordinate}"
+reason = "Creo functions 31 and 42 transfer coordinate-value and arithmetic-mean solver relations"
+
+[[change]]
 commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
 crate = "cadmpeg-core"
 kind = "deletion"

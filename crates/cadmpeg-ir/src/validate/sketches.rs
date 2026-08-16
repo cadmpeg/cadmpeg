@@ -11,6 +11,7 @@ use crate::sketches::{
 use std::collections::{HashMap, HashSet};
 
 const EPS_EQUAL_DISTANCE: f64 = 1.0e-9;
+const EPS_COORDINATE_VALUE: f64 = 1.0e-9;
 const EPS_DISTANCE_VALUE: f64 = 1.0e-9;
 const EPS_POLAR_ANGLE: f64 = 1.0e-9;
 const EPS_POLAR_ZERO: f64 = 1.0e-12;
@@ -1482,6 +1483,46 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 });
                 distance.0.is_finite() && distance.0 >= 0.0 && distance_matches && parameter_matches
             }
+            Constraint::PointCoordinateValues { point, values } => {
+                let coordinate_matches = sketch_locus_point(point, &geometry).is_none_or(|point| {
+                    [point.u, point.v]
+                        .into_iter()
+                        .zip(values)
+                        .all(|(measured, expected)| {
+                            expected.0.is_finite()
+                                && (measured - expected.0).abs()
+                                    <= ir.tolerances.linear.max(
+                                        EPS_COORDINATE_VALUE
+                                            * (1.0 + measured.abs().max(expected.0.abs())),
+                                    )
+                        })
+                });
+                values.iter().all(|value| value.0.is_finite()) && coordinate_matches
+            }
+            Constraint::MidpointCoordinate {
+                first,
+                second,
+                axis,
+                value,
+            } => {
+                let coordinate_matches = sketch_locus_point(first, &geometry)
+                    .zip(sketch_locus_point(second, &geometry))
+                    .is_none_or(|(first, second)| {
+                        let measured = match axis {
+                            crate::sketches::SketchCoordinateAxis::U => {
+                                f64::midpoint(first.u, second.u)
+                            }
+                            crate::sketches::SketchCoordinateAxis::V => {
+                                f64::midpoint(first.v, second.v)
+                            }
+                        };
+                        (measured - value.0).abs()
+                            <= ir.tolerances.linear.max(
+                                EPS_COORDINATE_VALUE * (1.0 + measured.abs().max(value.0.abs())),
+                            )
+                    });
+                value.0.is_finite() && coordinate_matches
+            }
             Constraint::PolarDistance {
                 first,
                 second,
@@ -1976,10 +2017,13 @@ fn sketch_locus_point(
 fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
     match definition {
         Constraint::CoincidentLoci { loci } => loci.iter().collect(),
-        Constraint::Midpoint { point, .. } | Constraint::PointOnObject { point, .. } => vec![point],
+        Constraint::Midpoint { point, .. }
+        | Constraint::PointOnObject { point, .. }
+        | Constraint::PointCoordinateValues { point, .. } => vec![point],
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
         | Constraint::DistanceLociValue { first, second, .. }
+        | Constraint::MidpointCoordinate { first, second, .. }
         | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => vec![first, second],

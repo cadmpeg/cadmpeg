@@ -1614,6 +1614,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
+            Definition::PointCoordinateValues { point, .. } => {
+                (vec![locus_entity(point).clone()], None)
+            }
+            Definition::MidpointCoordinate { first, second, .. } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
             Definition::AtIntersection {
                 point,
                 first,

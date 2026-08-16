@@ -239,6 +239,8 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::SameCoordinate { .. }
         | Constraint::PointOnObject { .. }
         | Constraint::Midpoint { .. }
+        | Constraint::PointCoordinateValues { .. }
+        | Constraint::MidpointCoordinate { .. }
         | Constraint::Offset { .. }
         | Constraint::ProjectedCopy { .. }
         | Constraint::AtIntersection { .. }

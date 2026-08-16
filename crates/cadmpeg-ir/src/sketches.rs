@@ -991,6 +991,24 @@ pub enum SketchConstraintDefinition {
         /// Bounded entity whose midpoint is used.
         entity: SketchEntityId,
     },
+    /// A point locus has fixed values on both sketch coordinate axes.
+    PointCoordinateValues {
+        /// Point whose two coordinates are constrained.
+        point: SketchLocus,
+        /// Coordinate values in sketch `u`, then `v`, order.
+        values: [Length; 2],
+    },
+    /// One sketch coordinate is the arithmetic mean of two point loci.
+    MidpointCoordinate {
+        /// First point contributing to the mean.
+        first: SketchLocus,
+        /// Second point contributing to the mean.
+        second: SketchLocus,
+        /// Coordinate axis carrying the mean relation.
+        axis: SketchCoordinateAxis,
+        /// Source-evaluated coordinate mean.
+        value: Length,
+    },
     /// One or more entities offset from their progenitors by one signed distance.
     Offset {
         /// Ordered progenitor/result pairs.

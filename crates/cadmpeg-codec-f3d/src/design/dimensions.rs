@@ -1837,6 +1837,8 @@ pub(crate) fn constraint_parameters(
         | Definition::TangentLoci { .. }
         | Definition::AtIntersection { .. }
         | Definition::Midpoint { .. }
+        | Definition::PointCoordinateValues { .. }
+        | Definition::MidpointCoordinate { .. }
         | Definition::Concentric { .. }
         | Definition::Coradial { .. }
         | Definition::Collinear { .. }
