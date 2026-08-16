@@ -23,17 +23,16 @@ use super::super::sweep::{
 };
 use super::super::uniqueness::{
     unique_feature_datum_plane, unique_feature_definition_for_transform,
-    unique_feature_profile_definition, unique_feature_profile_ref,
-    unique_feature_section_transform, unique_owned_feature_definition,
+    unique_feature_profile_ref, unique_feature_section_transform, unique_owned_feature_definition,
 };
 use super::{
     chamfer_constant_distance, differing_positive_lengths, draft_neutral_plane_selection,
     extrude_feature_definition_with_profile, feature_edge_selection, feature_parameters,
-    feature_reference_name, feature_result_surface_ids_by_feature, feature_surface_transitions,
-    filled_surface_feature_definition, full_turn_revolution_carrier_axis,
-    generated_surface_face_refs, knit_surface_feature_definition, model_feature_ids,
-    named_or_referenced_feature_definition, reference_named_feature_definition,
-    resolved_revolution_axis, round_constant_radius, round_observed_radii,
+    feature_reference_name, feature_result_surface_ids_by_feature,
+    feature_revolution_axis_for_transfer, feature_surface_transitions,
+    filled_surface_feature_definition, generated_surface_face_refs,
+    knit_surface_feature_definition, model_feature_ids, named_or_referenced_feature_definition,
+    reference_named_feature_definition, round_constant_radius, round_observed_radii,
     round_placed_cylinder_radii, schema_operation_kind, section_definition_for_history_feature,
     section_profile_ref, sweep_output_kind, sweep_solid, thicken_plane_offset,
     unresolved_extrude_extent,
@@ -475,26 +474,8 @@ pub(in super::super) fn schema_feature_definition(
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
         let extent = feature_revolution_extent(scan, feature_id);
-        let transforms = scan
-            .features
-            .section_transforms
-            .iter()
-            .filter(|transform| transform.feature_id == Some(feature_id))
-            .collect::<Vec<_>>();
-        let definition = unique_feature_profile_definition(
-            &scan.features.definitions,
-            &scan.features.section_transforms,
-            feature_id,
-        );
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
-        let transform = match transforms.as_slice() {
-            [transform] => Some(*transform),
-            _ => None,
-        };
-        let axis = definition
-            .zip(transform)
-            .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform))
-            .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent.as_ref()));
+        let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         return IrFeatureDefinition::Revolve {
             construction: RevolutionConstruction {

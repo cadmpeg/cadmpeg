@@ -8,7 +8,8 @@ use crate::decode::analytic::{
 };
 use crate::decode::build::has_transferred_geometry;
 use crate::decode::feature_history::{
-    full_turn_revolution_carrier_axis, resolved_revolution_axis, revolution_axis_for_transfer,
+    full_turn_revolution_carrier_axis, named_feature_definition, resolved_revolution_axis,
+    revolution_axis_for_transfer,
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
@@ -526,6 +527,118 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     };
     center.z = 1.0;
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
+}
+
+#[test]
+fn named_revolve_transfers_profile_axis() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 822,
+        owner_feature_id: Some(822),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 4,
+            entity_ref: None,
+            rows: [(1, 1, 0.0), (2, 1, 0.0), (1, 2, 0.0), (2, 2, 10.0)]
+                .into_iter()
+                .map(
+                    |(variable_type, key, value)| crate::feature::FeatureVariableRow {
+                        variable_type,
+                        key,
+                        value: Some(value),
+                        value_body: Vec::new(),
+                        guess: Some(value),
+                        guess_body: Vec::new(),
+                        guess_dimension_driven: false,
+                        known: Some(0),
+                        homogeneity: Some(1),
+                        uvar_id: None,
+                        dimension_driven: false,
+                        offset: 0,
+                    },
+                )
+                .collect(),
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 1,
+                body: Vec::new(),
+                offset: 0,
+            }],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: Some(crate::feature::FeatureSection3d {
+            sketch_plane_entity_id: None,
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_rows: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 90,
+        }),
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 80,
+    };
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 822,
+        feature_id: Some(822),
+        origin: [0.0; 3],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset: 90,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.definitions.push(definition);
+    scan.features.section_transforms.push(transform);
+    scan.features
+        .revolution_extents
+        .push(crate::feature::FeatureRevolutionExtent {
+            feature_id: 822,
+            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
+            offset: 1,
+        });
+    let ir = CadIr::empty(Units::default());
+
+    let Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
+        construction:
+            cadmpeg_ir::features::RevolutionConstruction {
+                axis: Some(axis), ..
+            },
+        ..
+    }) = named_feature_definition(&scan, &ir, 822, "Revolve")
+    else {
+        panic!("named revolve axis");
+    };
+    assert_eq!(axis.origin, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(axis.direction, Vector3::new(0.0, 1.0, 0.0));
 }
 
 #[test]

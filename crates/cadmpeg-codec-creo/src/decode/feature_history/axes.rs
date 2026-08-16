@@ -3,6 +3,7 @@
 
 use super::super::analytic::{cross, dot};
 use super::super::sketch::{normalized, resolved_section_points, section_point_in_model};
+use super::super::uniqueness::unique_feature_profile_definition;
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -171,6 +172,35 @@ pub(in super::super) fn revolution_axis_for_transfer(
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {
     resolved_revolution_axis(definition, transform)
+        .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
+}
+
+pub(in super::super) fn feature_revolution_axis_for_transfer(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    extent: Option<&RevolveExtent>,
+) -> Option<RevolutionAxis> {
+    let definition = unique_feature_profile_definition(
+        &scan.features.definitions,
+        &scan.features.section_transforms,
+        feature_id,
+    );
+    let transforms = scan
+        .features
+        .section_transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let transform = match transforms.as_slice() {
+        [transform] => Some(*transform),
+        _ => None,
+    };
+    definition
+        .zip(transform)
+        .and_then(|(definition, transform)| {
+            revolution_axis_for_transfer(scan, ir, feature_id, definition, transform, extent)
+        })
         .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
 }
 

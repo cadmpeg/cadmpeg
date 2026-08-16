@@ -6,7 +6,8 @@ use super::super::sketch_transfer::{
 };
 use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
-    feature_reference_name, filled_surface_feature_definition, knit_surface_feature_definition,
+    feature_reference_name, feature_revolution_axis_for_transfer,
+    filled_surface_feature_definition, knit_surface_feature_definition,
     linear_extrusion_extent_and_direction, numbered_feature_name_has_family,
     preceding_features_establish_body, schema_feature_definition, section_sweep_boolean_operation,
     sweep_output_kind, sweep_solid, thicken_feature_definition,
@@ -180,11 +181,12 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     feature_id: u32,
     op: BooleanOp,
 ) -> IrFeatureDefinition {
+    let extent = feature_revolution_extent(scan, feature_id);
     IrFeatureDefinition::Revolve {
         construction: RevolutionConstruction {
             profile: unique_feature_profile_ref(scan, ir, feature_id),
-            axis: None,
-            extent: feature_revolution_extent(scan, feature_id),
+            axis: feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
+            extent,
             axis_reference: None,
             solid: None,
             face_maker_class: None,
