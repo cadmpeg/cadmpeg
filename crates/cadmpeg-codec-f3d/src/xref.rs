@@ -387,11 +387,16 @@ fn role_adjacent_transforms(
 ) -> Vec<[[f64; 4]; 4]> {
     records
         .iter()
+        .filter(|record| record.class_tag == 256)
         .flat_map(|record| {
             role_tails(bytes, record, role)
                 .into_iter()
                 .filter_map(|after_role| {
-                    let matrix_at = after_role.checked_add(2)?;
+                    let flags_end = after_role.checked_add(2)?;
+                    if bytes.get(after_role..flags_end) != Some([0, 0].as_slice()) {
+                        return None;
+                    }
+                    let matrix_at = flags_end;
                     if matrix_at.checked_add(128)? <= record.end {
                         decode_rigid_matrix(bytes, matrix_at)
                     } else {
@@ -406,6 +411,7 @@ fn role_adjacent_transforms(
 struct IndexedRecord {
     offset: usize,
     end: usize,
+    class_tag: u32,
 }
 
 /// The transforms of every placement whose target path carries `role`, in
@@ -427,6 +433,9 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
         let Some((class_tag, after_tag)) = lp_ascii_strict(bytes, at, 0..=usize::MAX) else {
             continue;
         };
+        let Some(class_tag_number) = class_tag.parse::<u32>().ok() else {
+            continue;
+        };
         if after_tag == at + 7
             && class_tag.len() == 3
             && class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -434,15 +443,18 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
             if bytes.get(after_tag..after_tag + 8).is_none() {
                 continue;
             }
-            headers.push(at);
+            headers.push((at, class_tag_number));
         }
     }
     headers
         .iter()
         .enumerate()
-        .map(|(ordinal, offset)| IndexedRecord {
+        .map(|(ordinal, (offset, class_tag))| IndexedRecord {
             offset: *offset,
-            end: headers.get(ordinal + 1).copied().unwrap_or(bytes.len()),
+            end: headers
+                .get(ordinal + 1)
+                .map_or(bytes.len(), |(offset, _)| *offset),
+            class_tag: *class_tag,
         })
         .collect()
 }

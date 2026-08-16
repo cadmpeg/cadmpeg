@@ -278,11 +278,9 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Question.** Which carrier gives the occurrence transforms of an external reference when a Design stream holds both a class-256 role-adjacent carrier and one or more placement records for one role?
 
-**Known.** `f3d.md` §3.1 states that in class-256 carriers the placement occurrence is an LP-UTF16 occurrence-role GUID, two zero bytes, and a rigid transform equal to the scope transform. `f3d.md` §1.4 "**Placement.**" gives the `CE2913AA` placement record and states that several placements may carry the same role and place the same target document more than once.
+**Known.** `f3d.md` §3.1 states that a role-adjacent carrier has class tag 256, an LP-UTF16 occurrence-role GUID, two zero bytes, and a rigid transform equal to the scope transform. `f3d.md` §1.4 "**Placement.**" gives the `CE2913AA` placement record and states that several placements may carry the same role and place the same target document more than once. The two carrier forms may occur in one Design stream.
 
-`bind_occurrences` in `xref.rs` prefers the carrier form for a whole stream. It scans the stream for role-adjacent transforms, and when that scan returns any result it discards every structured placement of that stream. The scan applies no class-tag gate, does not check the two zero bytes, and accepts every needle hit in every indexed record whose following window decodes as a rigid matrix.
-
-**Need.** A stream that holds both forms loses the placement count and the placement transforms. Components then appear at the wrong pose or in the wrong number, and the merged `.f3z` document repeats the error. The precedence, and the gate that limits the carrier scan to class-256 records, settle the item.
+**Need.** A stream that holds both forms needs one precedence rule. The rule must preserve every authored placement without treating a non-class-256 role-shaped record as a carrier.
 
 ### XR-07. Absent occurrence transform against the identity placement
 

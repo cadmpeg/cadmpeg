@@ -184,9 +184,18 @@ fn occurrence_record_with_serializer_magic(
 }
 
 fn direct_occurrence_record(role: &str, transforms: &[[[f64; 4]; 4]]) -> Vec<u8> {
+    direct_occurrence_record_variant("256", role, transforms, [0, 0])
+}
+
+fn direct_occurrence_record_variant(
+    class_tag: &str,
+    role: &str,
+    transforms: &[[[f64; 4]; 4]],
+    flags: [u8; 2],
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(b"382");
+    bytes.extend_from_slice(class_tag.as_bytes());
     bytes.extend_from_slice(&10_u64.to_le_bytes());
     for transform in transforms {
         bytes.extend_from_slice(&[0; 9]);
@@ -195,7 +204,7 @@ fn direct_occurrence_record(role: &str, transforms: &[[[f64; 4]; 4]]) -> Vec<u8>
         for value in role {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&flags);
         for value in transform.iter().flatten() {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
@@ -395,6 +404,30 @@ fn repeated_roles_retain_each_directly_adjacent_occurrence_transform() {
         super::role_adjacent_transforms(&bytes, &super::indexed_records(&bytes), "role"),
         [first, second]
     );
+}
+
+#[test]
+fn role_adjacent_carriers_require_class_256_and_zero_flags() {
+    let transform = [
+        [1.0, 0.0, 0.0, 2.0],
+        [0.0, 1.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let non_class_256 = direct_occurrence_record_variant("382", "role", &[transform], [0, 0]);
+    assert!(super::role_adjacent_transforms(
+        &non_class_256,
+        &super::indexed_records(&non_class_256),
+        "role"
+    )
+    .is_empty());
+    let nonzero_flags = direct_occurrence_record_variant("256", "role", &[transform], [0, 1]);
+    assert!(super::role_adjacent_transforms(
+        &nonzero_flags,
+        &super::indexed_records(&nonzero_flags),
+        "role"
+    )
+    .is_empty());
 }
 
 #[test]
