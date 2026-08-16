@@ -794,6 +794,29 @@ Complex `B_SPLINE_CURVE` and `B_SPLINE_SURFACE` records use the same defaults
 when one of these subtype leaves is present. Rational weight aggregates have
 the same shape as their control-point aggregates.
 
+ISO 10303-42:2021 §§4.5.72 and 4.5.73 define a B-spline surface as a tensor
+product. `control_points_list` is a non-empty outer LIST of non-empty inner
+LISTs. `u_upper` is the outer-list size minus one, `v_upper` is the first
+inner-list size minus one, and the derived control-point array has one point
+for every `(u,v)` pair. The full knot array in each direction has
+`control_count + degree + 1` values and is non-decreasing. A
+`RATIONAL_B_SPLINE_SURFACE` has a weight grid with the same two dimensions as
+the control-point grid; each weight is positive. The STEP surface population
+therefore cannot represent a missing pole, an extra pole, a ragged row, or a
+weight grid with another shape.
+
+CADIR decision: a `NurbsSurface` stores its rectangular control grid in
+u-major order, with exactly `u_count * v_count` finite points. Its optional
+weights have the same cardinality and contain finite positive values. The two
+knot vectors have `count + degree + 1` finite non-decreasing values, and each
+count is greater than its degree. The STEP writer emits the grid as the
+u-major nested `control_points_list` and emits every pole and weight directly;
+it never substitutes a point or weight for a missing vector element. An
+invalid surface carrier is omitted and reports
+`geometry.carrier-not-written`; strict export rejects that loss before writing
+the header. This is a CADIR export-admission rule for malformed neutral input;
+it does not assign a STEP meaning to a missing pole.
+
 `CARTESIAN_TRANSFORMATION_OPERATOR_3D` stores a required local origin and
 optional axis1, axis2, axis3, and scale attributes. Its transformation matrix
 columns are normalized and orthogonal: axis3 defaults to +Z, axis1 is projected

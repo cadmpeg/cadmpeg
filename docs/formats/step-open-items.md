@@ -209,13 +209,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We need an explicit AP242 cross-file identity relation, precedence policy, and independently paired XML and Part 21 exchanges.
 
 **Note.** QA audit: commit `184b0ddbe` closed this item by retaining separate graphs and refusing XML input. No composition operand executes.
-
-### EX-01. Short NURBS surface control grid export
-
-**Question.** How must STEP export handle a `NurbsSurface` whose control-point vector is shorter than `u_count * v_count`?
-
-**Known.** `geometry.rs:585-603` emits the declared grid dimensions and substitutes `(0,0,0)` for each missing pole. It records no loss and does not refuse export.
-
-**Need.** We need a CADIR validation invariant and an export test that requires refusal or a reported lossy disposition for an incomplete grid.
-
-**Note.** A missing pole silently becomes real origin geometry. The exported surface can remain syntactically valid while its shape changes.

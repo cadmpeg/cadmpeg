@@ -1447,6 +1447,47 @@ fn source_native_record_reduction_is_reported() {
 }
 
 #[test]
+fn incomplete_nurbs_surface_is_omitted_and_reported() {
+    let mut ir = cylinder_surface_doc();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    });
+
+    let mut bytes = Vec::new();
+    let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())
+        .expect("report mode omits the invalid carrier");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+            && loss.message.contains("'cyl'")
+    }));
+    assert!(!String::from_utf8(bytes)
+        .expect("STEP output is UTF-8")
+        .contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    let mut strict_bytes = Vec::new();
+    let error = write_step(&ir, &mut strict_bytes, &options).expect_err("strict rejection");
+    assert!(matches!(error, StepError::Unsupported(_)));
+    assert!(strict_bytes.is_empty());
+}
+
+#[test]
 pub(crate) fn strict_writer_rejects_before_emitting_bytes() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
