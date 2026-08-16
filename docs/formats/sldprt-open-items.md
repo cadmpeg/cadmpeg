@@ -272,6 +272,14 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/parasolid.rs:183-243` scans every `00 22` array, retains finite XYZ candidates, sorts by scalar count, and selects the largest; equal-size candidates are rejected. If a feature-input payload contains a mesh array and an unrelated finite point array, the largest array is selected even when no native field binds it to the helix. The finite/count shape gate and tie rejection are counter-evidence against arbitrary byte acceptance, but they do not establish the largest-array rule.
 
+### AL-05. Appearance ownership beyond DisplayLists
+
+**Question.** Which records bind appearances to a part, configuration, display state, or B-rep-only feature output?
+
+**Known.** `sldprt.md` §8 defines DisplayLists body defaults, feature assignments through framed persistent surface references, face-local assignments, and their precedence. A `moVisualProperties_c` definition alone does not establish ownership. The opaque six-value `ATOM_ID_2001` layout does not establish a DisplayLists feature binding.
+
+**Need.** Part ownership, configuration and display-state selection, missing or conflicting persistent surface references, and feature appearance propagation to B-rep-only geometry remain unresolved.
+
 ## 5. Design intent
 
 ### DI-01. Other optional feature-manager node identities

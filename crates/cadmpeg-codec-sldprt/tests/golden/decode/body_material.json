@@ -2,17 +2,7 @@
   "ir": {
     "ir_version": "5",
     "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "sldprt:appearance:material#0",
-          "id": "sldprt:appearance:binding#body:0:0",
-          "object_type": "Body",
-          "target": {
-            "id": "sldprt:brep:body#0",
-            "kind": "body"
-          }
-        }
-      ],
+      "appearance_bindings": [],
       "appearances": [
         {
           "base_color": {
@@ -30,15 +20,8 @@
       "attributes": [],
       "bodies": [
         {
-          "color": {
-            "a": 1.0,
-            "b": 0.501960813999176,
-            "g": 0.250980406999588,
-            "r": 0.125490203499794
-          },
           "id": "sldprt:brep:body#0",
           "kind": "solid",
-          "name": "Steel",
           "regions": [
             "sldprt:brep:region#0"
           ]
