@@ -1803,15 +1803,52 @@ fn parse_embedded_image(
     })
 }
 
+fn bitmap_buffer(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<(Range<usize>, usize), FramingError> {
+    let start = reader.position();
+    let declared = reader.u32()?;
+    let uncompressed_byte_len = usize::try_from(declared)
+        .map_err(|_| FramingError::structural(start, "bitmap buffer size overflows usize"))?;
+    if uncompressed_byte_len == 0 {
+        return Ok((start..reader.position(), uncompressed_byte_len));
+    }
+    reader.skip(4)?;
+    let method = reader.u8()?;
+    match method {
+        0 => reader.skip(uncompressed_byte_len)?,
+        1 => {
+            let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+            if chunk.typecode != ANONYMOUS || chunk.short || chunk.body.is_empty() {
+                return Err(FramingError::structural(
+                    reader.position(),
+                    "Windows bitmap compressed buffer chunk is invalid",
+                ));
+            }
+            reader.skip(chunk.next_offset - reader.position())?;
+        }
+        _ => {
+            return Err(FramingError::structural(
+                reader.position() - 1,
+                "Windows bitmap compressed buffer method is unsupported",
+            ));
+        }
+    }
+    Ok((start..reader.position(), uncompressed_byte_len))
+}
+
 fn parse_windows_bitmap(
     data: &[u8],
     range: Range<usize>,
     class_uuid: Uuid,
+    archive: ArchiveVersion,
     source_offset: usize,
 ) -> Result<WindowsBitmapRecord, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let file_path = if class_uuid == WINDOWS_BITMAP_EX {
-        if reader.u8()? != 0x10 {
+        if reader.u8()? >> 4 != 1 {
             return Err(FramingError::structural(
                 reader.position() - 1,
                 "Windows bitmap version is unsupported",
@@ -1837,8 +1874,59 @@ fn parse_windows_bitmap(
             "Windows bitmap header is invalid",
         ));
     }
+    let palette_color_count = if colors_used != 0 {
+        usize::try_from(colors_used).map_err(|_| {
+            FramingError::structural(reader.position(), "Windows bitmap palette count overflows")
+        })?
+    } else {
+        match bits_per_pixel {
+            1 => 2,
+            4 => 16,
+            8 => 256,
+            _ => 0,
+        }
+    };
+    let palette_byte_len = palette_color_count.checked_mul(4).ok_or_else(|| {
+        FramingError::structural(reader.position(), "Windows bitmap palette overflows")
+    })?;
+    let image_byte_len = usize::try_from(image_byte_len).map_err(|_| {
+        FramingError::structural(reader.position(), "Windows bitmap image overflows")
+    })?;
     let pixel_buffer_offset = reader.position();
-    let buffer = reader.take(reader.remaining())?;
+    let pixel_buffer_end = if archive == ArchiveVersion::V1 && class_uuid == WINDOWS_BITMAP {
+        let raw_size = palette_byte_len
+            .checked_add(image_byte_len)
+            .ok_or_else(|| {
+                FramingError::structural(pixel_buffer_offset, "Windows bitmap size overflows")
+            })?;
+        reader.skip(raw_size)?;
+        reader.position()
+    } else {
+        let (first_buffer, first_size) = bitmap_buffer(data, &mut reader, archive)?;
+        let combined_size = palette_byte_len
+            .checked_add(image_byte_len)
+            .ok_or_else(|| {
+                FramingError::structural(first_buffer.start, "Windows bitmap size overflows")
+            })?;
+        if first_size != combined_size {
+            if first_size != palette_byte_len || image_byte_len == 0 {
+                return Err(FramingError::structural(
+                    first_buffer.start,
+                    "Windows bitmap buffer size does not match the header",
+                ));
+            }
+            let (_, second_size) = bitmap_buffer(data, &mut reader, archive)?;
+            if second_size != image_byte_len {
+                return Err(FramingError::structural(
+                    reader.position(),
+                    "Windows bitmap image buffer size does not match the header",
+                ));
+            }
+        }
+        reader.position()
+    };
+    reader.skip_remaining()?;
+    let buffer = &data[pixel_buffer_offset..pixel_buffer_end];
     Ok(WindowsBitmapRecord {
         id: format!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
         source_offset: source_offset as u64,
@@ -1850,7 +1938,7 @@ fn parse_windows_bitmap(
         planes,
         bits_per_pixel,
         compression,
-        image_byte_len,
+        image_byte_len: image_byte_len as i32,
         pixels_per_meter,
         colors_used,
         important_colors,
@@ -2300,6 +2388,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                             scan.data,
                             class.class_data_range,
                             class.class_uuid,
+                            scan.archive,
                             record.range.start,
                         ) {
                             windows_bitmaps.push(value);
@@ -2551,6 +2640,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 mod tests {
     use super::*;
     use crate::chunks::ArchiveVersion;
+    use std::io::Write;
 
     fn utf16(value: &str) -> Vec<u8> {
         let mut units = value.encode_utf16().collect::<Vec<_>>();
@@ -2592,6 +2682,74 @@ mod tests {
         bytes
     }
 
+    fn bitmap_header(
+        width: i32,
+        height: i32,
+        bits_per_pixel: u16,
+        image_byte_len: i32,
+        colors_used: i32,
+    ) -> Vec<u8> {
+        let mut bytes = 40_i32.to_le_bytes().to_vec();
+        bytes.extend(width.to_le_bytes());
+        bytes.extend(height.to_le_bytes());
+        bytes.extend(1_u16.to_le_bytes());
+        bytes.extend(bits_per_pixel.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend(image_byte_len.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend(colors_used.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        bytes
+    }
+
+    fn stored_bitmap_buffer(bytes: &[u8]) -> Vec<u8> {
+        let mut buffer = (bytes.len() as u32).to_le_bytes().to_vec();
+        if !bytes.is_empty() {
+            buffer.extend(crc32fast::hash(bytes).to_le_bytes());
+            buffer.push(0);
+            buffer.extend(bytes);
+        }
+        buffer
+    }
+
+    fn compressed_bitmap_buffer(bytes: &[u8]) -> Vec<u8> {
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(bytes).expect("bitmap zlib input");
+        let compressed = encoder.finish().expect("bitmap zlib output");
+        let mut buffer = (bytes.len() as u32).to_le_bytes().to_vec();
+        buffer.extend(crc32fast::hash(bytes).to_le_bytes());
+        buffer.push(1);
+        buffer.extend(crate::test_support::test_dump::crc_chunk(
+            ArchiveVersion::V8,
+            ANONYMOUS,
+            &compressed,
+        ));
+        buffer
+    }
+
+    fn windows_bitmap_payload(
+        class_uuid: Uuid,
+        minor: u8,
+        path: &str,
+        header: Vec<u8>,
+        buffers: &[Vec<u8>],
+        suffix: &[u8],
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        if class_uuid == WINDOWS_BITMAP_EX {
+            bytes.push(0x10 | minor);
+            bytes.extend(utf16(path));
+        }
+        bytes.extend(header);
+        for buffer in buffers {
+            bytes.extend(buffer);
+        }
+        bytes.extend(suffix);
+        bytes
+    }
+
     #[test]
     fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
         let id = Uuid::from_canonical([
@@ -2630,6 +2788,125 @@ mod tests {
         assert_eq!(raw.compression_method, 0);
         assert_eq!(raw.uncompressed_byte_len, 3);
         assert_eq!(raw.buffer_byte_len, 7);
+    }
+
+    #[test]
+    fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
+        let image = vec![0x11; 24];
+        let contiguous = windows_bitmap_payload(
+            WINDOWS_BITMAP,
+            0,
+            "",
+            bitmap_header(3, 2, 24, image.len() as i32, 0),
+            &[stored_bitmap_buffer(&image)],
+            &[0xaa, 0xbb],
+        );
+        let contiguous_record = parse_windows_bitmap(
+            &contiguous,
+            0..contiguous.len(),
+            WINDOWS_BITMAP,
+            ArchiveVersion::V8,
+            70,
+        )
+        .expect("contiguous Windows bitmap");
+        assert_eq!(contiguous_record.width_pixels, 3);
+        assert_eq!(contiguous_record.height_pixels, 2);
+        assert_eq!(contiguous_record.pixel_buffer_offset, 40);
+        assert_eq!(
+            contiguous_record.pixel_buffer_byte_len as usize,
+            contiguous.len() - 42
+        );
+
+        let palette = vec![0x22; 256 * 4];
+        let pixels = vec![0x33; 8];
+        let split = windows_bitmap_payload(
+            WINDOWS_BITMAP,
+            0,
+            "",
+            bitmap_header(2, 2, 8, pixels.len() as i32, 0),
+            &[
+                compressed_bitmap_buffer(&palette),
+                stored_bitmap_buffer(&pixels),
+            ],
+            &[0xcc, 0xdd],
+        );
+        let split_record = parse_windows_bitmap(
+            &split,
+            0..split.len(),
+            WINDOWS_BITMAP,
+            ArchiveVersion::V8,
+            71,
+        )
+        .expect("split Windows bitmap");
+        assert_eq!(split_record.bits_per_pixel, 8);
+        assert_eq!(split_record.colors_used, 0);
+        assert_eq!(
+            split_record.pixel_buffer_byte_len as usize,
+            split.len() - 42
+        );
+
+        let ex = windows_bitmap_payload(
+            WINDOWS_BITMAP_EX,
+            5,
+            "relative/example.bmp",
+            bitmap_header(2, 2, 24, pixels.len() as i32, 0),
+            &[stored_bitmap_buffer(&pixels)],
+            &[0xee, 0xff],
+        );
+        let ex_record =
+            parse_windows_bitmap(&ex, 0..ex.len(), WINDOWS_BITMAP_EX, ArchiveVersion::V8, 72)
+                .expect("minor-five Windows bitmap Ex");
+        assert_eq!(ex_record.file_path, "relative/example.bmp");
+        assert_eq!(
+            ex_record.pixel_buffer_byte_len as usize,
+            ex.len() - 47 - 40 - 2
+        );
+    }
+
+    #[test]
+    fn legacy_windows_bitmap_uses_raw_palette_and_pixels() {
+        let palette = vec![0x55; 256 * 4];
+        let pixels = vec![0x66; 8];
+        let mut raw = palette;
+        raw.extend(pixels);
+        let bytes = windows_bitmap_payload(
+            WINDOWS_BITMAP,
+            0,
+            "",
+            bitmap_header(2, 2, 8, 8, 0),
+            &[raw],
+            &[0xaa, 0xbb],
+        );
+        let record = parse_windows_bitmap(
+            &bytes,
+            0..bytes.len(),
+            WINDOWS_BITMAP,
+            ArchiveVersion::V1,
+            74,
+        )
+        .expect("legacy raw Windows bitmap");
+        assert_eq!(record.pixel_buffer_byte_len, (256 * 4 + 8) as u64);
+    }
+
+    #[test]
+    fn windows_bitmap_rejects_a_buffer_size_that_disagrees_with_header() {
+        let image = [0x44; 24];
+        let bytes = windows_bitmap_payload(
+            WINDOWS_BITMAP,
+            0,
+            "",
+            bitmap_header(3, 2, 24, image.len() as i32, 0),
+            &[stored_bitmap_buffer(&image[..1])],
+            &[],
+        );
+        assert!(parse_windows_bitmap(
+            &bytes,
+            0..bytes.len(),
+            WINDOWS_BITMAP,
+            ArchiveVersion::V8,
+            73,
+        )
+        .is_err());
     }
 
     #[test]

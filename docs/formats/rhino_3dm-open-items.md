@@ -128,28 +128,6 @@ for each version that is to be typed, including its fields and loss mapping.
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics are
 settled; future class-specific payload semantics remain open.
 
-### FV-04. Future presentation records
-
-**Question.** Which presentation records outside the audited bounded set have
-producer-defined later versions and appendable fields before their bounded end?
-
-**Known.** The specification now covers source-defined bounded suffix handling
-for material, texture, mapping, group, light, linetype, hatch, font,
-text-style, dimension-style, rendering attributes, view children, annotation
-settings, grid defaults, render settings, and related settings records.
-Tagged attribute/layer streams and explicit terminators are not generic suffix
-grammars. `ON_EmbeddedBitmap` is now source-settled: its major-1 payload has
-the path, CRC, outer compression method, method-specific buffer, and minor-1
-UUID/name gate documented in §20.4.
-
-**Need.** Producer writer/reader evidence for the remaining presentation
-classes, including the Windows bitmap payloads, or an independent witness
-showing each later version, field order, and boundary.
-
-**Note.** Narrowed 2026-08-16. The embedded-bitmap writer and reader are now
-audited and tested; the remaining presentation classes need source or witness
-evidence.
-
 ### RS-01. Later-minor bounded suffixes
 
 **Question.** Which remaining versioned readers outside sections 7.1, 13.3,

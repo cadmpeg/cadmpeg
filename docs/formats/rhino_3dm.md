@@ -1472,6 +1472,8 @@ failure make the buffer invalid.
 | `ON_PointCloud`          | `2488F347-F8FA-11D3-BFEC-0010830122F0` |
 | `ON_PointGrid`           | `4ED7D4E5-E947-11D3-BFE5-0010830122F0` |
 | `ON_EmbeddedBitmap`      | `772E6FC1-B17B-4FC4-8F54-5FDA511D76D2` |
+| `ON_WindowsBitmap`       | `390465EB-3721-11D4-800B-0010830122F0` |
+| `ON_WindowsBitmapEx`     | `203AFC17-BCC9-44FB-A07B-7F5C31BD5ED9` |
 | `ON_Hatch`               | `0559733B-5332-49D1-A936-0532AC76ADE5` |
 | `ON_DetailView`          | `C8C66EFA-B3CB-4E00-9440-2AD66203379E` |
 | `ON_NurbsCage`           | `06936AFB-3D3C-41AC-BF70-C9319FA480A1` |
@@ -3331,11 +3333,42 @@ terminator.
 
 Trace images store path, width, height, plane, grayscale, hidden, filtered, and
 file-reference state. Wallpaper stores path, grayscale, hidden, and file
-reference. Windows bitmap classes store a Windows bitmap header followed by
-one or two compressed palette/pixel buffers. `ON_WindowsBitmapEx` prefixes the
-bitmap with packed version 1.0 and a UTF-16 file path. Embedded bitmaps store
-component identity, file reference, compression method, uncompressed size, and
-the image buffer.
+reference.
+
+`ON_WindowsBitmap` class data has no version prefix. `ON_WindowsBitmapEx` starts
+with packed version `1.minor` and a UTF-16 file path. Its writer emits `1.0`;
+its reader accepts every minor with major `1`. The common Windows bitmap header
+is exactly 40 bytes:
+
+```
+i32 header size
+i32 width in pixels
+i32 height in pixels
+u16 planes
+u16 bits per pixel
+i32 compression
+i32 image byte count
+i32 horizontal pixels per meter
+i32 vertical pixels per meter
+i32 colors used
+i32 important colors
+```
+
+The writer emits header size `40`. Let `C` be `colors used` when nonzero; when
+it is zero, `C` is `2` for 1-bit pixels, `16` for 4-bit pixels, `256` for
+8-bit pixels, and `0` otherwise. The palette byte count is `4*C`, and the
+image byte count is the nonnegative image byte-count field.
+
+The class writers emit §10 compressed buffers. The archive-version-1
+`ON_WindowsBitmap` reader additionally accepts raw palette bytes followed by
+raw image bytes. Except for that legacy reader branch, the
+`ON_WindowsBitmap` and `ON_WindowsBitmapEx` readers use §10 compressed buffers.
+The first buffer declares either `4*C + image byte count` and contains the
+combined palette and image, or `4*C` and contains the palette alone. When it
+declares the palette alone and the image byte count is nonzero, a second buffer
+follows and declares exactly the image byte count. A zero image byte count ends
+the sequence after the first buffer. After the known buffers, remaining bytes
+belong to the bounded class-data suffix.
 
 `ON_EmbeddedBitmap` class data uses packed version `1.minor`. Its common prefix
 is:

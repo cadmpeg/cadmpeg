@@ -244,6 +244,93 @@ anchor = "u8 method"
 
 
 [[record]]
+name = "windows_bitmap_header"
+parsed_by = "crates/cadmpeg-codec-rhino/src/presentation.rs"
+kind = "byte"
+section = "20.4"
+anchor = "The common Windows bitmap header is exactly 40 bytes"
+size = 40
+note = "The class payload may prepend a packed version and UTF-16 path for ON_WindowsBitmapEx; this record is the common header that follows that optional prefix."
+
+[[record.field]]
+name = "header_size"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "i32 header size"
+
+[[record.field]]
+name = "width"
+offset = 4
+type = "i32"
+source = "spec"
+anchor = "i32 width in pixels"
+
+[[record.field]]
+name = "height"
+offset = 8
+type = "i32"
+source = "spec"
+anchor = "i32 height in pixels"
+
+[[record.field]]
+name = "planes"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "u16 planes"
+
+[[record.field]]
+name = "bits_per_pixel"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "u16 bits per pixel"
+
+[[record.field]]
+name = "compression"
+offset = 16
+type = "i32"
+source = "spec"
+anchor = "i32 compression"
+
+[[record.field]]
+name = "image_byte_count"
+offset = 20
+type = "i32"
+source = "spec"
+anchor = "i32 image byte count"
+
+[[record.field]]
+name = "horizontal_pixels_per_meter"
+offset = 24
+type = "i32"
+source = "spec"
+anchor = "i32 horizontal pixels per meter"
+
+[[record.field]]
+name = "vertical_pixels_per_meter"
+offset = 28
+type = "i32"
+source = "spec"
+anchor = "i32 vertical pixels per meter"
+
+[[record.field]]
+name = "colors_used"
+offset = 32
+type = "i32"
+source = "spec"
+anchor = "i32 colors used"
+
+[[record.field]]
+name = "important_colors"
+offset = 36
+type = "i32"
+source = "spec"
+anchor = "i32 important colors"
+
+
+[[record]]
 name = "on_plane"
 kind = "slot"
 section = "3.2"
