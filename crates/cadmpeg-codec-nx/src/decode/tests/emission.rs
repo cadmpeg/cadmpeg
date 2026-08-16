@@ -725,6 +725,67 @@ fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
 }
 
 #[test]
+fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget() {
+    const CONTACT_FIT_TOLERANCE: f64 = 1.0e-8;
+    const CANDIDATE_COUNT: usize = 300;
+
+    let source_pcurve = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    let mut ir =
+        blend_contact_transfer_fixture(CANDIDATE_COUNT, &source_pcurve, CONTACT_FIT_TOLERANCE);
+
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            return false;
+        };
+        context.sides[1].pcurve.is_some()
+    }));
+}
+
+#[test]
+fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
+    const CONTACT_FIT_TOLERANCE: f64 = 1.0e-2;
+
+    let source_pcurve = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(0.2, 0.0),
+            Point2::new(1.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE);
+
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[1].definition
+    else {
+        unreachable!()
+    };
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[1].pcurve.as_ref()
+    else {
+        panic!("adaptive blend-contact transfer did not produce a pcurve")
+    };
+    let source_pcurve = context.sides[0].pcurve.as_ref().unwrap();
+    let target_pcurve = context.sides[1].pcurve.as_ref().unwrap();
+    assert!(control_points.len() > 2);
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let source_uv = cadmpeg_ir::eval::pcurve_uv(source_pcurve, parameter).unwrap();
+        let target_uv = cadmpeg_ir::eval::pcurve_uv(target_pcurve, parameter).unwrap();
+        assert!((source_uv.u - target_uv.u).abs() <= CONTACT_FIT_TOLERANCE);
+        assert_eq!(source_uv.v, target_uv.v);
+    }
+}
+
+#[test]
 fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
     let mut later = ir.model.procedural_curves[0].clone();
@@ -837,6 +898,161 @@ fn cylinder_plane_transfer_fixture(
         param_range: Some([0.0, 1.0]),
         tolerance: Some(edge_tolerance),
     });
+    ir
+}
+
+fn blend_contact_transfer_fixture(
+    candidate_count: usize,
+    source_pcurve: &PcurveGeometry,
+    tolerance: f64,
+) -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::geometry::{
+        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralSurface, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let support = SurfaceId("synthetic:blend-contact-support".into());
+    let other_support = SurfaceId("synthetic:blend-contact-other-support".into());
+    let offset = SurfaceId("synthetic:blend-contact-offset".into());
+    let target = SurfaceId("synthetic:blend-contact-target".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: other_support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: offset.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 2.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: target.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
+            },
+            source_object: None,
+        },
+    ]);
+
+    let spine = CurveId("synthetic:blend-contact-spine".into());
+    ir.model.curves.push(Curve {
+        id: spine.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let contact_pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        weights: None,
+        periodic: false,
+    };
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("synthetic:blend-contact-spine-construction".into()),
+        curve: spine.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(offset),
+                        pcurve_parameter_range: None,
+                        pcurve: Some(contact_pcurve),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(other_support.clone()),
+                        pcurve_parameter_range: None,
+                        pcurve: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
+        surface: target.clone(),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: [
+                Some(BlendSupport {
+                    surface: support.clone(),
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: other_support,
+                    reversed: false,
+                }),
+            ],
+            spine: Some(spine),
+            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    for index in 0..candidate_count {
+        let curve = CurveId(format!("synthetic:blend-contact-curve-{index}"));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId(format!("synthetic:blend-contact-intersection-{index}")),
+            curve,
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(support.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: Some(source_pcurve.clone()),
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(target.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: Some(tolerance),
+        });
+    }
     ir
 }
 

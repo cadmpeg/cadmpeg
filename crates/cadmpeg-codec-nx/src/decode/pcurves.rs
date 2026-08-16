@@ -2004,7 +2004,17 @@ fn transfer_intersection_pcurve_with_budget(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
-    const CONTINUATION_STEPS: usize = 16;
+    const GENERAL_CONTINUATION_STEPS: usize = 16;
+    // A contact pcurve is one continuous boundary image. Its endpoints and
+    // one midpoint seed the same adaptive segment certifier used below; any
+    // non-linear portion must still pass the midpoint and quarter-point fit
+    // checks before it can be emitted.
+    const CONTACT_CONTINUATION_STEPS: usize = 1;
+    let continuation_steps = if blend_contact.is_some() {
+        CONTACT_CONTINUATION_STEPS
+    } else {
+        GENERAL_CONTINUATION_STEPS
+    };
 
     (parameter_range[0].is_finite()
         && parameter_range[1].is_finite()
@@ -2028,12 +2038,12 @@ fn transfer_intersection_pcurve_with_budget(
         budget,
         geometry_budget,
     )?;
-    let mut coarse = Vec::with_capacity(CONTINUATION_STEPS + 1);
+    let mut coarse = Vec::with_capacity(continuation_steps + 1);
     coarse.push(first);
-    for sample_index in 1..=CONTINUATION_STEPS {
+    for sample_index in 1..=continuation_steps {
         let parameter = parameter_range[0]
             + (parameter_range[1] - parameter_range[0]) * sample_index as f64
-                / CONTINUATION_STEPS as f64;
+                / continuation_steps as f64;
         let sample = transferred_pcurve_sample_with_budget(
             index,
             ir,
