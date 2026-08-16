@@ -2,8 +2,8 @@
 //! Tests for scalar equality propagation into equation consumers.
 
 use crate::decode::sketch::{
-    resolved_section_coordinates, section_equation_coordinate_equality_rows,
-    section_equation_equal_length_constraint_rows,
+    resolved_section_coordinates, resolved_section_scalar_values,
+    section_equation_coordinate_equality_rows, section_equation_equal_length_constraint_rows,
     section_equation_function_forty_three_axis_distance_values,
     section_equation_function_sixteen_angle_difference_values,
     section_equation_point_on_line_constraint_rows, section_equation_radius_dimensions,
@@ -383,6 +383,33 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
     let dimensions = section_equation_radius_dimensions(&radius_definition);
     assert_eq!(dimensions.len(), 1);
     assert_eq!(dimensions[0].value, 5.0);
+
+    let mut dimension_driven = definition(
+        &equation_body(&[(1, 2, &[0, 1])]),
+        vec![row(3, 42, None), row(0, 0, None)],
+    );
+    dimension_driven
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows
+        .iter_mut()
+        .for_each(|row| row.dimension_driven = true);
+    dimension_driven.dimensions = radius_definition.dimensions.clone();
+    let dimensions = section_equation_radius_dimensions(&dimension_driven);
+    assert_eq!(dimensions.len(), 1);
+    assert_eq!(
+        resolved_section_scalar_values(&dimension_driven)
+            .get(&(3, 42))
+            .copied(),
+        Some(5.0)
+    );
+    assert_eq!(
+        resolved_section_scalar_values(&dimension_driven)
+            .get(&(0, 0))
+            .copied(),
+        Some(5.0)
+    );
 
     let mut conflicting = radius_definition;
     conflicting.variables.as_mut().expect("variables").rows[2].value = Some(6.0);

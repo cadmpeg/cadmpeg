@@ -1048,6 +1048,7 @@ pub(crate) fn resolved_section_scalar_values(
         .into_iter()
         .filter(|constraint| constraint.active)
     {
+        merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
         merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
     }
     for constraint in
