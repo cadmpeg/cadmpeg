@@ -6,11 +6,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Length, Termination};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
+use super::super::analytic::{placed_planes, reconciled_model_plane};
 use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
@@ -749,6 +750,7 @@ pub fn counterbore_source_boundary_circle(
         .iter()
         .map(|row| (row.id, row))
         .collect::<BTreeMap<_, _>>();
+    let local_planes = placed_planes(scan);
     let boundary_for = |cylinder_id| {
         let boundaries = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
             .into_iter()
@@ -775,13 +777,8 @@ pub fn counterbore_source_boundary_circle(
                 };
                 ((*candidate - radius).abs() <= 1e-9).then_some(())?;
                 let axis = normalized([axis.x, axis.y, axis.z])?;
-                let surface = ir.model.surfaces.iter().find(|surface| {
-                    surface.id == SurfaceId(format!("creo:visibgeom:surface#{other}"))
-                })?;
-                let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry else {
-                    return None;
-                };
-                let normal = normalized([normal.x, normal.y, normal.z])?;
+                let plane = reconciled_model_plane(&local_planes, ir, other)?;
+                let normal = normalized(plane.normal)?;
                 let alignment = axis
                     .iter()
                     .zip(normal)
@@ -789,9 +786,9 @@ pub fn counterbore_source_boundary_circle(
                     .sum::<f64>()
                     .abs();
                 let distance = [
-                    center.x - origin.x,
-                    center.y - origin.y,
-                    center.z - origin.z,
+                    center.x - plane.origin[0],
+                    center.y - plane.origin[1],
+                    center.z - plane.origin[2],
                 ]
                 .iter()
                 .zip(normal)
@@ -799,7 +796,13 @@ pub fn counterbore_source_boundary_circle(
                 .sum::<f64>()
                 .abs();
                 let scale = [
-                    center.x, center.y, center.z, origin.x, origin.y, origin.z, radius,
+                    center.x,
+                    center.y,
+                    center.z,
+                    plane.origin[0],
+                    plane.origin[1],
+                    plane.origin[2],
+                    radius,
                 ]
                 .into_iter()
                 .map(f64::abs)
@@ -897,6 +900,9 @@ pub fn complete_cylinder_source_carrier(
         && carriers.iter().all(|candidate| **candidate == first))
     .then_some(first)
 }
+
+#[cfg(test)]
+mod tests;
 
 pub fn observed_cylinder_source_carrier(
     ids: &[u32],
