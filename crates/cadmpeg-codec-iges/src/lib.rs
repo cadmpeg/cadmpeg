@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IGES Fixed ASCII codec for versions 5.1, 5.2, and 5.3.
 //!
-//! Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 //! for the declared Fixed ASCII mechanical/document envelope. Bounded
-//! semantic writing is an extra; the L9 gate remains open.
+//! semantic writing and independent-producer acceptance are part of the
+//! verified profile.
 
 mod card;
 mod directory;
