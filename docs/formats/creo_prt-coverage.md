@@ -48,6 +48,11 @@ fixtures, scores above L1 remain blocked.
   and supported dimensional equations; type-five arc-radius relations seed the
   joined radius component in radius and diameter form. Disabled incidences
   remain retained but do not affect solved geometry.
+- Function-two and function-thirteen coordinate-equality equations transfer as
+  typed same-coordinate constraints when both point keys resolve to unique
+  section loci. Function-thirty-three endpoint-pair equations transfer as
+  typed equal-distance constraints under the same unique-locus rule; inactive
+  rows remain retained with their source activity.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs. Additive linear
   extrusions also accept a closed one-entity circle section, a closed single

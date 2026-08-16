@@ -1152,6 +1152,36 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         }
     );
 
+    let mut function_two = definition.clone();
+    function_two.body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+            \x01\x02\x00\x01\xf6\xe2\
+            \x02\x0d\xf8\x03\x02\x03\x04\xf6\xe2"
+        .to_vec();
+    function_two.variables.as_mut().expect("variables").rows = vec![
+        row(1, 1, None),
+        row(1, 2, None),
+        row(2, 1, Some(4.5)),
+        row(2, 2, None),
+        row(7, 3, Some(0.0)),
+    ];
+    function_two
+        .variables
+        .as_mut()
+        .expect("variables")
+        .declared_count = 5;
+    let function_two_constraints =
+        section_equation_same_coordinate_constraints(&function_two, &sketch);
+    assert_eq!(function_two_constraints.len(), 2);
+    assert_eq!(
+        function_two_constraints[0].0.definition,
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
+        }
+    );
+
     let mut nonzero_auxiliary = definition;
     nonzero_auxiliary
         .variables

@@ -643,7 +643,7 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
         &ambiguous_point_ids,
     );
     rows.into_iter()
-        .filter(|equation| equation.function_id == 13)
+        .filter(|equation| matches!(equation.function_id, 2 | 13))
         .filter_map(|equation| {
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
