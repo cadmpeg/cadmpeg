@@ -101,6 +101,9 @@ pub(crate) struct SectionUnsignedCoordinateDistance {
     pub(crate) coordinate: usize,
     pub(crate) scalar: SectionScalarVariable,
     pub(crate) value: f64,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -135,6 +138,16 @@ pub(crate) fn section_equation_unsigned_coordinate_distances(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionUnsignedCoordinateDistance> {
+    section_equation_unsigned_coordinate_distance_rows(definition, ambiguous_point_ids)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .collect()
+}
+
+pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionUnsignedCoordinateDistance> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -163,7 +176,6 @@ pub(crate) fn section_equation_unsigned_coordinate_distances(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
         .filter_map(|equation| {
             let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
@@ -195,6 +207,9 @@ pub(crate) fn section_equation_unsigned_coordinate_distances(
                 coordinate: usize::from(first.variable_type == 2),
                 scalar: (dimension.variable_type, dimension.key),
                 value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
         .collect()
