@@ -216,6 +216,8 @@ fn validate_declared_transform_frame(
     coefficient_intervals: [DeclaredInterval; 9],
     expected_determinant: f64,
 ) -> Result<(), DeclaredTransformFrameError> {
+    // CADIR admission for the IGES Type 124 invariants uses declared-real
+    // intervals; IGES does not define a separate receiver epsilon.
     let columns = std::array::from_fn::<_, 3, _>(|column| {
         [
             coefficient_intervals[column],

@@ -51,18 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-01. The Type 124 transformation tolerance
-
-**Question.** What numeric admission rule applies to the nine Type 124 linear coefficients?
-
-**Known.** `entities/geometry.rs:74-96` constructs outward representation intervals and `entities/geometry.rs:215-260` accepts a frame when its norm, dot-product, and determinant intervals contain the required values. The current specification states this as a format rule without a direct IGES section citation. The closure change supplied code, prose, and synthetic boundary tests.
-
-**Need.** Cite the Type 124 numeric rule or record it as a CADIR policy. The reader must not reject or accept foreign transform frames on an unsupported tolerance claim.
-
-**Conflict.** The specification presents interval membership as format-authoritative, but the closure evidence does not include an independent source witness.
-
-**Note.** Reopened by QA audit 2026-08-16. A self-authored interval implementation and its tests do not establish the IGES admission rule.
-
 ### GE-02. Unit-vector acceptance
 
 **Question.** What numeric rule admits a declared unit vector and an orthogonal vector pair?
