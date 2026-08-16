@@ -43,6 +43,67 @@ fn zero_join_tolerance_requires_exact_endpoint_equality() {
 }
 
 #[test]
+fn positive_join_tolerance_excludes_the_resolution_boundary() {
+    let left = Point3::new(0.0, 0.0, 0.0);
+    let inside = Point3::new(0.000_999, 0.0, 0.0);
+    let boundary = Point3::new(0.001, 0.0, 0.0);
+
+    assert!(close_with_tolerance(left, inside, Some(0.001)));
+    assert!(!close_with_tolerance(left, boundary, Some(0.001)));
+}
+
+#[test]
+fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
+    let curve_id = CurveId("line".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: PointId("start-point".into()),
+            position: Point3::new(0.001, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("end-point".into()),
+            position: Point3::new(1.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: VertexId("start".into()),
+            point: PointId("start-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("end".into()),
+            point: PointId("end-point".into()),
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("edge".into()),
+        curve: Some(curve_id.clone()),
+        start: VertexId("start".into()),
+        end: VertexId("end".into()),
+        param_range: Some([0.0, 1.0]),
+        tolerance: None,
+    });
+
+    assert!(bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None).is_none());
+
+    ir.model.points[0].position = Point3::new(0.000_999, 0.0, 0.0);
+    assert!(bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None).is_some());
+}
+
+#[test]
 fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
     let error = IgesCodec
         .decode(

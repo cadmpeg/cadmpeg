@@ -55,7 +55,7 @@ pub enum IgesLossCode {
     RuledDevelopabilityNotTransferred,
     /// Type 112 or Type 114 header semantics were not transferred to neutral geometry.
     SplineHeaderNotTransferred,
-    /// A Type 102 composite has no exact concatenated carrier.
+    /// A Type 102 composite has no admitted concatenated carrier.
     CompositeCarrierDegraded,
     /// Preserved source image required for a byte-exact write was unavailable.
     PreservedSourceUnavailable,

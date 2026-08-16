@@ -51,18 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-05. Type 102 carrier concatenation uses a private tolerance and degrades silently
-
-**Question.** What endpoint agreement rule governs Type 102 child concatenation?
-
-**Known.** `entities/composite.rs:135-196` selects candidate edges with a supplied join tolerance, and `entities/composite.rs:758-797` marks joins continuous only when that tolerance succeeds. The current specification requires strict Global minimum-resolution agreement and records a geometry loss on failure, but it has no direct IGES section citation. The closure change altered the implementation, tests, and prose together.
-
-**Need.** Cite the Type 102 join rule or classify the use of Global minimum resolution and the degradation path as CADIR policy. A failed exact carrier must remain visible with the defined loss.
-
-**Conflict.** The specification claims a format-authoritative endpoint rule while the closure evidence does not independently establish it.
-
-**Note.** Reopened by QA audit 2026-08-16. The existing synthetic joins do not establish the source threshold or receiver behavior.
-
 ## 5. Surfaces and topology
 
 ## 6. Product structure, annotation, and presentation

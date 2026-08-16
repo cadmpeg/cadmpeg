@@ -34,7 +34,7 @@ pub(super) struct CompositeProjection {
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
     IgesLossCode::CompositeCarrierDegraded
         .note(format!(
-            "IGES Type 102 entity D{} has no exact concatenated carrier because {reason}; the ordered native composite carrier was retained",
+            "IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained",
             entry.sequence
         ))
         .with_provenance(entry.loss_provenance())
@@ -146,8 +146,9 @@ fn composite_edge_endpoints_agree(
         point_for_vertex(ir, &right.end, index),
     ) {
         (Some(left_start), Some(right_start), Some(left_end), Some(right_end)) => {
-            left_start.distance(right_start) <= tolerance
-                && left_end.distance(right_end) <= tolerance
+            // GE-05: the MUR boundary is excluded; zero still means exact equality.
+            close_with_tolerance(left_start, right_start, Some(tolerance))
+                && close_with_tolerance(left_end, right_end, Some(tolerance))
         }
         (None, None, None, None) => true,
         _ => false,
@@ -182,7 +183,9 @@ fn select_composite_edge(
             ) else {
                 return false;
             };
-            evaluated_start.distance(start) <= tolerance && evaluated_end.distance(end) <= tolerance
+            // GE-05: candidate admission uses the same strict MUR rule as joins.
+            close_with_tolerance(evaluated_start, start, Some(tolerance))
+                && close_with_tolerance(evaluated_end, end, Some(tolerance))
         })
         .collect::<Vec<_>>();
     let first = usable.first()?;
@@ -729,6 +732,7 @@ fn close_with_tolerance(left: Point3, right: Point3, tolerance: Option<f64>) -> 
     match tolerance {
         Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => {
             let distance = left.distance(right);
+            // GE-05: IGES MUR coincidence is strictly less than the declared value.
             if tolerance == 0.0 {
                 distance == 0.0
             } else {
