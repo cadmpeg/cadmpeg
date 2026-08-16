@@ -731,6 +731,124 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
 }
 
 #[test]
+fn unique_unindexed_point_locus_is_projected() {
+    let hole = model_hole();
+    let sketch_feature = cadmpeg_ir::features::Feature {
+        id: FeatureId("position-sketch".into()),
+        ordinal: 1,
+        name: Some("Position".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(SketchId("position-geometry".into())),
+        },
+        native_ref: Some("native-position-sketch".into()),
+    };
+    let mut history = native_history();
+    history.features.push(crate::records::Feature {
+        id: "native-position-sketch".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: Some("6".into()),
+        parent_source_id: None,
+        ordinal: 1,
+        name: "Position".into(),
+        kind: "Sketch".into(),
+        input_class: Some("moProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::default(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    });
+    let mut lane = lane_with_position_reference(6);
+    let marker = |id: &str, ordinal, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("native-position-sketch".into()),
+        ordinal,
+        offset: u64::from(ordinal),
+        object_index: None,
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: Some(coordinates_m),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    lane.sketch_entities = vec![
+        marker("relation-anchor-0", 0, [0.0, 0.0]),
+        marker("position-locus", 1, [0.014, 0.025]),
+        marker("relation-anchor-1", 2, [0.0, 0.0]),
+    ];
+    let sketch = Sketch {
+        id: SketchId("position-geometry".into()),
+        name: Some("Position".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(10.0, 20.0, 30.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: Some("lane".into()),
+    };
+    let mut features = vec![hole, sketch_feature];
+
+    project_hole_position_sketches(
+        &mut features,
+        std::slice::from_ref(&sketch),
+        &[],
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+    );
+
+    let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
+        panic!("expected hole");
+    };
+    assert!(matches!(
+        placements.as_slice(),
+        [HolePlacement::Axis {
+            origin: Point3 {
+                x: 14.0,
+                y: 25.0,
+                z: 30.0
+            },
+            axis: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+        }]
+    ));
+
+    lane.sketch_entities
+        .push(marker("ambiguous-locus", 3, [0.006, 0.007]));
+    let mut ambiguous_features = vec![model_hole(), features[1].clone()];
+    project_hole_position_sketches(
+        &mut ambiguous_features,
+        std::slice::from_ref(&sketch),
+        &[],
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+    );
+    let FeatureDefinition::Hole { placements, .. } = &ambiguous_features[0].definition else {
+        panic!("expected hole");
+    };
+    assert!(placements.is_empty());
+}
+
+#[test]
 fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId("position-geometry".into());

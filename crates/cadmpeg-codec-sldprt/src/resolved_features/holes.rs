@@ -1374,28 +1374,77 @@ pub(crate) fn project_hole_position_sketches(
                     )
             })
             .collect::<Vec<_>>();
+        let mut unindexed_marker_ids = HashSet::new();
         let paired_marker_ids = if authored_markers.is_empty() {
             // Direct projection requires a complete alternate object roster.
             // An isolated pair among other coordinates can describe a
             // construction curve or dimension handle instead of a hole locus.
             let mut paired_marker_ids = HashSet::new();
             let mut complete_alternate_encoding = true;
+            let mut unindexed_locus: Option<&crate::records::SketchInputEntity> = None;
+            let mut complete_unindexed_encoding = true;
             for lane in matching_lanes {
                 let position_markers = lane
                     .sketch_entities
                     .iter()
                     .filter(|marker| {
                         marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
-                            && marker.object_index.is_some()
                             && marker.coordinates_m.is_some()
                     })
+                    .collect::<Vec<_>>();
+                let indexed_markers = position_markers
+                    .iter()
+                    .filter(|marker| marker.object_index.is_some())
                     .count();
                 let paired = paired_object_locus_markers(lane, position_feature.id.as_str());
-                complete_alternate_encoding &= paired.len() == position_markers;
+                complete_alternate_encoding &= paired.len() == indexed_markers;
                 paired_marker_ids.extend(paired.iter().map(|marker| marker.id.as_str()));
                 authored_markers.extend(paired);
+                if indexed_markers == 0
+                    && position_markers.iter().all(|marker| {
+                        matches!(
+                            marker.kind,
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        )
+                    })
+                {
+                    let loci = position_markers.into_iter().filter(|marker| {
+                        marker
+                            .coordinates_m
+                            .is_some_and(|[u, v]| u != 0.0 || v != 0.0)
+                    });
+                    let mut loci = loci.collect::<Vec<_>>();
+                    if let [locus] = loci.as_mut_slice() {
+                        if unindexed_locus
+                            .is_some_and(|previous| previous.coordinates_m != locus.coordinates_m)
+                        {
+                            complete_unindexed_encoding = false;
+                        } else {
+                            unindexed_locus = Some(*locus);
+                        }
+                    } else {
+                        complete_unindexed_encoding = false;
+                    }
+                } else {
+                    complete_unindexed_encoding = false;
+                }
             }
-            if complete_alternate_encoding {
+            // Legacy position sketches omit object indexes from their point
+            // records. Accept one locus only when every matching lane has a
+            // point-only coordinate roster with exactly one non-origin point;
+            // zero points are relation anchors and do not identify a hole.
+            if complete_unindexed_encoding {
+                if let Some(marker) = unindexed_locus {
+                    unindexed_marker_ids.insert(marker.id.as_str());
+                    authored_markers.push(marker);
+                    HashSet::new()
+                } else if complete_alternate_encoding {
+                    paired_marker_ids
+                } else {
+                    authored_markers.clear();
+                    HashSet::new()
+                }
+            } else if complete_alternate_encoding {
                 paired_marker_ids
             } else {
                 authored_markers.clear();
@@ -1428,7 +1477,9 @@ pub(crate) fn project_hole_position_sketches(
                     };
                     position
                 }
-                None if paired_marker_ids.contains(marker.id.as_str()) => {
+                None if paired_marker_ids.contains(marker.id.as_str())
+                    || unindexed_marker_ids.contains(marker.id.as_str()) =>
+                {
                     let Some(transform) = marker_transform else {
                         resolved.clear();
                         break;
