@@ -274,14 +274,6 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** We must know the targets to write a complete occurrence placement. A reader takes the target path, the discriminators, and the transform without them.
 
-### XR-05. Precedence of a role-adjacent carrier against a placement record
-
-**Question.** Which carrier gives the occurrence transforms of an external reference when a Design stream holds both a class-256 role-adjacent carrier and one or more placement records for one role?
-
-**Known.** `f3d.md` §3.1 states that a role-adjacent carrier has class tag 256, an LP-UTF16 occurrence-role GUID, two zero bytes, and a rigid transform equal to the scope transform. `f3d.md` §1.4 "**Placement.**" gives the `CE2913AA` placement record and states that several placements may carry the same role and place the same target document more than once. The two carrier forms may occur in one Design stream.
-
-**Need.** A stream that holds both forms needs one precedence rule. The rule must preserve every authored placement without treating a non-class-256 role-shaped record as a carrier.
-
 ### XR-07. Absent occurrence transform against the identity placement
 
 **Question.** How does a reader separate an occurrence that stores no transform from an occurrence whose placement did not decode?

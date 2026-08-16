@@ -2669,7 +2669,7 @@ impl<'a> F3dDecodeSession<'a> {
                 materials.has_topology_assignments,
             );
             annotate_docstruct(&mut self.ir, scan);
-            match crate::xref::decode(scan) {
+            match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
                 Ok(Some(table)) => {
                     self.ir.model.occurrences = crate::xref::project_occurrences(&table);
                     crate::xref::bind_component_insert_features(
@@ -2689,7 +2689,8 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir.model.appearances = decoded_materials.appearances;
             self.ir.model.appearance_bindings = decoded_materials.bindings;
             annotate_docstruct(&mut self.ir, scan);
-            let xref_table = crate::xref::decode(scan);
+            let xref_table =
+                crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
             if let Ok(Some(table)) = &xref_table {
                 self.ir.model.occurrences = crate::xref::project_occurrences(table);
                 crate::xref::bind_component_insert_features(

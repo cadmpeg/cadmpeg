@@ -8,9 +8,10 @@
 //! form of `Properties.dat`. [`is_assembly`] classifies a BREP-less document
 //! whose model is the placement of its XREF targets.
 
+use std::collections::HashSet;
+
 use serde::Deserialize;
 
-use cadmpeg_core::bytes::find_in;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
@@ -21,7 +22,9 @@ use cadmpeg_ir::products::{
 use crate::bytes::{lp_ascii_strict, take_reference};
 use crate::container::role;
 use crate::container::ContainerScan;
-use crate::records::{DesignParameterScope, XrefDesign, XrefReference};
+use crate::records::{
+    DesignComponentInsertConstruction, DesignParameterScope, XrefDesign, XrefReference,
+};
 
 /// Top-level container entry holding the external-reference table.
 pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
@@ -29,6 +32,9 @@ pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
 pub const PROPERTIES_ENTRY: &str = "Properties.dat";
 /// Top-level JSON document carrying component-reference extension data.
 pub const COMPONENT_REFERENCE_ENTRY: &str = "ComponentReferenceData.json";
+
+/// Stable type-table identity of a Design occurrence-placement record.
+const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
 
 /// The parsed `RedirectionsStream.dat` table.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -144,6 +150,15 @@ fn parse_component_reference_data(bytes: &[u8]) -> Result<serde_json::Value, Cod
 
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
 pub fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
+    decode_with_scopes(scan, &[])
+}
+
+/// Parse the external-reference table and bind its occurrences to exact
+/// `Component Insert` constructions already decoded from the Design streams.
+pub(crate) fn decode_with_scopes(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+) -> Result<Option<XrefTable>, CodecError> {
     // Validate the extension document independently of whether a redirections
     // table is present. Its members are application-defined and retained by
     // source fidelity, so no field-level semantics are guessed here.
@@ -152,7 +167,7 @@ pub fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
         return Ok(None);
     };
     let mut table = parse(bytes)?;
-    bind_occurrences(scan, &mut table)?;
+    bind_occurrences(scan, &mut table, scopes)?;
     Ok(Some(table))
 }
 
@@ -327,7 +342,11 @@ pub fn bind_component_insert_features(
 
 /// Expand container references through their occurrence records in the active
 /// Design `BulkStream` and retain each occurrence-local placement matrix.
-fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) -> Result<(), CodecError> {
+fn bind_occurrences(
+    scan: &ContainerScan,
+    table: &mut XrefTable,
+    scopes: &[DesignParameterScope],
+) -> Result<(), CodecError> {
     let mut streams = Vec::new();
     for entry in scan
         .entries
@@ -339,27 +358,45 @@ fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) -> Result<(), C
             .name
             .strip_suffix("BulkStream.dat")
             .map(|prefix| format!("{prefix}MetaStream.dat"));
-        let serializer_magic = meta_name
-            .filter(|name| scan.entries.iter().any(|candidate| candidate.name == *name))
-            .map(|name| {
-                let bytes = scan.entry_bytes(&name)?;
-                crate::metastream::serializer_magic(bytes, &name)
-            })
-            .transpose()?;
+        let (serializer_magic, placement_offsets) = if let Some(name) =
+            meta_name.filter(|name| scan.entries.iter().any(|candidate| candidate.name == *name))
+        {
+            let meta = scan.parsed_metastream(&name)?;
+            let meta_bytes = scan.entry_bytes(&name)?;
+            (
+                Some(crate::metastream::serializer_magic(meta_bytes, &name)?),
+                Some(typed_occurrence_placement_offsets(&meta)?),
+            )
+        } else {
+            (None, None)
+        };
         let headers = indexed_records(bytes);
-        let placements = occurrence_placements(bytes, &headers, serializer_magic);
-        streams.push((bytes, headers, placements));
+        let placements = occurrence_placements_filtered(
+            bytes,
+            &headers,
+            serializer_magic,
+            placement_offsets.as_ref(),
+        );
+        streams.push((placements, crate::ids::native_scope(&entry.name)));
     }
     let mut expanded = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
-        for (bytes, headers, placements) in &mut streams {
-            let direct = role_adjacent_transforms(bytes, headers, &reference.neutron_role);
-            if direct.is_empty() {
-                occurrences.extend(occurrence_transforms(placements, &reference.neutron_role));
-            } else {
-                occurrences.extend(direct.into_iter().map(Some));
-            }
+        for (placements, stream) in &streams {
+            let direct = select_component_insert_transforms(
+                scopes.iter().filter_map(|scope| {
+                    let stream = crate::ids::native_stream(&scope.id)?;
+                    let construction = scope.component_insert_construction.as_ref()?;
+                    Some((stream, construction))
+                }),
+                stream,
+                &reference.neutron_role,
+            );
+            occurrences.extend(occurrence_transforms_with_precedence(
+                direct,
+                placements,
+                &reference.neutron_role,
+            ));
         }
         if occurrences.is_empty() {
             expanded.push(reference.clone());
@@ -380,29 +417,67 @@ fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) -> Result<(), C
     Ok(())
 }
 
-fn role_adjacent_transforms(
-    bytes: &[u8],
-    records: &[IndexedRecord],
+/// Select the exact `Component Insert` constructions for one Design stream
+/// and external-reference role. The construction parser has already joined
+/// each role to its scope-owned relation record and verified its carrier
+/// transform, so the class tag is not an admission discriminator here.
+fn select_component_insert_transforms<'a, I>(
+    constructions: I,
+    stream: &str,
     role: &str,
-) -> Vec<[[f64; 4]; 4]> {
-    records
+) -> Vec<[[f64; 4]; 4]>
+where
+    I: IntoIterator<Item = (&'a str, &'a DesignComponentInsertConstruction)>,
+{
+    constructions
+        .into_iter()
+        .filter(|(construction_stream, construction)| {
+            *construction_stream == stream && construction.neutron_role == role
+        })
+        .map(|(_, construction)| construction.transform)
+        .collect()
+}
+
+/// Use scope-bound carriers when present. Placement records are the fallback
+/// for a stream with no exact carrier for this role.
+fn occurrence_transforms_with_precedence(
+    direct: Vec<[[f64; 4]; 4]>,
+    placements: &[OccurrencePlacement],
+    role: &str,
+) -> Vec<Option<[[f64; 4]; 4]>> {
+    if direct.is_empty() {
+        occurrence_transforms(placements, role)
+    } else {
+        direct.into_iter().map(Some).collect()
+    }
+}
+
+/// Return the `BulkStream` offsets whose type-table identity is the stable
+/// occurrence-placement type. Dynamic class tags and record shape are not
+/// sufficient because unrelated component records can share that shape.
+fn typed_occurrence_placement_offsets(
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashSet<usize>, CodecError> {
+    let placement_entities = meta
+        .types
         .iter()
-        .filter(|record| record.class_tag == 256)
-        .flat_map(|record| {
-            role_tails(bytes, record, role)
-                .into_iter()
-                .filter_map(|after_role| {
-                    let flags_end = after_role.checked_add(2)?;
-                    if bytes.get(after_role..flags_end) != Some([0, 0].as_slice()) {
-                        return None;
-                    }
-                    let matrix_at = flags_end;
-                    if matrix_at.checked_add(128)? <= record.end {
-                        decode_rigid_matrix(bytes, matrix_at)
-                    } else {
-                        None
-                    }
-                })
+        .filter(|design_type| {
+            design_type
+                .type_guid
+                .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
+        })
+        .flat_map(|design_type| design_type.entity_ids.iter().copied())
+        .collect::<HashSet<_>>();
+    meta.records
+        .iter()
+        .chain(meta.secondary_records.iter())
+        .filter(|record| placement_entities.contains(&record.entity_id))
+        .map(|record| {
+            usize::try_from(record.bulk_offset).map_err(|_| {
+                CodecError::Malformed(
+                    "F3D occurrence-placement BulkStream offset exceeds usize".into(),
+                )
+            })
         })
         .collect()
 }
@@ -411,7 +486,6 @@ fn role_adjacent_transforms(
 struct IndexedRecord {
     offset: usize,
     end: usize,
-    class_tag: u32,
 }
 
 /// The transforms of every placement whose target path carries `role`, in
@@ -433,9 +507,6 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
         let Some((class_tag, after_tag)) = lp_ascii_strict(bytes, at, 0..=usize::MAX) else {
             continue;
         };
-        let Some(class_tag_number) = class_tag.parse::<u32>().ok() else {
-            continue;
-        };
         if after_tag == at + 7
             && class_tag.len() == 3
             && class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -443,34 +514,17 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
             if bytes.get(after_tag..after_tag + 8).is_none() {
                 continue;
             }
-            headers.push((at, class_tag_number));
+            headers.push(at);
         }
     }
     headers
         .iter()
         .enumerate()
-        .map(|(ordinal, (offset, class_tag))| IndexedRecord {
+        .map(|(ordinal, offset)| IndexedRecord {
             offset: *offset,
-            end: headers
-                .get(ordinal + 1)
-                .map_or(bytes.len(), |(offset, _)| *offset),
-            class_tag: *class_tag,
+            end: headers.get(ordinal + 1).copied().unwrap_or(bytes.len()),
         })
         .collect()
-}
-
-fn role_tails(bytes: &[u8], record: &IndexedRecord, value: &str) -> Vec<usize> {
-    let encoded = value.encode_utf16().collect::<Vec<_>>();
-    let mut needle = Vec::with_capacity(4 + encoded.len() * 2);
-    needle.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-    needle.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
-    let mut tails = Vec::new();
-    let mut from = record.offset;
-    while let Some(at) = find_in(bytes, &needle, from, record.end) {
-        tails.push(at + needle.len());
-        from = at + 1;
-    }
-    tails
 }
 
 /// One occurrence-placement record: the target path it names and the transform
@@ -490,13 +544,26 @@ struct OccurrencePlacement {
 
 /// Parse every indexed record that closes exactly under the occurrence-placement
 /// grammar, in record order.
+#[cfg(test)]
 fn occurrence_placements(
     bytes: &[u8],
     records: &[IndexedRecord],
     serializer_magic: Option<u32>,
 ) -> Vec<OccurrencePlacement> {
+    occurrence_placements_filtered(bytes, records, serializer_magic, None)
+}
+
+/// Parse occurrence-placement records, optionally restricted by the
+/// `MetaStream` type-table admission set.
+fn occurrence_placements_filtered(
+    bytes: &[u8],
+    records: &[IndexedRecord],
+    serializer_magic: Option<u32>,
+    typed_offsets: Option<&HashSet<usize>>,
+) -> Vec<OccurrencePlacement> {
     records
         .iter()
+        .filter(|record| typed_offsets.is_none_or(|offsets| offsets.contains(&record.offset)))
         .filter_map(|record| {
             occurrence_placement(bytes.get(record.offset..record.end)?, serializer_magic)
         })

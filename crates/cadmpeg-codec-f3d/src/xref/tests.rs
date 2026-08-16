@@ -12,6 +12,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use std::collections::HashSet;
 use std::io::{Cursor, Read, Seek, Write};
 
 use cadmpeg_asm::asm_header;
@@ -183,35 +184,6 @@ fn occurrence_record_with_serializer_magic(
     bytes
 }
 
-fn direct_occurrence_record(role: &str, transforms: &[[[f64; 4]; 4]]) -> Vec<u8> {
-    direct_occurrence_record_variant("256", role, transforms, [0, 0])
-}
-
-fn direct_occurrence_record_variant(
-    class_tag: &str,
-    role: &str,
-    transforms: &[[[f64; 4]; 4]],
-    flags: [u8; 2],
-) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(class_tag.as_bytes());
-    bytes.extend_from_slice(&10_u64.to_le_bytes());
-    for transform in transforms {
-        bytes.extend_from_slice(&[0; 9]);
-        let role = role.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(role.len() as u32).to_le_bytes());
-        for value in role {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.extend_from_slice(&flags);
-        for value in transform.iter().flatten() {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-    }
-    bytes
-}
-
 #[test]
 fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
     let first = [
@@ -307,6 +279,8 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
         ]),
         Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
     );
+    let mut placement = placement;
+    placement[4..7].copy_from_slice(b"256");
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
@@ -319,7 +293,17 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
         .unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
-    zip.write_all(&design_metastream(&[])).unwrap();
+    zip.write_all(&design_metastream_with_records(
+        &[(
+            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &[10],
+        )],
+        &[(10, 0)],
+    ))
+    .unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&placement).unwrap();
@@ -385,49 +369,93 @@ fn a_role_that_no_path_element_names_places_nothing() {
 }
 
 #[test]
-fn repeated_roles_retain_each_directly_adjacent_occurrence_transform() {
-    let first = [
-        [1.0, 0.0, 0.0, -1.3],
+fn exact_component_insert_carriers_precede_structured_placements() {
+    let direct = [
+        [1.0, 0.0, 0.0, 7.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let second = [
-        [-1.0, 0.0, 0.0, -5.8],
-        [0.0, 1.0, 0.0, 6.16],
-        [0.0, 0.0, -1.0, 0.568],
-        [0.0, 0.0, 0.0, 1.0],
-    ];
-    let bytes = direct_occurrence_record("role", &[first, second]);
+    let structured = OccurrencePlacement {
+        link_names: vec!["role".into()],
+        discriminators: vec![1],
+        transform: Some([
+            [1.0, 0.0, 0.0, -5.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]),
+    };
 
     assert_eq!(
-        super::role_adjacent_transforms(&bytes, &super::indexed_records(&bytes), "role"),
-        [first, second]
+        super::occurrence_transforms_with_precedence(vec![direct], &[structured], "role"),
+        vec![Some(direct)]
     );
 }
 
 #[test]
-fn role_adjacent_carriers_require_class_256_and_zero_flags() {
-    let transform = [
-        [1.0, 0.0, 0.0, 2.0],
-        [0.0, 1.0, 0.0, 3.0],
-        [0.0, 0.0, 1.0, 4.0],
+fn component_insert_selection_uses_stream_and_role_not_class_tag() {
+    let selected = [
+        [1.0, 0.0, 0.0, 7.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let non_class_256 = direct_occurrence_record_variant("382", "role", &[transform], [0, 0]);
-    assert!(super::role_adjacent_transforms(
-        &non_class_256,
-        &super::indexed_records(&non_class_256),
-        "role"
+    let ignored = [
+        [1.0, 0.0, 0.0, 9.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let selected_construction = crate::records::DesignComponentInsertConstruction {
+        relation_record_index: 1,
+        carrier_record_index: 2,
+        occurrence_identity: None,
+        neutron_role: "role".into(),
+        neutron_role_offset: 0,
+        transform: selected,
+        transform_offset: 0,
+        carrier_transform_offset: 0,
+    };
+    let ignored_construction = crate::records::DesignComponentInsertConstruction {
+        neutron_role: "other".into(),
+        transform: ignored,
+        ..selected_construction.clone()
+    };
+
+    assert_eq!(
+        super::select_component_insert_transforms(
+            [
+                ("stream", &selected_construction),
+                ("stream", &ignored_construction),
+                ("other-stream", &selected_construction),
+            ],
+            "stream",
+            "role"
+        ),
+        vec![selected]
+    );
+}
+
+#[test]
+fn typed_placement_admission_rejects_shape_collision() {
+    let bytes = occurrence_record("role", 10, &[2, 3], None);
+    let records = super::indexed_records(&bytes);
+    let no_registered_placements = HashSet::new();
+    assert!(super::occurrence_placements_filtered(
+        &bytes,
+        &records,
+        None,
+        Some(&no_registered_placements),
     )
     .is_empty());
-    let nonzero_flags = direct_occurrence_record_variant("256", "role", &[transform], [0, 1]);
-    assert!(super::role_adjacent_transforms(
-        &nonzero_flags,
-        &super::indexed_records(&nonzero_flags),
-        "role"
-    )
-    .is_empty());
+
+    let registered_placement = HashSet::from([0]);
+    assert_eq!(
+        super::occurrence_placements_filtered(&bytes, &records, None, Some(&registered_placement),)
+            .len(),
+        1
+    );
 }
 
 #[test]
