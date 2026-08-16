@@ -1617,9 +1617,6 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     && marker.object_index.is_some()
             })
             .collect::<Vec<_>>();
-        if authored_markers.is_empty() {
-            continue;
-        }
         let radius = *diameter * 0.5;
         let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
         let axis_tolerance_squared = 1.0e-12;

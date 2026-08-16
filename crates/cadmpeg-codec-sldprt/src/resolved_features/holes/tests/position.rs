@@ -836,6 +836,107 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
 }
 
 #[test]
+fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
+    let hole = model_hole();
+    let sketch_id = SpatialSketchId("position-geometry".into());
+    let sketch_feature = cadmpeg_ir::features::Feature {
+        id: FeatureId("position-sketch".into()),
+        ordinal: 1,
+        name: Some("Position".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: Some("native-position-sketch".into()),
+    };
+    let mut history = native_history();
+    history.features.push(crate::records::Feature {
+        id: "native-position-sketch".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: Some("6".into()),
+        parent_source_id: None,
+        ordinal: 1,
+        name: "Position".into(),
+        kind: "3DSketch".into(),
+        input_class: Some("mo3DProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::default(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    });
+    let mut lane = lane_with_position_reference(6);
+    lane.configuration = Some("1".into());
+    let sketch = SpatialSketch {
+        id: sketch_id.clone(),
+        name: Some("Position".into()),
+        configuration: None,
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: Some("shared-lane".into()),
+    };
+    let positions = [
+        Point3::new(12.0, 23.0, 30.0),
+        Point3::new(12.0, 33.0, 30.0),
+        Point3::new(22.0, 23.0, 30.0),
+    ];
+    let entities = positions
+        .into_iter()
+        .enumerate()
+        .map(|(index, position)| SpatialSketchEntity {
+            id: SpatialSketchEntityId(format!("point-{index}")),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SpatialSketchGeometry::Point { position },
+        })
+        .collect::<Vec<_>>();
+    let mut features = vec![hole, sketch_feature];
+
+    project_spatial_hole_position_sketches(
+        &mut features,
+        &[sketch],
+        &entities,
+        &[],
+        &[history],
+        &[lane],
+    );
+
+    let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
+        panic!("expected hole");
+    };
+    assert_eq!(
+        placements,
+        &[
+            HolePlacement::Axis {
+                origin: Point3::new(12.0, 23.0, 30.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            HolePlacement::Axis {
+                origin: Point3::new(12.0, 33.0, 30.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            HolePlacement::Axis {
+                origin: Point3::new(22.0, 23.0, 30.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+        ]
+    );
+}
+
+#[test]
 fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId("position-geometry".into());

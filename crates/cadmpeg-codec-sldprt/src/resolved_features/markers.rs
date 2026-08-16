@@ -81,6 +81,10 @@ pub(crate) fn spatial_sketches(
                 .sketch_entities
                 .iter()
                 .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                // A spatial sketch stores an indexed geometry marker and an
+                // unindexed zero-valued anchor for the same point. Only the
+                // indexed marker is a model-space locus.
+                .filter(|marker| marker.object_index.is_some())
                 .filter_map(|marker| {
                     let offset = usize::try_from(marker.offset).ok()?;
                     if !relation_ranges.is_empty()

@@ -268,21 +268,20 @@ pub(crate) fn project_configuration_design_states(
             .into_iter()
             .map(|mut feature| {
                 if let Some(base_definition) = base_definitions.get(&feature.id) {
-                    // A scoped lane without a serialized position carrier has
-                    // no independent hole-locus state. Reuse neutral hole
-                    // semantics instead of turning an absent local record
-                    // into an authored unresolved override.
-                    let carrierless_hole =
-                        matches!(feature.definition, FeatureDefinition::Hole { .. })
-                            && !crate::resolved_features::holes::hole_position_carrier_present(
+                    if matches!(feature.definition, FeatureDefinition::Hole { .. }) {
+                        // A scoped lane may author positions without repeating
+                        // shared hole construction. Copy missing construction
+                        // fields while preserving authored local placements.
+                        let inherit_placements =
+                            !crate::resolved_features::holes::hole_position_carrier_present(
                                 &feature,
                                 histories,
                                 scoped_lanes,
                             );
-                    if carrierless_hole {
-                        inherit_configuration_shared_semantics(
+                        inherit_configuration_hole_semantics(
                             &mut feature.definition,
                             base_definition,
+                            inherit_placements,
                         );
                     }
                 }
@@ -713,6 +712,14 @@ pub(crate) fn inherit_configuration_shared_semantics(
         }
         return;
     }
+    inherit_configuration_hole_semantics(definition, base_definition, true);
+}
+
+pub(crate) fn inherit_configuration_hole_semantics(
+    definition: &mut FeatureDefinition,
+    base_definition: &FeatureDefinition,
+    inherit_placements: bool,
+) {
     let FeatureDefinition::Hole {
         profile,
         profile_filter,
@@ -770,7 +777,7 @@ pub(crate) fn inherit_configuration_shared_semantics(
     if direction.is_none() {
         direction.clone_from(base_direction);
     }
-    if placements.is_empty() {
+    if inherit_placements && placements.is_empty() {
         placements.clone_from(base_placements);
     }
     if missing_construction || matches!(kind, HoleKind::Unresolved { .. }) {

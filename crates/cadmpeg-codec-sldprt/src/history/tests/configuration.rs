@@ -815,6 +815,84 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
 }
 
 #[test]
+fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length, Termination};
+
+    let placement = HolePlacement::Axis {
+        origin: cadmpeg_ir::math::Point3::new(9.0, 8.0, 7.0),
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+    };
+    let base = FeatureDefinition::Hole {
+        profile: None,
+        profile_filter: None,
+        face: None,
+        position: None,
+        direction: None,
+        placements: vec![HolePlacement::Axis {
+            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        }],
+        kind: HoleKind::Counterbore {
+            diameter: Length(8.0),
+            depth: Length(4.0),
+        },
+        exit_kind: None,
+        diameter: Some(Length(5.0)),
+        extent: Some(Termination::Blind {
+            length: Length(12.0),
+        }),
+        bottom: None,
+        taper_angle: None,
+        specification: None,
+        allow_multi_profile_faces: None,
+    };
+    let mut local = FeatureDefinition::Hole {
+        profile: None,
+        profile_filter: None,
+        face: None,
+        position: None,
+        direction: None,
+        placements: vec![placement.clone()],
+        kind: HoleKind::Simple,
+        exit_kind: None,
+        diameter: None,
+        extent: None,
+        bottom: None,
+        taper_angle: None,
+        specification: None,
+        allow_multi_profile_faces: None,
+    };
+
+    inherit_configuration_hole_semantics(&mut local, &base, false);
+
+    let FeatureDefinition::Hole {
+        placements,
+        kind,
+        diameter,
+        extent,
+        ..
+    } = local
+    else {
+        panic!("hole definition changed variant");
+    };
+    assert_eq!(placements, [placement]);
+    assert_eq!(
+        kind,
+        HoleKind::Counterbore {
+            diameter: Length(8.0),
+            depth: Length(4.0),
+        }
+    );
+    assert_eq!(diameter, Some(Length(5.0)));
+    assert_eq!(
+        extent,
+        Some(Termination::Blind {
+            length: Length(12.0),
+        })
+    );
+}
+
+#[test]
 fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     use cadmpeg_ir::features::{
         ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
