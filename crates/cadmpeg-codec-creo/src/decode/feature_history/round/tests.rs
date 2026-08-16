@@ -167,3 +167,53 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         None
     );
 }
+
+#[test]
+fn round_support_radius_reconciles_placed_and_transferred_planes() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 913,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![1, 2, 3, 4],
+            offset: 0,
+        });
+    scan.planes.positional_frames.extend([
+        crate::surface::OutlinePlane {
+            surface_id: 3,
+            origin: [-9.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            u_axis: [0.0, 1.0, 0.0],
+            offset: 3,
+        },
+        crate::surface::OutlinePlane {
+            surface_id: 4,
+            origin: [-8.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            u_axis: [0.0, 1.0, 0.0],
+            offset: 4,
+        },
+    ]);
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
+
+    for (id, x) in [(3, -9.0), (4, -8.0)] {
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+                origin: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
+                normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        });
+    }
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
+
+    match &mut ir.model.surfaces[0].geometry {
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } => origin.x = -8.5,
+        _ => panic!("transferred support plane"),
+    }
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+}
