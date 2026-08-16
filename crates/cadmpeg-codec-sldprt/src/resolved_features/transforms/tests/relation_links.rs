@@ -124,6 +124,70 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
 }
 
 #[test]
+fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
+    let sketch = SketchId("sketch".into());
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.local_id = Some(7);
+    relation.object_index = Some(8);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "first-point".into(),
+        },
+        SketchInputLink {
+            local_id: 8,
+            entity_ref: "second-point".into(),
+        },
+    ];
+    let first = marker("first-point", Some([0.0, 0.0]));
+    let second = marker("second-point", Some([1.0, 0.0]));
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+    ]);
+    let first_entity = SketchEntity {
+        id: SketchEntityId("first-entity".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(first.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+    };
+    let second_entity = SketchEntity {
+        id: SketchEntityId("second-entity".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(second.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(1.0, 0.0),
+        },
+    };
+    let entities = vec![first_entity.clone(), second_entity.clone()];
+
+    assert!(marker_owns_constraint(&relation, &markers));
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &relation,
+            &sketch,
+            &entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_entity.id),
+            second: SketchLocus::Entity(second_entity.id),
+        })
+    );
+}
+
+#[test]
 fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);

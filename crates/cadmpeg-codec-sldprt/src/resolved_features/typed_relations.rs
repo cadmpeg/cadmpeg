@@ -1386,11 +1386,40 @@ pub(crate) fn marker_owns_constraint(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> bool {
+    let mut axis_point_links = marker
+        .links
+        .iter()
+        .filter(|link| link.entity_ref != marker.id)
+        .filter(|link| {
+            !matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|linked| linked.kind),
+                Some(SketchInputKind::Relation(_))
+            )
+        });
+    let axis_point_pair = matches!(
+        marker.kind,
+        SketchInputKind::Relation(
+            crate::records::SketchRelationKind::Horizontal
+                | crate::records::SketchRelationKind::Vertical
+        )
+    ) && relation_owner_markers(marker, markers_by_id).is_empty()
+        && axis_point_links.clone().count() == 2
+        && axis_point_links.all(|link| {
+            matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|linked| linked.kind),
+                Some(SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+            )
+        });
     marker.kind.owns_constraint()
-        && (marker
-            .links
-            .iter()
-            .any(|link| !relation_link_identifies_owner(marker, link))
+        && (axis_point_pair
+            || marker
+                .links
+                .iter()
+                .any(|link| !relation_link_identifies_owner(marker, link))
             || !relation_owner_markers(marker, markers_by_id).is_empty())
 }
 
