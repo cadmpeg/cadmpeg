@@ -56,7 +56,7 @@ fn unresolvable_length_unit_reports_an_error_loss() {
     );
 }
 
-fn assert_unscoped_document_point(
+fn assert_unscoped_cadir_fallback_point(
     first_length_unit: u64,
     second_length_unit: u64,
     expected_x: f64,
@@ -90,15 +90,36 @@ fn assert_unscoped_document_point(
 }
 
 #[test]
-fn conflicting_document_fallback_units_are_order_independent() {
-    assert_unscoped_document_point(1, 3, 1.0, true);
-    assert_unscoped_document_point(3, 1, 1.0, true);
+fn conflicting_cadir_fallback_units_are_order_independent() {
+    assert_unscoped_cadir_fallback_point(1, 3, 1.0, true);
+    assert_unscoped_cadir_fallback_point(3, 1, 1.0, true);
 }
 
 #[test]
-fn equivalent_document_fallback_units_define_the_shared_scale() {
-    assert_unscoped_document_point(1, 1, 1.0, false);
-    assert_unscoped_document_point(3, 3, 25.4, false);
+fn equivalent_context_units_define_cadir_fallback_scale() {
+    assert_unscoped_cadir_fallback_point(1, 1, 1.0, false);
+    assert_unscoped_cadir_fallback_point(3, 3, 25.4, false);
+}
+
+#[test]
+fn one_unscoped_unit_record_can_supply_cadir_fallback_scale() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unscoped unit'),'2;1');FILE_NAME('unscoped-unit','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.));#2=CARTESIAN_POINT('unscoped',(1.,0.,0.));#3=GEOMETRIC_REPRESENTATION_CONTEXT(3);#4=SHAPE_REPRESENTATION('unscoped',(#2),#3);ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode unscoped unit");
+    let point = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#2")
+        .expect("unscoped point");
+    assert_eq!(point.position.x, 10.0);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::DocumentLengthUnitUnresolved.kind() }));
 }
 
 #[test]

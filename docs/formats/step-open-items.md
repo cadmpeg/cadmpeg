@@ -858,30 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### UM-04. Document fallback unit identity
-
-**Question.** Which unit context and unit occurrence supply the document
-fallback when a representation has no usable `GLOBAL_UNIT_ASSIGNED_CONTEXT`?
-
-**Known.** Representation-local unit scopes are resolved from their reachable
-representation closure. `document_unit_scale` at
-`crates/cadmpeg-codec-step/src/reader/geometry.rs:3133-3180` collects every
-matching global context and returns a scale only when all resolved scales are
-equal. If no context supplies the dimension, it applies the same uniqueness
-rule to the remaining unit records. Conflicting values return no fallback;
-the code does not identify which context owns an unscoped document scale.
-
-**Note.** UM-01 settles scoped representation units but does not settle this
-fallback identity. The later implementation removes record-order selection by
-requiring one common scale, but that refusal rule does not establish the STEP
-document unit when contexts disagree or no context is linked.
-
-**Need.** We need the STEP document-level unit ownership rule and witness
-files with multiple global contexts, including conflicting and equivalent
-contexts, before selecting a fallback scale.
-
-QA audit: reopened after reviewing closing commit 706e743d3. The closing commit makes the fallback aggregation order-independent, but uniqueness across all global contexts is still a decoder policy and does not establish document-level unit ownership.
-
 ### TP-10. Malformed duplicate outer-bound fallback
 
 **Question.** When malformed input gives one face more than one

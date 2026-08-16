@@ -369,18 +369,32 @@ unit. Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the
 length and plane-angle scales for that representation and its reachable
 representation-item closure. A carrier shared by representations must have
 one equal scale in every such context; conflicting contexts leave the carrier
-on the document fallback scale and produce a geometry loss. The document
-fallback scale is the unique scale shared by all applicable global unit
-contexts. If no context supplies a dimension, all records for that dimension
-must resolve to one scale. Equivalent contexts define that shared scale.
-Conflicting contexts or unresolved dimension units do not define a fallback;
-unscoped values remain in source numeric units and produce a document-unit
-unresolved error. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty
-measure whose unit resolves to a length unit. When several length measures are
-present, the one named `distance_accuracy_value` is selected; otherwise a
-unique length measure is required. An ambiguous set does not define a linear
-tolerance. Geometric-consistency checks use the selected document tolerance as
-their baseline. Entity and solved-carrier tolerances can widen that baseline.
+on the document fallback scale and produce a geometry loss. ISO 10303-41
+defines `GLOBAL_UNIT_ASSIGNED_CONTEXT` as a `representation_context`; its
+`units` apply in that context, and each unit in its SET is a different kind.
+ISO 10303-42 requires every `geometric_representation_item` to be founded in
+a `geometric_representation_context` and assigns length and plane-angle units
+globally within that context. ISO 10303-43 requires a
+`value_representation_item` to be used in a representation whose context is a
+`GLOBAL_UNIT_ASSIGNED_CONTEXT`; a value item used in multiple representations
+must receive the same unit. The format defines no document-wide unit
+occurrence or precedence between independent contexts.
+
+CADIR decision: a value without a usable representation unit context receives
+a fallback only when every global unit context containing that dimension
+resolves to one equal scale, with all dimension-unit occurrences in each such
+context agreeing. If no context supplies the dimension, every unit record for
+that dimension must resolve to the same scale. This fallback is salvage for an
+unscoped value, not STEP unit ownership. It does not identify or select a unit
+occurrence, and entity-id or source order never selects the scale. Conflicting
+contexts, unresolved units, or a non-unique set leave unscoped values in source
+numeric units and produce a document-unit unresolved error.
+`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure whose
+unit resolves to a length unit. When several length measures are present, the
+one named `distance_accuracy_value` is selected; otherwise a unique length
+measure is required. An ambiguous set does not define a linear tolerance.
+Geometric-consistency checks use the selected document tolerance as their
+baseline. Entity and solved-carrier tolerances can widen that baseline.
 
 A conical surface accepts zero reference radius at its placement origin. Its
 finite half-angle converts from the representation's plane-angle unit to

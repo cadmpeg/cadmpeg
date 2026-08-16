@@ -3171,6 +3171,9 @@ fn document_unit_scale(
         return unique_scale(&context_scales);
     }
 
+    // STEP assigns units to representation contexts, not to the document.
+    // This branch is CADIR salvage for an unscoped dimension: accept only a
+    // scale to which every unit occurrence in the exchange resolves.
     let scales = exchange
         .records
         .iter()
