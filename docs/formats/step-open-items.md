@@ -231,21 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### SG-01. Signature method selection
-
-**Known.** Part 21 defines one signature method: a detached CMS
-`SignedData` object. The digest and signature algorithm identifiers are inside
-the decoded CMS object, not in a Part 21 field. The parser records the decoded
-CMS payload and does not guess an algorithm from its bytes.
-
-**Question.** Which SIGNATURE field identifies the signature method and its parameters?
-
-`step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define the complete byte boundary of a SIGNATURE section. The specification gives no field grammar for its content.
-
-**Need.** We must know the selection rule to choose the correct signature verification method.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### SG-02. Signed byte sequence
 
 **Known.** A signature covers the Part 21 alphabet bytes from the first

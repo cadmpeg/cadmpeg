@@ -352,6 +352,16 @@ Each entity occurs at most once. An unresolved target contributes no entities.
 A root ANCHOR whose value is a URI can forward a root reference to an entity or
 value in a subsidiary member.
 
+ISO 10303-21:2016 §14.1 defines each signature as CMS for external content
+and requires the CMS structure to be encoded as Base64. RFC 5652 §5 places
+the digest algorithm identifiers in `SignedData` and the per-signer digest and
+signature algorithm identifiers in `SignerInfo`; Part 21 supplies no separate
+method or parameter field. CADIR decision: the parser validates the CMS
+envelope and retains its decoded bytes. It does not infer an algorithm or
+verification parameter from the Part 21 section delimiters or Base64 text;
+verification uses the identifiers and parameters carried by CMS and a
+caller-supplied trust policy.
+
 CADIR decision: the STEP codec admits only the root member's exchange graph
 into CADIR. It checks that each root REFERENCE binding that resolves to an
 internal member, including a binding forwarded through a root ANCHOR, names an

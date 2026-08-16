@@ -145,6 +145,26 @@ fn parser_exposes_the_detached_signature_contract() {
 }
 
 #[test]
+fn signature_method_and_parameters_are_inside_cms_payload() {
+    let source = include_bytes!("tests/data/sg01_signature_method_selection.p21");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("signature method witness");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.signature_sections.len(), 1);
+    let section = &exchange.signature_sections[0];
+    assert_eq!(
+        &source[section.span.clone()],
+        b"SIGNATURE;\nMFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;"
+    );
+    assert_eq!(
+        &source[section.span.start..section.payload.start],
+        b"SIGNATURE;"
+    );
+    assert_eq!(&source[section.payload.end..section.span.end], b"ENDSEC;");
+    assert_eq!(section.cms.len(), 92);
+}
+
+#[test]
 fn parser_ignores_controls_inside_signature_terminators() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nEN\nDSEC;";
     let (exchange, _) = crate::parse::parse(source).expect("split signature terminator");
