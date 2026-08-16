@@ -517,6 +517,186 @@ fn complex_geometric_tolerance_uses_the_leaf_not_a_tolerance_mixin() {
 }
 
 #[test]
+fn geometric_tolerance_kind_uses_exact_leaf_and_retains_abstract_base_opaque() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+
+    let decode = |bytes| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode geometric tolerance witness")
+    };
+    let canonical = decode(include_bytes!(
+        "tests/data/ap03_geometric_tolerance_canonical.p21"
+    ));
+    let reordered = decode(include_bytes!(
+        "tests/data/ap03_geometric_tolerance_reordered.p21"
+    ));
+
+    for result in [&canonical, &reordered] {
+        let tolerance = result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+            .expect("complex flatness tolerance");
+        let PmiDefinition::GeometricTolerance {
+            tolerance: kind,
+            magnitude,
+            modifiers,
+            ..
+        } = &tolerance.definition
+        else {
+            panic!("complex flatness tolerance has the wrong definition")
+        };
+        assert_eq!(kind, &GeometricToleranceKind::Flatness);
+        assert_eq!(magnitude.quantity, PmiQuantity::Length);
+        assert_eq!(magnitude.value, 0.05);
+        assert_eq!(modifiers, &["free_state"]);
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .pmi
+                .iter()
+                .filter(|annotation| {
+                    matches!(
+                        annotation.definition,
+                        PmiDefinition::GeometricTolerance { .. }
+                    )
+                })
+                .count(),
+            1
+        );
+        assert!(result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown records")
+            .iter()
+            .any(|record| record.id.0 == "step:data:geometric_tolerance#13"));
+    }
+    assert!(!canonical
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
+    assert!(reordered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
+}
+
+#[test]
+fn supported_geometric_tolerance_kinds_emit_matching_leaf_entities() {
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let base = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_semantic_pmi.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode geometric tolerance template")
+        .into_parts()
+        .0;
+    let template = base
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| {
+            matches!(
+                annotation.definition,
+                PmiDefinition::GeometricTolerance { .. }
+            )
+        })
+        .cloned()
+        .expect("geometric tolerance template");
+    let kinds = [
+        (
+            GeometricToleranceKind::Straightness,
+            "STRAIGHTNESS_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Flatness, "FLATNESS_TOLERANCE"),
+        (GeometricToleranceKind::Roundness, "ROUNDNESS_TOLERANCE"),
+        (
+            GeometricToleranceKind::Cylindricity,
+            "CYLINDRICITY_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Coaxiality, "COAXIALITY_TOLERANCE"),
+        (
+            GeometricToleranceKind::LineProfile,
+            "LINE_PROFILE_TOLERANCE",
+        ),
+        (
+            GeometricToleranceKind::SurfaceProfile,
+            "SURFACE_PROFILE_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Angularity, "ANGULARITY_TOLERANCE"),
+        (
+            GeometricToleranceKind::Perpendicularity,
+            "PERPENDICULARITY_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Parallelism, "PARALLELISM_TOLERANCE"),
+        (GeometricToleranceKind::Position, "POSITION_TOLERANCE"),
+        (
+            GeometricToleranceKind::Concentricity,
+            "CONCENTRICITY_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Symmetry, "SYMMETRY_TOLERANCE"),
+        (
+            GeometricToleranceKind::CircularRunout,
+            "CIRCULAR_RUNOUT_TOLERANCE",
+        ),
+        (
+            GeometricToleranceKind::TotalRunout,
+            "TOTAL_RUNOUT_TOLERANCE",
+        ),
+    ];
+
+    for (ordinal, (kind, entity)) in kinds.into_iter().enumerate() {
+        let mut ir = base.clone();
+        ir.model.pmi.clear();
+        let mut annotation = template.clone();
+        annotation.id = PmiId(format!("test:pmi:tolerance#{ordinal}"));
+        let PmiDefinition::GeometricTolerance {
+            tolerance,
+            datum_system,
+            defined_unit,
+            defined_area_unit,
+            defined_area_second_unit,
+            modifiers,
+            ..
+        } = &mut annotation.definition
+        else {
+            panic!("geometric tolerance template has the wrong definition")
+        };
+        *tolerance = kind;
+        *datum_system = None;
+        *defined_unit = None;
+        *defined_area_unit = None;
+        *defined_area_second_unit = None;
+        modifiers.clear();
+        ir.model.pmi.push(annotation);
+
+        let mut output = Vec::new();
+        write_step(
+            &ir,
+            &mut output,
+            &StepWriteOptions {
+                schema: StepSchema::Ap242Edition3,
+                ..StepWriteOptions::default()
+            },
+        )
+        .expect("write geometric tolerance leaf");
+        let output = String::from_utf8(output).expect("STEP output is UTF-8");
+        assert!(output.contains(entity), "kind {ordinal} emitted:\n{output}");
+    }
+}
+
+#[test]
 fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
 

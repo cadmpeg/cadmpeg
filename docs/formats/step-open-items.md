@@ -444,21 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-03. Geometric tolerance kind selection
-
-**Question.** What STEP rule establishes geometric tolerance kind selection?
-
-**Known.** A complex geometric tolerance takes its kind from the exact
-geometric-tolerance leaf partial. Inherited base and modifier partials do not
-select the kind. The reader uses the same exact leaf table for direct and
-complex instances, so a non-leaf name that ends in `_TOLERANCE` remains an
-opaque source record instead of changing the leaf kind. The writer emits each
-supported leaf entity by its corresponding IR kind.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### AP-04. Annotation text completeness
 
 **Question.** What STEP rule establishes annotation text completeness?

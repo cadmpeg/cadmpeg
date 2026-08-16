@@ -1082,14 +1082,32 @@ derived-unit factors scale area and volume by their dimensions. CADIR decision:
 a repeated reference to one item is evaluated once, and an unsupported item
 produces a warning without suppressing supported siblings. Item order does not
 select a validation value.
-Geometric tolerances select their kind from the exact geometric-tolerance
-leaf partial, not from an inherited or modifier partial. They read their name
-and magnitude from the `GEOMETRIC_TOLERANCE` partial when the tolerance is
-complex. The
-`GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` partial supplies the datum-system
-link and does not add a shape-aspect target. The defined-unit and
-defined-area-unit partials retain their unit sizes and area shape; modifier
-aggregates retain their enumeration values. Presentation PMI retains
+ISO 10303-47 §6.2 defines the first compartment of a tolerance frame with one
+specific characteristic entity: `ANGULARITY_TOLERANCE`,
+`CIRCULAR_RUNOUT_TOLERANCE`, `COAXIALITY_TOLERANCE`,
+`CONCENTRICITY_TOLERANCE`, `CYLINDRICITY_TOLERANCE`, `FLATNESS_TOLERANCE`,
+`LINE_PROFILE_TOLERANCE`, `PARALLELISM_TOLERANCE`,
+`PERPENDICULARITY_TOLERANCE`, `POSITION_TOLERANCE`, `ROUNDNESS_TOLERANCE`,
+`STRAIGHTNESS_TOLERANCE`, `SURFACE_PROFILE_TOLERANCE`, `SYMMETRY_TOLERANCE`,
+or `TOTAL_RUNOUT_TOLERANCE`. ISO 10303-47 §6.4.9 declares
+`GEOMETRIC_TOLERANCE` an abstract supertype, and §6.6.1 requires exactly one
+of those characteristic subtypes for each geometric tolerance. A Part 21
+complex instance uses the `GEOMETRIC_TOLERANCE` partial for inherited `name`,
+`description`, `magnitude`, and `toleranced_shape_aspect`; its exact
+characteristic leaf partial supplies the kind. CAx-IF AP242 PMI Recommended
+Practices 4.1 §6.9.3 shows the same complex form with
+`GEOMETRIC_TOLERANCE_WITH_MODIFIERS` and `POSITION_TOLERANCE` partials.
+`GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` supplies the datum-system link and
+does not add a shape-aspect target. The defined-unit and defined-area-unit
+partials retain their unit sizes and area shape; modifier aggregates retain
+their enumeration values.
+CADIR decision: the reader recognizes only the exact characteristic leaf
+names above. An unrecognized direct entity name ending in `_TOLERANCE`,
+including the abstract `GEOMETRIC_TOLERANCE` name, is not a kind and remains a
+named opaque source record. An unrecognized partial inside a complex instance
+does not override an exact leaf. Partial order does not select the kind. The
+writer emits each supported IR kind with its corresponding characteristic
+leaf entity. Presentation PMI retains
 annotation identity, text, placement, and explicit occurrence visibility across
 inherited annotation partials. `INVISIBILITY` targeting a transferred
 presentation annotation sets its `visible=false`; it does not change visibility

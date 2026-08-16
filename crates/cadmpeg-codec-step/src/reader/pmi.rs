@@ -1515,7 +1515,6 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
         "SYMMETRY_TOLERANCE" => Kind::Symmetry,
         "CIRCULAR_RUNOUT_TOLERANCE" => Kind::CircularRunout,
         "TOTAL_RUNOUT_TOLERANCE" => Kind::TotalRunout,
-        "GEOMETRIC_TOLERANCE" => Kind::Other("geometric_tolerance".into()),
         _ => return None,
     })
 }
