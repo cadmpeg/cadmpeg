@@ -3752,6 +3752,9 @@ fn mapped_pcurve_closest(
     best.is_finite().then_some((best, best_parameter))
 }
 
+/// Return whether the bounded CADIR locus witness establishes equivalence.
+/// A true result is not a global proof for arbitrary curve/surface
+/// compositions; exhausting the refinement bound returns false.
 fn pcurve_loci_equivalent(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,

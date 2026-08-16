@@ -192,6 +192,42 @@ fn pcurve_locus_check_rejects_a_narrow_between_sample_crossing() {
 }
 
 #[test]
+fn bounded_pcurve_locus_witness_refuses_when_refinement_is_unresolved() {
+    let surface_id = SurfaceId("step:data:surface#locus-unresolved".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let bowed = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(0.5, 1.0),
+            Point2::new(1.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+
+    assert!(!pcurve_loci_equivalent(
+        &ModelIndex::new(&ir),
+        &surface_id,
+        &bowed,
+        [0.0, 1.0],
+        &bowed,
+        [0.0, 1.0],
+        0.0,
+    ));
+}
+
+#[test]
 fn synthesized_pcurve_chart_rejects_a_collapsed_bowed_axis() {
     let bowed = PcurveGeometry::Nurbs {
         degree: 2,

@@ -1132,14 +1132,23 @@ reference is decoded, is a member of the edge's `SEAM_CURVE` associated
 geometry, and has the coedge face surface as its basis. An invalid reference
 does not fall back to another pcurve; the coedge remains without a pcurve and
 reports a loss. For a non-seam edge with multiple same-surface candidates, the
-reader maps each candidate through that surface and accepts a unique
-endpoint-continuous fit. If several candidates tie, adaptive subdivision
-compares their mapped loci over the endpoint interval. Equivalent loci are
-one neutral carrier and the lowest STEP identity is retained; distinct tied
-or otherwise unresolved candidates remain detached and produce a topology
+reader maps each candidate through that surface and accepts a unique bounded
+endpoint-continuity witness. If several candidates tie, bounded adaptive
+subdivision compares their mapped loci over the endpoint interval. Equivalent
+loci are one neutral carrier and the lowest STEP identity is retained; distinct
+tied or otherwise unresolved candidates remain detached and produce a topology
 loss. A declared pcurve trim is the endpoint witness when it maps to both edge
 vertices; a stale declared trim can be replaced by an independently inverted
 edge interval. Candidate list order does not select a non-seam carrier.
+
+This numeric procedure is a CADIR admission rule, not a STEP invariant. It
+does not claim a global endpoint minimum or mathematical equality of arbitrary
+curve/surface compositions. Endpoint inversion uses finite seeds, NURBS knot
+boundaries, knot-span midpoints, and bounded improvement steps. Locus
+comparison includes NURBS breaks and refines until the finite depth bound is
+met; if the witness cannot establish equivalence within that bound, the
+candidate remains detached. The tolerance is the larger of the STEP
+coincidence tolerance and the document linear tolerance.
 
 ISO 10303-42 defines `SURFACE_CURVE.associated_geometry` as a list of one or
 two `PCURVE` or surface references. A selected pcurve identifies its basis
