@@ -993,14 +993,38 @@ fn opposite_chart_transfer_priority(
         | SurfaceGeometry::Nurbs(_) => 0,
         SurfaceGeometry::Transformed { .. } => 1,
         SurfaceGeometry::Procedural { .. }
-            if blend_surface_definition_with_index(index, target_surface).is_some()
+            if blend_boundary_transfer_available(index, ir, source_surface, target_surface)
                 && blend_transfer_contact(index, ir, source_surface, target_surface).is_some() =>
         {
             1
         }
-        SurfaceGeometry::Procedural { .. } => 2,
-        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => 3,
+        // A complete blend definition has a bounded spine and boundary
+        // parameterization fallback even when its serialized contact chart is
+        // absent. Try those targets before generic procedural carriers that
+        // can consume a chart-transfer slice without producing a pcurve.
+        SurfaceGeometry::Procedural { .. }
+            if blend_boundary_transfer_available(index, ir, source_surface, target_surface) =>
+        {
+            2
+        }
+        SurfaceGeometry::Procedural { .. } => 3,
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => 4,
     }
+}
+
+fn blend_boundary_transfer_available(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    ir: &CadIr,
+    source_surface: &SurfaceId,
+    target_surface: &SurfaceId,
+) -> bool {
+    let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, target_surface)
+    else {
+        return false;
+    };
+    supports
+        .iter()
+        .any(|support| parameterization_equivalent_surfaces(ir, support, source_surface))
 }
 
 #[cfg(test)]
@@ -2005,13 +2029,16 @@ fn transfer_intersection_pcurve_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
     const GENERAL_CONTINUATION_STEPS: usize = 16;
-    // A contact pcurve is one continuous boundary image. Its endpoints and
-    // one midpoint seed the same adaptive segment certifier used below; any
-    // non-linear portion must still pass the midpoint and quarter-point fit
-    // checks before it can be emitted.
-    const CONTACT_CONTINUATION_STEPS: usize = 1;
-    let continuation_steps = if blend_contact.is_some() {
-        CONTACT_CONTINUATION_STEPS
+    // A complete blend boundary is one continuous image even when its
+    // serialized contact chart is absent. Its endpoints and one midpoint
+    // seed the same adaptive segment certifier used below; any non-linear
+    // portion must still pass the midpoint and quarter-point fit checks
+    // before it can be emitted.
+    const BLEND_BOUNDARY_CONTINUATION_STEPS: usize = 1;
+    let blend_boundary_transfer =
+        blend_boundary_transfer_available(index, ir, source_surface, target_surface);
+    let continuation_steps = if blend_boundary_transfer {
+        BLEND_BOUNDARY_CONTINUATION_STEPS
     } else {
         GENERAL_CONTINUATION_STEPS
     };

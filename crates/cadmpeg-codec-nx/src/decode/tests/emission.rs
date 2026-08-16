@@ -733,8 +733,12 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
         origin: Point2::new(0.0, 0.0),
         direction: Point2::new(1.0, 0.0),
     };
-    let mut ir =
-        blend_contact_transfer_fixture(CANDIDATE_COUNT, &source_pcurve, CONTACT_FIT_TOLERANCE);
+    let mut ir = blend_contact_transfer_fixture(
+        CANDIDATE_COUNT,
+        &source_pcurve,
+        CONTACT_FIT_TOLERANCE,
+        true,
+    );
 
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
@@ -761,7 +765,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
         weights: None,
         periodic: false,
     };
-    let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE);
+    let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
 
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
@@ -783,6 +787,32 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
         assert!((source_uv.u - target_uv.u).abs() <= CONTACT_FIT_TOLERANCE);
         assert_eq!(source_uv.v, target_uv.v);
     }
+}
+
+#[test]
+fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_without_contact_chart() {
+    const BLEND_BOUNDARY_FIT_TOLERANCE: f64 = 1.0e-8;
+    const CANDIDATE_COUNT: usize = 300;
+
+    let source_pcurve = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    let mut ir = blend_contact_transfer_fixture(
+        CANDIDATE_COUNT,
+        &source_pcurve,
+        BLEND_BOUNDARY_FIT_TOLERANCE,
+        false,
+    );
+
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            return false;
+        };
+        context.sides[1].pcurve.is_some()
+    }));
 }
 
 #[test]
@@ -905,6 +935,7 @@ fn blend_contact_transfer_fixture(
     candidate_count: usize,
     source_pcurve: &PcurveGeometry,
     tolerance: f64,
+    contact_on_source_support: bool,
 ) -> cadmpeg_ir::document::CadIr {
     use cadmpeg_ir::geometry::{
         BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
@@ -959,7 +990,7 @@ fn blend_contact_transfer_fixture(
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
+            origin: Point3::new(0.0, 0.0, 2.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
         },
         source_object: None,
@@ -971,6 +1002,11 @@ fn blend_contact_transfer_fixture(
         weights: None,
         periodic: false,
     };
+    let contact_surface = if contact_on_source_support {
+        offset
+    } else {
+        other_support.clone()
+    };
     ir.model.procedural_curves.push(ProceduralCurve {
         id: ProceduralCurveId("synthetic:blend-contact-spine-construction".into()),
         curve: spine.clone(),
@@ -978,7 +1014,7 @@ fn blend_contact_transfer_fixture(
             context: IntcurveSupportContext {
                 sides: [
                     IntcurveSupportSide {
-                        surface: Some(offset),
+                        surface: Some(contact_surface),
                         pcurve_parameter_range: None,
                         pcurve: Some(contact_pcurve),
                     },
