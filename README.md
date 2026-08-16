@@ -1,16 +1,15 @@
 # cadmpeg
 
-**One open pipeline for native CAD.**
-
-cadmpeg is a toolchain for reading, inspecting, converting, and writing native CAD files. The CLI converts and inspects documents. The libraries add vendor-file support to other applications.
+A CLI to read, inspect, convert, and write native CAD files. Built on top of libraries that allow other applications to add support for these formats.
 
 Decoders map vendor files into one documented IR: preview meshes, B-rep geometry, design intent, and parametric history where the format carries them. Validators, exporters, and downstream tools share that IR. Progress per format follows an [L0–L9 support ladder](docs/format-support.md#support-ladder).
 
 [Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
 
-## Why cadmpeg
+## Purpose
 
-Native CAD formats are proprietary and sparsely documented. cadmpeg recovers geometry and design data into one IR. Values retain source byte offsets. Inferred values are marked. Unsupported content is reported as loss.
+Native CAD formats are proprietary, sparsely documented and cumbersome to work with.
+Building applications that support these formats requires navigating a maze of translator and SDK services without any open source options. cadmpeg aims to offer an open source solution for this problem.
 
 Format knowledge comes from legally possessed CAD files and public documentation. Vendor SDKs, decompiled binaries, and confidential material are prohibited ([LEGAL.md](LEGAL.md)).
 
@@ -81,8 +80,6 @@ wrote part.step (2125 entities)
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-Decoders produce the IR. Validators check it. Exporters consume it.
-
 - [CAD IR version 5](docs/cad-ir.md)
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
@@ -105,7 +102,7 @@ Machine-readable output from `inspect --json`, `validate --json`, and `diff --js
 
 ## Contributing
 
-Public test files are the most immediate need. If you can dedicate a CAD file to the public domain under CC0, please [donate it to the corpus](corpus/README.md).
+Public test files are the current need. If you can dedicate a CAD file to the public domain under CC0, [donate it to the corpus](corpus/README.md).
 
 Other contributions:
 
@@ -131,7 +128,7 @@ cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
 cadmpeg export cube.cadir.json -f step -o cube.step
 ```
 
-AI-assisted contributions are welcome when reviewed and concise. Clean-room rules still apply: do not pass vendor SDK knowledge through a model.
+AI-assisted contributions are welcome when reviewed and concise. Clean-room rules apply: do not pass vendor SDK knowledge through a model.
 
 ## Licensing
 
