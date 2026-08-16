@@ -135,13 +135,29 @@ location information. This is an application-level external-file reference.
 It is not a Part 21 sidecar key and does not import the referenced file into
 the XML `Uos`.
 
+The AP242 BO-Model edition-2 schema declares
+`ExternalGeometricModel.ExternalFile` as a `cmn:Reference` to an XML `File`.
+`File.Locations.ExternalItem` has an `Id` and an optional `Source`; it has no
+Part 21 occurrence name or Part 21 anchor field. In the common schema, `uid`
+has XML Schema type `ID` and `uidRef` has type `IDREF`. These references are
+local to the XML population. The schema therefore supplies no XML-to-Part-21
+identity relation. The [edition-2 BO-Model schema](https://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model/bom.xsd)
+and [common schema](https://standards.iso.org/iso/ts/10303/-3000/-ed-2/tech/xml-schema/common/common.xsd)
+are the governing declarations.
+
+The [CAx-IF BO-Model XML Assembly Structure recommended practices](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ap242xml_assy_struct_v1.00.pdf)
+§9 defines these as basic or nested references to a named file and excludes
+External Element References. The [CAx-IF External (Element) References recommended practices](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ext_ref_v31.pdf)
+§2 excludes Part 28 XML EER. Its Part 21 EER rules require an explicit
+external source and target anchor; §7.3 says EER extends the basic file
+reference, and §7.4 describes EER as navigation information for an existing
+assembly, not as a way to create or replace that assembly.
+
 CADIR decision: the STEP codec classifies a document by its published BO-Model
 namespace and refuses it as an alternate encoding. It does not discover a
 same-stem XML file or infer an association from `FILE_NAME`, filename suffix,
-XML prefix, or `Uos` alone. A caller must explicitly bind an XML resource,
-declare its AP242 XML schema and edition, and pass that binding to the separate
-composition policy. XML-to-Part-21 identity, value precedence, and conflict
-handling remain the BM-02 composition decision.
+XML prefix, or `Uos` alone. A caller must explicitly bind an XML resource and
+declare its AP242 XML schema and edition before any separate composition step.
 
 The AP242 BO-Model XML schema is ISO/TS 10303-3001. The common envelope is
 defined by its common XML schema. CAx-IF Recommended Practices for AP242
@@ -170,16 +186,16 @@ information rather than replacing existing data.
 
 CADIR decision: there is no generic BO-Model-to-Part-21 composition in the
 STEP codec. It does not discover a sidecar, join by filename, stem, numeric
-occurrence, `uid`, `Id`, text value, or serialization order, and it does not
-let XML values override Part 21 values. A caller that composes the documents
-must supply an explicit resource binding, the declared XML schema edition,
-and an identity mapping for the domain fields it chooses to connect. CADIR
-retains both source graphs and source identities. No source representation has
-default precedence. A neutral value is projected only when the caller's
-mapping identifies one semantic field and the source values agree; a missing
-mapping or conflicting values retains both source values, emits a composition
-conflict, and selects no neutral value. The caller may apply a separate
-domain-specific policy after this binding and conflict result.
+occurrence, XML `uid`, XML `Id`, text value, or serialization order, and it does
+not let XML values override Part 21 values. A caller that composes the
+documents must supply an explicit resource binding, the declared XML schema
+edition, and an identity mapping for the domain fields it chooses to connect.
+CADIR retains both source graphs and source identities. No source
+representation has default precedence. A neutral value is projected only when
+the caller's mapping identifies one semantic field and the source values
+agree; a missing mapping or conflicting values retains both source values,
+emits a composition conflict, and selects no neutral value. The caller may
+apply a separate domain-specific policy after this binding and conflict result.
 
 A Part 21 ZIP container uses PKZIP 2.04g compression. It admits stored and
 Deflate entries. PKZIP 2.04g excludes encryption, Unicode filename support,

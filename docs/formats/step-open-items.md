@@ -142,15 +142,3 @@ remainder open.
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation
-
-## 8. QA-reopened closure items
-
-### BM-02. BO-Model composition
-
-**Question.** How do BO-Model XML identities and values combine with a Part 21 instance graph?
-
-**Known.** The encodings have separate identity systems and explicit external-reference constructs. The codec refuses BO-Model XML and does not join it to Part 21 by filename, UID, value, or order.
-
-**Need.** We need an explicit AP242 cross-file identity relation, precedence policy, and independently paired XML and Part 21 exchanges.
-
-**Note.** QA audit: commit `184b0ddbe` closed this item by retaining separate graphs and refusing XML input. No composition operand executes.
