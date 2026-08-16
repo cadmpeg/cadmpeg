@@ -357,7 +357,7 @@ pub(super) fn decode(
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
-            "NAUO #{usage_id} has multiple resolved CONTEXT_DEPENDENT_SHAPE_REPRESENTATION placements ({records}); identity placement was used"
+            "NAUO #{usage_id} has multiple resolved CONTEXT_DEPENDENT_SHAPE_REPRESENTATION placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
         )));
     }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
@@ -377,6 +377,9 @@ pub(super) fn decode(
             .into_iter()
             .flatten()
         {
+            if ambiguous_placements.contains_key(&usage_id) {
+                continue;
+            }
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
@@ -418,9 +421,7 @@ pub(super) fn decode(
                 break 'expansion;
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
-            let transform = if ambiguous_placements.contains_key(&usage_id) {
-                Transform::identity()
-            } else if let Some(transform) = placements.get(&usage_id).copied() {
+            let transform = if let Some(transform) = placements.get(&usage_id).copied() {
                 transform
             } else {
                 if missing_placement_reports.insert(usage_id) {
@@ -509,6 +510,12 @@ pub(super) fn decode(
                 .is_some()
         {
             typed.insert(id);
+        }
+    }
+    for (&usage_id, source_ids) in &ambiguous_placements {
+        typed.remove(&usage_id);
+        for &source_id in source_ids {
+            typed.remove(&source_id);
         }
     }
     Ok(StageOutcome {

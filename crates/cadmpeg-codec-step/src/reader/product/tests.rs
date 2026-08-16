@@ -353,7 +353,7 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
 }
 
 #[test]
-fn ps07_duplicate_context_placements_use_identity_in_any_order() {
+fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
     for input in [
         include_bytes!("tests/data/ps07_duplicate_context_placement_first.p21").as_slice(),
         include_bytes!("tests/data/ps07_duplicate_context_placement_reordered.p21").as_slice(),
@@ -366,22 +366,51 @@ fn ps07_duplicate_context_placements_use_identity_in_any_order() {
             .model
             .occurrences
             .iter()
-            .find(|occurrence| occurrence.id.0.contains("#12"))
-            .expect("duplicate-placement occurrence");
-        assert_eq!(occurrence.transform, Transform::identity());
+            .find(|occurrence| occurrence.id.0.contains("#12"));
+        assert!(
+            occurrence.is_none(),
+            "ambiguous occurrence must not be admitted"
+        );
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
                 && loss.severity == cadmpeg_ir::Severity::Error
                 && loss.message.contains("NAUO #12")
                 && loss.message.contains("#38")
                 && loss.message.contains("#43")
-                && loss.message.contains("identity placement was used")
+                && loss.message.contains("no neutral occurrence was admitted")
+                && loss.message.contains("remain opaque")
         }));
         assert!(!result
             .report()
             .losses
             .iter()
             .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+        let unknowns = result.ir().native_unknowns("step").unwrap();
+        let unknown_ids = unknowns
+            .iter()
+            .map(|record| record.id.0.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            unknown_ids,
+            std::collections::BTreeSet::from([
+                "step:data:context_dependent_shape_representation#38",
+                "step:data:context_dependent_shape_representation#43",
+                "step:data:next_assembly_usage_occurrence#12",
+            ])
+        );
+        for id in &unknown_ids {
+            let retained = result
+                .source_fidelity()
+                .retained_record(id)
+                .expect("ambiguous placement source record is retained");
+            assert_eq!(
+                retained.data.as_deref(),
+                Some(
+                    &input
+                        [retained.offset as usize..(retained.offset + retained.byte_len) as usize]
+                )
+            );
+        }
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }

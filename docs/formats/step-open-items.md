@@ -148,16 +148,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 7. Annotation, presentation, and tessellation
 
-### PS-07. Duplicate occurrence placement
-
-**Question.** What is the disposition when multiple `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` records resolve to one usage occurrence?
-
-**Known.** `reader/product.rs:845-867` detects duplicates. `reader/product.rs:421-432` emits identity placement and a loss instead of selecting one transform.
-
-**Need.** We need the uniqueness rule and independent duplicate relations that distinguish invalid duplication from equivalent repeated placement.
-
-**Note.** QA audit: commit `307127d97` removed last-record selection but closed the item with identity substitution. The loss exposes the conflict, but the fabricated identity is not the source placement.
-
 ## 8. QA-reopened closure items
 
 ### BM-02. BO-Model composition

@@ -1285,10 +1285,13 @@ distinct uses receive distinct occurrence instances.
 CADIR decision: a neutral occurrence admits exactly one resolved
 `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` placement. If more than one resolved
 relationship targets the same usage, the placement is ambiguous even when the
-transforms are equal. The decoder selects no candidate, uses the identity
-transform, and reports `product.nauo-placement-ambiguous`. This decision is
-independent of Part 21 record order and numeric entity identifiers. A missing
-or otherwise unresolved sole relationship remains an unresolved placement.
+transforms are equal. The decoder admits no neutral occurrence for that usage,
+retains the `NEXT_ASSEMBLY_USAGE_OCCURRENCE` and every ambiguous
+`CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` as named opaque source records and
+reports `product.nauo-placement-ambiguous`. It never
+substitutes an identity transform or selects a relation from Part 21 record
+order or numeric entity identifiers. A missing or otherwise unresolved sole
+relationship remains an unresolved placement.
 CADIR decision: a parent representation's mapped items do not bind repeated
 uses of one child definition to individual occurrences. When each child
 definition occurs once in a parent usage set and the complete mapped-child
