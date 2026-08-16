@@ -1612,10 +1612,15 @@ pub struct DesignMirrorConstruction {
     pub count_offset: u64,
     /// Positive model-space stitch tolerance in source centimetres.
     pub stitch_tolerance: f64,
-    /// Parameter-owner record carrying `stitch_tolerance`.
-    pub stitch_tolerance_record_index: u32,
+    /// Parameter-owner record carrying `stitch_tolerance`, when the source
+    /// stores the scalar in a separate owner record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stitch_tolerance_record_index: Option<u32>,
     /// Byte offset of the evaluated stitch-tolerance scalar.
     pub stitch_tolerance_offset: u64,
+    /// Inline scope-frame carrier used by the legacy Mirror envelope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stitch_tolerance_scope: Option<DesignMirrorScopeTolerance>,
     /// Seed group selected by the source operation.
     pub seed_group_record_index: u32,
     /// Role-`0x5` mirror-plane group.
@@ -1641,6 +1646,26 @@ pub struct DesignMirrorConstruction {
     /// Proven unit mirror-plane normal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plane_normal: Option<Vector3>,
+}
+
+/// Exact inline carrier for a legacy Mirror stitch tolerance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignMirrorScopeTolerance {
+    /// Fixed scalar-lane marker preceding the tolerance value.
+    pub marker: u32,
+    /// Byte offset of the first scalar-lane marker.
+    pub marker_offset: u64,
+    /// Byte offset of the repeated scalar-lane marker.
+    pub repeated_marker_offset: u64,
+    /// First marked reference in the scalar lane.
+    pub first_reference: u32,
+    /// Byte offset of the first marked reference.
+    pub first_reference_offset: u64,
+    /// Second marked reference in the scalar lane.
+    pub second_reference: u32,
+    /// Byte offset of the second marked reference.
+    pub second_reference_offset: u64,
 }
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.

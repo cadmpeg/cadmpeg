@@ -47,6 +47,7 @@ use crate::layout::compact_loft_operation_prefix as compact_loft;
 use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
 use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
+use crate::layout::design_mirror_scope_class413_tail as mirror_413;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::edge_flange_fixed_operation_section as edge_flange;
@@ -89,9 +90,10 @@ use crate::records::{
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
     DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
     DesignFixedFilletParameters, DesignHemOperation, DesignHemParameterOwners,
-    DesignHoleConstruction, DesignHoleFaceSelection, DesignMirrorConstruction, DesignMoveOperation,
-    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignHoleConstruction, DesignHoleFaceSelection, DesignMirrorConstruction,
+    DesignMirrorScopeTolerance, DesignMoveOperation, DesignParameter, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
@@ -2725,6 +2727,79 @@ fn exact_pattern_identity_wrapper(
     ))
 }
 
+/// Parse the class-413 Mirror scalar lane.
+///
+/// This form has no ordinal-one parameter owner. Its positive stitch
+/// tolerance is carried after the preceding-history field, with two marked
+/// references naming the adjacent legacy records.
+pub(super) fn exact_legacy_mirror_scope_tolerance(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<(f64, u64, DesignMirrorScopeTolerance)> {
+    if scope.class_tag != "413" || scope.paired_class_tag != "262" {
+        return None;
+    }
+    let kind_code_units = scope.kind.encode_utf16().count();
+    let kind_end = usize::try_from(scope.kind_offset)
+        .ok()?
+        .checked_add(kind_code_units.checked_mul(2)?)?;
+    let previous = usize::try_from(scope.previous_history_state_id_offset).ok()?;
+    if previous != kind_end.checked_add(mirror_413::PREVIOUS_HISTORY_STATE)? {
+        return None;
+    }
+    let paired = usize::try_from(scope.paired_byte_offset).ok()?;
+    if paired != kind_end.checked_add(mirror_413::LEN)?
+        || paired.checked_sub(usize::try_from(scope.byte_offset).ok()?)?
+            != usize::try_from(scope.frame_length).ok()?
+    {
+        return None;
+    }
+    let marker_offset = kind_end.checked_add(mirror_413::SCALAR_MARKER)?;
+    let value_offset = kind_end.checked_add(mirror_413::STITCH_TOLERANCE)?;
+    let repeated_marker_offset = kind_end.checked_add(mirror_413::REPEATED_SCALAR_MARKER)?;
+    let marker = View::u32_le_at(bytes, marker_offset)?;
+    if marker != mirror_413::SCALAR_MARKER_VALUE
+        || View::u32_le_at(bytes, repeated_marker_offset)?
+            != mirror_413::REPEATED_SCALAR_MARKER_VALUE
+    {
+        return None;
+    }
+    let value = View::f64_le_at(bytes, value_offset)?;
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+    let first_reference_offset = kind_end.checked_add(mirror_413::FIRST_REFERENCE)?;
+    let second_reference_offset = kind_end.checked_add(mirror_413::SECOND_REFERENCE)?;
+    let reference_slot = mirror_413::SECOND_REFERENCE - mirror_413::FIRST_REFERENCE;
+    if bytes.get(first_reference_offset + 11..first_reference_offset + reference_slot)? != [0; 2]
+        || bytes.get(second_reference_offset + 11..second_reference_offset + reference_slot)?
+            != [0; 2]
+        || second_reference_offset.checked_add(reference_slot)? != paired
+    {
+        return None;
+    }
+    let first_reference = marked_record_reference(bytes, first_reference_offset)?;
+    let second_reference = marked_record_reference(bytes, second_reference_offset)?;
+    if first_reference != scope.record_index.checked_add(2)?
+        || second_reference != scope.record_index.checked_add(1)?
+    {
+        return None;
+    }
+    Some((
+        value,
+        u64::try_from(value_offset).ok()?,
+        DesignMirrorScopeTolerance {
+            marker,
+            marker_offset: u64::try_from(marker_offset).ok()?,
+            repeated_marker_offset: u64::try_from(repeated_marker_offset).ok()?,
+            first_reference,
+            first_reference_offset: u64::try_from(first_reference_offset).ok()?,
+            second_reference,
+            second_reference_offset: u64::try_from(second_reference_offset).ok()?,
+        },
+    ))
+}
+
 /// Join a Mirror scope's two operand groups and fixed parameters with either a
 /// referenced `WorkPlane` or a persistent plane-face selection.
 pub fn bind_mirror_constructions(
@@ -2849,16 +2924,43 @@ pub fn bind_mirror_constructions(
                     && owner.evaluated_value > 0.0
             })
             .collect::<Vec<_>>();
-        let ([count], [tolerance]) = (count.as_slice(), tolerance.as_slice()) else {
+        let ([count], tolerance_source) = (
+            count.as_slice(),
+            match (
+                tolerance.as_slice(),
+                exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]),
+            ) {
+                ([tolerance], None) => Some((
+                    tolerance.evaluated_value,
+                    tolerance.evaluated_value_offset,
+                    Some(tolerance.record_index),
+                    None,
+                )),
+                ([], Some((value, value_offset, scope_tail))) => {
+                    Some((value, value_offset, None, Some(scope_tail)))
+                }
+                _ => None,
+            },
+        ) else {
+            continue;
+        };
+        let Some((
+            stitch_tolerance,
+            stitch_tolerance_offset,
+            stitch_tolerance_record_index,
+            stitch_tolerance_scope,
+        )) = tolerance_source
+        else {
             continue;
         };
         scopes[index].mirror_construction = Some(DesignMirrorConstruction {
             count: 2,
             count_record_index: count.record_index,
             count_offset: count.evaluated_value_offset,
-            stitch_tolerance: tolerance.evaluated_value,
-            stitch_tolerance_record_index: tolerance.record_index,
-            stitch_tolerance_offset: tolerance.evaluated_value_offset,
+            stitch_tolerance,
+            stitch_tolerance_record_index,
+            stitch_tolerance_offset,
+            stitch_tolerance_scope,
             seed_group_record_index: seed_group.record_index,
             plane_group_record_index: plane_group.record_index,
             seed_feature_scope_record_index: seed_feature.map(|(record_index, _)| record_index),
