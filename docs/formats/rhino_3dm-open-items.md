@@ -220,6 +220,12 @@ and four color bytes followed by one signed `i32` color-source value. The
 producer readers consume those prefixes and let `EndRead3dmChunk()` skip a
 later direct suffix. The Rust settings reader now accepts that suffix and
 does not add a material-index range gate absent from the producer reader.
+The legacy `ON_3dmSettings::Read_v1` path also defines a flat settings stream:
+unit/tolerance data plus legacy named-construction-plane, named-view, and
+viewport records, each with its child grammar and end marker. The Rust V1
+decoder now consumes the unit record, skips the structural top-level end
+marker, and retains the three legacy presentation records as opaque bytes
+with a typed presentation loss, matching its CADIR admission decision.
 `ON_3dmSettings::Write_v2/Read_v2` also define the three counted presentation
 lists. Named construction planes use long `TCODE_VIEW_CPLANE` children; named
 views and active views use long `TCODE_VIEW_RECORD` children. Each outer list
@@ -238,10 +244,10 @@ layout. Remove only rejection not required by that evidence.
 **Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
 settled; annotation settings, grid defaults, units/tolerances, plugin list,
 settings attributes, render-mesh, analysis-mesh, render-settings, render
-settings userdata, the current-selector records, and the three counted
-view-list wrappers are now
-source-backed through their known prefixes, child types, stream markers, and
-version gates.
+settings userdata, the current-selector records, and the V1 settings
+presentation stream are now source-backed through their known prefixes,
+child types, stream markers, and version gates. The three counted view-list
+wrappers are also source-backed through the same evidence.
 The residual is the explicit
 writer-band/tagged/direct-reader audit for readers not yet characterized.
 

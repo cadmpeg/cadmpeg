@@ -3501,6 +3501,89 @@ than 23 February 2018.
 
 ### 20.4 Views and document presentation
 
+A version-1 settings stream is a flat sequence after the 32-byte file header
+and comment. It has no settings-table wrapper. The version-1 writer emits a
+long `TCODE_UNIT_AND_TOLERANCES` record with this body:
+
+```text
+i32 structure version = 1
+i32 length-unit code
+f64 absolute tolerance
+f64 relative tolerance
+f64 angle tolerance in radians
+```
+
+Length-unit codes are 0 none, 1 microns, 2 millimeters, 3 centimeters,
+4 meters, 5 kilometers, 6 microinches, 7 mils, 8 inches, 9 feet, and 10
+miles. The version-1 reader also accepts these legacy presentation records:
+
+```text
+long TCODE_NAMED_CPLANE
+  long TCODE_NAME: i32 ASCII byte count, ASCII name bytes
+  long TCODE_CPLANE:
+    ON_Point origin
+    ON_Vector x axis
+    ON_Vector y axis
+    f64 grid spacing
+    i32 grid line count
+    i32 thick-line frequency
+  short TCODE_ENDOFTABLE = 0
+
+long TCODE_NAMED_VIEW
+  long TCODE_NAME: i32 ASCII byte count, ASCII name bytes
+  long TCODE_CPLANE: as above
+  long TCODE_VIEW:
+    i32 projection
+    i32 valid flag
+    ON_Point target
+    f64 angle 1
+    f64 angle 2
+    f64 angle 3
+    f64 view size
+    f64 camera distance
+  short TCODE_SHOWGRID
+  short TCODE_SHOWGRIDAXES
+  short TCODE_SHOWWORLDAXES
+  short TCODE_ENDOFTABLE = 0
+
+long TCODE_VIEWPORT
+  long TCODE_CPLANE: as above
+  long TCODE_VIEW: as above
+  short TCODE_SHOWGRID
+  short TCODE_SHOWGRIDAXES
+  short TCODE_SHOWWORLDAXES
+  long TCODE_SNAPSIZE: f64 legacy snap size
+  long TCODE_NEAR_CLIP_PLANE: f64 legacy near-clip distance
+  long TCODE_HIDE_TRACE: empty legacy hide-trace marker
+  long TCODE_VIEWPORT_POSITION: 4 × f64 window bounds
+  long TCODE_VIEWPORT_TRACEINFO:
+    ON_Point image origin
+    ON_Vector image x axis
+    ON_Vector image y axis
+    f64 image width
+    f64 image height
+    i32 ASCII byte count, ASCII image path bytes
+  long TCODE_VIEWPORT_WALLPAPER:
+    i32 ASCII byte count, ASCII wallpaper path bytes
+  short TCODE_MAXIMIZED_VIEWPORT
+  short TCODE_VIEWPORT_V1_DISPLAYMODE
+  short TCODE_ENDOFTABLE = 0
+```
+
+The legacy presentation child order is not significant. Unknown complete
+children are skipped before the end marker. A missing or malformed nested end
+marker fails that presentation record. `TCODE_VIEWPORT_TRACEINFO` and
+`TCODE_VIEWPORT_WALLPAPER` contain their path payload directly; the path is
+not a nested `TCODE_NAME` chunk. A V1 file may omit the EOF marker after the
+flat settings stream.
+
+CADIR decision: the V1 decoder transfers the unit/tolerance record to neutral
+tolerances, retains complete V1 named-construction-plane, named-view, and
+viewport records as opaque source records, and reports
+`presentation.record-dropped` for each. It does not place these legacy records
+in the modern `views` or `construction_planes` arenas. The top-level short
+`TCODE_ENDOFTABLE` is structural and is not retained.
+
 A view record is an ordered child-chunk list terminated by `TCODE_ENDOFTABLE`.
 The construction-plane child stores packed version 1.0 or 1.1, plane, grid and
 snap spacing, grid counts, UTF-16 name, and depth-buffer flag. The viewport

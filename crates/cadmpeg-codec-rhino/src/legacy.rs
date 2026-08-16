@@ -47,6 +47,10 @@ const TCODE_LEGACY_SRFSTUFF: u32 = 0x0001_0107;
 const TCODE_MESH_OBJECT: u32 = 0x0010_0015;
 const TCODE_COMPRESSED_MESH_GEOMETRY: u32 = 0x0010_0017;
 const TCODE_UNIT_AND_TOLERANCES: u32 = 0x0200_0010;
+const TCODE_NAMED_CPLANE: u32 = 0x0200_0004;
+const TCODE_NAMED_VIEW: u32 = 0x0200_0005;
+const TCODE_VIEWPORT: u32 = 0x0200_0006;
+const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_ENDOFFILE: u32 = 0x8000_7fff;
 const TCODE_TEXT_BLOCK: u32 = 0x0020_0004;
 const TCODE_LINEAR_DIMENSION: u32 = 0x0020_0006;
@@ -57,6 +61,13 @@ const TCODE_RHINOIO_OBJECT_NURBS_CURVE: u32 = 0x0002_0008;
 const TCODE_RHINOIO_OBJECT_NURBS_SURFACE: u32 = 0x0002_0009;
 const TCODE_RHINOIO_OBJECT_BREP: u32 = 0x0002_000b;
 const TCODE_RHINOIO_OBJECT_DATA: u32 = 0x0002_fffe;
+
+fn is_v1_presentation_setting(typecode: u32) -> bool {
+    matches!(
+        typecode,
+        TCODE_NAMED_CPLANE | TCODE_NAMED_VIEW | TCODE_VIEWPORT
+    )
+}
 
 #[derive(Debug, Serialize)]
 struct V1String {
@@ -2129,6 +2140,10 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
         if chunk.typecode == TCODE_ENDOFFILE {
             break;
         }
+        if chunk.typecode == TCODE_ENDOFTABLE {
+            offset = chunk.next_offset;
+            continue;
+        }
         if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short {
             let mut reader =
                 BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
@@ -2149,6 +2164,9 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
             ir.tolerances.linear = reader.f64().map_err(malformed)? * scale;
             let _relative_tolerance = reader.f64().map_err(malformed)?;
             ir.tolerances.angular = reader.f64().map_err(malformed)?;
+        } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short {
+            *omitted.entry(chunk.typecode).or_default() += 1;
+            opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short {
             let mut reader =
                 BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
@@ -2389,9 +2407,15 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     let losses = omitted
         .into_iter()
         .map(|(typecode, count)| {
-            RhinoLossCode::ObjectFamilyNotTransferred.note(format!(
-                "V1 typecode {typecode:#010x}: {count} flat geometry records not transferred"
-            ))
+            if is_v1_presentation_setting(typecode) {
+                RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "V1 presentation typecode {typecode:#010x}: {count} record(s) retained as opaque"
+                ))
+            } else {
+                RhinoLossCode::ObjectFamilyNotTransferred.note(format!(
+                    "V1 typecode {typecode:#010x}: {count} flat geometry records not transferred"
+                ))
+            }
         })
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
@@ -2448,6 +2472,12 @@ mod tests {
         bytes
     }
 
+    fn short(typecode: u32, value: i32) -> Vec<u8> {
+        let mut bytes = typecode.to_le_bytes().to_vec();
+        bytes.extend(value.to_le_bytes());
+        bytes
+    }
+
     fn legacy_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut protected = body.to_vec();
         protected.extend(crate::chunks::crc16(0, body).to_le_bytes());
@@ -2465,6 +2495,23 @@ mod tests {
                 .collect::<Vec<_>>();
             data.extend(chunk(TCODE_RH_POINT, &body));
         }
+        data
+    }
+
+    fn v1_settings_archive() -> Vec<u8> {
+        let mut units = Vec::new();
+        units.extend(1_i32.to_le_bytes());
+        units.extend(4_i32.to_le_bytes());
+        units.extend(0.01_f64.to_le_bytes());
+        units.extend(0.02_f64.to_le_bytes());
+        units.extend(0.03_f64.to_le_bytes());
+        let mut data = archive(&[]);
+        data.extend(chunk(TCODE_UNIT_AND_TOLERANCES, &units));
+        for typecode in [TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_VIEWPORT] {
+            data.extend(chunk(typecode, &short(TCODE_ENDOFTABLE, 0)));
+        }
+        data.extend(short(TCODE_ENDOFTABLE, 0));
+        data.extend(short(TCODE_ENDOFFILE, 0));
         data
     }
 
@@ -2874,6 +2921,27 @@ mod tests {
             Point3::new(1.0, 2.0, 3.0)
         );
         assert!(result.report().geometry_transferred);
+    }
+
+    #[test]
+    fn v1_settings_presentation_records_are_opaque_and_table_end_is_structural() {
+        let result = decode_v1(&v1_settings_archive()).expect("valid V1 settings stream");
+        assert_eq!(result.ir().tolerances.linear, 10.0);
+        assert_eq!(result.source_fidelity().retained_records.len(), 3);
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| { loss.code == RhinoLossCode::PresentationRecordDropped.kind() })
+                .count(),
+            3
+        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("ffffffff")));
     }
 
     #[test]
