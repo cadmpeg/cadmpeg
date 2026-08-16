@@ -675,6 +675,27 @@ confusing coincidental payload bytes with a core mesh, point, shape, list, or as
 serialized traversal order; the logical span remains single-owner and is never duplicated for
 shared references.
 
+The remaining producer side-entry writers use these complete-member forms. A file-included value
+and each VRML resource request write the source file bytes without an internal header. A
+`Part::PropertyTopoShapeList` request writes one text or binary exact-shape payload; the XML list
+index and the `.N.brp` or `.N.bin` member suffix select the element and shape form, and the member
+has no list wrapper. `Part::PropertyFilletEdges` writes a little-endian `u32` item count followed
+by each item's `i32` value and two `f64` values. `Points::PropertyGreyValueList` and
+`Inspection::PropertyDistanceList` write a little-endian `u32` count followed by `f32` values.
+`Points::PropertyNormalList` and `Mesh::PropertyNormalList` write a little-endian `u32` count
+followed by three `f32` values per item. Their curvature-list variants write a little-endian
+`u32` count followed by eight `f32` values per item. `Mesh::PropertyMaterial` writes a little-endian
+`u32` binding value, four color arrays each framed by a `u32` count and packed `u32` values, and
+two float arrays each framed by a `u32` count and `f32` values.
+`Fem::PropertyFemMesh` writes the complete ASCII UNV member. `Fem::PropertyPostDataObject` writes
+the complete binary VTK XML member; a multiblock value writes a nested ZIP member containing its
+VTK XML tree. `Path::PropertyPath` delegates its side-entry request to the complete ASCII G-code
+payload of its toolpath. These payloads have no FCStd-specific wrapper beyond their ZIP member.
+The current writer emits no side member for `App::PropertyPythonObject` or
+`Part::PropertyShapeHistory`; the `Points::PropertyPointKernel` and `Path::PropertyPath` wrapper
+overrides do not add a second payload when their underlying kernel or toolpath has already issued
+the request.
+
 `Mesh::PropertyMeshKernel` contains exactly one direct `Mesh` value root. A duplicate or missing
 root is malformed. That root has zero or one non-empty `file` attribute; a non-empty attribute
 identifies the property's only binary side entry. A `Mesh` value without a side entry contains

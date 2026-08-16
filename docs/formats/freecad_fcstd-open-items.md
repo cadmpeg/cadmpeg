@@ -13,24 +13,6 @@ Each item has an identifier and these fields:
 
 ## 1. Application-specific side entries
 
-### AR-01. Application-specific side-entry framing
-
-**Question.** What concrete `SaveDocFile` payload framing does each application-specific side-entry
-writer use when its runtime property type is not registered by this codec?
-
-**Known.** `Writer::addFile` stores one persistence writer and one unique member name for each
-request, and the ZIP writer invokes that object's `SaveDocFile` for the complete member. The
-generic archive boundary has no application-wide payload header. The producer source contains
-concrete core and module side-entry writers, but the codec does not yet enumerate every remaining
-runtime family that can reach this path.
-
-**Need.** Enumerate the remaining unregistered runtime families and document the payload boundary
-and framing emitted by each concrete writer.
-
-**Note.** The full producer writer path settles the generic request and member boundary, not the
-internal grammar of every family. This item remains narrowed; opaque retention is not a semantic
-answer.
-
 ### AR-02. Application-specific side-entry values
 
 **Question.** What does each field in an application-specific side-entry payload mean after its
