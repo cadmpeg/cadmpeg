@@ -91,26 +91,6 @@ evidence.
 
 ## 3. Persistent topology identity
 
-### PT-03. Element-map carrier and owner selection
-
-**Question.** Which `Part`, `ElementMap2`, and property carrier belong to one persistent element
-map when a shape XML contains more than one candidate?
-
-**Known.** Element maps are associated with a shape property and retain their source XML and map
-order. The decoder rejects more than one `Part` or `ElementMap2` carrier in one exact-shape
-property and rejects more than one enclosing property for a string table.
-
-**Need.** Establish the exact producer cardinality and property association for duplicate
-carriers. Duplicate candidates must be rejected or linked by a producer-defined discriminator.
-
-**Conflict.** Commit `02c7628b3` removed this item and wrote a one-carrier rule into
-`freecad_fcstd.md` without changing the decoder and without tracing the FreeCAD writer path for the
-element-map carriers. Conservative
-decoder rejection prevents a source-order choice but does not establish the legal cardinality or
-shared ownership rule.
-
-**Note.** Reopened by this QA pass.
-
 ### PT-04. Source topology index provenance
 
 **Question.** What OCCT identity and traversal rules determine whether repeated placed roots or

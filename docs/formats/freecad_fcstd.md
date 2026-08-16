@@ -173,6 +173,11 @@ indices, locations, geometry carriers, topology, tolerances, flags, parameter ra
 An exact-shape property has at most one `Part` carrier and at most one `ElementMap2` carrier. Each
 carrier belongs to its enclosing property. Duplicate carriers are malformed. A missing carrier
 retains the exact property without selecting a different property or side entry.
+When element-map metadata is present, one property owns one compatibility `ElementMap` marker and
+one `ElementMap2` carrier. An empty map is represented by `ElementMap` alone; a non-empty map uses
+the compatibility marker followed by `ElementMap2`, inline or in one named side entry. Multiple
+exact-shape properties emit independent `Part` and element-map carriers and independent side-entry
+requests; no carrier is shared across properties.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
 For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and
