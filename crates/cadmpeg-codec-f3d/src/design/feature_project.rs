@@ -3181,28 +3181,42 @@ pub(crate) fn project_edge_flange(
         DesignBendPosition::Unknown(_) => return None,
     };
 
-    // The role-`0x08` group carries the selected edges. The aggregate role-`0x43`
+    // Each role-`0x08` group carries one selected edge. The aggregate role-`0x43`
     // group repeats them, so it contributes no separate selection.
-    let [edge_group_record_index] = operation.edge_group_record_indices.as_slice() else {
-        return None;
-    };
-    let mut matching = groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && group.record_index == *edge_group_record_index
-    });
-    let edge_group = matching.next()?;
-    if matching.next().is_some() || edge_group.role != 0x0000_0008_0000_0000 {
+    if operation.edge_group_record_indices.is_empty() {
         return None;
     }
-    let edges = crate::design::edge_resolve::resolved_edge_group(
-        edge_group,
-        groups,
-        edge_operands,
-        edge_identity_operands,
-        scope.previous_history_state_id,
-        &neutral_feature_id(scope),
-    );
+    let selections = operation
+        .edge_group_record_indices
+        .iter()
+        .map(|edge_group_record_index| {
+            let mut matching = groups.iter().filter(|group| {
+                native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope.record_index
+                    && group.record_index == *edge_group_record_index
+            });
+            let edge_group = matching.next()?;
+            if matching.next().is_some()
+                || edge_group.role != 0x0000_0008_0000_0000
+                || edge_group.members.len() != 1
+            {
+                return None;
+            }
+            Some(crate::design::edge_resolve::resolved_edge_group(
+                edge_group,
+                groups,
+                edge_operands,
+                edge_identity_operands,
+                scope.previous_history_state_id,
+                &neutral_feature_id(scope),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let edges = if selections.len() == 1 {
+        selections.into_iter().next()?
+    } else {
+        merge_edge_selections(scope, selections)
+    };
 
     Some(FeatureDefinition::SheetMetalEdgeFlange {
         edges,
@@ -3480,7 +3494,7 @@ pub(crate) fn project_ruled_surface(
             )
         })
         .collect::<Vec<_>>();
-    let edges = merge_ruled_surface_edges(scope, selections);
+    let edges = merge_edge_selections(scope, selections);
     Some(FeatureDefinition::RuledSurface {
         edges,
         support_faces: FaceSelection::Native(scope.id.clone()),
@@ -3494,7 +3508,7 @@ pub(crate) fn project_ruled_surface(
     })
 }
 
-fn merge_ruled_surface_edges(
+fn merge_edge_selections(
     scope: &DesignParameterScope,
     selections: Vec<cadmpeg_ir::features::EdgeSelection>,
 ) -> cadmpeg_ir::features::EdgeSelection {

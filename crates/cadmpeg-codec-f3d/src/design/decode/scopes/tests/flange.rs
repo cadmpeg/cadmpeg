@@ -215,6 +215,45 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
 }
 
 #[test]
+fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
+    let references = [201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234];
+    for (class_tag, paired_class_tag) in [("325", "258"), ("334", "257"), ("364", "261")] {
+        let frame = legacy_multi_edge_flange_frame();
+        let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            class_tag,
+            paired_class_tag,
+            &references,
+        )
+        .expect("legacy classed multi-edge EdgeFlange operation");
+        assert_eq!(operation.edge_wrapper_record_indices, [201, 210]);
+        assert_eq!(operation.edge_group_record_indices, [204, 213]);
+        assert_eq!(operation.edge_operand_record_indices, [207, 216]);
+        assert_eq!(operation.aggregate_group_record_index, 225);
+        assert_eq!(operation.aggregate_operand_record_indices, [228, 231]);
+        assert_eq!(operation.height_owner_record_index, 219);
+        assert_eq!(operation.angle_owner_record_index, 222);
+        assert_eq!(operation.settings_record_index, 234);
+        assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
+        assert_eq!(operation.bend_radius_offset, 165);
+        assert_eq!(
+            operation.bend_position,
+            crate::records::DesignBendPosition::Inside
+        );
+        assert_eq!(
+            operation.height_datum,
+            crate::records::DesignSheetMetalHeightDatum::OuterFaces
+        );
+        assert_eq!(
+            operation.edge_width_mode(),
+            crate::records::DesignEdgeWidthMode::FullEdge
+        );
+    }
+}
+
+#[test]
 fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
     let references = [201, 204, 207, 218, 240, 243, 251, 255];
     let frame = edge_flange_frame(&EdgeFlangeFixture {
@@ -418,5 +457,50 @@ fn legacy_edge_flange_frame() -> EdgeFlangeFrame {
         bytes,
         paired_at,
         bend_radius_offset: 138,
+    }
+}
+
+fn legacy_multi_edge_flange_frame() -> EdgeFlangeFrame {
+    use crate::layout::edge_flange_multi_edge_fixed_operation as layout;
+
+    fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    let paired_at = 591;
+    let mut bytes = vec![0; paired_at];
+    bytes[layout::BEND_POSITION..layout::BEND_POSITION + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[layout::EDGE_COUNT..layout::EDGE_COUNT + 4].copy_from_slice(&2u32.to_le_bytes());
+    reference(&mut bytes, layout::EDGE_WRAPPER_ONE_REFERENCE, 201);
+    reference(&mut bytes, layout::EDGE_WRAPPER_TWO_REFERENCE, 210);
+    reference(&mut bytes, layout::SETTINGS_REFERENCE, 234);
+    bytes[layout::HEIGHT_DATUM..layout::HEIGHT_DATUM + 4].copy_from_slice(&2u32.to_le_bytes());
+    reference(&mut bytes, layout::ANGLE_OWNER_REFERENCE, 222);
+    reference(&mut bytes, layout::HEIGHT_OWNER_REFERENCE, 219);
+    bytes[layout::REFERENCE_SIDE..layout::REFERENCE_SIDE + 4].copy_from_slice(&4u32.to_le_bytes());
+    bytes[layout::INSIDE_BEND_RADIUS..layout::INSIDE_BEND_RADIUS + 8]
+        .copy_from_slice(&0.254f64.to_le_bytes());
+    bytes[layout::RESULT_COUNT..layout::RESULT_COUNT + 4].copy_from_slice(&3u32.to_le_bytes());
+    reference(&mut bytes, layout::RESULT_ONE_REFERENCE, 501);
+    bytes[layout::RESULT_ONE_TRAILER..layout::RESULT_ONE_TRAILER + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, layout::RESULT_TWO_REFERENCE, 502);
+    bytes[layout::RESULT_TWO_TRAILER..layout::RESULT_TWO_TRAILER + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, layout::RESULT_THREE_REFERENCE, 503);
+    bytes[layout::RESULT_THREE_TRAILER..layout::RESULT_THREE_TRAILER + 4]
+        .copy_from_slice(&0u32.to_le_bytes());
+    bytes[layout::RESULT_SEPARATOR..layout::RESULT_SEPARATOR + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, layout::AGGREGATE_GROUP_REFERENCE, 225);
+    reference(&mut bytes, layout::EDGE_GROUP_ONE_REFERENCE, 204);
+    reference(&mut bytes, layout::EDGE_GROUP_TWO_REFERENCE, 213);
+
+    EdgeFlangeFrame {
+        bytes,
+        paired_at,
+        bend_radius_offset: u64::try_from(layout::INSIDE_BEND_RADIUS)
+            .expect("bend radius offset fits u64"),
     }
 }

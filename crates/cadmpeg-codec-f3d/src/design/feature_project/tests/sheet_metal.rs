@@ -175,6 +175,48 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     };
     assert!((first.0 - 30.0).abs() < 1e-12);
     assert!((second.0 - 15.0).abs() < 1e-12);
+
+    let mut multi_scope = scope.clone();
+    let mut multi_operation = multi_scope
+        .edge_flange_operation
+        .clone()
+        .expect("single-edge operation fixture");
+    multi_operation.edge_group_record_indices = vec![385, 415];
+    multi_operation.edge_operand_record_indices = vec![388, 418];
+    multi_operation.aggregate_operand_record_indices = vec![407, 420];
+    multi_scope.edge_flange_operation = Some(multi_operation);
+    let mut second_group = group.clone();
+    second_group.id = format!("{stream}:design-construction-operand-group#415");
+    second_group.record_index = 415;
+    second_group.members = vec![418];
+    let multi_groups = [group, second_group];
+    let multi_inputs = crate::design::feature_project::ProjectInputs {
+        native: &parameters,
+        owners: &owners,
+        scopes: &[],
+        timelines: &[],
+        construction_groups: &multi_groups,
+        fillet_radius_groups: &[],
+        edge_operands: &[],
+        edge_identity_operands: &[],
+        entity_selection_operands: &[],
+        curve_identities: &[],
+        face_operands: &[],
+        body_recipe_operands: &[],
+        placements: &[],
+        body_bindings: &[],
+        histories: &[],
+    };
+    let multi_definition =
+        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs)
+            .expect("typed multi-edge EdgeFlange definition");
+    let FeatureDefinition::SheetMetalEdgeFlange { edges, .. } = multi_definition else {
+        panic!("expected a sheet-metal edge flange");
+    };
+    assert_eq!(
+        edges,
+        cadmpeg_ir::features::EdgeSelection::Native(multi_scope.id)
+    );
 }
 
 #[test]
