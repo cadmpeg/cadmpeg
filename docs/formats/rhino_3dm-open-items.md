@@ -468,10 +468,18 @@ Boolean and UUID. V4/V5/V6 witness files with non-default base fields and all
 gated fields confirmed the writer bands and the source read defaults; the Rust
 owner test also covers a non-nil dimension-layer UUID and a future minor
 suffix.
-`ON_3dmConstructionPlaneGridDefaults` has a packed major-1 body with no minor
-field gates. `ON_BinaryArchive::BeginRead3dmChunk` requires a nonnegative
-modern minor. The Rust document-settings reader now consumes both complete
-known prefixes and leaves only the respective containing boundary suffix.
+`ON_3dmConstructionPlaneGridDefaults::Write/Read` in
+`opennurbs_3dm_settings.cpp` writes and reads packed version 1.0 followed by
+two document-length doubles, two signed counts, and three nonzero-true signed
+visibility values. Its in-class defaults are spacing 1.0, snap spacing 1.0,
+line count 70, thick-line frequency 5, and all visibility values true. The
+writer/reader witness `grid_defaults_witness.cpp` produced the same 41-byte
+body in V4, V5, and V6, with packed version `0x10`, values 2.5/0.75, counts
+42/3, and flags 0/1/0. The V6 inch witness transferred those two stored
+document lengths to 63.5/19.05 millimeters in the Rust arena. The owner test
+covers a future minor suffix and the length transfer. The Rust document-
+settings reader now consumes the complete known prefix and leaves only the
+respective containing boundary suffix.
 `ON_3dmUnitsAndTolerances::Read` accepts direct versions 100–199, gates display
 fields at 101 and custom-unit fields at 102, and relies on the outer settings
 chunk for future suffix bytes; the Rust units reader now matches that band.

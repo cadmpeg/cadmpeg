@@ -5456,7 +5456,8 @@ value. `CADIR decision:` omitted fields are `null` in the native
 annotation-settings record rather than synthesized from the archive-band
 runtime default.
 
-Grid defaults are the direct body of `TCODE_SETTINGS_GRID_DEFAULTS`:
+Grid defaults are the direct body of the CRC-bearing long
+`TCODE_SETTINGS_GRID_DEFAULTS` record:
 
 ```text
 u8 packed version = 1.minor
@@ -5470,8 +5471,11 @@ i32 show-world-axes flag
 ```
 
 The grid-default writer emits packed version 1.0 and the reader requires major
-version 1; the minor does not gate any field. Grid spacing and snap spacing are
-lengths. A thick-line frequency of 0 disables thick lines, 1 makes every line
+version 1; the minor does not gate any field. The default values are grid
+spacing 1.0, snap spacing 1.0, grid-line count 70, thick-line frequency 5, and
+all three visibility flags true. Grid spacing and snap spacing are document
+lengths; CADIR transfers them to millimeters with the document model-unit
+scale. A thick-line frequency of 0 disables thick lines, 1 makes every line
 thick, and `N >= 2` makes every Nth line thick. The three visibility flags are
 nonzero-true `i32` values.
 
