@@ -642,8 +642,13 @@ if minor >= 1:
 ```
 
 A geometry value is an anonymous major-1 chunk containing an `i32` count
-followed by that many polymorphic class wrappers. Every wrapper contains its
-geometry class UUID and class-data payload.
+followed by that many polymorphic class wrappers. Every non-null wrapper
+contains its geometry class UUID, class-data payload, zero or more class
+userdata items, and a class-end marker. A null wrapper contains only a nil
+class UUID child. When a wrapper contains `ON_Mesh` or `ON_Extrusion`, its
+class-userdata payload follows the owning-class rules in sections 7.2.3 and
+16, respectively; the geometry value reader applies those rules to the
+embedded owner.
 
 A polyedge value is an anonymous major-1 chunk containing an `i32` count
 followed by that many polyedge anonymous major-1 chunks:
@@ -798,6 +803,39 @@ mask color remains four RGBA bytes and the border offset remains a
 dimensionless factor; neither is unit-scaled. A malformed recognized payload
 retains the annotation record, omits `v5_text_extra`, and emits an
 `annotation.userdata-dropped` decode loss.
+
+#### 7.2.3 `ON_V5_MeshDoubleVertices`
+
+The built-in `ON_V5_MeshDoubleVertices` class uses class UUID and item UUID
+`17F24E75-21BE-4A7B-9F3D-7F85225247E3`. Its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`. Its userdata payload is the body of
+the outer anonymous userdata child from section 7.2. The body contains an
+anonymous major-1, minor-0 child:
+
+```text
+i32 single-precision vertex count
+i32 double-precision vertex count
+u32 single-precision vertex CRC
+u32 double-precision vertex CRC
+i32 serialized double-vertex count
+serialized double-vertex count × ON_3dPoint
+```
+
+The writer attaches this item to a nonempty mesh only for archive version 50
+when the single- and double-precision vertex arrays are synchronized. The
+writer validates both counts and both CRCs before writing. The stored counts
+and CRCs are producer-validity fields; the read-side transfer uses the actual
+serialized array count and the owner mesh's float vertices. If that count
+equals the owner vertex count and every serialized f64 coordinate casts
+exactly to the corresponding f32 coordinate, the double array becomes the
+mesh's source-precision vertex array. Otherwise the double array is discarded
+and the float array remains authoritative. A mesh double array already loaded
+from the class-data payload has precedence over this userdata item. Later
+minor bytes are skipped at the anonymous boundary.
+
+CADIR maps an accepted array to tessellation vertices before unit scaling. A
+rejected or malformed recognized item retains the mesh and its float vertices
+and emits `container.redundant-field-repaired`.
 
 ### 7.3 Strings
 
@@ -2166,6 +2204,12 @@ and face indices. Double vertices contain a `u32` count and, when nonzero, a
 compressed `3*f64` channel. A valid double channel has exactly the declared
 mesh vertex count and finite values.
 
+Archive version 50 mesh objects can also carry the class-userdata item in
+section 7.2.3. It is used only when the class-data payload did not provide a
+double-precision channel. Its accepted coordinates are the serialized f64
+values whose casts equal the float vertex channel; rejected userdata leaves
+the float channel authoritative.
+
 ## 15. Brep
 
 `ON_Brep` major 3 uses payload version 3.minor. Minor 1 adds mesh-side
@@ -2327,7 +2371,10 @@ and loop rings must be finite, endpoint-continuous, and closed.
 
 For Brep minor at least 1, render and analysis side chunks each contain one
 byte per face; nonzero is followed by a polymorphic object which must be an
-`ON_Mesh`. These are cache channels and do not alter Brep topology.
+`ON_Mesh`. The mesh object wrapper can carry the archive-50
+`ON_V5_MeshDoubleVertices` userdata item from section 7.2.3; the same actual
+count and exact f64-to-f32 cast checks apply to that nested mesh. These are
+cache channels and do not alter Brep topology.
 If a present slot has the wrong class or its bounded mesh payload cannot be
 parsed, the slot is discarded independently and the decode report emits
 `brep.mesh-cache-degraded` with the diagnostic cause. The Brep remains
@@ -2400,7 +2447,35 @@ bool transposed
 Miter vectors are serialized even when their presence flags are false. Minor
 1 appends `i32 profile count`. Minor 2 appends bottom and top cap booleans.
 Minor 3 appends an anonymous mesh-cache chunk. The complete 1.3 order is the
-common fields, profile count, two caps, and mesh cache.
+common fields, profile count, two caps, and mesh cache. The cache is anonymous
+version 1.0. It contains zero or more entries, each marked by `u8 1` and
+followed by an anonymous version-1.0 entry containing a mesh UUID and a
+polymorphic `ON_Mesh` wrapper; `u8 0` terminates the entry sequence. The mesh
+wrapper's class-userdata stream is part of that nested mesh and uses the
+owning-mesh rules in section 7.2.3.
+
+For a minor-2 writer that saves display meshes, the mesh cache is instead a
+temporary class-userdata item. Its class UUID and item UUID are
+`A8130A3E-E4F3-4CB0-BB8A-F10A473912D0`, and its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`. The body of its anonymous userdata
+child contains exactly three polymorphic object wrappers in this order:
+
+```text
+render mesh object
+analysis mesh object
+null object
+```
+
+The first two objects are null or `ON_Mesh`; a non-null wrong class rejects the
+optional cache. The third object is consumed and discarded. A null object
+wrapper is an `OPENNURBS_CLASS` long chunk containing only a class-UUID child
+whose UUID is nil; it has no class-data or class-end child. A non-null nested
+mesh carries the section 7.2.3 userdata item, and its accepted double vertices
+are transferred to the mesh tessellation before document-unit scaling. The
+cache reader consumes these three slots and skips any remaining bytes through
+the bounded userdata payload end. The cache is display data and does not alter
+analytic extrusion geometry. A malformed cache is discarded while the
+extrusion remains admissible.
 
 A present miter normal is unitized. The miter applies only when the unitized
 local Z component is greater than `1/64`. A normal that cannot be unitized or
@@ -3112,7 +3187,9 @@ if nonzero: polymorphic object
 ```
 
 The first wrapper is render mesh and the second analysis mesh. A nonzero entry
-must contain `ON_Mesh`; wrong-type entries are discarded independently.
+must contain `ON_Mesh`; wrong-type entries are discarded independently. Its
+class wrapper can contain the section 7.2.3 V5 mesh double-vertex userdata;
+that userdata is decoded against the nested mesh's float vertex channel.
 
 For Brep minor 3, the region wrapper is anonymous version 1.1, contains a
 one-byte region-topology-present flag, and then one anonymous version 1.0

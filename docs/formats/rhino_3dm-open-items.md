@@ -173,6 +173,22 @@ UUID is `C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 7.2.2 defines its
 anonymous version-1.0 payload with the parent text UUID, mask flag, color
 source, RGBA color bytes, and dimensionless border offset factor. The decoder
 retains those fields under the owning V5 text annotation.
+The built-in `ON_V5_MeshDoubleVertices` class userdata is also settled. Its
+class and item UUID is `17F24E75-21BE-4A7B-9F3D-7F85225247E3`, its application
+UUID is `C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 7.2.3 defines its
+anonymous version-1.0 payload with the two vertex counts, two CRC fields, and
+serialized f64 vertex array. The decoder adopts the array only when its actual
+count matches the mesh and its f64 values cast exactly to the stored f32
+vertices; otherwise it retains the float mesh and reports the redundant-field
+repair.
+The same class wrapper and transfer rule apply to render and analysis mesh
+cache objects nested in Brep minor-1 side arrays. They also apply to nested
+`ON_Mesh` wrappers in the minor-3 extrusion mesh cache and to mesh wrappers
+embedded in history geometry values. Minor-2 extrusion writers have a second
+settled carrier: class/item UUID `A8130A3E-E4F3-4CB0-BB8A-F10A473912D0` with
+the OpenNURBS 5 application UUID. Its bounded payload contains render,
+analysis, and null object wrappers; the first two accept null or `ON_Mesh`, the
+third is discarded, and a nested mesh carries the same section 7.2.3 rule.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -180,8 +196,9 @@ for each version that is to be typed, including its fields and loss mapping.
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
 built-in hatch gradient userdata, the V5 dimension-style extra, and
 `ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`, and
-`ON_OBSOLETE_V5_TextExtra` are settled; other future class-specific payload
-semantics remain open.
+`ON_OBSOLETE_V5_TextExtra`, and `ON_V5_MeshDoubleVertices` are settled,
+including the Brep, extrusion, and history carriers; other future
+class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

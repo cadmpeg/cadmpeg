@@ -11,7 +11,7 @@ use crate::chunks::{
     ChecksumStatus, Chunk,
 };
 use crate::curves::{error, GeometryError};
-use crate::objects::parse_class_wrapper;
+use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
 use crate::wire::Uuid;
 
@@ -192,6 +192,8 @@ pub(crate) struct RawBrepMeshSlot {
     pub(crate) mesh: Option<RawBrepChild>,
     /// Whether the archive supplied a nonzero presence byte.
     pub(crate) present: bool,
+    /// Class-userdata descriptors attached to the mesh object wrapper.
+    pub(crate) userdata: Vec<UserdataDescriptor>,
 }
 
 /// A raw region face side.
@@ -996,20 +998,27 @@ fn read_mesh_sides(
                 let start = child.position();
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
                 children.push(object.range());
-                let class = parse_class_wrapper(
+                let class = parse_class_wrapper_with_userdata(
                     bytes,
                     chunk_start_range(&object),
                     archive,
-                    &mut Vec::new(),
+                    warnings,
                 );
                 child.skip(object.next_offset - start)?;
                 match class {
-                    Ok(class) if supported_mesh(class.class_uuid) => Some(RawBrepChild {
-                        class_uuid: class.class_uuid,
-                        class_data_range: class.class_data_range,
-                        source_range: start..object.next_offset,
-                        base_type: RawBrepBaseType::Other,
-                    }),
+                    Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
+                        result.push(RawBrepMeshSlot {
+                            mesh: Some(RawBrepChild {
+                                class_uuid: class.class_uuid,
+                                class_data_range: class.class_data_range,
+                                source_range: start..object.next_offset,
+                                base_type: RawBrepBaseType::Other,
+                            }),
+                            present: true,
+                            userdata,
+                        });
+                        continue;
+                    }
                     Ok(_) => {
                         warnings.push("Brep mesh cache slot has wrong class".to_string());
                         None
@@ -1022,7 +1031,11 @@ fn read_mesh_sides(
             } else {
                 None
             };
-            result.push(RawBrepMeshSlot { mesh, present });
+            result.push(RawBrepMeshSlot {
+                mesh,
+                present,
+                userdata: Vec::new(),
+            });
         }
         finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
@@ -1037,6 +1050,7 @@ fn read_mesh_sides(
                     RawBrepMeshSlot {
                         mesh: None,
                         present: false,
+                        userdata: Vec::new(),
                     };
                     face_count
                 ],
@@ -1642,10 +1656,11 @@ mod tests {
     }
 
     fn class_wrapper(data: &[u8]) -> Vec<u8> {
+        let class_uuid = [9_u8; 16];
         let mut uuid = 0x0002_fffb_u32.to_le_bytes().to_vec();
         uuid.extend_from_slice(&20_i64.to_le_bytes());
-        uuid.extend([0; 16]);
-        uuid.extend_from_slice(&crc32fast::hash(&[0; 16]).to_le_bytes());
+        uuid.extend(class_uuid);
+        uuid.extend_from_slice(&crc32fast::hash(&class_uuid).to_le_bytes());
         let mut class_data = 0x0002_fffc_u32.to_le_bytes().to_vec();
         class_data.extend_from_slice(&i64::try_from(data.len() + 4).expect("length").to_le_bytes());
         class_data.extend_from_slice(data);
@@ -1654,6 +1669,54 @@ mod tests {
         end.extend_from_slice(&0_i64.to_le_bytes());
         let mut body = uuid;
         body.extend(class_data);
+        body.extend(end);
+        let mut wrapper = 0x0002_7ffa_u32.to_le_bytes().to_vec();
+        wrapper.extend_from_slice(&i64::try_from(body.len()).expect("length").to_le_bytes());
+        wrapper.extend(body);
+        wrapper
+    }
+
+    fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+        let mut bytes = typecode.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&i64::try_from(body.len() + 4).expect("length").to_le_bytes());
+        bytes.extend_from_slice(body);
+        bytes.extend_from_slice(&crc32fast::hash(body).to_le_bytes());
+        bytes
+    }
+
+    fn mesh_class_wrapper_with_userdata() -> Vec<u8> {
+        let class_uuid = crate::mesh::ON_MESH;
+        let item_uuid = crate::mesh::V5_MESH_DOUBLE_VERTICES;
+        let uuid = long_chunk(0x0002_fffb, &class_uuid.to_wire());
+        let class_data = long_chunk(0x0002_fffc, &[]);
+
+        let mut header_body = class_uuid.to_wire().to_vec();
+        header_body.extend(item_uuid.to_wire());
+        header_body.extend(1_i32.to_le_bytes());
+        header_body.extend([0_u8; 16 * 8]);
+        header_body.extend(Uuid::nil().to_wire());
+        header_body.push(0);
+        header_body.extend(50_i32.to_le_bytes());
+        header_body.extend(202_400_i32.to_le_bytes());
+        let header = long_chunk(0x0002_fff9, &header_body);
+        let payload = anonymous(&[0]);
+        let mut userdata_body = vec![0x22];
+        userdata_body.extend(header);
+        userdata_body.extend(payload);
+        let mut userdata = 0x0002_7ffd_u32.to_le_bytes().to_vec();
+        userdata.extend_from_slice(
+            &i64::try_from(userdata_body.len() + 4)
+                .expect("length")
+                .to_le_bytes(),
+        );
+        userdata.extend(userdata_body);
+        userdata.extend_from_slice(&crc32fast::hash(&[0x22]).to_le_bytes());
+
+        let mut end = 0x8002_7fff_u32.to_le_bytes().to_vec();
+        end.extend_from_slice(&0_i64.to_le_bytes());
+        let mut body = uuid;
+        body.extend(class_data);
+        body.extend(userdata);
         body.extend(end);
         let mut wrapper = 0x0002_7ffa_u32.to_le_bytes().to_vec();
         wrapper.extend_from_slice(&i64::try_from(body.len()).expect("length").to_le_bytes());
@@ -2002,6 +2065,27 @@ mod tests {
         assert_eq!(slots.len(), 1);
         assert!(!slots[0].present);
         assert!(warnings.is_empty());
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn mesh_side_wrapper_retains_nested_class_userdata() {
+        let presence = [1_u8];
+        let wrapper = mesh_class_wrapper_with_userdata();
+        let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Vec::new();
+        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
+            .expect("mesh cache with userdata");
+        assert_eq!(slots.len(), 1);
+        assert!(slots[0].present);
+        assert!(slots[0].mesh.is_some(), "warnings: {warnings:?}");
+        assert_eq!(slots[0].userdata.len(), 1);
+        assert_eq!(
+            slots[0].userdata[0].item_uuid,
+            crate::mesh::V5_MESH_DOUBLE_VERTICES
+        );
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
         assert_eq!(reader.remaining(), 0);
     }
 

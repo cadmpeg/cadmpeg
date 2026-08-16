@@ -9,7 +9,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
 use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
-use crate::objects::parse_class_wrapper;
+use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{interval, point, vector};
 use crate::wire::Uuid;
 
@@ -18,6 +18,10 @@ pub(crate) const ON_EXTRUSION: Uuid = Uuid::from_canonical([
     0x36, 0xf5, 0x31, 0x75, 0x72, 0xb8, 0x4d, 0x47, 0xbf, 0x1f, 0xb4, 0xe6, 0xfc, 0x24, 0xf4, 0xb9,
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
+/// Obsolete V5 extrusion display-mesh cache userdata class and item UUID.
+const ON_V5_EXTRUSION_DISPLAY_MESH_CACHE: Uuid = Uuid::from_canonical([
+    0xa8, 0x13, 0x0a, 0x3e, 0xe4, 0xf3, 0x4c, 0xb0, 0xbb, 0x8a, 0xf1, 0x0a, 0x47, 0x39, 0x12, 0xd0,
+]);
 const UNIT_TOLERANCE: f64 = 1.0e-10;
 const MITER_Z_MINIMUM: f64 = 1.0 / 64.0;
 const CLOSURE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
@@ -82,6 +86,7 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
 }
 
 /// Decodes one complete bounded `ON_Extrusion` class payload.
+#[allow(clippy::too_many_arguments)] // Keeps the borrowed archive and mesh-owner contexts explicit.
 pub(crate) fn decode(
     expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
@@ -89,6 +94,7 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: f64,
+    userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
 ) -> Result<DecodedExtrusion, GeometryError> {
     let outer = chunk_at(data, range.start, range.end, archive, false)?;
@@ -179,7 +185,22 @@ pub(crate) fn decode(
             }
         }
     } else {
-        Vec::new()
+        match read_v5_mesh_cache(
+            expand,
+            data,
+            archive,
+            writer_version,
+            scale,
+            userdata,
+            mesh_budget,
+            &mut warnings,
+        ) {
+            Ok(meshes) => meshes,
+            Err(cache_error) => {
+                warnings.push(format!("V5 extrusion mesh cache dropped: {cache_error}"));
+                Vec::new()
+            }
+        }
     };
     finish_payload(data, &outer, reader, &payload_children, &mut warnings)?;
 
@@ -608,7 +629,8 @@ fn read_mesh_cache(
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
-        let class = parse_class_wrapper(data, wrapper.range(), archive, warnings)?;
+        let (class, userdata) =
+            parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
         item_reader.skip(wrapper.next_offset - wrapper_start)?;
         if class.class_uuid != crate::mesh::ON_MESH {
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
@@ -623,6 +645,7 @@ fn read_mesh_cache(
                 association: None,
                 id: format!("rhino:extrusion:mesh-cache#{index}"),
                 scale,
+                userdata: &userdata,
             },
             mesh_budget,
         )?;
@@ -649,6 +672,63 @@ fn read_mesh_cache(
         "extrusion mesh cache",
         warnings,
     )?;
+    Ok(meshes)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_v5_mesh_cache(
+    expand: crate::mesh::MeshExpand<'_>,
+    data: &[u8],
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    scale: f64,
+    userdata: &[UserdataDescriptor],
+    mesh_budget: &mut crate::mesh::MeshBudget,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
+    let Some(cache) = userdata.iter().find(|value| {
+        value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+            && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+    }) else {
+        return Ok(Vec::new());
+    };
+
+    let mut offset = cache.payload_range.start;
+    let mut meshes = Vec::new();
+    for index in 0..3_usize {
+        let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
+        let (class, nested_userdata) =
+            parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
+        if index < 2 {
+            if class.class_uuid == crate::mesh::ON_MESH {
+                let mesh = crate::mesh::decode(
+                    expand,
+                    data,
+                    class.class_data_range,
+                    archive,
+                    crate::mesh::MeshDecodeOptions {
+                        writer_version,
+                        association: None,
+                        id: format!("rhino:extrusion:v5-mesh-cache#{index}"),
+                        scale,
+                        userdata: &nested_userdata,
+                    },
+                    mesh_budget,
+                )?;
+                meshes.push(mesh);
+            } else if class.class_uuid != Uuid::nil() {
+                return Err(error(
+                    wrapper.header_start,
+                    "V5 extrusion mesh-cache item is not ON_Mesh or null",
+                ));
+            }
+        }
+        offset = wrapper.next_offset;
+    }
+    // `ON_V5ExtrusionDisplayMeshCache::Read` returns after its three
+    // `ReadObject` calls. The enclosing anonymous-chunk end operation then
+    // skips any later bounded suffix, so preserve that forward-compatible
+    // boundary instead of rejecting the optional cache.
     Ok(meshes)
 }
 
@@ -832,6 +912,7 @@ pub(crate) mod tests {
                 archive,
                 writer_version,
                 scale,
+                &[],
                 mesh_budget,
             )
         })
@@ -1045,7 +1126,7 @@ pub(crate) mod tests {
         crc_chunk(ANONYMOUS, &body)
     }
 
-    fn one_mesh_cache() -> Vec<u8> {
+    fn one_mesh_wrapper() -> Vec<u8> {
         let mut mesh = vec![0x30];
         push_i32(&mut mesh, 1);
         push_i32(&mut mesh, 0);
@@ -1077,7 +1158,11 @@ pub(crate) mod tests {
         class_body.extend(crc_chunk(0x0002_fffc, &mesh));
         class_body.extend(0x8002_7fff_u32.to_le_bytes());
         class_body.extend(0_i64.to_le_bytes());
-        let wrapper = long(0x0002_7ffa, &class_body);
+        long(0x0002_7ffa, &class_body)
+    }
+
+    fn one_mesh_cache() -> Vec<u8> {
+        let wrapper = one_mesh_wrapper();
         let wrapper_len = wrapper.len();
         let mut item = Vec::new();
         push_i32(&mut item, 1);
@@ -1097,6 +1182,11 @@ pub(crate) mod tests {
         #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
         let wrapped = crc_chunk_excluding(ANONYMOUS, &cache, &[9..9 + item_len]);
         wrapped
+    }
+
+    fn null_object_wrapper() -> Vec<u8> {
+        let uuid = crc_chunk(0x0002_fffb, &[0; 16]);
+        long(0x0002_7ffa, &uuid)
     }
 
     fn decoded_polygon(clockwise: bool, closed: bool) -> DecodedCurve {
@@ -1430,6 +1520,77 @@ pub(crate) mod tests {
         assert_eq!(decoded.laterals.len(), 1);
         assert_eq!(decoded.meshes.len(), 1);
         assert!(decoded.warnings.is_empty());
+    }
+
+    #[test]
+    fn v5_mesh_cache_consumes_two_mesh_slots_and_a_null_slot() {
+        let mut bytes = one_mesh_wrapper();
+        bytes.extend(null_object_wrapper());
+        bytes.extend(null_object_wrapper());
+        let descriptor = crate::objects::UserdataDescriptor {
+            range: 0..bytes.len(),
+            version: (2, 2),
+            class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+            item_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: 0..bytes.len(),
+            unknown_version: false,
+        };
+        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            read_v5_mesh_cache(
+                expand,
+                &bytes,
+                ArchiveVersion::V5,
+                None,
+                1.0,
+                std::slice::from_ref(&descriptor),
+                &mut crate::mesh::MeshBudget::new(),
+                &mut Vec::new(),
+            )
+        })
+        .expect("V5 mesh cache");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn v5_mesh_cache_skips_a_bounded_suffix_after_three_slots() {
+        let mut bytes = one_mesh_wrapper();
+        bytes.extend(null_object_wrapper());
+        bytes.extend(null_object_wrapper());
+        bytes.extend([0xa5, 0x5a]);
+        let descriptor = crate::objects::UserdataDescriptor {
+            range: 0..bytes.len(),
+            version: (2, 2),
+            class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+            item_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: 0..bytes.len(),
+            unknown_version: false,
+        };
+        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            read_v5_mesh_cache(
+                expand,
+                &bytes,
+                ArchiveVersion::V5,
+                None,
+                1.0,
+                std::slice::from_ref(&descriptor),
+                &mut crate::mesh::MeshBudget::new(),
+                &mut Vec::new(),
+            )
+        })
+        .expect("V5 mesh cache suffix");
+        assert_eq!(result.len(), 1);
     }
 
     #[test]

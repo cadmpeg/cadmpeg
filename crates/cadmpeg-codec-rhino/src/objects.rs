@@ -390,6 +390,21 @@ pub(crate) fn parse_class_wrapper_with_userdata(
             .try_into()
             .expect("UUID length checked"),
     );
+    if class_uuid == Uuid::nil() {
+        if uuid_chunk.next_offset != wrapper.body.end {
+            return Err(FramingError::structural(
+                uuid_chunk.next_offset,
+                "null class wrapper has trailing bytes",
+            ));
+        }
+        return Ok((
+            ClassDescriptor {
+                class_uuid,
+                class_data_range: uuid_chunk.next_offset..uuid_chunk.next_offset,
+            },
+            Vec::new(),
+        ));
+    }
     let data_chunk = child(
         bytes,
         uuid_chunk.next_offset,

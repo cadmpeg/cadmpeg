@@ -893,6 +893,7 @@ fn extended_geometry_json(
                 association: None,
                 id: "rhino:history:embedded-mesh".to_string(),
                 scale,
+                userdata: &value.userdata,
             },
             &mut budget,
         )
@@ -943,6 +944,7 @@ fn extended_geometry_json(
             archive,
             writer_version,
             scale,
+            &value.userdata,
             &mut budget,
         )
         .ok()?;

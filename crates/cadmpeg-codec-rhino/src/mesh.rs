@@ -19,6 +19,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::curves::{error, GeometryError};
+use crate::objects::UserdataDescriptor;
 use crate::wire::Uuid;
 
 /// Decode context and root view used for mesh expansion.
@@ -55,6 +56,12 @@ fn expansion_refused(offset: usize, refusal: &CodecError) -> GeometryError {
 pub(crate) const ON_MESH: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xe4, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
+/// V5 class-userdata UUID for the mesh double-precision vertex array.
+pub(crate) const V5_MESH_DOUBLE_VERTICES: Uuid = Uuid::from_canonical([
+    0x17, 0xf2, 0x4e, 0x75, 0x21, 0xbe, 0x4a, 0x7b, 0x9f, 0x3d, 0x7f, 0x85, 0x22, 0x52, 0x47, 0xe3,
+]);
+/// Anonymous userdata payload chunk.
+const ANONYMOUS: u32 = 0x4000_8000;
 /// Codec-owned UV channel kind.
 pub(crate) const CHANNEL_UV: u32 = 0x5248_0001;
 /// Codec-owned color channel kind.
@@ -160,7 +167,7 @@ pub(crate) struct DecodedMesh {
 }
 
 /// Caller-owned identity and archive metadata for one mesh decode.
-pub(crate) struct MeshDecodeOptions {
+pub(crate) struct MeshDecodeOptions<'a> {
     /// Source writer version used by version-gated fields.
     pub(crate) writer_version: Option<i64>,
     /// Source-object association assigned to the tessellation.
@@ -169,6 +176,8 @@ pub(crate) struct MeshDecodeOptions {
     pub(crate) id: String,
     /// Native-unit to millimeter scale.
     pub(crate) scale: f64,
+    /// Class userdata attached to the owning mesh object.
+    pub(crate) userdata: &'a [UserdataDescriptor],
 }
 
 #[derive(Default)]
@@ -190,7 +199,7 @@ pub(crate) fn decode(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    options: MeshDecodeOptions,
+    options: MeshDecodeOptions<'_>,
     document_budget: &mut MeshBudget,
 ) -> Result<DecodedMesh, GeometryError> {
     let MeshDecodeOptions {
@@ -198,6 +207,7 @@ pub(crate) fn decode(
         association,
         id,
         scale,
+        userdata,
     } = options;
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut decoded = MeshChannels::default();
@@ -377,6 +387,24 @@ pub(crate) fn decode(
         decoded
             .warnings
             .push(format!("ON_Mesh skipped {skipped} trailing bytes"));
+    }
+    if double_vertices.is_none() {
+        if let Some(extra) = userdata.iter().find(|value| {
+            value.class_uuid == V5_MESH_DOUBLE_VERTICES
+                && value.item_uuid == V5_MESH_DOUBLE_VERTICES
+        }) {
+            match read_v5_double_vertices(data, extra, archive, &decoded.vertices) {
+                Ok(Some(values)) => double_vertices = Some(values),
+                Ok(None) => decoded.warnings.push(format!(
+                    "redundant V5 mesh double-precision userdata at offset {} was rejected; using float vertices",
+                    extra.range.start
+                )),
+                Err(error) => decoded.warnings.push(format!(
+                    "redundant V5 mesh double-precision userdata at offset {} was dropped: {error}",
+                    extra.range.start
+                )),
+            }
+        }
     }
     let source_vertices = double_vertices.unwrap_or_else(|| {
         decoded
@@ -961,6 +989,58 @@ fn read_double_chunk<'a>(
     Ok((count, bytes))
 }
 
+/// Reads the obsolete V5 class-userdata double-precision vertex array.
+///
+/// openNURBS reads the array count from the serialized array itself. The two
+/// counts and CRCs are producer-side validity fields; `DeleteAfterRead()` only
+/// adopts the array when its actual count matches the owner mesh and its f64
+/// values cast exactly to the owner's f32 vertices.
+fn read_v5_double_vertices(
+    data: &[u8],
+    extra: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    float_vertices: &[[f32; 3]],
+) -> Result<Option<Vec<[f64; 3]>>, GeometryError> {
+    let chunk = chunk_at(
+        data,
+        extra.payload_range.start,
+        extra.payload_range.end,
+        archive,
+        false,
+    )?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(error(
+            chunk.header_start,
+            "V5 mesh double-precision userdata is not anonymous",
+        ));
+    }
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let _major = reader.i32()?;
+    let _minor = reader.i32()?;
+    let _float_count = reader.i32()?;
+    let _double_count = reader.i32()?;
+    let _float_crc = reader.u32()?;
+    let _double_crc = reader.u32()?;
+    let array_count = checked_u32(&mut reader, MAX_MESH_VERTICES)?;
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(array_count)
+        .map_err(|_| error(reader.position(), "V5 mesh double-vertex allocation failed"))?;
+    for _ in 0..array_count {
+        values.push([reader.f64()?, reader.f64()?, reader.f64()?]);
+    }
+    reader.skip_remaining()?;
+    if values.len() != float_vertices.len()
+        || values
+            .iter()
+            .any(|point| point.iter().any(|value| !value.is_finite()))
+        || !v5_synchronization_ok(&values, float_vertices)
+    {
+        return Ok(None);
+    }
+    Ok(Some(values))
+}
+
 fn consume_optional_chunk(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1034,6 +1114,15 @@ fn synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
         a.iter()
             .zip(b)
             .all(|(left, right)| (*left - f64::from(*right)).abs() <= scale * 1.0e-6)
+    })
+}
+
+fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
+    double.iter().zip(float).all(|(double, float)| {
+        double
+            .iter()
+            .zip(float)
+            .all(|(double, float)| *double as f32 == *float)
     })
 }
 
@@ -1141,6 +1230,40 @@ mod tests {
         result
     }
 
+    fn v5_double_userdata_payload(points: &[[f64; 3]]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend(1_i32.to_le_bytes());
+        body.extend(0_i32.to_le_bytes());
+        body.extend(3_i32.to_le_bytes());
+        body.extend(3_i32.to_le_bytes());
+        body.extend(0_u32.to_le_bytes());
+        body.extend(0_u32.to_le_bytes());
+        body.extend((points.len() as i32).to_le_bytes());
+        for point in points {
+            for coordinate in point {
+                body.extend(coordinate.to_le_bytes());
+            }
+        }
+        chunk(&body)
+    }
+
+    fn v5_double_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
+        UserdataDescriptor {
+            range: range.clone(),
+            version: (2, 2),
+            class_uuid: V5_MESH_DOUBLE_VERTICES,
+            item_uuid: V5_MESH_DOUBLE_VERTICES,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: range,
+            unknown_version: false,
+        }
+    }
+
     fn compressed_mesh() -> Vec<u8> {
         let mut payload = vec![0x30];
         payload.extend(3_i32.to_le_bytes());
@@ -1184,11 +1307,73 @@ mod tests {
                     association: None,
                     id: "legacy-minor-five".to_string(),
                     scale: 1.0,
+                    userdata: &[],
                 },
                 &mut MeshBudget::new(),
             )
         });
         assert!(decoded.is_ok(), "{decoded:?}");
+    }
+
+    #[test]
+    fn v5_double_userdata_restores_exact_vertices_without_crc_admission() {
+        let delta = 2_f64.powi(-25);
+        let points = [[0.0, 0.0, 0.0], [1.0 + delta, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v5_double_userdata_payload(&points));
+        let descriptor = v5_double_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v5-double".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("V5 double userdata mesh");
+        assert_eq!(decoded.tessellation.vertices[1].x, 1.0 + delta);
+        assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
+    }
+
+    #[test]
+    fn v5_double_userdata_count_mismatch_retains_float_vertices() {
+        let delta = 2_f64.powi(-25);
+        let points = [[0.0, 0.0, 0.0], [1.0 + delta, 0.0, 0.0]];
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v5_double_userdata_payload(&points));
+        let descriptor = v5_double_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v5-double-mismatch".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("float mesh survives V5 double userdata mismatch");
+        assert_eq!(decoded.tessellation.vertices[1].x, 1.0);
+        assert!(decoded
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("redundant V5 mesh double-precision userdata")));
     }
 
     #[test]
@@ -1451,6 +1636,7 @@ mod tests {
                     association: None,
                     id: "first".to_string(),
                     scale: 1.0,
+                    userdata: &[],
                 },
                 &mut budget,
             )
@@ -1465,6 +1651,7 @@ mod tests {
                     association: None,
                     id: "second".to_string(),
                     scale: 1.0,
+                    userdata: &[],
                 },
                 &mut budget,
             )
@@ -1584,6 +1771,7 @@ mod tests {
                     association: None,
                     id: "test".to_string(),
                     scale: 1.0,
+                    userdata: &[],
                 },
                 &mut MeshBudget::new(),
             )

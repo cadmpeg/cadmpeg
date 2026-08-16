@@ -585,6 +585,23 @@ fn user_string_list_rejects_a_negative_count() {
 }
 
 #[test]
+fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
+    let archive = ArchiveVersion::V5;
+    let uuid = crc_chunk(archive, 0x0002_fffb, &[0; 16]);
+    let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
+    let (class, userdata) = crate::objects::parse_class_wrapper_with_userdata(
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Vec::new(),
+    )
+    .expect("null object wrapper");
+    assert_eq!(class.class_uuid, Uuid::nil());
+    assert!(class.class_data_range.is_empty());
+    assert!(userdata.is_empty());
+}
+
+#[test]
 fn uuid_list_uses_an_anonymous_versioned_chunk() {
     let archive = ArchiveVersion::V5;
     let mut body = 1_i32.to_le_bytes().to_vec();

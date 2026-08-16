@@ -856,6 +856,7 @@ impl<'a> DecodeContext<'a> {
                         association: Some(self.source_association(identity)),
                         id: format!("rhino:object:tessellation#{key}"),
                         scale,
+                        userdata: &object.userdata,
                     },
                     &mut self.mesh_budget,
                 );
@@ -2254,6 +2255,7 @@ impl<'a> DecodeContext<'a> {
             self.archive(),
             self.scan.metadata.properties.writer_version,
             scale,
+            &object.userdata,
             &mut self.mesh_budget,
         );
         match decoded {
@@ -3837,6 +3839,7 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                     association: Some(association.clone()),
                     id,
                     scale,
+                    userdata: &slot.userdata,
                 },
                 mesh_budget,
             ) {
