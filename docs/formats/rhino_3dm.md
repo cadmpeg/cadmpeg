@@ -3396,6 +3396,20 @@ ON_Interval path domain
 bool transposed
 ```
 
+For archive versions below 60, the source writer emits minor 2; for archive
+version 60 and later it emits minor 3. `ON_Extrusion` is a V5 class and is not
+written as that class in V4: a capped or multi-profile value is translated to
+`ON_Brep`, and an uncapped single-profile value is translated to
+`ON_SumSurface` or `ON_NurbsSurface`.
+
+Source validity requires a positive profile count and a profile object, a
+finite nonzero path, `0 <= trim[0] < trim[1] <= 1`, a unit `up` perpendicular
+to the path, and unit present miter normals whose local-Z component is greater
+than `1/64`. A nil profile wrapper is readable, but it yields profile count
+zero and is source-invalid. CADIR retains that bounded source record instead
+of admitting typed extrusion geometry. A typed extrusion also requires the
+profile to have an exact NURBS representation and to lie in the profile plane.
+
 Miter vectors are serialized even when their presence flags are false. Minor
 1 appends `i32 profile count`. Minor 2 appends bottom and top cap booleans.
 Minor 3 appends an anonymous mesh-cache chunk. The complete 1.3 order is the
@@ -3432,6 +3446,13 @@ extrusion remains admissible.
 A present miter normal is unitized. The miter applies only when the unitized
 local Z component is greater than `1/64`. A normal that cannot be unitized or
 does not exceed this threshold selects the flat cap transform.
+
+Profile and path coordinates are document lengths and receive document-unit
+conversion. `up` and miter normals are directions and do not scale. Trim and
+path-domain values, profile knots and rational weights, transpose, and cap
+flags do not scale. The trimmed path endpoints define the two cap origins;
+the lateral carrier uses the path-domain interval and the ordered profile
+coordinates. The profile remains the directrix child of each lateral.
 
 For minor below 1, profile count defaults to one when a profile exists and
 zero otherwise. For minor below 2, closed outer profiles default both caps to

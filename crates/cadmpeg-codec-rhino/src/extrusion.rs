@@ -1286,6 +1286,20 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn nil_profile_is_rejected_before_extrusion_transfer() {
+        let bytes = payload_with_profile(2, [false, false], None, null_object_wrapper());
+        assert!(decode(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            None,
+            1.0,
+            &mut crate::mesh::MeshBudget::new(),
+        )
+        .is_err());
+    }
+
+    #[test]
     fn profile_frame_uses_trim_start_up_cross_path_and_scales_once() {
         let bytes = payload(2, [false, false], None);
         let decoded = decode(

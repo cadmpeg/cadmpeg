@@ -768,6 +768,13 @@ reconstructs the exact NURBS carrier, and treats the bounds as framing only.
 Both children must be valid three-dimensional curves in the source; a nil
 polymorphic child is readable but source-invalid and is retained opaque by
 CADIR.
+The `ON_Extrusion` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its anonymous major/minor payload, V4 compatibility
+translation to `ON_Brep`, rational profile, path and trim intervals, up and
+miter directions, transpose, asymmetric cap flags, and minor-3 cache boundary
+are settled. The Rust decoder scales profile/path/cap geometry, preserves
+parameter values, directions, weights, and cap flags, constructs the lateral
+carrier and cap plane, and retains a missing-profile object opaque.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -1056,6 +1063,29 @@ tests `sum_surface_decodes_ordered_children_and_scales_once`,
 `sum_surface_multiplies_each_rational_weight_pair`, and
 `sum_surface_rejects_nil_child_object` gate ordered transfer, unit conversion,
 homogeneous product weights, and the malformed-child boundary.
+
+The extrusion slice is closed by `ON_Extrusion::IsValid` in
+`/home/pcurve/side2/opennurbs/opennurbs_beam.cpp:1217-1348`,
+`ON_Extrusion::Write`/`Read` at `:1465-1612`, its bounding-box construction at
+`:1673-1712`, and the V4 compatibility branch in
+`opennurbs_archive.cpp:4568-4593`. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/extrusion_witness.cpp` writes
+the valid V4, V50, V6, and inch-unit V6 files and its `--absent` mode writes a
+nil-profile V6 file. The public `example_read` harness reads all five files;
+the byte differential report is
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/extrusion_differential.txt`.
+`cadmpeg inspect` finds the V50/V6/inch `ON_Extrusion` UUIDs at `0x09e6`,
+`0x0a1f`, and `0x0a29`, the V4 `ON_Brep` UUID at `0x08e8`, and the embedded
+profile UUIDs at `0x0a32`, `0x0a6b`, and `0x0a75`. The V6 raw reads at
+`0x0a40`, `0x0b8d`, `0x0bbd`, `0x0be5`, `0x0be7`, `0x0c17`, `0x0c27`,
+`0x0c28`, and `0x0c2c` confirm the anonymous version and every witnessed
+field. The valid V50/V6/inch query results contain the profile directrix,
+lateral carrier, and start cap; the inch carrier scales by `25.4` while
+knots, weights, intervals, directions, transpose, and caps remain unchanged.
+V4 decodes as a valid BRep. The absent-profile result has
+`geometry_transferred=false`, is retained by CADIR, and validates after the
+owner test `nil_profile_is_rejected_before_extrusion_transfer` gates the
+malformed boundary.
 
 ### FV-06. Later major payload admission
 
