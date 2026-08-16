@@ -128,6 +128,84 @@ fn has_forbidden_form_63_duplicate(points: &[Point3], resolution: f64) -> bool {
     false
 }
 
+fn planar_cross(left: [f64; 2], right: [f64; 2], point: [f64; 2]) -> f64 {
+    (right[0] - left[0]) * (point[1] - left[1]) - (right[1] - left[1]) * (point[0] - left[0])
+}
+
+fn planar_point_on_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
+    planar_cross(start, end, point) == 0.0
+        && point[0] >= start[0].min(end[0])
+        && point[0] <= start[0].max(end[0])
+        && point[1] >= start[1].min(end[1])
+        && point[1] <= start[1].max(end[1])
+}
+
+fn segment_intersects_beyond_endpoint(
+    first: [[f64; 2]; 2],
+    second: [[f64; 2]; 2],
+    allowed_endpoint: Option<[f64; 2]>,
+) -> bool {
+    let [a, b] = first;
+    let [c, d] = second;
+    let orientations = [
+        planar_cross(a, b, c),
+        planar_cross(a, b, d),
+        planar_cross(c, d, a),
+        planar_cross(c, d, b),
+    ];
+    let opposite =
+        |left: f64, right: f64| (left > 0.0 && right < 0.0) || (left < 0.0 && right > 0.0);
+    if opposite(orientations[0], orientations[1]) && opposite(orientations[2], orientations[3]) {
+        return true;
+    }
+
+    let mut contacts = [(c, orientations[0]), (d, orientations[1])]
+        .into_iter()
+        .filter_map(|(point, orientation)| {
+            (orientation == 0.0 && planar_point_on_segment(point, a, b)).then_some(point)
+        })
+        .chain(
+            [(a, orientations[2]), (b, orientations[3])]
+                .into_iter()
+                .filter_map(|(point, orientation)| {
+                    (orientation == 0.0 && planar_point_on_segment(point, c, d)).then_some(point)
+                }),
+        );
+    contacts.any(|point| Some(point) != allowed_endpoint)
+}
+
+fn has_form_63_self_intersection(points: &[Point3]) -> bool {
+    let mut planar_points = points
+        .iter()
+        .map(|point| [point.x, point.y])
+        .collect::<Vec<_>>();
+    if planar_points.len() < 3 {
+        return false;
+    }
+    let last = planar_points.len() - 1;
+    planar_points[last] = planar_points[0];
+    let segment_count = last;
+    for first_index in 0..segment_count {
+        for second_index in first_index + 1..segment_count {
+            let allowed_endpoint = if second_index == first_index + 1 {
+                Some(planar_points[second_index])
+            } else if first_index == 0 && second_index + 1 == segment_count {
+                Some(planar_points[0])
+            } else {
+                None
+            };
+            if segment_intersects_beyond_endpoint(
+                [planar_points[first_index], planar_points[first_index + 1]],
+                [planar_points[second_index], planar_points[second_index + 1]],
+                allowed_endpoint,
+            ) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -259,19 +337,20 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "tuple array is truncated or non-finite"));
             continue;
         };
-        let points = values
+        let definition_points = values
             .chunks_exact(tuple_width)
             .map(|tuple| {
                 let z = match common_z {
                     Some(z) => z,
                     None => tuple[2],
                 };
-                transform.point(Point3::new(
-                    tuple[0] * factor,
-                    tuple[1] * factor,
-                    z * factor,
-                ))
+                Point3::new(tuple[0] * factor, tuple[1] * factor, z * factor)
             })
+            .collect::<Vec<_>>();
+        let points = definition_points
+            .iter()
+            .copied()
+            .map(|point| transform.point(point))
             .collect::<Vec<_>>();
         if presentation_form(entry.form) {
             losses.push(presentation_loss(
@@ -323,6 +402,13 @@ pub(super) fn project(
                 } else {
                     "simple closed path has coincident non-endpoint points"
                 },
+            ));
+            continue;
+        }
+        if entry.form == 63 && has_form_63_self_intersection(&definition_points) {
+            losses.push(entity_loss(
+                entry,
+                "simple closed path intersects itself away from shared endpoints",
             ));
             continue;
         }

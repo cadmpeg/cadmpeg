@@ -51,16 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-08. Type 106 duplicate points and closure
-
-**Question.** Which duplicate-point and closure patterns are valid in a Type 106 entity?
-
-**Known.** `entities/copious.rs:58-128` rejects coincident non-endpoint points for Form 63 and treats only the first and last points as an allowed duplicate pair. `entities/copious.rs:310-327` reports losses for endpoint disagreement and forbidden duplicates using Global minimum resolution. The Geometry section of `iges.md` states the same policy.
-
-**Need.** We need the Type 106 form rules for duplicate points and closed paths, including the tolerance and whether source order must be retained.
-
-**Note.** Reopened by the 2026-08-16 audit. The closure made the path policy internally consistent, but did not check the policy against the IGES specification or an exporter-authored witness file.
-
 ### GE-09. Type 104 endpoints are not independently authoritative
 
 **Question.** Must Type 104 endpoint coordinates agree with the conic parameters, and what tolerance applies?

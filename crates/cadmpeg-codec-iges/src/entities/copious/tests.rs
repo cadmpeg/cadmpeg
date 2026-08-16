@@ -102,9 +102,33 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
 }
 
 #[test]
+fn decode_preserves_crossing_segments_in_a_copious_linear_path() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(
+                12,
+                b"106,2,4,0,0,0,1,1,0,0,1,0,1,0,0;",
+                "00000000",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    else {
+        panic!("expected a degree-one path carrier");
+    };
+    assert_eq!(path.control_points.len(), 4);
+    assert!(path.control_points[1].x > path.control_points[0].x);
+    assert!(path.control_points[1].y > path.control_points[0].y);
+    assert!(path.control_points[3].x > path.control_points[0].x);
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
 fn decode_closes_form_63_with_the_global_minimum_resolution() {
     for (gap, decoded) in [("0.000999", true), ("0.001", false), ("0.001001", false)] {
-        let parameters = format!("106,1,3,0,0,0,1,0,0,{gap};");
+        let parameters = format!("106,1,4,0,0,0,1,0,0,1,{gap},0;");
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(copious_data_file(63, parameters.as_bytes(), "00000000")),
@@ -153,6 +177,28 @@ fn decode_rejects_a_form_63_non_endpoint_duplicate() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("coincident non-endpoint points")));
+}
+
+#[test]
+fn decode_rejects_form_63_self_intersections_without_duplicate_points() {
+    for parameters in [
+        b"106,1,5,0,0,0,1,1,0,1,1,0,0,0;".as_slice(),
+        b"106,1,4,0,0,0,2,0,1,0,0,0;".as_slice(),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(copious_data_file(63, parameters, "00000000")),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result.ir().model.curves.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    }
 }
 
 #[test]
