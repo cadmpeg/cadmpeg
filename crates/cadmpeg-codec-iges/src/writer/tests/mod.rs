@@ -248,6 +248,10 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         status(regenerate(trimmed_plane_file()).ir(), 142),
         (Some(1.into()), Some(0.into()), Some(0.into()))
     );
+    assert_eq!(
+        status(regenerate(parametrically_bounded_plane_file()).ir(), 126),
+        (Some(1.into()), Some(5.into()), Some(0.into()))
+    );
 }
 
 #[test]

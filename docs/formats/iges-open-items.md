@@ -57,16 +57,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-10. Fixed protocol constants with no complete source mapping
-
-**Question.** What are the correct `PREF`, creation-method, and hierarchy values for generated records?
-
-**Known.** `writer.rs:39-47` fixes frame and pcurve protocol values, and `writer.rs:2502-2506` and `writer.rs:2688-2697` emits them for Type 141 and Type 142. The writer also emits fixed Directory status strings at `writer.rs:1240-1575` and `writer.rs:3870-4505`; the Topology section of `iges.md` records the output constants.
-
-**Need.** We need the correct value for each field, and evidence from the IGES specification or from exporter-authored witness files for the Type 504 hierarchy difference and each Type 141/142 protocol value.
-
-**Note.** Reopened by the 2026-08-16 audit. The constants are explicit and deterministic, but the closure recorded them as settled without a complete mapping to the IGES specification or to exporter-authored witness files.
-
 ## 8. Evidence
 
 ### EV-02. The independent-application gate has no recorded run
