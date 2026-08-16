@@ -550,6 +550,79 @@ fn duplicate_face_outer_bounds_are_reported_without_inventing_inner_roles() {
 }
 
 #[test]
+fn duplicate_face_outer_bounds_follow_first_source_bound_for_cadir_salvage() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#25=EDGE_LOOP('',(#22,#23,#24));",
+            "#25=POLY_LOOP('',(#3,#4,#5));",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#70=CARTESIAN_POINT('',(2.,2.,0.));\n#71=CARTESIAN_POINT('',(2.,3.,0.));\n#72=CARTESIAN_POINT('',(3.,2.,0.));\n#73=POLY_LOOP('',(#70,#71,#72));\n#74=FACE_OUTER_BOUND('',#73,.T.);\n#29=FACE('',(#74,#26));",
+        );
+    assert_eq!(source.matches("FACE_OUTER_BOUND").count(), 2);
+
+    for (exchange, expected_loop, expected_origin) in [
+        (source.clone(), 73_u64, 7.0 / 3.0),
+        (
+            source.replace("#29=FACE('',(#74,#26));", "#29=FACE('',(#26,#74));"),
+            25,
+            10.0 / 3.0,
+        ),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(exchange), &DecodeOptions::default())
+            .expect("decode duplicate outer-bound witness");
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| { loss.code == StepLossCode::FaceMultipleOuterBounds.kind() }));
+
+        let face = &decoded.ir().model.faces[0];
+        assert_eq!(
+            face.loops[0].as_str(),
+            StepIdentity::data("loop", format!("{expected_loop}-face-29"))
+        );
+        let roles = face
+            .loops
+            .iter()
+            .map(|id| {
+                decoded
+                    .ir()
+                    .model
+                    .loops
+                    .iter()
+                    .find(|loop_| loop_.id == *id)
+                    .expect("decoded face loop")
+                    .boundary_role
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            roles,
+            vec![
+                cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+                cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+            ]
+        );
+
+        let surface = decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+            .expect("implicit face plane");
+        let SurfaceGeometry::Plane { origin, .. } = &surface.geometry else {
+            panic!("duplicate outer-bound witness did not produce an implicit plane");
+        };
+        assert_eq!(*origin, Point3::new(expected_origin, expected_origin, 0.0));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    }
+}
+
+#[test]
 fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
     let mut ir = unit_cube();
     ir.model.faces[0].surface = ir.model.faces[1].surface.clone();

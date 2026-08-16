@@ -2058,6 +2058,7 @@ fn build_one(
                 if is_outer_bound {
                     outer_bound_count += 1;
                 }
+                let retains_outer_role = is_outer_bound && outer_bound_count == 1;
                 let loop_step = require_carrier(
                     named_reference(br, bound_type, 1, 0),
                     failure,
@@ -2091,7 +2092,7 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
+                        boundary_role: if retains_outer_role {
                             LoopBoundaryRole::Outer
                         } else if is_outer_bound {
                             LoopBoundaryRole::Unspecified
@@ -2111,7 +2112,7 @@ fn build_one(
                             pcurves: Vec::new(),
                         }],
                     });
-                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
+                    loop_ids.push((retains_outer_role, lid));
                     used_v.insert((shell_step, vertex_step));
                     typed.extend([bound_step, loop_step]);
                     continue;
@@ -2200,7 +2201,7 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
+                        boundary_role: if retains_outer_role {
                             LoopBoundaryRole::Outer
                         } else if is_outer_bound {
                             LoopBoundaryRole::Unspecified
@@ -2210,7 +2211,7 @@ fn build_one(
                         coedges: coedge_ids,
                         vertex_uses: Vec::new(),
                     });
-                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
+                    loop_ids.push((retains_outer_role, lid));
                     typed.insert(bound_step);
                     continue;
                 }
@@ -2391,7 +2392,7 @@ fn build_one(
                 loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary_role: if is_outer_bound && outer_bound_count == 1 {
+                    boundary_role: if retains_outer_role {
                         LoopBoundaryRole::Outer
                     } else if is_outer_bound {
                         LoopBoundaryRole::Unspecified
@@ -2401,7 +2402,7 @@ fn build_one(
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
                 });
-                loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
+                loop_ids.push((retains_outer_role, lid));
                 typed.extend([bound_step, loop_step]);
             }
             if outer_bound_count > 1 {

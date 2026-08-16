@@ -259,28 +259,6 @@ exporter or taken from a public corpus, and an exact inverse or
 interval/adaptive proof for endpoint fit and locus equivalence, including
 reordered, near-tied, and crossing candidates.
 
-### TP-10. Malformed duplicate outer-bound fallback
-
-**Question.** When malformed input gives one face more than one
-`FACE_OUTER_BOUND`, which loop role and implicit face carrier should the
-decoder retain?
-
-**Known.** ISO 10303-42 permits at most one `FACE_OUTER_BOUND` for a face.
-For malformed input, the decoder marks the first outer bound in source order
-as outer, marks later outer declarations unspecified, and uses the first outer
-bound when it derives an implicit face plane
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:2671-2700,3126-3138`).
-
-**Note.** This is a salvage policy, not a STEP rule. A face with two
-valid-looking loops can therefore change its retained outer role and derived
-carrier when the loop order changes. TP-04 was closed because conforming STEP
-prohibits multiple outer bounds; that closure does not establish this
-malformed-input fallback.
-
-**Need.** We need an explicit conservative salvage policy, recorded as a
-CADIR decision, or evidence that first-role retention is required, with
-reordered duplicate-outer fixtures and validation results.
-
 ## 6. Units and measures
 
 ### UM-04. Document fallback unit identity

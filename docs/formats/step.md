@@ -473,7 +473,10 @@ standalone geometry.
 A face has at most one `FACE_OUTER_BOUND`. Other face bounds are not outer
 bounds. When malformed input declares more than one outer bound, the decoder
 retains every loop, keeps the first outer role in source order, marks the
-remaining conflicting roles unspecified, and reports a topology loss.
+remaining conflicting roles unspecified, and reports a topology loss. This
+malformed-input fallback is a CADIR decision: the first declaration in the
+`face.bounds` aggregate supplies the retained outer role and the implicit face
+plane; later `FACE_OUTER_BOUND` declarations never become inner bounds.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`
