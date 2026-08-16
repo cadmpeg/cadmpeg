@@ -658,10 +658,16 @@ witness when it maps to both edge vertices; a stale declared trim can be
 replaced by an independently inverted edge interval. Distinct tied or
 otherwise unresolved candidates remain detached and produce a topology loss.
 
-The source pcurve carrier is immutable. A chart variant derived from one
-coedge's endpoint fit is a use-scoped pcurve carrier. The coedge owns that
-variant through its `PcurveUse`; selecting a variant for another coedge does not
-change the source carrier or the first coedge's parameter range.
+ISO 10303-42 defines `SURFACE_CURVE.associated_geometry` as a list of one or
+two `PCURVE` or surface references. A selected pcurve identifies its basis
+surface and its 2D parameter curve. `SURFACE_CURVE` takes its parameterization
+from `master_representation`; each associated pcurve has the same sense as
+`curve_3d`. The entity graph may reference one `PCURVE` from multiple surface
+curves. CADIR decision: the source pcurve carrier is immutable. A chart
+variant derived from one coedge's endpoint fit is a use-scoped pcurve carrier.
+The coedge owns that variant through its `PcurveUse`; selecting a variant for
+another coedge does not change the source carrier or the first coedge's
+parameter range.
 
 A topology-referenced curve or surface whose geometry fails transfer retains
 its STEP identity as an unknown carrier linked to its opaque record. The body

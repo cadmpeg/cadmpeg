@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::*;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, Surface, SurfaceGeometry};
@@ -9,6 +10,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
 use cadmpeg_ir::units::Units;
 use std::collections::HashSet;
+use std::io::Cursor;
 
 const EPS_PCURVE_LOCI_DISTANCE: f64 = 1.0e-6;
 
@@ -275,6 +277,78 @@ fn selected_pcurve_variants_are_use_scoped() {
         second_variant.expect("second pcurve variant").geometry,
         selected_geometry
     );
+}
+
+#[test]
+fn shared_step_pcurve_variants_are_use_scoped() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc04_shared_pcurve.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode shared pcurve witness");
+
+    let source = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
+        .expect("shared source pcurve");
+    assert!(matches!(
+        &source.geometry,
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            same_sense: true,
+            ..
+        } if *parameter_range == [0.0, 1.0]
+    ));
+
+    let variant = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| {
+            pcurve
+                .id
+                .as_str()
+                .contains("pcurve#33-use-step-data-coedge-51-face-56")
+        })
+        .expect("use-scoped pcurve variant");
+    let PcurveGeometry::Transformed { transform, .. } = &variant.geometry else {
+        panic!("expected transformed pcurve variant");
+    };
+    assert_eq!(
+        transform.rows,
+        [[-1.0, 0.0, 5.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]
+    );
+
+    let first_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#42")
+        .and_then(|coedge| coedge.pcurves.first())
+        .expect("first shared pcurve use");
+    let second_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#45")
+        .and_then(|coedge| coedge.pcurves.first())
+        .expect("second shared pcurve use");
+    assert_eq!(first_use.pcurve.as_str(), "step:data:pcurve#33");
+    assert_eq!(
+        second_use.pcurve.as_str(),
+        "step:data:pcurve#33-use-step-data-coedge-51-face-56"
+    );
+    assert_ne!(first_use.pcurve, second_use.pcurve);
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
