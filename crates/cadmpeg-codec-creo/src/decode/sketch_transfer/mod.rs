@@ -29,10 +29,10 @@ pub(super) use constraints::{
     reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
     relation_incidence, relation_incidence_entities, relation_incidence_loci,
     section_angular_entities, section_dimension_constraints,
-    section_equation_equal_distance_constraints, section_equation_same_coordinate_constraints,
-    section_linear_distance_vectors, section_segment_radius_constraints,
-    section_segment_verhor_definition, section_solver_equation_is_disabled,
-    section_solver_relation_is_disabled,
+    section_equation_equal_distance_constraints, section_equation_point_on_line_constraints,
+    section_equation_same_coordinate_constraints, section_linear_distance_vectors,
+    section_segment_radius_constraints, section_segment_verhor_definition,
+    section_solver_equation_is_disabled, section_solver_relation_is_disabled,
 };
 
 pub(super) use loci::{

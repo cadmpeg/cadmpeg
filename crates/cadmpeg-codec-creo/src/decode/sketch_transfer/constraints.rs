@@ -6,9 +6,9 @@ use super::super::feature_history::{
     resolved_feature_dimension_parameter,
 };
 use super::super::sketch::{
-    resolved_section_coordinates, section_line_fixed_coordinate,
-    section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
-    unique_section_skamp_segment,
+    resolved_section_coordinates, section_equation_point_on_line_constraint_rows,
+    section_line_fixed_coordinate, section_linear_distance_coordinate, section_segment_rows,
+    section_type5_radius_arc, unique_section_skamp_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
@@ -664,6 +664,86 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
                         second,
                         axis,
                     },
+                    name: None,
+                    driving: None,
+                    active: Some(equation.active),
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
+                    native_ref: Some(sketch_native_ref(sketch)),
+                },
+                equation.offset,
+            ))
+        })
+        .collect()
+}
+
+pub(in super::super) fn section_equation_point_on_line_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .filter(|variables| variables.is_complete())
+        .map(|variables| variables.reconciled_points().1)
+        .unwrap_or_default();
+    let unique_segment_ids = unique_section_segment_external_ids(definition);
+    let segments = section_segment_rows(definition);
+    section_equation_point_on_line_constraint_rows(definition, &ambiguous_point_ids)
+        .into_iter()
+        .filter_map(|equation| {
+            let point = section_point_locus(definition, sketch, equation.target)?;
+            let matching_line_ids = segments
+                .iter()
+                .filter(|segment| {
+                    segment.kind == crate::feature::FeatureSegmentKind::Line
+                        && unique_segment_ids.contains(&segment.external_id)
+                        && (segment.point_ids == [equation.first, equation.second]
+                            || segment.point_ids == [equation.second, equation.first])
+                })
+                .map(|segment| segment.external_id)
+                .chain(
+                    definition
+                        .segments
+                        .iter()
+                        .flat_map(|table| &table.reference_line_rows)
+                        .filter(|segment| {
+                            unique_segment_ids.contains(&segment.external_id)
+                                && (segment.point_ids
+                                    == [Some(equation.first), Some(equation.second)]
+                                    || segment.point_ids
+                                        == [Some(equation.second), Some(equation.first)])
+                        })
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    definition
+                        .segments
+                        .iter()
+                        .flat_map(|table| &table.centered_line_rows)
+                        .filter(|segment| {
+                            unique_segment_ids.contains(&segment.external_id)
+                                && matches!([equation.first, equation.second], [0, 1] | [1, 0])
+                        })
+                        .map(|segment| segment.external_id),
+                )
+                .collect::<Vec<_>>();
+            let [line_external_id] = matching_line_ids.as_slice() else {
+                return None;
+            };
+            let entity = sketch_entity_id(sketch, *line_external_id);
+            Some((
+                SketchConstraint {
+                    id: sketch_constraint_id(
+                        sketch,
+                        format_args!("equation:{}", equation.equation_id),
+                    ),
+                    sketch: sketch.clone(),
+                    definition: SketchConstraintDefinition::PointOnObject { point, entity },
                     name: None,
                     driving: None,
                     active: Some(equation.active),

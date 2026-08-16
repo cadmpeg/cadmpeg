@@ -52,7 +52,10 @@ fixtures, scores above L1 remain blocked.
   typed same-coordinate constraints when both point keys resolve to unique
   section loci. Function-thirty-three endpoint-pair equations transfer as
   typed equal-distance constraints under the same unique-locus rule; inactive
-  rows remain retained with their source activity.
+  rows remain retained with their source activity. Function-thirty-five
+  equations transfer as typed point-on-object constraints when the two
+  reference point keys bind to one unique section line and the target key
+  resolves to an emitted point locus.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs. Additive linear
   extrusions also accept a closed one-entity circle section, a closed single
