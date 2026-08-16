@@ -1183,4 +1183,38 @@ mod tests {
         assert_eq!(value.clipping_planes[0].depth_mm, Some(3.0));
         assert!(value.clipping_planes[0].depth_enabled);
     }
+
+    #[test]
+    fn view_attributes_decode_page_settings_and_skip_page_suffix() {
+        let archive = ArchiveVersion::V5;
+        let mut page = Vec::new();
+        page.extend(7_i32.to_le_bytes());
+        for value in [210.0_f64, 297.0, 10.0, 11.0, 12.0, 13.0] {
+            page.extend(value.to_le_bytes());
+        }
+        page.extend(utf16_bytes("witness-printer"));
+        page.extend([0xde, 0xad, 0xbe, 0xef]);
+
+        let mut body = vec![0x13];
+        body.extend(1_i32.to_le_bytes());
+        body.extend(210.0_f64.to_le_bytes());
+        body.extend(297.0_f64.to_le_bytes());
+        body.extend([0; 16]);
+        for _ in 0..6 {
+            body.extend(0.0_f64.to_le_bytes());
+        }
+        body.extend([0; 16]);
+        body.extend(anonymous_chunk(archive, 7, &page));
+        body.push(1);
+
+        let value = parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
+        assert_eq!(value.view_type, 1);
+        assert!(value.projection_locked);
+        let page = value.page_settings.expect("page settings");
+        assert_eq!(page.page_number, 7);
+        assert_eq!(page.width_mm, 210.0);
+        assert_eq!(page.height_mm, 297.0);
+        assert_eq!(page.margins_mm, [10.0, 11.0, 12.0, 13.0]);
+        assert_eq!(page.printer_name, "witness-printer");
+    }
 }

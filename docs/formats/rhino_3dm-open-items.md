@@ -495,7 +495,12 @@ for viewport userdata, V3 wallpaper, and view attributes, and the short zero
 `TCODE_ENDOFTABLE` terminator. The reader skips unknown children before that
 marker and accepts a bounded suffix after it. The Rust view parser now requires
 the source child type, stops at the marker, and reports a typed loss for a
-failed child or malformed named-construction-plane list.
+failed child or malformed named-construction-plane list. The view-attributes
+reader invokes `ON_3dmPageSettings::Read` at outer minor 2. Its anonymous child
+has version 1.0 on write, a page number, width and height, four millimeter
+margins, and a UTF-16 printer name; the major-1 reader accepts every
+nonnegative minor and skips later bytes at the child boundary before continuing
+with the outer fields.
 The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
 major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
 `ON_3dmApplication` reads its three strings without a major/minor gate; all

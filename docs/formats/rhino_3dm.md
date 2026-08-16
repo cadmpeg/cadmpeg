@@ -4976,8 +4976,27 @@ View-attributes packed versions 1.1 through 1.9 add view type; page dimensions;
 display-mode UUID; anonymous page settings; projection lock; an array of
 versioned clipping-plane equations, UUIDs, enabled flags, and depths; named-view
 UUID; construction-Z-axis flag; focal-blur values; rendering pixel size; and
-section behavior. Page sizes and margins are millimeters already. The nested
-view-attribute clipping-plane record has major version 1. Minor 0 has no depth;
+section behavior. Page sizes and margins are millimeters already. At outer minor
+2 and later, the display-mode UUID is followed by an anonymous page-settings
+child:
+
+```text
+i32 page-settings major = 1
+i32 page-settings minor >= 0
+i32 page number
+f64 width in millimeters
+f64 height in millimeters
+f64 left margin in millimeters
+f64 right margin in millimeters
+f64 top margin in millimeters
+f64 bottom margin in millimeters
+UTF-16 printer name
+```
+
+The page-settings writer emits version 1.0. Its reader requires major version 1,
+accepts every nonnegative minor, and skips later bytes at the anonymous child
+boundary. The nested view-attribute clipping-plane record has major version 1.
+Minor 0 has no depth;
 minor 1 and 2 add a depth whose legacy enabled state is true only for a
 nonnegative value other than `1.234321e38`; minor 3 and every later minor store
 an explicit depth-enabled flag. A bounded reader consumes this known prefix and
