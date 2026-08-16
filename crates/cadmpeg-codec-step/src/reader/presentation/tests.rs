@@ -939,6 +939,39 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
 }
 
 #[test]
+fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
+    for input in [
+        include_bytes!("tests/data/ap10_duplicate_transparency_first.p21").as_slice(),
+        include_bytes!("tests/data/ap10_duplicate_transparency_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode duplicate transparency witness");
+        let appearance = result
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .find(|appearance| {
+                appearance
+                    .base_color
+                    .is_some_and(|color| color.r == 1.0 && color.g == 0.0 && color.b == 0.0)
+            })
+            .expect("red appearance");
+        assert_eq!(appearance.base_color.expect("appearance color").a, 1.0);
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::SurfaceTransparencyConflict.kind()
+                && loss.message.contains("rendering #12")
+                && loss.message.contains("#10=0.25")
+                && loss.message.contains("#11=0.75")
+                && loss.message.contains("transparency omitted")
+        }));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn point_style_invisibility_on_a_point_set_is_binding_scoped() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('point',(0.,0.,0.));

@@ -543,26 +543,6 @@ QA audit: reopened after reviewing closing commit cbbbe401b. The closing commit 
 
 **Note.** Reordering the same two relations can change the occurrence transform without changing the represented usage. The current code silently selects one candidate.
 
-### AP-10. Multiple surface transparency properties
-
-**Question.** How does a surface style select transparency when one
-`SURFACE_STYLE_RENDERING_WITH_PROPERTIES` references multiple valid
-`SURFACE_STYLE_TRANSPARENT` properties?
-
-**Known.** `crates/cadmpeg-codec-step/src/reader/presentation.rs:1212-1228`
-walks the property references and returns the first finite transparency. No
-conflict loss records distinct transparency values, and the specification
-defines alpha conversion but no precedence for multiple properties.
-
-**Need.** We need a witness file with two distinct transparency properties
-under one rendering record and a reordered copy, plus the source uniqueness or
-precedence rule.
-
-**Note.** Reordering the property references can change appearance alpha while
-the color and both transparency properties remain valid. The existing
-transparency test uses separate rendering records and does not exercise this
-selection.
-
 ### TS-01. Invalid repositioned tessellation placement
 
 **Question.** What happens when a REPOSITIONED_TESSELLATED_ITEM has a missing, invalid, or unknown placement reference?

@@ -1087,7 +1087,7 @@ fn find_color(
         return None;
     }
     let transparency = (domain == StyleDomain::Surface)
-        .then(|| surface_transparency(record, exchange))
+        .then(|| surface_transparency(id, record, exchange, losses))
         .flatten();
     let mut result = (|| {
         let side_rank = if domain == StyleDomain::Surface {
@@ -1244,22 +1244,46 @@ fn find_color(
     result
 }
 
-fn surface_transparency(record: &RawRecord, exchange: &Exchange) -> Option<f64> {
-    record
+fn surface_transparency(
+    id: u64,
+    record: &RawRecord,
+    exchange: &Exchange,
+    losses: &mut Vec<LossNote>,
+) -> Option<f64> {
+    let candidates = record
         .partials
         .iter()
         .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
         .flat_map(|partial| partial.parameters.iter().flat_map(references))
-        .filter_map(|id| exchange.records.get(&id))
-        .filter_map(|property| {
-            property
+        .filter_map(|property_id| {
+            let property = exchange.records.get(&property_id)?;
+            let transparency = property
                 .partials
                 .iter()
                 .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
                 .and_then(|partial| partial.parameters.first())
-                .and_then(ValueExt::number)
+                .and_then(ValueExt::number)?;
+            transparency
+                .is_finite()
+                .then_some((property_id, transparency))
         })
-        .find(|transparency| transparency.is_finite() && (0.0..=1.0).contains(transparency))
+        .filter(|(_, transparency)| (0.0..=1.0).contains(transparency))
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [] => None,
+        [(_, transparency)] => Some(*transparency),
+        _ => {
+            let details = candidates
+                .iter()
+                .map(|(property_id, transparency)| format!("#{property_id}={transparency}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            losses.push(StepLossCode::SurfaceTransparencyConflict.note(format!(
+                "surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"
+            )));
+            None
+        }
+    }
 }
 
 fn surface_side_rank(record: &RawRecord) -> u8 {

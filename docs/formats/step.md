@@ -987,12 +987,21 @@ forbids repeating a style type except `EXTERNALLY_DEFINED_STYLE` and
 `SURFACE_STYLE_USAGE`; WR2 permits at most two `SURFACE_STYLE_USAGE` values;
 WR3 requires two such values to apply to opposite surface sides.
 `surface_side_style.styles` contains at most one value of each style type, and
-`surface_style_rendering_with_properties.properties` contains at most one
-value of each property type. A valid assignment therefore has no two
-same-side surface renderings or two transparency values to rank. Distinct
-surface sides are handled by the CADIR side projection above. The format does
-not define a color or transparency precedence for other applicable style
-characteristics.
+ISO 10303-46 §6.4.62 defines
+`surface_style_rendering_with_properties.properties` as `SET[1:2] OF
+rendering_properties_select`; WR1 requires all property values to have
+different types. Section 6.4.65 defines `SURFACE_STYLE_TRANSPARENT` and
+restricts `transparency` to `0.0..1.0`. A valid rendering therefore has at most
+one transparency property, and no transparency precedence is defined for a
+second value. Distinct surface sides are handled by the CADIR side projection
+above. The format does not define a color or transparency precedence for other
+applicable style characteristics.
+
+CADIR decision: if a malformed rendering record contains multiple finite
+`SURFACE_STYLE_TRANSPARENT` values, the decoder retains the resolved color,
+omits transparency for that rendering, and records
+`presentation.surface-transparency-conflict`. It never selects a value from
+the SET serialization order.
 
 ISO 10303-46 §6.3.35 defines `surface_side` as `.POSITIVE.`, `.NEGATIVE.`,
 and `.BOTH.`. `.POSITIVE.` is the side in the surface-normal direction,
