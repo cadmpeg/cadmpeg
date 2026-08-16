@@ -543,9 +543,11 @@ structure. A `REFERENCE` section adds the schema populations of its referenced
 exchange structures. The inclusion is transitive, and an entity occurs at most
 once. A resource that does not resolve to an exchange structure contributes no
 entities. This population is the conformance population; it does not import a
-referenced file's numeric DATA names into the local exchange.
-ISO 10303-21:2016 §§8.2.5, 10.2, 11.2, and Annex J define this population and
-the distributed exchange meaning.
+referenced file's numeric DATA names into the local exchange. The [Part 21
+edition-3 text](https://www.steptools.com/stds/step/IS_final_p21e3.html)
+§§8.2.5, 10.2, 11.2, and Annex J define this population and the distributed
+exchange meaning. Annex J states that distribution changes the location of
+content, not its meaning.
 
 ## 7. Edition 3 sections
 
@@ -590,8 +592,9 @@ sections, units, or other records into the local exchange. Numeric instance
 names are unique within their own exchange structure; the URI fragment and
 anchor name identify the cross-resource target. A target that is not an entity
 or value in the current `FILE_SCHEMA`, or that cannot be resolved, has the
-format result `$`. ISO 10303-21:2016 §§10.2.5–10.2.7 and Annex J define this
-single-target substitution across distributed exchange structures.
+format result `$`. The [Part 21 edition-3 text](https://www.steptools.com/stds/step/IS_final_p21e3.html)
+§§10.2.5–10.2.7 and Annex J define this single-target substitution across
+distributed exchange structures.
 
 CADIR decision: a standalone clear-text input has no implicit transport base
 URI. The codec does not derive one from `FILE_NAME.name`, any other header

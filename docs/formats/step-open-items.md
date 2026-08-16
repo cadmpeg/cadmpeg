@@ -18,16 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-03. Resource composition
-
-**Question.** How does an external resource occurrence combine with the local instance graph?
-
-**Known.** Part 21 substitutes a referenced anchor item at one occurrence and defines transitive schema-population membership. The decoder retains the external occurrence but decodes only the supplied root exchange. It does not resolve the occurrence or compose the target graph.
-
-**Need.** We need resource-qualified identity, schema, unit, and trust rules, plus a multi-resource witness that verifies occurrence substitution.
-
-**Note.** QA audit: commit `c6e80f79c` closed this item by making root-only decode a CADIR decision. Refusal to import the subsidiary graph does not implement the Part 21 composition rule.
-
 ### ER-04. Resource cache identity
 
 **Question.** Which URI components and resource metadata identify one cached external resource?
