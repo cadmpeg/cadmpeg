@@ -3511,13 +3511,60 @@ validity, and three dimensionless view-scale values. Camera locations, targets,
 frustum coordinates, construction-plane origins, and grid spacing are length
 values. Camera axes and view scale are not scaled.
 
-A saved or active view list has a bounded `i32` count followed by complete view
-chunks. A view enters the typed `views` arena only after its child chunks and
-end marker parse successfully. If a framed view record fails child parsing, it
-is omitted from the typed arena and emits a
+A saved or active view list has this body:
+
+```text
+i32 count
+repeat count times:
+  long TCODE_VIEW_RECORD
+    ordered view-child stream
+```
+
+The named-construction-plane list has the same count framing, with one long
+`TCODE_VIEW_CPLANE` child per count. The named-view and active-view lists use
+long `TCODE_VIEW_RECORD` children. The list records are CRC-bearing; their CRC
+covers the count and any direct suffix bytes and excludes each complete child
+chunk. Each child has its own CRC and bounded body. The readers require
+the defined child typecode for every counted child; an unexpected typecode or
+short framing fails that list read.
+
+CADIR rejects a negative count or a count above 65536 before it frames any
+child. This is a CADIR admission bound, not a change to the on-disk `i32`
+count field.
+
+A view record writes these children in order when their archive-version gates
+are met:
+
+```text
+long  TCODE_VIEW_VIEWPORT
+long  TCODE_VIEW_VIEWPORT_USERDATA       (archive >= 4 and userdata exists)
+long  TCODE_VIEW_CPLANE
+long  TCODE_VIEW_TARGET
+short TCODE_VIEW_V3_DISPLAYMODE
+long  TCODE_VIEW_POSITION
+short TCODE_VIEW_SHOWCONGRID
+short TCODE_VIEW_SHOWCONAXES
+short TCODE_VIEW_SHOWWORLDAXES
+long  TCODE_VIEW_NAME
+long  TCODE_VIEW_TRACEIMAGE
+long  TCODE_VIEW_WALLPAPER
+long  TCODE_VIEW_WALLPAPER_V3             (archive >= 3)
+long  TCODE_VIEW_ATTRIBUTES               (archive >= 4)
+short TCODE_ENDOFTABLE = 0
+```
+
+The view reader accepts these children in any order, skips unknown complete
+chunks, and stops typed-child decoding at the short zero-valued
+`TCODE_ENDOFTABLE`. Bytes after that marker remain an untyped suffix through
+the `TCODE_VIEW_RECORD` boundary. The marker is required; a missing or
+non-short/nonzero marker fails the view read. A view enters the typed `views`
+arena only after its known children and marker parse successfully. If a framed
+view record fails child parsing, it is omitted from the typed arena and emits a
 `presentation.record-dropped` loss; no synthetic identity, visibility, or child
-record is created. If the list cannot frame a later child, parsing stops at the
-bounded failure and emits the same loss for that record boundary.
+record is created. If a counted view child has the wrong type or the list
+cannot frame a later child, parsing stops at that bounded failure and emits the
+same loss for that record boundary. CADIR decision: a malformed
+named-construction-plane list is omitted as a whole and emits the same loss.
 
 View-attributes packed versions 1.1 through 1.9 add view type; page dimensions;
 display-mode UUID; anonymous page settings; projection lock; an array of
@@ -3533,9 +3580,9 @@ clipping-plane object's separate record uses the minor-0-through-5 grammar in
 section 13.4, including the minor-5 participation items.
 
 Each known view child consumes its bounded known prefix and skips a suffix
-before that child boundary. Unknown child chunks are skipped as complete
-bounded chunks. `TCODE_ENDOFTABLE` remains the required final view-list
-terminator.
+before that child boundary. Unknown child chunks before the end marker are
+skipped as complete bounded chunks. `TCODE_ENDOFTABLE` terminates the typed
+view-child stream; later bytes remain bounded suffix data.
 
 Trace images store path, width, height, plane, grayscale, hidden, filtered, and
 file-reference state. Wallpaper stores path, grayscale, hidden, and file
@@ -4033,10 +4080,10 @@ boundary is available for preservation.
 
 The settings table has a different boundary rule. Each top-level settings item
 is a length-bounded chunk. An unknown top-level typecode is skipped by ending
-that chunk, without assigning a payload grammar. The counted named-view and
-named-construction-plane lists require each child to have their defined child
-typecode; an unexpected child type is a read failure, not a generically
-skippable future item.
+that chunk, without assigning a payload grammar. The counted named-view,
+active-view, and named-construction-plane lists require each child to have its
+defined child typecode and long framing; an unexpected child type is a read
+failure, not a generically skippable future item.
 
 Opaque records do not select neutral fields or partial typed state. Retained
 bytes, when present, cover the complete record boundary.

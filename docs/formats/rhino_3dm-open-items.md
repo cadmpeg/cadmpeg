@@ -212,6 +212,16 @@ children, and leaves a later outer suffix at the settings-record boundary.
 The Rust document-data reader now recognizes this wrapper and reuses the
 source-defined major-1/major-2 userdata header parser; the anonymous payload
 remains class-owned.
+`ON_3dmSettings::Write_v2/Read_v2` also define the three counted presentation
+lists. Named construction planes use long `TCODE_VIEW_CPLANE` children; named
+views and active views use long `TCODE_VIEW_RECORD` children. Each outer list
+CRC covers the count and direct suffix bytes, excluding complete child chunks.
+`ON_3dmView::Write/Read` defines the ordered child writers, the archive gates
+for viewport userdata, V3 wallpaper, and view attributes, and the short zero
+`TCODE_ENDOFTABLE` terminator. The reader skips unknown children before that
+marker and accepts a bounded suffix after it. The Rust view parser now requires
+the source child type, stops at the marker, and reports a typed loss for a
+failed child or malformed named-construction-plane list.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
@@ -219,9 +229,10 @@ layout. Remove only rejection not required by that evidence.
 
 **Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
 settled; annotation settings, grid defaults, units/tolerances, plugin list,
-settings attributes, render-mesh, analysis-mesh, render-settings, and the
-render-settings userdata wrapper are now source-backed through their known
-prefixes, stream markers, and version gates.
+settings attributes, render-mesh, analysis-mesh, render-settings, render
+settings userdata, and the three counted view-list wrappers are now
+source-backed through their known prefixes, child types, stream markers, and
+version gates.
 The residual is the explicit
 writer-band/tagged/direct-reader audit for readers not yet characterized.
 

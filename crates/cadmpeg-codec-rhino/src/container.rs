@@ -10,8 +10,9 @@ use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
-    chunk_at, parse_eof, parse_header, verify_checksum, ArchiveVersion, ChecksumStatus,
-    FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    chunk_at, direct_checksum_ranges, parse_eof, parse_header, verify_checksum,
+    verify_checksum_ranges, ArchiveVersion, ChecksumStatus, FramingError, TCODE_CRC,
+    TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -189,6 +190,15 @@ fn checksum_warning(
         || matches!(typecode, TCODE_OBJECT_RECORD | TCODE_LAYER_RECORD)
     {
         crate::chunks::verify_checksum_ranges(data, &chunk, &[])
+    } else if matches!(
+        typecode,
+        TCODE_NAMED_PLANES | TCODE_NAMED_VIEWS | TCODE_VIEWS
+    ) {
+        let Ok(children) = list_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
     }
@@ -199,6 +209,49 @@ fn checksum_warning(
         ))),
         _ => Ok(None),
     }
+}
+
+/// Returns the complete nested chunks after a counted view-list prefix.
+///
+/// The list CRC covers the count and any direct suffix bytes, but not these
+/// complete child chunks. A malformed child has no recoverable checksum range;
+/// the owning view parser reports that framing failure separately.
+fn list_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let count = View::i32_le_at(data, chunk.body.start).ok_or(FramingError::Truncated {
+        offset: chunk.body.start,
+        needed: 4,
+    })?;
+    let child_count = usize::try_from(count).unwrap_or(0);
+    let mut offset = chunk
+        .body
+        .start
+        .checked_add(4)
+        .ok_or(FramingError::Overflow {
+            offset: chunk.body.start,
+        })?;
+    if offset > chunk.body.end {
+        return Err(FramingError::Truncated {
+            offset: chunk.body.end,
+            needed: offset - chunk.body.end,
+        });
+    }
+    let mut children = Vec::new();
+    for _ in 0..child_count {
+        let child = chunk_at(data, offset, chunk.body.end, archive, false)?;
+        if child.next_offset <= offset {
+            return Err(FramingError::structural(
+                offset,
+                "view-list child did not advance",
+            ));
+        }
+        children.push(child.range());
+        offset = child.next_offset;
+    }
+    Ok(children)
 }
 
 fn parse_record(

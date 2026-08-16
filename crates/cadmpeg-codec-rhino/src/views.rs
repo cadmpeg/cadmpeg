@@ -779,13 +779,14 @@ fn parse_view(
                 attributes_detail = Some(attributes);
             }
             TCODE_ENDOFTABLE => {
-                if !child.short || child.value != 0 || child.next_offset != record.body.end {
+                if !child.short || child.value != 0 {
                     return Err(FramingError::structural(
                         offset,
                         "view end marker is invalid",
                     ));
                 }
                 terminated = true;
+                break;
             }
             _ => {}
         }
@@ -875,6 +876,7 @@ fn parse_list(
     }
     let mut views = Vec::new();
     for index in 0..count {
+        let child_offset = reader.position();
         let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
             Ok(view) => view,
             Err(error) => {
@@ -887,17 +889,24 @@ fn parse_list(
                 break;
             }
         };
+        if view.typecode != VIEW_RECORD || view.short {
+            losses.push(
+                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "{kind} view list child at offset {child_offset} has unexpected typecode {:#010x}",
+                    view.typecode
+                )),
+            );
+            break;
+        }
         let next = view.next_offset;
-        if view.typecode == VIEW_RECORD && !view.short {
-            match parse_view(data, &view, archive, scale, kind, index) {
-                Ok(value) => views.push(value),
-                Err(error) => losses.push(
-                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
-                        "{kind} view record at offset {} was omitted after child parsing failed: {error}",
-                        view.header_start
-                    )),
-                ),
-            }
+        match parse_view(data, &view, archive, scale, kind, index) {
+            Ok(value) => views.push(value),
+            Err(error) => losses.push(
+                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "{kind} view record at offset {} was omitted after child parsing failed: {error}",
+                    view.header_start
+                )),
+            ),
         }
         if let Err(error) = reader.skip(next - reader.position()) {
             losses.push(
@@ -965,8 +974,14 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         }
         for record in &table.records {
             if record.typecode == NAMED_CPLANES {
-                if let Ok(values) = parse_named_cplanes(scan.data, record, scan.archive, scale) {
-                    cplanes.extend(values);
+                match parse_named_cplanes(scan.data, record, scan.archive, scale) {
+                    Ok(values) => cplanes.extend(values),
+                    Err(error) => losses.push(
+                        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                            "named construction-plane list at offset {} was omitted after parsing failed: {error}",
+                            record.range.start
+                        )),
+                    ),
                 }
             }
             if record.typecode == NAMED_VIEWS {
@@ -998,11 +1013,13 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 mod tests {
     use super::{
         legacy_clipping_depth, parse_attributes, parse_list, parse_viewport, Viewport,
-        UNSET_POSITIVE_FLOAT,
+        NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
-    use crate::test_support::test_dump::{anonymous_chunk, long_chunk, utf16_bytes};
+    use crate::test_support::test_dump::{
+        anonymous_chunk, crc_chunk, long_chunk, short_chunk, utf16_bytes,
+    };
 
     fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
         for coordinate in value {
@@ -1081,6 +1098,48 @@ mod tests {
             losses[0].code,
             crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
         );
+    }
+
+    #[test]
+    fn unexpected_view_child_type_stops_the_counted_list() {
+        let archive = ArchiveVersion::V5;
+        let child = crc_chunk(archive, NAMED_CPLANES, &[0]);
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(child);
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        assert!(views.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("unexpected typecode"));
+    }
+
+    #[test]
+    fn view_end_marker_stops_typed_children_before_bounded_suffix() {
+        let archive = ArchiveVersion::V5;
+        let mut view_body = short_chunk(archive, super::TCODE_ENDOFTABLE, 0);
+        view_body.extend([0xaa, 0xbb]);
+        let view = crc_chunk(archive, super::VIEW_RECORD, &view_body);
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(view);
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        assert_eq!(views.len(), 1);
+        assert!(losses.is_empty());
+        assert_eq!(views[0].children.len(), 1);
     }
 
     #[test]

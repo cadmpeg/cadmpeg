@@ -12,7 +12,7 @@ use cadmpeg_ir::IR_VERSION;
 use crate::chunks::{
     anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
     parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
-    TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT,
+    TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE, TCODE_SHORT,
 };
 use crate::settings;
 use crate::test_support::test_dump::*;
@@ -356,6 +356,28 @@ fn crc_mismatch_is_a_summary_warning_and_later_record_survives() {
     assert_eq!(
         summary.entries[2].attributes.get("record_count"),
         Some(&"2".to_string())
+    );
+}
+
+#[test]
+fn counted_view_list_crc_excludes_nested_children() {
+    let archive = ArchiveVersion::V5;
+    let child = crc_chunk(archive, 0x2000_813b, &[1, 2, 3]);
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    let child_range = 4..4 + child.len();
+    body.extend(child);
+    body.extend(short_chunk(archive, TCODE_ENDOFTABLE, 0));
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8035,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
+            .expect("view-list checksum framing"),
+        None
     );
 }
 
