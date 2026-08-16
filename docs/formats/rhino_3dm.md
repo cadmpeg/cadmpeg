@@ -2660,6 +2660,47 @@ The obsolete hatch extension is consumed after reading. Each valid matching
 record applies its base point in serialized order, so the last valid record
 owns the hatch base point; no such extension remains attached to the hatch.
 
+Archive version 60 and later may attach `ON_GradientColorData` class userdata
+to an `ON_Hatch`. The userdata class UUID and item UUID are
+`0C1AD613-4EFA-4F47-A147-4D79D77FCB0C`. Its application UUID is
+`7B0B585D-7A31-45D0-925E-BDD7DDF3E4E3`. The class userdata header and its
+outer anonymous child use section 7.2. The outer anonymous body contains one
+long `TCODE_ANONYMOUS_CHUNK` (`0x40008000`) major-1 chunk:
+
+```text
+anonymous gradient-data version 1.0
+i32 gradient type
+ON_3dPoint gradient start
+ON_3dPoint gradient end
+f64 repeat
+i32 color-stop count
+color-stop count × color stop
+```
+
+Gradient type values are 0 none, 1 linear, 2 radial, 3 disabled linear, and
+4 disabled radial. A color stop is a long `TCODE_ANONYMOUS_CHUNK`
+(`0x40008000`) major-1 chunk whose body is:
+
+```text
+ON_Color RGBA bytes
+f64 stop position
+```
+
+`ON_Color` is four raw bytes in red, green, blue, alpha order. The source
+writer emits the color-stop count as a nonnegative `i32`; the codec admits a
+nonnegative count only when every bounded stop fits the userdata payload and
+the allocation cap. The class reader requires major version 1, accepts only
+gradient types 0 through 4, consumes each stop at its child boundary, and
+closes the gradient-data chunk at its own boundary. Gradient start and end
+coordinates use document length conversion. Repeat and stop positions are
+unitless.
+
+The CADIR decision is to expose a recognized gradient userdata item as the
+hatch feature's native `gradient` parameter. Its JSON value contains the
+gradient type name and numeric value, scaled start and end points, repeat, and
+ordered RGBA stops. The hatch fill is still not rendered as neutral fill
+geometry; the source object record remains retained for native fidelity.
+
 ### 18.3 Detail views
 
 `ON_DetailView` uses an anonymous chunk with major version 1 and a nonnegative

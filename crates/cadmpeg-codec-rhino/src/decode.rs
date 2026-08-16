@@ -1112,12 +1112,16 @@ impl<'a> DecodeContext<'a> {
                 )),
             );
         }
-        if let Err(error) =
-            crate::hatch::apply_userdata(self.scan.data, &object.userdata, scale, &mut hatch)
-        {
+        if let Err(error) = crate::hatch::apply_userdata(
+            self.scan.data,
+            &object.userdata,
+            scale,
+            self.archive(),
+            &mut hatch,
+        ) {
             self.scan_warning(
                 source_order,
-                &format!("hatch base-point extension failed: {error}"),
+                &format!("hatch userdata extension failed: {error}"),
             );
         }
         let key = self.object_key(identity, source_order);
@@ -1157,6 +1161,13 @@ impl<'a> DecodeContext<'a> {
                 format!("{},{}", hatch.basepoint[0], hatch.basepoint[1]),
             ),
         ]);
+        if let Some(gradient) = hatch
+            .gradient
+            .as_ref()
+            .and_then(crate::hatch::gradient_json)
+        {
+            parameters.insert("gradient".to_string(), gradient);
+        }
         for (index, (kind, id)) in loop_ids.iter().enumerate() {
             parameters.insert(
                 format!("loop_{index}"),

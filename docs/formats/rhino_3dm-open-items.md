@@ -135,11 +135,20 @@ payload child, minor-gated header fields, and suffix skipping. The payload
 grammar is owned by the userdata class. Unknown classes can be preserved but
 do not gain typed fields from the header.
 
+The built-in `ON_GradientColorData` class userdata is now settled for archive
+version 60 and later. Its class and item UUID is
+`0C1AD613-4EFA-4F47-A147-4D79D77FCB0C`; the source writer and reader in
+`opennurbs_hatch.cpp` define the bounded anonymous gradient-data and color-stop
+chunks. The Rhino decoder maps its type, scaled endpoints, repeat, and ordered
+RGBA stops to the hatch feature's native `gradient` parameter while retaining
+the source object record because neutral hatch fill geometry is not produced.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
-**Note.** Narrowed 2026-08-16. Generic header and boundary semantics are
-settled; future class-specific payload semantics remain open.
+**Note.** Narrowed 2026-08-16. Generic header and boundary semantics and the
+built-in hatch gradient userdata are settled; other future class-specific
+payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

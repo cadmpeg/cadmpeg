@@ -1041,8 +1041,9 @@ fn extended_geometry_json(
             scale,
         );
     } else if value.class_id == crate::hatch::CLASS {
-        let hatch =
+        let mut hatch =
             crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
+        crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch).ok()?;
         let mut plane = hatch.plane;
         for coordinate in &mut plane.origin.0 {
             *coordinate *= scale;
@@ -1061,7 +1062,7 @@ fn extended_geometry_json(
                 })
             })
             .collect::<Vec<_>>();
-        serde_json::json!({
+        let mut semantic = serde_json::json!({
             "kind": "hatch",
             "plane": {
                 "origin": plane.origin.0,
@@ -1075,7 +1076,16 @@ fn extended_geometry_json(
             "pattern_index": hatch.pattern_index,
             "loops": loops,
             "basepoint": hatch.basepoint,
-        })
+        });
+        if let Some(gradient) = hatch
+            .gradient
+            .as_ref()
+            .and_then(crate::hatch::gradient_json)
+            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+        {
+            semantic["gradient"] = gradient;
+        }
+        semantic
     } else if value.class_id == crate::detail::CLASS {
         let detail =
             crate::detail::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
