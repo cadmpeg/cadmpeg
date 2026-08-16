@@ -1267,6 +1267,38 @@ class/item/application triple owns the typed value. A malformed recognized
 payload leaves the object attributes and geometry admitted, omits this native
 value, and retains the bounded userdata record for opaque fidelity handling.
 
+#### 7.2.14 `ON_ThickeningUserData`
+
+`ON_ThickeningUserData` uses class UUID
+`AA03D9C3-4CCF-4431-A06E-25F38CF3913F`, item UUID
+`6AA7CCC3-2721-410F-AA56-E8AB4F3ECE67`, and application UUID
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. It is attached to the
+`ON_3dmObjectAttributes` mesh-modifier owner and uses the same XML userdata
+payload framing as section 7.2.12. The writer emits XML userdata version 2;
+the reader accepts versions 1 and 2 and skips remaining bytes at the bounded
+userdata payload boundary.
+
+The XML document has root `xml` and a direct child named
+`thickening-object-data`. Parameter and property names are matched
+case-insensitively. A parameter with no `type` property is absent to the
+parameter reader. Unknown child elements are ignored. Missing parameters use
+the class getter defaults below:
+
+| XML child | Type | Meaning | Missing value |
+| --- | --- | --- | ---: |
+| `on` | bool | Enables thickening | `false` |
+| `solid` | bool | Adds side walls to make an open mesh solid | `true` |
+| `both-sides` | bool | Thickens on both sides of the original surface | `false` |
+| `offset-only` | bool | Produces only the offset surface | `false` |
+| `distance` | double | Thickening distance | `0.1` |
+
+CADIR stores the recognized item under the owning object presentation's
+`mesh_modifiers.thickening` native value. It does not create geometry or a
+second object identity. The first serialized matching class/item/application
+triple owns the typed value. A malformed recognized payload leaves the object
+attributes and geometry admitted, omits this native value, and retains the
+bounded userdata record for opaque fidelity handling.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2117,6 +2149,11 @@ The `ON_EdgeSofteningUserData` item is a typed attributes carrier. Its XML
 payload and edge-softening fields are specified in section 7.2.13; the
 resulting modifier is retained under the same object presentation without
 changing the transferred object geometry.
+
+The `ON_ThickeningUserData` item is a typed attributes carrier. Its XML
+payload and thickening fields are specified in section 7.2.14; the resulting
+modifier is retained under the same object presentation without changing the
+transferred object geometry.
 
 ## 10. Compressed buffers
 

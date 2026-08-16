@@ -10,6 +10,7 @@ const XML_USERDATA_VERSION: i32 = 2;
 const DISPLACEMENT_ROOT: &str = "new-displacement-object-data";
 const DISPLACEMENT_SUB: &str = "sub";
 const EDGE_SOFTENING_ROOT: &str = "edge-softening-object-data";
+const THICKENING_ROOT: &str = "thickening-object-data";
 
 /// The class UUID registered by `ON_DisplacementUserData`.
 pub(crate) const DISPLACEMENT_CLASS: Uuid = Uuid::from_canonical([
@@ -31,6 +32,16 @@ pub(crate) const EDGE_SOFTENING_ITEM: Uuid = Uuid::from_canonical([
     0x8c, 0xbe, 0x61, 0x60, 0x5c, 0xbd, 0x4b, 0x4d, 0x8c, 0xd2, 0x7c, 0xe0, 0xa7, 0xc8, 0xc2, 0xd8,
 ]);
 
+/// The class UUID registered by `ON_ThickeningUserData`.
+pub(crate) const THICKENING_CLASS: Uuid = Uuid::from_canonical([
+    0xaa, 0x03, 0xd9, 0xc3, 0x4c, 0xcf, 0x44, 0x31, 0xa0, 0x6e, 0x25, 0xf3, 0x8c, 0xf3, 0x91, 0x3f,
+]);
+
+/// The item UUID returned by `ON_ThickeningUserData::Uuid`.
+pub(crate) const THICKENING_ITEM: Uuid = Uuid::from_canonical([
+    0x6a, 0xa7, 0xcc, 0xc3, 0x27, 0x21, 0x41, 0x0f, 0xaa, 0x56, 0xe8, 0xab, 0x4f, 0x3e, 0xce, 0x67,
+]);
+
 /// The application UUID registered by `ON_MeshModifier::PlugInId`.
 pub(crate) const MESH_MODIFIER_PLUGIN: Uuid = Uuid::from_canonical([
     0xf2, 0x93, 0xde, 0x5c, 0xd1, 0xff, 0x46, 0x7a, 0x9b, 0xd1, 0xca, 0xc8, 0xec, 0x4b, 0x2e, 0x6b,
@@ -43,6 +54,8 @@ pub(crate) struct MeshModifiers {
     pub(crate) displacement: Option<DisplacementModifier>,
     /// The edge-softening modifier, when the object carries one.
     pub(crate) edge_softening: Option<EdgeSofteningModifier>,
+    /// The thickening modifier, when the object carries one.
+    pub(crate) thickening: Option<ThickeningModifier>,
 }
 
 /// The XML parameters written by `ON_DisplacementUserData`.
@@ -125,6 +138,24 @@ pub(crate) struct EdgeSofteningModifier {
     pub(crate) edge_angle_threshold: f64,
 }
 
+/// The XML parameters written by `ON_ThickeningUserData`.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct ThickeningModifier {
+    /// `ON_XMLUserData` payload version.
+    pub(crate) xml_version: i32,
+    /// Whether thickening is enabled.
+    pub(crate) on: bool,
+    /// Whether an open mesh receives side walls.
+    pub(crate) solid: bool,
+    /// Whether thickening is applied to both sides.
+    pub(crate) both_sides: bool,
+    /// Whether only the offset surface is produced.
+    pub(crate) offset_only: bool,
+    /// Thickening distance.
+    pub(crate) distance: f64,
+}
+
 /// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
 pub(crate) fn parse_attribute_userdata(
     bytes: &[u8],
@@ -136,7 +167,12 @@ pub(crate) fn parse_attribute_userdata(
         first_matching_descriptor(descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM);
     let edge_softening_descriptor =
         first_matching_descriptor(descriptors, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM);
-    if displacement_descriptor.is_none() && edge_softening_descriptor.is_none() {
+    let thickening_descriptor =
+        first_matching_descriptor(descriptors, THICKENING_CLASS, THICKENING_ITEM);
+    if displacement_descriptor.is_none()
+        && edge_softening_descriptor.is_none()
+        && thickening_descriptor.is_none()
+    {
         return None;
     }
 
@@ -178,10 +214,32 @@ pub(crate) fn parse_attribute_userdata(
             }
         }
     });
-    (displacement.is_some() || edge_softening.is_some()).then_some(MeshModifiers {
-        displacement,
-        edge_softening,
-    })
+    let thickening = thickening_descriptor.and_then(|descriptor| {
+        let Some(payload_range) = descriptor.payload_range.clone() else {
+            warnings.push(format!(
+                "thickening userdata at {} has no bounded payload",
+                descriptor.range.start
+            ));
+            return None;
+        };
+        match parse_thickening(bytes, payload_range) {
+            Ok(thickening) => Some(thickening),
+            Err(error) => {
+                warnings.push(format!(
+                    "thickening userdata at {} dropped: {error}",
+                    descriptor.range.start
+                ));
+                None
+            }
+        }
+    });
+    (displacement.is_some() || edge_softening.is_some() || thickening.is_some()).then_some(
+        MeshModifiers {
+            displacement,
+            edge_softening,
+            thickening,
+        },
+    )
 }
 
 fn first_matching_descriptor(
@@ -211,6 +269,14 @@ fn parse_edge_softening(
 ) -> Result<EdgeSofteningModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
     parse_edge_softening_xml(&xml, xml_version)
+}
+
+fn parse_thickening(
+    bytes: &[u8],
+    payload_range: std::ops::Range<usize>,
+) -> Result<ThickeningModifier, FramingError> {
+    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    parse_thickening_xml(&xml, xml_version)
 }
 
 fn parse_xml_userdata(
@@ -336,6 +402,35 @@ fn parse_edge_softening_xml(
         faceted: field_bool(edge_softening, "unweld", false),
         force_softening: field_bool(edge_softening, "force-softening", false),
         edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0),
+    })
+}
+
+fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifier, FramingError> {
+    let document = roxmltree::Document::parse(xml)
+        .map_err(|error| FramingError::structural(0, format!("invalid thickening XML: {error}")))?;
+    let root = document.root_element();
+    if !same_name(root, "xml") {
+        return Err(FramingError::structural(
+            0,
+            format!(
+                "thickening XML root is `{}`, expected `xml`",
+                root.tag_name().name()
+            ),
+        ));
+    }
+    let thickening = direct_child(root, THICKENING_ROOT).ok_or_else(|| {
+        FramingError::structural(
+            0,
+            format!("thickening XML has no `{THICKENING_ROOT}` child"),
+        )
+    })?;
+    Ok(ThickeningModifier {
+        xml_version,
+        on: field_bool(thickening, "on", false),
+        solid: field_bool(thickening, "solid", true),
+        both_sides: field_bool(thickening, "both-sides", false),
+        offset_only: field_bool(thickening, "offset-only", false),
+        distance: field_f64(thickening, "distance", 0.1),
     })
 }
 
@@ -508,6 +603,18 @@ mod tests {
         )
     }
 
+    fn thickening_descriptor(
+        payload: &[u8],
+        application_uuid: Option<Uuid>,
+    ) -> AttributeUserdataDescriptor {
+        descriptor_with_ids(
+            0..payload.len(),
+            THICKENING_CLASS,
+            THICKENING_ITEM,
+            application_uuid,
+        )
+    }
+
     fn descriptor_with_ids(
         range: std::ops::Range<usize>,
         class_uuid: Uuid,
@@ -573,6 +680,14 @@ mod tests {
 <force-softening type=\"bool\">true</force-softening>\
 <edge-threshold type=\"double\">17.5</edge-threshold>\
 </edge-softening-object-data></xml>";
+
+    const THICKENING_XML: &str = "<xml><thickening-object-data>\
+<on type=\"bool\">true</on>\
+<solid type=\"bool\">false</solid>\
+<both-sides type=\"bool\">true</both-sides>\
+<offset-only type=\"bool\">true</offset-only>\
+<distance type=\"double\">0.25</distance>\
+</thickening-object-data></xml>";
 
     #[test]
     fn parses_v2_displacement_fields_and_sub_item() {
@@ -662,18 +777,78 @@ mod tests {
     }
 
     #[test]
-    fn parses_displacement_and_edge_softening_from_one_attributes_stream() {
+    fn parses_v2_thickening_fields() {
+        let payload = v2_payload(THICKENING_XML);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[thickening_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("thickening userdata");
+        let thickening = modifiers.thickening.expect("thickening");
+        assert_eq!(thickening.xml_version, 2);
+        assert!(thickening.on);
+        assert!(!thickening.solid);
+        assert!(thickening.both_sides);
+        assert!(thickening.offset_only);
+        assert_eq!(thickening.distance, 0.25);
+        assert!(modifiers.displacement.is_none());
+        assert!(modifiers.edge_softening.is_none());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn thickening_defaults_and_xml_names_are_stable() {
+        let xml = "<XML><THICKENING-OBJECT-DATA>\
+<ON TYPE=\"BOOL\">true</ON>\
+<SOLID TYPE=\"BOOL\">false</SOLID>\
+<BOTH-SIDES TYPE=\"BOOL\">true</BOTH-SIDES>\
+<OFFSET-ONLY TYPE=\"BOOL\">true</OFFSET-ONLY>\
+<distance>9</distance>\
+<unknown type=\"double\">99</unknown>\
+</THICKENING-OBJECT-DATA></XML>";
+        let payload = v2_payload(xml);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[thickening_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("thickening userdata");
+        let thickening = modifiers.thickening.expect("thickening");
+        assert!(thickening.on);
+        assert!(!thickening.solid);
+        assert!(thickening.both_sides);
+        assert!(thickening.offset_only);
+        assert_eq!(thickening.distance, 0.1);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn parses_all_mesh_modifiers_from_one_attributes_stream() {
         let displacement_payload = v2_payload("<xml><new-displacement-object-data/></xml>");
         let edge_start = displacement_payload.len();
         let edge_payload = v2_payload(EDGE_SOFTENING_XML);
+        let thickening_start = edge_start + edge_payload.len();
+        let thickening_payload = v2_payload(THICKENING_XML);
         let mut bytes = displacement_payload;
         bytes.extend(&edge_payload);
+        bytes.extend(&thickening_payload);
         let descriptors = [
             descriptor(&bytes[..edge_start], Some(MESH_MODIFIER_PLUGIN)),
             descriptor_with_ids(
-                edge_start..bytes.len(),
+                edge_start..thickening_start,
                 EDGE_SOFTENING_CLASS,
                 EDGE_SOFTENING_ITEM,
+                Some(MESH_MODIFIER_PLUGIN),
+            ),
+            descriptor_with_ids(
+                thickening_start..bytes.len(),
+                THICKENING_CLASS,
+                THICKENING_ITEM,
                 Some(MESH_MODIFIER_PLUGIN),
             ),
         ];
@@ -683,6 +858,7 @@ mod tests {
                 .expect("mesh modifiers");
         assert!(modifiers.displacement.is_some());
         assert!(modifiers.edge_softening.is_some());
+        assert!(modifiers.thickening.is_some());
         assert!(warnings.is_empty());
     }
 
@@ -764,6 +940,22 @@ mod tests {
         .is_none());
         assert!(edge_warnings.iter().any(|warning| {
             warning.contains("edge-softening userdata") && warning.contains("dropped")
+        }));
+
+        let malformed_thickening = v2_payload("<xml><thickening-object-data>");
+        let mut thickening_warnings = Vec::new();
+        assert!(parse_attribute_userdata(
+            &malformed_thickening,
+            &[thickening_descriptor(
+                &malformed_thickening,
+                Some(MESH_MODIFIER_PLUGIN),
+            )],
+            ArchiveVersion::V6,
+            &mut thickening_warnings,
+        )
+        .is_none());
+        assert!(thickening_warnings.iter().any(|warning| {
+            warning.contains("thickening userdata") && warning.contains("dropped")
         }));
     }
 }

@@ -393,6 +393,8 @@ struct MeshModifiersRecord {
     displacement: Option<DisplacementRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     edge_softening: Option<EdgeSofteningRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thickening: Option<ThickeningRecord>,
 }
 
 #[derive(Debug, Serialize)]
@@ -441,10 +443,22 @@ struct EdgeSofteningRecord {
     edge_angle_threshold: f64,
 }
 
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct ThickeningRecord {
+    xml_version: i32,
+    on: bool,
+    solid: bool,
+    both_sides: bool,
+    offset_only: bool,
+    distance: f64,
+}
+
 fn mesh_modifiers_record(modifiers: &crate::mesh_modifiers::MeshModifiers) -> MeshModifiersRecord {
     MeshModifiersRecord {
         displacement: modifiers.displacement.as_ref().map(displacement_record),
         edge_softening: modifiers.edge_softening.as_ref().map(edge_softening_record),
+        thickening: modifiers.thickening.as_ref().map(thickening_record),
     }
 }
 
@@ -495,6 +509,17 @@ fn edge_softening_record(
         faceted: edge_softening.faceted,
         force_softening: edge_softening.force_softening,
         edge_angle_threshold: edge_softening.edge_angle_threshold,
+    }
+}
+
+fn thickening_record(thickening: &crate::mesh_modifiers::ThickeningModifier) -> ThickeningRecord {
+    ThickeningRecord {
+        xml_version: thickening.xml_version,
+        on: thickening.on,
+        solid: thickening.solid,
+        both_sides: thickening.both_sides,
+        offset_only: thickening.offset_only,
+        distance: thickening.distance,
     }
 }
 

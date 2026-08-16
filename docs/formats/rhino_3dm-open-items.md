@@ -260,6 +260,14 @@ is `CB5EB395-BF1B-4112-8F2F-F728FCE8169C`, item UUID is
 the six edge-softening parameters. Section 7.2.13 and the decoder retain the
 typed `faceted` value from the XML `unweld` parameter.
 
+The built-in `ON_ThickeningUserData` class is also settled. Its class UUID is
+`AA03D9C3-4CCF-4431-A06E-25F38CF3913F`, item UUID is
+`6AA7CCC3-2721-410F-AA56-E8AB4F3ECE67`, and application UUID is
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. Its object-attributes payload uses
+`ON_XMLUserData` version 1 or 2 framing, the `xml`/`thickening-object-data`
+XML roots, and the source getter defaults for the five thickening parameters.
+Section 7.2.14 and the decoder retain the typed distance and Boolean values.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
