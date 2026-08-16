@@ -11,7 +11,9 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{dot, is_axis_aligned, PlaneEquation};
+use super::super::analytic::{
+    dot, is_axis_aligned, placed_planes, reconciled_model_plane, PlaneEquation,
+};
 use super::super::feature_history::{
     agreed_feature_affected_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
     section_sweep_allows_linear_extrusion, slot_fillet_cylinder,
@@ -89,27 +91,14 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         if support_ids.len() < 4 {
             continue;
         }
-        let planes = affected
+        let local_planes = placed_planes(scan);
+        let Some(planes) = affected
             .iter()
-            .filter_map(|id| {
-                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
-                let surface = ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == surface_id)?;
-                match surface.geometry {
-                    SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
-                        origin: [origin.x, origin.y, origin.z],
-                        normal: [normal.x, normal.y, normal.z],
-                    }),
-                    _ => None,
-                }
-            })
-            .collect::<Vec<_>>();
-        if planes.len() != affected.len() {
+            .map(|id| reconciled_model_plane(&local_planes, ir, *id))
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
-        }
+        };
         let cap_planes: [PlaneEquation; 2] = planes[..cap_ids.len()].try_into().expect("two caps");
         let Some(cylinder) = slot_fillet_cylinder(cap_planes, &planes[cap_ids.len()..]) else {
             continue;
@@ -164,6 +153,9 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     }
     transferred
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(in super::super) fn transfer_rowless_round_cylinders(
     scan: &ContainerScan,
