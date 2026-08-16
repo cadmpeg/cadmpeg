@@ -128,16 +128,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 7. Annotation, presentation, and tessellation
 
-### AP-12. Presentation PMI placement arbitration
-
-**Question.** How must the decoder preserve or withhold presentation placement when one annotation reaches multiple placement carriers?
-
-**Known.** The [ISO 10303-46 visual-presentation schema](https://ap238.org/SMRL_v8_final/data/resource_docs/visual_presentation/sys/5_schema.htm) permits an `ANNOTATION_TEXT_OCCURRENCE` to reach a `COMPOSITE_TEXT`; its text aggregates are sets, and each `TEXT_LITERAL` has a placement. The reader collects multiple text carriers and withholds unordered text (`crates/cadmpeg-codec-step/src/reader/pmi.rs:1157-1183`), but the annotation path asks for the first reachable placement (`crates/cadmpeg-codec-step/src/reader/pmi.rs:565-596`), and `find_placement` returns the first recursive match (`crates/cadmpeg-codec-step/src/reader/pmi.rs:1219-1249`).
-
-**Need.** Define an order-independent placement rule and a witness with two reachable text or annotation placement carriers at distinct transforms. The decoder must require one placement or preserve all placements.
-
-**Conflict.** A composite text with differently placed literals can have its text withheld while its neutral PMI placement changes with SET or record traversal order, without a placement loss.
-
 ## 8. Product structure and placement
 
 ### BM-02. BO-Model composition

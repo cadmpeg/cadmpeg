@@ -752,6 +752,51 @@ fn annotation_text_requires_one_reachable_carrier() {
 }
 
 #[test]
+fn composite_presentation_placement_does_not_depend_on_set_order() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let decode = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode composite placement witness")
+    };
+    let first = decode(include_bytes!(
+        "tests/data/ap12_composite_placement_first.p21"
+    ));
+    let reordered = decode(include_bytes!(
+        "tests/data/ap12_composite_placement_reordered.p21"
+    ));
+    for result in [&first, &reordered] {
+        let PmiDefinition::Presentation {
+            ref text,
+            ref placement,
+            ..
+        } = result.ir().model.pmi[0].definition
+        else {
+            panic!("composite annotation has the wrong definition")
+        };
+        assert!(text.is_none());
+        assert!(placement.is_none());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::PresentationAnnotationPlacementAmbiguous.kind()
+                && loss.message.contains("2 reachable placement carriers")
+        }));
+        let unknowns = result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown records");
+        for id in [11, 12, 13] {
+            assert!(
+                unknowns
+                    .iter()
+                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                "ambiguous presentation carrier #{id} was not retained"
+            );
+        }
+    }
+}
+
+#[test]
 fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
 

@@ -1747,7 +1747,20 @@ metadata loss is emitted, and every carrier and unresolved composition record
 remains named opaque data with its source links. Traversal order, aggregate
 serialization order, and entity identity never select a carrier. Unmodeled
 tessellated annotation carriers remain named opaque records with their source
-links. `PLUS_MINUS_TOLERANCE` carries
+links. ISO 10303-46 §5.4.11 defines `ANNOTATION_TEXT.mapping_target` as the
+placement of an annotation text, §5.4.23 defines `DEFINED_CHARACTER_GLYPH.placement`,
+and §5.4.41 defines `TEXT_LITERAL.placement`; §5.4.18 defines
+`COMPOSITE_TEXT.collected_text` as a SET and gives composite text no placement
+attribute. CADIR decision: for each presentation annotation, the reader
+collects every resolvable 3D placement carrier reached by the annotation's
+reference graph and counts each source placement identity once. A shared
+placement reference is one candidate. Exactly one candidate supplies the
+presentation PMI placement. No candidate leaves the placement absent. More
+than one candidate leaves the placement absent, retains the source annotation
+graph, and reports `pmi.presentation-annotation-placement-ambiguous`. The
+reader does not compose or select candidates from mapped-item structure,
+aggregate serialization order, record order, numeric entity identifiers, or
+equal transform values from different placement identities. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.

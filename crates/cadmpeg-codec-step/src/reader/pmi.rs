@@ -579,12 +579,32 @@ pub(super) fn decode(
             0,
         );
         let parameters = all_parameters(record).collect::<Vec<_>>();
-        let placement = parameters
-            .iter()
-            .flat_map(|value| references(value))
-            .find_map(|reference| {
-                find_placement(reference, exchange, geometry, &mut BTreeSet::new(), 0)
-            });
+        // Placement identity is the carrier key; the transform value cannot
+        // make two source carriers one semantic carrier.
+        let mut placement_candidates = BTreeMap::new();
+        let mut placement_visited = BTreeMap::new();
+        for reference in parameters.iter().flat_map(|value| references(value)) {
+            collect_placement_candidates(
+                reference,
+                exchange,
+                geometry,
+                &mut placement_visited,
+                &mut placement_candidates,
+                0,
+            );
+        }
+        let placement = match placement_candidates.len() {
+            0 => None,
+            1 => placement_candidates.values().next().copied(),
+            count => {
+                losses.push(StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
+                    format!(
+                        "presentation annotation #{id} has {count} reachable placement carriers with no unique placement"
+                    ),
+                ));
+                None
+            }
+        };
         let mut semantics = parameters
             .iter()
             .flat_map(|value| references(value))
@@ -1216,37 +1236,43 @@ fn collect_annotation_text(
     }
 }
 
-fn find_placement(
+fn collect_placement_candidates(
     id: u64,
     exchange: &Exchange,
     geometry: &GeometryData,
-    visited: &mut BTreeSet<u64>,
+    visited: &mut BTreeMap<u64, usize>,
+    candidates: &mut BTreeMap<u64, Transform>,
     depth: usize,
-) -> Option<Transform> {
-    if depth >= 256 {
-        return None;
+) {
+    // Retain the shortest depth so the bounded traversal is independent of
+    // aggregate member order when a graph has alternate paths.
+    if depth >= 256
+        || visited
+            .get(&id)
+            .is_some_and(|visited_depth| *visited_depth <= depth)
+    {
+        return;
     }
+    visited.insert(id, depth);
     if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&id) {
-        let y_axis = cadmpeg_ir::math::Vector3::new(
-            z_axis.y * x_axis.z - z_axis.z * x_axis.y,
-            z_axis.z * x_axis.x - z_axis.x * x_axis.z,
-            z_axis.x * x_axis.y - z_axis.y * x_axis.x,
+        candidates.insert(
+            id,
+            super::geometry::placement_transform((origin, z_axis, x_axis)),
         );
-        return Some(Transform {
-            rows: [
-                [x_axis.x, y_axis.x, z_axis.x, origin.x],
-                [x_axis.y, y_axis.y, z_axis.y, origin.y],
-                [x_axis.z, y_axis.z, z_axis.z, origin.z],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        });
     }
-    if !visited.insert(id) {
-        return None;
+    let Some(record) = exchange.records.get(&id) else {
+        return;
+    };
+    for reference in all_parameters(record).flat_map(references) {
+        collect_placement_candidates(
+            reference,
+            exchange,
+            geometry,
+            visited,
+            candidates,
+            depth + 1,
+        );
     }
-    all_parameters(exchange.records.get(&id)?)
-        .flat_map(references)
-        .find_map(|reference| find_placement(reference, exchange, geometry, visited, depth + 1))
 }
 
 fn push_annotation(

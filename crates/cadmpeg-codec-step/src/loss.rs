@@ -76,6 +76,8 @@ pub enum StepLossCode {
     BodyConflictingMappedPlacements,
     /// A presentation annotation has several text carriers and no order.
     PresentationAnnotationTextUnordered,
+    /// A presentation annotation has several placement carriers and no unique placement.
+    PresentationAnnotationPlacementAmbiguous,
     /// A dimensional characteristic has several named nominal measures.
     DimensionalNominalAmbiguous,
     /// A dimensional characteristic has several unnamed measure values.
@@ -315,6 +317,7 @@ impl StepLossCode {
         Self::NauoPlacementAmbiguous,
         Self::BodyConflictingMappedPlacements,
         Self::PresentationAnnotationTextUnordered,
+        Self::PresentationAnnotationPlacementAmbiguous,
         Self::DimensionalNominalAmbiguous,
         Self::DimensionalUnnamedMeasureAmbiguous,
         Self::PmiLengthUnitUnresolved,
@@ -454,6 +457,9 @@ impl StepLossCode {
             Self::BodyConflictingMappedPlacements => "product.body-conflicting-mapped-placements",
             Self::PresentationAnnotationTextUnordered => {
                 "pmi.presentation-annotation-text-unordered"
+            }
+            Self::PresentationAnnotationPlacementAmbiguous => {
+                "pmi.presentation-annotation-placement-ambiguous"
             }
             Self::DimensionalNominalAmbiguous => "pmi.dimensional-nominal-ambiguous",
             Self::DimensionalUnnamedMeasureAmbiguous => "pmi.dimensional-unnamed-measure-ambiguous",
@@ -639,6 +645,7 @@ impl StepLossCode {
             }
             Self::MetadataStringInvalid
             | Self::PresentationAnnotationTextUnordered
+            | Self::PresentationAnnotationPlacementAmbiguous
             | Self::DimensionalNominalAmbiguous
             | Self::DimensionalUnnamedMeasureAmbiguous
             | Self::ConflictingScalarColors
@@ -833,6 +840,7 @@ mod tests {
                 "product.nauo-placement-ambiguous",
                 "product.body-conflicting-mapped-placements",
                 "pmi.presentation-annotation-text-unordered",
+                "pmi.presentation-annotation-placement-ambiguous",
                 "pmi.dimensional-nominal-ambiguous",
                 "pmi.dimensional-unnamed-measure-ambiguous",
                 "pmi.length-unit-unresolved",
