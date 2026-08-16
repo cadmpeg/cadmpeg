@@ -20,7 +20,7 @@ use crate::solve::incidence::{
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching,
     repair_distinct_domain_matching_with_budget, retain_distinct_matching_supports,
-    unique_coordinate_bijection, MatchingEdgeConstraint,
+    MatchingEdgeConstraint,
 };
 #[cfg(test)]
 use crate::solve::missing_edge::standard_mesh_boundary_assignments;
@@ -3299,7 +3299,7 @@ impl MeshQuotient {
             return output;
         }
         let mut output = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::<MeshOrientationSignature>::new();
         let mut oriented = oriented_edges.clone();
         walk(
             &assignment.boundaries,
@@ -3317,6 +3317,185 @@ impl MeshQuotient {
             budget,
         );
         output
+    }
+
+    fn assignment_options_for_directions(
+        &self,
+        assignment: &MeshFaceBoundaryAssignment,
+        direction_options: &MeshFaceDirectionOptions,
+        limit: usize,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Vec<(Vec<Vec<bool>>, Self)> {
+        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
+        }
+
+        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge
+                .checked_mul(2)?
+                .checked_add(usize::from(!reversed))
+        }
+
+        if limit == 0
+            || assignment.boundaries.len() != direction_options.first().map_or(0, Vec::len)
+        {
+            return Vec::new();
+        }
+        let work = assignment
+            .boundaries
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>()
+            .max(1);
+        let mut output = Vec::new();
+        let mut seen = HashSet::<MeshOrientationSignature>::new();
+        for directions in direction_options.iter().take(limit) {
+            if directions.len() != assignment.boundaries.len()
+                || directions
+                    .iter()
+                    .zip(&assignment.boundaries)
+                    .any(|(directions, boundary)| directions.len() != boundary.len())
+            {
+                continue;
+            }
+            if budget.is_some_and(|budget| !budget.charge_by(work)) {
+                break;
+            }
+            let mut quotient = self.clone();
+            let merged = assignment.boundaries.iter().zip(directions).all(
+                |(boundary, boundary_directions)| {
+                    if boundary.is_empty()
+                        || boundary
+                            .iter()
+                            .zip(boundary_directions)
+                            .any(|(use_, direction)| {
+                                use_.reversed.is_some_and(|required| required != *direction)
+                            })
+                    {
+                        return false;
+                    }
+                    (0..boundary.len()).all(|index| {
+                        let next = (index + 1) % boundary.len();
+                        let Some(left_end) = edge_end(boundary[index], boundary_directions[index])
+                        else {
+                            return false;
+                        };
+                        let Some(right_start) =
+                            edge_start(boundary[next], boundary_directions[next])
+                        else {
+                            return false;
+                        };
+                        quotient.merge(left_end, right_start).is_some()
+                    })
+                },
+            );
+            if !merged {
+                continue;
+            }
+            let mut signature_quotient = quotient.clone();
+            if seen.insert((signature_quotient.signature(), directions.clone())) {
+                output.push((directions.clone(), quotient));
+            }
+        }
+        output
+    }
+
+    fn merge_label_directions_in_place(
+        &mut self,
+        assignment: &MeshFaceBoundaryAssignment,
+        label_directions: &[Vec<bool>],
+        edge_orientations: &[Option<bool>],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Option<Vec<Vec<bool>>> {
+        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
+        }
+
+        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge
+                .checked_mul(2)?
+                .checked_add(usize::from(!reversed))
+        }
+
+        if assignment.boundaries.len() != label_directions.len()
+            || label_directions
+                .iter()
+                .zip(&assignment.boundaries)
+                .any(|(directions, boundary)| directions.len() != boundary.len())
+        {
+            return None;
+        }
+        let work = assignment
+            .boundaries
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>()
+            .max(1);
+        if budget.is_some_and(|budget| !budget.charge_by(work)) {
+            return None;
+        }
+        let directions = assignment
+            .boundaries
+            .iter()
+            .zip(label_directions)
+            .map(|(boundary, labels)| {
+                boundary
+                    .iter()
+                    .zip(labels)
+                    .map(|(use_, &label_direction)| {
+                        let orientation = edge_orientations.get(use_.edge)?.as_ref().copied()?;
+                        let direction = orientation ^ label_direction;
+                        use_.reversed
+                            .is_none_or(|required| required == direction)
+                            .then_some(direction)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let merged =
+            assignment
+                .boundaries
+                .iter()
+                .zip(&directions)
+                .all(|(boundary, boundary_directions)| {
+                    if boundary.is_empty() {
+                        return false;
+                    }
+                    (0..boundary.len()).all(|index| {
+                        let next = (index + 1) % boundary.len();
+                        let Some(left_end) = edge_end(boundary[index], boundary_directions[index])
+                        else {
+                            return false;
+                        };
+                        let Some(right_start) =
+                            edge_start(boundary[next], boundary_directions[next])
+                        else {
+                            return false;
+                        };
+                        self.merge(left_end, right_start).is_some()
+                    })
+                });
+        if !merged {
+            return None;
+        }
+        Some(directions)
+    }
+
+    fn assignment_option_for_label_directions(
+        &self,
+        assignment: &MeshFaceBoundaryAssignment,
+        label_directions: &[Vec<bool>],
+        edge_orientations: &[Option<bool>],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Option<(Vec<Vec<bool>>, Self)> {
+        let mut quotient = self.clone();
+        let directions = quotient.merge_label_directions_in_place(
+            assignment,
+            label_directions,
+            edge_orientations,
+            budget,
+        )?;
+        Some((directions, quotient))
     }
 
     pub(crate) fn point_assignment(
@@ -4749,6 +4928,7 @@ pub(crate) fn propagate_common_boundary_components(
 }
 
 type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
+type MeshFaceDirectionOptions = Vec<Vec<Vec<bool>>>;
 pub(crate) type MeshEndpointPair = (usize, [usize; 2]);
 pub(crate) type MeshEndpointSolutionFilter<'a> = &'a dyn Fn(&[MeshEndpointPair]) -> bool;
 type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -> bool;
@@ -4763,7 +4943,12 @@ pub(crate) struct MeshPartialEndpointConstraint<'a> {
 type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
 pub(crate) type MeshFaceEndpointConfigurations = Vec<MeshFaceEndpointConfiguration>;
 type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
-type MeshSelectionStateSignature = (bool, Vec<MeshFaceSelection>, MeshQuotientSignature);
+type MeshSelectionStateSignature = (
+    bool,
+    Vec<MeshFaceSelection>,
+    MeshQuotientSignature,
+    Vec<Option<bool>>,
+);
 type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
 
@@ -4840,6 +5025,10 @@ pub(crate) struct MeshSelectionSearch<'a> {
     pub(crate) edge_candidates: &'a [Vec<[usize; 2]>],
     pub(crate) edge_rows: &'a [EdgeRow],
     pub(crate) vertex_points: &'a [[f64; 3]],
+    pub(crate) port_identities: Option<&'a [[u32; 2]]>,
+    pub(crate) fixed_face_directions: Vec<Option<MeshFaceDirectionOptions>>,
+    pub(crate) fixed_edge_orientations: Vec<Option<bool>>,
+    pub(crate) edge_has_fixed_direction: Vec<bool>,
     pub(crate) selected: Vec<MeshFaceSelection>,
     pub(crate) visited_states: HashSet<MeshSelectionStateSignature>,
     pub(crate) solution: Option<(StandardTopology, Vec<usize>)>,
@@ -5488,6 +5677,804 @@ pub(crate) fn mesh_face_endpoint_configurations(
     Some(configurations)
 }
 
+/// Return whether an unordered endpoint configuration can close every
+/// boundary cycle of one face assignment. Configuration pairs are normalized
+/// by `mesh_face_endpoint_configurations`; the checks below still compare
+/// them as unordered pairs so callers cannot depend on that representation.
+fn endpoint_configuration_boundary_cycle_viable(
+    boundary: &[MeshBoundaryEdgeCandidate],
+    pairs: &HashMap<usize, [usize; 2]>,
+) -> Option<bool> {
+    if boundary.is_empty() {
+        return None;
+    }
+    let first = boundary.first()?;
+    let first_pair = *pairs.get(&first.edge)?;
+    let first_directions = if first_pair[0] == first_pair[1] {
+        vec![false]
+    } else {
+        vec![false, true]
+    };
+    let mut states = first_directions
+        .into_iter()
+        .map(|direction| {
+            let start = if direction {
+                first_pair[1]
+            } else {
+                first_pair[0]
+            };
+            let current = if direction {
+                first_pair[0]
+            } else {
+                first_pair[1]
+            };
+            (start, current)
+        })
+        .collect::<Vec<_>>();
+    for use_ in &boundary[1..] {
+        let pair = *pairs.get(&use_.edge)?;
+        let mut next = Vec::new();
+        for (start, current) in states {
+            for direction in [false, true] {
+                if pair[0] == pair[1] && direction {
+                    continue;
+                }
+                let edge_start = if direction { pair[1] } else { pair[0] };
+                let edge_end = if direction { pair[0] } else { pair[1] };
+                if edge_start == current {
+                    next.push((start, edge_end));
+                }
+            }
+        }
+        states = next;
+        if states.is_empty() {
+            return Some(false);
+        }
+    }
+    Some(states.into_iter().any(|(start, current)| start == current))
+}
+
+fn endpoint_configuration_cycles_viable(
+    assignment: &MeshFaceBoundaryAssignment,
+    configuration: &MeshFaceEndpointConfiguration,
+) -> Option<bool> {
+    let pairs = configuration.iter().copied().collect::<HashMap<_, _>>();
+    if pairs.len() != configuration.len() {
+        return None;
+    }
+    Some(
+        !assignment.boundaries.is_empty()
+            && assignment.boundaries.iter().all(|boundary| {
+                endpoint_configuration_boundary_cycle_viable(boundary, &pairs)
+                    .is_some_and(|viable| viable)
+            }),
+    )
+}
+
+fn endpoint_configuration_for_assignment(
+    assignment: &MeshFaceBoundaryAssignment,
+    edge_pairs: &[[usize; 2]],
+) -> Option<MeshFaceEndpointConfiguration> {
+    let mut pairs = HashMap::<usize, [usize; 2]>::new();
+    for use_ in assignment.boundaries.iter().flatten() {
+        let mut pair = *edge_pairs.get(use_.edge)?;
+        pair.sort_unstable();
+        match pairs.get(&use_.edge) {
+            Some(previous) if *previous != pair => return None,
+            Some(_) => {}
+            None => {
+                pairs.insert(use_.edge, pair);
+            }
+        }
+    }
+    let mut configuration = pairs.into_iter().collect::<Vec<_>>();
+    configuration.sort_unstable();
+    Some(configuration)
+}
+
+fn endpoint_configuration_boundary_directions(
+    boundary: &[MeshBoundaryEdgeCandidate],
+    pairs: &HashMap<usize, [usize; 2]>,
+) -> Option<Vec<Vec<bool>>> {
+    if boundary.is_empty() {
+        return None;
+    }
+    let first = boundary.first()?;
+    let first_pair = *pairs.get(&first.edge)?;
+    let first_directions = if first_pair[0] == first_pair[1] {
+        vec![false]
+    } else {
+        vec![false, true]
+    };
+    let mut states = first_directions
+        .into_iter()
+        .map(|direction| {
+            let start = if direction {
+                first_pair[1]
+            } else {
+                first_pair[0]
+            };
+            let current = if direction {
+                first_pair[0]
+            } else {
+                first_pair[1]
+            };
+            (start, current, vec![direction])
+        })
+        .collect::<Vec<_>>();
+    for use_ in &boundary[1..] {
+        let pair = *pairs.get(&use_.edge)?;
+        let mut next = Vec::new();
+        for (start, current, directions) in states {
+            for direction in [false, true] {
+                if pair[0] == pair[1] && direction {
+                    continue;
+                }
+                let edge_start = if direction { pair[1] } else { pair[0] };
+                let edge_end = if direction { pair[0] } else { pair[1] };
+                if edge_start != current {
+                    continue;
+                }
+                let mut directions = directions.clone();
+                directions.push(direction);
+                next.push((start, edge_end, directions));
+                if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
+                    return None;
+                }
+            }
+        }
+        states = next;
+        if states.is_empty() {
+            return Some(Vec::new());
+        }
+    }
+    Some(
+        states
+            .into_iter()
+            .filter_map(|(start, current, directions)| (start == current).then_some(directions))
+            .collect(),
+    )
+}
+
+fn endpoint_configuration_directions(
+    assignment: &MeshFaceBoundaryAssignment,
+    configuration: &MeshFaceEndpointConfiguration,
+) -> Option<MeshFaceDirectionOptions> {
+    let pairs = configuration.iter().copied().collect::<HashMap<_, _>>();
+    if pairs.len() != configuration.len() {
+        return None;
+    }
+    let mut alternatives = vec![Vec::new()];
+    for boundary in &assignment.boundaries {
+        let boundary_options = endpoint_configuration_boundary_directions(boundary, &pairs)?;
+        let mut next = Vec::new();
+        for prefix in &alternatives {
+            for boundary_directions in &boundary_options {
+                let mut alternative = prefix.clone();
+                alternative.push(boundary_directions.clone());
+                next.push(alternative);
+                if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
+                    return None;
+                }
+            }
+        }
+        alternatives = next;
+        if alternatives.is_empty() {
+            break;
+        }
+    }
+    Some(alternatives)
+}
+
+#[derive(Clone)]
+struct MeshEndpointRelationChoice {
+    assignment: usize,
+    edge_pairs: MeshFaceEndpointConfiguration,
+}
+type MeshEndpointRelationSelections = Vec<Vec<usize>>;
+type MeshFixedDirectionOption = (Vec<Vec<bool>>, MeshQuotient, Vec<Option<bool>>);
+
+fn canonical_mesh_boundary_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>> {
+    directions
+        .iter()
+        .map(|boundary| {
+            let complement = boundary
+                .iter()
+                .map(|direction| !direction)
+                .collect::<Vec<_>>();
+            if complement < *boundary {
+                complement
+            } else {
+                boundary.clone()
+            }
+        })
+        .collect()
+}
+
+fn propagate_endpoint_relation_domains(
+    domains: &mut [Vec<MeshEndpointRelationChoice>],
+    assigned: &mut [Option<[usize; 2]>],
+    budget: &WorkBudget<'_>,
+) -> bool {
+    loop {
+        let mut changed = false;
+        for choices in domains.iter_mut() {
+            if !budget.charge_by(choices.len().max(1)) {
+                return false;
+            }
+            let before = choices.len();
+            choices.retain(|choice| {
+                choice.edge_pairs.iter().all(|&(edge, pair)| {
+                    assigned[edge].is_none_or(|selected| same_unordered_pair(selected, pair))
+                })
+            });
+            if choices.is_empty() {
+                return false;
+            }
+            changed |= choices.len() != before;
+        }
+
+        let support_work = domains
+            .iter()
+            .flat_map(|choices| choices.iter())
+            .flat_map(|choice| choice.edge_pairs.iter())
+            .count()
+            .max(1);
+        if !budget.charge_by(support_work) {
+            return false;
+        }
+        let edge_support = domains
+            .iter()
+            .map(|choices| {
+                let mut pairs = HashMap::<usize, HashSet<[usize; 2]>>::new();
+                let mut counts = HashMap::<usize, usize>::new();
+                for choice in choices {
+                    for &(edge, pair) in &choice.edge_pairs {
+                        pairs.entry(edge).or_default().insert(pair);
+                        *counts.entry(edge).or_default() += 1;
+                    }
+                }
+                (pairs, counts, choices.len())
+            })
+            .collect::<Vec<_>>();
+        for (face, choices) in domains.iter_mut().enumerate() {
+            let before = choices.len();
+            choices.retain(|choice| {
+                choice.edge_pairs.iter().all(|&(edge, pair)| {
+                    edge_support.iter().enumerate().all(
+                        |(other_face, (pairs, counts, choice_count))| {
+                            if other_face == face {
+                                return true;
+                            }
+                            let absent = counts.get(&edge).copied().unwrap_or(0) < *choice_count;
+                            absent
+                                || pairs
+                                    .get(&edge)
+                                    .is_some_and(|values| values.contains(&pair))
+                        },
+                    )
+                })
+            });
+            if choices.is_empty() {
+                return false;
+            }
+            changed |= choices.len() != before;
+        }
+        for choices in domains.iter() {
+            if choices.len() != 1 {
+                continue;
+            }
+            for &(edge, pair) in &choices[0].edge_pairs {
+                match assigned[edge] {
+                    Some(selected) if !same_unordered_pair(selected, pair) => return false,
+                    Some(_) => {}
+                    None => {
+                        assigned[edge] = Some(pair);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            return true;
+        }
+    }
+}
+
+fn walk_endpoint_relation_domains<F>(
+    domains: Vec<Vec<MeshEndpointRelationChoice>>,
+    face_assignments: &[Vec<MeshFaceBoundaryAssignment>],
+    assigned: Vec<Option<[usize; 2]>>,
+    budget: &WorkBudget<'_>,
+    evaluate: &mut F,
+) where
+    F: FnMut(MeshEndpointRelationSelections, Vec<[usize; 2]>) -> bool,
+{
+    if budget.exhausted() || !budget.charge() {
+        return;
+    }
+    let mut domains = domains;
+    let mut assigned = assigned;
+    if !propagate_endpoint_relation_domains(&mut domains, &mut assigned, budget) {
+        return;
+    }
+    let Some((face, choices)) = domains
+        .iter()
+        .enumerate()
+        .filter(|(_, choices)| choices.len() > 1)
+        .min_by_key(|(face, choices)| (choices.len(), *face))
+    else {
+        let mut edge_pairs = assigned;
+        for choice in domains.iter().filter_map(|choices| choices.first()) {
+            for &(edge, pair) in &choice.edge_pairs {
+                match edge_pairs[edge] {
+                    Some(selected) if !same_unordered_pair(selected, pair) => return,
+                    Some(_) => {}
+                    None => edge_pairs[edge] = Some(pair),
+                }
+            }
+        }
+        let Some(edge_pairs) = edge_pairs.into_iter().collect::<Option<Vec<_>>>() else {
+            return;
+        };
+        let selections = domains
+            .iter()
+            .enumerate()
+            .map(|(face, choices)| {
+                let choice = choices.first()?;
+                if choice.assignment != usize::MAX {
+                    return Some(vec![choice.assignment]);
+                }
+                let viable = face_assignments[face]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(assignment, assignment_value)| {
+                        let configuration =
+                            endpoint_configuration_for_assignment(assignment_value, &edge_pairs)?;
+                        endpoint_configuration_cycles_viable(assignment_value, &configuration)
+                            .is_some_and(|viable| viable)
+                            .then_some(assignment)
+                    })
+                    .collect::<Vec<_>>();
+                (!viable.is_empty()).then_some(viable)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(selections) = selections else {
+            return;
+        };
+        evaluate(selections, edge_pairs);
+        return;
+    };
+    for choice in choices.clone() {
+        if budget.exhausted() {
+            return;
+        }
+        let mut branch = domains.clone();
+        branch[face] = vec![choice];
+        walk_endpoint_relation_domains(
+            branch,
+            face_assignments,
+            assigned.clone(),
+            budget,
+            evaluate,
+        );
+    }
+}
+
+/// Solve the unordered endpoint-configuration relation before selecting
+/// intrinsic cycle orientations. A configuration records one candidate pair
+/// for every edge in a face. Shared edges must agree on that pair, but their
+/// row-port order is selected later by the quotient search.
+fn resolve_endpoint_configuration_relation_streaming(
+    assignments: &[Vec<MeshFaceBoundaryAssignment>],
+    endpoint_configurations: &[Vec<Option<MeshFaceEndpointConfigurations>>],
+    edge_candidates: &[Vec<[usize; 2]>],
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    port_identities: &[[u32; 2]],
+    budget: &WorkBudget<'_>,
+) -> Option<MeshEndpointResolve> {
+    if assignments.len() != endpoint_configurations.len()
+        || edge_candidates.iter().any(Vec::is_empty)
+    {
+        return None;
+    }
+    let mut domains = Vec::with_capacity(assignments.len());
+    let mut covered = alloc_filled(
+        edge_candidates.len(),
+        false,
+        "catia_endpoint_relation_covered",
+    )
+    .ok()?;
+    for (face_assignments, face_configurations) in assignments.iter().zip(endpoint_configurations) {
+        if face_assignments.len() != face_configurations.len() {
+            return None;
+        }
+        let mut choices = Vec::new();
+        let mut unknown = false;
+        for (assignment, configurations) in face_configurations.iter().enumerate() {
+            let Some(configurations) = configurations else {
+                unknown = true;
+                continue;
+            };
+            for configuration in configurations {
+                for &(edge, _) in configuration {
+                    *covered.get_mut(edge)? = true;
+                }
+                if endpoint_configuration_cycles_viable(
+                    face_assignments.get(assignment)?,
+                    configuration,
+                ) != Some(true)
+                {
+                    continue;
+                }
+                choices.push(MeshEndpointRelationChoice {
+                    assignment,
+                    edge_pairs: configuration.clone(),
+                });
+            }
+        }
+        choices.sort_unstable_by(|left, right| {
+            (left.assignment, &left.edge_pairs).cmp(&(right.assignment, &right.edge_pairs))
+        });
+        choices.dedup_by(|left, right| {
+            left.assignment == right.assignment && left.edge_pairs == right.edge_pairs
+        });
+        if choices.is_empty() {
+            if !unknown {
+                return Some(MeshEndpointResolve::Rejected);
+            }
+            choices.push(MeshEndpointRelationChoice {
+                assignment: usize::MAX,
+                edge_pairs: Vec::new(),
+            });
+        }
+        if !budget.charge_by(choices.len()) {
+            return Some(MeshEndpointResolve::Exhausted);
+        }
+        domains.push(choices);
+    }
+    if covered.iter().any(|covered| !covered) {
+        return None;
+    }
+    let mut resolved = None;
+    let mut ambiguous = false;
+    let mut exhausted = false;
+    let mut evaluate =
+        |selections: MeshEndpointRelationSelections, edge_pairs: Vec<[usize; 2]>| -> bool {
+            let mut combinations = vec![Vec::new()];
+            for options in selections {
+                let mut next = Vec::new();
+                for combination in &combinations {
+                    for &assignment in &options {
+                        if !budget.charge() {
+                            exhausted = true;
+                            return true;
+                        }
+                        let mut combination = combination.clone();
+                        combination.push(assignment);
+                        next.push(combination);
+                    }
+                }
+                combinations = next;
+            }
+            for combination in combinations {
+                let selected_assignments = combination
+                    .iter()
+                    .enumerate()
+                    .map(|(face, &assignment)| assignments[face].get(assignment).cloned())
+                    .collect::<Option<Vec<_>>>();
+                let Some(selected_assignments) = selected_assignments else {
+                    continue;
+                };
+                let candidates = edge_pairs
+                    .iter()
+                    .copied()
+                    .map(|pair| vec![pair])
+                    .collect::<Vec<_>>();
+                let outcome = resolve_fixed_mesh_endpoint_pairs(
+                    edge_rows,
+                    vertex_points,
+                    &candidates,
+                    &selected_assignments,
+                    port_identities,
+                    budget,
+                );
+                match outcome {
+                    MeshEndpointResolve::Solved(topology, assignment) => {
+                        let candidate = (topology, assignment);
+                        if let Some(previous) = &resolved {
+                            if !mesh_candidates_equivalent(previous, &candidate) {
+                                ambiguous = true;
+                                return true;
+                            }
+                        } else {
+                            resolved = Some(candidate);
+                        }
+                    }
+                    MeshEndpointResolve::Ambiguous => {
+                        ambiguous = true;
+                        return true;
+                    }
+                    MeshEndpointResolve::Exhausted => {
+                        exhausted = true;
+                        return true;
+                    }
+                    MeshEndpointResolve::Rejected => {}
+                }
+                if budget.exhausted() {
+                    exhausted = true;
+                    return true;
+                }
+            }
+            false
+        };
+    walk_endpoint_relation_domains(
+        domains,
+        assignments,
+        alloc_filled(
+            edge_candidates.len(),
+            None,
+            "catia_endpoint_relation_assigned",
+        )
+        .ok()?,
+        budget,
+        &mut evaluate,
+    );
+    if ambiguous {
+        Some(MeshEndpointResolve::Ambiguous)
+    } else if exhausted || budget.exhausted() {
+        Some(MeshEndpointResolve::Exhausted)
+    } else if let Some((topology, assignment)) = resolved {
+        Some(MeshEndpointResolve::Solved(topology, assignment))
+    } else {
+        Some(MeshEndpointResolve::Rejected)
+    }
+}
+
+fn resolve_fixed_mesh_endpoint_pairs(
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    selected: &[MeshFaceBoundaryAssignment],
+    port_identities: &[[u32; 2]],
+    budget: &WorkBudget<'_>,
+) -> MeshEndpointResolve {
+    if selected.is_empty()
+        || edge_candidates.len() != edge_rows.len()
+        || port_identities.len() != edge_rows.len()
+    {
+        return MeshEndpointResolve::Rejected;
+    }
+    let assignment_domains = selected
+        .iter()
+        .cloned()
+        .map(|assignment| vec![assignment])
+        .collect::<Vec<_>>();
+    if edge_candidates
+        .iter()
+        .any(|candidates| candidates.len() != 1)
+    {
+        return MeshEndpointResolve::Rejected;
+    }
+    let edge_pairs = edge_candidates
+        .iter()
+        .map(|candidates| candidates.first().copied())
+        .collect::<Option<Vec<_>>>()
+        .ok_or(MeshEndpointResolve::Rejected);
+    let Ok(edge_pairs) = edge_pairs else {
+        return MeshEndpointResolve::Rejected;
+    };
+    let fixed_face_directions = selected
+        .iter()
+        .map(|assignment| {
+            let configuration = endpoint_configuration_for_assignment(assignment, &edge_pairs)?;
+            let directions = endpoint_configuration_directions(assignment, &configuration)?;
+            (!directions.is_empty()).then_some(Some(directions))
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or(MeshEndpointResolve::Rejected);
+    let Ok(fixed_face_directions) = fixed_face_directions else {
+        return MeshEndpointResolve::Rejected;
+    };
+    let Ok(mut edge_has_fixed_direction) = alloc_filled(
+        edge_candidates.len(),
+        false,
+        "catia_fixed_mesh_edge_directions",
+    ) else {
+        return MeshEndpointResolve::Rejected;
+    };
+    for use_ in selected
+        .iter()
+        .flat_map(|assignment| &assignment.boundaries)
+        .flatten()
+    {
+        if use_.reversed.is_some() {
+            let Some(fixed) = edge_has_fixed_direction.get_mut(use_.edge) else {
+                return MeshEndpointResolve::Rejected;
+            };
+            *fixed = true;
+        }
+    }
+    let Some(quotient) =
+        initial_mesh_quotient(edge_candidates, vertex_points.len(), port_identities)
+    else {
+        return MeshEndpointResolve::Rejected;
+    };
+    let mut direct_quotient = quotient.clone();
+    let mut direct_orientations = edge_has_fixed_direction
+        .iter()
+        .map(|fixed| (!fixed).then_some(false))
+        .collect::<Vec<_>>();
+    let mut direct_directions = Vec::with_capacity(selected.len());
+    let mut direct_possible = true;
+    for (assignment, direction_options) in selected.iter().zip(&fixed_face_directions) {
+        let Some(direction_options) = direction_options.as_ref() else {
+            direct_possible = false;
+            break;
+        };
+        let Some(label_directions) = direction_options.first() else {
+            direct_possible = false;
+            break;
+        };
+        let mut next_orientations = direct_orientations.clone();
+        let constrained = assignment
+            .boundaries
+            .iter()
+            .zip(label_directions)
+            .flat_map(|(boundary, directions)| boundary.iter().zip(directions))
+            .all(|(use_, &label_direction)| {
+                let Some(required) = use_.reversed else {
+                    return true;
+                };
+                let Some(orientation) = next_orientations.get_mut(use_.edge) else {
+                    return false;
+                };
+                let required_orientation = required ^ label_direction;
+                match *orientation {
+                    Some(existing) => existing == required_orientation,
+                    None => {
+                        *orientation = Some(required_orientation);
+                        true
+                    }
+                }
+            });
+        if !constrained {
+            direct_possible = false;
+            break;
+        }
+        let Some(directions) = direct_quotient.merge_label_directions_in_place(
+            assignment,
+            label_directions,
+            &next_orientations,
+            Some(budget),
+        ) else {
+            direct_possible = false;
+            break;
+        };
+        direct_orientations = next_orientations;
+        direct_directions.push(directions);
+    }
+    let direct_root_count = direct_possible.then(|| direct_quotient.root_count());
+    if direct_possible {
+        let outcome = reconstruct_mesh_selection(
+            edge_rows.to_vec(),
+            vertex_points.to_vec(),
+            selected,
+            &direct_directions,
+        )
+        .and_then(|topology| {
+            resolve_mesh_selection_from_quotient(
+                topology,
+                direct_quotient,
+                vertex_points,
+                edge_candidates,
+                port_identities,
+                budget,
+            )
+        });
+        if let Some(outcome) = outcome {
+            match outcome {
+                MeshEndpointResolve::Rejected => {}
+                resolved => return resolved,
+            }
+        }
+        if budget.exhausted() {
+            return MeshEndpointResolve::Exhausted;
+        }
+    }
+    if direct_root_count.is_some_and(|roots| roots < vertex_points.len()) {
+        let probe = MeshSelectionSearch {
+            assignments: &assignment_domains,
+            #[cfg(test)]
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: Vec::new(),
+            edge_candidates,
+            edge_rows,
+            vertex_points,
+            port_identities: None,
+            fixed_face_directions: fixed_face_directions.clone(),
+            fixed_edge_orientations: edge_has_fixed_direction
+                .iter()
+                .map(|fixed| (!fixed).then_some(false))
+                .collect(),
+            edge_has_fixed_direction: edge_has_fixed_direction.clone(),
+            selected: match alloc_filled(
+                assignment_domains.len(),
+                None,
+                "catia_fixed_mesh_probe_selection",
+            ) {
+                Ok(selected) => selected,
+                Err(_) => return MeshEndpointResolve::Rejected,
+            },
+            visited_states: HashSet::new(),
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+            face_equation_cache: RefCell::default(),
+        };
+        if (0..probe.assignments.len()).all(|face| {
+            probe
+                .canonical_fixed_direction_option_count(face)
+                .is_some_and(|options| options <= 1)
+        }) {
+            return MeshEndpointResolve::Rejected;
+        }
+    }
+    let face_equations = possible_face_equations(&assignment_domains);
+    let Some(face_choices) = possible_face_choices_with_limit(
+        &assignment_domains,
+        &face_equations,
+        MAX_MESH_CONSTRAINT_OPERATIONS,
+    ) else {
+        return MeshEndpointResolve::Exhausted;
+    };
+    let Ok(face_work) = alloc_filled(
+        assignment_domains.len(),
+        Some(1),
+        "catia_fixed_mesh_face_work",
+    ) else {
+        return MeshEndpointResolve::Rejected;
+    };
+    let mut search = MeshSelectionSearch {
+        assignments: &assignment_domains,
+        #[cfg(test)]
+        possible_face_equations: face_equations,
+        possible_face_choices: face_choices,
+        face_work,
+        edge_candidates,
+        edge_rows,
+        vertex_points,
+        port_identities: Some(port_identities),
+        fixed_face_directions,
+        fixed_edge_orientations: edge_has_fixed_direction
+            .iter()
+            .map(|fixed| (!fixed).then_some(false))
+            .collect(),
+        edge_has_fixed_direction,
+        selected: match alloc_filled(assignment_domains.len(), None, "catia_fixed_mesh_selection") {
+            Ok(selected) => selected,
+            Err(_) => return MeshEndpointResolve::Rejected,
+        },
+        visited_states: HashSet::new(),
+        solution: None,
+        ambiguous: false,
+        exhausted: false,
+        face_equation_cache: RefCell::default(),
+    };
+    search.search_fixed_direction_with_budget(&quotient, budget);
+    if search.exhausted {
+        MeshEndpointResolve::Exhausted
+    } else if search.ambiguous {
+        MeshEndpointResolve::Ambiguous
+    } else if let Some((topology, assignment)) = search.solution {
+        MeshEndpointResolve::Solved(topology, assignment)
+    } else {
+        MeshEndpointResolve::Rejected
+    }
+}
+
 pub(crate) fn prune_mesh_endpoint_pair_support(
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
@@ -5589,6 +6576,14 @@ pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
 impl MeshSelectionSearch<'_> {
     pub(crate) fn should_stop(&self) -> bool {
         self.ambiguous || self.exhausted
+    }
+
+    fn has_exact_singleton_endpoint_domains(&self) -> bool {
+        self.port_identities.is_some()
+            && self
+                .edge_candidates
+                .iter()
+                .all(|candidates| candidates.len() == 1)
     }
 
     #[cfg(test)]
@@ -6020,11 +7015,13 @@ impl MeshSelectionSearch<'_> {
         propagation_budget: &WorkBudget<'_>,
     ) -> Option<MeshQuotient> {
         let mut measured = quotient.clone();
-        if !self.propagate_forced_face_equations_from(
-            &mut measured,
-            Some(changed_edges),
-            propagation_budget,
-        ) {
+        if !self.has_exact_singleton_endpoint_domains()
+            && !self.propagate_forced_face_equations_from(
+                &mut measured,
+                Some(changed_edges),
+                propagation_budget,
+            )
+        {
             return None;
         }
         if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
@@ -6035,6 +7032,7 @@ impl MeshSelectionSearch<'_> {
             return None;
         }
         if root_count == self.vertex_points.len()
+            && !self.has_exact_singleton_endpoint_domains()
             && !measured.point_assignment_exists(
                 self.vertex_points.len(),
                 self.edge_candidates,
@@ -6043,7 +7041,7 @@ impl MeshSelectionSearch<'_> {
         {
             return None;
         }
-        self.fixed_remaining_faces_are_orientable()
+        (self.has_exact_singleton_endpoint_domains() || self.fixed_remaining_faces_are_orientable())
             .then_some(measured)
     }
 
@@ -6061,6 +7059,346 @@ impl MeshSelectionSearch<'_> {
         self.search_from_state(quotient, false, budget, propagation_budget);
     }
 
+    fn fixed_direction_options(
+        &self,
+        measured: &MeshQuotient,
+        face: usize,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Vec<MeshFixedDirectionOption> {
+        let Some(direction_options) = self
+            .fixed_face_directions
+            .get(face)
+            .and_then(Option::as_ref)
+        else {
+            return Vec::new();
+        };
+        let [assignment] = self.assignments[face].as_slice() else {
+            return Vec::new();
+        };
+        let mut seen = HashSet::<(Vec<Vec<bool>>, Vec<Option<bool>>)>::new();
+        let mut output = Vec::new();
+        for label_directions in direction_options {
+            let mut next_orientations = self.fixed_edge_orientations.clone();
+            let constrained = assignment
+                .boundaries
+                .iter()
+                .zip(label_directions)
+                .flat_map(|(boundary, directions)| boundary.iter().zip(directions))
+                .all(|(use_, &label_direction)| {
+                    let Some(required) = use_.reversed else {
+                        return true;
+                    };
+                    let Some(orientation) = next_orientations.get_mut(use_.edge) else {
+                        return false;
+                    };
+                    let required_orientation = required ^ label_direction;
+                    match *orientation {
+                        Some(existing) => existing == required_orientation,
+                        None => {
+                            *orientation = Some(required_orientation);
+                            true
+                        }
+                    }
+                });
+            if !constrained {
+                continue;
+            }
+            let Some((directions, quotient)) = measured.assignment_option_for_label_directions(
+                assignment,
+                label_directions,
+                &next_orientations,
+                budget,
+            ) else {
+                continue;
+            };
+            let signature = (
+                canonical_mesh_boundary_directions(&directions),
+                next_orientations.clone(),
+            );
+            if seen.insert(signature) {
+                output.push((directions, quotient, next_orientations));
+            }
+        }
+        output
+    }
+
+    fn canonical_fixed_direction_option_count(&self, face: usize) -> Option<usize> {
+        let direction_options = self.fixed_face_directions.get(face)?.as_ref()?;
+        let [assignment] = self.assignments[face].as_slice() else {
+            return None;
+        };
+        let ready = assignment.boundaries.iter().flatten().all(|use_| {
+            self.fixed_edge_orientations
+                .get(use_.edge)
+                .and_then(Option::as_ref)
+                .is_some()
+                || use_.reversed.is_some()
+                || !self
+                    .edge_has_fixed_direction
+                    .get(use_.edge)
+                    .copied()
+                    .unwrap_or(false)
+        });
+        if !ready {
+            return None;
+        }
+        let mut seen = HashSet::<(Vec<Vec<bool>>, Vec<Option<bool>>)>::new();
+        for label_directions in direction_options {
+            let mut orientations = self.fixed_edge_orientations.clone();
+            let constrained = assignment
+                .boundaries
+                .iter()
+                .zip(label_directions)
+                .flat_map(|(boundary, directions)| boundary.iter().zip(directions))
+                .all(|(use_, &label_direction)| {
+                    let Some(required) = use_.reversed else {
+                        return true;
+                    };
+                    let Some(orientation) = orientations.get_mut(use_.edge) else {
+                        return false;
+                    };
+                    let required_orientation = required ^ label_direction;
+                    match *orientation {
+                        Some(existing) => existing == required_orientation,
+                        None => {
+                            *orientation = Some(required_orientation);
+                            true
+                        }
+                    }
+                });
+            if !constrained {
+                continue;
+            }
+            let directions = assignment
+                .boundaries
+                .iter()
+                .zip(label_directions)
+                .map(|(boundary, labels)| {
+                    boundary
+                        .iter()
+                        .zip(labels)
+                        .map(|(use_, &label)| {
+                            orientations
+                                .get(use_.edge)?
+                                .as_ref()
+                                .copied()
+                                .map(|orientation| orientation ^ label)
+                        })
+                        .collect::<Option<Vec<_>>>()
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(directions) = directions else {
+                continue;
+            };
+            seen.insert((
+                canonical_mesh_boundary_directions(&directions),
+                orientations,
+            ));
+        }
+        Some(seen.len())
+    }
+
+    fn search_fixed_direction_with_budget(
+        &mut self,
+        quotient: &MeshQuotient,
+        budget: &WorkBudget<'_>,
+    ) {
+        if self.should_stop() {
+            return;
+        }
+        if !budget.charge() {
+            self.exhausted = true;
+            return;
+        }
+        let mut measured = quotient.clone();
+        if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
+            return;
+        }
+        if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
+            let signature = self.selection_state_signature(&measured, true);
+            if !self.visited_states.insert(signature) {
+                return;
+            }
+        }
+        if measured.root_count() < self.vertex_points.len() {
+            return;
+        }
+        let selected_edges = self
+            .selected
+            .iter()
+            .enumerate()
+            .filter_map(|(face, selected)| {
+                selected
+                    .as_ref()
+                    .and_then(|(index, _)| self.assignments[face].get(*index))
+            })
+            .flat_map(|assignment| &assignment.boundaries)
+            .flatten()
+            .map(|use_| use_.edge)
+            .collect::<HashSet<_>>();
+        let mut impossible = false;
+        let face = self
+            .selected
+            .iter()
+            .enumerate()
+            .filter(|(_, selected)| selected.is_none())
+            .filter_map(|(face, _)| {
+                let directions = self.fixed_face_directions.get(face)?.as_ref()?;
+                let [assignment] = self.assignments[face].as_slice() else {
+                    return None;
+                };
+                let ready = assignment.boundaries.iter().flatten().all(|use_| {
+                    self.fixed_edge_orientations
+                        .get(use_.edge)
+                        .and_then(Option::as_ref)
+                        .is_some()
+                        || use_.reversed.is_some()
+                        || !self
+                            .edge_has_fixed_direction
+                            .get(use_.edge)
+                            .copied()
+                            .unwrap_or(false)
+                });
+                if !ready {
+                    return None;
+                }
+                let local_fixed = assignment
+                    .boundaries
+                    .iter()
+                    .flatten()
+                    .filter(|use_| use_.reversed.is_some())
+                    .count();
+                let adjacent = assignment
+                    .boundaries
+                    .iter()
+                    .flatten()
+                    .any(|use_| selected_edges.contains(&use_.edge));
+                let viable_options = self
+                    .fixed_direction_options(&measured, face, None)
+                    .into_iter()
+                    .filter(|(_, quotient, _)| {
+                        let mut quotient = quotient.clone();
+                        quotient.root_count() >= self.vertex_points.len()
+                    })
+                    .count();
+                if viable_options == 0 {
+                    impossible = true;
+                    return None;
+                }
+                let use_count = assignment.boundaries.iter().map(Vec::len).sum::<usize>();
+                Some((
+                    (
+                        !adjacent,
+                        viable_options,
+                        local_fixed == 0,
+                        usize::MAX.saturating_sub(use_count),
+                        directions.len(),
+                        face,
+                    ),
+                    face,
+                ))
+            })
+            .min_by_key(|(key, _)| *key)
+            .map(|(_, face)| face);
+        if impossible {
+            return;
+        }
+        let Some(face) = face else {
+            if let Some(edge) =
+                self.edge_has_fixed_direction
+                    .iter()
+                    .enumerate()
+                    .find_map(|(edge, has_fixed)| {
+                        (*has_fixed
+                            && self
+                                .fixed_edge_orientations
+                                .get(edge)
+                                .is_some_and(Option::is_none))
+                        .then_some(edge)
+                    })
+            {
+                for orientation in [false, true] {
+                    if self.should_stop() {
+                        return;
+                    }
+                    self.fixed_edge_orientations[edge] = Some(orientation);
+                    self.search_fixed_direction_with_budget(&measured, budget);
+                }
+                self.fixed_edge_orientations[edge] = None;
+                return;
+            }
+            let selected_assignments = self
+                .selected
+                .iter()
+                .enumerate()
+                .map(|(face, selected)| {
+                    let (assignment, directions) = selected.as_ref()?;
+                    if *assignment != 0 {
+                        return None;
+                    }
+                    Some((self.assignments[face].get(*assignment)?.clone(), directions))
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(selected_assignments) = selected_assignments else {
+                return;
+            };
+            let (selected_assignments, directions): (Vec<_>, Vec<_>) = selected_assignments
+                .into_iter()
+                .map(|(assignment, directions)| (assignment, directions.clone()))
+                .unzip();
+            let Some(port_identities) = self.port_identities else {
+                return;
+            };
+            let Some(outcome) = resolve_singleton_mesh_selection(
+                self.edge_rows,
+                self.vertex_points,
+                self.edge_candidates,
+                &selected_assignments,
+                &directions,
+                port_identities,
+                budget,
+            ) else {
+                return;
+            };
+            match outcome {
+                MeshEndpointResolve::Solved(topology, assignment) => {
+                    let candidate = (topology, assignment);
+                    match &self.solution {
+                        Some(solution)
+                            if *solution != candidate
+                                && !mesh_candidates_equivalent(solution, &candidate) =>
+                        {
+                            self.ambiguous = true;
+                        }
+                        None => self.solution = Some(candidate),
+                        Some(_) => {}
+                    }
+                }
+                MeshEndpointResolve::Ambiguous => self.ambiguous = true,
+                MeshEndpointResolve::Exhausted => self.exhausted = true,
+                MeshEndpointResolve::Rejected => {}
+            }
+            return;
+        };
+        let previous_orientations = self.fixed_edge_orientations.clone();
+        let options = self.fixed_direction_options(&measured, face, Some(budget));
+        if budget.exhausted() {
+            self.exhausted = true;
+            return;
+        }
+        for (directions, next_quotient, next_orientations) in options {
+            if self.should_stop() {
+                return;
+            }
+            self.fixed_edge_orientations = next_orientations;
+            self.selected[face] = Some((0, directions));
+            self.search_fixed_direction_with_budget(&next_quotient, budget);
+            self.selected[face] = None;
+            self.fixed_edge_orientations
+                .clone_from(&previous_orientations);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
         let budget = WorkBudget::new(limit);
@@ -6074,7 +7412,12 @@ impl MeshSelectionSearch<'_> {
         prepared: bool,
     ) -> MeshSelectionStateSignature {
         let mut quotient = quotient.clone();
-        (prepared, self.selected.clone(), quotient.signature())
+        (
+            prepared,
+            self.selected.clone(),
+            quotient.signature(),
+            self.fixed_edge_orientations.clone(),
+        )
     }
 
     pub(crate) fn search_from_state(
@@ -6109,7 +7452,13 @@ impl MeshSelectionSearch<'_> {
     ) {
         let mut measured = quotient.clone();
         if !prepared {
-            if !self.propagate_forced_face_equations_from(&mut measured, None, propagation_budget) {
+            if !self.has_exact_singleton_endpoint_domains()
+                && !self.propagate_forced_face_equations_from(
+                    &mut measured,
+                    None,
+                    propagation_budget,
+                )
+            {
                 return;
             }
             if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
@@ -6120,6 +7469,7 @@ impl MeshSelectionSearch<'_> {
                 return;
             }
             if root_count == self.vertex_points.len()
+                && !self.has_exact_singleton_endpoint_domains()
                 && !measured.point_assignment_exists(
                     self.vertex_points.len(),
                     self.edge_candidates,
@@ -6131,7 +7481,9 @@ impl MeshSelectionSearch<'_> {
                 }
                 return;
             }
-            if !self.fixed_remaining_faces_are_orientable() {
+            if !self.has_exact_singleton_endpoint_domains()
+                && !self.fixed_remaining_faces_are_orientable()
+            {
                 return;
             }
         }
@@ -6243,6 +7595,66 @@ impl MeshSelectionSearch<'_> {
             return;
         }
         let Some((_, supported, _, _, _, face)) = next else {
+            let selected = self.selected.iter().cloned().collect::<Option<Vec<_>>>();
+            let Some(selected) = selected else {
+                return;
+            };
+            let assignment_indices = selected.iter().map(|(index, _)| *index).collect::<Vec<_>>();
+            let directions = selected
+                .iter()
+                .map(|(_, directions)| directions.clone())
+                .collect::<Vec<_>>();
+            let selected_assignments = self
+                .assignments
+                .iter()
+                .zip(&assignment_indices)
+                .map(|(assignments, &index)| assignments.get(index).cloned())
+                .collect::<Option<Vec<_>>>();
+            let Some(selected_assignments) = selected_assignments else {
+                return;
+            };
+            if self
+                .edge_candidates
+                .iter()
+                .all(|candidates| candidates.len() == 1)
+            {
+                if let Some(port_identities) = self.port_identities {
+                    let outcome = resolve_singleton_mesh_selection(
+                        self.edge_rows,
+                        self.vertex_points,
+                        self.edge_candidates,
+                        &selected_assignments,
+                        &directions,
+                        port_identities,
+                        budget,
+                    );
+                    if let Some(outcome) = outcome {
+                        match outcome {
+                            MeshEndpointResolve::Solved(topology, assignment) => {
+                                let candidate = (topology, assignment);
+                                match &self.solution {
+                                    Some(solution)
+                                        if *solution != candidate
+                                            && !mesh_candidates_equivalent(
+                                                solution, &candidate,
+                                            ) =>
+                                    {
+                                        self.ambiguous = true;
+                                    }
+                                    None => self.solution = Some(candidate),
+                                    Some(_) => {}
+                                }
+                            }
+                            MeshEndpointResolve::Ambiguous => self.ambiguous = true,
+                            MeshEndpointResolve::Exhausted => self.exhausted = true,
+                            MeshEndpointResolve::Rejected => {}
+                        }
+                        if self.should_stop() {
+                            return;
+                        }
+                    }
+                }
+            }
             let mut quotient = measured.clone();
             let Some(root_points) = quotient.close_coordinate_roots(
                 self.vertex_points.len(),
@@ -6252,24 +7664,6 @@ impl MeshSelectionSearch<'_> {
                 if budget.exhausted() {
                     self.exhausted = true;
                 }
-                return;
-            };
-            let selected = self.selected.iter().cloned().collect::<Option<Vec<_>>>();
-            let Some(selected) = selected else {
-                return;
-            };
-            let assignment_indices = selected.iter().map(|(index, _)| *index).collect::<Vec<_>>();
-            let directions = selected
-                .into_iter()
-                .map(|(_, directions)| directions)
-                .collect::<Vec<_>>();
-            let selected_assignments = self
-                .assignments
-                .iter()
-                .zip(&assignment_indices)
-                .map(|(assignments, &index)| assignments.get(index).cloned())
-                .collect::<Option<Vec<_>>>();
-            let Some(selected_assignments) = selected_assignments else {
                 return;
             };
             let candidate = reconstruct_mesh_selection(
@@ -6368,13 +7762,29 @@ impl MeshSelectionSearch<'_> {
                 break;
             }
             let assignment = &self.assignments[face][assignment_index];
-            let assignment_options = measured.assignment_options_limited(
-                assignment,
-                self.edge_candidates,
-                &selected_edges,
-                remaining,
-                Some(budget),
-            );
+            let assignment_options = if let Some(direction_options) = self
+                .fixed_face_directions
+                .get(face)
+                .and_then(Option::as_ref)
+            {
+                if assignment_index != 0 {
+                    continue;
+                }
+                measured.assignment_options_for_directions(
+                    assignment,
+                    direction_options,
+                    remaining,
+                    Some(budget),
+                )
+            } else {
+                measured.assignment_options_limited(
+                    assignment,
+                    self.edge_candidates,
+                    &selected_edges,
+                    remaining,
+                    Some(budget),
+                )
+            };
             if budget.exhausted() {
                 self.exhausted = true;
                 return;
@@ -6722,6 +8132,134 @@ fn singleton_mesh_boundary_directions(
     (solutions.len() == 1).then(|| solutions.remove(0))
 }
 
+fn resolve_mesh_selection_from_quotient(
+    topology: StandardTopology,
+    mut quotient: MeshQuotient,
+    vertex_points: &[[f64; 3]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    port_identities: &[[u32; 2]],
+    budget: &WorkBudget<'_>,
+) -> Option<MeshEndpointResolve> {
+    if quotient.union.len() != edge_candidates.len().checked_mul(2)?
+        || port_identities.len() != edge_candidates.len()
+        || quotient.root_count() != vertex_points.len()
+    {
+        return None;
+    }
+    let edge_vertices = topology.edge_vertices()?;
+    if edge_vertices.len() != edge_candidates.len() {
+        return None;
+    }
+    let roots = (0..quotient.union.len())
+        .filter(|node| quotient.union.find(*node) == *node)
+        .collect::<Vec<_>>();
+    let domains = roots
+        .iter()
+        .map(|root| {
+            let mut domain = quotient.domains[*root].iter().copied().collect::<Vec<_>>();
+            domain.sort_unstable();
+            domain
+        })
+        .collect::<Vec<_>>();
+    let root_assignment = distinct_domain_matching_with_budget(
+        domains.iter().map(Vec::as_slice),
+        vertex_points.len(),
+        Some(budget),
+        None,
+    )?;
+    let root_points = roots
+        .into_iter()
+        .zip(root_assignment)
+        .collect::<HashMap<_, _>>();
+    let mut point_assignment = alloc_filled(
+        topology.logical_vertex_count,
+        None,
+        "catia_merged_mesh_point_assignment",
+    )
+    .ok()?;
+    let mut points_by_identity = HashMap::<u32, usize>::new();
+    for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
+        let points = [start, end]
+            .into_iter()
+            .enumerate()
+            .map(|(port, vertex)| {
+                let root = quotient.union.find(edge * 2 + port);
+                let point = *root_points.get(&root)?;
+                match point_assignment[vertex] {
+                    Some(stored) if stored != point => return None,
+                    Some(_) => {}
+                    None => point_assignment[vertex] = Some(point),
+                }
+                Some(point)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let points = <[usize; 2]>::try_from(points.as_slice()).ok()?;
+        let closed_ports = quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
+        if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
+            return None;
+        }
+        for (identity, point) in port_identities[edge].into_iter().zip(points) {
+            match points_by_identity.insert(identity, point) {
+                Some(previous) if previous != point => return None,
+                _ => {}
+            }
+        }
+    }
+    Some(MeshEndpointResolve::Solved(
+        topology,
+        point_assignment.into_iter().collect::<Option<Vec<_>>>()?,
+    ))
+}
+
+fn reduced_distinct_matching(
+    domains: &[Vec<usize>],
+    point_count: usize,
+    budget: &WorkBudget<'_>,
+    excluded: Option<(usize, usize)>,
+) -> Option<Vec<usize>> {
+    let mut assignment = alloc_filled(domains.len(), None, "catia_reduced_matching").ok()?;
+    let mut used = alloc_filled(point_count, false, "catia_reduced_matching_used").ok()?;
+    let mut remaining = Vec::new();
+    for (root, domain) in domains.iter().enumerate() {
+        if domain.len() == 1 {
+            let point = domain[0];
+            if excluded.is_some_and(|(excluded_root, excluded_point)| {
+                excluded_root == root && excluded_point == point
+            }) || used[point]
+            {
+                return None;
+            }
+            used[point] = true;
+            assignment[root] = Some(point);
+            continue;
+        }
+        let values = domain
+            .iter()
+            .copied()
+            .filter(|point| {
+                !used[*point]
+                    && excluded.is_none_or(|(excluded_root, excluded_point)| {
+                        excluded_root != root || excluded_point != *point
+                    })
+            })
+            .collect::<Vec<_>>();
+        if values.is_empty() {
+            return None;
+        }
+        remaining.push((root, values));
+    }
+    let remaining_domains = remaining
+        .iter()
+        .map(|(_, domain)| domain.as_slice())
+        .collect::<Vec<_>>();
+    let matching =
+        distinct_domain_matching_with_budget(remaining_domains, point_count, Some(budget), None)?;
+    for ((root, _), point) in remaining.into_iter().zip(matching) {
+        assignment[root] = Some(point);
+    }
+    assignment.into_iter().collect()
+}
+
 fn resolve_singleton_mesh_selection(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
@@ -6755,11 +8293,26 @@ fn resolve_singleton_mesh_selection(
             }
         }
     }
-    if !quotient.merge_singleton_coordinate_roots(edge_candidates) {
-        return None;
-    }
-    if !quotient.edge_domains_viable(edge_candidates) {
-        return None;
+    for (edge, candidates) in edge_candidates.iter().enumerate() {
+        let &[[left_point, right_point]] = candidates.as_slice() else {
+            return None;
+        };
+        let left_root = quotient.union.find(edge * 2);
+        let right_root = quotient.union.find(edge * 2 + 1);
+        if left_root == right_root && left_point != right_point {
+            return None;
+        }
+        let allowed = [left_point, right_point]
+            .into_iter()
+            .collect::<HashSet<_>>();
+        for root in [left_root, right_root] {
+            let mut domain = quotient.domains[root].as_ref().clone();
+            domain.retain(|point| allowed.contains(point));
+            if domain.is_empty() {
+                return None;
+            }
+            quotient.domains[root] = Arc::new(domain);
+        }
     }
     let roots = (0..quotient.union.len())
         .filter(|node| quotient.union.find(*node) == *node)
@@ -6787,15 +8340,8 @@ fn resolve_singleton_mesh_selection(
             values
         })
         .collect::<Vec<_>>();
-    let unique_assignment = unique_coordinate_bijection(&domain_sets, vertex_points);
-    let first_assignment = unique_assignment.clone().or_else(|| {
-        distinct_domain_matching_with_budget(
-            domain_values.iter().map(Vec::as_slice),
-            vertex_points.len(),
-            Some(budget),
-            None,
-        )
-    });
+    let first_assignment =
+        reduced_distinct_matching(&domain_values, vertex_points.len(), budget, None);
     let Some(first_assignment) = first_assignment else {
         return budget.exhausted().then_some(MeshEndpointResolve::Exhausted);
     };
@@ -6856,34 +8402,29 @@ fn resolve_singleton_mesh_selection(
         ))
     };
     let first = materialize(&first_assignment)?;
-    if unique_assignment.is_none() {
-        let ambiguous_roots = domain_values
-            .iter()
-            .enumerate()
-            .filter(|(_, domain)| domain.len() > 1)
-            .map(|(root, _)| root)
-            .collect::<Vec<_>>();
-        for root in ambiguous_roots {
-            let Some(alternate) = distinct_domain_matching_with_budget(
-                domain_values.iter().map(Vec::as_slice),
-                vertex_points.len(),
-                Some(budget),
-                Some(MatchingEdgeConstraint::Exclude(
-                    root,
-                    first_assignment[root],
-                )),
-            ) else {
-                if budget.exhausted() {
-                    return Some(MeshEndpointResolve::Exhausted);
-                }
-                continue;
-            };
-            let Some(alternate) = materialize(&alternate) else {
-                continue;
-            };
-            if !mesh_candidates_equivalent(&first, &alternate) {
-                return Some(MeshEndpointResolve::Ambiguous);
+    let ambiguous_roots = domain_values
+        .iter()
+        .enumerate()
+        .filter(|(_, domain)| domain.len() > 1)
+        .map(|(root, _)| root)
+        .collect::<Vec<_>>();
+    for root in ambiguous_roots {
+        let Some(alternate) = reduced_distinct_matching(
+            &domain_values,
+            vertex_points.len(),
+            budget,
+            Some((root, first_assignment[root])),
+        ) else {
+            if budget.exhausted() {
+                return Some(MeshEndpointResolve::Exhausted);
             }
+            continue;
+        };
+        let Some(alternate) = materialize(&alternate) else {
+            continue;
+        };
+        if !mesh_candidates_equivalent(&first, &alternate) {
+            return Some(MeshEndpointResolve::Ambiguous);
         }
     }
     Some(MeshEndpointResolve::Solved(first.0, first.1))
@@ -7029,6 +8570,53 @@ fn resolve_standard_mesh_endpoint_candidates(
     ) else {
         return MeshEndpointResolve::Exhausted;
     };
+    let Ok(unselected) = alloc_filled(
+        edge_candidates.len(),
+        None,
+        "catia_endpoint_unselected_edges",
+    ) else {
+        return MeshEndpointResolve::Rejected;
+    };
+    let configuration_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let endpoint_configurations = assignments
+        .iter()
+        .map(|face| {
+            face.iter()
+                .map(|assignment| {
+                    if configuration_budget.exhausted() {
+                        return None;
+                    }
+                    let local_budget =
+                        configuration_budget.child_slice(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
+                    let configurations = mesh_face_endpoint_configurations(
+                        std::slice::from_ref(assignment),
+                        &edge_candidates,
+                        &unselected,
+                        &local_budget,
+                    );
+                    if !configuration_budget.charge_by(local_budget.consumed())
+                        || local_budget.exhausted()
+                    {
+                        None
+                    } else {
+                        configurations
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let relation = resolve_endpoint_configuration_relation_streaming(
+        &assignments,
+        &endpoint_configurations,
+        &edge_candidates,
+        edge_rows,
+        vertex_points,
+        port_identities,
+        budget,
+    );
+    if let Some(resolved) = relation {
+        return resolved;
+    }
     let mut search = MeshSelectionSearch {
         assignments: &assignments,
         #[cfg(test)]
@@ -7038,7 +8626,21 @@ fn resolve_standard_mesh_endpoint_candidates(
         edge_candidates: &edge_candidates,
         edge_rows,
         vertex_points,
-        selected: vec![None; face_count],
+        port_identities: Some(port_identities),
+        fixed_face_directions: match alloc_filled(
+            face_count,
+            None,
+            "catia_mesh_fixed_face_directions",
+        ) {
+            Ok(fixed_face_directions) => fixed_face_directions,
+            Err(_) => return MeshEndpointResolve::Rejected,
+        },
+        fixed_edge_orientations: Vec::new(),
+        edge_has_fixed_direction: Vec::new(),
+        selected: match alloc_filled(face_count, None, "catia_mesh_selected_faces") {
+            Ok(selected) => selected,
+            Err(_) => return MeshEndpointResolve::Rejected,
+        },
         visited_states: HashSet::new(),
         solution: None,
         ambiguous: false,
@@ -7361,6 +8963,65 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
         ),
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
     ));
+}
+
+#[test]
+fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
+    let edge_rows = (0..3)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 2,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 2,
+                start: 2,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    }]];
+    let endpoint_configurations = vec![vec![Some(vec![vec![
+        (0, [0, 1]),
+        (1, [1, 2]),
+        (2, [0, 2]),
+    ]])]];
+    let port_identities = vec![[0, 1], [2, 3], [4, 5]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    let Some(MeshEndpointResolve::Solved(topology, point_assignment)) =
+        resolve_endpoint_configuration_relation_streaming(
+            &assignments,
+            &endpoint_configurations,
+            &edge_candidates,
+            &edge_rows,
+            &vertex_points,
+            &port_identities,
+            &budget,
+        )
+    else {
+        panic!("endpoint configuration relation did not solve the cycle");
+    };
+
+    assert_eq!(topology.faces.len(), 1);
+    assert_eq!(point_assignment, vec![0, 1, 2]);
 }
 
 #[test]
