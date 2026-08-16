@@ -109,7 +109,18 @@ fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::
 struct ColorSpec<'a> {
     color: cadmpeg_ir::topology::Color,
     appearance: Option<&'a Appearance>,
-    binding_id: Option<&'a str>,
+    hidden: bool,
+}
+
+fn equivalent_style_spec(left: ColorSpec<'_>, right: ColorSpec<'_>) -> bool {
+    left.color == right.color
+        && left.hidden == right.hidden
+        && left
+            .appearance
+            .and_then(|appearance| appearance.name.as_deref())
+            == right
+                .appearance
+                .and_then(|appearance| appearance.name.as_deref())
 }
 
 struct LoopSegment {
@@ -176,6 +187,8 @@ pub(crate) struct Builder<'a> {
     tessellation_step_refs: HashMap<String, Ref>,
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
+    conflicted_appearance_bindings: BTreeSet<String>,
+    appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<String>>,
     hidden_appearance_items: Vec<Ref>,
     hidden_presentation_layer_items: Vec<Ref>,
     unstyled_colors: usize,
@@ -330,6 +343,8 @@ impl<'a> Builder<'a> {
             tessellation_step_refs: HashMap::new(),
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
+            conflicted_appearance_bindings: BTreeSet::new(),
+            appearance_binding_target_conflicts: BTreeMap::new(),
             hidden_appearance_items: Vec::new(),
             hidden_presentation_layer_items: Vec::new(),
             unstyled_colors: 0,
@@ -455,8 +470,10 @@ impl<'a> Builder<'a> {
             .filter(|binding| binding.visible == Some(false))
             .map(|binding| binding.id.as_str())
             .collect::<BTreeSet<_>>();
-        let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
-        let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut body_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
+        let mut face_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
+        let mut body_binding_ids: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut face_binding_ids: HashMap<&str, Vec<&str>> = HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
@@ -473,14 +490,22 @@ impl<'a> Builder<'a> {
             let spec = ColorSpec {
                 color,
                 appearance: Some(appearance),
-                binding_id: Some(&binding.id),
+                hidden: hidden_binding_ids.contains(binding.id.as_str()),
             };
             match &binding.target {
                 AppearanceTarget::Body(id) => {
-                    body_colors.entry(id.as_str()).or_insert(spec);
+                    body_candidates.entry(id.as_str()).or_default().push(spec);
+                    body_binding_ids
+                        .entry(id.as_str())
+                        .or_default()
+                        .push(binding.id.as_str());
                 }
                 AppearanceTarget::Face(id) => {
-                    face_colors.entry(id.as_str()).or_insert(spec);
+                    face_candidates.entry(id.as_str()).or_default().push(spec);
+                    face_binding_ids
+                        .entry(id.as_str())
+                        .or_default()
+                        .push(binding.id.as_str());
                 }
                 AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
@@ -495,22 +520,81 @@ impl<'a> Builder<'a> {
             .extend(dangling_appearance_bindings);
         self.colorless_appearance_bindings
             .extend(colorless_appearance_bindings);
+
+        let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut conflicting_body_targets = BTreeSet::new();
+        let mut conflicting_face_targets = BTreeSet::new();
+        let mut conflicted_binding_ids = BTreeSet::new();
+        let mut target_conflicts = BTreeMap::new();
+        for (target, candidates) in body_candidates {
+            let Some(first) = candidates.first().copied() else {
+                continue;
+            };
+            if candidates
+                .iter()
+                .copied()
+                .any(|candidate| !equivalent_style_spec(first, candidate))
+            {
+                conflicting_body_targets.insert(target.to_string());
+                let ids = body_binding_ids
+                    .get(target)
+                    .expect("body appearance candidate has binding ids")
+                    .iter()
+                    .map(|id| (*id).to_string())
+                    .collect::<BTreeSet<_>>();
+                conflicted_binding_ids.extend(ids.iter().cloned());
+                target_conflicts.insert(("body".into(), target.into()), ids);
+            } else {
+                body_colors.insert(target, first);
+            }
+        }
+        for (target, candidates) in face_candidates {
+            let Some(first) = candidates.first().copied() else {
+                continue;
+            };
+            if candidates
+                .iter()
+                .copied()
+                .any(|candidate| !equivalent_style_spec(first, candidate))
+            {
+                conflicting_face_targets.insert(target.to_string());
+                let ids = face_binding_ids
+                    .get(target)
+                    .expect("face appearance candidate has binding ids")
+                    .iter()
+                    .map(|id| (*id).to_string())
+                    .collect::<BTreeSet<_>>();
+                conflicted_binding_ids.extend(ids.iter().cloned());
+                target_conflicts.insert(("face".into(), target.into()), ids);
+            } else {
+                face_colors.insert(target, first);
+            }
+        }
+        self.conflicted_appearance_bindings
+            .extend(conflicted_binding_ids);
+        self.appearance_binding_target_conflicts
+            .extend(target_conflicts);
         for body in &ir.model.bodies {
-            if let Some(color) = body.color {
-                body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
-                    color,
-                    appearance: None,
-                    binding_id: None,
-                });
+            if !conflicting_body_targets.contains(body.id.as_str()) {
+                if let Some(color) = body.color {
+                    body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
+                        color,
+                        appearance: None,
+                        hidden: false,
+                    });
+                }
             }
         }
         for face in &ir.model.faces {
-            if let Some(color) = face.color {
-                face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
-                    color,
-                    appearance: None,
-                    binding_id: None,
-                });
+            if !conflicting_face_targets.contains(face.id.as_str()) {
+                if let Some(color) = face.color {
+                    face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
+                        color,
+                        appearance: None,
+                        hidden: false,
+                    });
+                }
             }
         }
 
@@ -540,6 +624,9 @@ impl<'a> Builder<'a> {
         faces.sort_by(|a, b| a.0.cmp(&b.0));
         let mut styled_bodies: BTreeSet<&str> = BTreeSet::new();
         for (face_id, face) in &faces {
+            if conflicting_face_targets.contains(face_id) {
+                continue;
+            }
             let own = face_colors.get(face_id.as_str()).copied();
             let body = face_body.get(face_id.as_str()).copied();
             let inherited = body.and_then(|b| body_colors.get(b).copied());
@@ -553,27 +640,29 @@ impl<'a> Builder<'a> {
                     styled_bodies.insert(b);
                 }
             }
-            if let Some(binding_id) = spec.binding_id {
-                self.written_appearance_bindings
-                    .insert(binding_id.to_string());
+            if own.is_some() {
+                if let Some(binding_ids) = face_binding_ids.get(face_id.as_str()) {
+                    self.written_appearance_bindings
+                        .extend(binding_ids.iter().map(|id| (*id).to_string()));
+                }
+            } else if let Some(body_id) = body {
+                if let Some(binding_ids) = body_binding_ids.get(body_id) {
+                    self.written_appearance_bindings
+                        .extend(binding_ids.iter().map(|id| (*id).to_string()));
+                }
             }
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
                 .unwrap_or("");
             let style = self.surface_style(spec.color, name, &mut style_refs);
-            styled.push(
-                self.emit_styled_item(
-                    style,
-                    *face,
-                    spec.binding_id
-                        .is_some_and(|binding_id| hidden_binding_ids.contains(binding_id)),
-                ),
-            );
+            styled.push(self.emit_styled_item(style, *face, spec.hidden));
         }
         let mut direct_unstyled = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
-            if self.written_appearance_bindings.contains(&binding.id) {
+            if self.written_appearance_bindings.contains(&binding.id)
+                || self.conflicted_appearance_bindings.contains(&binding.id)
+            {
                 continue;
             }
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
@@ -643,9 +732,9 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_id) = spec.binding_id {
+            if let Some(binding_ids) = body_binding_ids.get(*body_id) {
                 self.written_appearance_bindings
-                    .insert(binding_id.to_string());
+                    .extend(binding_ids.iter().map(|id| (*id).to_string()));
             }
             let name = spec
                 .appearance
@@ -660,13 +749,10 @@ impl<'a> Builder<'a> {
             } else {
                 self.surface_style(spec.color, name, &mut style_refs)
             };
-            let hidden = spec
-                .binding_id
-                .is_some_and(|binding_id| hidden_binding_ids.contains(binding_id));
             styled.extend(
                 targets
                     .into_iter()
-                    .map(|target| self.emit_styled_item(style, target, hidden)),
+                    .map(|target| self.emit_styled_item(style, target, spec.hidden)),
             );
             styled_bodies.insert(body_id);
         }
@@ -4235,6 +4321,20 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let appearance_binding_target_conflicts = self.appearance_binding_target_conflicts.clone();
+        for ((target_kind, target_id), bindings) in appearance_binding_target_conflicts {
+            let binding_ids = bindings
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                StepLossCode::AppearanceBindingTargetConflict,
+                format!(
+                    "appearance bindings {binding_ids} have conflicting target style projections for {target_kind} '{target_id}' and were not written"
+                ),
+            );
+        }
         let lossy_appearances = self
             .ir
             .model
@@ -4273,9 +4373,10 @@ impl<'a> Builder<'a> {
                     || !appearance.properties.is_empty()
                     || alpha_unwritable
                     || bindings.is_empty()
-                    || bindings
-                        .iter()
-                        .any(|binding| !self.written_appearance_bindings.contains(&binding.id))
+                    || bindings.iter().any(|binding| {
+                        !self.written_appearance_bindings.contains(&binding.id)
+                            && !self.conflicted_appearance_bindings.contains(&binding.id)
+                    })
             })
             .count();
         if lossy_appearances > 0 {

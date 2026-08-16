@@ -148,16 +148,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 7. Annotation, presentation, and tessellation
 
-### AP-11. Export precedence for repeated appearance bindings
-
-**Question.** How does STEP export represent or reject multiple CADIR appearance bindings that target the same body or face?
-
-**Known.** `export.rs:462-483` iterates model order and uses `or_insert`, so the first binding supplies the exported color. Later bindings are silently ignored for that target. No loss reports the conflict.
-
-**Need.** We need a CADIR multiplicity invariant or a STEP export rule, plus an order-permuted IR witness with two distinct target colors.
-
-**Note.** If two bindings target one face or body, reversing their model order changes the exported STEP color while the binding set is unchanged.
-
 ### PS-07. Duplicate occurrence placement
 
 **Question.** What is the disposition when multiple `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` records resolve to one usage occurrence?

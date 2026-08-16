@@ -186,6 +186,8 @@ pub enum StepLossCode {
     AppearanceBindingMissingAsset,
     /// Appearance bindings reference appearances without a base color.
     AppearanceBindingNoBaseColor,
+    /// Appearance bindings target one body or face with conflicting styles.
+    AppearanceBindingTargetConflict,
     /// Coedge pcurve references have no geometry.
     CoedgePcurveNoGeometry,
     /// Emitted coedge pcurves carry native-only metadata.
@@ -368,6 +370,7 @@ impl StepLossCode {
         Self::HiddenPresentationLayerOmitted,
         Self::AppearanceBindingMissingAsset,
         Self::AppearanceBindingNoBaseColor,
+        Self::AppearanceBindingTargetConflict,
         Self::CoedgePcurveNoGeometry,
         Self::CoedgePcurveNativeMetadata,
         Self::PcurveUseNativeMetadata,
@@ -519,6 +522,7 @@ impl StepLossCode {
             Self::HiddenPresentationLayerOmitted => "presentation.hidden-layer-omitted",
             Self::AppearanceBindingMissingAsset => "appearance.binding-missing-asset",
             Self::AppearanceBindingNoBaseColor => "appearance.binding-no-base-color",
+            Self::AppearanceBindingTargetConflict => "appearance.binding-target-conflict",
             Self::CoedgePcurveNoGeometry => "pcurve.coedge-no-geometry",
             Self::CoedgePcurveNativeMetadata => "pcurve.coedge-native-metadata",
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
@@ -744,9 +748,9 @@ impl StepLossCode {
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
             Self::UnknownSurfaceFaceOmitted => LossTaxonomy::UnknownSurfaceFaceOmitted,
             Self::HiddenBodyOmitted => LossTaxonomy::HiddenBodyOmitted,
-            Self::AppearanceBindingMissingAsset | Self::AppearanceBindingNoBaseColor => {
-                LossTaxonomy::MaterialNotTransferred
-            }
+            Self::AppearanceBindingMissingAsset
+            | Self::AppearanceBindingNoBaseColor
+            | Self::AppearanceBindingTargetConflict => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
             Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
                 LossTaxonomy::ParametricRecordOmitted
@@ -884,6 +888,7 @@ mod tests {
                 "presentation.hidden-layer-omitted",
                 "appearance.binding-missing-asset",
                 "appearance.binding-no-base-color",
+                "appearance.binding-target-conflict",
                 "pcurve.coedge-no-geometry",
                 "pcurve.coedge-native-metadata",
                 "pcurve.use-native-metadata",

@@ -610,6 +610,141 @@ fn writer_reports_appearance_without_base_color() {
     }));
 }
 
+fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool) -> CadIr {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let target = if body_target {
+        AppearanceTarget::Body(ir.model.bodies[0].id.clone())
+    } else {
+        AppearanceTarget::Face(ir.model.faces[0].id.clone())
+    };
+    let red = AppearanceId("test:appearance#red".into());
+    let blue = AppearanceId("test:appearance#blue".into());
+    for (id, color) in [
+        (
+            red.clone(),
+            cadmpeg_ir::topology::Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+        ),
+        (
+            blue.clone(),
+            cadmpeg_ir::topology::Color {
+                r: if same_color { 1.0 } else { 0.0 },
+                g: 0.0,
+                b: if same_color { 0.0 } else { 1.0 },
+                a: 1.0,
+            },
+        ),
+    ] {
+        ir.model.appearances.push(Appearance {
+            id,
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(color),
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        });
+    }
+    let mut bindings = vec![
+        AppearanceBinding {
+            id: "test:binding#red".into(),
+            target: target.clone(),
+            appearance: red,
+            source_entity_id: None,
+            object_type: None,
+            visible: None,
+            channels: std::collections::BTreeMap::new(),
+        },
+        AppearanceBinding {
+            id: "test:binding#blue".into(),
+            target,
+            appearance: blue,
+            source_entity_id: None,
+            object_type: None,
+            visible: None,
+            channels: std::collections::BTreeMap::new(),
+        },
+    ];
+    if reverse {
+        bindings.reverse();
+    }
+    ir.model.appearance_bindings = bindings;
+    ir
+}
+
+#[test]
+fn writer_rejects_order_dependent_duplicate_target_styles() {
+    for (body_target, target_kind) in [(true, "body"), (false, "face")] {
+        let mut forward_output = Vec::new();
+        let forward_report = write_step(
+            &duplicate_target_style_ir(body_target, false, false),
+            &mut forward_output,
+            &StepWriteOptions::default(),
+        )
+        .expect("report mode writes geometry while omitting the conflict");
+        let mut reverse_output = Vec::new();
+        let reverse_report = write_step(
+            &duplicate_target_style_ir(body_target, true, false),
+            &mut reverse_output,
+            &StepWriteOptions::default(),
+        )
+        .expect("reordered report mode writes geometry while omitting the conflict");
+        assert_eq!(forward_output, reverse_output);
+        for report in [forward_report, reverse_report] {
+            assert_eq!(report.losses.len(), 1, "unexpected losses: {report:?}");
+            let loss = &report.losses[0];
+            assert_eq!(
+                loss.code,
+                StepLossCode::AppearanceBindingTargetConflict.kind()
+            );
+            assert!(loss.message.contains(target_kind));
+            assert!(loss.message.contains("test:binding#red"));
+            assert!(loss.message.contains("test:binding#blue"));
+        }
+        assert!(!String::from_utf8_lossy(&forward_output).contains("STYLED_ITEM"));
+
+        let mut strict_output = Vec::new();
+        assert!(matches!(
+            write_step(
+                &duplicate_target_style_ir(body_target, false, false),
+                &mut strict_output,
+                &StepWriteOptions {
+                    unsupported: StepUnsupportedPolicy::Reject,
+                    ..StepWriteOptions::default()
+                }
+            ),
+            Err(StepError::Unsupported(_))
+        ));
+        assert!(strict_output.is_empty());
+    }
+
+    let mut equivalent_output = Vec::new();
+    let equivalent_report = write_step(
+        &duplicate_target_style_ir(false, false, true),
+        &mut equivalent_output,
+        &StepWriteOptions::default(),
+    )
+    .expect("equal target styles are coalesced");
+    assert!(equivalent_report.losses.is_empty(), "{equivalent_report:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&equivalent_output)
+            .matches("STYLED_ITEM")
+            .count(),
+        1
+    );
+}
+
 #[test]
 fn writer_reports_reduced_tessellation_metadata_and_body_links() {
     let mut ir = unit_cube();

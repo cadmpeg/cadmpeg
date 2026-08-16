@@ -1521,6 +1521,18 @@ lower alpha so a rendering transparency property is not lost beside an opaque
 fill color. Independent effective styled items retain separate appearance
 bindings.
 
+CADIR export decision: the STEP writer projects one body or face appearance
+target to one `STYLED_ITEM` style only when every eligible binding for that
+target has the same write projection: base RGBA color, `COLOUR_RGB` name, and
+binding visibility. Equivalent duplicate bindings coalesce and all of their
+binding identities count as written. Distinct projections have no format
+precedence. Report-mode export omits every style selected from the conflicting
+bindings for that target and records `appearance.binding-target-conflict`
+with the target and binding identities. An unconflicted body style may still
+transfer through the normal body-to-face projection. Strict export rejects the
+non-empty loss report. The writer does not select a binding from model order,
+aggregate order, or first occurrence.
+
 Visibility remains binding-level and does not change visibility on a shared
 geometry carrier. The writer emits binding-specific `INVISIBILITY` records for
 emitted hidden styled items on schemas that support visibility; unsupported
