@@ -394,6 +394,83 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
 }
 
 #[test]
+fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
+    let root = include_bytes!("tests/data/ce02_root_anchor_valid.p21");
+    let subsidiary = include_bytes!("tests/data/ce02_subsidiary_valid.p21");
+    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
+    assert!(root_diagnostics.is_empty());
+    assert_eq!(
+        root_exchange.anchors[0].value,
+        crate::parse::Value::Resource("parts/ce02_subsidiary_valid.p21#remote_item".into())
+    );
+    assert_eq!(root_exchange.references[0].uri, "#target");
+
+    let (subsidiary_exchange, subsidiary_diagnostics) =
+        crate::parse::parse(subsidiary).expect("parse CE-02 subsidiary");
+    assert!(subsidiary_diagnostics.is_empty());
+    assert_eq!(
+        subsidiary_exchange.anchors[0].value,
+        crate::parse::Value::Reference(1)
+    );
+    assert_eq!(
+        subsidiary_exchange.records[&1].partials[0].parameters,
+        vec![crate::parse::Value::String(b"remote".to_vec())]
+    );
+
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/ce02_subsidiary_valid.p21",
+            subsidiary,
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect valid forwarded archive");
+    assert_eq!(summary.entries.len(), 2);
+    assert!(!summary.entries[1]
+        .attributes
+        .contains_key("logical_sections"));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note
+                == "internal resource #10 -> parts/ce02_subsidiary_valid.p21#remote_item")
+    );
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root with valid forwarded target");
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena")
+            .len(),
+        1
+    );
+    assert!(result
+        .report()
+        .notes
+        .contains(&"internal resource #10 -> parts/ce02_subsidiary_valid.p21#remote_item".into()));
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external reference #10 -> #target".into()));
+
+    let missing = step_zip(&[(ROOT_NAME, root, CompressionMethod::Stored)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(missing), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+}
+
+#[test]
 fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
     let root = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
