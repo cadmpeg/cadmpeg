@@ -336,6 +336,34 @@ decoded unique section name and one governing schema name listed in
 FILE_SCHEMA. Multiple DATA sections require parameters on every section. All
 DATA sections share the entity-instance namespace.
 
+The Part 21 schema population is separate from the decoded instance graph. It
+contains every entity in the local DATA sections. A `SCHEMA_POPULATION` adds
+the schema populations of its listed exchange structures. A `REFERENCE` adds
+the schema populations of every exchange structure named by its URI. This
+inclusion is transitive, and each entity occurs at most once. A resource that
+does not resolve to an exchange structure contributes no entities. The schema
+population is the conformance population; it does not import a referenced
+exchange's numeric DATA names into the local exchange. Part 21 §§8.2.5, 10.2,
+11.2, and Annex J define these population and distributed-exchange rules.
+
+For a resolved external resource, the referenced `ANCHOR_ITEM` supplies one
+entity or value at the local occurrence. URI forwarding repeats this lookup.
+It does not copy the resource's DATA records, numeric instance names, schema
+sections, units, or other records into the local exchange. Numeric instance
+names are local to each exchange structure. A target that is not an entity or
+value in the governing `FILE_SCHEMA`, or that cannot be resolved, has the
+format result `$`.
+
+CADIR decision: the STEP codec admits only the supplied root exchange graph.
+It keeps each external occurrence bound to its exact resource URI and anchor
+fragment. It does not assign a subsidiary numeric instance to a root identity
+and does not merge subsidiary DATA, schemas, units, or coordinate contexts. A
+caller that composes resources must provide a resolver-qualified resource
+binding, verify the target and its schema, and apply its trust, digest or
+signature, unit, and coordinate-context policies before connecting that target
+to a local occurrence. The codec has no implicit cross-resource composition
+step. A missing, refused, or unverified target remains an external dependency.
+
 ## 8. Entity-layer invariants
 
 All STEP aggregate indices are one-based. Entity references preserve identity,

@@ -18,21 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-03. Resource composition
-
-**Question.** How does each external resource combine with the local instance graph?
-
-**Known.** Part 21 resolves a resource fragment to an entity or value ANCHOR,
-follows forwarded URI anchors, and returns `$` on a failed or cyclic
-resolution. It does not define a merge of two independent numeric DATA
-namespaces. The neutral IR currently has one document-wide identity universe.
-
-**Note.** A resource-qualified graph import needs an explicit identity,
-schema, unit, and trust policy. The reader retains unresolved external
-occurrences and does not invent a cross-resource merge.
-
-**Need.** We must know the composition rule to resolve cross-resource identities and build one product graph.
-
 ### ER-04. Resource cache identity
 
 **Question.** Which URI components and resource metadata determine whether two external resource references identify the same cached resource?
