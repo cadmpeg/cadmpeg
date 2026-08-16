@@ -925,14 +925,16 @@ fn declared_entity_handle_linked_pairs<'a>(
             };
             if !matches!(
                 radial.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
             ) {
                 return None;
             }
             let center_local_id = center.local_id?;
             if center_local_id == 0
                 || radial.object_index != Some(center_local_id)
-                || radial.local_id != Some(0)
+                || !matches!(radial.local_id, None | Some(0))
             {
                 return None;
             }

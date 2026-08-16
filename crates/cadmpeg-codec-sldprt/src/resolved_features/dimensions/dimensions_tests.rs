@@ -96,6 +96,41 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     assert_eq!(carrier.center, [0.010, 0.020]);
     assert_eq!(carrier.construction, Some(false));
 
+    let mut terminal_lane = lane.clone();
+    terminal_lane.sketch_entities[2].local_id = None;
+    let terminal_markers = terminal_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let terminal_carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&terminal_lane),
+        &terminal_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .expect("terminal radial address carrier");
+    assert_eq!(terminal_carrier.marker.id, "center");
+    assert_eq!(terminal_carrier.center, [0.010, 0.020]);
+
+    terminal_lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+    let circular_radial_markers = terminal_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let circular_radial_carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&terminal_lane),
+        &circular_radial_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .expect("terminal circular radial address carrier");
+    assert_eq!(circular_radial_carrier.marker.id, "center");
+    assert_eq!(circular_radial_carrier.center, [0.010, 0.020]);
+
     let mut ambiguous_lane = lane.clone();
     ambiguous_lane.sketch_entities.extend([
         marker(
