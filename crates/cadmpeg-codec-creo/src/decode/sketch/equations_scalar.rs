@@ -14,6 +14,7 @@ use super::equations_coordinate::{
 const EPS_RADIAL_VALUE: f64 = 1e-9;
 const EPS_RADIAL_ANGLE: f64 = 1e-9;
 const EPS_RADIAL_ZERO: f64 = 1e-12;
+const EPS_SCALAR_EQUALITY: f64 = 1e-9;
 
 pub(crate) fn section_equation_coordinate_equalities(
     definition: &crate::feature::FeatureDefinition,
@@ -281,6 +282,7 @@ pub(crate) fn section_equation_function_forty_two_midpoint_coordinate_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
@@ -319,7 +321,14 @@ pub(crate) fn section_equation_function_forty_two_midpoint_coordinate_rows(
                         .and_then(|point| point[coordinate]),
                 )
                 .map(|(first, second)| f64::midpoint(first, second));
-            let value = reconcile_equation_value(result.value, solved).ok()?;
+            let result_variable = (result.variable_type, result.key);
+            let equality_value = scalar_equality_values
+                .get(&result_variable)
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let stored = reconcile_equation_value(result.value, equality_value).ok()?;
+            let value = reconcile_equation_value(stored, solved).ok()?;
             Some(SectionFunctionFortyTwoMidpointCoordinate {
                 first: first.key,
                 second: second.key,
@@ -356,6 +365,7 @@ pub(crate) fn section_equation_function_thirty_one_point_coordinate_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
@@ -392,9 +402,27 @@ pub(crate) fn section_equation_function_thirty_one_point_coordinate_rows(
                 return None;
             }
             let point = coordinates.get(&first_u.key).copied().unwrap_or([None; 2]);
+            let u_equality = scalar_equality_values
+                .get(&(second_u.variable_type, second_u.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let v_equality = scalar_equality_values
+                .get(&(second_v.variable_type, second_v.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
             let values = [
-                reconcile_equation_value(second_u.value, point[0]).ok()?,
-                reconcile_equation_value(second_v.value, point[1]).ok()?,
+                reconcile_equation_value(
+                    reconcile_equation_value(second_u.value, u_equality).ok()?,
+                    point[0],
+                )
+                .ok()?,
+                reconcile_equation_value(
+                    reconcile_equation_value(second_v.value, v_equality).ok()?,
+                    point[1],
+                )
+                .ok()?,
             ];
             Some(SectionFunctionThirtyOnePointCoordinates {
                 point: first_u.key,
@@ -690,6 +718,18 @@ pub(crate) fn section_equation_scalar_equality_components(
 pub(crate) fn section_equation_scalar_equalities(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, f64> {
+    section_equation_scalar_equality_values(definition)
+        .into_iter()
+        .filter_map(|(variable, value)| match value {
+            Ok(Some(value)) => Some((variable, value)),
+            Ok(None) | Err(()) => None,
+        })
+        .collect()
+}
+
+fn section_equation_scalar_equality_values(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -715,27 +755,29 @@ pub(crate) fn section_equation_scalar_equalities(
 
     let mut resolved = BTreeMap::new();
     for component in section_equation_scalar_equality_components(definition) {
-        if component.iter().any(|variable| invalid.contains(variable)) {
-            continue;
-        }
-        let component_values = component
-            .iter()
-            .flat_map(|variable| values.get(variable).into_iter().flatten().copied())
-            .collect::<Vec<_>>();
-        let Some(first) = component_values.first().copied() else {
-            continue;
+        let value = if component.iter().any(|variable| invalid.contains(variable)) {
+            Err(())
+        } else {
+            let component_values = component
+                .iter()
+                .flat_map(|variable| values.get(variable).into_iter().flatten().copied())
+                .collect::<Vec<_>>();
+            match component_values.first().copied() {
+                None => Ok(None),
+                Some(first) => {
+                    let scale = component_values
+                        .iter()
+                        .map(|value| value.abs())
+                        .fold(1.0, f64::max);
+                    component_values
+                        .iter()
+                        .all(|value| (*value - first).abs() <= EPS_SCALAR_EQUALITY * scale)
+                        .then_some(Some(first))
+                        .ok_or(())
+                }
+            }
         };
-        let scale = component_values
-            .iter()
-            .map(|value| value.abs())
-            .fold(1.0, f64::max);
-        if component_values
-            .iter()
-            .any(|value| (*value - first).abs() > 1e-9 * scale)
-        {
-            continue;
-        }
-        resolved.extend(component.into_iter().map(|variable| (variable, first)));
+        resolved.extend(component.into_iter().map(|variable| (variable, value)));
     }
     resolved
 }

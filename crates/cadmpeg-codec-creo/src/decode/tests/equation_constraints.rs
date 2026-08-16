@@ -595,6 +595,47 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             value: Length(2.0),
         }
     );
+
+    let mut propagated_midpoint = function_forty_two.clone();
+    propagated_midpoint.body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+            \x01\x2a\xf8\x03\x00\x01\x02\xf6\xe2\
+            \x02\x05\xf8\x03\x02\x03\x04\xf6\xe2"
+        .to_vec();
+    let variables = propagated_midpoint.variables.as_mut().expect("variables");
+    variables.declared_count = 5;
+    variables.rows[2].value = None;
+    variables.rows.push(variable(6, 21, Some(2.0)));
+    variables.rows.push(variable(5, 0, Some(0.0)));
+    let propagated_constraints =
+        section_equation_function_forty_two_midpoint_coordinate_constraints(
+            &propagated_midpoint,
+            &sketch,
+        );
+    assert_eq!(propagated_constraints.len(), 1);
+    assert_eq!(
+        propagated_constraints[0].0.definition,
+        SketchConstraintDefinition::MidpointCoordinate {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
+            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:31".into())),
+            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
+            value: Length(2.0),
+        }
+    );
+    let mut conflicting_equality_midpoint = propagated_midpoint.clone();
+    let variables = conflicting_equality_midpoint
+        .variables
+        .as_mut()
+        .expect("variables");
+    variables.rows[2].value = Some(2.0);
+    variables.rows[3].value = Some(3.0);
+    assert!(
+        section_equation_function_forty_two_midpoint_coordinate_constraints(
+            &conflicting_equality_midpoint,
+            &sketch,
+        )
+        .is_empty()
+    );
     let mut conflicting_midpoint = function_forty_two;
     conflicting_midpoint
         .variables
@@ -667,6 +708,44 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             point: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
             values: [Length(2.0), Length(1.0)],
         }
+    );
+
+    let mut propagated_point = function_thirty_one.clone();
+    propagated_point.body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+            \x01\x1f\xf8\x04\x00\x01\x02\x03\xf6\xe2\
+            \x02\x05\xf8\x03\x02\x04\x05\xf6\xe2"
+        .to_vec();
+    let variables = propagated_point.variables.as_mut().expect("variables");
+    variables.declared_count = 6;
+    variables.rows[2].value = None;
+    variables.rows.push(variable(6, 22, Some(2.0)));
+    variables.rows.push(variable(5, 0, Some(0.0)));
+    let propagated_constraints = section_equation_function_thirty_one_point_coordinate_constraints(
+        &propagated_point,
+        &sketch,
+    );
+    assert_eq!(propagated_constraints.len(), 1);
+    assert_eq!(
+        propagated_constraints[0].0.definition,
+        SketchConstraintDefinition::PointCoordinateValues {
+            point: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
+            values: [Length(2.0), Length(1.0)],
+        }
+    );
+    let mut conflicting_equality_point = propagated_point.clone();
+    let variables = conflicting_equality_point
+        .variables
+        .as_mut()
+        .expect("variables");
+    variables.rows[2].value = Some(2.0);
+    variables.rows[4].value = Some(3.0);
+    assert!(
+        section_equation_function_thirty_one_point_coordinate_constraints(
+            &conflicting_equality_point,
+            &sketch,
+        )
+        .is_empty()
     );
     let mut conflicting_point = function_thirty_one;
     conflicting_point
