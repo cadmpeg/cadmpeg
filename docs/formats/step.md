@@ -849,6 +849,17 @@ complex instance, its name, item list, and context use the populated
 `REPRESENTATION` partial; an empty inherited subtype partial does not replace
 those attributes. The two items of an `ITEM_DEFINED_TRANSFORMATION` belong to
 the two representations connected by its representation relationship. An
+ISO 10303-43 representation relationship with an
+`ITEM_DEFINED_TRANSFORMATION` binds `transform_item_1` to `rep_1` and
+`transform_item_2` to `rep_2`. ISO/TS 10303-1345 defines the occurrence
+convention as child in `rep_1` and parent in `rep_2`: `transform_item_1` is in
+the child frame and `transform_item_2` is in the parent frame.
+CADIR decision: for a child-to-parent occurrence relationship, the placement
+is `transform_item_2` composed with the inverse of `transform_item_1`. If the
+relationship endpoints are parent-to-child, CADIR swaps the two items before
+computing that same child-to-parent transform. Neither endpoint order nor
+item order is ignored; an endpoint pairing that is absent or ambiguous leaves
+the placement unresolved.
 occurrence placement belongs to its defining relationship and representation
 context. A
 `SHAPE_REPRESENTATION_RELATIONSHIP` connects its two shape-representation

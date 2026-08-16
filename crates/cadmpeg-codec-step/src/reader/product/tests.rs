@@ -219,6 +219,49 @@ fn occurrence_transform_direction_follows_relationship_endpoints() {
 }
 
 #[test]
+fn ps02_item_defined_transform_items_follow_relationship_endpoint_contexts() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-02 fixture")
+    };
+
+    let child_to_parent = decode_fixture(include_bytes!(
+        "tests/data/ps02_child_to_parent_transform.p21"
+    ));
+    let child = child_to_parent
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .expect("child-to-parent occurrence");
+    assert_eq!(child.transform.rows[0][3], 25.0);
+    assert!(!child_to_parent
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+
+    let parent_to_child = decode_fixture(include_bytes!(
+        "tests/data/ps02_parent_to_child_transform.p21"
+    ));
+    let child = parent_to_child
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .expect("parent-to-child occurrence");
+    assert_eq!(child.transform.rows[0][3], -25.0);
+    assert!(!parent_to_child
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+}
+
+#[test]
 fn occurrence_transform_resolves_through_placed_shape_representation() {
     let source = String::from_utf8(include_bytes!(
         "../../../tests/fixtures/ap242_assembly.p21"
