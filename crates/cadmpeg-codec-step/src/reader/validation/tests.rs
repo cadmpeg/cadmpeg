@@ -125,6 +125,61 @@ fn validation_representation_decodes_all_measure_items() {
 }
 
 #[test]
+fn ps06_combined_validation_items_ignore_set_order_and_keep_siblings() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-06 fixture")
+    };
+    let validation_notes = |result: &cadmpeg_ir::codec::DecodeResult| {
+        let mut notes = result
+            .report()
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("geometric validation "))
+            .cloned()
+            .collect::<Vec<_>>();
+        notes.sort();
+        notes
+    };
+    let unsupported_items = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message
+                    .contains("geometric validation property #41 has unsupported item")
+            })
+            .map(|loss| loss.message.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let source_order = decode_fixture(include_bytes!(
+        "tests/data/ps06_combined_validation_properties_source_order.p21"
+    ));
+    let reordered = decode_fixture(include_bytes!(
+        "tests/data/ps06_combined_validation_properties_reordered.p21"
+    ));
+
+    let expected_notes = vec![
+        "geometric validation centroid combined validation: expected (1,2,3)".to_owned(),
+        "geometric validation surface area combined validation: expected 50".to_owned(),
+        "geometric validation volume combined validation: expected 8".to_owned(),
+    ];
+    assert_eq!(validation_notes(&source_order), expected_notes);
+    assert_eq!(validation_notes(&reordered), expected_notes);
+    assert_eq!(
+        unsupported_items(&source_order),
+        ["geometric validation property #41 has unsupported item #60"]
+    );
+    assert_eq!(
+        unsupported_items(&source_order),
+        unsupported_items(&reordered)
+    );
+}
+
+#[test]
 fn validation_shape_representation_with_parameters_uses_inherited_items() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),

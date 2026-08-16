@@ -1042,9 +1042,19 @@ transfer that point as a typed PMI target.
 Geometric validation properties read area, volume, and centroid values through
 inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
 `MEASURE_WITH_UNIT` partials. Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes and
-their inherited `DERIVED_UNIT_ELEMENT` factors are typed. Every referenced
-area, volume, or centroid item is evaluated; derived-unit factors scale area
-and volume by their dimensions.
+their inherited `DERIVED_UNIT_ELEMENT` factors are typed. ISO 10303-43 defines
+`representation.items` as `SET[1:?]`; a geometric-validation representation
+is not limited to one item. CAx-IF Recommended Practices for Geometric and
+Assembly Validation Properties permit one representation to combine validation
+properties when they have the same `PROPERTY_DEFINITION.name` and definition.
+The combined representation has an empty name, and each property is
+instantiated at most once for the model element. A solid may therefore carry
+one volume, one surface-area, and one centroid item in one combined
+representation. Every referenced area, volume, or centroid item is evaluated;
+derived-unit factors scale area and volume by their dimensions. CADIR decision:
+a repeated reference to one item is evaluated once, and an unsupported item
+produces a warning without suppressing supported siblings. Item order does not
+select a validation value.
 Geometric tolerances select their kind from the exact geometric-tolerance
 leaf partial, not from an inherited or modifier partial. They read their name
 and magnitude from the `GEOMETRIC_TOLERANCE` partial when the tolerance is

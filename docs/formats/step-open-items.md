@@ -444,20 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PS-06. Validation representation item count
-
-**Question.** How many measure items may one geometric-validation
-representation carry?
-
-**Known.** A validation representation transfers every referenced item.
-Area, volume, and centroid items are evaluated independently. An unsupported
-item reports a warning naming that item and does not suppress other items in
-the same representation. Repeated item references are evaluated once.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### AP-01. Datum identification for a complex datum
 
 **Question.** What STEP rule establishes datum identification for a complex datum?
