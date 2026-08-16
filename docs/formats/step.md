@@ -223,7 +223,20 @@ value occurrence declared by a REFERENCE entry is external and is not required
 in the local DATA graph. A value occurrence cannot resolve to a DATA entity
 instance. An unknown standard or user-defined entity name produces a named
 opaque record that retains its complete token span, byte span, and links to
-other named opaque records.
+resolved source records.
+
+ISO 10303-21:2016 §11.2 defines a user-defined entity instance as an entity
+that is not part of the EXPRESS schema named by the header. It uses the same
+entity-instance syntax as a schema entity, with `USER_DEFINED_KEYWORD` in its
+simple record. The meaning of the instance, including the number, data types,
+and meanings of its attributes, is an agreement between the exchange partners.
+Part 21 recommends defining an EXPRESS schema for such information and
+encoding it in a separate DATA section when a shared schema is available.
+CADIR decision: a `!` entity name and its attributes select no neutral or
+source-native semantics without that agreement. The reader retains the full
+record as a named opaque record, preserves links to every resolved referenced
+source record, and does not create a neutral or typed native entity from the
+name alone.
 
 ## 6. Header
 

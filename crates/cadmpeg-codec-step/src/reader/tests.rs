@@ -227,6 +227,53 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
 }
 
 #[test]
+pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
+    let bytes = include_bytes!("tests/data/ud01_user_defined_entity.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode user-defined entity witness");
+
+    assert_eq!(result.ir().model.entity_count(), 0);
+    let unknowns = result.ir().native_unknowns("step").unwrap();
+    assert_eq!(unknowns.len(), 2);
+
+    let target = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:!vendor_target#1")
+        .expect("user-defined target record");
+    assert!(target.links.is_empty());
+    let target_source = result
+        .source_fidelity()
+        .retained_record(&target.id.0)
+        .expect("retained user-defined target span");
+    assert_eq!(
+        target_source.data.as_deref(),
+        Some(b"#1=!VENDOR_TARGET('target');".as_slice())
+    );
+
+    let entity = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:!vendor_entity#2")
+        .expect("user-defined entity record");
+    assert_eq!(entity.links, vec!["step:data:!vendor_target#1".to_string()]);
+    let entity_source = result
+        .source_fidelity()
+        .retained_record(&entity.id.0)
+        .expect("retained user-defined entity span");
+    assert_eq!(
+        entity_source.data.as_deref(),
+        Some(b"#2=!VENDOR_ENTITY('vendor payload',#1,!VENDOR_TYPE((#1)));".as_slice())
+    );
+
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("!VENDOR_ENTITY instance(s) as named opaque STEP records")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.findings.is_empty(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn opaque_links_retain_typed_step_targets() {
     let result = decode_inline(
         "#1=EXAMPLE_RECORD('',#2);

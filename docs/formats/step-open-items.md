@@ -231,22 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### UD-01. User-defined entity semantics
-
-**Known.** Part 21 does not assign semantics to a user-defined entity
-name. The number, data types, and meanings of its attributes are an agreement
-between the exchange partners. The reader therefore retains the complete
-record as a named opaque record with its links and does not infer a native or
-neutral entity.
-
-**Question.** What entity semantics does each user-defined `!` entity name select?
-
-`step.md` §3 "user_name" defines the syntax of a user-defined name. `step.md` §5 "Entity instance names share one namespace across all DATA sections." through `step.md` §5 "Entity instance names share one namespace across all DATA sections." require an unknown entity to retain its name, complete spans, and links to other named opaque records.
-
-**Need.** We must know the semantics to transfer a user-defined entity to typed native or neutral records.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### UD-02. User-defined type semantics
 
 **Known.** Part 21 does not assign semantics to a user-defined type name.
