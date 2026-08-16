@@ -20,7 +20,7 @@ The Terminate data area contains four eight-byte fields: `S` plus the seven-digi
 
 ## Global section
 
-The Global field categories and empty-field defaulting rule follow [IGES 5.3 §2.2.1](https://paulbourke.net/dataformats/iges/IGES.pdf). The Global data-type rules follow [§2.2.2](https://paulbourke.net/dataformats/iges/IGES.pdf). The field definitions and default values are in [§§2.2.4.3.12–2.2.4.3.26](https://paulbourke.net/dataformats/iges/IGES.pdf).
+The Global field categories and empty-field defaulting rule follow [IGES 5.3 §2.2.1](https://paulbourke.net/dataformats/iges/IGES.pdf). The Global data-type rules follow [§2.2.2](https://paulbourke.net/dataformats/iges/IGES.pdf). The field definitions and default values are in [§§2.2.4.3.1–2.2.4.3.26](https://paulbourke.net/dataformats/iges/IGES.pdf).
 
 The Global data stream is the concatenation of bytes 1 through 72 from its cards. Its first value defines the parameter delimiter and its second value defines the record delimiter. Each is a one-character Hollerith string. Omitted first and second values select comma and semicolon respectively.
 
@@ -126,6 +126,8 @@ Type 182 Form 0 selects one connected component of a disjoint Boolean result. It
 The `native.iges` `procedural_solids` arena retains sweep kind, form, profile identity, native sweep amount, omitted-versus-present axis fields, and transformation link. Semantic decoding requires a decoded profile carrier and closure consistent with the owning form.
 
 ## Product structure
+
+The Type 320 Network Subfigure Definition and Type 420 Network Subfigure Instance type-flag fields are defined by [IGES 5.3 §4.78](https://paulbourke.net/dataformats/iges/IGES.pdf) and [§4.140](https://paulbourke.net/dataformats/iges/IGES.pdf). Type 320 requires an integer flag `0`, `1`, or `2`; Type 420 uses the same values and defaults an omitted flag to `0`.
 
 Type 132 Form 0 defines a network connection point with entity-use flag `04`. It stores a finite model-space position; optional display geometry; connection type and function classifications; function identifier and name with optional Type 312 display templates; a unique integer identifier; swap policy; and an optional Type 320 or Type 420 owner. Connection type values are `0` through `2`, `101` through `104`, `201` through `203`, or implementor-defined `5001` through `9999`. Function codes are `0` through `49`, `98`, `99`, or implementor-defined `5001` through `9999`. The Directory transformation places the point and its display presentation. The `connect_points` arena preserves definition and occurrence connection identities separately through their owner links.
 
