@@ -8,6 +8,7 @@
 use std::fmt::Write as _;
 use std::io::Cursor;
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::eval::{
@@ -518,6 +519,25 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     assert!(matches!(
         codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
         Err(cadmpeg_core::CodecError::WrongFormat(_))
+    ));
+}
+
+#[test]
+fn codec_refuses_schema_marked_part26_hdf5_population() {
+    let encoded = include_bytes!("data/ce05_part26_population.h5.b64")
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    let bytes = STANDARD.decode(encoded).expect("Part 26 HDF5 witness");
+    assert!(bytes.starts_with(b"\x89HDF\r\n\x1a\n"));
+
+    let codec = StepCodec::default();
+    assert_eq!(codec.detect(&bytes), Confidence::Medium);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::NotImplemented(message))
+            if message == "STEP Part 26 binary/HDF5 encoding"
     ));
 }
 
