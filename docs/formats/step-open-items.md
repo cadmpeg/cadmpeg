@@ -149,13 +149,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** Define an AP242 cross-file identity relation, precedence policy, and independently paired XML and Part 21 exchanges.
 
 **Conflict.** Refusing BO-Model XML avoids an accidental join but does not implement or settle cross-file composition.
-
-### PS-09. Parent mapped-item salvage order
-
-**Question.** What source identity permits parent-representation mapped items to bind unique child usages when no occurrence-owned representation exists?
-
-**Known.** `reader/product.rs:1034-1043` sorts usages by physical record span. `reader/product.rs:1060-1101` sorts parent representations by span and walks each `representation.items` sequence. `reader/product.rs:1104-1113` admits the transforms only when the mapped-child sequence agrees with the usage sequence. The specification declares `representation.items` a `SET` with no member-order meaning (`step.md` §8 "ISO 10303-43 defines `representation.items`") but permits physical-order salvage (`step.md` §8 "CADIR decision: a parent representation's mapped items").
-
-**Need.** Add an order-permuted unique-child witness that proves the same source graph gives the same admission and transform, or remove this salvage and require an explicit occurrence association.
-
-**Conflict.** Permuting one SET or record order can change the branch from inferred placement to identity placement with `NauoPlacementUnresolved`, without changing the references, child definitions, or transforms.

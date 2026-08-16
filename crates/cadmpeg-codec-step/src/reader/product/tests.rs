@@ -845,6 +845,43 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
 }
 
 #[test]
+fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
+    for input in [
+        include_bytes!("tests/data/ps09_unique_parent_items_first.p21").as_slice(),
+        include_bytes!("tests/data/ps09_unique_parent_items_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode PS-09 fixture");
+        let first = result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.0.contains("#16"))
+            .expect("first child occurrence");
+        assert_eq!(first.transform.rows[0][3], 25.0);
+        assert_eq!(first.transform.rows[1][3], 0.0);
+        let second = result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.0.contains("#17"))
+            .expect("second child occurrence");
+        assert_eq!(second.transform.rows[0][3], -10.0);
+        assert_eq!(second.transform.rows[1][3], 4.0);
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn unrelated_representation_mapping_does_not_place_an_occurrence() {
     let result = StepCodec::default()
         .decode(

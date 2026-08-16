@@ -863,6 +863,15 @@ fn occurrence_placements(
         })
         .collect::<BTreeMap<_, _>>();
     let definition_representations = definition_representations(exchange, &pds);
+    let mut definitions_by_representation = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for (&definition, representations) in &definition_representations {
+        for &representation in representations {
+            definitions_by_representation
+                .entry(representation)
+                .or_default()
+                .insert(definition);
+        }
+    }
     let representation_links = representation_links(exchange);
     let mut result = BTreeMap::new();
     let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
@@ -970,13 +979,6 @@ fn occurrence_placements(
             )),
         }
     }
-    infer_parent_representation_placements(
-        exchange,
-        geometry,
-        usages,
-        &definition_representations,
-        &mut result,
-    );
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
     for usage in usages.values() {
         *sibling_usage_counts
@@ -987,10 +989,10 @@ fn occurrence_placements(
         if result.contains_key(&usage_id) {
             continue;
         }
-        let Some(child_representations) = definition_representations.get(&usage.child_definition)
-        else {
-            continue;
-        };
+        // A parent representation's MAPPED_ITEM identifies its child through
+        // the mapping source's mapped representation and that representation's
+        // SHAPE_DEFINITION_REPRESENTATION. `representation.items` is a SET,
+        // so admission cannot depend on member or record order.
         let Some(parent_representations) = definition_representations.get(&usage.parent_definition)
         else {
             continue;
@@ -1015,7 +1017,13 @@ fn occurrence_placements(
                 else {
                     continue;
                 };
-                if child_representations.contains(&mapped_representation)
+                let Some(mapped_definitions) =
+                    definitions_by_representation.get(&mapped_representation)
+                else {
+                    continue;
+                };
+                if mapped_definitions.len() == 1
+                    && mapped_definitions.contains(&usage.child_definition)
                     && !placements.contains(&transform)
                 {
                     placements.push(transform);
@@ -1033,118 +1041,6 @@ fn occurrence_placements(
         }
     }
     result
-}
-
-fn infer_parent_representation_placements(
-    exchange: &Exchange,
-    geometry: &GeometryData,
-    usages: &BTreeMap<u64, Usage>,
-    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-    result: &mut BTreeMap<u64, Transform>,
-) {
-    // A parent representation can carry occurrence mappings without an
-    // occurrence-owned shape representation. Use that ordering only when
-    // the complete mapped-child sequence agrees with the usage sequence.
-    let mut definitions_by_representation = BTreeMap::<u64, Vec<u64>>::new();
-    for (&definition, representations) in definition_representations {
-        for &representation in representations {
-            definitions_by_representation
-                .entry(representation)
-                .or_default()
-                .push(definition);
-        }
-    }
-
-    let mut parent_definitions = usages
-        .values()
-        .map(|usage| usage.parent_definition)
-        .collect::<Vec<_>>();
-    parent_definitions.sort_unstable();
-    parent_definitions.dedup();
-
-    for parent_definition in parent_definitions {
-        let mut parent_usages = usages
-            .iter()
-            .filter(|(_, usage)| usage.parent_definition == parent_definition)
-            .collect::<Vec<_>>();
-        parent_usages.sort_by_key(|(id, _)| {
-            exchange
-                .records
-                .get(id)
-                .map_or(usize::MAX, |record| record.span.start)
-        });
-
-        let mut child_definitions = BTreeSet::new();
-        if parent_usages
-            .iter()
-            .any(|(_, usage)| !child_definitions.insert(usage.child_definition))
-        {
-            // Representation item order does not bind repeated uses of one
-            // child definition. Such uses require occurrence-owned shape
-            // representations or an explicit context-dependent placement.
-            continue;
-        }
-
-        let Some(parent_representations) = definition_representations.get(&parent_definition)
-        else {
-            continue;
-        };
-        let mut parent_representations = parent_representations.iter().copied().collect::<Vec<_>>();
-        parent_representations.sort_by_key(|representation| {
-            exchange
-                .records
-                .get(representation)
-                .map_or(usize::MAX, |record| record.span.start)
-        });
-
-        let mut mapped_children = Vec::<(u64, Transform)>::new();
-        for representation in parent_representations {
-            let Some(record) = exchange.records.get(&representation) else {
-                continue;
-            };
-            let Some(items) = super::representation::items(record) else {
-                continue;
-            };
-            for item_id in items {
-                let Some(item) = exchange.records.get(&item_id) else {
-                    continue;
-                };
-                if item.partial("MAPPED_ITEM").is_none() {
-                    continue;
-                }
-                let Some((mapped_representation, transform)) =
-                    mapped_item_placement(item, exchange, geometry)
-                else {
-                    continue;
-                };
-                let Some(definitions) = definitions_by_representation.get(&mapped_representation)
-                else {
-                    continue;
-                };
-                let [child_definition] = definitions.as_slice() else {
-                    continue;
-                };
-                if parent_usages
-                    .iter()
-                    .any(|(_, usage)| usage.child_definition == *child_definition)
-                {
-                    mapped_children.push((*child_definition, transform));
-                }
-            }
-        }
-
-        if mapped_children.len() != parent_usages.len()
-            || parent_usages.iter().zip(&mapped_children).any(
-                |((_, usage), (child_definition, _))| usage.child_definition != *child_definition,
-            )
-        {
-            continue;
-        }
-
-        for ((usage_id, _), (_, transform)) in parent_usages.into_iter().zip(mapped_children) {
-            result.entry(*usage_id).or_insert(transform);
-        }
-    }
 }
 
 fn mapped_item_placement(

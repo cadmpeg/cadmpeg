@@ -1361,15 +1361,23 @@ candidate as named opaque source records, and reports
 `product.nauo-placement-ambiguous`. It never gives one assembly mechanism
 precedence over the other or selects a mechanism from Part 21 record order or
 numeric entity identifiers.
-CADIR decision: a parent representation's mapped items do not bind repeated
-uses of one child definition to individual occurrences. When each child
-definition occurs once in a parent usage set and the complete mapped-child
-sequence agrees with that usage set, CADIR may use physical record order as a
-deterministic inference; this is a CADIR salvage rule and does not assign
-meaning to the STEP `SET` order. Repeated child definitions disable that
-inference even when their mapped targets differ. Without an occurrence-owned
-mapped representation or a context-dependent placement, each repeated use
-keeps the identity transform and reports `AssemblyPlacementsNotTransferred`.
+ISO 10303-43 §4.4.18 defines `representation_map.mapped_representation` as
+the representation mapped by a `MAPPED_ITEM`. ISO 10303-41 §23.4.7 defines
+`SHAPE_DEFINITION_REPRESENTATION` as the association of a shape representation
+with a `PRODUCT_DEFINITION_SHAPE`. CADIR uses the child definition reached by
+that representation association as the source identity for an implicit
+parent-representation placement. A parent representation's mapped items do
+not bind repeated uses of one child definition to individual occurrences.
+CADIR admits an implicit placement only when the mapped item's source
+representation resolves to exactly one child definition, that child
+definition occurs once among the parent's usages, and exactly one distinct
+transform is found for it in the parent representation's mapped items. This
+binding does not use `representation.items` member order, parent usage record
+order, or numeric entity identifiers. If the source identity is not unique or
+the qualifying transforms are not unique, no placement is admitted. Repeated
+child definitions therefore keep the identity transform and report
+`product.nauo-placement-unresolved` without an occurrence-owned mapped
+representation or a context-dependent placement.
 ISO/TS 10303-1345 defines the mapped-item assembly link through an additional
 separate `SHAPE_REPRESENTATION` with only the `MAPPED_ITEM`; a
 `SHAPE_DEFINITION_REPRESENTATION` and a `PRODUCT_DEFINITION_SHAPE` link that
@@ -1385,8 +1393,7 @@ representation does not place the occurrence and produces an
 assembly-placement loss.
 For the implicit parent-representation salvage path, CADIR considers only a
 mapped item directly listed by a representation linked to the parent
-definition and only when the complete mapped-child sequence agrees with the
-parent usage sequence. This salvage rule is not a STEP occurrence association.
+definition. This salvage rule is not a STEP occurrence association.
 CADIR decision: for standalone mapped items that resolve to one body, an
 identical transform is assigned once to that body's `transform`. Distinct
 transforms cannot be represented by one body transform, so CADIR leaves the
