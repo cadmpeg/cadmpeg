@@ -104,9 +104,8 @@ pub(in super::super) fn class_100_operand_producers(
                             let position = (table.offset, entry.offset, table_index, entry_index);
                             (position < consumer_position
                                 && entry.class_id == 200
-                                && entry.entity_id == entity_id
-                                && entry.source_entity_id.is_some())
-                            .then_some(owner)
+                                && entry.entity_id == entity_id)
+                                .then_some(owner)
                         })
                         .collect::<Vec<_>>()
                 })

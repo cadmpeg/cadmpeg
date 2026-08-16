@@ -711,7 +711,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
     let source_missing_entry = table(175, 67, vec![entry(192, 200, None)]);
     assert_eq!(
         knit_class_100_operand_entity_ids(416, &[source_missing_entry.clone(), consumer.clone()]),
-        None
+        Some(vec![192])
     );
     assert_eq!(
         feature_entity_dependencies(&[source_missing_entry, consumer.clone()], 416),
@@ -845,10 +845,10 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
 
 #[test]
 fn surface_merge_quilt_roster_links_every_unique_generator() {
-    let entry = |entity_id, source_entity_id, offset| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, offset| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id: 200,
-        source_entity_id: Some(source_entity_id),
+        source_entity_id: None,
         related_entity_id: None,
         related_entity_state: None,
         prefixed: true,
@@ -859,7 +859,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         feature_id: Some(feature_id),
         table_class_id: 67,
         entry_ids: vec![entity_id],
-        entries: vec![entry(entity_id, feature_id, offset + 1)],
+        entries: vec![entry(entity_id, offset + 1)],
         surface_ids: Vec::new(),
         non_surface_entity_ids: vec![entity_id],
         offset,

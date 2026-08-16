@@ -167,7 +167,6 @@ pub(in super::super) fn preceding_feature_entity_producers(
             table.entries.iter().filter_map(move |entry| {
                 (entry.class_id == 200
                     && entry.entity_id == entity_id
-                    && entry.source_entity_id.is_some()
                     && entry.offset < consumer_offset)
                     .then_some(owner)
             })
