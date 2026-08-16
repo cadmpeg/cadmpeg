@@ -444,20 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PC-06. Default placement reference direction
-
-**Question.** What STEP rule establishes default placement reference direction?
-
-**Known.** An omitted or parallel `AXIS2_PLACEMENT_3D.ref_direction` uses
-the projection of global +X onto the plane normal to the axis. When the axis
-is within `1e-12` of parallel to X, it uses global +Y before projection. The
-STEP reader applies this rule locally, so a neutral stability helper cannot
-change STEP chart semantics.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-07. Ellipse semi-axis canonicalization
 
 **Question.** What STEP rule establishes ellipse semi-axis canonicalization?

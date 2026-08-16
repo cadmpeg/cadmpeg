@@ -158,6 +158,67 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
 }
 
 #[test]
+fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc06_placement_reference.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode placement reference witness");
+
+    let expected = [
+        ("#6", (0.8, -0.6, 0.0)),
+        ("#9", (0.0, 1.0, 0.0)),
+        ("#12", (0.0, 1.0, 0.0)),
+    ];
+    for (source_id, (x, y, z)) in expected {
+        let curve = decoded
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == format!("step:data:curve{source_id}"))
+            .expect("witness circle");
+        let CurveGeometry::Circle { ref_direction, .. } = curve.geometry else {
+            panic!("witness carrier is not a circle");
+        };
+        assert!((ref_direction.x - x).abs() < 1.0e-12);
+        assert!((ref_direction.y - y).abs() < 1.0e-12);
+        assert!((ref_direction.z - z).abs() < 1.0e-12);
+    }
+
+    let near_axis = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#15")
+        .expect("near-axis witness circle");
+    let CurveGeometry::Circle { ref_direction, .. } = near_axis.geometry else {
+        panic!("near-axis witness carrier is not a circle");
+    };
+    assert!(ref_direction.y > 0.999_999_999);
+
+    let parallel_reference = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#18")
+        .expect("parallel-reference witness circle");
+    let CurveGeometry::Circle { ref_direction, .. } = parallel_reference.geometry else {
+        panic!("parallel-reference witness carrier is not a circle");
+    };
+    assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
+    assert!(ref_direction.y.abs() < 1.0e-12);
+    assert!(ref_direction.z.abs() < 1.0e-12);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PlacementReferenceInferred.kind()
+            && loss.message.contains("AXIS2_PLACEMENT_3D #17")
+    }));
+}
+
+#[test]
 fn parallel_axis_reference_direction_is_reported_and_inferred() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

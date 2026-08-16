@@ -455,14 +455,28 @@ the same shape as their control-point aggregates.
 optional axis1, axis2, axis3, and scale attributes. Its transformation matrix
 columns are normalized and orthogonal: axis3 defaults to +Z, axis1 is projected
 onto the plane normal to axis3, and axis2 determines the sense of the projected
-second axis. The default axis1 is +X, except for an axis3 within `1e-12` of
-parallel to X, where it is +Y; the default axis2 is +Y. The 2D operator derives a perpendicular
-second axis from axis1 and uses axis2 only to select its sense. Omitted scale is 1.
+second axis. The 2D operator derives a perpendicular second axis from axis1 and
+uses axis2 only to select its sense. Omitted scale is 1.
 
-`AXIS2_PLACEMENT_3D` uses the same first-projected-axis rule when its optional
-reference direction is omitted or parallel to its axis: +X is projected onto
-the plane normal to the axis, except for an axis within `1e-12` of parallel to
-X, where +Y is projected.
+ISO 10303-42 `build_axes` forms the normalized placement axes from the axis and
+reference direction. The axis defaults to +Z. `first_proj_axis` projects the
+reference direction onto the plane normal to that axis. If the reference
+direction is omitted, the projected direction is +X, except that an axis equal
+to +X or -X selects +Y before projection. The second placement axis is the
+normalized cross product of the placement axis and the projected reference.
+The same rule applies to the default axis1 of
+`CARTESIAN_TRANSFORMATION_OPERATOR_3D`. A supplied reference direction that
+is parallel or anti-parallel to the placement axis violates `WR4`; it is not a
+valid default case.
+
+CADIR decision: the STEP reader classifies a normalized axis with
+`abs(axis.x) >= 1 - 1e-12` as the +X/-X default case. This tolerance handles
+numeric direction records and applies only to STEP placement and transformation
+construction. If a supplied reference is non-parallel, the reader projects
+that reference without applying the default-axis tolerance. If a supplied
+reference is parallel or anti-parallel, the reader reports
+`PlacementReferenceInferred` and uses the projected default reference. This
+STEP-local salvage does not change neutral transform or chart semantics.
 
 The IR stores the longer `ELLIPSE` semi-axis as `major_direction` and
 `major_radius`. If the first STEP semi-axis is shorter than the second, the
