@@ -113,6 +113,12 @@ dimension-style, view, and settings readers consume known bounded prefixes and
 skip source-defined suffixes. Tagged streams, explicit terminators, and
 writer-band ceilings remain grammar controls. An unknown table record has no
 typed fields from its typecode alone.
+`ON_Group::Internal_WriteV5` and `Internal_ReadV5` define the group class
+wrapper's packed 1.1 prefix: archive index, UTF-16 name, and UUID. The group
+record writer and reader in `ON_BinaryArchive::Write3dmGroup` and
+`Read3dmGroup` contain that wrapper directly in the CRC-bearing group record.
+The Rust decoder consumes that prefix and resolves object-attribute group
+indexes to unique group records.
 The shared model-component child is also source-defined: the legacy anonymous
 version-1.0 form uses the five-bit UUID/parent/index/name/status presence mask,
 ignores other mask bits, and uses a two-`u32` locked/hidden status mask; the
@@ -537,6 +543,13 @@ spot exponent, attenuation, shadow intensity, archive index, UUID, name,
 length, width, and hotspot. The length and width fields are minor 1 gates and
 the hotspot is a minor 2 gate. The Rust light-table decoder bounds the class
 wrapper separately from those record children.
+`ON_BinaryArchive::Write3dmGroup` and `Read3dmGroup` use a group record whose
+only record child is the `ON_Group` class wrapper. `ON_Group::Internal_WriteV5`
+emits packed version 1.1 with the archive index, UTF-16 name, and UUID; its
+reader accepts major 1 and leaves later bytes at the class-data boundary. The
+Rust group-table decoder now consumes the same bounded prefix. This group
+writer/reader slice is settled; the RS-01 residue is limited to the
+uncharacterized direct-reader, writer-band, and tagged-stream families.
 The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
 major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
 `ON_3dmApplication` reads its three strings without a major/minor gate; all
@@ -599,6 +612,10 @@ also independently covered by V4, V5, and V6 witnesses. Its V4/V5 direct
 legacy RDK material-instance carrier, universal render-engine plug-in
 precedence, and V6 inline UUID field are settled; the Rust material record
 transfers the compatibility UUID and retains the class-data UUID otherwise.
+The `ON_Group` class is independently covered by V4, V5, and V6 witnesses. Its
+class UUID, class-data boundary, packed 1.1 archive-index/name/UUID prefix, and
+object-attribute group-index links are settled; the Rust group record preserves
+the fields and emits both witnessed member links.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -617,7 +634,12 @@ closed by `ON_Material::Internal_WriteV5`/`Read` and
 the `cadmpeg inspect` direct-XML and inline-UUID reads, and the owner tests
 `legacy_rdk_material_userdata_transfers_uuid_from_unterminated_xml`,
 `legacy_rdk_material_userdata_ignores_terminated_callback_xml`, and
-`legacy_rdk_material_userdata_rejects_malformed_xml`.
+`legacy_rdk_material_userdata_rejects_malformed_xml`. The group slice is
+closed by `ON_Group::Internal_WriteV5`/`Internal_ReadV5` and
+`ON_BinaryArchive::Write3dmGroup`/`Read3dmGroup`, the authored V4/V5/V6 group
+witness, `cadmpeg inspect` reads of the group table and class-data wrapper, and
+the three-version `cadmpeg query item` result showing the preserved index,
+name, UUID, and two object links.
 
 ### FV-06. Later major payload admission
 

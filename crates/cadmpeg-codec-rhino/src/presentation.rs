@@ -4496,6 +4496,10 @@ mod tests {
         let group = parse_group(&bytes, 0..bytes.len(), 120).expect("required invariant");
         assert_eq!(group.archive_index, 7);
         assert_eq!(group.name, "fixtures");
+        assert_eq!(
+            group.source_uuid.as_deref(),
+            Some("44444444-4444-4444-4444-444444444444")
+        );
         assert_eq!(group.source_offset, 120);
     }
 

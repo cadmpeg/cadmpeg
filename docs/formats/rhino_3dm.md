@@ -4546,9 +4546,36 @@ Segment lengths and widths with model units are length values. Hatch patterns
 store identity, fill type, description, and hatch lines. Hatch-line base,
 offset, and dash values are lengths; angle is radians.
 
-Group and light records use packed major-1 versions. Group minor 0 stores the
-index and name; minor 1 and later add the UUID. Each reader accepts only major
-1 and skips fields after its known prefix at the class-data boundary.
+Group and light records use packed major-1 versions. The group class UUID is
+`721D9F97-3645-44C4-8BE6-B2CF697D25CE`. A group table record is:
+
+```text
+GROUP_RECORD long
+  OPENNURBS_CLASS long
+    OPENNURBS_CLASS_UUID long: group class UUID and CRC
+    OPENNURBS_CLASS_DATA long: group payload
+    zero or more CLASS_USERDATA chunks
+    OPENNURBS_CLASS_END short, value 0
+```
+
+The group class-data payload is:
+
+```text
+packed version 1.minor
+i32 archive group index
+UTF-16 group name
+if minor >= 1: UUID group ID
+```
+
+The writer emits packed version 1.1. The reader requires major 1 and skips
+fields after its known prefix at the class-data boundary. The group record has
+no record-end child; its CRC-bearing long-chunk boundary contains the class
+wrapper. Group membership is stored on object attributes as archive group
+indexes, not in the group class data. CADIR links an object to the unique group
+with each listed index. Duplicate group indexes produce no links for that index
+and a `presentation.record-dropped` loss. A missing or nil serialized group ID
+is not a source identity; CADIR keys that record by its archive index and leaves
+`source_uuid` unset.
 
 The light class UUID is
 `85A08513-F383-11D3-BFE7-0010830122F0`. A light table record is:
