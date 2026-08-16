@@ -2150,6 +2150,45 @@ class-data boundary remain untyped. Bytes after item zero are bounded suffix
 bytes, not another extension item. Layer visibility and lock state are
 independent.
 
+Item 35 contains a direct `ON_SectionStyle` anonymous child. The child uses
+version `1.1`, writes the binary-archive model-component attributes, and then
+uses this item stream through `u8` item zero:
+
+```
+item 1:  u8 background-fill mode
+item 2:  two ON_Color background-fill colors
+item 3:  bool section-boundary visible
+item 4:  two ON_Color section-boundary colors
+item 5:  f64 boundary-width scale
+item 6:  u8 section-fill rule
+item 7:  i32 hatch-pattern index
+item 8:  f64 hatch scale
+item 9:  f64 hatch rotation in radians
+item 10: two ON_Color hatch colors
+item 11: direct ON_Linetype child
+```
+
+The writer emits only non-default section-style values and emits the direct
+child at item 11 when a boundary linetype exists. A reader consumes known item
+values and stops at the child boundary when a later item is encountered. The
+current writer does not emit the compatibility items 28 through 33 or item 36;
+it emits item 34 when the per-viewport visibility default for new detail views
+is changed and item 35 when a custom section style exists. Item 28's
+`no-clipping-planes` value is followed by an `ON_UuidList`; item 29 through 32
+are the legacy section-hatch and section-fill values; item 33 is a direct
+linetype child; and item 36 is an obsolete clipping-type Boolean.
+
+CADIR transfers a non-default IGES level as the optional `iges_level` field of
+the owning native layer record; the source default `-1` is omitted. Item 34 is
+transferred as the optional `visible_in_new_details` field. The obsolete mode,
+model index, line-style fields, thickness, scale, and item 36 have no neutral
+field. The compatibility section-hatch values, item 33 direct linetype, and
+item 35 section-style child have no second neutral resource identity: the
+codec validates their bounded source grammar and retains the complete owning
+layer record through source fidelity without projecting them into a separate
+CADIR object. Item 28 is transferred as `clipping_planes_enabled` after
+inverting its source `no-clipping-planes` value.
+
 #### 8.3.1 Layer per-viewport userdata
 
 `ON__LayerExtensions` is class-owned userdata on `ON_Layer`. Its class UUID and

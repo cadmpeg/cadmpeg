@@ -663,6 +663,8 @@ struct LayerPresentationRecord {
     source_uuid: Option<String>,
     parent_uuid: Option<String>,
     name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    iges_level: Option<i32>,
     visible: bool,
     locked: bool,
     expanded: Option<bool>,
@@ -673,6 +675,8 @@ struct LayerPresentationRecord {
     plot_weight_mm: Option<f64>,
     display_material_uuid: Option<String>,
     clipping_planes_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visible_in_new_details: Option<bool>,
     rendering_materials: Vec<RenderingMaterialReference>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     per_viewport_settings: Vec<LayerPerViewportPresentationRecord>,
@@ -3528,6 +3532,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 .filter(|id| !id.is_nil())
                 .map(|id| id.to_string()),
             name: layer.name.clone(),
+            iges_level: (layer.iges_level != -1).then_some(layer.iges_level),
             visible: layer.visible,
             locked: layer.locked,
             expanded: layer.expanded,
@@ -3541,6 +3546,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 .filter(|id| !id.is_nil())
                 .map(|id| id.to_string()),
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
+            visible_in_new_details: layer.visible_in_new_details,
             rendering_materials,
             per_viewport_settings: layer
                 .per_viewport_settings

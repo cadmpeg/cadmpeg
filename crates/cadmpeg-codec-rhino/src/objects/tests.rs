@@ -406,6 +406,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         plot_weight: None,
         display_material_id: None,
         no_clipping_planes: None,
+        visible_in_new_details: None,
         rendering_range: None,
         extension_items: Vec::new(),
         embedded_linetype: None,

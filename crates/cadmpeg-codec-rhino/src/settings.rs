@@ -536,6 +536,8 @@ pub(crate) struct LayerRecord {
     pub(crate) display_material_id: Option<Uuid>,
     /// Whether clipping planes are disabled.
     pub(crate) no_clipping_planes: Option<bool>,
+    /// Whether per-viewport visibility starts enabled in new detail views.
+    pub(crate) visible_in_new_details: Option<bool>,
     /// Bounded rendering payload range.
     pub(crate) rendering_range: Option<Range<usize>>,
     /// Raw extension item IDs successfully consumed.
@@ -2195,6 +2197,7 @@ fn parse_layer(
         plot_weight,
         display_material_id,
         no_clipping_planes: None,
+        visible_in_new_details: None,
         rendering_range,
         extension_items: Vec::new(),
         embedded_linetype: None,
@@ -2256,7 +2259,12 @@ fn parse_layer(
                     finite(&reader, value, "layer extension value")?;
                 }
                 32 | 34 | 36 => {
-                    reader.skip(1)?;
+                    if item == 34 {
+                        layer.visible_in_new_details =
+                            Some(reader.bool_with_writer_version(writer_version)?);
+                    } else {
+                        reader.skip(1)?;
+                    }
                 }
                 33 => {
                     layer.embedded_linetype =

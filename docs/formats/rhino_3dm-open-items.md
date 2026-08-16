@@ -687,6 +687,15 @@ empty, the dimension-style text-style index is unset, and the modern
 font-characteristics child is retained as bounded source metadata under the
 owning dimension style. The source-defined font child grammar is the same
 anonymous `ON_Font` grammar used by modern text styles.
+The `ON_Layer` class is independently covered by V4, V50, and V6 model
+witnesses. Its packed 1.15 base prefix, V4 child-name rewrite, archive and
+component references, IGES level, colors, visibility and locking, UUID and
+parent fields, rendering child, display-material UUID, item-34 new-detail
+visibility flag, item-35 direct section-style child, and class-owned
+per-viewport userdata are settled. The Rust decoder transfers the base values,
+IGES level, item 34, and normalized per-viewport entries; it bounds and
+validates item 35 while retaining the complete layer record for source
+fidelity.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -735,6 +744,35 @@ and `dimension-style-current-font-v60.3dm`, `cadmpeg inspect` reads showing
 font-record headers at V4/V50 and none at V6 plus the V6 anonymous 1.6 font
 child, the three-version `cadmpeg query item` results, and the owner test
 `dimension_style_future_minor_preserves_known_prefix_and_suffix`.
+
+The layer slice is closed by `ON_Layer::Write`/`Read` and
+`ON_BinaryArchive::Write3dmLayer`/`Read3dmLayer` in
+`/home/pcurve/side2/opennurbs/opennurbs_layer.cpp` and
+`opennurbs_archive.cpp`, `ON__LayerPerViewSettings::Write`/`Read`,
+`ON__LayerExtensions::Write`/`Read`, and `ON_SectionStyle::Write`/`Read`.
+The authored witness
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/layer_model_witness.cpp`
+adds two layers, referenced materials and linetypes, a child-layer parent,
+non-default base fields, item-34 and item-35 data, and a complete per-viewport
+override, then writes V4, V50, and V6 files. The public `example_read` harness
+reads all three; V4 renames the child to `child-layer (e875)` while V50/V6
+retain `child-layer`. `cadmpeg inspect` finds the `ON_Layer` class UUIDs at
+V6 offsets `3201` and `3458`, the layer-extension class/item UUIDs at `3786`
+and `3802`, the OpenNURBS application UUID at `3950`, and the V6 child layer
+payload shows the item-34 Boolean, the item-35 anonymous section-style child,
+and the bounded userdata child. The three-version `cadmpeg query item` output
+transfers IGES levels `42`/`43`, material and linetype indices `0`/`1`, the
+parent UUID, the V4 name rewrite, `visible_in_new_details=false`, and the
+per-viewport mask `63` with colors, weight `2.25`, visible value `2`, and
+persistent-visibility value `2`. The owner test
+`parses_layer_class_wrapper_and_rendering_chunk` now gates the base fields and
+item-34 Boolean; `layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule`
+gates the normalized userdata values.
+
+The witness initially omitted the referenced material and linetype components;
+OpenNURBS therefore resolved their layer references to `-1`. Adding the
+components and using their assigned manifest indices produced the final
+reference-bearing witness. That harness correction is not format evidence.
 
 ### FV-06. Later major payload admission
 

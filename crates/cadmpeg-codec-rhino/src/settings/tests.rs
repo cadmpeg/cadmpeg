@@ -589,7 +589,14 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let mut warnings = Vec::new();
     let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
     assert_eq!(metadata.layers.len(), 1, "{warnings:?}");
+    assert_eq!(metadata.layers[0].index, 7);
+    assert_eq!(metadata.layers[0].iges_level, -1);
+    assert_eq!(metadata.layers[0].render_material_index, -1);
+    assert_eq!(metadata.layers[0].color, [10, 20, 30, 255]);
     assert_eq!(metadata.layers[0].name, "L");
+    assert!(metadata.layers[0].visible);
+    assert!(!metadata.layers[0].locked);
+    assert_eq!(metadata.layers[0].visible_in_new_details, Some(true));
     assert_eq!(
         metadata.layers[0]
             .embedded_linetype
@@ -979,6 +986,7 @@ fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() 
         plot_weight: None,
         display_material_id: None,
         no_clipping_planes: None,
+        visible_in_new_details: None,
         rendering_range: None,
         extension_items: Vec::new(),
         embedded_linetype: None,
