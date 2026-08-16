@@ -558,6 +558,9 @@ pub fn decode_face_operands(
         let is_mirror_seed = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::Mirror)
             && group.role == 0x0000_0008_0000_0000;
+        let is_mirror_plane = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::Mirror)
+            && group.role == 0x0000_0005_0000_0000;
         let is_split_face_operand = scope.kind == "SplitFace";
         let is_delete_face_operand =
             matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace");
@@ -577,6 +580,7 @@ pub fn decode_face_operands(
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
             && !is_mirror_seed
+            && !is_mirror_plane
             && !is_split_face_operand
             && !is_delete_face_operand
             && !is_thread_face

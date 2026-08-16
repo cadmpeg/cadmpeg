@@ -4012,6 +4012,7 @@ fn extend_related_design_records(
         &native.design_construction_operand_groups,
         &native.design_record_headers,
         &native.design_parameter_owners,
+        &native.construction_recipes,
     )?;
     native.design_extrude_selection_groups =
         crate::design::decode::operands::decode_extrude_selection_groups(
@@ -4185,6 +4186,22 @@ fn extend_related_design_records(
                 .chain(std::iter::once(identity.following_record_index))
                 .map(move |record_index| (stream.clone(), record_index))
         })
+        .chain(
+            native
+                .design_construction_operand_groups
+                .iter()
+                .filter_map(|group| {
+                    let stream = crate::ids::native_stream(&group.id)?.to_owned();
+                    Some(
+                        group
+                            .members
+                            .iter()
+                            .copied()
+                            .map(move |record_index| (stream.clone(), record_index)),
+                    )
+                })
+                .flatten(),
+        )
         .collect::<Vec<_>>();
     let existing = native
         .design_record_headers
@@ -4225,13 +4242,6 @@ fn extend_related_design_records(
     );
     crate::history::bind_hole_selection_history(
         &mut native.design_parameter_scopes,
-        &native.asm_histories,
-    );
-    crate::history::bind_mirror_selection_planes(
-        &mut native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.design_entity_selection_operands,
-        &native.design_construction_operand_identities,
         &native.asm_histories,
     );
     native.design_body_recipe_operands =
@@ -4338,6 +4348,14 @@ fn extend_related_design_records(
         &mut native.design_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
+        &native.asm_histories,
+    );
+    crate::history::bind_mirror_selection_planes(
+        &mut native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_entity_selection_operands,
+        &native.design_face_operands,
+        &native.design_construction_operand_identities,
         &native.asm_histories,
     );
     crate::history::bind_edge_identity_bounded_face_rules(

@@ -2808,11 +2808,13 @@ pub fn bind_mirror_constructions(
     groups: &[crate::records::DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     owners: &[DesignParameterOwner],
+    recipes: &[ConstructionRecipe],
 ) -> Result<(), CodecError> {
     let headers = headers
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
+    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     for index in 0..scopes.len() {
         if design_feature_family(&scopes[index].kind) != Some(DesignFeatureFamily::Mirror) {
             continue;
@@ -2867,6 +2869,22 @@ pub fn bind_mirror_constructions(
                     .map(|record_index| (record_index, plane_reference_offset))
             },
         );
+        let face_recipe = {
+            let records = record_offset_index
+                .entry(stream)
+                .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+            parse_face_operand(
+                bytes,
+                records,
+                &scopes[index],
+                plane_group.scope_reference_ordinal,
+                Some((plane_group.record_index, 0)),
+                None,
+                plane_header,
+                recipes,
+            )
+            .is_some()
+        };
         let (plane_scope_record_index, plane_reference_offset, plane_selection_record_index) =
             if let Some((plane_scope_record_index, plane_reference_offset)) = work_plane {
                 (
@@ -2881,6 +2899,7 @@ pub fn bind_mirror_constructions(
                 plane_header,
             )
             .is_some()
+                || face_recipe
             {
                 (None, None, Some(*plane_member))
             } else {

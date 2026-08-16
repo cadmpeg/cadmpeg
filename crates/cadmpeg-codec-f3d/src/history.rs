@@ -6226,6 +6226,7 @@ pub(crate) fn bind_mirror_selection_planes(
     scopes: &mut [crate::records::DesignParameterScope],
     groups: &[crate::records::DesignConstructionOperandGroup],
     operands: &[crate::records::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::DesignFaceOperand],
     identities: &[crate::records::DesignConstructionOperandIdentity],
     histories: &[AsmHistory],
 ) {
@@ -6243,7 +6244,9 @@ pub(crate) fn bind_mirror_selection_planes(
         ) else {
             continue;
         };
-        let Some(_) = unique_history_state_pair(histories, state_id, previous_state_id) else {
+        let Some((history, _, _)) =
+            unique_history_state_pair(histories, state_id, previous_state_id)
+        else {
             continue;
         };
         let mut matching_groups = groups.iter().filter(|group| {
@@ -6259,42 +6262,59 @@ pub(crate) fn bind_mirror_selection_planes(
         if matching_groups.next().is_some() {
             continue;
         }
-        let mut matching_operands = operands.iter().filter(|operand| {
-            crate::ids::native_stream(&operand.id) == stream
-                && operand.scope_record_index == scope.record_index
-                && operand.group_record_index == group.record_index
-                && operand.group_member_ordinal == 0
-                && operand.record_index == selection_record_index
-        });
-        let Some(operand) = matching_operands.next() else {
-            continue;
-        };
-        if matching_operands.next().is_some() {
+        let matching_operands = operands
+            .iter()
+            .filter(|operand| {
+                crate::ids::native_stream(&operand.id) == stream
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == 0
+                    && operand.record_index == selection_record_index
+            })
+            .collect::<Vec<_>>();
+        let matching_face_operands = face_operands
+            .iter()
+            .filter(|operand| {
+                crate::ids::native_stream(&operand.id) == stream
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == Some(group.record_index)
+                    && operand.group_member_ordinal == Some(0)
+                    && operand.record_index == selection_record_index
+            })
+            .collect::<Vec<_>>();
+        if matching_operands.len() > 1 || matching_face_operands.len() > 1 {
             continue;
         }
-        let mut matching_identities = identities.iter().filter(|identity| {
-            crate::ids::native_stream(&identity.id) == stream
-                && identity.group_record_index == group.record_index
-        });
-        let identity = matching_identities.next();
-        let duplicate_identity = matching_identities.next();
-        if duplicate_identity.is_some() {
-            continue;
-        }
-        let persistent_candidates = identity
-            .and_then(|identity| identity.persistent_identity.as_ref())
-            .map_or_else(Vec::new, |identity| {
-                entity_selection_face_candidates(identity.local_id, histories)
+        let plane = if let [operand] = matching_operands.as_slice() {
+            if !matching_face_operands.is_empty() {
+                continue;
+            }
+            let mut matching_identities = identities.iter().filter(|identity| {
+                crate::ids::native_stream(&identity.id) == stream
+                    && identity.group_record_index == group.record_index
             });
-        let Some(candidate) = unique_mirror_plane_candidate(
-            entity_selection_face_candidates(operand.primary_identity, histories),
-            persistent_candidates,
-        ) else {
+            let identity = matching_identities.next();
+            if matching_identities.next().is_some() {
+                continue;
+            }
+            let persistent_candidates = identity
+                .and_then(|identity| identity.persistent_identity.as_ref())
+                .map_or_else(Vec::new, |identity| {
+                    entity_selection_face_candidates(identity.local_id, histories)
+                });
+            let Some(candidate) = unique_mirror_plane_candidate(
+                entity_selection_face_candidates(operand.primary_identity, histories),
+                persistent_candidates,
+            ) else {
+                continue;
+            };
+            historical_mirror_plane(&candidate, previous_state_id, histories)
+        } else if let [operand] = matching_face_operands.as_slice() {
+            historical_mirror_face_operand_plane(operand, history, previous_state_id)
+        } else {
             continue;
         };
-        let Some(plane) = historical_mirror_plane(&candidate, previous_state_id, histories) else {
-            continue;
-        };
+        let Some(plane) = plane else { continue };
         let norm = (plane.normal.x * plane.normal.x
             + plane.normal.y * plane.normal.y
             + plane.normal.z * plane.normal.z)
@@ -6305,6 +6325,39 @@ pub(crate) fn bind_mirror_selection_planes(
         construction.plane_origin = Some(plane.origin);
         construction.plane_normal = Some(plane.normal);
     }
+}
+
+fn historical_mirror_face_operand_plane(
+    operand: &crate::records::DesignFaceOperand,
+    history: &AsmHistory,
+    previous_state_id: i64,
+) -> Option<HistoricalMirrorPlane> {
+    let mut slots = if operand.resolved_face_slots.is_empty() {
+        let candidates = if operand.preceding_candidate_faces.is_empty() {
+            crate::design::face_resolve::historical_face_operand_candidates(operand)
+        } else {
+            operand.preceding_candidate_faces.clone()
+        };
+        candidates
+            .iter()
+            .filter_map(|face| stable_ref(&face.0))
+            .collect::<Vec<_>>()
+    } else {
+        operand.resolved_face_slots.clone()
+    };
+    slots.sort_unstable();
+    slots.dedup();
+    let planes = slots
+        .iter()
+        .map(|face_slot| {
+            historical_mirror_plane_for_face_slot(*face_slot, previous_state_id, history)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let first = planes.first()?.clone();
+    planes
+        .iter()
+        .all(|candidate| mirror_planes_coincident(&first, candidate))
+        .then_some(first)
 }
 
 fn unique_mirror_plane_candidate(
@@ -6391,10 +6444,34 @@ fn historical_mirror_plane_in_state(
     if candidate.historical_entity_kind == AsmHistoricalEntityKind::Loop {
         return historical_loop_plane(candidate.historical_entity_ref, topology);
     }
+    historical_mirror_plane_for_face_slot_in_topology(candidate.face_slot, topology)
+}
+
+fn historical_mirror_plane_for_face_slot(
+    face_slot: i64,
+    state_id: i64,
+    history: &AsmHistory,
+) -> Option<HistoricalMirrorPlane> {
+    let mut matching_states = history
+        .states
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    let state = matching_states.next()?;
+    if matching_states.next().is_some() {
+        return None;
+    }
+    let topology = state.topology.as_ref()?;
+    historical_mirror_plane_for_face_slot_in_topology(face_slot, topology)
+}
+
+fn historical_mirror_plane_for_face_slot_in_topology(
+    face_slot: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<HistoricalMirrorPlane> {
     let mut bindings = topology
         .face_surfaces
         .iter()
-        .filter(|binding| binding.entity == candidate.face_slot);
+        .filter(|binding| binding.entity == face_slot);
     let binding = bindings.next()?;
     if bindings.next().is_some() {
         return None;

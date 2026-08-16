@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! History-module unit tests.
-#![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
+#![allow(clippy::unwrap_used, unused_imports)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -1667,6 +1665,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         std::slice::from_ref(&group),
         std::slice::from_ref(&operand),
         &[],
+        &[],
         std::slice::from_ref(&history),
     );
 
@@ -1674,6 +1673,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     assert_eq!(construction.plane_origin, Some(Point3::new(1.0, 2.0, 3.0)));
     assert_eq!(construction.plane_normal, Some(Vector3::new(0.0, 0.0, 1.0)));
 }
+
 #[test]
 fn historical_loop_plane_requires_coincident_axis_bearing_curves() {
     use crate::history_records::{
