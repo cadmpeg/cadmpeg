@@ -728,6 +728,12 @@ coordinates, dimensionless page-per-model ratio, and archive-independent
 boundary transfer are settled. The Rust decoder emits the detail feature and
 linked boundary curve, retains the bounded view payload as length and SHA-256
 properties, and reports the specified view-state retention boundary.
+The `ON_NurbsCage` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its anonymous 1.0 dimension, rational flag, orders,
+counts, U/V/W knot vectors, and ordered control net are settled. The Rust
+decoder transfers the complete nonrational cage state to native feature
+parameters and properties, converting only spatial control coordinates and
+retaining the source object for the native lattice boundary.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -875,6 +881,20 @@ ratio and boundary link; V60 and inch V6 retain equal view payload length
 `1558` and equal SHA-256. The owner test
 `decodes_boundary_and_bounds_native_view_state` now uses a dimension-2 raw
 curve and asserts unscaled page coordinates.
+
+The NURBS-cage slice is closed by `ON_NurbsCage::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_nurbsvolume.cpp:29-228`, the authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/cage_object_witness.cpp`, and
+its V4/V50/V6 plus inch-unit V6 outputs. `cadmpeg inspect` reads the class
+UUID at V4 `0x8d6`, V50 `0x9d4`, and V6 `0xa0f`; the V4 class-data child has
+anonymous body `0x8f2`, version `1.0` at `0x8fa`, dimension `3` at `0x902`,
+orders and counts `2,2,2`, and U/V/W knot pairs `[0,1]`. OpenNURBS readback
+reports the same nonrational 2x2x2 cage and first/last control points
+`[10,20,30]` and `[30,50,70]` in all four witnesses. Final
+`cadmpeg query item` results transfer the same parameters, knots, and control
+points in V4/V50/V6; the inch result converts them to the corresponding
+millimeter values while retaining knots. The owner `cage` tests continue to
+gate rational weights and future-minor suffix handling.
 
 ### FV-06. Later major payload admission
 

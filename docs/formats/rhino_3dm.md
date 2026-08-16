@@ -3930,6 +3930,13 @@ When a cage is nested in a morph-control end chunk, the cage's anonymous
 chunk is its own boundary. A cage suffix ends at that child boundary and does
 not consume the enclosing morph-control fields.
 
+CADIR creates one native `nurbs_cage` feature for each accepted cage. Its
+parameters retain dimension, rational form, orders, and control counts; its
+native properties retain the three knot vectors, converted control points, and
+rational weights. Knot values and weights remain unscaled. The cage is not
+converted into a neutral lattice, so the source object remains retained for
+native fidelity and this boundary emits `cage.lattice-not-transferred`.
+
 ### 18.5 Morph controls
 
 `ON_MorphControl::Write` emits anonymous version 2.1. Its version-2 reader
