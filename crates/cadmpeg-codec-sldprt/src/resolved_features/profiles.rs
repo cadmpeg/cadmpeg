@@ -710,6 +710,11 @@ pub(crate) fn project_marker_backed_sketches(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
+    let marker_owners = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .filter_map(|marker| marker.feature_ref.as_deref())
+        .collect::<HashSet<_>>();
     let feature_frames = sketch_feature_frames(features, histories, lanes);
     project_detached_legacy_config_sketches(
         features,
@@ -776,30 +781,6 @@ pub(crate) fn project_marker_backed_sketches(
                         && marker.offset < end
                 })
                 .collect::<Vec<_>>();
-            let markers = object_markers
-                .iter()
-                .copied()
-                .filter(|marker| {
-                    matches!(
-                        marker.kind,
-                        SketchInputKind::Point
-                            | SketchInputKind::ConstrainedPoint
-                            | SketchInputKind::LineOrCircle
-                            | SketchInputKind::Arc
-                    ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
-                        !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
-                            && !auxiliary_profile_record(&lane.native_payload, offset)
-                            && !relation_reference_curve_record(
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            )
-                    })
-                })
-                .collect::<Vec<_>>();
-            if markers.is_empty() {
-                continue;
-            }
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -836,6 +817,67 @@ pub(crate) fn project_marker_backed_sketches(
                 "sldprt:model:sketch#markers:{lane_key}:{}",
                 native_feature.ordinal
             ));
+            let markers = object_markers
+                .iter()
+                .copied()
+                .filter(|marker| {
+                    matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                        !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
+                            && !auxiliary_profile_record(&lane.native_payload, offset)
+                            && !relation_reference_curve_record(
+                                &lane.native_payload,
+                                marker,
+                                &object_markers,
+                            )
+                    })
+                })
+                .collect::<Vec<_>>();
+            if markers.is_empty() {
+                let has_unbound_marker = lane
+                    .sketch_entities
+                    .iter()
+                    .any(|marker| marker.offset > start as u64 && marker.offset < end as u64);
+                if object_markers.is_empty()
+                    && !has_unbound_marker
+                    && !marker_owners.contains(native_feature.id.as_str())
+                    && bound_sketch.is_none()
+                    && !block_definition
+                {
+                    if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
+                        let sketch = Sketch {
+                            id: sketch_id.clone(),
+                            name: Some(native_feature.name.clone()),
+                            configuration: lane.configuration.clone(),
+                            visible: None,
+                            placement: frame.map_or(
+                                cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                                |(origin, normal, u_axis)| {
+                                    cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                                        origin,
+                                        normal,
+                                        u_axis,
+                                    }
+                                },
+                            ),
+                            profiles: Vec::new(),
+                            native_ref: Some(lane.id.clone()),
+                        };
+                        sketches.push(sketch);
+                    }
+                    features[feature_index].definition =
+                        cadmpeg_ir::features::FeatureDefinition::Sketch {
+                            space: cadmpeg_ir::features::SketchSpace::Planar,
+                            sketch: Some(sketch_id),
+                        };
+                }
+                continue;
+            }
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition = if block_definition {
                     cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
@@ -2692,6 +2734,151 @@ mod detached_legacy_sketch_tests {
             lane.sketch_entities[0].feature_ref.as_deref(),
             Some("feature")
         );
+    }
+
+    #[test]
+    fn empty_named_sketch_is_projected_without_geometry_markers() {
+        let mut native_feature = feature();
+        native_feature.kind = "Sketch".into();
+        native_feature.input_class = Some("moProfileFeature_c".into());
+        native_feature.name = "empty".into();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native_feature],
+        };
+        let lane_id = "sldprt:feature-input:resolved-features#1";
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: vec![0; 64],
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 8,
+                object_id: Some(30),
+                value: "empty".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let expected_sketch = SketchId("sldprt:model:sketch#markers:1:30".into());
+        let mut neutral_feature = cadmpeg_ir::features::Feature::new(
+            cadmpeg_ir::features::FeatureId("neutral".into()),
+            30,
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
+        );
+        neutral_feature.name = Some("empty".into());
+        neutral_feature.native_ref = Some("feature".into());
+        let mut features = vec![neutral_feature];
+        let mut sketches = Vec::new();
+        let mut sketch_entities = Vec::new();
+
+        project_marker_backed_sketches(
+            &mut features,
+            &mut sketches,
+            &mut sketch_entities,
+            &[history],
+            &[lane],
+        );
+
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(sketches[0].id, expected_sketch);
+        assert_eq!(sketches[0].profiles, Vec::<Vec<SketchEntityUse>>::new());
+        assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
+        assert!(sketch_entities.is_empty());
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } if sketch == &expected_sketch
+        ));
+    }
+
+    #[test]
+    fn unbound_marker_keeps_empty_sketch_unresolved() {
+        let mut native_feature = feature();
+        native_feature.kind = "Sketch".into();
+        native_feature.input_class = Some("moProfileFeature_c".into());
+        native_feature.name = "empty".into();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native_feature],
+        };
+        let lane_id = "sldprt:feature-input:resolved-features#1";
+        let mut unbound = marker(0, Some(1), SketchInputKind::Point, Some([0.0, 0.0]));
+        unbound.feature_ref = None;
+        unbound.offset = 20;
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: vec![0; 64],
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 8,
+                object_id: Some(30),
+                value: "empty".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![unbound],
+        };
+        let mut neutral_feature = cadmpeg_ir::features::Feature::new(
+            cadmpeg_ir::features::FeatureId("neutral".into()),
+            30,
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
+        );
+        neutral_feature.name = Some("empty".into());
+        neutral_feature.native_ref = Some("feature".into());
+        let mut features = vec![neutral_feature];
+        let mut sketches = Vec::new();
+        let mut sketch_entities = Vec::new();
+
+        project_marker_backed_sketches(
+            &mut features,
+            &mut sketches,
+            &mut sketch_entities,
+            &[history],
+            &[lane],
+        );
+
+        assert!(sketches.is_empty());
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Sketch { sketch: None, .. }
+        ));
     }
 
     #[test]
