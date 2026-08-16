@@ -5874,11 +5874,24 @@ fn endpoint_configuration_directions(
 
 #[derive(Clone)]
 struct MeshEndpointRelationChoice {
+    id: usize,
     assignments: Vec<usize>,
     edge_pairs: MeshFaceEndpointConfiguration,
 }
 type MeshEndpointRelationSelections = Vec<Vec<usize>>;
 type MeshFixedDirectionOption = (Vec<Vec<bool>>, MeshQuotient, Vec<Option<bool>>);
+
+#[derive(Clone)]
+struct MeshEndpointRelationArc {
+    neighbor: usize,
+    supports: Vec<Vec<u64>>,
+}
+
+struct MeshEndpointRelationConstraints {
+    arcs: Vec<Vec<MeshEndpointRelationArc>>,
+    incoming: Vec<Vec<(usize, usize)>>,
+    choice_counts: Vec<usize>,
+}
 
 fn canonical_mesh_boundary_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>> {
     directions
@@ -5897,14 +5910,170 @@ fn canonical_mesh_boundary_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>
         .collect()
 }
 
+fn canonical_endpoint_relation_key(
+    choice: &MeshEndpointRelationChoice,
+    edges: &[usize],
+) -> Option<Vec<[usize; 2]>> {
+    edges
+        .iter()
+        .map(|&edge| {
+            choice
+                .edge_pairs
+                .iter()
+                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair))
+                .map(|mut pair| {
+                    if pair[1] < pair[0] {
+                        pair.swap(0, 1);
+                    }
+                    pair
+                })
+        })
+        .collect()
+}
+
+fn build_endpoint_relation_constraints(
+    domains: &[Vec<MeshEndpointRelationChoice>],
+    budget: &WorkBudget<'_>,
+) -> Option<MeshEndpointRelationConstraints> {
+    let mut shared_edges = BTreeMap::<(usize, usize), Vec<usize>>::new();
+    let mut edge_faces = HashMap::<usize, BTreeSet<usize>>::new();
+    for (face, choices) in domains.iter().enumerate() {
+        for choice in choices {
+            for &(edge, _) in &choice.edge_pairs {
+                edge_faces.entry(edge).or_default().insert(face);
+            }
+        }
+    }
+    for (edge, faces) in edge_faces {
+        let faces = faces.into_iter().collect::<Vec<_>>();
+        for (left_index, &left) in faces.iter().enumerate() {
+            for &right in &faces[left_index + 1..] {
+                shared_edges.entry((left, right)).or_default().push(edge);
+                shared_edges.entry((right, left)).or_default().push(edge);
+            }
+        }
+    }
+
+    let mut arcs = (0..domains.len())
+        .map(|_| Vec::<MeshEndpointRelationArc>::new())
+        .collect::<Vec<_>>();
+    let mut incoming = (0..domains.len())
+        .map(|_| Vec::<(usize, usize)>::new())
+        .collect::<Vec<_>>();
+    let choice_counts = domains.iter().map(Vec::len).collect::<Vec<_>>();
+    for ((face, neighbor), edges) in shared_edges {
+        let left_complete = domains[face].iter().all(|choice| {
+            edges.iter().all(|edge| {
+                choice
+                    .edge_pairs
+                    .iter()
+                    .any(|(candidate, _)| candidate == edge)
+            })
+        });
+        let right_complete = domains[neighbor].iter().all(|choice| {
+            edges.iter().all(|edge| {
+                choice
+                    .edge_pairs
+                    .iter()
+                    .any(|(candidate, _)| candidate == edge)
+            })
+        });
+        let supports = if left_complete && right_complete {
+            let index_work = domains[face]
+                .len()
+                .saturating_add(domains[neighbor].len())
+                .max(1);
+            if !budget.charge_by(index_work) {
+                return None;
+            }
+            let mut index = HashMap::<Vec<[usize; 2]>, Vec<usize>>::new();
+            for choice in &domains[neighbor] {
+                let key = canonical_endpoint_relation_key(choice, &edges)?;
+                index.entry(key).or_default().push(choice.id);
+            }
+            domains[face]
+                .iter()
+                .map(|choice| {
+                    let key = canonical_endpoint_relation_key(choice, &edges)
+                        .expect("complete relation choice contains shared edge");
+                    let mut mask = alloc_filled(
+                        (domains[neighbor].len().saturating_add(63) / 64).max(1),
+                        0u64,
+                        "catia_endpoint_relation_support_mask",
+                    )
+                    .ok()?;
+                    for &other in index.get(&key).into_iter().flatten() {
+                        mask[other / 64] |= 1u64 << (other % 64);
+                    }
+                    Some(mask)
+                })
+                .collect::<Option<Vec<_>>>()?
+        } else {
+            let comparison_work = domains[face]
+                .len()
+                .saturating_mul(domains[neighbor].len())
+                .max(1);
+            if !budget.charge_by(comparison_work) {
+                return None;
+            }
+            domains[face]
+                .iter()
+                .map(|choice| {
+                    let mut mask = alloc_filled(
+                        (domains[neighbor].len().saturating_add(63) / 64).max(1),
+                        0u64,
+                        "catia_endpoint_relation_support_mask",
+                    )
+                    .ok()?;
+                    for other in &domains[neighbor] {
+                        let compatible = edges.iter().all(|&edge| {
+                            let left = choice
+                                .edge_pairs
+                                .iter()
+                                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair));
+                            let right = other
+                                .edge_pairs
+                                .iter()
+                                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair));
+                            left.zip(right)
+                                .is_none_or(|(left, right)| same_unordered_pair(left, right))
+                        });
+                        if compatible {
+                            mask[other.id / 64] |= 1u64 << (other.id % 64);
+                        }
+                    }
+                    Some(mask)
+                })
+                .collect::<Option<Vec<_>>>()?
+        };
+        let arc_index = arcs[face].len();
+        arcs[face].push(MeshEndpointRelationArc { neighbor, supports });
+        incoming[neighbor].push((face, arc_index));
+    }
+    Some(MeshEndpointRelationConstraints {
+        arcs,
+        incoming,
+        choice_counts,
+    })
+}
+
 fn propagate_endpoint_relation_domains(
     domains: &mut [Vec<MeshEndpointRelationChoice>],
     assigned: &mut [Option<[usize; 2]>],
+    constraints: &MeshEndpointRelationConstraints,
     budget: &WorkBudget<'_>,
 ) -> bool {
+    let mut dirty_faces = domains
+        .iter()
+        .enumerate()
+        .filter_map(|(face, choices)| {
+            (choices.len() != constraints.choice_counts[face]).then_some(face)
+        })
+        .collect::<Vec<_>>();
+    let mut first_pass = true;
     loop {
         let mut changed = false;
-        for choices in domains.iter_mut() {
+        for (face, choices) in domains.iter_mut().enumerate() {
             if !budget.charge_by(choices.len().max(1)) {
                 return false;
             }
@@ -5917,54 +6086,82 @@ fn propagate_endpoint_relation_domains(
             if choices.is_empty() {
                 return false;
             }
-            changed |= choices.len() != before;
+            if choices.len() != before {
+                dirty_faces.push(face);
+                changed = true;
+            }
         }
 
-        let support_work = domains
+        let Some(mut active) = constraints
+            .choice_counts
             .iter()
-            .flat_map(|choices| choices.iter())
-            .flat_map(|choice| choice.edge_pairs.iter())
-            .count()
-            .max(1);
-        if !budget.charge_by(support_work) {
-            return false;
-        }
-        let edge_support = domains
-            .iter()
-            .map(|choices| {
-                let mut pairs = HashMap::<usize, HashSet<[usize; 2]>>::new();
-                let mut counts = HashMap::<usize, usize>::new();
-                for choice in choices {
-                    for &(edge, pair) in &choice.edge_pairs {
-                        pairs.entry(edge).or_default().insert(pair);
-                        *counts.entry(edge).or_default() += 1;
-                    }
-                }
-                (pairs, counts, choices.len())
+            .map(|&choice_count| {
+                alloc_filled(
+                    (choice_count.saturating_add(63) / 64).max(1),
+                    0u64,
+                    "catia_endpoint_relation_active_mask",
+                )
+                .ok()
             })
-            .collect::<Vec<_>>();
-        for (face, choices) in domains.iter_mut().enumerate() {
-            let before = choices.len();
-            choices.retain(|choice| {
-                choice.edge_pairs.iter().all(|&(edge, pair)| {
-                    edge_support.iter().enumerate().all(
-                        |(other_face, (pairs, counts, choice_count))| {
-                            if other_face == face {
-                                return true;
-                            }
-                            let absent = counts.get(&edge).copied().unwrap_or(0) < *choice_count;
-                            absent
-                                || pairs
-                                    .get(&edge)
-                                    .is_some_and(|values| values.contains(&pair))
-                        },
-                    )
-                })
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+        for (face, choices) in domains.iter().enumerate() {
+            for choice in choices {
+                let Some(active_word) = active[face].get_mut(choice.id / 64) else {
+                    return false;
+                };
+                *active_word |= 1u64 << (choice.id % 64);
+            }
+        }
+        let mut queue = if first_pass && dirty_faces.is_empty() {
+            constraints
+                .arcs
+                .iter()
+                .enumerate()
+                .flat_map(|(face, arcs)| (0..arcs.len()).map(move |arc| (face, arc)))
+                .collect::<VecDeque<_>>()
+        } else {
+            dirty_faces
+                .drain(..)
+                .flat_map(|face| constraints.incoming[face].iter().copied())
+                .collect::<VecDeque<_>>()
+        };
+        first_pass = false;
+        while let Some((face, arc_index)) = queue.pop_front() {
+            let arc = &constraints.arcs[face][arc_index];
+            let neighbor_active = &active[arc.neighbor];
+            let before = domains[face].len();
+            domains[face].retain(|choice| {
+                let Some(supports) = arc.supports.get(choice.id) else {
+                    return false;
+                };
+                if !budget.charge_by(supports.len().max(1)) {
+                    return false;
+                }
+                supports
+                    .iter()
+                    .zip(neighbor_active)
+                    .any(|(supported, active)| supported & active != 0)
             });
-            if choices.is_empty() {
+            if budget.exhausted() || domains[face].is_empty() {
                 return false;
             }
-            changed |= choices.len() != before;
+            if domains[face].len() == before {
+                continue;
+            }
+            active[face].fill(0);
+            for choice in &domains[face] {
+                active[face][choice.id / 64] |= 1u64 << (choice.id % 64);
+            }
+            changed = true;
+            queue.extend(
+                constraints.incoming[face]
+                    .iter()
+                    .copied()
+                    .filter(|&(source, _)| source != arc.neighbor),
+            );
         }
         // A pair present with one value in every surviving choice of one face
         // is a forced edge relation, even when the face still has assignment
@@ -6025,6 +6222,7 @@ fn walk_endpoint_relation_domains<F>(
     domains: Vec<Vec<MeshEndpointRelationChoice>>,
     face_assignments: &[Vec<MeshFaceBoundaryAssignment>],
     assigned: Vec<Option<[usize; 2]>>,
+    constraints: &MeshEndpointRelationConstraints,
     budget: &WorkBudget<'_>,
     evaluate: &mut F,
 ) where
@@ -6035,7 +6233,7 @@ fn walk_endpoint_relation_domains<F>(
     }
     let mut domains = domains;
     let mut assigned = assigned;
-    if !propagate_endpoint_relation_domains(&mut domains, &mut assigned, budget) {
+    if !propagate_endpoint_relation_domains(&mut domains, &mut assigned, constraints, budget) {
         return;
     }
     let Some((face, choices)) = domains
@@ -6095,6 +6293,7 @@ fn walk_endpoint_relation_domains<F>(
             branch,
             face_assignments,
             assigned.clone(),
+            constraints,
             budget,
             evaluate,
         );
@@ -6161,6 +6360,7 @@ fn resolve_endpoint_configuration_relation_streaming(
                 assignments.sort_unstable();
                 assignments.dedup();
                 MeshEndpointRelationChoice {
+                    id: 0,
                     assignments,
                     edge_pairs,
                 }
@@ -6174,9 +6374,13 @@ fn resolve_endpoint_configuration_relation_streaming(
                 return Some(MeshEndpointResolve::Rejected);
             }
             choices.push(MeshEndpointRelationChoice {
+                id: 0,
                 assignments: vec![usize::MAX],
                 edge_pairs: Vec::new(),
             });
+        }
+        for (id, choice) in choices.iter_mut().enumerate() {
+            choice.id = id;
         }
         if !budget.charge_by(choices.len()) {
             return Some(MeshEndpointResolve::Exhausted);
@@ -6186,6 +6390,9 @@ fn resolve_endpoint_configuration_relation_streaming(
     if covered.iter().any(|covered| !covered) {
         return None;
     }
+    let Some(constraints) = build_endpoint_relation_constraints(&domains, budget) else {
+        return Some(MeshEndpointResolve::Exhausted);
+    };
     let mut resolved = None;
     let mut ambiguous = false;
     let mut exhausted = false;
@@ -6271,6 +6478,7 @@ fn resolve_endpoint_configuration_relation_streaming(
             "catia_endpoint_relation_assigned",
         )
         .ok()?,
+        &constraints,
         budget,
         &mut evaluate,
     );
@@ -9075,6 +9283,116 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
 
     assert_eq!(topology.faces.len(), 1);
     assert_eq!(point_assignment, vec![0, 1, 2]);
+}
+
+#[test]
+fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
+    let mut domains = vec![
+        vec![
+            MeshEndpointRelationChoice {
+                id: 0,
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+            },
+            MeshEndpointRelationChoice {
+                id: 1,
+                assignments: vec![1],
+                edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+            },
+        ],
+        vec![
+            MeshEndpointRelationChoice {
+                id: 0,
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1]), (1, [6, 7])],
+            },
+            MeshEndpointRelationChoice {
+                id: 1,
+                assignments: vec![1],
+                edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+            },
+        ],
+    ];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let constraints = build_endpoint_relation_constraints(&domains, &budget)
+        .expect("shared-edge relation constraints should build");
+    let mut assigned = vec![None; 2];
+
+    assert!(propagate_endpoint_relation_domains(
+        &mut domains,
+        &mut assigned,
+        &constraints,
+        &budget,
+    ));
+    assert_eq!(
+        domains[0]
+            .iter()
+            .map(|choice| choice.id)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(
+        domains[1]
+            .iter()
+            .map(|choice| choice.id)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+}
+
+#[test]
+fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
+    let mut domains = vec![
+        vec![
+            MeshEndpointRelationChoice {
+                id: 0,
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1])],
+            },
+            MeshEndpointRelationChoice {
+                id: 1,
+                assignments: vec![1],
+                edge_pairs: vec![(0, [2, 3])],
+            },
+        ],
+        vec![
+            MeshEndpointRelationChoice {
+                id: 0,
+                assignments: vec![0],
+                edge_pairs: vec![(0, [4, 5])],
+            },
+            MeshEndpointRelationChoice {
+                id: 1,
+                assignments: vec![1],
+                edge_pairs: Vec::new(),
+            },
+        ],
+    ];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let constraints = build_endpoint_relation_constraints(&domains, &budget)
+        .expect("shared-edge relation constraints should build");
+    let mut assigned = vec![None];
+
+    assert!(propagate_endpoint_relation_domains(
+        &mut domains,
+        &mut assigned,
+        &constraints,
+        &budget,
+    ));
+    assert_eq!(
+        domains[0]
+            .iter()
+            .map(|choice| choice.id)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    assert_eq!(
+        domains[1]
+            .iter()
+            .map(|choice| choice.id)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
 }
 
 #[test]
