@@ -33,6 +33,8 @@ use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
 
+const EPS_UNIT_SCALE: f64 = 1.0e-12;
+
 #[test]
 fn unresolvable_length_unit_reports_an_error_loss() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unresolvable length unit'),'2;1');FILE_NAME('unit','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#4=CARTESIAN_POINT('',(1.,2.,3.));#5=SHAPE_REPRESENTATION('',(#4),#3);ENDSEC;END-ISO-10303-21;";
@@ -416,4 +418,84 @@ fn decode_scales_geometry_by_its_representation_context() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
+}
+
+fn decode_unscoped_point_with_global_contexts(
+    first_length_unit: u64,
+    second_length_unit: u64,
+) -> cadmpeg_ir::codec::DecodeResult {
+    let records = format!(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n\
+#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);\n\
+#3=(CONVERSION_BASED_UNIT('inch one',#2) LENGTH_UNIT() NAMED_UNIT(*));\n\
+#4=(CONVERSION_BASED_UNIT('inch two',#2) LENGTH_UNIT() NAMED_UNIT(*));\n\
+#5=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n\
+#6=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#{first_length_unit},#5)) REPRESENTATION_CONTEXT('first','3D'));\n\
+#7=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#{second_length_unit},#5)) REPRESENTATION_CONTEXT('second','3D'));\n\
+#8=CARTESIAN_POINT('unscoped',(1.,0.,0.));\n\
+#9=REPRESENTATION_CONTEXT('unscoped','3D');\n\
+#10=SHAPE_REPRESENTATION('unscoped representation',(#8),#9);\n"
+    );
+    decode_inline(&records)
+}
+
+#[test]
+fn decode_conflicting_global_contexts_use_neutral_unscoped_fallback() {
+    let metric_first = decode_unscoped_point_with_global_contexts(1, 3);
+    let inch_first = decode_unscoped_point_with_global_contexts(3, 1);
+
+    for result in [&metric_first, &inch_first] {
+        let point = result
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|point| point.id.as_str() == "step:data:point#8")
+            .expect("unscoped point");
+        assert!((point.position.x - 1.0).abs() < EPS_UNIT_SCALE);
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::DocumentLengthUnitUnresolved.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+        }));
+    }
+}
+
+#[test]
+fn decode_equivalent_global_contexts_supply_unscoped_fallback() {
+    let result = decode_unscoped_point_with_global_contexts(3, 4);
+    let point = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#8")
+        .expect("unscoped point");
+
+    assert!((point.position.x - 25.4).abs() < EPS_UNIT_SCALE);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::DocumentLengthUnitUnresolved.kind()));
+}
+
+#[test]
+fn decode_standalone_length_unit_does_not_supply_unscoped_fallback() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('standalone length unit'),'2;1');FILE_NAME('standalone-length-unit','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=REPRESENTATION_CONTEXT('unscoped','3D');#5=CARTESIAN_POINT('unscoped',(1.,0.,0.));#6=SHAPE_REPRESENTATION('unscoped representation',(#5),#4);ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode standalone length unit");
+    let point = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#5")
+        .expect("unscoped point");
+
+    assert!((point.position.x - 1.0).abs() < EPS_UNIT_SCALE);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DocumentLengthUnitUnresolved.kind()
+            && loss.severity == cadmpeg_ir::Severity::Error
+    }));
 }

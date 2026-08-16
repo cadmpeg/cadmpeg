@@ -261,28 +261,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 6. Units and measures
 
-### UM-04. Document fallback unit identity
-
-**Question.** Which unit context and unit occurrence supply the document
-fallback when a representation has no usable `GLOBAL_UNIT_ASSIGNED_CONTEXT`?
-
-**Known.** Representation-local unit scopes are resolved from their reachable
-representation closure. The document fallback in
-`crates/cadmpeg-codec-step/src/reader/geometry.rs:2791-2844` scans the record
-map for the first global unit context, then the first matching length or
-plane-angle unit. The record map is ordered by numeric instance ID. Conflicting
-fallback contexts do not produce an ambiguity loss.
-
-**Note.** UM-01 settles scoped representation units but does not settle this
-fallback identity. If an exchange has multiple global unit contexts and a
-consumer is unscoped, the selected scale can change when instance numbers or
-context order change. This is source-order/record-order selection, not
-evidence of the document unit.
-
-**Need.** We need the STEP document-level unit ownership rule and witness
-files with multiple global contexts, including conflicting and equivalent
-contexts, before selecting a fallback scale.
-
 ## 7. Annotation, presentation, and tessellation
 
 ### AP-08. Context-dependent style selection

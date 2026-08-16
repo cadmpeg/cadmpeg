@@ -302,8 +302,14 @@ unit. Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the
 length and plane-angle scales for that representation and its reachable
 representation-item closure. A carrier shared by representations must have
 one equal scale in every such context; conflicting contexts leave the carrier
-on the document fallback scale and produce a geometry loss. Unscoped values
-use the document fallback scale. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure
+on the document fallback scale and produce a geometry loss. A
+`GLOBAL_UNIT_ASSIGNED_CONTEXT` is a representation context, not a document
+unit declaration. For an unscoped value, CADIR collects each dimension's
+usable scale from every global unit context. Equivalent scales supply one
+fallback scale. No usable scale or differing scales use `1.0` millimetres or
+radians and produce the corresponding unresolved document-unit loss. A
+standalone unit and numeric instance order never select the fallback.
+`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure
 whose unit resolves to a length unit. When several length measures are
 present, the one named `distance_accuracy_value` is selected; otherwise a
 unique length measure is required. An ambiguous set does not define a linear

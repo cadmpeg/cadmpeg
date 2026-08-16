@@ -2778,59 +2778,23 @@ fn is_representation_context_record(record: &RawRecord) -> bool {
 }
 
 fn length_scale(exchange: &Exchange) -> Option<f64> {
-    let context_units = exchange.records.values().find_map(|record| {
-        record
-            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
-            .parameters
-            .first()?
-            .list()
-    });
-    let unit_id = context_units
-        .into_iter()
-        .flatten()
-        .filter_map(Value::reference)
-        .find(|id| {
-            exchange
-                .records
-                .get(id)
-                .is_some_and(|record| record.partial("LENGTH_UNIT").is_some())
-        })
-        .or_else(|| {
-            exchange
-                .records
-                .iter()
-                .find(|(_, record)| record.partial("LENGTH_UNIT").is_some())
-                .map(|(&id, _)| id)
-        })?;
-    unit_scale_mm(unit_id, exchange, &mut BTreeSet::new())
+    let candidates = exchange
+        .records
+        .iter()
+        .filter(|(_, record)| record.partial("GLOBAL_UNIT_ASSIGNED_CONTEXT").is_some())
+        .filter_map(|(&id, _)| context_unit_scales(id, exchange).0)
+        .collect::<Vec<_>>();
+    unique_scale(&candidates)
 }
 
 fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
-    let context_units = exchange.records.values().find_map(|record| {
-        record
-            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
-            .parameters
-            .first()?
-            .list()
-    });
-    let unit_id = context_units
-        .into_iter()
-        .flatten()
-        .filter_map(Value::reference)
-        .find(|id| {
-            exchange
-                .records
-                .get(id)
-                .is_some_and(|record| record.partial("PLANE_ANGLE_UNIT").is_some())
-        })
-        .or_else(|| {
-            exchange
-                .records
-                .iter()
-                .find(|(_, record)| record.partial("PLANE_ANGLE_UNIT").is_some())
-                .map(|(&id, _)| id)
-        })?;
-    unit_scale_radians(unit_id, exchange, &mut BTreeSet::new())
+    let candidates = exchange
+        .records
+        .iter()
+        .filter(|(_, record)| record.partial("GLOBAL_UNIT_ASSIGNED_CONTEXT").is_some())
+        .filter_map(|(&id, _)| context_unit_scales(id, exchange).1)
+        .collect::<Vec<_>>();
+    unique_scale(&candidates)
 }
 
 pub(super) fn unit_scale_radians(
