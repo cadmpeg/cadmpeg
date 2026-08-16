@@ -815,6 +815,48 @@ grid confirms that direct class serialization returns false and that
 exist for CADIR to admit. The Rust class registry therefore correctly leaves
 the UUID unsupported and retains no fabricated point-grid interpretation.
 
+The direct NURBS and plane-surface classes are independently covered by V4,
+V50, V6, and inch-unit V6 witnesses. `ON_NurbsCurve::Write`/`Read` defines
+the packed dimension, rational flag, order, CV count, two reserved integers,
+reserved bounding box, stored knots, homogeneous or Euclidean poles, and the
+V6 SubD-friendly suffix. `ON_PlaneSurface::Write`/`Read` defines the plane and
+independent domains/extents. `ON_ClippingPlaneSurface::Write`/`Read` adds the
+bounded plane carrier and `ON_ClippingPlane::Write`/`Read` adds viewport,
+identity, enabled, depth, and ordered participation fields. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/nurbs_plane_witness.cpp`
+reports source-valid nonrational, rational, and dimension-2 NURBS curves,
+dimension-2 line and polyline objects, a plane surface, and a clipping-plane
+surface in all four files. Its clipping-plane differential uses surface-plane
+origin `(20,30,40)` and clipping-plane origin `(120,130,140)` to establish
+that the first child is the transferred surface carrier. The Rust readers
+transfer all seven objects; dimension-2 curves are lifted with zero Z, and
+the inch differential scales only spatial poles and surface origins while
+retaining knots, weights, domains, extents, axes, and clipping controls in
+their source units or native record. The V6 `cadmpeg inspect` reads locate
+the three NURBS class payloads at `0x0a33`, `0x0bcc`, and `0x0d4f`, the plane
+surface payload at `0x10a6`, and the clipping-surface payload at `0x121e`.
+
+The direct NURBS-curve and plane-surface slice is closed by
+`ON_NurbsCurve::IsValid`/`Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_nurbscurve.cpp:566-910`, plane and
+clipping writers/readers in
+`/home/pcurve/side2/opennurbs/opennurbs_planesurface.cpp:84-147,1345-1605,1706-1775`,
+primitive writers in
+`/home/pcurve/side2/opennurbs/opennurbs_archive.cpp:1287-1442`, and archive
+dispatch in `/home/pcurve/side2/opennurbs/opennurbs_archive.cpp:4513-4647`.
+The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/nurbs_plane_witness.cpp` and
+`nurbs_plane_differential.txt` cover V4/V50/V6, inch scaling, class-data
+offsets, source readback, decode, and validation. The focused owner test
+`top_level_nurbs_lifts_a_valid_two_dimensional_curve` gates the NURBS
+dimension admission; the existing bounded line and polyline tests gate the
+shared simple-curve dimension rule. The V6 class-data payloads are at the
+offsets recorded in the Known section. The Rust readers transfer all seven
+objects and preserve the clipping surface as the first child plane carrier;
+native fidelity retains the finite parameterization and clipping-control
+bytes. The code, specification, evidence, and gates for this slice are
+complete; the remaining TE-01 classes stay open below.
+
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
 outcome, and typed or opaque transfer result.

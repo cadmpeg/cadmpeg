@@ -703,7 +703,7 @@ pub(crate) fn read_nurbs_curve(
     reader: &mut BoundedReader<'_>,
     scale: f64,
 ) -> Result<NurbsCurve, GeometryError> {
-    read_nurbs_curve_inner(reader, scale, Some(3))
+    read_nurbs_curve_inner(reader, scale, None)
 }
 
 /// Reads a Rhino NURBS curve whose poles are two-dimensional UV values.

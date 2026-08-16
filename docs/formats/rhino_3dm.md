@@ -2796,8 +2796,9 @@ for parameters `t[0..n)` is:
 ```
 
 Polyline points are document-length values; parameters and `dimension` are
-not converted. CADIR transfers the point sequence as one degree-one NURBS
-curve with the knot vector above.
+not converted. CADIR's typed admission requires dimension 2 or 3. CADIR
+transfers the point sequence as one degree-one NURBS curve with the knot
+vector above.
 
 ### 12.6 Polycurve
 
@@ -2937,6 +2938,13 @@ from the reconstructed knot vector, not serialized as a boolean.
 After the known minor-gated fields, the reader skips any suffix before the
 bounded class-data end.
 
+CADIR transfers an admitted curve of dimension 2 or 3 to a neutral NURBS
+curve. A dimension-2 pole receives a zero third coordinate. Pole coordinates
+are converted to millimetres; degree, the reconstructed knot vector,
+parameter domain, weights, and periodicity are unchanged. The reserved
+bounding box is framing data, not a curve definition, and remains available
+only through the retained native record.
+
 The stored vector omits two endpoint knots. Let `o=order`, `n=CV count`,
 `m=o+n-2`, and `K[0..m)` be stored knots. The full vector has `o+n` entries:
 
@@ -3022,6 +3030,14 @@ plus the mapped U coordinate times the plane X axis plus the mapped V
 coordinate times the plane Y axis. A reader consumes the known prefix for the
 minor and skips remaining bytes before the bounded payload end.
 
+`CADIR decision:` a transferred plane surface uses the neutral infinite-plane
+carrier with the source origin converted to millimetres, the source Z axis as
+normal, and the source X axis as `u_axis`. The source equation is validated
+but is not a second neutral field. Domains and extents remain native
+parameterization data; for a Brep they are used by the pcurve parameter map,
+and for a free surface they remain in the retained native record because the
+neutral plane carrier has no finite-rectangle fields.
+
 ### 13.4 Clipping-plane surface
 
 Class UUID `DBC5A584-CE3F-4170-98A8-497069CA5C36` contains an anonymous
@@ -3068,6 +3084,14 @@ Minor 5 participation items are ordered and optional:
 Each item can occur at most once. Present items occur in ascending item order.
 Item codes 14 and above terminate the known participation stream; the
 remaining bytes are skipped at the bounded chunk end.
+
+`CADIR decision:` a transferred clipping-plane surface uses the first child
+plane surface as its neutral plane carrier. The clipping-plane child is
+parsed and validated, but its viewport IDs, plane ID, enabled flag, clipping
+plane, depth controls, and participation lists remain native-record fields;
+the neutral surface has no clipping-control fields. The clipping plane may
+have a different origin from the first child plane; the first child still
+defines the transferred surface geometry.
 
 ### 13.5 Revolution surface
 

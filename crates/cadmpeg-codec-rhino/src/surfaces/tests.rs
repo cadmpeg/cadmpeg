@@ -377,6 +377,19 @@ fn c2_nurbs_reads_two_dimensions_without_scaling_uv() {
 }
 
 #[test]
+fn top_level_nurbs_lifts_a_valid_two_dimensional_curve() {
+    let bytes = curve_2d_payload(false);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let curve = read_nurbs_curve(&mut reader, 2.0).expect("valid two-dimensional curve");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!(curve.control_points[1], Point3::new(2.0, 4.0, 0.0));
+    assert_eq!(
+        curve.knots,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
+    );
+}
+
+#[test]
 fn c2_nurbs_preserves_periodic_parameterization() {
     let mut bytes = curve_2d_payload(false);
     let knots: [f64; 7] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];

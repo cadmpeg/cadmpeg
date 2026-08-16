@@ -383,7 +383,7 @@ pub(crate) fn decode_inner(
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_line(&mut reader, scale, Some(3))?),
+                geometry: CurveGeometry::Nurbs(read_line(&mut reader, scale, None)?),
                 compound: None,
                 warnings: Vec::new(),
             },
@@ -400,7 +400,7 @@ pub(crate) fn decode_inner(
         }
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, scale, Some(3))?),
+                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, scale, None)?),
                 compound: None,
                 warnings: Vec::new(),
             },
@@ -1733,6 +1733,25 @@ mod tests {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
             let curve = read_line(&mut reader, 1.0, None).expect("valid line");
             assert_eq!(curve.knots, vec![2.0, 2.0, 5.0, 5.0]);
+        }
+    }
+
+    #[test]
+    fn bounded_polyline_accepts_both_serialized_dimensions() {
+        for dimension in [2_i32, 3] {
+            let mut bytes = vec![0x10];
+            bytes.extend(2_i32.to_le_bytes());
+            for value in [0.0_f64, 0.0, 0.0, 1.0, 2.0, 0.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(2_i32.to_le_bytes());
+            bytes.extend(10.0_f64.to_le_bytes());
+            bytes.extend(12.0_f64.to_le_bytes());
+            bytes.extend(dimension.to_le_bytes());
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+            let curve = read_polyline(&mut reader, 1.0, None).expect("valid polyline");
+            assert_eq!(curve.control_points.len(), 2);
+            assert_eq!(curve.knots, vec![10.0, 10.0, 12.0, 12.0]);
         }
     }
 
