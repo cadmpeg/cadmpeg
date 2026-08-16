@@ -421,6 +421,7 @@ pub(super) fn project(
                 transform.point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor));
             let end_point =
                 transform.point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor));
+            // GE-03: IGES §2.2.4.3.19 supplies the positional comparison only.
             if previous_terminal_point.is_some_and(|previous| {
                 !points_within_resolution(previous, start_point, resolution)
             }) {
@@ -438,6 +439,9 @@ pub(super) fn project(
                 })
             });
             if continuity >= 1 && segment > 0 {
+                // GE-03: IGES §4.14 defines slope and curvature continuity but
+                // gives no numeric receiver tolerance. Interval overlap is the
+                // CADIR admission decision for the declared real values.
                 let start_derivative = starts.map(|component| component[1]);
                 let Some(start_tangent) = interval_unit_tangent(start_derivative) else {
                     continuous = false;
@@ -518,6 +522,8 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "terminal derivative block is missing"));
             continue;
         };
+        // GE-03: §4.14 calls this block redundant. CADIR keeps the
+        // coefficient-defined carrier when a present block disagrees.
         let last_values = &coefficients[coefficients.len() - 12..];
         let last_segment_start = coefficient_start + (segment_count - 1) * 12;
         let last_width = declared_interval(

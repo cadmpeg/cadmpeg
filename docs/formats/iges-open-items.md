@@ -51,18 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-03. Type 112 segment continuity
-
-**Question.** Which Type 112 continuity constraints are format requirements for `H=0`, `H=1`, and `H=2`?
-
-**Known.** `entities/splines.rs:430-489` checks position, unit-tangent, and curvature interval overlap according to the declared continuity class. The current specification states the same constraints without a direct IGES section citation. The closure change added implementation and synthetic cases only.
-
-**Need.** Cite the Type 112 continuity table and define the required receiver action for a failed redundant endpoint or derivative field.
-
-**Conflict.** The specification treats the continuity tests as format-authoritative, but the closure evidence does not include a primary-source or independent-producer witness.
-
-**Note.** Reopened by QA audit 2026-08-16. Existing tests exercise the implementation decision and cannot establish the source semantics.
-
 ### GE-05. Type 102 carrier concatenation uses a private tolerance and degrades silently
 
 **Question.** What endpoint agreement rule governs Type 102 child concatenation?

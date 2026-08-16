@@ -393,6 +393,32 @@ fn decode_type_112_h2_compares_curvature_with_arc_length_parameterization() {
 }
 
 #[test]
+fn decode_keeps_type_112_curve_when_redundant_terminal_block_disagrees() {
+    let parameters = type_112_parameters(
+        1,
+        &[0.0, 1.0],
+        &[[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+        [99.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    );
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                parameters.as_bytes(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("terminal derivative block disagrees with the last polynomial")
+    }));
+}
+
+#[test]
 fn decode_rejects_a_degenerate_type_112_segment() {
     let parameters = type_112_parameters(0, &[0.0, 1.0], &[[0.0; 12]], [0.0; 12]);
     let result = IgesCodec
