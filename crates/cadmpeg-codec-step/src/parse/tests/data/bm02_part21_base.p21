@@ -1,0 +1,11 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('BM-02 Part 21 graph witness'),'4;1');
+FILE_NAME('bm02-model.p21','2026-08-16T00:00:00Z',('cadmpeg'),('cadmpeg'),'cadmpeg','cadmpeg','');
+FILE_SCHEMA(('AP242'));
+ENDSEC;
+DATA;
+#1=ITEM('PART-42');
+#42=ITEM('PART-42');
+ENDSEC;
+END-ISO-10303-21;

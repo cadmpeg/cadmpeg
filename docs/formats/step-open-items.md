@@ -18,21 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### BM-02. Sidecar composition
-
-**Question.** How do AP242 BO-Model XML identities and values combine with the Part 21 instance graph?
-
-**Known.** The BO-Model XML schema and Part 21 encode related product data in
-different representation systems. Part 21 identity numbers are local to its
-DATA graph. No Part 21 rule maps an XML object identity or XML value to a
-numeric Part 21 instance.
-
-**Note.** Sidecar composition needs the declared AP242 XML edition from the
-published AP242 downloads, plus an identity linkage, precedence rule, and
-conflict policy recorded as a CADIR decision.
-
-**Need.** We must know the composition rule to build one product graph from the Part 21 exchange structure and its sidecar.
-
 ## 3. Containers and other encodings
 
 ### CE-03. Part 28 XML grammar

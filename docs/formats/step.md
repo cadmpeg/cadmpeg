@@ -64,6 +64,38 @@ BO-Model XML Assembly Structure §§4.1.5, 4.1.6, 4.1.7, 4.1.8, 4.1.9, 9.1,
 and 9.3 define the recommended header population, namespaces, file suffixes,
 and external-file relationship.
 
+The BO-Model XML identity system is local to the XML document. `uid` has XML
+Schema type `ID`, and `uidRef` has type `IDREF`; they identify XML elements and
+references in that XML document. `Id.id` and `Identifier.id` are business
+identifier strings with the role and context fields defined by the BO Model.
+They are not Part 21 occurrence names. A Part 21 `#` or `@` occurrence is
+local to its exchange structure, so equal numeric values, equal text values,
+equal filenames, or equal business identifiers do not establish one object.
+
+The BO-Model recommended practices can carry a basic external-file reference
+from a `DigitalFile` or `ExternalGeometricModel` to a Part 21 file. Nested
+references can carry a target `Part.id`, `PartVersion.id`, and `PartView.id`
+with the component-file reference. These fields identify a target file and
+business object for navigation. They do not map an XML `uid` or business
+identifier to a Part 21 `#` occurrence, copy attributes, or define value
+precedence. The CAx-IF External (Element) References recommended practices
+explicitly leave Part 28 XML EER out of scope; their Part 21 EER rules use an
+explicit external source and target anchors, and state that EER adds
+information rather than replacing existing data.
+
+CADIR decision: there is no generic BO-Model-to-Part-21 composition in the
+STEP codec. It does not discover a sidecar, join by filename, stem, numeric
+occurrence, `uid`, `Id`, text value, or serialization order, and it does not
+let XML values override Part 21 values. A caller that composes the documents
+must supply an explicit resource binding, the declared XML schema edition,
+and an identity mapping for the domain fields it chooses to connect. CADIR
+retains both source graphs and source identities. No source representation has
+default precedence. A neutral value is projected only when the caller's
+mapping identifies one semantic field and the source values agree; a missing
+mapping or conflicting values retains both source values, emits a composition
+conflict, and selects no neutral value. The caller may apply a separate
+domain-specific policy after this binding and conflict result.
+
 A Part 21 ZIP container uses PKZIP 2.04g compression. It admits stored and
 Deflate entries. PKZIP 2.04g excludes encryption, Unicode filename support,
 and Deflate64. The archive may contain multiple exchange files, directories,
