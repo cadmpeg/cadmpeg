@@ -31,19 +31,11 @@ use super::skamp::{
 
 const EPS_SECTION_COORDINATE: f64 = 1e-9;
 
-pub(crate) fn resolved_section_coordinates(
+pub(crate) fn saved_section_coordinate_witnesses(
     definition: &crate::feature::FeatureDefinition,
-) -> BTreeMap<u32, [Option<f64>; 2]> {
-    let (points, ambiguous_point_ids) = match &definition.variables {
-        Some(variables) if variables.is_complete() => variables.reconciled_points(),
-        Some(_) => return BTreeMap::new(),
-        None => (BTreeMap::new(), BTreeSet::new()),
-    };
-    let mut segment_counts = BTreeMap::new();
-    for segment in definition.segments.iter().flat_map(|table| &table.rows) {
-        *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
-    }
-    let mut saved_segment_points = definition
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<(u32, [f64; 2])> {
+    let mut witnesses = definition
         .segments
         .iter()
         .filter(|table| table.is_complete())
@@ -62,7 +54,7 @@ pub(crate) fn resolved_section_coordinates(
         .filter_map(|segment| saved_section_segment_point_coordinates(definition, segment))
         .flatten()
         .collect::<Vec<_>>();
-    saved_segment_points.extend(
+    witnesses.extend(
         definition
             .segments
             .iter()
@@ -74,6 +66,22 @@ pub(crate) fn resolved_section_coordinates(
                 Some((segment.center_id, center))
             }),
     );
+    witnesses
+}
+
+pub(crate) fn resolved_section_coordinates(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<u32, [Option<f64>; 2]> {
+    let (points, ambiguous_point_ids) = match &definition.variables {
+        Some(variables) if variables.is_complete() => variables.reconciled_points(),
+        Some(_) => return BTreeMap::new(),
+        None => (BTreeMap::new(), BTreeSet::new()),
+    };
+    let mut segment_counts = BTreeMap::new();
+    for segment in definition.segments.iter().flat_map(|table| &table.rows) {
+        *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
+    }
+    let saved_segment_points = saved_section_coordinate_witnesses(definition, &ambiguous_point_ids);
     let segments = definition
         .segments
         .iter()

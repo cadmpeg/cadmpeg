@@ -3778,6 +3778,65 @@
             .definition,
         SketchConstraintDefinition::Native { .. }
     ));
+    let mut conflicting_saved_spanning_distance = distance_definition.clone();
+    conflicting_saved_spanning_distance.order_table = Some(crate::feature::FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureOrderRow {
+            external_id: 12,
+            internal_id: 20,
+            bitmask: 1,
+            offset: 95,
+        }],
+        offset: 94,
+    });
+    conflicting_saved_spanning_distance.saved_section = Some(crate::feature::FeatureSavedSection {
+        entities: vec![crate::feature::FeatureSavedEntity::Line(
+            crate::feature::FeatureSavedLine {
+                entity_id: 20,
+                references: Vec::new(),
+                attributes: Vec::new(),
+                endpoints: [
+                    [Some(0.0), Some(2.0), Some(0.0)],
+                    [Some(4.0), Some(3.0), Some(0.0)],
+                ],
+                body: Vec::new(),
+                offset: 96,
+            },
+        )],
+        offset: 96,
+    });
+    assert!(matches!(
+        section_dimension_constraints(
+            &conflicting_saved_spanning_distance,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    let mut agreeing_saved_spanning_distance = conflicting_saved_spanning_distance.clone();
+    let crate::feature::FeatureSavedEntity::Line(line) = agreeing_saved_spanning_distance
+        .saved_section
+        .as_mut()
+        .expect("saved section")
+        .entities
+        .first_mut()
+        .expect("saved line")
+    else {
+        panic!("saved line entity");
+    };
+    line.endpoints[1][0] = Some(0.0);
+    assert!(matches!(
+        section_dimension_constraints(
+            &agreeing_saved_spanning_distance,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::VerticalDistance { .. }
+    ));
     let mut schema_orientation = distance_definition.clone();
     let schema_dimension = &mut schema_orientation
         .dimensions

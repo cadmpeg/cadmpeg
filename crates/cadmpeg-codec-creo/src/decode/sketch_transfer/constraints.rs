@@ -6,7 +6,7 @@ use super::super::feature_history::{
     resolved_feature_dimension_parameter,
 };
 use super::super::sketch::{
-    approximately_equal, resolved_section_coordinates,
+    approximately_equal, resolved_section_coordinates, saved_section_coordinate_witnesses,
     section_equation_function_forty_three_axis_distance_rows,
     section_equation_function_forty_two_midpoint_coordinate_rows,
     section_equation_function_six_distance_rows,
@@ -1446,6 +1446,8 @@ pub(in super::super) fn section_dimension_constraints(
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
     let resolved_coordinates = resolved_section_coordinates(definition);
+    let saved_coordinate_witnesses =
+        saved_section_coordinate_witnesses(definition, &ambiguous_point_ids);
     relations
         .rows
         .iter()
@@ -1586,7 +1588,7 @@ pub(in super::super) fn section_dimension_constraints(
                                 first_id,
                                 second_id,
                                 &resolved_coordinates,
-                                &[],
+                                &saved_coordinate_witnesses,
                                 &ambiguous_point_ids,
                             );
                             let matching = segments
