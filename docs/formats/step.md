@@ -610,14 +610,20 @@ are schema strings and remain source metadata, not Part 21 resource tokens.
 
 For a ZIP container, the root exchange has the archive member
 `ISO-10303.p21` as its base directory entry. Part 21:2016 Annex A.4 requires
-relative addresses to be interpreted against the directory of the referencing
-member and forbids an address outside the archive root. The codec normalizes
-`.` components, processes `..` only while a parent member remains, rejects an
-absolute path, an empty path component, or traversal above the root, and treats
-a URI scheme or network-path reference as external. It checks the resulting
-member name against the archive central directory. Root ANCHOR forwarding is
-resolved before this member check; subsidiary members remain resources and are
-not read into the root graph.
+this root member and permits other members as subsidiaries. Only the root is
+addressed from outside the archive; a root `ANCHOR` forwards an external
+reference to an entity or value in a subsidiary. Relative addresses are
+interpreted against the directory of the referencing member and cannot leave
+the archive root. The codec normalizes `.` components, processes `..` only
+while a parent member remains, rejects an absolute path, an empty path
+component, or traversal above the root, and treats a URI scheme or network-path
+reference as external. It checks the resulting member name against the archive
+central directory. Root ANCHOR forwarding is resolved before this member
+check. A resolved URI must name an anchor with the same fragment; the anchor
+item is the referenced entity or value, and a URI-valued anchor forwards the
+resolution again. If the target does not meet these rules, the Part 21 result
+is `$`. Subsidiary members remain resources and are not read into the root
+graph by the codec.
 
 CADIR decision: external resource access is an admission boundary outside the
 STEP codec. The codec performs no network, filesystem, archive-download, or
@@ -632,7 +638,9 @@ implicitly; a missing or refused access result remains an unresolved external
 dependency.
 For an edition-3 ZIP, the root exchange has the schema-population and
 REFERENCE rules above. A root ANCHOR whose value is a URI can forward a root
-reference to an entity or value in a subsidiary member.
+reference to an entity or value in a subsidiary member. A caller composition
+step must parse the addressed member and apply that member's ANCHOR table; a
+subsidiary numeric instance name is never a root numeric identity.
 
 CADIR decision: the STEP codec admits only the root exchange graph. It keeps
 each external occurrence bound to its exact resource URI and anchor fragment;

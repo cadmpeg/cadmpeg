@@ -20,16 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-02. ZIP resource composition
-
-**Question.** How do references between exchange resources in an edition-3 ZIP container resolve into one graph?
-
-**Known.** Annex A.4 defines archive-relative addressing and root-anchor forwarding. The archive reader checks the addressed member but admits only `ISO-10303.p21` to semantic decode. It does not substitute an entity or value from a subsidiary graph.
-
-**Need.** We need a multi-member archive witness and a resource-qualified graph model that verifies forwarded anchor substitution.
-
-**Note.** QA audit: commit `2a5fd8ce8` documented root-only decode and deleted the item. Root-only refusal is not the resource-composition operand.
-
 ### CE-03. Part 28 XML grammar
 
 **Question.** Which Part 28 configuration and generated schema define each supported AP203, AP214, or AP242 XML grammar?
