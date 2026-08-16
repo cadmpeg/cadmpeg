@@ -974,6 +974,33 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
 }
 
 #[test]
+fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() {
+    let surface = SurfaceGeometry::Sphere {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 5.0,
+    };
+    let section_radius = 21.0_f64.sqrt();
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Circle {
+            center: Point3::new(0.0, 2.0, 0.0),
+            radius: section_radius,
+        },
+    };
+    let start = Point3::new(section_radius, 2.0, 0.0);
+    let end = Point3::new(0.0, 2.0, section_radius);
+
+    assert!(standard_pcurve_geometry(&surface, &support, start, end, None, None).is_none());
+    assert!(standard_endpoint_pair_supports_topology(
+        &surface, &support, start, end, None
+    ));
+}
+
+#[test]
 fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.points.push(Point {

@@ -43,6 +43,7 @@ const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
 const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
 const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
 const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
+const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -3417,7 +3418,7 @@ fn attach_standard_topology(
                     let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
                         return false;
                     };
-                    standard_pcurve_geometry(
+                    standard_endpoint_pair_supports_topology(
                         &surface.geometry,
                         support,
                         start,
@@ -3426,9 +3427,7 @@ fn attach_standard_topology(
                             brep,
                             bindings[face].2,
                         ),
-                        None,
                     )
-                    .is_some()
                 })
             });
             if pairs.is_empty() {
@@ -5963,6 +5962,37 @@ pub(crate) fn point_on_standard_face(
             .sum::<f64>();
         inside_aabb && distance_squared.sqrt() <= bounds.sphere_radius + TOLERANCE
     })
+}
+
+/// Keep a topological endpoint pair when p-curve derivation cannot prove it.
+///
+/// The endpoint domain is an input to exact trim-cycle and port-identity
+/// solving. P-curve construction is a later, optional emission step. A
+/// spherical face can carry a non-isoparametric circular section; the generic
+/// UV-midpoint p-curve test cannot derive that section from its endpoints, but
+/// the serialized circle carrier and face membership still make the pair
+/// admissible for topology solving.
+pub(super) fn standard_endpoint_pair_supports_topology(
+    surface: &SurfaceGeometry,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    start: Point3,
+    end: Point3,
+    witness: Option<Point3>,
+) -> bool {
+    if !point_on_surface(start, surface) || !point_on_surface(end, surface) {
+        return false;
+    }
+    if standard_pcurve_geometry(surface, support, start, end, witness, None).is_some() {
+        return true;
+    }
+    matches!(
+        (surface, &support.geometry),
+        (
+            SurfaceGeometry::Sphere { .. },
+            crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
+        ) if (start.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+            && (end.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+    )
 }
 
 pub(crate) fn standard_pcurve_geometry(
