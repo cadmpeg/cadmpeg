@@ -5,14 +5,21 @@ use super::*;
 use crate::test_support::test_dump::*;
 use crate::test_support::{class_wrapper, crc_chunk};
 
-pub(crate) fn polyedge_payload() -> Vec<u8> {
+const OPENNURBS_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
+
+fn polyedge_payload_with_domains(edge_domain: [f64; 2], trim_domain: [f64; 2]) -> Vec<u8> {
     let mut segment = 1_i32.to_le_bytes().to_vec();
     segment.extend(0_i32.to_le_bytes());
     segment.extend([0_u8; 15]);
     segment.push(9);
     segment.extend(2_i32.to_le_bytes());
     segment.extend(17_i32.to_le_bytes());
-    for value in [0.0_f64, 4.0, 1.0, 3.0] {
+    for value in [
+        edge_domain[0],
+        edge_domain[1],
+        trim_domain[0],
+        trim_domain[1],
+    ] {
         segment.extend(value.to_le_bytes());
     }
     segment.push(1);
@@ -37,6 +44,10 @@ pub(crate) fn polyedge_payload() -> Vec<u8> {
     payload
 }
 
+pub(crate) fn polyedge_payload() -> Vec<u8> {
+    polyedge_payload_with_domains([0.0, 4.0], [1.0, 3.0])
+}
+
 #[test]
 fn decodes_persistent_polyedge_segment_construction() {
     let payload = polyedge_payload();
@@ -45,12 +56,28 @@ fn decodes_persistent_polyedge_segment_construction() {
     })
     .expect("required invariant");
     assert_eq!(decoded.parameters, [0.0, 10.0]);
+    assert_eq!(
+        decoded.segments[0].object_id,
+        Uuid::from_wire(POLYEDGE_SEGMENT_TARGET)
+    );
     assert_eq!(decoded.segments[0].component, [2, 17]);
     assert_eq!(decoded.segments[0].edge_domain, [0.0, 4.0]);
     assert_eq!(decoded.segments[0].trim_domain, [1.0, 3.0]);
     assert!(decoded.segments[0].reversed);
     assert_eq!(decoded.segments[0].domain, [10.0, 20.0]);
     assert_eq!(decoded.segments[0].proxy_domain, [2.0, 6.0]);
+}
+
+#[test]
+fn accepts_empty_edge_and_trim_domains_for_a_source_curve_segment() {
+    let payload =
+        polyedge_payload_with_domains([OPENNURBS_UNSET_VALUE; 2], [OPENNURBS_UNSET_VALUE; 2]);
+    let decoded = crate::decode::with_expand_bytes(&payload, |expand| {
+        decode(expand, 0..payload.len(), ArchiveVersion::V8)
+    })
+    .expect("required invariant");
+    assert_eq!(decoded.segments[0].edge_domain, [OPENNURBS_UNSET_VALUE; 2]);
+    assert_eq!(decoded.segments[0].trim_domain, [OPENNURBS_UNSET_VALUE; 2]);
 }
 
 #[test]

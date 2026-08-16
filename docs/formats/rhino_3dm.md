@@ -2764,19 +2764,29 @@ knot count = control-point count + degree + 1
 `ON_PolyEdgeSegment`. A segment is an anonymous version 1.0 chunk:
 
 ```text
-UUID referenced object
-ON_ComponentIndex referenced component
-ON_Interval edge domain
-ON_Interval trim domain
-bool proxy reversed
-ON_Interval polyedge segment domain
-ON_Interval referenced curve domain
+UUID referenced object (16 wire-order bytes)
+i32 component type
+i32 component index
+f64 edge-domain minimum
+f64 edge-domain maximum
+f64 trim-domain minimum
+f64 trim-domain maximum
+u8 proxy reversed (0 or 1)
+f64 polyedge-segment-domain minimum
+f64 polyedge-segment-domain maximum
+f64 referenced-curve-domain minimum
+f64 referenced-curve-domain maximum
 ```
 
 The segment and parameter counts obey the polycurve invariants. All domains
 are finite. The object UUID and component index persist the source curve,
 Brep edge, or Brep trim selection; the reversal and domain fields define its
 orientation and parameter mapping inside the polyedge.
+When `ON_PolyEdgeSegment::Create` receives an ordinary source curve rather
+than a Brep edge or trim, the edge and trim domains remain empty intervals:
+both endpoints are the finite `ON_UNSET_VALUE` sentinel
+`-1.23432101234321e+308`. Those sentinel pairs mean that no Brep edge or trim
+subdomain is selected; they are not increasing domains.
 
 The packed curve readers consume their known prefixes and skip unread bytes
 before the containing class-data boundary. A later minor does not change the
@@ -4002,6 +4012,24 @@ variant 3 retains the start transform and end cage. Each localizer retains its
 type, point, vector, distance interval, and optional curve or surface. The
 deformation is not applied to captive objects: the source morph object remains
 retained for native fidelity and emits `morph.deformation-not-applied`.
+
+### 18.6 Persistent polyedge references
+
+CADIR does not create neutral geometry for an `ON_PolyEdgeCurve`. It creates
+one native `polyedge_reference` feature. Its `construction` property retains
+the polycurve parameter array and, in segment order, each referenced object
+UUID, component type and index, edge and trim domains, proxy-reversal byte,
+polyedge segment domain, and referenced-curve domain. A uniquely resolved
+segment UUID becomes `segment_N_object` in the feature parameters and links
+the feature to that source object record. A missing or ambiguous UUID leaves
+that parameter absent and emits the corresponding reference loss.
+
+CADIR retains the polyedge source record and emits
+`polyedge.references-not-resolved` because the construction is not a neutral
+binding, even when every segment UUID resolves to a source record. The
+polyedge parameter array and all segment domains remain numeric construction
+values; CADIR does not apply document-length scaling to them. Referenced
+carrier geometry is scaled by its own geometry rule.
 
 ## 19. Exact gates and invariants
 

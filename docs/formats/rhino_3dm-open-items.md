@@ -741,6 +741,13 @@ localizer, option fields, and class boundary are settled. The Rust decoder
 transfers the complete witnessed cage variant, resolves the captive-object
 link, converts spatial values and transform translations, and retains the
 source object because it does not apply the deformation.
+The `ON_PolyEdgeCurve` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its inherited polycurve payload, persistent segment
+class UUID, object UUIDs, component type/index pairs, edge and trim domains,
+proxy-reversal byte, segment domains, and referenced-curve domains are
+settled. The Rust decoder preserves the construction values, resolves unique
+segment UUIDs to source-record links, and retains unresolved or ambiguous
+references as explicit reference losses.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -944,6 +951,35 @@ the model curve to `[381,635,889]`/`[1143,1397,1651]` and the support-plane
 origin to `[127,152.4,177.8]`. The owner test
 `decodes_parameter_model_and_support_carriers` now asserts the parameter
 curve remains unscaled while the model curve and support plane scale.
+
+The polyedge-reference slice is closed by `ON_PolyCurve::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_polycurve.cpp:410-499` and
+`ON_PolyEdgeSegment::Init`/`Create`/`Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_polyedgecurve.cpp:25-39,103-139,780-847`, the
+authored `/home/pcurve/side2/tmp/agent-rhino-l9-20260816/polyedge_witness.cpp`,
+and its V4/V50/V6 plus inch-unit V6 outputs. `cadmpeg inspect` finds the
+`ON_PolyEdgeCurve` class UUID at V4 `0x0b7c`, V50 `0x0be8`, V6 `0x0c21`, and
+inch V6 `0x0c2b`; the first persistent segment UUID occurs at V4 `0x0c2d`,
+V50 `0x0cad`, V6 `0x0ce6`, and inch V6 `0x0cf0`; the second occurs at V4
+`0x0cd2`, V50 `0x0d66`, V6 `0x0d9f`, and inch V6 `0x0da9`. The
+valid producer witness uses two segments and records parameter values
+`[10,20,35]`, component pairs `[31,17]` and `[2,23]`, edge domains
+`[-1.23432101234321e+308,-1.23432101234321e+308]`/`[6,8]`, trim domains
+`[-1.23432101234321e+308,-1.23432101234321e+308]`/`[7,9]`, segment domains
+`[-20,-10]`/`[-10,5]`, referenced domains `[1,9]`/`[3,18]`, and one reversed
+segment. `ON_PolyEdgeSegment::Create` leaves the first source-curve
+segment's edge and trim intervals at the finite `ON_UNSET_VALUE`
+empty-interval sentinel. OpenNURBS model readback exposes the two source curves and the
+persisted segment fields but cannot restore the runtime proxy carriers; its
+reader also loses the reversal flag because it calls `Reverse` before
+`SetDomain`. The Rust decoder retains the reversal and every persisted field,
+links both UUIDs to the source curve records, and emits the native-retention
+loss. Inch V6 scales only the two source curve geometries; the polyedge
+parameter array, component pairs, reversal, and all domains remain unchanged.
+The owner test `decodes_persistent_polyedge_segment_construction` now also
+asserts the persisted segment UUID, and
+`accepts_empty_edge_and_trim_domains_for_a_source_curve_segment` gates the
+finite empty-interval sentinel.
 
 ### FV-06. Later major payload admission
 
