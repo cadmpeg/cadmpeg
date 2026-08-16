@@ -423,7 +423,7 @@ pub(crate) mod design_draft_scope_class448 {
 /// Spec §3.1. Record length 97 B.
 ///
 /// ```text
-/// Offsets are relative to the version-one Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+/// Offsets are relative to the version-one Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix.
 /// ```
 pub(crate) mod design_hole_point_data_v1_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -455,7 +455,7 @@ pub(crate) mod design_hole_point_data_v1_prefix {
 /// Spec §3.1. Record length 122 B.
 ///
 /// ```text
-/// Offsets are relative to the version-four Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+/// Offsets are relative to the version-four Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix.
 /// ```
 pub(crate) mod design_hole_point_data_v4_prefix {
     /// Record length in bytes. Spec §3.1.

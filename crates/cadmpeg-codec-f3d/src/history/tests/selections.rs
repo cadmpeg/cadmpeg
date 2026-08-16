@@ -95,6 +95,115 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
 }
 
 #[test]
+fn hole_face_selection_history_binds_the_unique_persistent_face() {
+    let state = AsmDeltaState {
+        id: "selected-state-2".into(),
+        parent: "selected".into(),
+        byte_offset: 0,
+        state_id: 2,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 2,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        record_table_complete: true,
+        topology: Some(AsmHistoricalTopology {
+            faces: vec![30],
+            loops: vec![20],
+            coedges: vec![10],
+            pcurves: vec![18044],
+            face_loops: vec![AsmHistoricalRelation {
+                owner_ref: 30,
+                member_refs: vec![20],
+            }],
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 20,
+                member_refs: vec![10],
+            }],
+            coedge_pcurves: vec![AsmHistoricalOptionalCarrierBinding {
+                entity: 10,
+                carrier: Some(18044),
+            }],
+            ..AsmHistoricalTopology::default()
+        }),
+        transition: None,
+    };
+    let history = AsmHistory {
+        id: "selected".into(),
+        byte_offset: 0,
+        stream_size: None,
+        history_entry_count: None,
+        record_table_binding_budget_exceeded: false,
+        projection_finalized: false,
+        states: vec![state],
+    };
+    let face_selection = crate::records::DesignHoleFaceSelection {
+        record_index: 100,
+        byte_offset: 0,
+        class_tag: "333".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 0,
+        context_id: "context".into(),
+        context_id_offset: 0,
+        identity_record_index: 103,
+        identity_record_offset: 0,
+        primary_identity: 18044,
+        primary_identity_offset: 0,
+        secondary_identity: None,
+        secondary_identity_offset: None,
+        curve_secondary_identity: None,
+        curve_secondary_identity_offset: None,
+        historical_face_candidates: Vec::new(),
+        next_record_index: 104,
+        next_byte_offset: 0,
+    };
+    let construction = crate::records::DesignHoleConstruction {
+        point_record_index: 55,
+        point_record_byte_offset: 0,
+        position: [0.0; 3],
+        position_offset: 0,
+        direction: [0.0, 0.0, 1.0],
+        direction_offset: 0,
+        point_parameters: [0.0; 2],
+        point_parameter_offsets: [0, 0],
+        reference_type: 0,
+        reference_type_offset: 0,
+        tangent_point_data: None,
+        tangent_point_data_prefix: None,
+        tangent_point_data_offset: None,
+        input_record_indices: vec![55],
+        input_record_offsets: vec![0],
+        face_selection: Some(face_selection),
+    };
+    let mut scope = crate::records::DesignParameterScope::empty("f3d:scope#42", "Hole", 42);
+    scope.hole_construction = Some(construction);
+
+    bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
+
+    assert_eq!(
+        scope
+            .hole_construction
+            .as_ref()
+            .and_then(|construction| construction.face_selection.as_ref())
+            .map(|selection| selection.historical_face_candidates.as_slice()),
+        Some(
+            &[crate::records::DesignEntitySelectionFaceCandidate {
+                history_id: "selected".into(),
+                historical_entity_kind: AsmHistoricalEntityKind::Pcurve,
+                historical_entity_ref: 18044,
+                historical_state_ids: vec![2],
+                face_slot: 30,
+            }][..]
+        )
+    );
+}
+
+#[test]
 fn compact_edge_treatment_deletions_require_exact_cardinality() {
     assert_eq!(
         complete_compact_edge_treatment_deletions(true, Some(2), &[17, 19]),

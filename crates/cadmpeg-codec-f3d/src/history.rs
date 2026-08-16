@@ -1981,6 +1981,18 @@ pub(crate) fn bind_feature_face_selections(
             cadmpeg_ir::features::FeatureDefinition::SplitFace { targets, .. } => {
                 bind_face_selection(targets, scope, groups, operands);
             }
+            cadmpeg_ir::features::FeatureDefinition::Hole {
+                face: Some(face), ..
+            } => {
+                bind_hole_face_selection(
+                    face,
+                    &feature_id,
+                    previous_state_id,
+                    &history.id,
+                    scope,
+                    input_topologies,
+                );
+            }
             _ => {}
         }
     }
@@ -2076,6 +2088,62 @@ fn bind_entity_face_selection(
         state: state_id,
         faces,
         native: group.id.clone(),
+    };
+}
+
+#[allow(clippy::too_many_arguments)]
+fn bind_hole_face_selection(
+    selection: &mut cadmpeg_ir::features::FaceSelection,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    operation_history_id: &str,
+    scope: &crate::records::DesignParameterScope,
+    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+) {
+    use cadmpeg_ir::features::FaceSelection;
+
+    let FaceSelection::Native(native_id) = selection else {
+        return;
+    };
+    let Some(construction) = &scope.hole_construction else {
+        return;
+    };
+    let Some(face_selection) = &construction.face_selection else {
+        return;
+    };
+    let [candidate] = face_selection.historical_face_candidates.as_slice() else {
+        return;
+    };
+    let local = candidate.history_id == operation_history_id
+        && candidate.historical_state_ids.contains(&previous_state_id);
+    let Some(source) = historical_brep_source(&candidate.history_id) else {
+        return;
+    };
+    let state_id =
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id);
+    let mut topologies = input_topologies
+        .iter_mut()
+        .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
+    let Some(topology) = topologies.next() else {
+        return;
+    };
+    if topologies.next().is_some() {
+        return;
+    }
+    let prefix = feature_input_prefix(feature_id, previous_state_id);
+    let discriminator = if local {
+        candidate.face_slot.to_string()
+    } else {
+        format!("{}:{source}:{}", source.len(), candidate.face_slot)
+    };
+    let face = crate::ids::history_input_face_id(&prefix, discriminator);
+    if !topology.faces.contains(&face) {
+        topology.faces.push(face.clone());
+    }
+    *selection = FaceSelection::Historical {
+        state: state_id,
+        faces: vec![face],
+        native: native_id.clone(),
     };
 }
 
@@ -5898,6 +5966,24 @@ pub(crate) fn bind_entity_selection_history(
         );
         operand.resolved_edge_slot =
             unique_entity_selection_edge(&operand.historical_edge_candidates);
+    }
+}
+
+/// Resolve direct persistent face selections carried by Hole constructions.
+pub(crate) fn bind_hole_selection_history(
+    scopes: &mut [crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+) {
+    for scope in scopes {
+        let Some(construction) = &mut scope.hole_construction else {
+            continue;
+        };
+        let Some(selection) = &mut construction.face_selection else {
+            continue;
+        };
+        selection.historical_face_candidates.clear();
+        selection.historical_face_candidates =
+            entity_selection_face_candidates(selection.primary_identity, histories);
     }
 }
 

@@ -1703,6 +1703,172 @@ fn historical_brep_source_qualifies_state_local_candidates() {
 }
 
 #[test]
+fn hole_face_selection_binds_to_the_feature_input_topology() {
+    use crate::history_records::{
+        AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
+    };
+    use crate::records::{
+        DesignEntitySelectionFaceCandidate, DesignHoleConstruction, DesignHoleFaceSelection,
+        DesignParameterScope,
+    };
+    use cadmpeg_ir::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, HoleKind,
+        Length, Termination,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let feature_id = FeatureId("f3d:feature#42".into());
+    let scope_id = "f3d:Design/BulkStream.dat:scope#42";
+    let mut scope = DesignParameterScope::empty(scope_id, "Hole", 42);
+    scope.history_state_id = Some(2);
+    scope.previous_history_state_id = Some(1);
+    scope.hole_construction = Some(DesignHoleConstruction {
+        point_record_index: 55,
+        point_record_byte_offset: 0,
+        position: [0.0; 3],
+        position_offset: 0,
+        direction: [0.0, 0.0, 1.0],
+        direction_offset: 0,
+        point_parameters: [0.0; 2],
+        point_parameter_offsets: [0, 0],
+        reference_type: 0,
+        reference_type_offset: 0,
+        tangent_point_data: None,
+        tangent_point_data_prefix: None,
+        tangent_point_data_offset: None,
+        input_record_indices: vec![55],
+        input_record_offsets: vec![0],
+        face_selection: Some(DesignHoleFaceSelection {
+            record_index: 100,
+            byte_offset: 0,
+            class_tag: "333".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            identity_record_index: 103,
+            identity_record_offset: 0,
+            primary_identity: 18044,
+            primary_identity_offset: 0,
+            secondary_identity: None,
+            secondary_identity_offset: None,
+            curve_secondary_identity: None,
+            curve_secondary_identity_offset: None,
+            historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
+                history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2".into(),
+                historical_entity_kind: AsmHistoricalEntityKind::Pcurve,
+                historical_entity_ref: 18044,
+                historical_state_ids: vec![1],
+                face_slot: 30,
+            }],
+            next_record_index: 104,
+            next_byte_offset: 0,
+        }),
+    });
+    let mut feature = Feature::new(
+        feature_id.clone(),
+        0,
+        FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
+            face: Some(FaceSelection::Native(scope_id.into())),
+            position: Some(Point3::new(0.0, 0.0, 0.0)),
+            direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            placements: Vec::new(),
+            kind: HoleKind::Simple,
+            exit_kind: None,
+            diameter: Some(Length(5.0)),
+            extent: Some(Termination::Blind {
+                length: Length(10.0),
+            }),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
+        },
+    );
+    feature.native_ref = Some(scope_id.into());
+    let mut input_topologies = vec![FeatureInputTopology {
+        id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
+        input_of: feature_id.clone(),
+        bodies: Vec::new(),
+        faces: Vec::new(),
+        edges: Vec::new(),
+        vertices: Vec::new(),
+        native_ref: None,
+    }];
+    let state = |state_id, transition| AsmDeltaState {
+        id: format!("history:state#{state_id}"),
+        parent: "history".into(),
+        byte_offset: 0,
+        state_id,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: state_id,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        record_table_complete: true,
+        topology: Some(AsmHistoricalTopology::default()),
+        transition,
+    };
+    let history = AsmHistory {
+        id: "f3d:history".into(),
+        byte_offset: 0,
+        stream_size: None,
+        history_entry_count: None,
+        record_table_binding_budget_exceeded: false,
+        projection_finalized: false,
+        states: vec![
+            state(
+                2,
+                Some(AsmHistoricalTransition {
+                    previous_state_id: Some(1),
+                    records: Default::default(),
+                    topology: Default::default(),
+                }),
+            ),
+            state(1, None),
+        ],
+    };
+
+    bind_feature_face_selections(
+        std::slice::from_mut(&mut feature),
+        &mut input_topologies,
+        &[scope],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[history],
+    );
+
+    let FeatureDefinition::Hole {
+        face:
+            Some(FaceSelection::Historical {
+                state,
+                faces,
+                native,
+            }),
+        ..
+    } = &feature.definition
+    else {
+        panic!("Hole support face remains unresolved");
+    };
+    assert_eq!(native, scope_id);
+    assert_eq!(
+        state,
+        &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
+    );
+    assert_eq!(faces.len(), 1);
+    assert_eq!(&input_topologies[0].faces, faces);
+}
+
+#[test]
 fn projection_caches_end_after_history_consumers() {
     let transition = crate::history_records::AsmHistoricalTransition {
         previous_state_id: Some(1),

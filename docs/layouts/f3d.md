@@ -345,7 +345,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 97 B
 
-Offsets are relative to the version-one Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+Offsets are relative to the version-one Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -367,7 +367,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 122 B
 
-Offsets are relative to the version-four Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+Offsets are relative to the version-four Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`

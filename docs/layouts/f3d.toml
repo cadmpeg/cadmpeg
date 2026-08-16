@@ -1080,7 +1080,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Version `1` stores the counted input-reference count at offset `93`"
 size = 97
-note = "Offsets are relative to the version-one Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix."
+note = "Offsets are relative to the version-one Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
@@ -1159,7 +1159,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Version `4` stores a tangent-data prefix byte at offset `93`"
 size = 122
-note = "Offsets are relative to the version-four Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix."
+note = "Offsets are relative to the version-four Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix."
 
 [[record.field]]
 name = "indexed_header"

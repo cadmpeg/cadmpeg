@@ -4216,6 +4216,10 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.asm_histories,
     );
+    crate::history::bind_hole_selection_history(
+        &mut native.design_parameter_scopes,
+        &native.asm_histories,
+    );
     crate::history::bind_mirror_selection_planes(
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,
