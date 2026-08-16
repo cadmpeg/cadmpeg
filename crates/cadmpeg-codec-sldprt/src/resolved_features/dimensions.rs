@@ -5,7 +5,7 @@ use super::endpoints::{
 };
 use super::markers::{inline_arc_coordinates, marker_native_code, sketch_marker_prefix_at};
 use super::relation_geometry::{
-    declared_entity_handle_circular_marker, declared_entity_handle_has_linked_pair,
+    declared_entity_handle_circular_marker, declared_entity_handle_has_resolved_pair,
     declared_entity_handle_owner, implicit_circle_marker, owned_relation_parameters,
     DeclaredEntityHandleOwner,
 };
@@ -244,7 +244,7 @@ fn unique_unlinked_declared_entity_handle_circular_carrier<'a>(
 ) -> Option<(&'a SketchInputEntity, DimensionedCurveNative)> {
     if !expected_radius.is_finite()
         || expected_radius <= 0.0
-        || declared_entity_handle_has_linked_pair(lanes, feature, operand)
+        || declared_entity_handle_has_resolved_pair(lanes, feature, operand)
     {
         return None;
     }

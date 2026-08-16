@@ -319,6 +319,144 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
 }
 
 #[test]
+fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness() {
+    let kind = FeatureInputOperandKind::Native(0x8263);
+    let operand = FeatureInputOperand {
+        offset: 100,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 0,
+        entity_ref: None,
+    };
+    let marker = |id: &str, offset, marker_kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: u32::try_from(offset).unwrap(),
+        offset,
+        object_index: None,
+        local_id: None,
+        kind: marker_kind,
+        state_value: None,
+        coordinates_m: Some(coordinates_m),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![
+            FeatureInputClass {
+                id: "entity-class".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 100,
+                name: "sgEntHandle".into(),
+                role: FeatureInputClassRole::SketchEntity,
+            },
+            FeatureInputClass {
+                id: "arc-class".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 25,
+                name: "sgArcHandle".into(),
+                role: FeatureInputClassRole::SketchEntity,
+            },
+        ],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: operand.reference_ref.clone(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: operand.offset,
+            kind,
+            class_ref: Some("entity-class".into()),
+            object_index: 0,
+        }],
+        sketch_entities: vec![
+            marker("arc", 10, SketchInputKind::Arc, [0.0, 0.0]),
+            marker("arc-radial", 20, SketchInputKind::Point, [0.003, 0.004]),
+            marker(
+                "other-circle",
+                30,
+                SketchInputKind::LineOrCircle,
+                [0.1, 0.0],
+            ),
+            marker("other-radial", 40, SketchInputKind::Point, [0.103, 0.004]),
+        ],
+    };
+    let markers_by_id = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+
+    let carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&lane),
+        &markers_by_id,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .expect("declared curve child pair");
+
+    assert_eq!(carrier.marker.id, "arc");
+    assert_eq!(carrier.center, [0.0, 0.0]);
+    assert!(matches!(
+        carrier.curve,
+        Some(DimensionedCurveNative::Circle { center: [0.0, 0.0] })
+    ));
+
+    let mut multiple_declared = lane.clone();
+    multiple_declared.classes.push(FeatureInputClass {
+        id: "line-class".into(),
+        parent: "lane".into(),
+        ordinal: 2,
+        offset: 45,
+        name: "sgLineHandle".into(),
+        role: FeatureInputClassRole::SketchEntity,
+    });
+    let multiple_markers = multiple_declared
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&multiple_declared),
+        &multiple_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .is_none());
+
+    let mut mismatched_declared = lane;
+    mismatched_declared.sketch_entities[1].coordinates_m = Some([0.004, 0.0]);
+    let mismatched_markers = mismatched_declared
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&mismatched_declared),
+        &mismatched_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .is_none());
+}
+
+#[test]
 fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
     let sketch = Sketch {
         id: SketchId("sketch".into()),

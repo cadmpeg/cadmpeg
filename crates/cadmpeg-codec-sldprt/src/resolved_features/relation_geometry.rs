@@ -873,19 +873,32 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     else {
         return None;
     };
-    let mut candidates = declared_entity_handle_linked_pairs(lane, feature)
-        .into_iter()
-        .filter_map(|[center, radial]| {
-            let [cu, cv] = center.coordinates_m?;
-            let [ru, rv] = radial.coordinates_m?;
-            let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-            same_dimension_length(radius, expected_radius).then_some((center, radius))
-        });
+    let child_pairs = declared_entity_handle_declared_child_pairs(lane, feature);
+    let pairs = declared_entity_handle_pairs(lane, feature);
+    if !child_pairs.is_empty() {
+        let [child_pair] = child_pairs.as_slice() else {
+            return None;
+        };
+        if pairs.len() != 1 {
+            return None;
+        }
+        let [center, radial] = *child_pair;
+        let [cu, cv] = center.coordinates_m?;
+        let [ru, rv] = radial.coordinates_m?;
+        let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+        return same_dimension_length(radius, expected_radius).then_some((center, radius));
+    }
+    let mut candidates = pairs.into_iter().filter_map(|[center, radial]| {
+        let [cu, cv] = center.coordinates_m?;
+        let [ru, rv] = radial.coordinates_m?;
+        let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+        same_dimension_length(radius, expected_radius).then_some((center, radius))
+    });
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)
 }
 
-pub(super) fn declared_entity_handle_has_linked_pair(
+pub(super) fn declared_entity_handle_has_resolved_pair(
     lanes: &[FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -894,7 +907,82 @@ pub(super) fn declared_entity_handle_has_linked_pair(
     else {
         return false;
     };
-    !declared_entity_handle_linked_pairs(lane, feature).is_empty()
+    !declared_entity_handle_pairs(lane, feature).is_empty()
+}
+
+fn declared_entity_handle_pairs<'a>(
+    lane: &'a FeatureInputLane,
+    feature: &str,
+) -> Vec<[&'a SketchInputEntity; 2]> {
+    let mut pairs = declared_entity_handle_linked_pairs(lane, feature);
+    pairs.extend(declared_entity_handle_declared_child_pairs(lane, feature));
+    pairs.sort_unstable_by_key(|[center, radial]| (center.offset, radial.offset));
+    pairs.dedup_by(|left, right| left[0].id == right[0].id && left[1].id == right[1].id);
+    pairs
+}
+
+/// Resolve the wide child form where a curve marker is followed by its radial
+/// point and the point interval declares the curve handle class. The class
+/// declaration is scoped to the following marker interval; a radius match
+/// alone is not sufficient because the same feature can contain repeated
+/// circular construction carriers.
+fn declared_entity_handle_declared_child_pairs<'a>(
+    lane: &'a FeatureInputLane,
+    feature: &str,
+) -> Vec<[&'a SketchInputEntity; 2]> {
+    let mut feature_markers = lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+        .collect::<Vec<_>>();
+    feature_markers.sort_unstable_by_key(|marker| marker.offset);
+    let mut markers = feature_markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers
+        .windows(2)
+        .filter_map(|pair| {
+            let [center, radial] = pair else {
+                unreachable!("slice windows have the requested length")
+            };
+            let class_name = match center.kind {
+                SketchInputKind::Arc => "sgArcHandle",
+                SketchInputKind::LineOrCircle => "sgLineHandle",
+                _ => return None,
+            };
+            if !matches!(
+                radial.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                return None;
+            }
+            let next_marker_offset = feature_markers
+                .iter()
+                .find(|marker| marker.offset > radial.offset)
+                .map_or(u64::MAX, |marker| marker.offset);
+            let declared = lane.classes.iter().any(|class| {
+                class.name == class_name
+                    && class.offset > radial.offset
+                    && class.offset < next_marker_offset
+            });
+            if !declared {
+                return None;
+            }
+            Some([*center, *radial])
+        })
+        .collect()
 }
 
 fn declared_entity_handle_linked_pairs<'a>(
