@@ -724,28 +724,32 @@ and source shell instance as a tie-break. The source `voids` SET order does
 not select a neutral shell slot. The outer shell is not repeated in the void
 suffix.
 
-A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or a
-`VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
-vertex-only boundary. A base `FACE` without an explicit surface derives an
-implicit plane from the first `FACE_OUTER_BOUND` in source order, or from the
-first valid boundary when no outer bound is declared. The selected loop keeps
-its ordered points and applies `FACE_BOUND.orientation`; its signed polygon
-area defines the plane normal. The plane origin is the arithmetic centroid of
-the selected ring. Its u-axis is the projection of the first global coordinate
-axis whose projection has the greatest length; ties keep x, then y, then z.
-Every point must be within `max(0.01, 1e-12 * ring_scale)` of that plane, where
-`ring_scale` is the largest displacement from the centroid. A ring whose
-signed area is at most `1e-12 * ring_scale^2`, or whose point residual exceeds
-that bound, does not produce a plane. In a complex face-bound instance, the
-partial with the boundary parameters supplies the inherited `FACE_BOUND`
-attributes; an empty `FACE_OUTER_BOUND` partial supplies only the outer role.
-An `ORIENTED_FACE` keeps the base plane carrier orientation and composes its
-reversal through face sense and boundary traversal. ISO 10303-42:2021 §5.5.3
-defines `VERTEX_POINT.vertex_geometry` as the point that defines the vertex
-position. Section §5.5.5 requires vertex geometry to be consistent with an
-`EDGE_CURVE`; §6.4.2 IP5 requires every topological element of a
-`MANIFOLD_SOLID_BREP` to have defined associated geometry. A base `EDGE`
-emits a curve-less CADIR edge when both endpoint vertices have point carriers.
+A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or
+a `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
+vertex-only boundary. ISO 10303-42:2021 §5.5.16 defines `POLY_LOOP` as an
+ordered coplanar collection of points with implicit straight segments. Section
+§5.5.19 states that a face may have an implicit surface when its faces are
+defined by `POLY_LOOP`; that surface is the plane containing the poly-loop
+points. The same section defines the topological normal by the cross-product
+rule toward the face interior and requires all poly-loop orientations of one
+face to produce the same normal. Section §5.5.17 gives
+`FACE_BOUND.orientation` the meaning of retaining or reversing the loop sense.
+
+CADIR decision: for a base `FACE` without an explicit `FACE_SURFACE`, the
+decoder selects the first `FACE_OUTER_BOUND` in source order, or the first
+valid boundary when no outer bound is declared. It applies
+`FACE_BOUND.orientation` to the selected loop. For a `POLY_LOOP`, the selected
+points define the inferred plane. CADIR also applies this inference to an
+`EDGE_LOOP` by using its resolved directed edge endpoints; this is a CADIR
+extension beyond the Part 42 implicit-poly-loop rule. The plane origin is the
+arithmetic centroid of the selected ring. Its u-axis is the projection of the
+first global coordinate axis whose projection has the greatest length; ties
+keep x, then y, then z. Every point must be within
+`max(0.01, 1e-12 * ring_scale)` of that plane, where `ring_scale` is the
+largest displacement from the centroid. A ring whose signed area is at most
+`1e-12 * ring_scale^2`, or whose point residual exceeds that bound, does not
+produce a plane. An `ORIENTED_FACE` keeps the base plane carrier orientation
+and composes its reversal through face sense and boundary traversal.
 
 CADIR decision: a topology member that requires a `VERTEX_POINT` with an
 absent point carrier is mandatory and unrepresentable. Sheet and wire

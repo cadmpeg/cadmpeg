@@ -75,6 +75,81 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
 }
 
 #[test]
+fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points() {
+    let source = String::from_utf8(include_bytes!("data/tp06_implicit_face_plane.p21").to_vec())
+        .expect("fixture is UTF-8");
+    let base = StepCodec::default()
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("decode implicit face witness");
+    let base_surface = base
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
+        .expect("base implicit plane");
+    let SurfaceGeometry::Plane { normal, origin, .. } = base_surface.geometry else {
+        panic!("base face did not produce a plane");
+    };
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(origin, Point3::new(2.0, 1.5, 0.0));
+
+    let rotated = source.replace(
+        "#6=POLY_LOOP('outer',(#3,#4,#5,#11));",
+        "#6=POLY_LOOP('outer',(#4,#5,#11,#3));",
+    );
+    let rotated = StepCodec::default()
+        .decode(&mut Cursor::new(rotated), &DecodeOptions::default())
+        .expect("decode rotated implicit face witness");
+    let rotated_surface = rotated
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
+        .expect("rotated implicit plane");
+    assert_eq!(rotated_surface.geometry, base_surface.geometry);
+
+    let reversed = source.replace(
+        "#7=FACE_OUTER_BOUND('outer',#6,.T.);",
+        "#7=FACE_OUTER_BOUND('outer',#6,.F.);",
+    );
+    let reversed = StepCodec::default()
+        .decode(&mut Cursor::new(reversed), &DecodeOptions::default())
+        .expect("decode reversed implicit face witness");
+    let reversed_surface = reversed
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
+        .expect("reversed implicit plane");
+    let SurfaceGeometry::Plane { normal, .. } = reversed_surface.geometry else {
+        panic!("reversed face did not produce a plane");
+    };
+    assert_eq!(normal, Vector3::new(0.0, 0.0, -1.0));
+
+    let non_planar = source.replace(
+        "#5=CARTESIAN_POINT('c',(4.,3.,0.));",
+        "#5=CARTESIAN_POINT('c',(4.,3.,1.));",
+    );
+    let non_planar = StepCodec::default()
+        .decode(&mut Cursor::new(non_planar), &DecodeOptions::default())
+        .expect("decode non-planar implicit face witness");
+    assert!(non_planar.ir().model.bodies.is_empty());
+    assert!(!non_planar
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8"));
+    assert!(non_planar.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyRootRejected.kind()
+            && loss.message.contains("implicit face plane")
+    }));
+}
+
+#[test]
 fn implicit_face_plane_is_invariant_under_edge_ring_rotation() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())

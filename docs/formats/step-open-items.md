@@ -231,25 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### TP-06. Implicit face-plane orientation
-
-**Question.** What STEP rule establishes implicit face-plane orientation?
-
-**Known.** A base `FACE` without a surface uses the first outer boundary,
-or the first valid boundary when no outer role exists. Its signed ring area
-defines the normal. The centroid defines the origin, and the projection of the
-most orthogonal global coordinate axis defines the u-axis, with x/y/z tie
-order. The ring must be planar within the document coincidence tolerance and
-`1e-12` of its scale. Degenerate or non-planar rings reject the topology root;
-an `ORIENTED_FACE` still composes reversal through the face sense and boundary
-traversal. This makes the inferred carrier independent of cyclic ring
-serialization and prevents a non-planar boundary from receiving a fabricated
-plane.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### TP-07. Pcurve recursion and normalization
 
 **Question.** What STEP rule establishes pcurve recursion and normalization?
