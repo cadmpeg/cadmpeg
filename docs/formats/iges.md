@@ -127,6 +127,8 @@ The `native.iges` `procedural_solids` arena retains sweep kind, form, profile id
 
 ## Product structure
 
+A missing Type 320 type flag is malformed because the definition field is required; a missing Type 420 type flag selects its required default `0`. A supplied flag for either entity is an integer in `0..=2`.
+
 The Type 320 Network Subfigure Definition and Type 420 Network Subfigure Instance type-flag fields are defined by [IGES 5.3 §4.78](https://paulbourke.net/dataformats/iges/IGES.pdf) and [§4.140](https://paulbourke.net/dataformats/iges/IGES.pdf). Type 320 requires an integer flag `0`, `1`, or `2`; Type 420 uses the same values and defaults an omitted flag to `0`.
 
 Type 132 Form 0 defines a network connection point with entity-use flag `04`. It stores a finite model-space position; optional display geometry; connection type and function classifications; function identifier and name with optional Type 312 display templates; a unique integer identifier; swap policy; and an optional Type 320 or Type 420 owner. Connection type values are `0` through `2`, `101` through `104`, `201` through `203`, or implementor-defined `5001` through `9999`. Function codes are `0` through `49`, `98`, `99`, or implementor-defined `5001` through `9999`. The Directory transformation places the point and its display presentation. The `connect_points` arena preserves definition and occurrence connection identities separately through their owner links.

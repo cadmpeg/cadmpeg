@@ -175,16 +175,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-05. Type 420 and Type 320 use different type-flag optionality
-
-**Question.** Does the Type 420 type flag have a default, and may a non-integer token satisfy it?
-
-**Known.** `entities/structure.rs:1959-1961` accepts an omitted Type 420 flag as `0` and rejects a supplied non-integer token; `entities/structure.rs:1876-1879` requires the corresponding Type 320 flag to be an integer in `0..=2`. `entities/structure/tests.rs:1417-1449` tests wrong-typed flags. The current specification records the Type 420 default.
-
-**Need.** We need the default, token type, and allowed values for both fields, with one consistent malformed-token policy.
-
-**Note.** Reopened by the 2026-08-16 audit. The local behavior is now explicit and tested, but the closure did not establish the rule for the differing optionality from the IGES specification.
-
 ### PS-06. Type 402 Form 5 requires a non-null leader pointer
 
 **Question.** May a Type 402 Form 5 label placement have no leader?
