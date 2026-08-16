@@ -51,7 +51,10 @@ impl CodecBackend for StepCodec {
     fn detect(&self, prefix: &[u8]) -> Confidence {
         if starts_with_step_magic(prefix) {
             Confidence::High
-        } else if archive::has_root_marker(prefix) || is_part28_xml(prefix) {
+        } else if archive::has_root_marker(prefix)
+            || is_part28_xml(prefix)
+            || is_ap242_bo_model_xml(prefix)
+        {
             Confidence::Medium
         } else {
             Confidence::No
@@ -369,17 +372,7 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
             "STEP Part 28 XML encoding".into(),
         ));
     }
-    let lower = bytes
-        .iter()
-        .take(4096)
-        .map(u8::to_ascii_lowercase)
-        .collect::<Vec<_>>();
-    if lower.starts_with(b"<?xml")
-        && (lower
-            .windows(21)
-            .any(|window| window == b"business_object_model")
-            || lower.windows(14).any(|window| window == b"ap242_bo_model"))
-    {
+    if is_ap242_bo_model_xml(bytes) {
         return Err(CodecError::NotImplemented(
             "AP242 BO-Model XML sidecar".into(),
         ));
@@ -398,6 +391,42 @@ fn is_part28_xml(bytes: &[u8]) -> bool {
             || lower
                 .windows(21)
                 .any(|window| window == b"iso:std:iso:10303:-28"))
+}
+
+fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
+    let lower = bytes
+        .iter()
+        .take(4096)
+        .map(u8::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    let without_bom = lower
+        .strip_prefix(b"\xef\xbb\xbf")
+        .unwrap_or(lower.as_slice());
+    let starts_xml = without_bom
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .is_some_and(|at| without_bom[at] == b'<');
+    if !starts_xml {
+        return false;
+    }
+    // BM-01: the published AP242 BO namespace identifies the alternate
+    // encoding. A filename or the local name `Uos` does not identify it.
+    ([
+        b"http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model".as_slice(),
+        b"http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model".as_slice(),
+    ]
+    .iter()
+    .any(|namespace| {
+        lower
+            .windows(namespace.len())
+            .any(|window| window == *namespace)
+    })) || (lower.starts_with(b"<?xml")
+        && (lower
+            .windows(b"business_object_model".len())
+            .any(|window| window == b"business_object_model")
+            || lower
+                .windows(b"ap242_bo_model".len())
+                .any(|window| window == b"ap242_bo_model")))
 }
 
 #[cfg(test)]

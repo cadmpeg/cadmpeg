@@ -18,24 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-## 2. AP242 BO-Model sidecars
-
-### BM-01. Sidecar envelope
-
-**Question.** What XML grammar and file relationship identify an AP242 BO-Model sidecar?
-
-**Known.** AP242 BO-Model XML is a separate AP242 encoding with its own XML
-schema and edition-specific document envelope. Part 21 has no required
-sidecar filename, XML root, content identifier, or association record that
-binds such a document to one Part 21 exchange.
-
-**Note.** Detecting an XML root string does not establish the AP242 edition
-or the relationship to a Part 21 file. The BO-Model XML schema comes from the
-published AP242 downloads; the association rule comes from the CAx-IF
-recommended practices.
-
-**Need.** We must know the envelope to detect, parse, and associate the sidecar with its Part 21 exchange structure.
-
 ### BM-02. Sidecar composition
 
 **Question.** How do AP242 BO-Model XML identities and values combine with the Part 21 instance graph?

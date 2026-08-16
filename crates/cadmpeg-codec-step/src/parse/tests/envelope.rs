@@ -473,6 +473,10 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             b"<?xml version='1.0'?><business_object_model/>",
             "AP242 BO-Model XML sidecar",
         ),
+        (
+            include_bytes!("data/bm01_ap242_bo_model_ed2.stpx").as_slice(),
+            "AP242 BO-Model XML sidecar",
+        ),
     ];
     for &(bytes, reason) in cases {
         let error = codec
@@ -486,4 +490,13 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
         Confidence::Medium
     );
+    let canonical = include_bytes!("data/bm01_ap242_bo_model_ed2.stpx");
+    assert_eq!(codec.detect(canonical), Confidence::Medium);
+
+    let lookalike = include_bytes!("data/bm01_ap242_bo_model_wrong_namespace.stpx");
+    assert_eq!(codec.detect(lookalike), Confidence::No);
+    assert!(matches!(
+        codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
+        Err(cadmpeg_core::CodecError::WrongFormat(_))
+    ));
 }

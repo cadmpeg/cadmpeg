@@ -18,6 +18,52 @@ occurrence relationships carry identity and placement.
 
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
+
+An AP242 BO-Model XML exchange uses the XML Schema for its selected AP242 BO
+Model edition. AP242 Edition 1 (2014) uses the ISO/TS 10303-3001 edition-1
+schema; its 2016 technical corrigendum uses the edition-2 schema. The
+published AP242 Edition 2 and later XML material is the AP242 Domain Model,
+not the BO Model, and has a different schema and namespace. An AP242 edition
+number and an XML-schema edition number are not interchangeable.
+
+For the AP242 BO Model edition-2 schema, the document element is `Uos` in the
+namespace
+`http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model`.
+The namespace URI, not the prefix, identifies the schema. The common schema
+defines `Uos` as an ordered sequence of one `Header` followed by one or more
+`DataContainer` elements. `Header` has these optional children in this order:
+`Name`, `TimeStamp`, `Author`, `Organization`, `PreprocessorVersion`,
+`OriginatingSystem`, `Authorization`, and `Documentation`. The AP242 schema
+provides the concrete `AP242DataContainer` type, selected with `xsi:type`.
+The corresponding edition-1 schema uses its edition-1 namespace and its own
+schema document. A supplied `xsi:schemaLocation` names the namespace and the
+schema document; it does not replace namespace identity. The `.stpx` and
+`.stpxZ` suffixes are CAx-IF recommended filename conventions, not XML
+grammar tokens.
+
+Part 21 does not define a sidecar filename, a same-stem pairing, an XML root,
+or an association from `FILE_NAME` to a BO-Model XML document. The CAx-IF
+AP242 BO-Model XML recommended practices model a referenced Part 21 or nested
+BO-Model file as a `DigitalFile` with an `ExternalItem`; the target filename is
+in `ExternalItem.Id`, and an optional `ExternalItem.Source` supplies path or
+location information. This is an application-level external-file reference.
+It is not a Part 21 sidecar key and does not import the referenced file into
+the XML `Uos`.
+
+CADIR decision: the STEP codec classifies a document by its published BO-Model
+namespace and refuses it as an alternate encoding. It does not discover a
+same-stem XML file or infer an association from `FILE_NAME`, filename suffix,
+XML prefix, or `Uos` alone. A caller must explicitly bind an XML resource,
+declare its AP242 XML schema and edition, and pass that binding to the separate
+composition policy. XML-to-Part-21 identity, value precedence, and conflict
+handling remain the BM-02 composition decision.
+
+The AP242 BO-Model XML schema is ISO/TS 10303-3001. The common envelope is
+defined by its common XML schema. CAx-IF Recommended Practices for AP242
+BO-Model XML Assembly Structure §§4.1.5, 4.1.6, 4.1.7, 4.1.8, 4.1.9, 9.1,
+and 9.3 define the recommended header population, namespaces, file suffixes,
+and external-file relationship.
+
 A Part 21 ZIP container uses PKZIP 2.04g compression. It admits stored and
 Deflate entries. PKZIP 2.04g excludes encryption, Unicode filename support,
 and Deflate64. The archive may contain multiple exchange files, directories,
