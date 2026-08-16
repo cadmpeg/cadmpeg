@@ -12,6 +12,7 @@
 mod fidelity;
 mod item;
 mod schema;
+mod schema_infer;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -40,9 +41,9 @@ pub enum QueryView {
     ///
     /// Accepts a command report or a decode sidecar. Empty coverage is not an error.
     Coverage(QueryArgs),
-    /// Validation errors and warnings.
+    /// Check errors and warnings.
     ///
-    /// Accepts a command report written by `validate` or `convert`.
+    /// Accepts a command report written by `check` or `convert`.
     Findings(QueryArgs),
     /// What was dropped or reduced.
     ///
@@ -69,16 +70,20 @@ pub enum QueryView {
     Item(ItemArgs),
     /// Fields of an entity type.
     ///
-    /// Unlike the other views this takes no file: it prints what this
-    /// binary's IR types allow — every field of an arena's element type,
-    /// which fields are optional, and every variant of a tagged union
-    /// (`FaceSelection`'s `value` is absent, a string, an array, or an
-    /// object depending on `kind`; the discriminator of a feature's
-    /// `definition` is `.definition.definition`). Bare `query schema`
-    /// lists every model arena and its element type; `sidecar` prints the
-    /// `<stem>.fidelity.json` decode-sidecar shape. Which arenas a given
-    /// document actually has still comes from `query counts FILE`; native
-    /// arena records are codec-owned — fetch one with `query item` instead.
+    /// With no FILE this prints what this binary's IR types allow — every
+    /// field of an arena's element type, which fields are optional, and
+    /// every variant of a tagged union (`FaceSelection`'s `value` is
+    /// absent, a string, an array, or an object depending on `kind`; the
+    /// discriminator of a feature's `definition` is
+    /// `.definition.definition`). Bare `query schema` lists every model
+    /// arena and its element type; `sidecar` prints the
+    /// `<stem>.fidelity.json` decode-sidecar shape.
+    ///
+    /// Native arena records are per-document. `query schema FILE ARENA`
+    /// infers each dotted path's presence, JSON type, and an example from
+    /// the records (`layout_prefix  435/710  array`). Unknown arena names
+    /// list every addressable arena and its entry count. Which arenas a
+    /// given document actually has also comes from `query counts FILE`.
     Schema(SchemaArgs),
     /// Retained source bytes.
     ///
@@ -164,7 +169,7 @@ struct ReportProbe {
     #[serde(default)]
     decode_report: Option<DecodeReportProbe>,
     #[serde(default)]
-    validation_report: Option<ValidationReportProbe>,
+    check_report: Option<CheckReportProbe>,
 }
 
 #[derive(Deserialize)]
@@ -194,7 +199,7 @@ struct DecodeReportProbe {
 }
 
 #[derive(Deserialize)]
-struct ValidationReportProbe {
+struct CheckReportProbe {
     #[serde(default)]
     entity_counts: BTreeMap<String, u64>,
     #[serde(default)]
@@ -474,7 +479,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 }
                 None => rows.push(("decode_report".to_owned(), "null".to_owned())),
             }
-            match &report.validation_report {
+            match &report.check_report {
                 Some(validation) => {
                     rows.push((
                         "findings".to_owned(),
@@ -486,7 +491,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         ),
                     ));
                     rows.push((
-                        "validation_losses".to_owned(),
+                        "check_losses".to_owned(),
                         validation.losses.len().to_string(),
                     ));
                     rows.push((
@@ -494,7 +499,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         validation.entity_counts.len().to_string(),
                     ));
                 }
-                None => rows.push(("validation_report".to_owned(), "null".to_owned())),
+                None => rows.push(("check_report".to_owned(), "null".to_owned())),
             }
         }
         Artifact::Cadir(cadir) => {
@@ -574,7 +579,7 @@ fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         Artifact::Sidecar(sidecar) => sidecar.report.as_ref(),
         Artifact::Cadir(_) => bail!(
             "a CADIR document has no decode report; coverage is in the report \
-             written by `decode --report` or in the `.fidelity.json` sidecar"
+             written by `dump --report` or in the `.fidelity.json` sidecar"
         ),
     };
     let (coverage, note): (&BTreeMap<String, u64>, Option<&str>) = match decode {
@@ -608,21 +613,18 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     let report = match artifact {
         Artifact::Report(report) => report,
         Artifact::Cadir(_) => bail!(
-            "a CADIR document has no findings; run: cadmpeg validate FILE -o report.json \
+            "a CADIR document has no findings; run: cadmpeg check FILE -o report.json \
              && cadmpeg query findings report.json"
         ),
         Artifact::Sidecar(_) => bail!(
-            "a decode sidecar has no validation findings; run: cadmpeg validate FILE \
+            "a decode sidecar has no check findings; run: cadmpeg check FILE \
              -o report.json && cadmpeg query findings report.json \
              (a sidecar carries `coverage` and `losses`)"
         ),
     };
-    let (rows, note): (&[FindingProbe], Option<&str>) = match &report.validation_report {
+    let (rows, note): (&[FindingProbe], Option<&str>) = match &report.check_report {
         Some(validation) => (&validation.findings, None),
-        None => (
-            &[],
-            Some("(no validation report — this command did not validate)"),
-        ),
+        None => (&[], Some("(no check report; this command did not check)")),
     };
     if args.json {
         let payload = rows
@@ -657,10 +659,10 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
 
 fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     let (rows, note): (&[LossProbe], Option<&str>) = match artifact {
-        Artifact::Report(report) => match (&report.validation_report, &report.decode_report) {
+        Artifact::Report(report) => match (&report.check_report, &report.decode_report) {
             (Some(validation), _) => (&validation.losses, None),
             (None, Some(decode)) => (&decode.losses, None),
-            (None, None) => (&[], Some("(this report has no decode or validation stage)")),
+            (None, None) => (&[], Some("(this report has no decode or check stage)")),
         },
         Artifact::Sidecar(sidecar) => match &sidecar.report {
             Some(decode) => (&decode.losses, None),
@@ -732,13 +734,13 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
         Artifact::Report(report) => {
             let (entity_counts, note): (&BTreeMap<String, u64>, Option<&str>) =
-                match &report.validation_report {
+                match &report.check_report {
                     Some(validation) => (&validation.entity_counts, None),
                     None => {
                         static EMPTY: BTreeMap<String, u64> = BTreeMap::new();
                         (
                             &EMPTY,
-                            Some("(no validation report — this command did not validate)"),
+                            Some("(no check report; this command did not check)"),
                         )
                     }
                 };
@@ -757,7 +759,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
         Artifact::Sidecar(_) => bail!(
             "a decode sidecar has no entity counts; use `cadmpeg query coverage` or \
-             `cadmpeg query losses` on it, or run `cadmpeg validate` for entity counts"
+             `cadmpeg query losses` on it, or run `cadmpeg check` for entity counts"
         ),
     }
 }

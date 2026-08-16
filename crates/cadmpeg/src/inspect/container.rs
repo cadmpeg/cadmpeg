@@ -1,29 +1,81 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Container entry listing and exact member extraction.
+//! Container member listing (ZIP or CFB) and exact member extraction.
 
 use std::fmt::Write as _;
 
 use anyhow::{Context, Result};
-use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
+use cadmpeg_container::compound::{CompoundAllocation, CompoundEntry, CompoundSnapshot};
 use cadmpeg_container::{ArchiveSnapshot, EntryRecord};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 
-/// Lists the ZIP entries in `bytes`.
+const CFB_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+
+/// One CFB directory row in a container listing.
+pub struct CfbRow {
+    /// `"storage"` or `"stream"`.
+    pub kind: &'static str,
+    /// Hierarchy path with source spelling preserved.
+    pub path: String,
+    /// Logical stream size; `None` for storages.
+    pub size: Option<u64>,
+    /// `"fat"` or `"mini-fat"`; `None` for storages.
+    pub allocation: Option<&'static str>,
+    /// CFB directory-entry index.
+    pub directory_id: u32,
+}
+
+/// Container members listed from a ZIP archive or a CFB file.
+pub enum Listing {
+    /// ZIP central-directory entries.
+    Zip(Vec<EntryRecord>),
+    /// CFB directory rows (storages and streams).
+    Cfb(Vec<CfbRow>),
+}
+
+/// Lists ZIP entries or CFB directory members in `bytes`.
 ///
 /// # Errors
 ///
 /// Returns an error when the bytes exceed the resource-limit profile or the
-/// central directory does not parse.
-pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Vec<EntryRecord>> {
+/// ZIP central directory or CFB directory does not parse.
+pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits,
         ..DecodePolicy::default()
     };
-    let (_ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
-    Ok(snapshot.entries().to_vec())
+    if bytes.starts_with(&CFB_MAGIC) {
+        let snapshot = CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
+        let rows = snapshot
+            .entries()
+            .iter()
+            .map(|entry| match entry {
+                CompoundEntry::Storage(storage) => CfbRow {
+                    kind: "storage",
+                    path: storage.path().to_string(),
+                    size: None,
+                    allocation: None,
+                    directory_id: entry.directory_id(),
+                },
+                CompoundEntry::Stream(stream) => CfbRow {
+                    kind: "stream",
+                    path: stream.path().to_string(),
+                    size: Some(stream.logical_size()),
+                    allocation: Some(match stream.allocation() {
+                        CompoundAllocation::Regular => "fat",
+                        CompoundAllocation::Mini => "mini-fat",
+                    }),
+                    directory_id: entry.directory_id(),
+                },
+            })
+            .collect();
+        Ok(Listing::Cfb(rows))
+    } else {
+        let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
+        Ok(Listing::Zip(snapshot.entries().to_vec()))
+    }
 }
 
 /// Extracts one ZIP entry or CFB stream.
@@ -45,7 +97,7 @@ pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u
     };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    if bytes.starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
+    if bytes.starts_with(&CFB_MAGIC) {
         let snapshot = CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
         let entry = snapshot.stream(name).ok_or_else(|| {
             anyhow::anyhow!("{}", missing_compound_member_message(&snapshot, name))
@@ -157,27 +209,47 @@ pub fn shell_quote(name: &str) -> String {
 ///
 /// Names are raw strings here — shell quoting belongs to the table
 /// rendering, not to JSON.
-pub fn render_json(entries: &[EntryRecord]) -> String {
-    let entries: Vec<serde_json::Value> = entries
-        .iter()
-        .map(|entry| {
-            serde_json::json!({
-                "name": entry.name,
-                "compression": entry.compression.label(),
-                "crc32": entry.crc32,
-                "compressed_size": entry.compressed_size,
-                "uncompressed_size": entry.uncompressed_size,
-                "header_start": entry.header_start,
-                "data_start": entry.data_start,
-                "central_start": entry.central_start,
-            })
-        })
-        .collect();
+pub fn render_json(listing: &Listing) -> String {
+    let (container_kind, entries): (&str, Vec<serde_json::Value>) = match listing {
+        Listing::Zip(entries) => (
+            "zip",
+            entries
+                .iter()
+                .map(|entry| {
+                    serde_json::json!({
+                        "name": entry.name,
+                        "compression": entry.compression.label(),
+                        "crc32": entry.crc32,
+                        "compressed_size": entry.compressed_size,
+                        "uncompressed_size": entry.uncompressed_size,
+                        "header_start": entry.header_start,
+                        "data_start": entry.data_start,
+                        "central_start": entry.central_start,
+                    })
+                })
+                .collect(),
+        ),
+        Listing::Cfb(rows) => (
+            "cfb",
+            rows.iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "kind": row.kind,
+                        "path": row.path,
+                        "size": row.size,
+                        "allocation": row.allocation,
+                        "directory_id": row.directory_id,
+                    })
+                })
+                .collect(),
+        ),
+    };
     let envelope = serde_json::json!({
         "schema_version": crate::commands::CLI_SCHEMA_VERSION,
         "command": "inspect container",
         "status": "ok",
         "refusal": null,
+        "container_kind": container_kind,
         "entries": entries,
     });
     let mut rendered = serde_json::to_string_pretty(&envelope).expect("the envelope serializes");
@@ -186,27 +258,53 @@ pub fn render_json(entries: &[EntryRecord]) -> String {
 }
 
 /// Formats an entry listing as an aligned table.
-pub fn render(entries: &[EntryRecord]) -> String {
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "{:>10}  {:>10}  {:>12}  {:>12}  {:>8}  {:>10}  name",
-        "header", "data", "packed", "unpacked", "method", "crc32"
-    );
-    for entry in entries {
-        let _ = writeln!(
-            out,
-            "0x{:08x}  0x{:08x}  {:>12}  {:>12}  {:>8}  0x{:08x}  {}",
-            entry.header_start,
-            entry.data_start,
-            entry.compressed_size,
-            entry.uncompressed_size,
-            entry.compression.label(),
-            entry.crc32,
-            shell_quote(&entry.name)
-        );
+pub fn render(listing: &Listing) -> String {
+    match listing {
+        Listing::Zip(entries) => {
+            let mut out = String::new();
+            let _ = writeln!(
+                out,
+                "{:>10}  {:>10}  {:>12}  {:>12}  {:>8}  {:>10}  name",
+                "header", "data", "packed", "unpacked", "method", "crc32"
+            );
+            for entry in entries {
+                let _ = writeln!(
+                    out,
+                    "0x{:08x}  0x{:08x}  {:>12}  {:>12}  {:>8}  0x{:08x}  {}",
+                    entry.header_start,
+                    entry.data_start,
+                    entry.compressed_size,
+                    entry.uncompressed_size,
+                    entry.compression.label(),
+                    entry.crc32,
+                    shell_quote(&entry.name)
+                );
+            }
+            out
+        }
+        Listing::Cfb(rows) => {
+            let mut out = String::new();
+            let _ = writeln!(
+                out,
+                "{:>4}  {:>8}  {:>12}  {:>8}  path",
+                "id", "kind", "size", "alloc"
+            );
+            for row in rows {
+                let size = row.size.map(|n| n.to_string()).unwrap_or_default();
+                let alloc = row.allocation.unwrap_or("");
+                let _ = writeln!(
+                    out,
+                    "{:>4}  {:>8}  {:>12}  {:>8}  {}",
+                    row.directory_id,
+                    row.kind,
+                    size,
+                    alloc,
+                    shell_quote(&row.path)
+                );
+            }
+            out
+        }
     }
-    out
 }
 
 #[cfg(test)]
@@ -247,6 +345,22 @@ mod tests {
                 .expect("synthetic CFB stream extracts"),
             vec![0x5a; 4096]
         );
+    }
+
+    #[test]
+    fn lists_compound_storages_and_streams() {
+        let file = compound_fixture();
+        let Listing::Cfb(rows) =
+            list(&file, ResourceLimits::desktop()).expect("synthetic CFB lists")
+        else {
+            panic!("expected a CFB listing");
+        };
+        let payload = rows
+            .iter()
+            .find(|row| row.path == "Payload")
+            .expect("Payload row");
+        assert_eq!(payload.kind, "stream");
+        assert_eq!(payload.size, Some(4096));
     }
 
     fn compound_fixture() -> Vec<u8> {

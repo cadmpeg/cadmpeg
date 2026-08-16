@@ -67,9 +67,9 @@ declare millimetre units. The CLI accepts the same archive-version choice:
 
 ```sh
 cadmpeg inspect model.3dm
-cadmpeg decode model.3dm -o model.cadir.json
+cadmpeg dump model.3dm -o model.cadir.json
 cadmpeg convert model.cadir.json -o model.3dm
-cadmpeg convert model.cadir.json -o model-v6.3dm --rhino-version 60
+cadmpeg convert model.cadir.json -o model-v6.3dm --rhino-target 60
 ```
 
 ## Data model

@@ -29,6 +29,9 @@ pub struct FidelityArgs {
     /// Write the extracted bytes to this file.
     #[arg(short = 'o', long, value_name = "FILE", requires = "stream")]
     pub output: Option<PathBuf>,
+    /// Replace an existing output file.
+    #[arg(long, requires = "output")]
+    pub force: bool,
     /// Stream the extracted bytes to stdout even though they are binary.
     #[arg(long, requires = "stream")]
     pub binary_stdout: bool,
@@ -84,13 +87,13 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
         Artifact::Sidecar(_) => {}
         Artifact::Cadir(_) => bail!(
             "{} is a CADIR document; the fidelity payload lives in the \
-             `<stem>.fidelity.json` decode sidecar `cadmpeg decode` writes \
+             `<stem>.fidelity.json` decode sidecar `cadmpeg dump` writes \
              next to it",
             args.file.display()
         ),
         Artifact::Report(_) => bail!(
             "{} is a command report; the fidelity payload lives in the \
-             `<stem>.fidelity.json` decode sidecar `cadmpeg decode` writes",
+             `<stem>.fidelity.json` decode sidecar `cadmpeg dump` writes",
             args.file.display()
         ),
     }
@@ -223,6 +226,9 @@ fn extract(args: &FidelityArgs, payload: &FidelityPayload, stream: &str) -> Resu
     }
 
     if let Some(path) = &args.output {
+        if path.exists() && !args.force {
+            bail!("{} exists; pass --force to replace it", path.display());
+        }
         std::fs::write(path, &assembled)
             .with_context(|| format!("writing {} bytes to {}", assembled.len(), path.display()))?;
         eprintln!(

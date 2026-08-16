@@ -20,13 +20,13 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
     path
 }
 
-const VALIDATE_REPORT: &str = r#"{
+const CHECK_REPORT: &str = r#"{
   "schema_version": 6,
-  "command": "validate",
+  "command": "check",
   "status": "ok",
   "refusal": null,
   "decode_report": null,
-  "validation_report": {
+  "check_report": {
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
       {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
@@ -68,7 +68,7 @@ const SIDECAR: &str = r#"{
 fn summary_detects_all_three_artifact_kinds() {
     let dir = tempdir().unwrap();
     for (name, content, kind) in [
-        ("report.json", VALIDATE_REPORT, "command report"),
+        ("report.json", CHECK_REPORT, "command report"),
         ("model.cadir.json", CADIR_DOC, "CADIR document"),
         ("model.fidelity.json", SIDECAR, "decode sidecar"),
     ] {
@@ -87,7 +87,7 @@ fn summary_detects_all_three_artifact_kinds() {
 #[test]
 fn findings_and_losses_project_tsv_with_a_header() {
     let dir = tempdir().unwrap();
-    let report = write(dir.path(), "report.json", VALIDATE_REPORT);
+    let report = write(dir.path(), "report.json", CHECK_REPORT);
 
     cadmpeg()
         .args(["query", "findings", report.to_str().unwrap()])
@@ -112,7 +112,7 @@ fn findings_and_losses_project_tsv_with_a_header() {
 #[test]
 fn coverage_on_a_report_without_a_decode_stage_is_empty_not_an_error() {
     let dir = tempdir().unwrap();
-    let report = write(dir.path(), "report.json", VALIDATE_REPORT);
+    let report = write(dir.path(), "report.json", CHECK_REPORT);
     cadmpeg()
         .args(["query", "coverage", report.to_str().unwrap()])
         .assert()
@@ -148,7 +148,7 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
              native.fcstd\tobjects\t3\n",
         );
 
-    let report = write(dir.path(), "report.json", VALIDATE_REPORT);
+    let report = write(dir.path(), "report.json", CHECK_REPORT);
     cadmpeg()
         .args(["query", "counts", report.to_str().unwrap()])
         .assert()
@@ -187,7 +187,7 @@ fn arenas_alias_matches_counts_byte_for_byte() {
 }
 
 #[test]
-fn findings_on_a_cadir_document_teaches_validate_then_query() {
+fn findings_on_a_cadir_document_teaches_check_then_query() {
     let dir = tempdir().unwrap();
     let cadir = write(dir.path(), "model.cadir.json", CADIR_DOC);
     cadmpeg()
@@ -195,7 +195,7 @@ fn findings_on_a_cadir_document_teaches_validate_then_query() {
         .assert()
         .code(2)
         .stderr(
-            predicate::str::contains("cadmpeg validate")
+            predicate::str::contains("cadmpeg check")
                 .and(predicate::str::contains("query findings")),
         );
 }
@@ -203,7 +203,7 @@ fn findings_on_a_cadir_document_teaches_validate_then_query() {
 #[test]
 fn query_json_wraps_the_projection_in_the_versioned_envelope() {
     let dir = tempdir().unwrap();
-    let report = write(dir.path(), "report.json", VALIDATE_REPORT);
+    let report = write(dir.path(), "report.json", CHECK_REPORT);
     let output = cadmpeg()
         .args(["query", "findings", "--json", report.to_str().unwrap()])
         .output()
@@ -268,7 +268,7 @@ fn a_non_json_file_is_an_operational_error() {
 }
 
 #[test]
-fn query_projects_a_real_validate_report_end_to_end() {
+fn query_projects_a_real_check_report_end_to_end() {
     let dir = tempdir().unwrap();
     let ir = unit_cube();
     let model = dir.path().join("cube.cadir.json");
@@ -277,7 +277,7 @@ fn query_projects_a_real_validate_report_end_to_end() {
 
     cadmpeg()
         .args([
-            "validate",
+            "check",
             model.to_str().unwrap(),
             "-o",
             report.to_str().unwrap(),
@@ -573,7 +573,7 @@ fn item_miss_id_lists_close_candidates() {
 #[test]
 fn item_rejects_report_and_sidecar() {
     let dir = tempdir().unwrap();
-    let report = write(dir.path(), "report.json", VALIDATE_REPORT);
+    let report = write(dir.path(), "report.json", CHECK_REPORT);
     cadmpeg()
         .args([
             "query",
@@ -587,7 +587,7 @@ fn item_rejects_report_and_sidecar() {
         .stderr(
             predicate::str::contains("command report")
                 .and(predicate::str::contains("query findings"))
-                .and(predicate::str::contains("decode SOURCE")),
+                .and(predicate::str::contains("dump SOURCE")),
         );
 
     let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
@@ -602,8 +602,7 @@ fn item_rejects_report_and_sidecar() {
         .assert()
         .code(2)
         .stderr(
-            predicate::str::contains("fidelity.json")
-                .and(predicate::str::contains("decode SOURCE")),
+            predicate::str::contains("fidelity.json").and(predicate::str::contains("dump SOURCE")),
         );
 }
 
@@ -858,25 +857,15 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
 }
 
 #[test]
-fn schema_teaches_on_native_file_and_unknown_arguments() {
+fn schema_teaches_on_native_without_file_and_unknown_ir_arena() {
     let native = cadmpeg()
         .args(["query", "schema", "native.creo.rows"])
         .output()
         .unwrap();
     assert_eq!(native.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&native.stderr);
-    assert!(stderr.contains("query item"), "{stderr}");
-
-    let file = cadmpeg()
-        .args(["query", "schema", "doc.json"])
-        .output()
-        .unwrap();
-    assert_eq!(file.status.code(), Some(2));
-    let stderr = String::from_utf8_lossy(&file.stderr);
-    assert!(
-        stderr.contains("takes an arena name, not a file"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("query schema FILE"), "{stderr}");
+    assert!(stderr.contains("native.creo.rows"), "{stderr}");
 
     let unknown = cadmpeg()
         .args(["query", "schema", "model.bogus"])
@@ -886,6 +875,123 @@ fn schema_teaches_on_native_file_and_unknown_arguments() {
     let stderr = String::from_utf8_lossy(&unknown.stderr);
     assert!(stderr.contains("the IR defines:"), "{stderr}");
     assert!(stderr.contains("faces"), "{stderr}");
+}
+
+#[test]
+fn schema_infers_native_fields_from_a_document() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    cadmpeg()
+        .args(["query", "schema", path, "native.creo.curve_parameters"])
+        .assert()
+        .success()
+        .stdout(
+            "path\tpresence\ttype\texample\n\
+             feature_id\t2/2\tnumber\t11372\n\
+             id\t2/2\tstring\tcreo:curve#818\n\
+             type_byte\t2/2\tnumber\t8\n",
+        )
+        .stderr(predicate::str::contains(
+            "inferred from 2 records in native.creo.curve_parameters",
+        ));
+
+    let output = cadmpeg()
+        .args(["query", "schema", path, "model.sketch_entities"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("path\tpresence\ttype\texample\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("optional\t1/4\tstring\tpresent"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("meta.note\t1/4\tstring\tx\\ty"), "{stdout}");
+    assert!(stdout.contains("meta.tag\t4/4\tstring\ta"), "{stdout}");
+    assert!(stdout.contains("links\t1/4\tarray\t[1,2]"), "{stdout}");
+    assert!(!stdout.contains("links.0"), "{stdout}");
+
+    let json = cadmpeg()
+        .args([
+            "query",
+            "schema",
+            "--json",
+            path,
+            "native.creo.curve_parameters",
+        ])
+        .output()
+        .unwrap();
+    assert!(json.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(value["command"], "query schema");
+    assert_eq!(value["schema"]["inferred"], true);
+    assert_eq!(value["schema"]["arena"], "native.creo.curve_parameters");
+    assert_eq!(value["schema"]["records"], 2);
+    let fields = value["schema"]["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0]["path"], "feature_id");
+    assert_eq!(fields[0]["present"], 2);
+    assert_eq!(fields[0]["type"], "number");
+}
+
+#[test]
+fn schema_document_unknown_arena_lists_counts() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    let missing = cadmpeg()
+        .args(["query", "schema", path, "native.creo.missing"])
+        .output()
+        .unwrap();
+    assert_eq!(missing.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&missing.stderr);
+    assert!(
+        stderr.contains("unknown arena native.creo.missing"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("native.creo.curve_parameters\t2"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("model.sketch_entities\t4"), "{stderr}");
+    assert!(stderr.contains("model.empty_arena\t0"), "{stderr}");
+    assert!(!stderr.contains("model.null_arena"), "{stderr}");
+
+    let file_only = cadmpeg().args(["query", "schema", path]).output().unwrap();
+    assert_eq!(file_only.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&file_only.stderr);
+    assert!(stderr.contains("needs an arena name"), "{stderr}");
+    assert!(
+        stderr.contains("native.creo.curve_parameters\t2"),
+        "{stderr}"
+    );
+
+    cadmpeg()
+        .args(["query", "schema", path, "model.empty_arena"])
+        .assert()
+        .success()
+        .stdout("path\tpresence\ttype\texample\n")
+        .stderr(predicate::str::contains("(arena is empty)"));
+
+    let report = write(dir.path(), "report.json", CHECK_REPORT);
+    cadmpeg()
+        .args([
+            "query",
+            "schema",
+            report.to_str().unwrap(),
+            "native.creo.rows",
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("command report").and(predicate::str::contains("dump SOURCE")),
+        );
 }
 
 #[test]
@@ -989,6 +1095,46 @@ fn fidelity_extracts_a_contiguous_stream_byte_exactly() {
 }
 
 #[test]
+fn fidelity_refuses_to_overwrite_without_force() {
+    let dir = tempdir().unwrap();
+    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
+    let out = dir.path().join("existing.bin");
+    fs::write(&out, b"precious").unwrap();
+
+    cadmpeg()
+        .args([
+            "query",
+            "fidelity",
+            sidecar.to_str().unwrap(),
+            "--stream",
+            "Contents/Config-0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "exists; pass --force to replace it",
+        ));
+    assert_eq!(fs::read(&out).unwrap(), b"precious");
+
+    cadmpeg()
+        .args([
+            "query",
+            "fidelity",
+            sidecar.to_str().unwrap(),
+            "--stream",
+            "Contents/Config-0",
+            "-o",
+            out.to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&out).unwrap(), b"ABCDEF");
+}
+
+#[test]
 fn fidelity_extraction_teaches_on_every_failure_shape() {
     let dir = tempdir().unwrap();
     let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
@@ -1087,7 +1233,7 @@ fn a_written_report_carries_the_generator_and_summary_prints_it() {
 
     cadmpeg()
         .args([
-            "validate",
+            "check",
             model.to_str().unwrap(),
             "-o",
             report.to_str().unwrap(),
@@ -1107,7 +1253,7 @@ fn a_written_report_carries_the_generator_and_summary_prints_it() {
         .stdout(predicate::str::contains("generator\tcadmpeg "));
 
     // Reports from older builds have no generator; the row is simply absent.
-    let stripped = write(dir.path(), "old.report.json", VALIDATE_REPORT);
+    let stripped = write(dir.path(), "old.report.json", CHECK_REPORT);
     let output = cadmpeg()
         .args(["query", "summary", stripped.to_str().unwrap()])
         .output()

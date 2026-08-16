@@ -24,7 +24,7 @@ The committed transfer floors are:
 |      70 |              31 |             46 |
 |      80 |              24 |             39 |
 
-The test fails when `example_read` refuses a file, `cadmpeg validate` reports
+The test fails when `example_read` refuses a file, `cadmpeg check` reports
 an error, a source-object total changes, or a supported-object count falls
 below its floor.
 

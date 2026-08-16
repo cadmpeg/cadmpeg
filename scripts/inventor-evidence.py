@@ -1378,14 +1378,14 @@ def run_capture(command: Sequence[str], timeout: float) -> tuple[int, str]:
 def cli_sweep(
     source_path: Path, ordinal: int, cadmpeg: Path, timeout: float
 ) -> dict:
-    """Run the local inspect/decode/validate matrix for one document."""
+    """Run the local inspect/dump/check matrix for one document."""
 
     runs = []
     with tempfile.TemporaryDirectory(prefix="inventor-sweep-") as directory:
         temporary = Path(directory)
         for profile in ("desktop", "service"):
             for strict in (False, True):
-                strict_flag = ("--strict",) if strict else ()
+                strict_flag = ("--no-salvage",) if strict else ()
                 prefix = f"{profile}-{'strict' if strict else 'salvage'}"
                 inspect_command = [
                     str(cadmpeg),
@@ -1404,7 +1404,7 @@ def cli_sweep(
                     decode_path = temporary / f"{prefix}-decode-{repeat}.json"
                     decode_command = [
                         str(cadmpeg),
-                        "decode",
+                        "dump",
                         "--input-format",
                         "inventor",
                         "--limits",
@@ -1425,7 +1425,7 @@ def cli_sweep(
                     report_path = temporary / f"{prefix}-validate-{repeat}.json"
                     validate_command = [
                         str(cadmpeg),
-                        "validate",
+                        "check",
                         "--input-format",
                         "inventor",
                         "--limits",
@@ -1519,7 +1519,7 @@ def compare_carriers(
             wrapper_status, _wrapper_json = load_json_command(
                 [
                     str(cadmpeg),
-                    "decode",
+                    "dump",
                     "--input-format",
                     "inventor",
                     "--output",
@@ -1532,7 +1532,7 @@ def compare_carriers(
             direct_status, _direct_json = load_json_command(
                 [
                     str(cadmpeg),
-                    "decode",
+                    "dump",
                     "--input-format",
                     "sat",
                     "--output",
@@ -1545,7 +1545,7 @@ def compare_carriers(
             wrapper_validation_status, wrapper_validation = load_json_command(
                 [
                     str(cadmpeg),
-                    "validate",
+                    "check",
                     "--input-format",
                     "inventor",
                     "--json",
@@ -1559,7 +1559,7 @@ def compare_carriers(
             direct_validation_status, direct_validation = load_json_command(
                 [
                     str(cadmpeg),
-                    "validate",
+                    "check",
                     "--input-format",
                     "sat",
                     "--json",
@@ -1601,7 +1601,7 @@ def compare_carriers(
             def findings(value):
                 if not isinstance(value, dict):
                     return None
-                report = value.get("validation_report")
+                report = value.get("check_report")
                 if not isinstance(report, dict):
                     return None
                 return normalize_strings(
@@ -1723,7 +1723,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--sweep",
         action="store_true",
-        help="run inspect/decode/validate in desktop/service and salvage/strict modes",
+        help="run inspect/dump/check in desktop/service and salvage/strict modes",
     )
     parser.add_argument(
         "--cadmpeg",
