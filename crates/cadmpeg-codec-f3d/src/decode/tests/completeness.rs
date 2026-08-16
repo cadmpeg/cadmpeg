@@ -85,6 +85,31 @@ fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
 }
 
 #[test]
+fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+
+    let complete = FeatureDefinition::DeleteBody {
+        bodies: BodySelection::Bodies(vec![BodyId("body:1".into())]),
+        mode: BodyRetentionMode::DeleteSelected,
+    };
+    assert!(!feature_definition_is_incomplete(&complete));
+
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Native("native:remove-body".into()),
+            mode: BodyRetentionMode::DeleteSelected,
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Bodies(vec![BodyId("body:1".into())]),
+            mode: BodyRetentionMode::Unresolved,
+        }
+    ));
+}
+
+#[test]
 fn product_feature_definitions_require_neutral_reference_ids() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::ids::OccurrenceId;
