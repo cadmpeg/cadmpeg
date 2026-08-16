@@ -430,14 +430,15 @@ equality between two referenced rows; for two type-1 rows or two type-2 rows,
 this transfers equality between the corresponding point coordinates. Function
 `3` transfers a complete non-negative linear dimension into an unsigned
 coordinate-difference constraint when its inline type-0 scalar agrees with the
-selected dimension row or its type-0 value is the dimension-driven sentinel.
-The selected complete dimension supplies that sentinel's resolved scalar. A
-function-2 type-3/type-0 pair binds a positive type-3 radius row to a type-3
-dimension row when the inline scalar agrees or the type-0 row is
-dimension-driven; the selected dimension supplies the resolved scalar and
-radius value. A function-5 type-6/type-6/type-5 row with a zero type-5 selector
-transfers direct equality between the two type-6 scalars; either finite scalar
-supplies the other row's dimension-driven sentinel.
+selected dimension row, its scalar-equality component resolves to that value,
+or its type-0 value is the dimension-driven sentinel. The selected complete
+dimension supplies that sentinel's resolved scalar. A function-2 type-3/type-0
+pair binds a positive type-3 radius row to a type-3 dimension row when the
+resolved scalar values agree or the type-0 row is dimension-driven; the
+selected dimension supplies the resolved scalar and radius value. A function-5
+type-6/type-6/type-5 row with a zero type-5 selector transfers direct equality
+between the two type-6 scalars; either finite scalar supplies the other row's
+dimension-driven sentinel.
 
 **Need.** We must know the remaining non-equality equation and relation joins
 that assign a dimension value to a dimension-driven solver variable.

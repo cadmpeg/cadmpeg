@@ -10,6 +10,8 @@ use super::equations_scalar::{
 };
 use super::skamp::SectionPointSource;
 
+const EPS_DIMENSION_BINDING: f64 = 1e-9;
+
 #[derive(Clone, Copy)]
 pub(crate) struct SectionFunctionSixDistance {
     pub(crate) first: u32,
@@ -173,6 +175,7 @@ pub(crate) struct SectionRadiusDimension {
 
 pub(crate) fn section_equation_dimension_scalar_value(
     scalar: &crate::feature::FeatureVariableRow,
+    equality_value: Option<f64>,
     dimension_value: f64,
     strictly_positive: bool,
 ) -> Option<f64> {
@@ -183,7 +186,8 @@ pub(crate) fn section_equation_dimension_scalar_value(
     if !valid(dimension_value) {
         return None;
     }
-    match scalar.value {
+    let scalar_value = reconcile_equation_value(scalar.value, equality_value).ok()?;
+    match scalar_value {
         Some(value) if valid(value) && approximately_equal(value, dimension_value) => {
             Some(dimension_value)
         }
@@ -231,6 +235,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
@@ -257,8 +262,17 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
             {
                 return None;
             }
-            let value =
-                section_equation_dimension_scalar_value(dimension, dimension_row.value?, false)?;
+            let equality_value = scalar_equality_values
+                .get(&(dimension.variable_type, dimension.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let value = section_equation_dimension_scalar_value(
+                dimension,
+                equality_value,
+                dimension_row.value?,
+                false,
+            )?;
             Some(SectionUnsignedCoordinateDistance {
                 first: first.key,
                 second: second.key,
@@ -301,6 +315,7 @@ pub(crate) fn section_equation_radius_dimensions(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
@@ -318,18 +333,35 @@ pub(crate) fn section_equation_radius_dimensions(
             };
             let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
             let dimension_value = dimension.value?;
+            let radius_equality = scalar_equality_values
+                .get(&(radius.variable_type, radius.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let radius_value = reconcile_equation_value(radius.value, radius_equality).ok()?;
             if dimension.dimension_type != 3
                 || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-                || radius.value.is_some_and(|value| {
+                || radius_value.is_some_and(|value| {
                     !value.is_finite()
                         || value <= 0.0
                         || (value - dimension_value).abs()
-                            > 1e-9 * value.abs().max(dimension_value.abs()).max(1.0)
+                            > EPS_DIMENSION_BINDING
+                                * value.abs().max(dimension_value.abs()).max(1.0)
                 })
             {
                 return None;
             }
-            let value = section_equation_dimension_scalar_value(scalar, dimension_value, true)?;
+            let equality_value = scalar_equality_values
+                .get(&(scalar.variable_type, scalar.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let value = section_equation_dimension_scalar_value(
+                scalar,
+                equality_value,
+                dimension_value,
+                true,
+            )?;
             Some(SectionRadiusDimension {
                 radius_variable: (radius.variable_type, radius.key),
                 radius: radius.key,

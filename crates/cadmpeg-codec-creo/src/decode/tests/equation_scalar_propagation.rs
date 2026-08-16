@@ -6,8 +6,9 @@ use crate::decode::sketch::{
     section_equation_equal_length_constraint_rows,
     section_equation_function_forty_three_axis_distance_values,
     section_equation_function_sixteen_angle_difference_values,
-    section_equation_point_on_line_constraint_rows, section_equation_scalar_equalities,
-    section_equation_scalar_equality_components,
+    section_equation_point_on_line_constraint_rows, section_equation_radius_dimensions,
+    section_equation_scalar_equalities, section_equation_scalar_equality_components,
+    section_equation_unsigned_coordinate_distance_rows,
 };
 use std::collections::BTreeSet;
 
@@ -304,4 +305,86 @@ fn function_five_accepts_a_zero_selector_proved_by_scalar_equality() {
         .rows[2]
         .value = Some(1.0);
     assert!(!section_equation_scalar_equalities(&conflicting_selector).contains_key(&(6, 10)));
+}
+
+#[test]
+fn dimension_equations_accept_scalar_values_proved_by_equality() {
+    let mut coordinate_definition = definition(
+        &equation_body(&[(1, 3, &[0, 1, 2]), (2, 2, &[2, 3])]),
+        vec![
+            row(1, 10, Some(0.0)),
+            row(1, 11, Some(5.0)),
+            row(0, 0, None),
+            row(0, 1, Some(5.0)),
+        ],
+    );
+    coordinate_definition.dimensions = Some(crate::feature::FeatureDimensionTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureDimension {
+            dimension_type: 1,
+            value: Some(5.0),
+            value_body: Vec::new(),
+            unresolved_value_token: None,
+            value_unit: crate::feature::DimensionUnit::Millimeters,
+            direction_byte: 0,
+            auxiliary_value: None,
+            auxiliary_body: Vec::new(),
+            external_id: 100,
+            references: None,
+            offset: 0,
+        }],
+        offset: 0,
+    });
+    let constraints = section_equation_unsigned_coordinate_distance_rows(
+        &coordinate_definition,
+        &BTreeSet::new(),
+    );
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].value, 5.0);
+
+    let mut conflicting = coordinate_definition;
+    conflicting.variables.as_mut().expect("variables").rows[2].value = Some(4.0);
+    assert!(
+        section_equation_unsigned_coordinate_distance_rows(&conflicting, &BTreeSet::new(),)
+            .is_empty()
+    );
+}
+
+#[test]
+fn radius_dimensions_accept_radius_values_proved_by_equality() {
+    let mut radius_definition = definition(
+        &equation_body(&[(1, 2, &[0, 1]), (2, 2, &[0, 2]), (3, 2, &[1, 3])]),
+        vec![
+            row(3, 42, None),
+            row(0, 0, None),
+            row(3, 43, Some(5.0)),
+            row(0, 1, Some(5.0)),
+        ],
+    );
+    radius_definition.dimensions = Some(crate::feature::FeatureDimensionTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureDimension {
+            dimension_type: 3,
+            value: Some(5.0),
+            value_body: Vec::new(),
+            unresolved_value_token: None,
+            value_unit: crate::feature::DimensionUnit::Millimeters,
+            direction_byte: 0,
+            auxiliary_value: None,
+            auxiliary_body: Vec::new(),
+            external_id: 101,
+            references: None,
+            offset: 0,
+        }],
+        offset: 0,
+    });
+    let dimensions = section_equation_radius_dimensions(&radius_definition);
+    assert_eq!(dimensions.len(), 1);
+    assert_eq!(dimensions[0].value, 5.0);
+
+    let mut conflicting = radius_definition;
+    conflicting.variables.as_mut().expect("variables").rows[2].value = Some(6.0);
+    assert!(section_equation_radius_dimensions(&conflicting).is_empty());
 }

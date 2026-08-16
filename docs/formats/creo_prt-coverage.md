@@ -57,7 +57,8 @@ fixtures, scores above L1 remain blocked.
   reference point keys bind to one unique section line and the target key
   resolves to an emitted point locus. Function-three equations transfer as
   typed horizontal- or vertical-distance constraints when their dimension
-  ordinal resolves to one emitted parameter and both point keys resolve to
+  ordinal resolves to one emitted parameter, their inline or scalar-equality-
+  resolved value agrees with that dimension, and both point keys resolve to
   emitted loci. Function-forty-three equations transfer as typed horizontal-
   or vertical-distance constraints when their unique dimension parameter
   agrees with the solved one-axis coordinate difference and both point keys
@@ -66,8 +67,8 @@ fixtures, scores above L1 remain blocked.
   reconciled zero value.
 - Function-two type-3/type-0 radius equations transfer as typed radius
   constraints when the radius key binds to unique emitted arc or circle
-  entities and the complete type-3 dimension agrees with the equation scalar;
-  solver activity is retained.
+  entities and the complete type-3 dimension agrees with the inline or
+  scalar-equality-resolved equation scalars; solver activity is retained.
 - Function-zero equations transfer as typed polar-distance constraints when
   both point loci and finite radial and angular values reconcile. Zero-length
   rows omit the undefined direction, and a reconciled type-3 radius dimension
