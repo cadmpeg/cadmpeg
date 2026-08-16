@@ -26,6 +26,13 @@ const EPS_AGREE: f64 = 1e-9;
 const EPS_ORTHO: f64 = 1e-10;
 const EPS_NEAR_ZERO: f64 = 1e-12;
 
+fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
+    let id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+    let mut matches = surfaces.iter().filter(|surface| surface.id == id);
+    let surface = matches.next()?;
+    matches.next().is_none().then_some(surface)
+}
+
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,
     faces: [u32; 2],
@@ -35,9 +42,7 @@ pub fn mapped_pcurve_endpoints(
         .into_iter()
         .zip(endpoint_sets)
         .filter_map(|(face_id, endpoints)| {
-            let surface = ir.model.surfaces.iter().find(|surface| {
-                surface.id == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
-            })?;
+            let surface = unique_model_surface(&ir.model.surfaces, face_id)?;
             let [first, second] = endpoints.map(|uv| {
                 cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
                     .map(|point| [point.x, point.y, point.z])
@@ -356,9 +361,7 @@ pub fn transfer_analytic_pcurve_carriers(
         }))
     {
         for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets) {
-            let Some(surface) = ir.model.surfaces.iter().find(|surface| {
-                surface.id == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
-            }) else {
+            let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
                 continue;
             };
             if endpoints.iter().all(|uv| {
@@ -604,10 +607,8 @@ pub fn pcurve_backed_periodic_conic_parameter_range(
 ) -> Option<[f64; 2]> {
     let mut selected = None;
     for face_id in faces {
-        let Some(surface) = surfaces
-            .iter()
-            .find(|surface| surface.id == SurfaceId(format!("creo:visibgeom:surface#{face_id}")))
-            .map(|surface| &surface.geometry)
+        let Some(surface) =
+            unique_model_surface(surfaces, face_id).map(|surface| &surface.geometry)
         else {
             continue;
         };
@@ -827,5 +828,43 @@ pub fn planar_curve_pcurve(
             })
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::units::Units;
+
+    #[test]
+    fn mapped_pcurve_endpoints_reject_duplicate_face_surfaces() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 1.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+        ]);
+
+        assert!(mapped_pcurve_endpoints(
+            &ir,
+            [7, 7],
+            [[[0.0, 0.0], [1.0, 0.0]], [[0.0, 0.0], [1.0, 0.0]]],
+        )
+        .is_none());
     }
 }
