@@ -89,16 +89,6 @@ from a conformant file.
 
 **Note.** Reopened by the 2026-08-16 audit. The code and synthetic tests implement a conservative project recovery policy, but the rule that one malformed definition invalidates every root inference is not established from the IGES specification or from an exporter-authored witness file.
 
-### DR-10. Two fixed defaults in the Type 406 Form 30 native record
-
-**Question.** What are the defaults of the Type 406 Form 30 character-set and witness-line-angle fields, and in which unit is the angle native?
-
-**Known.** `native.rs:3463-3475` stores the declared values and supplies character set `1` and `FRAC_PI_2` when those fields are omitted. The Appearance section of `iges.md` records the same defaults and radians as the angle unit.
-
-**Need.** We need the two defaults and the native unit of the angle field. An injected value must remain distinguishable from an explicit value.
-
-**Note.** Reopened by the 2026-08-16 audit. The native record now preserves declared and effective values, but the fixture and same-change specification do not prove the defaults or angle unit.
-
 ### DR-16. Native counted records retain partial prefixes after a malformed nested count
 
 **Question.** What native list state is exposed after a nested counted sequence stops before its declared width?
