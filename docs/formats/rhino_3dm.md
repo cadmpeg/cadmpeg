@@ -3807,6 +3807,42 @@ are skipped. The class-end marker stops the stream, and any remaining bytes
 through the containing record boundary are a suffix. The anonymous payload is
 owned by the userdata class and has no common field grammar.
 
+The current-selector settings records have fixed direct prefixes. The current
+layer, wire-density, font, and dimstyle records are short chunks whose value
+uses the archive's short-value width. The reader admits current-layer, font,
+and dimstyle values from `-1` through `INT32_MAX`; it admits wire-density
+values from `-2` through `INT32_MAX`. The writer substitutes zero for an unset
+layer, font, or dimstyle index and writes the current wire density directly.
+
+The current-material record is a CRC-bearing long chunk. Its known body prefix
+is:
+
+```text
+i32 current material index
+i32 current material source
+```
+
+The writer emits `-1` for an unset material index. The source reader consumes
+the signed `i32` without an additional index range gate. Material-source
+ordinals are 0 layer, 1 object, and 3 parent.
+
+The current-color record is a CRC-bearing long chunk. Its known body prefix
+is:
+
+```text
+u8 red
+u8 green
+u8 blue
+u8 alpha
+i32 current color source
+```
+
+Color-source ordinals are 0 layer, 1 object, 2 material, and 3 parent. These
+two long readers consume the known eight-byte prefix and let the enclosing
+settings-record boundary skip later direct suffix bytes. Their CRC covers the
+complete direct body, including any such suffix. The selectors have no
+version prefix; bytes not in the fixed prefixes are bounded suffix data.
+
 The `TCODE_SETTINGS_PLUGINLIST` record is a CRC-bearing long settings record.
 The writer emits it first in the settings stream only for archive versions 4
 and later, and only when at least one plugin reference is present. Its known

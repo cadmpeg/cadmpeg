@@ -2281,7 +2281,7 @@ pub(crate) fn parse_setting(
             Ok(())
         }
         CURRENT_MATERIAL => {
-            if record.short || record.body.len() != 8 {
+            if record.short || record.body.len() < 8 {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current material must be a long eight-byte index/source pair"
@@ -2289,19 +2289,13 @@ pub(crate) fn parse_setting(
                 });
             }
             let material_index = View::i32_le_at(data, record.body.start).expect("length checked");
-            if material_index < -1 {
-                return Err(FramingError::Structural {
-                    offset: record.range.start,
-                    message: "current material index is invalid".to_string(),
-                });
-            }
             settings.current_material = Some(material_index);
             settings.current_material_source =
                 Some(View::i32_le_at(data, record.body.start + 4).expect("length checked"));
             Ok(())
         }
         CURRENT_COLOR => {
-            if record.short || record.body.len() != 8 {
+            if record.short || record.body.len() < 8 {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current color must be a long color/source pair".to_string(),

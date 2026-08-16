@@ -679,16 +679,17 @@ fn future_section_style_extension_stops_at_unknown_code() {
 }
 
 #[test]
-fn parses_selector_widths_from_their_serialized_forms() {
+fn parses_selector_widths_and_skips_direct_suffix() {
     let mut settings_value = settings::DocumentSettings::default();
     let mut material_data = 42_i32.to_le_bytes().to_vec();
     material_data.extend(3_i32.to_le_bytes());
+    material_data.extend([0xaa, 0xbb]);
     let material_record = crate::container::Record {
         typecode: 0x2000_8039,
-        range: 0..8,
-        body: 0..8,
+        range: 0..material_data.len(),
+        body: 0..material_data.len(),
         short: false,
-        value: 8,
+        value: material_data.len() as i64,
     };
     settings::parse_setting(
         &material_data,
@@ -702,12 +703,13 @@ fn parses_selector_widths_from_their_serialized_forms() {
 
     let mut color_data = vec![1, 2, 3, 4];
     color_data.extend(2_i32.to_le_bytes());
+    color_data.extend([0xcc, 0xdd]);
     let color_record = crate::container::Record {
         typecode: 0x2000_803a,
-        range: 0..8,
-        body: 0..8,
+        range: 0..color_data.len(),
+        body: 0..color_data.len(),
         short: false,
-        value: 8,
+        value: color_data.len() as i64,
     };
     settings::parse_setting(
         &color_data,
@@ -739,6 +741,26 @@ fn parses_selector_widths_from_their_serialized_forms() {
     assert_eq!(settings_value.current_wire_density, Some(5));
     assert_eq!(settings_value.current_font, Some(7));
     assert_eq!(settings_value.current_dimstyle, Some(9));
+}
+
+#[test]
+fn current_material_accepts_the_source_reader_i32_range() {
+    let mut data = (-2_i32).to_le_bytes().to_vec();
+    data.extend(3_i32.to_le_bytes());
+    let record = crate::container::Record {
+        typecode: 0x2000_8039,
+        range: 0..data.len(),
+        body: 0..data.len(),
+        short: false,
+        value: data.len() as i64,
+    };
+    let mut settings_value = settings::DocumentSettings::default();
+
+    settings::parse_setting(&data, &record, &mut settings_value, ArchiveVersion::V8)
+        .expect("source reader accepts every signed i32 material index");
+
+    assert_eq!(settings_value.current_material, Some(-2));
+    assert_eq!(settings_value.current_material_source, Some(3));
 }
 
 #[test]

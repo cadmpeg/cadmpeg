@@ -212,6 +212,14 @@ children, and leaves a later outer suffix at the settings-record boundary.
 The Rust document-data reader now recognizes this wrapper and reuses the
 source-defined major-1/major-2 userdata header parser; the anonymous payload
 remains class-owned.
+The remaining direct selectors are now characterized. The current-layer,
+current-wire-density, current-font, and current-dimstyle records are short
+chunks. Current material and current color are CRC-bearing long chunks with
+eight-byte known prefixes: two signed `i32` values for material index/source,
+and four color bytes followed by one signed `i32` color-source value. The
+producer readers consume those prefixes and let `EndRead3dmChunk()` skip a
+later direct suffix. The Rust settings reader now accepts that suffix and
+does not add a material-index range gate absent from the producer reader.
 `ON_3dmSettings::Write_v2/Read_v2` also define the three counted presentation
 lists. Named construction planes use long `TCODE_VIEW_CPLANE` children; named
 views and active views use long `TCODE_VIEW_RECORD` children. Each outer list
@@ -230,7 +238,8 @@ layout. Remove only rejection not required by that evidence.
 **Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
 settled; annotation settings, grid defaults, units/tolerances, plugin list,
 settings attributes, render-mesh, analysis-mesh, render-settings, render
-settings userdata, and the three counted view-list wrappers are now
+settings userdata, the current-selector records, and the three counted
+view-list wrappers are now
 source-backed through their known prefixes, child types, stream markers, and
 version gates.
 The residual is the explicit
