@@ -224,6 +224,189 @@ pub(crate) fn section_equation_auxiliary_constraints(
     constraints
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct SectionFunctionFortyTwoMidpointCoordinate {
+    pub(crate) first: u32,
+    pub(crate) second: u32,
+    pub(crate) coordinate: usize,
+    pub(crate) value: Option<f64>,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SectionFunctionThirtyOnePointCoordinates {
+    pub(crate) point: u32,
+    pub(crate) values: [Option<f64>; 2],
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
+}
+
+fn reconcile_equation_value(stored: Option<f64>, solved: Option<f64>) -> Result<Option<f64>, ()> {
+    if stored.is_some_and(|value| !value.is_finite())
+        || solved.is_some_and(|value| !value.is_finite())
+    {
+        return Err(());
+    }
+    match (stored, solved) {
+        (Some(stored), Some(solved)) if !approximately_equal(stored, solved) => Err(()),
+        (Some(stored), _) => Ok(Some(stored)),
+        (_, Some(solved)) => Ok(Some(solved)),
+        (None, None) => Ok(None),
+    }
+}
+
+pub(crate) fn section_equation_function_forty_two_midpoint_coordinate_rows(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionFunctionFortyTwoMidpointCoordinate> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    let row = |ordinal: Option<u32>| {
+        usize::try_from(ordinal?)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+    };
+    equations
+        .rows
+        .iter()
+        .filter_map(|equation| {
+            let [Some(first), Some(second), Some(result)] = equation.arguments.as_slice() else {
+                return None;
+            };
+            if equation.function_id != 42 {
+                return None;
+            }
+            let (Some(first), Some(second), Some(result)) =
+                (row(Some(*first)), row(Some(*second)), row(Some(*result)))
+            else {
+                return None;
+            };
+            if first.variable_type != second.variable_type
+                || !matches!(first.variable_type, 1 | 2)
+                || result.variable_type != 6
+                || ambiguous_point_ids.contains(&first.key)
+                || ambiguous_point_ids.contains(&second.key)
+            {
+                return None;
+            }
+            let coordinate = usize::from(first.variable_type == 2);
+            let solved = coordinates
+                .get(&first.key)
+                .and_then(|point| point[coordinate])
+                .zip(
+                    coordinates
+                        .get(&second.key)
+                        .and_then(|point| point[coordinate]),
+                )
+                .map(|(first, second)| f64::midpoint(first, second));
+            let value = reconcile_equation_value(result.value, solved).ok()?;
+            Some(SectionFunctionFortyTwoMidpointCoordinate {
+                first: first.key,
+                second: second.key,
+                coordinate,
+                value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn section_equation_function_thirty_one_point_coordinate_rows(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionFunctionThirtyOnePointCoordinates> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    let row = |ordinal: Option<u32>| {
+        usize::try_from(ordinal?)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+    };
+    equations
+        .rows
+        .iter()
+        .filter_map(|equation| {
+            let [Some(first_u), Some(first_v), Some(second_u), Some(second_v)] =
+                equation.arguments.as_slice()
+            else {
+                return None;
+            };
+            if equation.function_id != 31 {
+                return None;
+            }
+            let (Some(first_u), Some(first_v), Some(second_u), Some(second_v)) = (
+                row(Some(*first_u)),
+                row(Some(*first_v)),
+                row(Some(*second_u)),
+                row(Some(*second_v)),
+            ) else {
+                return None;
+            };
+            if first_u.variable_type != 1
+                || first_v.variable_type != 2
+                || first_u.key != first_v.key
+                || second_u.variable_type != 6
+                || second_v.variable_type != 6
+                || second_u.key == second_v.key
+                || ambiguous_point_ids.contains(&first_u.key)
+            {
+                return None;
+            }
+            let point = coordinates.get(&first_u.key).copied().unwrap_or([None; 2]);
+            let values = [
+                reconcile_equation_value(second_u.value, point[0]).ok()?,
+                reconcile_equation_value(second_v.value, point[1]).ok()?,
+            ];
+            Some(SectionFunctionThirtyOnePointCoordinates {
+                point: first_u.key,
+                values,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn merge_scalar_value_candidate(
     values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
     variable: SectionScalarVariable,

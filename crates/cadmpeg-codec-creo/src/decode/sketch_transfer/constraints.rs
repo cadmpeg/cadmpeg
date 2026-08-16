@@ -8,11 +8,13 @@ use super::super::feature_history::{
 use super::super::sketch::{
     approximately_equal, resolved_section_coordinates,
     section_equation_function_forty_three_axis_distance_rows,
-    section_equation_function_six_distance_rows, section_equation_point_on_line_constraint_rows,
-    section_equation_radial_constraint_rows, section_equation_radius_dimensions,
-    section_equation_unsigned_coordinate_distance_rows, section_line_fixed_coordinate,
-    section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
-    unique_section_skamp_segment,
+    section_equation_function_forty_two_midpoint_coordinate_rows,
+    section_equation_function_six_distance_rows,
+    section_equation_function_thirty_one_point_coordinate_rows,
+    section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
+    section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
+    section_line_fixed_coordinate, section_linear_distance_coordinate, section_segment_rows,
+    section_type5_radius_arc, unique_section_skamp_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
@@ -99,6 +101,7 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
         | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
+        | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
         | SketchConstraintDefinition::PolarDistance { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
@@ -113,6 +116,7 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::Midpoint { point, entity } => {
             locus_emitted(point) && emitted.contains(entity)
         }
+        SketchConstraintDefinition::PointCoordinateValues { point, .. } => locus_emitted(point),
         SketchConstraintDefinition::AtIntersection {
             point,
             first,
@@ -222,6 +226,8 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::CoincidentLoci { .. }
         | SketchConstraintDefinition::SameCoordinate { .. }
         | SketchConstraintDefinition::Midpoint { .. }
+        | SketchConstraintDefinition::PointCoordinateValues { .. }
+        | SketchConstraintDefinition::MidpointCoordinate { .. }
         | SketchConstraintDefinition::Concentric { .. }
         | SketchConstraintDefinition::Coradial { .. }
         | SketchConstraintDefinition::Collinear { .. }
@@ -862,6 +868,113 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
             ))
         })
         .collect()
+}
+
+pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let coordinates = resolved_section_coordinates(definition);
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .filter(|variables| variables.is_complete())
+        .map(|variables| variables.reconciled_points().1)
+        .unwrap_or_default();
+    section_equation_function_forty_two_midpoint_coordinate_rows(
+        definition,
+        &coordinates,
+        &ambiguous_point_ids,
+    )
+    .into_iter()
+    .filter_map(|equation| {
+        let value = equation.value?;
+        if !value.is_finite() {
+            return None;
+        }
+        let first = section_point_locus(definition, sketch, equation.first)?;
+        let second = section_point_locus(definition, sketch, equation.second)?;
+        let axis = match equation.coordinate {
+            0 => SketchCoordinateAxis::U,
+            1 => SketchCoordinateAxis::V,
+            _ => return None,
+        };
+        Some((
+            SketchConstraint {
+                id: sketch_constraint_id(sketch, format_args!("equation:{}", equation.equation_id)),
+                sketch: sketch.clone(),
+                definition: SketchConstraintDefinition::MidpointCoordinate {
+                    first,
+                    second,
+                    axis,
+                    value: Length(value),
+                },
+                name: None,
+                driving: None,
+                active: Some(equation.active),
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: Some(sketch_native_ref(sketch)),
+            },
+            equation.offset,
+        ))
+    })
+    .collect()
+}
+
+pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let coordinates = resolved_section_coordinates(definition);
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .filter(|variables| variables.is_complete())
+        .map(|variables| variables.reconciled_points().1)
+        .unwrap_or_default();
+    section_equation_function_thirty_one_point_coordinate_rows(
+        definition,
+        &coordinates,
+        &ambiguous_point_ids,
+    )
+    .into_iter()
+    .filter_map(|equation| {
+        let [u, v] = equation.values;
+        let (Some(u), Some(v)) = (u, v) else {
+            return None;
+        };
+        if !u.is_finite() || !v.is_finite() {
+            return None;
+        }
+        let point = section_point_locus(definition, sketch, equation.point)?;
+        Some((
+            SketchConstraint {
+                id: sketch_constraint_id(sketch, format_args!("equation:{}", equation.equation_id)),
+                sketch: sketch.clone(),
+                definition: SketchConstraintDefinition::PointCoordinateValues {
+                    point,
+                    values: [Length(u), Length(v)],
+                },
+                name: None,
+                driving: None,
+                active: Some(equation.active),
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: Some(sketch_native_ref(sketch)),
+            },
+            equation.offset,
+        ))
+    })
+    .collect()
 }
 
 pub(in super::super) fn section_equation_polar_distance_constraints(

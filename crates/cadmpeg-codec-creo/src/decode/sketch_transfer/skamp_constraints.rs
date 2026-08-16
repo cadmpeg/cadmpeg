@@ -553,6 +553,7 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
         | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
+        | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinition::VerticalDistance { first, second, .. }
         | SketchConstraintDefinition::HorizontalLoci { first, second }
@@ -563,6 +564,7 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinition::PointOnObject { point, entity } => {
             locus_compatible(point) && geometry.contains_key(entity)
         }
+        SketchConstraintDefinition::PointCoordinateValues { point, .. } => locus_compatible(point),
         SketchConstraintDefinition::Symmetric { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }

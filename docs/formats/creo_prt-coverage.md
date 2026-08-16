@@ -74,6 +74,12 @@ fixtures, scores above L1 remain blocked.
   constraints when their positive scalar and both point loci reconcile. A
   reconciled type-3 radius dimension remains attached as an optional driving
   distance parameter.
+- Function-thirty-one equations transfer as typed two-axis point-coordinate
+  constraints when both type-6 scalar values and the point locus reconcile.
+  Function-forty-two equations transfer as typed same-axis coordinate-mean
+  constraints when the scalar value and both point loci reconcile. Inactive
+  rows retain their source activity; conflicting or incomplete rows remain
+  native.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots
