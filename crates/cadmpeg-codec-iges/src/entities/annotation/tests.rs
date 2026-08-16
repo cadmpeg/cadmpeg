@@ -68,7 +68,7 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
 }
 
 #[test]
-fn decode_applies_new_general_note_defaults_and_accepts_zero_metrics() {
+fn decode_applies_new_general_note_defaults_with_positive_metrics() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(defaulted_new_general_note_file()),
@@ -84,6 +84,23 @@ fn decode_applies_new_general_note_defaults_and_accepts_zero_metrics() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_zero_new_general_note_character_metrics() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(zero_character_metrics_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

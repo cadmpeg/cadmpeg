@@ -1728,14 +1728,25 @@ pub(crate) fn text_annotation_file() -> Vec<u8> {
 }
 
 pub(crate) fn defaulted_new_general_note_file() -> Vec<u8> {
+    new_general_note_file_with_character_metrics("1", "1")
+}
+
+pub(crate) fn zero_character_metrics_new_general_note_file() -> Vec<u8> {
+    new_general_note_file_with_character_metrics("0", "0")
+}
+
+fn new_general_note_file_with_character_metrics(
+    character_width: &str,
+    character_height: &str,
+) -> Vec<u8> {
     let mut fields = vec![String::from("213")];
     fields.extend((0..11).map(|_| String::new()));
     fields.push(String::from("1"));
     fields.extend(
         [
             "0", // FIXVAR
-            "",  // CHRWID
-            "",  // CHRHGT
+            character_width,
+            character_height,
             "",  // CSPACE
             "",  // LSPACE
             "",  // FONT

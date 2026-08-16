@@ -116,9 +116,9 @@ fn new_general_note_valid(
                 .zip(spacing)
                 .is_some_and(|((width, height), spacing)| {
                     width.is_finite()
-                        && width >= 0.0
+                        && width > 0.0
                         && height.is_finite()
-                        && height >= 0.0
+                        && height > 0.0
                         && spacing.is_finite()
                         && match fixed {
                             Some(0) => spacing >= -width,
