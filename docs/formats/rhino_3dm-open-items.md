@@ -759,6 +759,15 @@ document units; angles, surface parameters, transpose, and profile parameter
 values do not. The cached bounds are framing input only and are not part of
 the procedural definition. A source object with no profile is invalid and is
 retained opaque rather than admitted as a typed surface.
+The `ON_SumSurface` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its packed version, basepoint, cached bounds, ordered
+polymorphic child-curve slots, child parameter domains, rational weights, and
+solved-carrier product weights are settled. The Rust decoder scales the
+basepoint and child geometry, preserves child order and parameter values,
+reconstructs the exact NURBS carrier, and treats the bounds as framing only.
+Both children must be valid three-dimensional curves in the source; a nil
+polymorphic child is readable but source-invalid and is retained opaque by
+CADIR.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -1020,6 +1029,33 @@ sets the profile flag to zero; OpenNURBS reads the archive but reports
 `revolution_rejects_versions_axis_intervals_transpose_and_presence` gate the
 major-1 default, scaled coordinates, normalized axis, transpose admission,
 and invalid profile branch.
+
+The sum-surface slice is closed by `ON_SumSurface::Write`/`Read` and
+`ON_SumSurface::IsValid` in
+`/home/pcurve/side2/opennurbs/opennurbs_sumsurface.cpp:197-285`, the class
+formula and cache contract in `opennurbs_sumsurface.h:30-36` and
+`opennurbs_sumsurface.cpp:310-365`, the nil-object writer/reader branch in
+`opennurbs_archive.cpp:4239-4260,5159-5164`, and packed-version helpers in
+`opennurbs_archive.cpp:5762-5790`. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/sum_surface_witness.cpp`
+writes valid V4, V50, V6, and inch-unit V6 files with distinct rational
+children. The public `example_read` harness reads every file; the byte
+differential report is
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/sum_surface_differential.txt`.
+`cadmpeg inspect` finds the sum class UUID at V4 `0x08f6`, V50 `0x09f4`, V6
+`0x0a2d`, and inch V6 `0x0a37`; the two child NURBS UUIDs occur at
+`0x096b/0x0a44`, `0x0a75/0x0b5e`, `0x0aae/0x0b98`, and `0x0ab8/0x0ba2`.
+The valid query results contain two ordered children and the solved carrier;
+the inch result scales basepoint and geometric control points by `25.4` while
+retaining domains, knots, and weights. The separate
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/sum_surface_absent_witness.cpp`
+writes each nil-child position. OpenNURBS reads both and reports the named
+`IsValid` failure; CADIR reports `geometry_transferred=false`, retains the
+source record, and validation succeeds for the retained document. The owner
+tests `sum_surface_decodes_ordered_children_and_scales_once`,
+`sum_surface_multiplies_each_rational_weight_pair`, and
+`sum_surface_rejects_nil_child_object` gate ordered transfer, unit conversion,
+homogeneous product weights, and the malformed-child boundary.
 
 ### FV-06. Later major payload admission
 

@@ -293,6 +293,10 @@ fn line_wrapper(scale_source: f64) -> Vec<u8> {
     long_chunk(0x0002_7ffa, &class_body)
 }
 
+fn nil_object_wrapper() -> Vec<u8> {
+    long_chunk(0x0002_7ffa, &long_chunk(0x0002_fffb, &[0; 16]))
+}
+
 pub(crate) fn valid_revolution_payload(version: u8) -> Vec<u8> {
     let mut bytes = revolution_prefix(version);
     *bytes.last_mut().expect("required invariant") = 1;
@@ -306,7 +310,7 @@ fn valid_sum_payload() -> Vec<u8> {
         push_f64(&mut bytes, value);
     }
     bytes.extend(line_wrapper(1.0));
-    bytes.extend(line_wrapper(1.0));
+    bytes.extend(line_wrapper(2.0));
     bytes
 }
 
@@ -766,9 +770,34 @@ fn sum_surface_decodes_ordered_children_and_scales_once() {
     assert!((basepoint.x - 25.4).abs() < 1.0e-12);
     assert!((basepoint.y - 50.8).abs() < 1.0e-12);
     assert!((basepoint.z - 76.2).abs() < 1.0e-12);
-    assert!((geometry.control_points[0].x - 127.0).abs() < 1.0e-12);
+    assert!((geometry.control_points[0].x - 177.8).abs() < 1.0e-12);
     assert!((geometry.control_points[0].y - 50.8).abs() < 1.0e-12);
     assert!((geometry.control_points[0].z - 76.2).abs() < 1.0e-12);
+    let CurveGeometry::Nurbs(first) = &children[0].geometry else {
+        panic!("expected first NURBS child");
+    };
+    let CurveGeometry::Nurbs(second) = &children[1].geometry else {
+        panic!("expected second NURBS child");
+    };
+    assert_eq!(first.control_points[0].x, 2.0 * 25.4);
+    assert_eq!(second.control_points[0].x, 4.0 * 25.4);
+}
+
+#[test]
+fn sum_surface_rejects_nil_child_object() {
+    for (first, second) in [
+        (nil_object_wrapper(), line_wrapper(1.0)),
+        (line_wrapper(1.0), nil_object_wrapper()),
+    ] {
+        let mut bytes = vec![0x10];
+        for value in [1.0, 2.0, 3.0, -10.0, -10.0, -10.0, 10.0, 10.0, 10.0] {
+            push_f64(&mut bytes, value);
+        }
+        bytes.extend(first);
+        bytes.extend(second);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+    }
 }
 
 #[test]

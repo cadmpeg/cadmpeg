@@ -3024,7 +3024,8 @@ followed by a bounded suffix that the reader skips.
 
 ### 13.6 Sum surface
 
-Writers emit packed version `1.0`. Major 1 is accepted:
+Writers emit packed version `1.0`, where the byte is `(major << 4) | minor`.
+Major 1 is accepted:
 
 ```
 u8 version
@@ -3034,12 +3035,27 @@ polymorphic ON_Curve first
 polymorphic ON_Curve second
 ```
 
+`basepoint` is a document-length translation vector. `bounds` is the six-f64
+cached `ON_SumSurface::m_bbox` value; its coordinates are document lengths and
+the decoder consumes it as bounded framing input. It is not part of the
+procedural definition. The two curve slots are ordered: slot 0 supplies U and
+slot 1 supplies V. Curve geometric coordinates are document lengths; curve
+parameter values, knot values, and rational weights do not receive document
+unit conversion.
+
 The exact surface is `S(u,v)=basepoint+C0(u)+C1(v)`. For child homogeneous
 poles `H0=(wP,w)` and `H1=(vQ,v)`, the surface weight is `wv` and the
 homogeneous point is `v(wP)+w(vQ)+wv*basepoint`. U inherits the first curve;
 V inherits the second.
-The reader consumes the known prefix and skips any suffix before the bounded
-class-data end.
+Source validity requires both child pointers to name valid three-dimensional
+curves and requires a valid basepoint. A nil child is nevertheless a readable
+archive object because the polymorphic object slot can contain a nil UUID; it
+is source-invalid, and CADIR retains the bounded source record instead of
+admitting a typed sum. Typed transfer additionally requires both children to
+have an exact NURBS representation. The solved carrier uses the ordered child
+domains and knot vectors and the product-weight formula above. The reader
+consumes the known prefix and skips any suffix before the bounded class-data
+end.
 
 ## 14. Mesh
 
