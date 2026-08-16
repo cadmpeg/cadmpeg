@@ -18,12 +18,154 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
+### ER-02. Resource access
+
+**Question.** Which retrieval and authentication procedure applies to an external resource URI?
+
+**Known.** Part 21 defines the URI, anchor, and external occurrence result (`step.md` §7 "REFERENCE entries bind an external entity"). The specification assigns transport, authentication, redirect, certificate, authorization, and freshness controls to an external resolver (`step.md` §7 "CADIR decision: external resource access"). The codec only reports external dependencies (`crates/cadmpeg-codec-step/src/codec.rs:157-176`); it does not call a resolver.
+
+**Need.** Define the caller resource-provider interface, access result, and trust boundary before external bytes can enter a composition step.
+
+**Conflict.** A no-access codec boundary does not define the retrieval or authentication procedure that a caller must apply.
+
+### ER-03. Resource composition
+
+**Question.** How does an external resource occurrence combine with the local instance graph?
+
+**Known.** Part 21 substitutes one referenced anchor item at one local occurrence and does not copy the target resource's numeric instances into the local exchange (`step.md` §7 "For a resolved external resource"). The codec parses the supplied root only and reports external dependencies (`crates/cadmpeg-codec-step/src/codec.rs:323-362`).
+
+**Need.** Define resource-qualified identity, schema, unit, trust, and anchor-substitution rules for a composition step, with a multi-resource witness.
+
+**Conflict.** Root-only decode preserves the dependency but does not execute the cross-resource substitution that the format defines.
+
+### ER-04. Resource cache identity
+
+**Question.** Which URI components and resource metadata identify one cached external resource?
+
+**Known.** Part 21 supplies a URI, an optional last-visited timestamp, and an optional message digest, but does not define URI normalization, cache keys, validators, content negotiation, or representation equivalence (`step.md` §6 "In a `SCHEMA_POPULATION` triple"). The codec has no external-resource cache (`step.md` §7 "CADIR decision: the STEP codec has no external-resource cache").
+
+**Need.** Define the caller cache key, freshness rule, digest rule, and representation-equivalence result, with references that vary URI spelling and freshness metadata.
+
+**Conflict.** A cache-free codec does not settle cache identity for a caller that resolves the dependency.
+
 ## 3. Containers and other encodings
+
+### CE-02. ZIP resource composition
+
+**Question.** How do references between exchange resources in an edition-3 ZIP container resolve into one graph?
+
+**Known.** Annex A.4 defines archive-relative addressing and root-anchor forwarding (`step.md` §7 "For a ZIP container"). The archive code checks the addressed member (`crates/cadmpeg-codec-step/src/archive.rs:122-152`), while ZIP decode passes only the root member to the STEP reader (`crates/cadmpeg-codec-step/src/codec.rs:323-362`).
+
+**Need.** Define the resource-qualified graph model and anchor substitution for a multi-member archive, with a witness that verifies the forwarded target is composed into the local graph.
+
+**Conflict.** Checking a subsidiary member and retaining an external dependency does not compose that member's entities or values into CADIR.
+
+### CE-03. Part 28 XML grammar
+
+**Question.** Which Part 28 configuration and generated schema define each supported AP203, AP214, or AP242 XML grammar?
+
+**Known.** Part 28 is an EXPRESS-to-XML mapping. The codec refuses a Part 28 candidate before Part 21 parsing (`crates/cadmpeg-codec-step/src/codec.rs:365-374`).
+
+**Need.** Define the supported AP schema, Part 28 configuration, generated XML schema, and independent conforming exchanges.
+
+**Conflict.** Detection and refusal do not implement the Part 28 grammar.
+
+### CE-04. Part 28 graph mapping
+
+**Question.** How does each supported Part 28 XML construct map to the STEP instance graph and CADIR?
+
+**Known.** The mapping is schema-driven. The codec has no XML entity, value, reference, or identity adapter (`crates/cadmpeg-codec-step/src/codec.rs:365-374`).
+
+**Need.** Define the mapping configuration and conformance witnesses for entity identity, references, aggregates, and omitted values.
+
+**Conflict.** Unsupported-input refusal provides no graph-mapping operand.
+
+### CE-05. Part 26 binary grammar
+
+**Question.** Which Part 26 mapping and HDF5 layout define each supported AP203, AP214, or AP242 binary exchange?
+
+**Known.** Part 26 is an EXPRESS-driven HDF5 mapping. The codec refuses an HDF5 signature before Part 21 parsing (`crates/cadmpeg-codec-step/src/codec.rs:365-370`).
+
+**Need.** Define the supported AP schema, mapping version, HDF5 layout, and independent conforming exchanges.
+
+**Conflict.** Signature detection and refusal do not implement the Part 26 grammar.
+
+### CE-06. Part 26 graph mapping
+
+**Question.** How does each supported Part 26 construct map to the STEP instance graph and CADIR?
+
+**Known.** The mapping uses schema and population groups, compound entity types, optional bitmaps, instance identifiers, aggregates, and links. The codec implements none of these mappings (`crates/cadmpeg-codec-step/src/codec.rs:365-370`).
+
+**Need.** Define the mapping version and conformance witnesses for identity, references, aggregates, and optional values.
+
+**Conflict.** Unsupported-input refusal provides no graph-mapping operand.
 
 ## 4. Signatures
 
+### SG-04. Signature verification result
+
+**Question.** Which executed checks make a retained STEP signature valid, invalid, or indeterminate?
+
+**Known.** The parser retains the detached CMS object and signed byte range (`crates/cadmpeg-codec-step/src/parse.rs:124-139`). CMS admission checks only structure and detached form (`crates/cadmpeg-codec-step/src/signature.rs:227-281`); the decode path calls that structural validator (`crates/cadmpeg-codec-step/src/parse.rs:1923-1933`).
+
+**Need.** Define a verifier interface, caller trust policy, and independently signed valid, modified, expired, revoked, and unknown-chain witnesses.
+
+**Conflict.** Structural CMS admission emits no cryptographic result and does not execute digest, signed-attribute, signature, certificate-path, revocation, time, or trust checks.
+
 ## 5. Topology and pcurve decisions
+
+### TP-09. Bounded pcurve admission
+
+**Question.** What proves endpoint fit and model-space locus equivalence for competing pcurve candidates?
+
+**Known.** The selector admits one same-surface candidate after a finite endpoint check or bounded seeded search (`crates/cadmpeg-codec-step/src/reader/topology.rs:3061-3175`). The specification calls this an existential endpoint witness, not a global nearest-point proof (`step.md` §8 "CADIR decision: a typed `SEAM_EDGE`").
+
+**Need.** Define the proof or accepted approximation for endpoint fit and whole-locus equivalence, with reordered, near-tied, crossing, and missed-minimum witnesses.
+
+**Conflict.** A finite endpoint witness can admit a candidate without proving the complete model-space locus or proving that a bounded search found the required fit.
 
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation
+
+### AP-12. Presentation PMI placement arbitration
+
+**Question.** How must the decoder preserve or withhold presentation placement when one annotation reaches multiple placement carriers?
+
+**Known.** The [ISO 10303-46 visual-presentation schema](https://ap238.org/SMRL_v8_final/data/resource_docs/visual_presentation/sys/5_schema.htm) permits an `ANNOTATION_TEXT_OCCURRENCE` to reach a `COMPOSITE_TEXT`; its text aggregates are sets, and each `TEXT_LITERAL` has a placement. The reader collects multiple text carriers and withholds unordered text (`crates/cadmpeg-codec-step/src/reader/pmi.rs:1157-1183`), but the annotation path asks for the first reachable placement (`crates/cadmpeg-codec-step/src/reader/pmi.rs:565-596`), and `find_placement` returns the first recursive match (`crates/cadmpeg-codec-step/src/reader/pmi.rs:1219-1249`).
+
+**Need.** Define an order-independent placement rule and a witness with two reachable text or annotation placement carriers at distinct transforms. The decoder must require one placement or preserve all placements.
+
+**Conflict.** A composite text with differently placed literals can have its text withheld while its neutral PMI placement changes with SET or record traversal order, without a placement loss.
+
+## 8. Product structure and placement
+
+### BM-02. BO-Model composition
+
+**Question.** How do BO-Model XML identities and values combine with a Part 21 instance graph?
+
+**Known.** The encodings have separate identity systems and explicit external-file references (`step.md` §1 "Part 21 does not define a sidecar filename", `step.md` §1 "The BO-Model XML identity system is local"). The codec refuses BO-Model XML (`crates/cadmpeg-codec-step/src/codec.rs:365-379`).
+
+**Need.** Define an AP242 cross-file identity relation, precedence policy, and independently paired XML and Part 21 exchanges.
+
+**Conflict.** Refusing BO-Model XML avoids an accidental join but does not implement or settle cross-file composition.
+
+### PS-08. Cross-mechanism occurrence placement arbitration
+
+**Question.** How must the decoder arbitrate a valid context-dependent placement and a valid occurrence-owned mapped placement for one `NEXT_ASSEMBLY_USAGE_OCCURRENCE`?
+
+**Known.** `reader/product.rs:853-875` inserts each resolved `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` transform into the placement result. `reader/product.rs:895-897` skips occurrence-owned candidates when that result already contains the usage. The specification defines both placement patterns (`step.md` §8 "Product shape binds through", `step.md` §8 "ISO 10303-44 defines each") but gives no precedence between them.
+
+**Need.** Add an independent witness with distinct transforms from both valid mechanisms and define an order-independent rule that either binds one mechanism or withholds the placement while retaining both relations.
+
+**Conflict.** A valid context-dependent relation silently suppresses a valid occurrence-owned mapped relation. The decoder does not compare transforms or report a conflict.
+
+### PS-09. Parent mapped-item salvage order
+
+**Question.** What source identity permits parent-representation mapped items to bind unique child usages when no occurrence-owned representation exists?
+
+**Known.** `reader/product.rs:1034-1043` sorts usages by physical record span. `reader/product.rs:1060-1101` sorts parent representations by span and walks each `representation.items` sequence. `reader/product.rs:1104-1113` admits the transforms only when the mapped-child sequence agrees with the usage sequence. The specification declares `representation.items` a `SET` with no member-order meaning (`step.md` §8 "ISO 10303-43 defines `representation.items`") but permits physical-order salvage (`step.md` §8 "CADIR decision: a parent representation's mapped items").
+
+**Need.** Add an order-permuted unique-child witness that proves the same source graph gives the same admission and transform, or remove this salvage and require an explicit occurrence association.
+
+**Conflict.** Permuting one SET or record order can change the branch from inferred placement to identity placement with `NauoPlacementUnresolved`, without changing the references, child definitions, or transforms.
