@@ -252,24 +252,6 @@ neutral relation. The prior specification text that prescribed source-order assi
 discard was removed because it was decoder policy rather than producer evidence; the projection
 remains open.
 
-### DP-07. Legacy point carrier provenance
-
-**Question.** Does any FreeCAD producer version write a declared `Part::GeomPoint` with a `Point`
-carrier instead of the current `GeomPoint` carrier?
-
-**Known.** `PropertyGeometryList::Save` writes the `Geometry` type attribute from the geometry
-runtime type. `GeomPoint::Save` writes `GeomPoint`; the other registered geometry writers use the
-carrier tags recorded in the specification.
-
-**Need.** Establish the FreeCAD source path or a saved witness document for the historical `Point`
-tag, including the producer version and its value grammar.
-
-**Conflict.** The decoder accepts `Point` as a compatibility carrier for `Part::GeomPoint`. The
-FreeCAD writer history for that alias has not been traced.
-
-**Note.** This pass settled the current producer runtime-name/carrier-tag mapping and rejects a
-registered name paired with another known carrier. The historical point alias remains open.
-
 ### DP-09. Spreadsheet carrier and value-container selection
 
 **Question.** Which property and XML value container supply spreadsheet cells and row or column

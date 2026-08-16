@@ -299,9 +299,12 @@ select lines; `Part::GeomCircle` selects circles; `Part::GeomArcOfCircle` select
 zero or multiple eligible carrier children remains a native sketch entity. The registered runtime
 names require these carrier tags: `GeomLine`, `LineSegment`, `Circle`, `ArcOfCircle`, `Ellipse`,
 `ArcOfEllipse`, `Hyperbola`, `ArcOfHyperbola`, `Parabola`, `ArcOfParabola`, `GeomPoint`, and
-`BSplineCurve`, respectively. The current producer does not emit a registered runtime name paired
-with another carrier tag. Metadata children `Construction`, `GeoExtensions`, and `UID` do not count
-as geometry carriers.
+`BSplineCurve`, respectively. The producer-defined `Part::GeomPoint` carrier is `GeomPoint` with
+`X`, `Y`, and `Z` attributes. A `Point` child under the declared `Part::GeomPoint` runtime name
+is admitted only as a CADIR decoder-compatibility form; it is not a producer-defined carrier and
+uses the persisted `X` and `Y` coordinates. A registered runtime name paired with another carrier
+tag is otherwise malformed. Metadata children `Construction`, `GeoExtensions`, and `UID` do not
+count as geometry carriers.
 An `ExternalGeometry` link creates an ordered construction entity. When `ExternalGeo` supplies its
 cached carrier, that carrier defines the solved sketch geometry. Without a cached carrier, the
 neutral entity retains the target document, object, and subelements as an unresolved external

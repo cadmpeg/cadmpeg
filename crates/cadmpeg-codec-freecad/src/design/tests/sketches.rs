@@ -119,6 +119,28 @@ fn rejects_declared_geometry_with_the_wrong_carrier_tag() {
 }
 
 #[test]
+fn transfers_geom_point_carrier() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1">
+<Geometry type="Part::GeomPoint"><GeomPoint X="1.25" Y="-2.5" Z="3.75"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("point carrier");
+    assert!(matches!(
+        result.ir().model.sketch_entities[0].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Point { position }
+            if position == cadmpeg_ir::math::Point2::new(1.25, -2.5)
+    ));
+}
+
+#[test]
 fn rejects_incomplete_present_sketch_placement() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
