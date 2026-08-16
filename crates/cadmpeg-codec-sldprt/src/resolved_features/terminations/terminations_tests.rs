@@ -442,6 +442,96 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
 }
 
 #[test]
+fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
+    let mut payload = vec![0; 600];
+    let anchor = 350;
+    payload[anchor..anchor + 2].copy_from_slice(&[0x20, 0x86]);
+    payload[anchor + 4..anchor + 8].copy_from_slice(&1u32.to_le_bytes());
+    payload[anchor + 18..anchor + 22].copy_from_slice(&1u32.to_le_bytes());
+    payload[anchor + 30..anchor + 34].copy_from_slice(&[1, 0, 0, 1]);
+    payload[anchor + 92] = 1;
+
+    let feature = |id: &str, source_id: &str, input_class: &str| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some(source_id.into()),
+        parent_source_id: None,
+        ordinal: source_id.parse().expect("required invariant"),
+        name: id.into(),
+        kind: "Feature".into(),
+        input_class: Some(input_class.into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            feature("extrusion", "10", "moICE_c"),
+            feature("cosmetic", "11", "moCosmeticThread_c"),
+            feature("next", "12", "Chamfer_c"),
+        ],
+    }];
+    let lane = FeatureInputLane {
+        id: "lane#7".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![
+            FeatureInputName {
+                id: "extrusion-name".into(),
+                parent: "lane#7".into(),
+                ordinal: 0,
+                offset: 10,
+                value: "extrusion".into(),
+                object_id: Some(10),
+            },
+            FeatureInputName {
+                id: "cosmetic-name".into(),
+                parent: "lane#7".into(),
+                ordinal: 1,
+                offset: 200,
+                value: "cosmetic".into(),
+                object_id: Some(11),
+            },
+            FeatureInputName {
+                id: "next-name".into(),
+                parent: "lane#7".into(),
+                ordinal: 2,
+                offset: 500,
+                value: "next".into(),
+                object_id: Some(12),
+            },
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+
+    assert_eq!(
+        histories[0].features[0].properties.get("EndCondition"),
+        Some(&"ThroughAll".to_string())
+    );
+}
+
+#[test]
 fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
     let mut payload = vec![0; 240];
     payload[..2].copy_from_slice(&[0x95, 0x81]);

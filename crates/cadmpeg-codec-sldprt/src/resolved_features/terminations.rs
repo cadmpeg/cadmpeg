@@ -111,14 +111,30 @@ pub(crate) fn enrich_history_extrusion_terminations(
             if !is_extrusion_end_spec_owner(feature) {
                 continue;
             }
+            let is_cosmetic_thread = |candidate: &crate::records::Feature| {
+                native_object_class(candidate.input_class.as_deref().unwrap_or_default()).kind
+                    == NativeClassKind::CosmeticThread
+            };
             let has_depth =
                 feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1");
             let Ok(start) = usize::try_from(*start) else {
                 continue;
             };
+            // Cosmetic-thread children may be serialized between an extrusion
+            // object and its end spec. Other following objects still delimit
+            // the scan so a later feature cannot supply the termination.
             let end_spec_end = objects[index + 1..]
                 .iter()
-                .find(|(_, next_id)| next_id != feature_id)
+                .find(|(_, next_id)| {
+                    if next_id == feature_id {
+                        return false;
+                    }
+                    !histories
+                        .iter()
+                        .flat_map(|history| &history.features)
+                        .find(|candidate| candidate.id == *next_id)
+                        .is_some_and(is_cosmetic_thread)
+                })
                 .and_then(|object| usize::try_from(object.0).ok())
                 .unwrap_or(lane.native_payload.len());
             let mut end_index = index + 1;
@@ -133,7 +149,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     .find(|feature| feature.id == *next_id)
                     .is_some_and(|feature| {
                         let class = feature.input_class.as_deref().unwrap_or_default();
-                        is_profile_feature_object(feature) || class == "moCosmeticThread_c"
+                        is_profile_feature_object(feature)
+                            || native_object_class(class).kind == NativeClassKind::CosmeticThread
                     });
                 if !skip {
                     break;
