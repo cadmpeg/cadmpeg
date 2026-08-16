@@ -2529,6 +2529,12 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
         &mut annotations,
     );
+    crate::history::bind_configuration_topology_selections(
+        &mut ir,
+        &histories,
+        &native.feature_input_lanes,
+        &face_identities,
+    );
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         &mut ir.model.features,

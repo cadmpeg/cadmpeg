@@ -348,6 +348,65 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     }
 }
 
+/// Resolve topology operands in configuration-local feature snapshots.
+pub(crate) fn bind_configuration_topology_selections(
+    ir: &mut cadmpeg_ir::CadIr,
+    histories: &[FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    face_identities: &[(String, u32, u32)],
+) {
+    for (configuration_index, lane_index) in
+        configuration_lane_assignments(&ir.model.configurations, lanes)
+    {
+        if !matches!(
+            ir.model.configurations[configuration_index].bodies,
+            ConfigurationBodies::Resolved(_)
+        ) {
+            continue;
+        }
+        let scoped_lanes = &lanes[lane_index..=lane_index];
+        let mut features = {
+            let states = &ir.model.configurations[configuration_index].feature_states;
+            ir.model
+                .features
+                .iter()
+                .filter_map(|feature| {
+                    let state = states.get(&feature.id)?;
+                    let mut feature = feature.clone();
+                    feature.suppressed = Some(state.suppressed);
+                    feature.dependencies.clone_from(&state.dependencies);
+                    feature.outputs.clone_from(&state.outputs);
+                    feature.definition.clone_from(&state.definition);
+                    Some(feature)
+                })
+                .collect::<Vec<_>>()
+        };
+        let topology_selection_inputs = crate::history::TopologySelectionInputs {
+            bodies: &ir.model.bodies,
+            faces: &ir.model.faces,
+            surfaces: &ir.model.surfaces,
+            edges: &ir.model.edges,
+            curves: &ir.model.curves,
+            lanes: scoped_lanes,
+            face_identities,
+        };
+        crate::history::bind_topology_selections(
+            &mut features,
+            histories,
+            &topology_selection_inputs,
+        );
+        let states = &mut ir.model.configurations[configuration_index].feature_states;
+        for feature in features {
+            let Some(state) = states.get_mut(&feature.id) else {
+                continue;
+            };
+            state.definition = feature.definition;
+            state.dependencies = feature.dependencies;
+            state.outputs = feature.outputs;
+        }
+    }
+}
+
 pub(crate) fn restore_configuration_tree_node_definitions(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
