@@ -1212,20 +1212,30 @@ does not fall back to another pcurve; the coedge remains without a pcurve and
 reports a loss. For a non-seam edge with exactly one same-surface candidate,
 the reader forms an endpoint witness in model space. A finite declared trim
 is evaluated at both directed endpoints, with the reversed pairing also
-accepted. If either pairing has a maximum residual greater than the larger of
-the STEP coincidence tolerance and the document linear tolerance, the reader
-may run a bounded one-dimensional search on the mapped pcurve. The search
-evaluates each returned parameter again; only two finite parameters whose
-evaluated residuals meet that bound admit the optional relation. This is an
-existential CADIR witness, not a global nearest-point proof. A stale finite
-trim therefore keeps the recovered interval only on the coedge use, and an
-unbounded candidate uses the same witness rule. Search failure or a residual
-outside the bound omits the optional relation and reports
-`topology.pcurve-endpoints-discontinuous`; the source pcurve remains unchanged.
-When two or more same-surface candidates exist, Part 42 supplies no selector
-for the oriented edge. CADIR leaves the optional relation detached and reports
-`topology.pcurve-association-ambiguous`; it does not compare mapped loci,
-choose a STEP identity, or use list order. An unowned candidate and its
+accepted. The lower of the two maximum residuals is the declared-trim score.
+When that score is greater than the STEP coincidence tolerance, the reader
+runs a bounded one-dimensional search on the mapped pcurve. A finite pcurve
+search starts with zero. A finite pcurve domain contributes its endpoints,
+midpoint, 64 equal subdivisions, NURBS and trim breakpoints, and the midpoint
+of every resulting interval. Angular carriers contribute the three
+quarter-turn seeds. A line contributes seeds from each available surface
+period and surface-domain boundary. Every seed gets at most 32 Newton steps,
+with at most 12 half-step backtracks per step.
+The reader evaluates every returned parameter again and takes the lowest
+residual over the finite seed results. Only two finite parameters whose
+maximum evaluated residual is at most
+`max(STEP coincidence tolerance, document linear tolerance)` admit the
+optional relation. This is an existential CADIR witness, not a global
+nearest-point proof. A finite seed set can miss a lower residual between its
+basins, and no finite endpoint witness proves complete model-space locus
+equivalence. A stale finite trim therefore keeps the recovered interval only
+on the coedge use, and an unbounded candidate uses the same witness rule.
+Search failure or a residual outside the bound omits the optional relation and
+reports `topology.pcurve-endpoints-discontinuous`; the source pcurve remains
+unchanged. When two or more same-surface candidates exist, Part 42 supplies no
+selector for the oriented edge. CADIR leaves every optional relation detached
+and reports `topology.pcurve-association-ambiguous`; it does not compare mapped
+loci, choose a STEP identity, or use list order. An unowned candidate and its
 dependency closure follow the opaque-retention rule.
 
 ISO 10303-42 defines `SURFACE_CURVE.associated_geometry` as a list of one or

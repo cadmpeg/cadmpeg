@@ -3,6 +3,7 @@ use super::super::*;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::eval::pcurve_uv;
 use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
@@ -104,6 +105,75 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
 }
 
 #[test]
+fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
+    let surface_id = SurfaceId("step:data:surface#bounded-search-witness".into());
+    let surface_geometry = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface_geometry.clone(),
+        source_object: None,
+    });
+
+    // The polar harmonic has a stationary chart tangent at seed 0. Its
+    // exact point at pi is outside the default seed set, so the bounded
+    // Newton loop cannot prove that the seed result is the global minimum.
+    let pcurve = PcurveGeometry::PolarHarmonic {
+        radial_center: Point2::new(2.0, -1.0),
+        radial_cos: Point2::new(0.0, 1.0),
+        radial_sin: Point2::new(1.0, 0.0),
+        axial_origin: 0.0,
+        axial_cos: 0.0,
+        axial_sin: 0.0,
+    };
+    let exact_parameter = std::f64::consts::PI;
+    let exact_uv = pcurve_uv(&pcurve, exact_parameter).expect("witness pcurve is evaluable");
+    let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
+    let index = ModelIndex::new(&ir);
+    let seeds = pcurve_selection_seeds(&index, &surface_id, &pcurve, &surface_geometry);
+    assert_eq!(seeds, vec![0.0]);
+    let bounded = pcurve_surface_closest(&index, &surface_id, &pcurve, target, &seeds)
+        .expect("bounded search returns an evaluated witness");
+    assert!(bounded.0 > cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
+    let exact = pcurve_uv(&pcurve, exact_parameter).expect("exact point remains evaluable");
+    assert!(Point3::new(exact.u, exact.v, 0.0).distance(target) <= f64::EPSILON);
+}
+
+#[test]
+fn stale_trim_recovery_is_retained_above_step_tolerance() {
+    let source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));",
+        "#70=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'distance_accuracy_value','');\n#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#70)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));",
+    )
+    .replace("#53=VECTOR('',#52,1.);", "#53=VECTOR('',#52,10.);")
+    .replace(
+        "#54=LINE('',#51,#53);",
+        "#54=TRIMMED_CURVE('',#71,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.005)),.T.,.PARAMETER.);\n#71=LINE('',#51,#53);",
+    );
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode stale trim with document tolerance");
+    assert!((decoded.ir().tolerances.linear - 0.1).abs() <= f64::EPSILON);
+    let use_ = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| &coedge.pcurves)
+        .find(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+        .expect("stale trimmed pcurve use");
+    assert_eq!(use_.parameter_range, Some([0.0, 1.0]));
+}
+
+#[test]
 fn competing_same_surface_pcurves_remain_detached() {
     let decoded = crate::StepCodec::default()
         .decode(
@@ -139,6 +209,61 @@ fn competing_same_surface_pcurves_remain_detached() {
         .any(|record| record.id.0 == "step:data:pcurve#69"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+fn assert_tp09_competing_pcurves_are_order_independent(source: &[u8]) {
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode competing pcurve witness");
+
+    assert!(decoded.ir().model.pcurves.is_empty());
+    let edge_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#19")
+        .expect("competing pcurve edge use");
+    assert!(edge_use.pcurves.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("curve #57")
+            && loss.message.contains("2 pcurves")
+            && loss.message.contains("surface #28")
+    }));
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#56"));
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#69"));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn reordered_competing_same_surface_pcurves_remain_detached() {
+    assert_tp09_competing_pcurves_are_order_independent(include_bytes!(
+        "data/tp09_competing_pcurves_reordered.p21"
+    ));
+}
+
+#[test]
+fn near_tied_competing_same_surface_pcurves_remain_detached() {
+    assert_tp09_competing_pcurves_are_order_independent(include_bytes!(
+        "data/tp09_competing_pcurves_near_tied.p21"
+    ));
+}
+
+#[test]
+fn crossing_competing_same_surface_pcurves_remain_detached() {
+    assert_tp09_competing_pcurves_are_order_independent(include_bytes!(
+        "data/tp09_competing_pcurves_crossing.p21"
+    ));
 }
 
 #[test]

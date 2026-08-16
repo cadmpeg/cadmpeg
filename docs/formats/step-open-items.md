@@ -114,16 +114,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Topology and pcurve decisions
 
-### TP-09. Bounded pcurve admission
-
-**Question.** What proves endpoint fit and model-space locus equivalence for competing pcurve candidates?
-
-**Known.** The selector admits one same-surface candidate after a finite endpoint check or bounded seeded search (`crates/cadmpeg-codec-step/src/reader/topology.rs:3061-3175`). The specification calls this an existential endpoint witness, not a global nearest-point proof (`step.md` §8 "CADIR decision: a typed `SEAM_EDGE`").
-
-**Need.** Define the proof or accepted approximation for endpoint fit and whole-locus equivalence, with reordered, near-tied, crossing, and missed-minimum witnesses.
-
-**Conflict.** A finite endpoint witness can admit a candidate without proving the complete model-space locus or proving that a bounded search found the required fit.
-
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation

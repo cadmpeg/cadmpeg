@@ -3124,7 +3124,7 @@ fn select_associated_pcurve(
     let parameter_range = pcurve_declared_parameter_range(geometry).and_then(|range| {
         let declared =
             pcurve_declared_endpoint_fit(&index, &surface_id, geometry, range, start, end)?;
-        (declared.is_finite() && declared > bound)
+        (declared.is_finite() && declared > COINCIDENCE_TOLERANCE)
             .then_some([endpoint.start_parameter, endpoint.end_parameter])
     });
     drop(index);
