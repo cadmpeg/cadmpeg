@@ -309,6 +309,98 @@ fn decode_reports_missing_declared_solver_variable_rows() {
 }
 
 #[test]
+fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
+    let line = |point_ids| crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: Some(0),
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 10,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![line([1, 2])],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let segments = definition
+        .segments
+        .as_ref()
+        .expect("segments")
+        .rows
+        .iter()
+        .collect::<Vec<_>>();
+    let valid = BTreeMap::from([(1, [Some(2.0), Some(0.0)]), (2, [Some(2.0), Some(3.0)])]);
+    assert_eq!(
+        crate::decode::sketch::section_linear_distance_coordinate(
+            &definition,
+            &segments,
+            1,
+            2,
+            &valid,
+            &[],
+            &BTreeSet::new(),
+        ),
+        Some(1)
+    );
+    let conflicting = BTreeMap::from([(1, [Some(2.0), Some(0.0)]), (2, [Some(4.0), Some(3.0)])]);
+    assert_eq!(
+        crate::decode::sketch::section_linear_distance_coordinate(
+            &definition,
+            &segments,
+            1,
+            2,
+            &conflicting,
+            &[],
+            &BTreeSet::new(),
+        ),
+        None
+    );
+    assert_eq!(
+        crate::decode::sketch::section_linear_distance_coordinate(
+            &definition,
+            &segments,
+            1,
+            2,
+            &BTreeMap::new(),
+            &[(1, [2.0, 0.0]), (2, [4.0, 3.0])],
+            &BTreeSet::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions() {
     let definition = crate::feature::FeatureDefinition {
         id: 40,

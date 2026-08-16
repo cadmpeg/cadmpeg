@@ -29,6 +29,8 @@ use super::skamp::{
     section_skamp_selected_point, SectionPointSource, SectionSymmetryAxis,
 };
 
+const EPS_SECTION_COORDINATE: f64 = 1e-9;
+
 pub(crate) fn resolved_section_coordinates(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, [Option<f64>; 2]> {
@@ -551,8 +553,50 @@ pub(crate) fn section_linear_distance_coordinate(
             segment.point_ids == [first, second] || segment.point_ids == [second, first]
         })
         .collect::<Vec<_>>();
+    let point_coordinate = |point_id: u32, coordinate: usize| -> Result<Option<f64>, ()> {
+        if ambiguous_point_ids.contains(&point_id) {
+            return Err(());
+        }
+        let mut values = Vec::new();
+        if let Some(value) = coordinates
+            .get(&point_id)
+            .and_then(|point| point[coordinate])
+        {
+            value.is_finite().then_some(()).ok_or(())?;
+            values.push(value);
+        }
+        for &(_, point) in saved_segment_points
+            .iter()
+            .filter(|(saved_point_id, _)| *saved_point_id == point_id)
+        {
+            let value = point[coordinate];
+            value.is_finite().then_some(()).ok_or(())?;
+            values.push(value);
+        }
+        let Some(first) = values.first().copied() else {
+            return Ok(None);
+        };
+        let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+        values
+            .iter()
+            .all(|value| (*value - first).abs() <= EPS_SECTION_COORDINATE * scale)
+            .then_some(Some(first))
+            .ok_or(())
+    };
     if let [segment] = matching_segments.as_slice() {
         if let Some(fixed_coordinate) = section_line_fixed_coordinate(definition, segment) {
+            let Ok(first_coordinate) = point_coordinate(first, fixed_coordinate) else {
+                return None;
+            };
+            let Ok(second_coordinate) = point_coordinate(second, fixed_coordinate) else {
+                return None;
+            };
+            if let (Some(first), Some(second)) = (first_coordinate, second_coordinate) {
+                let scale = first.abs().max(second.abs()).max(1.0);
+                if (first - second).abs() > EPS_SECTION_COORDINATE * scale {
+                    return None;
+                }
+            }
             return 1usize.checked_sub(fixed_coordinate);
         }
     }
@@ -585,38 +629,11 @@ pub(crate) fn section_linear_distance_coordinate(
     };
     has_unique_incident_entity(first).then_some(())?;
     has_unique_incident_entity(second).then_some(())?;
-    let point_coordinate = |point_id: u32, coordinate: usize| -> Option<f64> {
-        if ambiguous_point_ids.contains(&point_id) {
-            return None;
-        }
-        let mut values = Vec::new();
-        if let Some(value) = coordinates
-            .get(&point_id)
-            .and_then(|point| point[coordinate])
-        {
-            value.is_finite().then_some(())?;
-            values.push(value);
-        }
-        for &(_, point) in saved_segment_points
-            .iter()
-            .filter(|(saved_point_id, _)| *saved_point_id == point_id)
-        {
-            let value = point[coordinate];
-            value.is_finite().then_some(())?;
-            values.push(value);
-        }
-        let first = values.first().copied()?;
-        let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-        values
-            .iter()
-            .all(|value| (*value - first).abs() <= 1e-9 * scale)
-            .then_some(first)
-    };
     let equal_coordinate = |coordinate: usize| -> Option<bool> {
-        let first = point_coordinate(first, coordinate)?;
-        let second = point_coordinate(second, coordinate)?;
+        let first = point_coordinate(first, coordinate).ok().flatten()?;
+        let second = point_coordinate(second, coordinate).ok().flatten()?;
         let scale = first.abs().max(second.abs()).max(1.0);
-        Some((first - second).abs() <= 1e-9 * scale)
+        Some((first - second).abs() <= EPS_SECTION_COORDINATE * scale)
     };
     let equal_u = equal_coordinate(0);
     let equal_v = equal_coordinate(1);
