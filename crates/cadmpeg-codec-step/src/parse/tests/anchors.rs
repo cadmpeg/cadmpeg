@@ -51,6 +51,29 @@ fn parser_accepts_external_instance_references_in_edition_three() {
 }
 
 #[test]
+fn standalone_relative_reference_has_no_implicit_transport_base() {
+    let source = include_bytes!("data/er01_standalone_relative_uri.p21");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("standalone URI witness");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.references[0].uri, "parts/child.p21#target");
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(10),
+            crate::parse::Value::Reference(2),
+        ]
+    );
+    assert_eq!(
+        exchange.records[&4].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(3),
+            crate::parse::Value::String(b"parts/document.p21#target".to_vec()),
+        ]
+    );
+}
+
+#[test]
 fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#2;ENDSEC;REFERENCE;#10=<#shape>;ENDSEC;DATA;#1=ITEM(#10);#2=TARGET();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("local entity reference");

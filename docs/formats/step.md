@@ -372,6 +372,30 @@ an ANCHOR that supplies an entity for a `#id` occurrence or a value for an
 failed or cyclic resolution produces `$`. A resource path or UUID that cannot
 be obtained remains an external dependency until the caller supplies resource
 access. External occurrence names do not create local DATA entity identities.
+ISO 10303-21:2016 §6.5.2 requires the resource token to contain an IETF URI;
+§10.2.1 makes a URI without a fragment resolve to `$`, and §§10.2.2–10.2.7
+define UUID, local-anchor, and legacy numeric-fragment handling.
+
+CADIR decision: a standalone clear-text input has no implicit transport base
+URI. The codec does not derive one from `FILE_NAME.name`, any other header
+field, an application `DOCUMENT_REFERENCE` or `EXTERNAL_SOURCE` string, or
+the process working directory. A fragment-only non-UUID is resolved against
+the current exchange's ANCHOR table. A URI with a nonempty path, query, or
+scheme is retained as the exact external dependency until an external resource
+resolver supplies it; the codec does not open a local path or normalize that
+URI against the host filesystem. Application document-reference source fields
+are schema strings and remain source metadata, not Part 21 resource tokens.
+
+For a ZIP container, the root exchange has the archive member
+`ISO-10303.p21` as its base directory entry. Part 21:2016 Annex A.4 requires
+relative addresses to be interpreted against the directory of the referencing
+member and forbids an address outside the archive root. The codec normalizes
+`.` components, processes `..` only while a parent member remains, rejects an
+absolute path, an empty path component, or traversal above the root, and treats
+a URI scheme or network-path reference as external. It checks the resulting
+member name against the archive central directory. Root ANCHOR forwarding is
+resolved before this member check; subsidiary members remain resources and are
+not read into the root graph.
 For an edition-3 ZIP, the Part 21 schema population includes all DATA entities
 in the exchange and the schema populations of REFERENCE targets transitively.
 Each entity occurs at most once. An unresolved target contributes no entities.

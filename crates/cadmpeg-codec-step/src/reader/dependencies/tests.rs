@@ -59,6 +59,36 @@ pub(crate) fn decode_reports_data_section_external_dependencies() {
 }
 
 #[test]
+fn standalone_relative_uri_is_retained_without_filesystem_resolution() {
+    let bytes = include_bytes!("../../parse/tests/data/er01_standalone_relative_uri.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode standalone URI witness without a transport base");
+
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external reference #10 -> parts/child.p21#target".into()));
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external document doc-id (doc-name) from parts/document.p21#target".into()));
+
+    let summary = StepCodec::default()
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("inspect standalone URI witness");
+    let references = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "REFERENCE")
+        .expect("reference inventory");
+    assert_eq!(
+        references.attributes["external_uris"],
+        "parts/child.p21#target,#local_target"
+    );
+}
+
+#[test]
 fn complex_document_dependency_records_use_inherited_fields() {
     let result = decode_inline(
         "#1=DOCUMENT_TYPE('digital');
