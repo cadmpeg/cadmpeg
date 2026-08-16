@@ -363,7 +363,15 @@ accessors.
 
 Length values convert to millimetres. Plane-angle values remain radians. SI
 prefixes apply before conversion-based-unit factors. Conversion-based units
-form an acyclic chain that ends in a dimensional base unit. Representation
+form an acyclic chain that ends in a dimensional base unit. ISO 10303-43
+defines uncertainty at three scopes. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`
+applies to representations that share its context,
+`UNCERTAINTY_ASSIGNED_REPRESENTATION` applies to the items collected by one
+representation, and `qualified_representation_item` from ISO 10303-45 applies
+to one item. The precedence is item uncertainty, then representation
+uncertainty, then global-context uncertainty. An
+`UNCERTAINTY_MEASURE_WITH_UNIT` applies only to items using the measure type
+of its value component, and its numeric value is positive. Representation
 uncertainty is a linear tolerance measured in the representation's length
 unit. Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the
 length and plane-angle scales for that representation and its reachable
@@ -401,10 +409,21 @@ not STEP unit ownership. It does not identify or select a unit occurrence,
 and entity-id or source order never selects the scale. Conflicting contexts,
 unresolved units, or a non-unique set leave unscoped values in source numeric
 units and produce a document-unit unresolved error.
-`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure whose
-unit resolves to a length unit. When several length measures are present, the
-one named `distance_accuracy_value` is selected; otherwise a unique length
-measure is required. An ambiguous set does not define a linear tolerance.
+CADIR decision: `Tolerances.linear` stores one document-wide baseline. It is
+projected only from resolvable positive length measures in
+`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`. A candidate whose `name` is
+`distance_accuracy_value` (case-insensitive) is preferred when exactly one
+such candidate exists; this name is a CADIR convention, not a STEP precedence
+rule. Otherwise exactly one resolvable length candidate is required. Angular
+measures do not compete with length measures. Multiple candidates without a
+unique named candidate leave the default linear tolerance and produce
+`geometry.uncertainty-length-ambiguous`; no resolvable length candidate with
+an unresolved candidate produces `geometry.uncertainty-length-unresolved`.
+An empty candidate set leaves the default without a selection. The optional
+description does not participate in name selection, and source order never
+selects a candidate. Representation-scoped and qualified-item uncertainties
+remain retained as source-native records because one document baseline cannot
+encode their scopes; they do not replace `Tolerances.linear`.
 Geometric-consistency checks use the selected document tolerance as their
 baseline. Entity and solved-carrier tolerances can widen that baseline.
 

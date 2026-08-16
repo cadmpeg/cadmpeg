@@ -3332,9 +3332,13 @@ fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option
                     unresolved_measure_count += 1;
                     continue;
                 }
-                let named_distance_accuracy = record_values(measure)
-                    .filter_map(string_value)
-                    .any(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
+                // The CADIR convention applies to the name attribute, not
+                // the optional description attribute.
+                let named_distance_accuracy = measure
+                    .partial("UNCERTAINTY_MEASURE_WITH_UNIT")
+                    .and_then(|partial| partial.parameters.get(2))
+                    .and_then(string_value)
+                    .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
                 measures.push((named_distance_accuracy, result));
             } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
                 unresolved_measure_count += 1;

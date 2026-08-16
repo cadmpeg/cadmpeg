@@ -33,6 +33,8 @@ use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
 
+const EPS_LINEAR_UNCERTAINTY: f64 = 1.0e-12;
+
 #[test]
 fn unresolvable_length_unit_reports_an_error_loss() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unresolvable length unit'),'2;1');FILE_NAME('unit','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#4=CARTESIAN_POINT('',(1.,2.,3.));#5=SHAPE_REPRESENTATION('',(#4),#3);ENDSEC;END-ISO-10303-21;";
@@ -438,6 +440,73 @@ fn decode_prefers_named_length_uncertainty_when_several_lengths_are_present() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind() }));
+}
+
+#[test]
+fn decode_named_uncertainty_selection_is_order_independent() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('ordered uncertainty'),'2;1');FILE_NAME('ordered-uncertainty','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'manufacturing_accuracy','');#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2,#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('model','3D'));#6=CARTESIAN_POINT('point',(1.,0.,0.));#7=SHAPE_REPRESENTATION('construction points',(#6),#5);ENDSEC;END-ISO-10303-21;";
+    for source in [
+        source.to_owned(),
+        source.replace(
+            "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2,#3))",
+            "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3,#2))",
+        ),
+    ] {
+        let result = StepCodec::default()
+            .decode(
+                &mut Cursor::new(source.as_bytes()),
+                &DecodeOptions::default(),
+            )
+            .expect("decode ordered uncertainty");
+        assert!((result.ir().tolerances.linear - 0.2).abs() < EPS_LINEAR_UNCERTAINTY);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| { loss.code != StepLossCode::UncertaintyLengthAmbiguous.kind() }));
+    }
+}
+
+#[test]
+fn decode_uses_uncertainty_name_not_description() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('uncertainty labels'),'2;1');FILE_NAME('uncertainty-labels','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'manufacturing_accuracy','distance_accuracy_value');#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'other_accuracy','');#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2,#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('model','3D'));#6=CARTESIAN_POINT('point',(1.,0.,0.));#7=SHAPE_REPRESENTATION('construction points',(#6),#5);ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode uncertainty labels");
+
+    assert_eq!(
+        result.ir().tolerances.linear,
+        cadmpeg_ir::units::Tolerances::default().linear
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind()
+            && loss.severity == cadmpeg_ir::Severity::Warning
+    }));
+}
+
+#[test]
+fn decode_keeps_representation_uncertainty_scoped_to_native_source() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('scoped uncertainty'),'2;1');FILE_NAME('scoped-uncertainty','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'distance_accuracy_value','global');#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#5=CARTESIAN_POINT('point',(1.,0.,0.));#6=SHAPE_REPRESENTATION('global',(#5),#4);#7=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'representation_accuracy','scoped');#8=(REPRESENTATION('scoped',(#5),#4) UNCERTAINTY_ASSIGNED_REPRESENTATION((#7)));ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode scoped uncertainty");
+
+    assert!((result.ir().tolerances.linear - 0.1).abs() < EPS_LINEAR_UNCERTAINTY);
+    assert!(result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| {
+            record.id.0.ends_with("#8")
+                && record.id.0.contains("uncertainty_assigned_representation")
+        }));
 }
 
 #[test]
