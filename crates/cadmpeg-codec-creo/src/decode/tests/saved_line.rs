@@ -515,6 +515,31 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("relations")
         .skamps[0]
+        .items = vec![
+        crate::feature::FeatureSkampItem {
+            entity_id: 99,
+            sense: 0,
+        },
+        crate::feature::FeatureSkampItem {
+            entity_id: 12,
+            sense: 2,
+        },
+    ];
+    solver_families
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .status = 0;
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        Some(SectionEntityIncidenceFamily::Point)
+    );
+    solver_families
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
         .items[0]
         .sense = 4;
     assert_eq!(
@@ -607,7 +632,7 @@ fn saved_line_joins_through_order_table() {
     }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
-        None
+        Some(SectionEntityIncidenceFamily::Point)
     );
     solver_families
         .relations

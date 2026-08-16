@@ -546,7 +546,6 @@ pub(in super::super) fn solver_only_section_entity_family(
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
         .flat_map(|relations| &relations.skamps)
-        .filter(|skamp| section_skamp_active(skamp.status))
     {
         if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
             if first.entity_id == entity_id
