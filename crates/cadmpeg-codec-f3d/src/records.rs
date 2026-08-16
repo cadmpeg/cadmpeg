@@ -2209,16 +2209,73 @@ pub struct DesignHoleConstruction {
     pub reference_type: u32,
     /// Byte offset of `reference_type`.
     pub reference_type_offset: u64,
-    /// Tangent-point data carried by the point-data base level.
-    pub tangent_point_data: [f64; 3],
-    /// Serialized byte immediately before the tangent-point data.
-    pub tangent_point_data_prefix: u8,
-    /// Byte offset of the first tangent-point component.
-    pub tangent_point_data_offset: u64,
+    /// Tangent-point data carried by the version-four point-data base level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangent_point_data: Option<[f64; 3]>,
+    /// Serialized byte immediately before the version-four tangent-point data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangent_point_data_prefix: Option<u8>,
+    /// Byte offset of the first version-four tangent-point component.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangent_point_data_offset: Option<u64>,
     /// Record indices of the counted input-reference run.
     pub input_record_indices: Vec<u32>,
     /// Byte offsets of the input-reference targets.
     pub input_record_offsets: Vec<u64>,
+    /// Direct persistent face selection carried by the Hole scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_selection: Option<DesignHoleFaceSelection>,
+}
+
+/// Direct persistent face selection carried by a `Hole` scope.
+///
+/// Hole selections are scope references rather than construction-group
+/// members. Their envelope is the same persistent entity-selection grammar
+/// used by grouped operands, but the scope owns the selection directly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignHoleFaceSelection {
+    /// Indexed record carrying the persistent selection envelope.
+    pub record_index: u32,
+    /// Byte offset of the selection envelope header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: String,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: String,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Nested indexed record carrying the persistent identity.
+    pub identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    pub identity_record_offset: u64,
+    /// Primary persistent identity of the selected face.
+    pub primary_identity: u64,
+    /// Byte offset of the primary persistent identity.
+    pub primary_identity_offset: u64,
+    /// Optional secondary persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_identity: Option<u64>,
+    /// Byte offset of the optional secondary persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_identity_offset: Option<u64>,
+    /// Optional secondary identity of a selected Sketch curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_secondary_identity: Option<u64>,
+    /// Byte offset of the optional Sketch-curve secondary identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_secondary_identity_offset: Option<u64>,
+    /// History-qualified face proofs for the primary identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
+    /// Indexed record immediately following the selection envelope.
+    pub next_record_index: u32,
+    /// Byte offset of the following indexed record.
+    pub next_byte_offset: u64,
 }
 
 /// Indexed sketch or construction-operation record that scopes parameters.

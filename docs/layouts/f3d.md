@@ -8,6 +8,7 @@ Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
 Covers the fixed Design-segment headers, parameter-owner prefix, Draft scope frames, and body-map prefix, the named solid-primitive prologue,
+the versioned Hole point-data and direct-selection prefixes,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
 feature scope, current and shifted Extrude operation and extent sections,
 wrapper, and Scene records,
@@ -339,6 +340,71 @@ Unstated regions:
 - `11..171` (160 B): The variable Draft prologue precedes the reserved zero and fixed reference table.
 - `267..294` (27 B): The Draft frame carries an unassigned span before the preceding-history state.
 - `298..340` (42 B): The fixed frame tail before the paired indexed header is not assigned.
+
+## `design_hole_point_data_v1_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 97 B
+
+Offsets are relative to the version-one Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the point-data primary indexed header |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes at offsets `11` through `18` |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | a leading-block presence byte at offset `19` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | a property-block presence byte at offset `20` |
+| 21 | 4 | `bounding_box_index` | `u32` | little | spec | a bounding-box index at offset `21` |
+| 25 | 24 | `position` | `f64[3]` | little | spec | The position triple is at offset `25` |
+| 49 | 24 | `direction` | `f64[3]` | little | spec | the model-space direction triple at offset `49` |
+| 73 | 16 | `point_parameters` | `f64[2]` | little | spec | the two construction parameters at offset `73` |
+| 89 | 4 | `reference_type` | `u32` | little | spec | `refType` at offset `89` |
+| 93 | 4 | `input_count` | `u32` | little | spec | the counted input-reference count at offset `93` |
+
+## `design_hole_point_data_v4_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 122 B
+
+Offsets are relative to the version-four Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the point-data primary indexed header |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes at offsets `11` through `18` |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | a leading-block presence byte at offset `19` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | a property-block presence byte at offset `20` |
+| 21 | 4 | `bounding_box_index` | `u32` | little | spec | a bounding-box index at offset `21` |
+| 25 | 24 | `position` | `f64[3]` | little | spec | The position triple is at offset `25` |
+| 49 | 24 | `direction` | `f64[3]` | little | spec | the model-space direction triple at offset `49` |
+| 73 | 16 | `point_parameters` | `f64[2]` | little | spec | the two construction parameters at offset `73` |
+| 89 | 4 | `reference_type` | `u32` | little | spec | `refType` at offset `89` |
+| 93 | 1 | `tangent_prefix` | `u8` | little | spec | a tangent-data prefix byte at offset `93` |
+| 94 | 24 | `tangent_point_data` | `f64[3]` | little | spec | a tangent triple at offset `94` |
+| 118 | 4 | `input_count` | `u32` | little | spec | the counted input-reference count at offset `118` |
+
+## `design_hole_direct_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+Fixed prefix through the variable asset UUID. The context UUID and nested indexed records follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The direct support-face selection has type GUID |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets `11` through `20` |
+| 21 | 1 | `nested_selection_marker` | `u8` | little | spec | `u8 1` at offset `21` · value `1` |
+| 22 | 4 | `nested_record_index` | `u32` | little | spec | nested record index at offset `22` |
+| 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes at offsets `26` through `31` |
+| 32 | 4 | `asset_presence` | `u32` | little | spec | `u32 1` at offset `32` · value `1` |
+| 36 | 4 | `asset_uuid_code_unit_count` | `u32` | little | spec | the asset UUID code-unit count at offset `36` |
 
 ## `scale_modern_operation_prefix`
 

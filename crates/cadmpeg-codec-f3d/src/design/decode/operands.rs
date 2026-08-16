@@ -562,6 +562,7 @@ pub fn decode_face_operands(
         let is_delete_face_operand =
             matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace");
         let is_thread_face = scope.kind == "Thread" && group.role == 0x0000_0010_0000_0000;
+        let is_hole_face = scope.kind == "Hole" && group.role == 0x0000_0004_0000_0000;
         let is_draft_operand =
             design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
         let is_surface_offset_operand = design_feature_family(&scope.kind)
@@ -579,6 +580,7 @@ pub fn decode_face_operands(
             && !is_split_face_operand
             && !is_delete_face_operand
             && !is_thread_face
+            && !is_hole_face
             && !is_draft_operand
             && !is_surface_offset_operand
         {
@@ -930,6 +932,7 @@ pub fn decode_construction_operand_groups(
             || scope.kind == "SurfaceDeleteFace"
             || scope.kind == "Decal"
             || scope.kind == "Thread"
+            || scope.kind == "Hole"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
@@ -2448,6 +2451,13 @@ pub fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
+        if scopes.iter().any(|scope| {
+            scope.record_index == group.scope_record_index
+                && native_stream(&scope.id) == Some(stream)
+                && scope.kind == "Hole"
+        }) {
+            continue;
+        }
         let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };

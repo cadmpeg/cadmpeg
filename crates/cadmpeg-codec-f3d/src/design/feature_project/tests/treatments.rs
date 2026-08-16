@@ -139,11 +139,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         point_parameter_offsets: [83, 91],
         reference_type: 19,
         reference_type_offset: 99,
-        tangent_point_data: [-1.0, -1.0, -1.0],
-        tangent_point_data_prefix: 0,
-        tangent_point_data_offset: 104,
+        tangent_point_data: Some([-1.0, -1.0, -1.0]),
+        tangent_point_data_prefix: Some(0),
+        tangent_point_data_offset: Some(104),
         input_record_indices: vec![378],
         input_record_offsets: vec![129],
+        face_selection: None,
     });
     scopes[2].reference_members = vec![0, 363, 0, 370, 0, 378];
     let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {

@@ -418,6 +418,104 @@ pub(crate) mod design_draft_scope_class448 {
     pub(crate) const PREVIOUS_HISTORY_STATE: usize = 294;
 }
 
+/// Byte offsets for the `design_hole_point_data_v1_prefix` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the version-one Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+/// ```
+pub(crate) mod design_hole_point_data_v1_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 97;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE: usize = 19;
+    /// Offset of `property_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_BLOCK_PRESENCE: usize = 20;
+    /// Offset of `bounding_box_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BOUNDING_BOX_INDEX: usize = 21;
+    /// Offset of `position` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const POSITION: usize = 25;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 49;
+    /// Offset of `point_parameters` (`f64[2]`, little-endian). Spec §3.1.
+    pub(crate) const POINT_PARAMETERS: usize = 73;
+    /// Offset of `reference_type` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_TYPE: usize = 89;
+    /// Offset of `input_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const INPUT_COUNT: usize = 93;
+}
+
+/// Byte offsets for the `design_hole_point_data_v4_prefix` record.
+///
+/// Spec §3.1. Record length 122 B.
+///
+/// ```text
+/// Offsets are relative to the version-four Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix.
+/// ```
+pub(crate) mod design_hole_point_data_v4_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 122;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE: usize = 19;
+    /// Offset of `property_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_BLOCK_PRESENCE: usize = 20;
+    /// Offset of `bounding_box_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BOUNDING_BOX_INDEX: usize = 21;
+    /// Offset of `position` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const POSITION: usize = 25;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 49;
+    /// Offset of `point_parameters` (`f64[2]`, little-endian). Spec §3.1.
+    pub(crate) const POINT_PARAMETERS: usize = 73;
+    /// Offset of `reference_type` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_TYPE: usize = 89;
+    /// Offset of `tangent_prefix` (`u8`). Spec §3.1.
+    pub(crate) const TANGENT_PREFIX: usize = 93;
+    /// Offset of `tangent_point_data` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const TANGENT_POINT_DATA: usize = 94;
+    /// Offset of `input_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const INPUT_COUNT: usize = 118;
+}
+
+/// Byte offsets for the `design_hole_direct_selection_prefix` record.
+///
+/// Spec §3.1. Record length 40 B.
+///
+/// ```text
+/// Fixed prefix through the variable asset UUID. The context UUID and nested indexed records follow.
+/// ```
+pub(crate) mod design_hole_direct_selection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 40;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `nested_selection_marker` (`u8`). Spec §3.1.
+    pub(crate) const NESTED_SELECTION_MARKER: usize = 21;
+    /// Stated value of `nested_selection_marker` (`u8`). Spec §3.1.
+    pub(crate) const NESTED_SELECTION_MARKER_VALUE: u8 = 1;
+    /// Offset of `nested_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NESTED_RECORD_INDEX: usize = 22;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 26;
+    /// Offset of `asset_presence` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ASSET_PRESENCE: usize = 32;
+    /// Stated value of `asset_presence` (`u32`). Spec §3.1.
+    pub(crate) const ASSET_PRESENCE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `asset_uuid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ASSET_UUID_CODE_UNIT_COUNT: usize = 36;
+}
+
 /// Byte offsets for the `scale_modern_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 79 B.

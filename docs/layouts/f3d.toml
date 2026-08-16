@@ -7,6 +7,7 @@ spec = "docs/formats/f3d.md"
 endianness = "little"
 note = """
 Covers the fixed Design-segment headers, parameter-owner prefix, Draft scope frames, and body-map prefix, the named solid-primitive prologue,
+the versioned Hole point-data and direct-selection prefixes,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
 feature scope, current and shifted Extrude operation and extent sections,
 wrapper, and Scene records,
@@ -1071,6 +1072,238 @@ anchor = "+294: u32 previous_history_state"
 offset = 298
 size = 42
 note = "The fixed frame tail before the paired indexed header is not assigned."
+
+[[record]]
+name = "design_hole_point_data_v1_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Version `1` stores the counted input-reference count at offset `93`"
+size = 97
+note = "Offsets are relative to the version-one Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the point-data primary indexed header"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets `11` through `18`"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a leading-block presence byte at offset `19`"
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a property-block presence byte at offset `20`"
+
+[[record.field]]
+name = "bounding_box_index"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a bounding-box index at offset `21`"
+
+[[record.field]]
+name = "position"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The position triple is at offset `25`"
+
+[[record.field]]
+name = "direction"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "the model-space direction triple at offset `49`"
+
+[[record.field]]
+name = "point_parameters"
+offset = 73
+type = "f64[2]"
+source = "spec"
+anchor = "the two construction parameters at offset `73`"
+
+[[record.field]]
+name = "reference_type"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "`refType` at offset `89`"
+
+[[record.field]]
+name = "input_count"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "the counted input-reference count at offset `93`"
+
+[[record]]
+name = "design_hole_point_data_v4_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Version `4` stores a tangent-data prefix byte at offset `93`"
+size = 122
+note = "Offsets are relative to the version-four Hole point-data primary indexed header. The counted same-segment reference run follows the fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the point-data primary indexed header"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets `11` through `18`"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a leading-block presence byte at offset `19`"
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a property-block presence byte at offset `20`"
+
+[[record.field]]
+name = "bounding_box_index"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a bounding-box index at offset `21`"
+
+[[record.field]]
+name = "position"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The position triple is at offset `25`"
+
+[[record.field]]
+name = "direction"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "the model-space direction triple at offset `49`"
+
+[[record.field]]
+name = "point_parameters"
+offset = 73
+type = "f64[2]"
+source = "spec"
+anchor = "the two construction parameters at offset `73`"
+
+[[record.field]]
+name = "reference_type"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "`refType` at offset `89`"
+
+[[record.field]]
+name = "tangent_prefix"
+offset = 93
+type = "u8"
+source = "spec"
+anchor = "a tangent-data prefix byte at offset `93`"
+
+[[record.field]]
+name = "tangent_point_data"
+offset = 94
+type = "f64[3]"
+source = "spec"
+anchor = "a tangent triple at offset `94`"
+
+[[record.field]]
+name = "input_count"
+offset = 118
+type = "u32"
+source = "spec"
+anchor = "the counted input-reference count at offset `118`"
+
+[[record]]
+name = "design_hole_direct_selection_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The direct support-face selection has type GUID"
+size = 40
+note = "Fixed prefix through the variable asset UUID. The context UUID and nested indexed records follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The direct support-face selection has type GUID"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes at offsets `11` through `20`"
+
+[[record.field]]
+name = "nested_selection_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset `21`"
+value = 1
+
+[[record.field]]
+name = "nested_record_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "nested record index at offset `22`"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 26
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets `26` through `31`"
+
+[[record.field]]
+name = "asset_presence"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "`u32 1` at offset `32`"
+value = 1
+
+[[record.field]]
+name = "asset_uuid_code_unit_count"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "the asset UUID code-unit count at offset `36`"
 
 [[record]]
 name = "scale_modern_operation_prefix"

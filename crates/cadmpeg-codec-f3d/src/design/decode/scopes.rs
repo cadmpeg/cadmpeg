@@ -76,9 +76,9 @@ use crate::records::{
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
     DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
     DesignFixedFilletParameters, DesignHemOperation, DesignHemParameterOwners,
-    DesignHoleConstruction, DesignMirrorConstruction, DesignMoveOperation, DesignParameter,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignHoleConstruction, DesignHoleFaceSelection, DesignMirrorConstruction, DesignMoveOperation,
+    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
@@ -5008,12 +5008,19 @@ fn exact_point_data_construction(
 /// Type GUID of the point-and-direction carrier selected by a `Hole` scope.
 const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
 
+/// Type GUID of the direct persistent face selection carried by a `Hole`.
+const HOLE_FACE_SELECTION_TYPE_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
+
+/// Accepted norm error for a serialized Hole drilling direction.
+const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
+
 /// Decode the exact point-and-direction carrier owned by a `Hole` scope.
 ///
-/// The carrier's version-four base level is distinct from the version-three
-/// `WorkPoint` level: it writes the position, direction, two construction
-/// parameters, `refType`, tangent-point data, and a counted input-reference
-/// run in that order. The type GUID and version select this layout; the
+/// The carrier's versioned base level is distinct from the `WorkPoint` level:
+/// it writes the position, direction, two construction parameters, `refType`,
+/// and a counted input-reference run. Version four inserts tangent-point data
+/// before that run; version one omits it and retains additional class members
+/// before the paired header. The type GUID and version select the layout; the
 /// dynamic class tag does not.
 pub(crate) fn exact_hole_construction(
     bytes: &[u8],
@@ -5024,9 +5031,13 @@ pub(crate) fn exact_hole_construction(
     if scope.kind != "Hole" {
         return None;
     }
+    let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
-        if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_POINT_DATA_TYPE_GUID, 4)) {
+        let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
+            continue;
+        };
+        if *type_guid != HOLE_POINT_DATA_TYPE_GUID || !matches!(*version, 1 | 4) {
             continue;
         }
         for (start, paired_at) in records.frames(*record_index) {
@@ -5047,11 +5058,78 @@ pub(crate) fn exact_hole_construction(
             else {
                 continue;
             };
-            if let Some(candidate) =
-                hole_construction_frame_at(bytes, start, paired_at, payload_at, *record_index)
-            {
+            if let Some(candidate) = hole_construction_frame_at(
+                bytes,
+                start,
+                paired_at,
+                payload_at,
+                *record_index,
+                *version,
+                face_selection.clone(),
+            ) {
                 candidates.push(candidate);
             }
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn exact_hole_face_selection(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignHoleFaceSelection> {
+    let mut candidates = Vec::new();
+    for record_index in &scope.reference_members {
+        if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
+        {
+            continue;
+        }
+        for (start, _paired_at) in records.frames(*record_index) {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+            else {
+                continue;
+            };
+            if class_tag.len() != 3
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || after_tag != start + 7
+                || View::u32_le_at(bytes, after_tag) != Some(*record_index)
+            {
+                continue;
+            }
+            let Some(frame) = parse_entity_selection_frame(
+                bytes,
+                *record_index,
+                u64::try_from(start).ok()?,
+                &class_tag,
+            ) else {
+                continue;
+            };
+            candidates.push(DesignHoleFaceSelection {
+                record_index: frame.record_index,
+                byte_offset: frame.byte_offset,
+                class_tag: frame.class_tag,
+                asset_id: frame.asset_id,
+                asset_id_offset: frame.asset_id_offset,
+                context_id: frame.context_id,
+                context_id_offset: frame.context_id_offset,
+                identity_record_index: frame.identity_record_index,
+                identity_record_offset: frame.identity_record_offset,
+                primary_identity: frame.primary_identity,
+                primary_identity_offset: frame.primary_identity_offset,
+                secondary_identity: frame.secondary_identity,
+                secondary_identity_offset: frame.secondary_identity_offset,
+                curve_secondary_identity: frame.curve_secondary_identity,
+                curve_secondary_identity_offset: frame.curve_secondary_identity_offset,
+                historical_face_candidates: Vec::new(),
+                next_record_index: frame.next_record_index,
+                next_byte_offset: frame.next_byte_offset,
+            });
         }
     }
     let [candidate] = candidates.as_slice() else {
@@ -5066,6 +5144,8 @@ fn hole_construction_frame_at(
     paired_at: usize,
     payload_at: usize,
     point_record_index: u32,
+    version: u32,
+    face_selection: Option<DesignHoleFaceSelection>,
 ) -> Option<DesignHoleConstruction> {
     let body = bytes.get(..paired_at)?;
     let mut cursor = payload_prologue(body, payload_at, paired_at)?;
@@ -5080,10 +5160,24 @@ fn hole_construction_frame_at(
     let reference_type_at = cursor;
     let reference_type = View::u32_le_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
-    let tangent_point_data_prefix = *body.get(cursor)?;
-    cursor = cursor.checked_add(1)?;
-    let tangent_point_data_at = cursor;
-    cursor = cursor.checked_add(24)?;
+    let (tangent_point_data_prefix, tangent_point_data, tangent_point_data_offset) = if version == 4
+    {
+        let prefix = *body.get(cursor)?;
+        cursor = cursor.checked_add(1)?;
+        let tangent_point_data_at = cursor;
+        cursor = cursor.checked_add(24)?;
+        let tangent_point_data: [f64; 3] =
+            f64s_at(body, tangent_point_data_at, 3)?.try_into().ok()?;
+        (
+            Some(prefix),
+            Some(tangent_point_data),
+            Some(u64::try_from(tangent_point_data_at).ok()?),
+        )
+    } else if version == 1 {
+        (None, None, None)
+    } else {
+        return None;
+    };
     let input_count = usize::try_from(View::u32_le_at(body, cursor)?).ok()?;
     cursor = cursor.checked_add(4)?;
     if input_count == 0 || input_count > paired_at.checked_sub(cursor)? {
@@ -5092,7 +5186,6 @@ fn hole_construction_frame_at(
     let position: [f64; 3] = f64s_at(body, position_at, 3)?.try_into().ok()?;
     let direction: [f64; 3] = f64s_at(body, direction_at, 3)?.try_into().ok()?;
     let point_parameters: [f64; 2] = f64s_at(body, point_parameters_at, 2)?.try_into().ok()?;
-    let tangent_point_data: [f64; 3] = f64s_at(body, tangent_point_data_at, 3)?.try_into().ok()?;
     let direction_norm = direction
         .iter()
         .map(|component| component * component)
@@ -5101,9 +5194,9 @@ fn hole_construction_frame_at(
         .iter()
         .chain(direction.iter())
         .chain(point_parameters.iter())
-        .chain(tangent_point_data.iter())
+        .chain(tangent_point_data.iter().flatten())
         .any(|value| !value.is_finite())
-        || (direction_norm - 1.0).abs() > 1.0e-12
+        || (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM
     {
         return None;
     }
@@ -5116,7 +5209,9 @@ fn hole_construction_frame_at(
         input_record_indices.push(target);
         input_record_offsets.push(u64::try_from(reference_at.checked_add(1)?).ok()?);
     }
-    if cursor != paired_at {
+    if (version == 4 && cursor != paired_at)
+        || (version == 1 && next_indexed_record_offset(bytes, cursor)? != paired_at)
+    {
         return None;
     }
     Some(DesignHoleConstruction {
@@ -5135,9 +5230,10 @@ fn hole_construction_frame_at(
         reference_type_offset: u64::try_from(reference_type_at).ok()?,
         tangent_point_data,
         tangent_point_data_prefix,
-        tangent_point_data_offset: u64::try_from(tangent_point_data_at).ok()?,
+        tangent_point_data_offset,
         input_record_indices,
         input_record_offsets,
+        face_selection,
     })
 }
 
