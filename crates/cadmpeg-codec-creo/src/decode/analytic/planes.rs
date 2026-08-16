@@ -351,6 +351,7 @@ pub fn reconciled_model_plane(
                 origin: [origin.x, origin.y, origin.z],
                 normal: [normal.x, normal.y, normal.z],
             }),
+            SurfaceGeometry::Unknown { .. } => None,
             _ => return None,
         },
         _ => return None,

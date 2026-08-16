@@ -418,11 +418,11 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
     scan.surfaces.rows.extend([row(31), row(32)]);
     scan.planes.outlines.push(plane(31, 2.0));
 
-    assert!(feature_plane_equations(&scan, 917).is_none());
+    assert!(feature_plane_equations(&scan, &CadIr::empty(Units::default()), 917).is_none());
 
     scan.planes.outlines.push(plane(32, 8.0));
     assert_eq!(
-        feature_plane_equations(&scan, 917).and_then(|planes| {
+        feature_plane_equations(&scan, &CadIr::empty(Units::default()), 917).and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some((

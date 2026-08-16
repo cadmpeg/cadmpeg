@@ -9,10 +9,46 @@ use super::super::sketch::normalized;
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<PlaneEquation>, ()> {
+    if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none() {
+        return Err(());
+    }
+    let outlines = scan
+        .planes
+        .outlines
+        .iter()
+        .filter(|plane| plane.surface_id == surface_id)
+        .collect::<Vec<_>>();
+    match outlines.as_slice() {
+        [plane] => Ok(Some(PlaneEquation {
+            origin: plane.origin,
+            normal: plane.normal,
+        })),
+        [] => {
+            let frames = scan
+                .planes
+                .local_systems
+                .iter()
+                .filter(|frame| frame.surface_id == surface_id)
+                .collect::<Vec<_>>();
+            match frames.as_slice() {
+                [] => Ok(None),
+                [frame] => Ok(frame
+                    .origin
+                    .zip(frame.normal)
+                    .map(|(origin, normal)| PlaneEquation { origin, normal })),
+                _ => Err(()),
+            }
+        }
+        _ => Err(()),
+    }
+}
 
 pub(in super::super) fn feature_plane_equations(
     scan: &ContainerScan,
+    ir: &CadIr,
     feature_id: u32,
 ) -> Option<Vec<([f64; 3], [f64; 3])>> {
     let ids = scan
@@ -24,31 +60,20 @@ pub(in super::super) fn feature_plane_equations(
         })
         .map(|row| row.id)
         .collect::<BTreeSet<_>>();
+    let mut local_planes = BTreeMap::new();
+    for id in &ids {
+        match feature_local_plane(scan, *id) {
+            Ok(Some(plane)) => {
+                local_planes.insert(*id, plane);
+            }
+            Ok(None) => {}
+            Err(()) => return None,
+        }
+    }
     ids.into_iter()
         .map(|id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
-            let outlines = scan
-                .planes
-                .outlines
-                .iter()
-                .filter(|plane| plane.surface_id == id)
-                .collect::<Vec<_>>();
-            match outlines.as_slice() {
-                [plane] => Some((plane.origin, plane.normal)),
-                [] => {
-                    let frames = scan
-                        .planes
-                        .local_systems
-                        .iter()
-                        .filter(|frame| frame.surface_id == id)
-                        .collect::<Vec<_>>();
-                    let [frame] = frames.as_slice() else {
-                        return None;
-                    };
-                    Some((frame.origin?, frame.normal?))
-                }
-                _ => None,
-            }
+            let plane = reconciled_model_plane(&local_planes, ir, id)?;
+            Some((plane.origin, plane.normal))
         })
         .collect()
 }

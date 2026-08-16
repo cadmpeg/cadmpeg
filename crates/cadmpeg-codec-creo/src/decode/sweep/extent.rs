@@ -729,7 +729,7 @@ pub(in super::super) fn resolved_feature_extrusion_span(
     generated_arc_cylinder_extent(scan, definition, transform)
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
-            feature_plane_equations(scan, feature_id)
+            feature_plane_equations(scan, ir, feature_id)
                 .and_then(|planes| extrusion_span(transform.origin, transform.normal, planes))
         })
         .or_else(|| {
