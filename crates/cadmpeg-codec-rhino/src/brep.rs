@@ -19,6 +19,13 @@ use crate::wire::Uuid;
 pub(crate) const ON_BREP: Uuid = Uuid::from_canonical([
     0x60, 0xb5, 0xdb, 0xc5, 0xe6, 0x60, 0x11, 0xd3, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
+/// V5 class-userdata UUID for the Brep region-topology carrier.
+pub(crate) const V5_BREP_REGION_TOPOLOGY_USERDATA: Uuid = Uuid::from_canonical([
+    0x7f, 0xe2, 0x3d, 0x63, 0xe5, 0x36, 0x43, 0xf1, 0x98, 0xe2, 0xc8, 0x07, 0xa2, 0x62, 0x5a, 0xff,
+]);
+const OPENNURBS4: Uuid = Uuid::from_canonical([
+    0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe, 0x52, 0x0d,
+]);
 const LEGACY_TRIMMED_SURFACE: Uuid = Uuid::from_canonical([
     0x07, 0x05, 0xfd, 0xef, 0x3e, 0x2a, 0x11, 0xd4, 0x80, 0x0e, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -35,10 +42,17 @@ pub(crate) const MAX_BREP_DEPTH: usize = 32;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = 1.234_321_012_343_21e308;
 const ON_UNSET_NEGATIVE_VALUE: f64 = -ON_UNSET_VALUE;
+const ON_BREP_FACE_SIDE: Uuid = Uuid::from_canonical([
+    0x30, 0x93, 0x03, 0x70, 0x0d, 0x5b, 0x4e, 0xe4, 0x80, 0x83, 0xbd, 0x63, 0x5c, 0x73, 0x98, 0xa4,
+]);
+const ON_BREP_REGION: Uuid = Uuid::from_canonical([
+    0xca, 0x7a, 0x00, 0x92, 0x7e, 0xe6, 0x4f, 0x99, 0xb9, 0xd2, 0xe1, 0xd6, 0xaa, 0x79, 0x8a, 0xa1,
+]);
 type RegionRead = (
     Vec<RawBrepFaceSide>,
     Vec<RawBrepRegion>,
     Option<Range<usize>>,
+    bool,
 );
 
 /// The base class family expected by a polymorphic Brep slot.
@@ -561,6 +575,7 @@ pub(crate) fn parse(
     range: Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
+    userdata: &[UserdataDescriptor],
 ) -> Result<BrepParse, GeometryError> {
     let mut reader = BoundedReader::new(bytes, range.start, range.end)?;
     let version_offset = reader.position();
@@ -628,11 +643,30 @@ pub(crate) fn parse(
     } else {
         None
     };
-    let (face_sides, regions, region_wrapper_range) = if minor >= 3 {
-        read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
-    } else {
-        (Vec::new(), Vec::new(), None)
-    };
+    let (mut face_sides, mut regions, mut region_wrapper_range, inline_region_loaded) =
+        if minor >= 3 {
+            read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
+        } else {
+            (Vec::new(), Vec::new(), None, false)
+        };
+    if !inline_region_loaded {
+        if let Some(extra) = userdata.iter().find(|value| {
+            value.class_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
+                && value.item_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
+                && (value.application_uuid.is_none() || value.application_uuid == Some(OPENNURBS4))
+        }) {
+            match read_region_topology_userdata(bytes, extra, archive, faces.len(), &mut warnings) {
+                Ok((sides, topology_regions, range, _)) => {
+                    face_sides = sides;
+                    regions = topology_regions;
+                    region_wrapper_range = range;
+                }
+                Err(error) => warnings.push(format!(
+                    "invalid optional Brep region topology discarded: {error}"
+                )),
+            }
+        }
+    }
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
         warnings.push(format!("ON_Brep skipped {skipped} trailing bytes"));
@@ -1078,7 +1112,7 @@ fn read_regions(
         }
         if !outer.bool()? {
             outer.skip_remaining()?;
-            return Ok((Vec::new(), Vec::new(), None));
+            return Ok((Vec::new(), Vec::new(), None, false));
         }
         let nested_chunk = anonymous_chunk(bytes, &mut outer, archive)?;
         let mut topology = body_reader(bytes, &nested_chunk)?;
@@ -1111,11 +1145,11 @@ fn read_regions(
             ));
         }
         outer.skip_remaining()?;
-        Ok((sides, regions, Some(nested_chunk.range())))
+        Ok((sides, regions, Some(nested_chunk.range()), true))
     })();
     reader.skip(chunk.next_offset - reader.position())?;
     match parsed {
-        Ok((sides, regions, nested)) => {
+        Ok((sides, regions, nested, inline_region_loaded)) => {
             let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested.as_slice())?;
             if matches!(
                 verify_checksum_ranges(bytes, &chunk, &direct)?,
@@ -1123,15 +1157,62 @@ fn read_regions(
             ) {
                 warnings.push("Brep region wrapper checksum mismatch".to_string());
             }
-            Ok((sides, regions, Some(chunk.range())))
+            Ok((sides, regions, Some(chunk.range()), inline_region_loaded))
         }
         Err(error) => {
             warnings.push(format!(
                 "invalid optional Brep region topology discarded: {error}"
             ));
-            Ok((Vec::new(), Vec::new(), Some(chunk.range())))
+            Ok((Vec::new(), Vec::new(), Some(chunk.range()), false))
         }
     }
+}
+
+fn read_region_topology_userdata(
+    bytes: &[u8],
+    extra: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    face_count: usize,
+    warnings: &mut Vec<String>,
+) -> Result<RegionRead, GeometryError> {
+    let mut parent = BoundedReader::new(bytes, extra.payload_range.start, extra.payload_range.end)?;
+    let topology_chunk = anonymous_chunk(bytes, &mut parent, archive)?;
+    let mut topology = body_reader(bytes, &topology_chunk)?;
+    let major = topology.i32()?;
+    let minor = topology.i32()?;
+    if major != 1 || minor < 0 {
+        return Err(GeometryError::unsupported(
+            topology.position() - 8,
+            "unsupported Brep userdata region-topology version",
+        ));
+    }
+    let sides_start = topology.position();
+    let sides = read_region_sides(bytes, &mut topology, archive, warnings)?;
+    let sides_range = sides_start..topology.position();
+    let regions_start = topology.position();
+    let regions = read_region_records(bytes, &mut topology, archive, warnings)?;
+    let regions_range = regions_start..topology.position();
+    finish_anonymous_children(
+        bytes,
+        &mut parent,
+        &topology_chunk,
+        topology,
+        &[sides_range, regions_range],
+        warnings,
+    )?;
+    let skipped = parent.skip_remaining()?;
+    if skipped != 0 {
+        warnings.push(format!(
+            "Brep region-topology userdata skipped {skipped} trailing bytes"
+        ));
+    }
+    if sides.len() != face_count.saturating_mul(2) {
+        return Err(error(
+            extra.range.start,
+            "redundant Brep region face-side count mismatch",
+        ));
+    }
+    Ok((sides, regions, Some(extra.range.clone()), true))
 }
 
 fn read_region_sides<'a>(
@@ -1144,7 +1225,7 @@ fn read_region_sides<'a>(
     let mut result = Vec::with_capacity(count);
     let mut children = Vec::with_capacity(count);
     for _ in 0..count {
-        let (body, source) = region_element(bytes, &mut child, archive)?;
+        let (body, source) = region_element(bytes, &mut child, archive, ON_BREP_FACE_SIDE)?;
         children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         result.push(RawBrepFaceSide {
@@ -1170,7 +1251,7 @@ fn read_region_records<'a>(
     let mut result = Vec::with_capacity(count);
     let mut children = Vec::with_capacity(count);
     for _ in 0..count {
-        let (body, source) = region_element(bytes, &mut child, archive)?;
+        let (body, source) = region_element(bytes, &mut child, archive, ON_BREP_REGION)?;
         children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         let index = child.i32()?;
@@ -1205,6 +1286,7 @@ fn region_element(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    expected_class: Uuid,
 ) -> Result<(Range<usize>, Range<usize>), GeometryError> {
     let start = reader.position();
     if archive.value() < 60 {
@@ -1224,8 +1306,26 @@ fn region_element(
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
         let class =
             parse_class_wrapper(bytes, chunk_start_range(&chunk), archive, &mut Vec::new())?;
+        if class.class_uuid != expected_class {
+            return Err(error(start, "unexpected Brep region element class"));
+        }
         reader.skip(chunk.next_offset - start)?;
-        Ok((class.class_data_range, start..chunk.next_offset))
+        let mut class_data = BoundedReader::new(
+            bytes,
+            class.class_data_range.start,
+            class.class_data_range.end,
+        )?;
+        let payload = anonymous_chunk(bytes, &mut class_data, archive)?;
+        let mut body = body_reader(bytes, &payload)?;
+        let major = body.i32()?;
+        let minor = body.i32()?;
+        if major != 1 || minor < 0 {
+            return Err(GeometryError::unsupported(
+                payload.body.start,
+                "unsupported Brep region element version",
+            ));
+        }
+        Ok((body.position()..payload.body.end, start..chunk.next_offset))
     }
 }
 
@@ -1655,12 +1755,141 @@ mod tests {
         anonymous(&body)
     }
 
+    fn region_face_side(index: i32, region: i32, face: i32, direction: i32) -> Vec<u8> {
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(0_i32.to_le_bytes());
+        body.extend(index.to_le_bytes());
+        body.extend(region.to_le_bytes());
+        body.extend(face.to_le_bytes());
+        body.extend(direction.to_le_bytes());
+        anonymous(&body)
+    }
+
+    fn region_record(index: i32, region_type: i32, sides: &[i32], bounds: [f64; 6]) -> Vec<u8> {
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(0_i32.to_le_bytes());
+        body.extend(index.to_le_bytes());
+        body.extend(region_type.to_le_bytes());
+        body.extend((sides.len() as i32).to_le_bytes());
+        body.extend(sides.iter().flat_map(|value| value.to_le_bytes()));
+        body.extend(bounds.into_iter().flat_map(f64::to_le_bytes));
+        anonymous(&body)
+    }
+
+    fn region_array(entries: &[u8], count: i32) -> Vec<u8> {
+        let mut header = 1_i32.to_le_bytes().to_vec();
+        header.extend(0_i32.to_le_bytes());
+        header.extend(count.to_le_bytes());
+        anonymous_mixed(&[(&header, false), (entries, true)])
+    }
+
+    fn region_topology_userdata_payload() -> Vec<u8> {
+        let sides = [region_face_side(0, 0, 0, 1), region_face_side(1, 0, 0, -1)].concat();
+        let side_array = region_array(&sides, 2);
+        let region = region_record(0, 0, &[0, 1], [-1.0, -1.0, 0.0, 2.0, 2.0, 1.0]);
+        let region_array = region_array(&region, 1);
+        let mut header = 1_i32.to_le_bytes().to_vec();
+        header.extend(0_i32.to_le_bytes());
+        anonymous_mixed(&[(&header, false), (&side_array, true), (&region_array, true)])
+    }
+
+    fn region_topology_v6_payload() -> Vec<u8> {
+        let sides = [
+            class_wrapper_for(ON_BREP_FACE_SIDE, &region_face_side(0, 0, 0, 1)),
+            class_wrapper_for(ON_BREP_FACE_SIDE, &region_face_side(1, 0, 0, -1)),
+        ]
+        .concat();
+        let side_array = region_array(&sides, 2);
+        let region = class_wrapper_for(
+            ON_BREP_REGION,
+            &region_record(0, 0, &[0, 1], [-1.0, -1.0, 0.0, 2.0, 2.0, 1.0]),
+        );
+        let region_array = region_array(&region, 1);
+        let mut header = 1_i32.to_le_bytes().to_vec();
+        header.extend(0_i32.to_le_bytes());
+        anonymous_mixed(&[(&header, false), (&side_array, true), (&region_array, true)])
+    }
+
+    fn region_topology_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
+        UserdataDescriptor {
+            range: range.clone(),
+            version: (2, 2),
+            class_uuid: V5_BREP_REGION_TOPOLOGY_USERDATA,
+            item_uuid: V5_BREP_REGION_TOPOLOGY_USERDATA,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: Some(OPENNURBS4),
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: range,
+            unknown_version: false,
+        }
+    }
+
+    #[test]
+    fn v5_region_topology_userdata_decodes_the_v5_array_grammar() {
+        let payload = region_topology_userdata_payload();
+        let descriptor = region_topology_userdata_descriptor(0..payload.len());
+        let mut warnings = Vec::new();
+        let (sides, regions, source_range, loaded) = read_region_topology_userdata(
+            &payload,
+            &descriptor,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect("V5 region topology userdata");
+
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        assert!(loaded);
+        assert_eq!(source_range, Some(0..payload.len()));
+        assert_eq!(sides.len(), 2);
+        assert_eq!(sides[0].index, 0);
+        assert_eq!(sides[0].region, 0);
+        assert_eq!(sides[0].face, 0);
+        assert_eq!(sides[0].direction, 1);
+        assert_eq!(sides[1].direction, -1);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].index, 0);
+        assert_eq!(regions[0].region_type, 0);
+        assert_eq!(regions[0].sides, vec![0, 1]);
+        assert_eq!(regions[0].bounds.minimum, Point3([-1.0, -1.0, 0.0]));
+        assert_eq!(regions[0].bounds.maximum, Point3([2.0, 2.0, 1.0]));
+    }
+
+    #[test]
+    fn v6_region_topology_arrays_unwrap_polymorphic_records() {
+        let payload = region_topology_v6_payload();
+        let descriptor = region_topology_userdata_descriptor(0..payload.len());
+        let mut warnings = Vec::new();
+        let (sides, regions, _, loaded) = read_region_topology_userdata(
+            &payload,
+            &descriptor,
+            ArchiveVersion::V6,
+            1,
+            &mut warnings,
+        )
+        .expect("V6 region topology userdata");
+
+        assert!(loaded);
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        assert_eq!(
+            sides.iter().map(|side| side.direction).collect::<Vec<_>>(),
+            [1, -1]
+        );
+        assert_eq!(regions[0].sides, vec![0, 1]);
+    }
+
     fn class_wrapper(data: &[u8]) -> Vec<u8> {
-        let class_uuid = [9_u8; 16];
+        class_wrapper_for(Uuid::from_canonical([9; 16]), data)
+    }
+
+    fn class_wrapper_for(class_uuid: Uuid, data: &[u8]) -> Vec<u8> {
         let mut uuid = 0x0002_fffb_u32.to_le_bytes().to_vec();
         uuid.extend_from_slice(&20_i64.to_le_bytes());
-        uuid.extend(class_uuid);
-        uuid.extend_from_slice(&crc32fast::hash(&class_uuid).to_le_bytes());
+        uuid.extend(class_uuid.to_wire());
+        uuid.extend_from_slice(&crc32fast::hash(&class_uuid.to_wire()).to_le_bytes());
         let mut class_data = 0x0002_fffc_u32.to_le_bytes().to_vec();
         class_data.extend_from_slice(&i64::try_from(data.len() + 4).expect("length").to_le_bytes());
         class_data.extend_from_slice(data);
@@ -1960,8 +2189,8 @@ mod tests {
 
     #[test]
     fn brep_major_is_structured_as_unsupported() {
-        let error =
-            parse(&[0x20], 0..1, ArchiveVersion::V5, None).expect_err("major two must be rejected");
+        let error = parse(&[0x20], 0..1, ArchiveVersion::V5, None, &[])
+            .expect_err("major two must be rejected");
         assert!(matches!(
             error,
             GeometryError::UnsupportedVersion { offset: 0, .. }
@@ -1972,7 +2201,7 @@ mod tests {
     fn negative_array_count_is_rejected_before_allocation() {
         let mut bytes = vec![0x30, 0x10];
         bytes.extend_from_slice(&(-1_i32).to_le_bytes());
-        let error = parse(&bytes, 0..bytes.len(), ArchiveVersion::V5, None)
+        let error = parse(&bytes, 0..bytes.len(), ArchiveVersion::V5, None, &[])
             .expect_err("negative C2 count must fail");
         assert!(matches!(error, GeometryError::Malformed(_)));
     }
@@ -2146,10 +2375,11 @@ mod tests {
         let outer = anonymous_mixed(&[(&outer_prefix, false), (&nested, true)]);
         let mut reader = BoundedReader::new(&outer, 0, outer.len()).expect("reader");
         let mut warnings = Vec::new();
-        let (_, regions, _) =
+        let (_, regions, _, loaded) =
             read_regions(&outer, &mut reader, ArchiveVersion::V5, 0, &mut warnings)
                 .expect("regions");
         assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(loaded);
         assert_eq!(regions.len(), 1);
         assert_eq!(reader.remaining(), 0);
     }

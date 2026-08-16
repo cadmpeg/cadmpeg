@@ -574,6 +574,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         0..payload.len(),
         crate::chunks::ArchiveVersion::V5,
         None,
+        &[],
     )
     .expect("direct Brep fixture parse");
     let result = decode(&archive_unit(

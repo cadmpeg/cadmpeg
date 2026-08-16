@@ -198,6 +198,15 @@ loss; the mesh face triangles remain the transferred geometry. The class is a
 V4/V5 compatibility carrier. An explicitly attached item can persist in a
 later all-userdata archive; when an inline n-gon count is present, that newer
 count takes precedence for the neutral grouping loss.
+The built-in `ON_V5_BrepRegionTopologyUserData` class is also settled. Its
+class and item UUID is `7FE23D63-E536-43F1-98E2-C807A2625AFF`, its application
+UUID is `17B3ECDA-17BA-4E45-9E67-A2B8D9BE520D`, and section 7.2.5 defines its
+anonymous region-topology payload, V5 raw array elements, and later
+polymorphic array elements. `ON_Brep::Write` attaches it automatically only
+for archive version 50 when the Brep has faces and exactly twice as many face
+sides; `DeleteAfterRead` installs it only when no inline region topology is
+loaded. The decoder reuses the Brep region carriers and validation, so no new
+neutral field is introduced.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -206,9 +215,9 @@ for each version that is to be typed, including its fields and loss mapping.
 built-in hatch gradient userdata, the V5 dimension-style extra, and
 `ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`, and
 `ON_OBSOLETE_V5_TextExtra`, `ON_V5_MeshDoubleVertices`, and
-`ON_V4V5_MeshNgonUserData` are settled, including the Brep, extrusion, and
-history carriers where applicable; other future class-specific payload
-semantics remain open.
+`ON_V4V5_MeshNgonUserData`, and `ON_V5_BrepRegionTopologyUserData` are settled,
+including the Brep, extrusion, and history carriers where applicable; other
+future class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

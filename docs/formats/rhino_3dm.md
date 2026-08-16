@@ -885,6 +885,72 @@ contributes its admitted record count to the existing
 invalid or malformed list contributes no grouping count and leaves the mesh
 admissible.
 
+#### 7.2.5 `ON_V5_BrepRegionTopologyUserData`
+
+The built-in `ON_V5_BrepRegionTopologyUserData` class uses class UUID and item
+UUID `7FE23D63-E536-43F1-98E2-C807A2625AFF`. Its application UUID is
+`17B3ECDA-17BA-4E45-9E67-A2B8D9BE520D`. Its userdata payload is one anonymous
+major-1, minor-0 `ON_BrepRegionTopology` chunk:
+
+```text
+anonymous version 1.0
+  face-side array
+  region array
+```
+
+Each array is an anonymous major-1, minor-0 chunk containing an `i32` count.
+For archive versions below 60, each element is a raw anonymous major-1,
+minor-0 chunk. For archive version 60 and later, each element is a polymorphic
+object wrapper whose class-data payload contains the corresponding anonymous
+major-1, minor-0 face-side or region record.
+
+A face-side record is an anonymous major-1, minor-0 chunk containing:
+
+```text
+i32 face-side index
+i32 region index
+i32 face index
+i32 surface-normal direction
+```
+
+A region record is an anonymous major-1, minor-0 chunk containing:
+
+```text
+i32 region index
+i32 region type
+i32 face-side count
+face-side count × i32 face-side index
+ON_BoundingBox
+```
+
+The bounding box contains the minimum and maximum points as six `f64` values.
+Region type `0` is the infinite region and type `1` is a bounded region. The
+region topology has exactly `2 * face_count` face sides. Side positions `2*f`
+and `2*f+1` identify face `f` and carry directions `+1` and `-1`. There is
+exactly one infinite region; region membership is reciprocal, and a face side
+is listed at most once in a region. A side with region index `-1` is unassigned.
+
+An `ON_Brep` writer emits packed Brep version 3.2 for archive versions 4 and
+5. For archive version 50, it temporarily attaches this userdata item when a
+region topology exists, the Brep has at least one face, and the topology has
+exactly twice as many face sides as faces. The item is deleted after writing.
+Archive version 40 does not automatically attach this carrier. A later
+archive can contain the item when it remains attached and userdata is
+serialized; the array element form then follows the containing archive band.
+
+When reading, the userdata reader creates the region topology with the owning
+Brep. `DeleteAfterRead` installs it only when the Brep has no region topology
+already loaded. A loaded inline topology therefore takes precedence; a V5
+class-userdata topology supplies the same region fields when no inline value
+exists.
+
+CADIR decision: a recognized valid item populates the Brep's existing region
+face-side and region carriers. It does not create a second neutral topology
+representation. A structurally unreadable or semantically invalid optional
+item is discarded, the Brep remains admissible, and the decode report emits
+`container.redundant-field-repaired` with the diagnostic cause. A checksum
+mismatch follows the recoverable warning policy in §4.1.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2446,15 +2512,25 @@ For an archive writer version before 2 October 2002, the stored value is unset.
 A Brep is closed when it has at least one face and every edge has exactly two
 trim uses. A closed Brep is solid; another Brep is a sheet.
 
-For minor at least 3, the region wrapper is anonymous major-1, followed by a
-presence byte and, when present, a major-1 region-topology object. The object
-contains a face-side array and region array, each with major 1 and
-an `i32` count. Before archive 60, arrays contain raw anonymous element chunks;
-at archive 60 and later, arrays contain polymorphic objects.
+For archive version 50, minor 2 stores region topology through the temporary
+`ON_V5_BrepRegionTopologyUserData` item in section 7.2.5 when the topology
+passes the writer's face-side count gate. Archive version 40 has no automatic
+region-topology carrier. For minor at least 3, the region wrapper is anonymous
+major-1, followed by a presence byte and, when present, a major-1
+region-topology object. The inline object and the section 7.2.5 item use the
+same face-side and region arrays: before archive 60, arrays contain raw
+anonymous element chunks; at archive 60 and later, arrays contain polymorphic
+objects.
 When the optional region topology fails its face-side or element invariants, the
 complete optional region topology is discarded and the decode report emits
 `container.redundant-field-repaired` with the diagnostic cause; the Brep remains
 admissible.
+
+CADIR decision: when an inline minor-3 topology does not assign exactly one
+bounded region to each face, neutral shell grouping falls back to edge
+incidence and the decode report emits
+`Brep 3.3 region topology was not representable; incidence-derived shells used`.
+The native region records remain retained.
 
 Face side:
 
@@ -3257,14 +3333,22 @@ The same wrapper can contain section 7.2.4 legacy mesh n-gon userdata in any
 archive band; its validated record count is reported as dropped neutral
 grouping when no inline n-gon count takes precedence.
 
+For Brep minor 2 in archive version 50, the region-topology item in section
+7.2.5 is a class-userdata child of the Brep class wrapper. Its payload is one
+anonymous version 1.0 region-topology object, followed by the class-userdata
+and class-end framing. The automatic item is present only when the Brep has a
+region topology, at least one face, and exactly `2 * face_count` face sides.
 For Brep minor 3, the region wrapper is anonymous version 1.1, contains a
 one-byte region-topology-present flag, and then one anonymous version 1.0
-region-topology object when present. Its face-side and region arrays are each
-anonymous version 1.0 with `i32 count`. Before archive 60, entries are raw
-anonymous version 1.0 element chunks. At archive 60+, entries are polymorphic
-objects. The arrays have no per-entry presence integer. The face-side count is
-exactly `2 * face_count`; side positions `2f` and `2f+1` carry directions +1
-and -1 for face `f`.
+region-topology object when present. In both carriers, each face-side and
+region array is anonymous version 1.0 with `i32 count`, has no per-entry
+presence integer, and uses raw anonymous version 1.0 elements before archive
+60 or polymorphic objects at archive 60+. The face-side count is exactly
+`2 * face_count`; side positions `2f` and `2f+1` carry directions +1 and -1
+for face `f`. Before archive 60, an element is the record chunk itself; at
+archive 60 and later, the polymorphic object's class-data payload contains
+that record chunk. A loaded inline topology takes precedence over the userdata
+carrier.
 
 Element records use the widths already specified in §15. Their cross-record
 invariants are exact: positional indexes equal record indexes; C2/C3/surface

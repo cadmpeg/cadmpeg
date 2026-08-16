@@ -3173,6 +3173,7 @@ impl<'a> DecodeContext<'a> {
             object.class_data_range.clone(),
             self.archive(),
             self.scan.metadata.properties.writer_version,
+            &object.userdata,
         );
         let parsed = match parsed {
             Ok(value) => value,
@@ -4357,7 +4358,7 @@ pub(crate) fn embedded_brep_json(
     writer_version: Option<i64>,
     scale: f64,
 ) -> Option<String> {
-    let parsed = crate::brep::parse(data, range, archive, writer_version).ok()?;
+    let parsed = crate::brep::parse(data, range, archive, writer_version, &[]).ok()?;
     let brep = match parsed {
         crate::brep::BrepParse::Valid(value) => value,
         crate::brep::BrepParse::SemanticInvalid { .. } => return None,

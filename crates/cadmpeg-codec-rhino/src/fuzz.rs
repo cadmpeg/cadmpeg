@@ -131,7 +131,7 @@ pub fn brep(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let _ = crate::brep::parse(data, 1..data.len(), selected_archive(data[0]), None);
+    let _ = crate::brep::parse(data, 1..data.len(), selected_archive(data[0]), None, &[]);
 }
 
 /// Exercises `SubD` framing, archive ID maps, and directed rings.
