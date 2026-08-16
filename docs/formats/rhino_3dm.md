@@ -3731,6 +3731,11 @@ automatic render tessellation; the analysis-mesh body controls automatic
 analysis tessellation. They are separate records even though their wire
 grammars are identical.
 
+For these two records, the outer CRC covers the bytes written directly by the
+mesh body. It excludes the complete anonymous SubD-display child, including
+that child's header and CRC. Bytes appended after the child before the outer
+record CRC are direct suffix bytes and are included in the outer CRC.
+
 Global annotation settings are the direct body of
 `TCODE_SETTINGS_ANNOTATION`. The body starts with a packed one-byte version
 `1.minor` (major in the high nibble, minor in the low nibble):

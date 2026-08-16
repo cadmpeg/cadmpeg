@@ -11,7 +11,7 @@ use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
     chunk_at, direct_checksum_ranges, parse_eof, parse_header, verify_checksum,
-    verify_checksum_ranges, ArchiveVersion, ChecksumStatus, FramingError, TCODE_CRC,
+    verify_checksum_ranges, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_CRC,
     TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
@@ -84,6 +84,7 @@ const TCODE_SETTINGS_ATTRIBUTES: u32 = 0x2000_8134;
 const TCODE_PLUGIN_LIST: u32 = 0x2000_8135;
 const TCODE_RENDER_USERDATA: u32 = 0x2000_8136;
 const TCODE_HISTORICAL_UNUSED_SETTINGS: u32 = 0x2000_803e;
+const TCODE_ANONYMOUS: u32 = 0x4000_8000;
 
 /// A bounded record descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +201,15 @@ fn checksum_warning(
         };
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
+    } else if matches!(
+        typecode,
+        TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
+    ) {
+        let Ok(children) = mesh_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
     }
@@ -210,6 +220,52 @@ fn checksum_warning(
         ))),
         _ => Ok(None),
     }
+}
+
+/// Returns the nested SubD-display chunk in a version 1.5-or-newer mesh
+/// settings payload.
+///
+/// `ON_MeshParameters::Write()` writes the direct mesh fields first and then
+/// calls `ON_SubDDisplayParameters::Write()`. Future minor versions keep that
+/// child position; any later bytes remain direct suffix bytes.
+fn mesh_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let packed_version = reader.u8()?;
+    if packed_version >> 4 != 1 || packed_version & 0x0f < 5 {
+        return Ok(Vec::new());
+    }
+
+    for _ in 0..5 {
+        reader.i32()?;
+    }
+    for _ in 0..4 {
+        reader.f64()?;
+    }
+    for _ in 0..2 {
+        reader.i32()?;
+    }
+    for _ in 0..4 {
+        reader.f64()?;
+    }
+    reader.i32()?;
+    reader.i32()?;
+    reader.bool()?;
+    reader.f64()?;
+    reader.u8()?;
+    reader.bool()?;
+
+    let child = chunk_at(data, reader.position(), chunk.body.end, archive, false)?;
+    if child.typecode != TCODE_ANONYMOUS || child.short {
+        return Err(FramingError::structural(
+            reader.position(),
+            "mesh SubD display parameters must be an anonymous chunk",
+        ));
+    }
+    Ok(vec![child.range()])
 }
 
 /// Returns the complete nested chunks after a counted view-list prefix.

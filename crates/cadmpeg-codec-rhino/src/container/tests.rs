@@ -382,6 +382,26 @@ fn counted_view_list_crc_excludes_nested_children() {
 }
 
 #[test]
+fn mesh_settings_crc_excludes_nested_subd_display_chunk() {
+    let archive = ArchiveVersion::V5;
+    let mut body = vec![0x1f];
+    body.extend([0; 111]);
+    let child_range_start = body.len();
+    body.extend(anonymous_chunk(archive, 3, &[4, 0, 0, 0, 2, 0, 0, 0, 1, 0]));
+    let child_range = child_range_start..body.len();
+    body.extend([0xde, 0xad]);
+    for typecode in [0x2000_8032, 0x2000_8033] {
+        let record =
+            crc_chunk_excluding(archive, typecode, &body, std::slice::from_ref(&child_range));
+        assert_eq!(
+            super::checksum_warning(&record, typecode, 0, record.len(), archive)
+                .expect("mesh-settings checksum framing"),
+            None
+        );
+    }
+}
+
+#[test]
 fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
     let archive = ArchiveVersion::V5;
     let record = crc_chunk(archive, 0x2000_803e, &[0; 24]);

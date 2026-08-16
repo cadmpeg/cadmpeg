@@ -196,6 +196,9 @@ source-defined prefix and skips only the outer settings-attributes suffix.
 `TCODE_SETTINGS_ANALYSISMESH`. Those enclosing records provide the suffix
 boundary, so the Rust reader admits later packed minors after the known
 minor-5 SubD child and skips their remaining bytes at the top-level record.
+The outer CRC for each record covers the direct mesh bytes, excludes the
+complete anonymous SubD-display child, and includes any direct suffix after
+that child.
 `ON_3dmSettings::Write_v2` places `TCODE_SETTINGS_PLUGINLIST` first for
 archive versions at least 4 when the list is nonempty. Its outer reader uses
 packed major 1 and a count, then calls `ON_PlugInRef::Read` for each anonymous
@@ -250,7 +253,8 @@ settled; annotation settings, grid defaults, units/tolerances, plugin list,
 settings attributes, render-mesh, analysis-mesh, render-settings, render
 settings userdata, the current-selector records, and the V1 settings
 presentation stream are now source-backed through their known prefixes,
-child types, stream markers, and version gates. The historical unused settings
+child types, stream markers, version gates, and mesh outer-CRC ranges. The
+historical unused settings
 record and the three counted view-list wrappers are also source-backed through
 the same evidence.
 The residual is the explicit
