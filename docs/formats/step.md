@@ -654,15 +654,19 @@ timestamp alone does not establish byte identity. Different validated
 digests for one URI are a conflict, not a merge. No cached bytes or cache
 equivalence result enters the decoded STEP graph implicitly.
 
-ISO 10303-21:2016 §14.1 defines each signature as CMS for external content
-and requires the CMS structure to be encoded as Base64. RFC 5652 §5 places
-the digest algorithm identifiers in `SignedData` and the per-signer digest and
-signature algorithm identifiers in `SignerInfo`; Part 21 supplies no separate
-method or parameter field. CADIR decision: the parser validates the CMS
-envelope and retains its decoded bytes. It does not infer an algorithm or
-verification parameter from the Part 21 section delimiters or Base64 text;
-verification uses the identifiers and parameters carried by CMS and a
-caller-supplied trust policy.
+ISO 10303-21:2016 §14.1 in the [Part 21 edition-3
+text](https://www.steptools.com/stds/step/IS_final_p21e3.html) defines each
+signature as CMS for external content and requires the CMS structure to be
+encoded as Base64. [RFC 5652](https://www.rfc-editor.org/rfc/rfc5652) §§5.4–5.6
+defines the digest input, signed-attribute input, signature comparison, and
+recipient public-key input. The digest and signature algorithm identifiers and
+their parameters are CMS fields; Part 21 supplies no separate method or
+parameter field. CADIR decision: the parser checks the CMS envelope, detached
+content form, algorithm-identifier shape, signer identifier, signer-info field
+order, and signature-value shape, then retains the decoded bytes. It does not
+execute the RFC digest, signed-attribute, signature, key, or trust checks and
+does not infer an algorithm or verification parameter from Part 21 delimiters
+or Base64 text. Those checks use CMS fields and a caller-supplied verifier.
 
 CADIR decision: the STEP codec admits only the root member's exchange graph
 into CADIR. It checks that each root REFERENCE binding that resolves to an
@@ -697,13 +701,13 @@ signature section and the alphabet bytes between it and the later
 `SIGNATURE;` token. The reader retains both the complete source span and the
 decoded CMS payload.
 
-For one signature, `valid` requires all of the following: the verifier computes
+For one signature, a downstream verifier reports `valid` only after it computes
 the digest over the exact Table 1 alphabet projection of the preceding source;
-when `SignerInfo.signedAttrs` is present, it verifies the DER signed-attribute
-input, the `messageDigest` attribute equals that content digest, and the
-`content-type` attribute equals `encapContentInfo.eContentType`; it verifies the
+when `SignerInfo.signedAttrs` is present, verifies the DER signed-attribute
+input, the `messageDigest` attribute against that content digest, and the
+`content-type` attribute against `encapContentInfo.eContentType`; verifies the
 CMS `signature` OCTET STRING with the `signatureAlgorithm` identifier and the
-selected signer public key; and the caller's trust policy accepts the signer,
+selected signer public key; and applies a trust policy that accepts the signer,
 certificate path, key usage, validity time, revocation evidence, and required
 authorization. `invalid` means that a cryptographic check or an explicitly
 required policy check fails. A source or CMS value that fails Part 21 or CMS

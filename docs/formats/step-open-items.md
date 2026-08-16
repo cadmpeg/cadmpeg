@@ -72,16 +72,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 4. Signatures
 
-### SG-04. Signature verification result
-
-**Question.** Which executed checks make a retained STEP signature valid, invalid, or indeterminate?
-
-**Known.** The parser retains the detached CMS object and signed byte range. It performs structural CMS admission but no digest, signed-attribute, signature, certificate-path, revocation, time, or trust-policy verification.
-
-**Need.** We need a verifier interface, caller trust policy, and independently signed valid, modified, expired, revoked, and unknown-chain witnesses.
-
-**Note.** QA audit: commit `88ccb2488` documented RFC 5652 conditions and proved that modified source bytes still retain the same structural CMS. No verification result is computed. This is closure without the verification operand.
-
 ## 5. Topology and pcurve decisions
 
 ### TP-09. Pcurve endpoint proof boundary
