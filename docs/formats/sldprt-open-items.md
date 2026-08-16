@@ -26,7 +26,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the class-root grammar and body ownership rule to decode every body without assigning entities from one body to another.
 
-**Note.** The closure evidence is limited to synthetic byte builders in `src/tests.rs:6889-6917` and `6921-6957`. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:258-271` accepts one distinct class-root vector, and `:473-558` assigns records by head-offset intervals. If a file has two valid heads with an unrelated face record between them, interval membership can bind that face to the wrong body; no stored relation is checked. The specification now states this interval grammar, but the closure did not establish it from an independent specimen or a native ownership field.
+**Note.** The closure evidence is limited to synthetic byte builders in `src/tests.rs:6889-6917` and `6921-6957`. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:258-271` accepts one distinct class-root vector, and `:473-558` assigns records by head-offset intervals. If a file has two valid heads with an unrelated face record between them, interval membership can bind that face to the wrong body; no stored relation is checked. The specification now states this interval grammar, but the closure did not verify it against corpus specimens or a native ownership field. Corpus files with two class-root heads, read with `cadmpeg inspect`, settle the ownership rule.
 
 ### BC-02. Deltas faces outside partition intervals
 
@@ -102,7 +102,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the carrier grammar and field semantics to construct the exact offset surface and preserve its orientation.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/offset.rs:22-85` accepts the `00 3c` shape, discriminator bytes `V`, `I`, or `U`, a flag, a support attribute, and a finite distance. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1615` evaluates it as the same signed normal offset and uses it before blend and sweep fallbacks. The parser and nested-offset tests use synthetic records in `src/tests.rs:357-371`, `8549-8592`, and `8691-8715`; no independent specimen establishes that all discriminators and flags have identical offset semantics. A valid carrier with another meaning would be silently decoded as the same offset surface.
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/offset.rs:22-85` accepts the `00 3c` shape, discriminator bytes `V`, `I`, or `U`, a flag, a support attribute, and a finite distance. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1615` evaluates it as the same signed normal offset and uses it before blend and sweep fallbacks. The parser and nested-offset tests use synthetic records in `src/tests.rs:357-371`, `8549-8592`, and `8691-8715`; the closure cited no corpus specimen. Identical offset semantics for the `V`, `I`, and `U` discriminators and each flag value is not verified against corpus records. Probe batches that vary the offset discriminator and flag, and corpus `00 3c` records read with `cadmpeg inspect`, settle the semantics. A valid carrier with another meaning would be silently decoded as the same offset surface.
 
 ### GC-05. Variable-radius blend carriers
 
@@ -214,7 +214,7 @@ The attribute scanner accepts only the exact supported family names followed imm
 
 **Need.** We must know the gap to write the record back without moving or inventing undecoded bytes.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/metadata.rs:43-89` still validates the f64 block by finite-value and extent checks after the fixed prefix. Commit `058e16cbf` changed the scan from the first plausible offset to the `ff` prefix and added the synthetic rejection test `src/tests.rs:22953-22972`; the generated fixture supplies the observed bytes. No independent specimen or complete record framing establishes that the prefix and nine values are the full rule. Another token occurrence with the same prefix and bounded numbers can be emitted as a plane, while a valid revision with a different gap is skipped.
+**Note.** `crates/cadmpeg-codec-sldprt/src/metadata.rs:43-89` still validates the f64 block by finite-value and extent checks after the fixed prefix. Commit `058e16cbf` changed the scan from the first plausible offset to the `ff` prefix and added the synthetic rejection test `src/tests.rs:22953-22972`; the generated fixture supplies the observed bytes. The closure cited no corpus specimen and no complete record framing, so the prefix-plus-nine-values rule is not verified against corpus records. Corpus `moTransRefPlaneData_c` occurrences, found and read with `cadmpeg inspect`, give the gap length and the record framing. Another token occurrence with the same prefix and bounded numbers can be emitted as a plane, while a valid revision with a different gap is skipped.
 
 ### CM-09. Active body stream selection
 

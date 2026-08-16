@@ -647,25 +647,25 @@ A Keywords `Draft` element is a face-draft operation. `Direction` is the pull di
 
 A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token for its neutral plane and drafted faces. Each plane-reference prefix has this fixed layout before its variable component path:
 
-| Offset | Type | Meaning |
-|---:|---|---|
-| +0 | u16 LE | lane-scoped plane-reference token |
-| +2 | u16 LE | non-`ffff` tagged child token |
-| +4 | u32 LE | value `2` |
-| +8 | bytes[3] | `00 00 00` or `40 00 00` wrapper flags |
-| +11 | u32 LE | nonzero reference identity |
-| +15 | u32 LE | repeated reference identity |
-| +19 | bytes[28] | zero |
-| +47 | bytes[16] | `ff` |
-| +63 | bytes[9] | zero |
-| +72 | u16 LE | tagged instance token |
-| +74 | u32 LE | role word |
-| +78 | u32 LE | zero |
-| +82 | u32 LE | component-vector cell count in `2..65` |
-| +86 | bytes[4] | component-vector selector: byte 1 is `02` or `03`, byte 0 is a lane-specific subtype, and bytes 2–3 are zero |
-| +90 | u32 LE | component selector |
-| +94 | bytes[16] | duplicated component-vector marker |
-| +110 | u16 LE | zero marker tail |
+| Offset | Type      | Meaning                                                                                                      |
+| -----: | --------- | ------------------------------------------------------------------------------------------------------------ |
+|     +0 | u16 LE    | lane-scoped plane-reference token                                                                            |
+|     +2 | u16 LE    | non-`ffff` tagged child token                                                                                |
+|     +4 | u32 LE    | value `2`                                                                                                    |
+|     +8 | bytes[3]  | `00 00 00` or `40 00 00` wrapper flags                                                                       |
+|    +11 | u32 LE    | nonzero reference identity                                                                                   |
+|    +15 | u32 LE    | repeated reference identity                                                                                  |
+|    +19 | bytes[28] | zero                                                                                                         |
+|    +47 | bytes[16] | `ff`                                                                                                         |
+|    +63 | bytes[9]  | zero                                                                                                         |
+|    +72 | u16 LE    | tagged instance token                                                                                        |
+|    +74 | u32 LE    | role word                                                                                                    |
+|    +78 | u32 LE    | zero                                                                                                         |
+|    +82 | u32 LE    | component-vector cell count in `2..65`                                                                       |
+|    +86 | bytes[4]  | component-vector selector: byte 1 is `02` or `03`, byte 0 is a lane-specific subtype, and bytes 2–3 are zero |
+|    +90 | u32 LE    | component selector                                                                                           |
+|    +94 | bytes[16] | duplicated component-vector marker                                                                           |
+|   +110 | u16 LE    | zero marker tail                                                                                             |
 
 The first complete plane-reference record in the interval identifies the neutral plane. Later complete records identify the drafted faces; semantically identical component paths denote one face. The component vector uses the count-minus-one, count-minus-two, or mixed-entry forms defined for duplicated component-vector records. An odd cell count can also encode `N` mixed entries interleaved with `N−1` u32 path-slot words; in that form, `cell_count = 2N−1`. A unique addressed direction frame between the first component vector and the next plane-reference record supplies the pull direction. The frame starts with `c7 cf ff ff c7 cf ff ff`, u32 zero, a nonzero u32 address, and eight zero bytes. Twelve finite f64 LE values occupy offsets +24 through +119. In the 120-byte aligned form, the xyz pull-direction unit vector is the final three values at +96, +104, and +112. In the 153-byte extended form, the aligned direction slots are not a unit vector, nine zero bytes occupy +120 through +128, and an unaligned xyz unit vector occupies +129, +137, and +145. Missing, repeated, non-unit, or lane-disagreeing direction frames leave the native pull direction unresolved. Explicit Keywords face selections and direction take precedence over these feature-input operands.
 
@@ -884,25 +884,25 @@ the part object. Exactly one complete part object selects the semantic graph.
 
 Each entity has this header and terminator:
 
-| Field | Encoding | Semantics |
-| --- | --- | --- |
-| marker | Pascal string `Entity` | Entity start |
-| class | Pascal string | Qualified runtime class |
-| assembly | Pascal string | Runtime assembly name |
-| version | u32 LE | Serialization version |
-| sections | section sequence | Typed fields and relations |
-| terminator | Pascal string `EndEntity` | Entity end |
+| Field      | Encoding                  | Semantics                  |
+| ---------- | ------------------------- | -------------------------- |
+| marker     | Pascal string `Entity`    | Entity start               |
+| class      | Pascal string             | Qualified runtime class    |
+| assembly   | Pascal string             | Runtime assembly name      |
+| version    | u32 LE                    | Serialization version      |
+| sections   | section sequence          | Typed fields and relations |
+| terminator | Pascal string `EndEntity` | Entity end                 |
 
 Entity sections use these grammars:
 
-| Start token | Counted values | End token |
-| --- | --- | --- |
-| `Strings` | u32 LE count; Pascal-string key and Pascal-string value | `EndStrings` |
-| `Integers` | u32 LE count; Pascal-string key and i32 LE value | `EndIntegers` |
-| `Doubles` | u32 LE count; Pascal-string key and f64 LE value | `EndDoubles` |
-| `Features` | u32 LE count; feature ID and type Pascal-string pairs; owned entity definitions follow the roster | `EndFeatures` |
-| `Annotations` | u32 LE count; annotation ID and type Pascal-string pairs; owned entity definitions follow the roster | `EndAnnotations` |
-| `RelatedObjects` | u32 LE count; relation name and type Pascal-string pairs; one entity for each pair | `EndRelatedObjects` |
+| Start token      | Counted values                                                                                       | End token           |
+| ---------------- | ---------------------------------------------------------------------------------------------------- | ------------------- |
+| `Strings`        | u32 LE count; Pascal-string key and Pascal-string value                                              | `EndStrings`        |
+| `Integers`       | u32 LE count; Pascal-string key and i32 LE value                                                     | `EndIntegers`       |
+| `Doubles`        | u32 LE count; Pascal-string key and f64 LE value                                                     | `EndDoubles`        |
+| `Features`       | u32 LE count; feature ID and type Pascal-string pairs; owned entity definitions follow the roster    | `EndFeatures`       |
+| `Annotations`    | u32 LE count; annotation ID and type Pascal-string pairs; owned entity definitions follow the roster | `EndAnnotations`    |
+| `RelatedObjects` | u32 LE count; relation name and type Pascal-string pairs; one entity for each pair                   | `EndRelatedObjects` |
 
 The part `Features` section owns the semantic feature definitions. The part
 `Annotations` section owns the semantic annotation definitions. Other feature
@@ -1157,15 +1157,15 @@ For an edge with exactly two coedge uses, equal coedge markers require opposite 
 
 Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]` triple) or as `[disc][attr]` adjacency tables; the magic occurs at the family-specific position within the record window.
 
-| Tag                    | Deltas form | Magic    | Anchor                                                        |
-| ---------------------- | ----------- | -------- | ------------------------------------------------------------- |
-| `00 0e`                | tripled     | body +9  | owner triple before magic; five ref triples then marker after |
-| `00 0f`                | tripled     | none     | four ref triples at body +6                                   |
+| Tag                    | Deltas form | Magic    | Anchor                                                                            |
+| ---------------------- | ----------- | -------- | --------------------------------------------------------------------------------- |
+| `00 0e`                | tripled     | body +9  | owner triple before magic; five ref triples then marker after                     |
+| `00 0f`                | tripled     | none     | four ref triples at body +6                                                       |
 | `00 10`                | prefixed    | body +9  | post-magic cell 2 = curve carrier; direction from unique same-edge forward coedge |
-| `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use                        |
-| `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr                         |
-| `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run                                 |
-| `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker                              |
+| `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use                                            |
+| `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr                                             |
+| `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run                                                     |
+| `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker                                                  |
 
 Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
 
@@ -1486,32 +1486,34 @@ The offset surface retains the support parameterization. Nested offset carriers 
   Every position in one face-tessellation table lies on its owning B-rep face support surface. The f32 coordinate precision limits this incidence test. When exactly one B-rep face has an analytic support incident to all table positions, that face owns the table and its body is the face's topological owner.
 
   Coincident planar supports are distinguished by a complete bounded-face relation. This relation consists of one ordered, strictly convex loop of line edges and zero or more one-edge closed circular inner loops. Every table position is inside or on the line loop and outside or on each circular loop. An indexed triangle does not cross a circular loop. An edge between two circle-boundary positions can be the chordal approximation of that loop. When exactly one coincident face contains the complete table under these rules, that face owns the table. An incomplete boundary relation or a different boundary grammar does not eliminate a coincident candidate.
+
 - A DisplayLists scene-class declaration scopes its following scene objects. The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier binds that object class to the Keywords record with the same source identifier. Anonymous object counts do not identify Keywords records.
 - **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains material names and RGB `0x00BBGGRR` values; names use UTF-16LE. A document metadata record starts with its ASCII class token. Offsets below are from the end of that token. Scalar fields are little-endian.
 
-| token | offset | type | field |
-| --- | --- | --- | --- |
-| `moBBoxCenterData_c` | +0 | u32 | `1` |
-| | +4 | f64[3] | bounding-box center xyz, metres |
-| | +28 | f64 | maximum radius, metres |
-| `moDefaultRefPlnData_c` | +0 | f64[3] | datum origin xyz, metres |
-| | +24 | f64[6] | datum frame, dimensionless |
-| `moTransRefPlaneData_c` | +0 | bytes[8] | `ff ff ff ff ff ff ff ff` |
-| | +8 | f64[3] | plane center xyz, metres |
-| | +32 | f64[2] | plane extents, metres |
-| | +48 | f64[3] | auxiliary frame, dimensionless |
-| | +72 | f64 | plane diagonal, metres |
-| `moPart_c` | +0 | u32 | part identifier |
-| | +4 | u32 | `0` |
-| | +8 | u32 | part version |
-| | +12 | u8 | `0` |
-| `moConfigurationMgr_c` | +66 | u32 | configuration-manager minor version |
-| | +107 | u8 | configuration state count |
-| | +117 | u64 | FILETIME timestamp |
-| | +125 | — | record end |
-| `moLengthUserUnits_c` | +0 | bytes[3] | `ff fe ff` |
-| | +3 | u8 | UTF-16 code-unit count `n` |
-| | +4 | bytes[2n] | linear-unit name, UTF-16LE |
+| token                   | offset | type      | field                               |
+| ----------------------- | ------ | --------- | ----------------------------------- |
+| `moBBoxCenterData_c`    | +0     | u32       | `1`                                 |
+|                         | +4     | f64[3]    | bounding-box center xyz, metres     |
+|                         | +28    | f64       | maximum radius, metres              |
+| `moDefaultRefPlnData_c` | +0     | f64[3]    | datum origin xyz, metres            |
+|                         | +24    | f64[6]    | datum frame, dimensionless          |
+| `moTransRefPlaneData_c` | +0     | bytes[8]  | `ff ff ff ff ff ff ff ff`           |
+|                         | +8     | f64[3]    | plane center xyz, metres            |
+|                         | +32    | f64[2]    | plane extents, metres               |
+|                         | +48    | f64[3]    | auxiliary frame, dimensionless      |
+|                         | +72    | f64       | plane diagonal, metres              |
+| `moPart_c`              | +0     | u32       | part identifier                     |
+|                         | +4     | u32       | `0`                                 |
+|                         | +8     | u32       | part version                        |
+|                         | +12    | u8        | `0`                                 |
+| `moConfigurationMgr_c`  | +66    | u32       | configuration-manager minor version |
+|                         | +107   | u8        | configuration state count           |
+|                         | +117   | u64       | FILETIME timestamp                  |
+|                         | +125   | —         | record end                          |
+| `moLengthUserUnits_c`   | +0     | bytes[3]  | `ff fe ff`                          |
+|                         | +3     | u8        | UTF-16 code-unit count `n`          |
+|                         | +4     | bytes[2n] | linear-unit name, UTF-16LE          |
+
 - **Per-face appearance** uses the inline `00 53` child defined in §5.
 - **XML / UnQLite** carry OPC parts, document/feature metadata, unit metadata (`SW_UnitsLinear=0` = millimetres), and MessagePack UI data: auxiliary, not the exact B-rep.
 
