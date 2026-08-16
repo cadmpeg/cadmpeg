@@ -10,6 +10,7 @@ use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::ObjectUuidValue;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
+const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
 
 /// One reusable component prototype named by the fast-load structure roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,7 +162,18 @@ pub fn fast_load_component_roster(
         return (Vec::new(), Vec::new(), Vec::new());
     };
 
-    let mut candidates = (0..payload.len()).filter_map(|start| parse_candidate(payload, start));
+    // Every admitted roster starts with a version/count pair followed by the
+    // first metadata string `MODEL`. Search for that mandatory framed value
+    // before invoking the complete parser; trying the parser at every byte
+    // makes a large opaque structure stream quadratic in its candidate count.
+    let mut candidates = payload
+        .windows(MODEL_FRAME.len())
+        .enumerate()
+        .filter(|(_, window)| *window == MODEL_FRAME)
+        .filter_map(|(model_offset, _)| {
+            let start = model_offset.checked_sub(2)?;
+            parse_candidate(payload, start)
+        });
     let Some(candidate) = candidates.next() else {
         return (Vec::new(), Vec::new(), Vec::new());
     };

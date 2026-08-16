@@ -3,12 +3,12 @@
 
 use super::offset::point_distance;
 use super::pcurves::{
-    attach_tolerant_edge_intersections, complete_exact_boundary_intersection_pcurves,
+    attach_tolerant_edge_intersections, complete_exact_boundary_intersection_pcurves_with_budget,
     complete_intersection_pcurves_from_coedge_incidence,
-    complete_intersection_pcurves_from_opposite_charts,
+    complete_intersection_pcurves_from_opposite_charts_with_budget,
     complete_intersection_supports_from_edge_incidence,
     complete_tolerant_intersection_pcurves_from_serialized_branches, ordered_parameter_range,
-    pcurve_matches_edge_range_with_index, pcurve_parameter_range,
+    pcurve_matches_edge_range_with_index, pcurve_parameter_range, TransferBudget,
 };
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
@@ -30,7 +30,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn emit_topology(
+pub(super) fn emit_topology(
     ir: &mut CadIr,
     stream_index: usize,
     graph: &Graph,
@@ -42,6 +42,8 @@ pub(crate) fn emit_topology(
     trim_ranges: &BTreeMap<u32, [f64; 2]>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
+    exact_transfer_budget: &TransferBudget<'_>,
+    completion_transfer_budget: &TransferBudget<'_>,
 ) {
     let prefix = format!("nx:s{stream_index}");
     let body_shape_shells = graph.body_shape_shells();
@@ -169,7 +171,6 @@ pub(crate) fn emit_topology(
         }
         shells.insert(node.xmt, shell_id);
     }
-
     let mut vertices = BTreeMap::new();
     for node in graph
         .of_kind(18)
@@ -194,7 +195,6 @@ pub(crate) fn emit_topology(
         });
         vertices.insert(node.xmt, vertex.clone());
     }
-
     let mut edges = BTreeMap::new();
     for node in graph
         .of_kind(16)
@@ -362,7 +362,6 @@ pub(crate) fn emit_topology(
         });
         edges.insert(node.xmt, id);
     }
-
     let mut faces = BTreeMap::new();
     for node in graph
         .of_kind(14)
@@ -402,7 +401,6 @@ pub(crate) fn emit_topology(
         }
         faces.insert(node.xmt, id);
     }
-
     let mut loops = BTreeMap::new();
     for &loop_xmt in valid_loop_rings.keys() {
         let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
@@ -442,7 +440,6 @@ pub(crate) fn emit_topology(
         }
         loops.insert(node.xmt, id);
     }
-
     let fin_ids: BTreeMap<u32, CoedgeId> = valid_fin_xmts
         .iter()
         .filter(|xmt| {
@@ -661,7 +658,6 @@ pub(crate) fn emit_topology(
             parent.coedges.push(id);
         }
     }
-
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
@@ -670,8 +666,12 @@ pub(crate) fn emit_topology(
         &serialized_branch_pcurves,
         annotations,
     );
-    complete_exact_boundary_intersection_pcurves(ir, annotations);
-    complete_intersection_pcurves_from_opposite_charts(ir);
+    complete_exact_boundary_intersection_pcurves_with_budget(
+        ir,
+        annotations,
+        exact_transfer_budget,
+    );
+    complete_intersection_pcurves_from_opposite_charts_with_budget(ir, completion_transfer_budget);
 
     let owned_edges: BTreeSet<_> = ir
         .model

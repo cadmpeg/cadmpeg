@@ -2,9 +2,10 @@
 //! EXT11 support-UV assignment, completion, and equivalent-parameter transfer.
 
 use super::blend::{
-    blend_boundary_parameter_from_support_pcurve, blend_surface_definition,
-    blend_surface_parameter_grid_with_index, blend_surface_parameters_for_fit_with_grid,
-    blend_surface_parameters_from_grid_for_fit, decoded_surface_point_inner, BlendParameterGrid,
+    blend_boundary_parameter_from_contact_pcurve_with_geometry,
+    blend_surface_definition_with_index, blend_surface_parameter_grid_with_index,
+    blend_surface_parameters_for_fit_with_grid, blend_surface_parameters_from_grid_for_fit,
+    decoded_surface_point_with_geometry, spine_contact_pcurve, BlendParameterGrid,
     BoundaryInverseTarget,
 };
 use super::offset::{
@@ -14,6 +15,7 @@ use super::offset::{
 use super::pcurves::pcurve_matches_edge_range_with_index;
 use super::MISSING_TOLERANCE;
 use crate::topology::Graph;
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance, pcurve_uv,
@@ -27,6 +29,20 @@ use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Maximum support-UV point fits admitted for one model completion.
+pub(super) const MAX_SUPPORT_UV_SAMPLES: usize = 1_024;
+
+pub(super) type SupportUvBudget<'a> = WorkBudget<'a>;
+
+pub(super) fn support_uv_budget_exhausted(budget: &SupportUvBudget<'_>) -> bool {
+    budget.exhausted() || budget.remaining() == 0
+}
+
+#[cfg(test)]
+pub(super) fn new_support_uv_budget() -> SupportUvBudget<'static> {
+    WorkBudget::new(MAX_SUPPORT_UV_SAMPLES)
+}
+
 pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
     let mut knots = Vec::with_capacity(parameters.len() + 2);
     knots.push(parameters[0]);
@@ -35,8 +51,9 @@ pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
     knots
 }
 
-pub(crate) fn assign_ext11_support_uv(
+pub(crate) fn assign_ext11_support_uv_with_index(
     ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [u32; 2],
     points: &[Point3],
@@ -47,8 +64,9 @@ pub(crate) fn assign_ext11_support_uv(
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
         return None;
     };
-    assign_ext11_support_uv_to_surfaces(
+    assign_ext11_support_uv_to_surfaces_with_index(
         ir,
+        index,
         [&first_surface, &second_surface],
         points,
         fit_tolerance,
@@ -56,20 +74,21 @@ pub(crate) fn assign_ext11_support_uv(
     )
 }
 
-pub(crate) fn validate_serialized_support_uv(
+pub(crate) fn validate_serialized_support_uv_with_index(
     ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [u32; 2],
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
 ) -> [Option<Vec<[f64; 2]>>; 2] {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     std::array::from_fn(|side| {
         let surface = surfaces_by_xmt.get(&supports[side])?;
         let values = lanes[side].as_deref()?;
-        let tolerance = blend_spine_cache_fit_tolerance(ir, surface, fit_tolerance);
-        support_uv_lane_matches_surface(ir, &index, surface, points, tolerance, Some(values))
+        let tolerance =
+            blend_spine_cache_fit_tolerance_with_index(index, ir, surface, fit_tolerance);
+        support_uv_lane_matches_surface(ir, index, surface, points, tolerance, Some(values))
             .then(|| values.to_vec())
     })
 }
@@ -104,12 +123,13 @@ pub(crate) fn support_uv_lane_matches_surface(
         let Some(uv) = surface_parameters(geometry, *uv) else {
             return false;
         };
-        decoded_surface_point_inner(index, surface, uv.u, uv.v, 0)
+        decoded_surface_point_with_geometry(index, surface, geometry, uv.u, uv.v, 0)
             .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
     })
 }
 
-pub(crate) fn assign_ext11_support_uv_to_surfaces(
+#[cfg(test)]
+pub(super) fn assign_ext11_support_uv_to_surfaces(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
@@ -117,10 +137,28 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
     lanes: &[Option<Vec<[f64; 2]>>; 2],
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    assign_ext11_support_uv_to_surfaces_with_index(
+        ir,
+        &index,
+        surfaces,
+        points,
+        fit_tolerance,
+        lanes,
+    )
+}
+
+pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
+    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surfaces: [&SurfaceId; 2],
+    points: &[Point3],
+    fit_tolerance: f64,
+    lanes: &[Option<Vec<[f64; 2]>>; 2],
+) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         support_uv_lane_matches_surface(
             ir,
-            &index,
+            index,
             surface,
             points,
             fit_tolerance,
@@ -210,6 +248,8 @@ pub(crate) fn pcurve_control_point_seed(
 }
 
 pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
         let Some(procedural_index) = ir
             .model
@@ -238,8 +278,9 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
         if !missing.into_iter().any(|missing| missing) {
             continue;
         }
-        let Some(assigned) = assign_ext11_support_uv_to_surfaces(
+        let Some(assigned) = assign_ext11_support_uv_to_surfaces_with_index(
             ir,
+            &model_index,
             [&surfaces[0], &surfaces[1]],
             points,
             *fit_tolerance,
@@ -247,7 +288,7 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
         ) else {
             continue;
         };
-        let replacements: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
+        let side_replacements: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
             if !missing[side] {
                 return None;
             }
@@ -277,25 +318,42 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
                 periodic: false,
             })
         });
+        for (side, replacement) in side_replacements.into_iter().enumerate() {
+            if let Some(replacement) = replacement {
+                replacements.push((procedural_index, side, replacement));
+            }
+        }
+    }
+    drop(model_index);
+    for (procedural_index, side, replacement) in replacements {
         let ProceduralCurveDefinition::Intersection { context, .. } =
             &mut ir.model.procedural_curves[procedural_index].definition
         else {
             unreachable!("definition checked above");
         };
-        for (side, replacement) in replacements.into_iter().enumerate() {
-            if let Some(replacement) = replacement {
-                context.sides[side].pcurve = Some(replacement);
-            }
-        }
+        context.sides[side].pcurve = Some(replacement);
     }
 }
 
-pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+#[cfg(test)]
+pub(super) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+    let support_budget = new_support_uv_budget();
+    complete_support_uv_with_budget(ir, pending, &support_budget);
+}
+
+pub(super) fn complete_support_uv_with_budget(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+    support_budget: &SupportUvBudget<'_>,
+) {
     loop {
         let before = pending_support_lanes_requiring_completion(ir, pending);
-        complete_support_uv_wave(ir, pending);
+        if support_uv_budget_exhausted(support_budget) {
+            break;
+        }
+        complete_support_uv_wave(ir, pending, support_budget);
         let after = pending_support_lanes_requiring_completion(ir, pending);
-        if after >= before {
+        if after >= before || support_uv_budget_exhausted(support_budget) {
             break;
         }
     }
@@ -326,14 +384,23 @@ pub(crate) fn invalidate_inconsistent_support_uv(
                 let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
                     continue;
                 };
-                let tolerance = blend_spine_cache_fit_tolerance(ir, surface, *fit_tolerance);
+                let Some(geometry) = index
+                    .surfaces(surface.0.as_str())
+                    .map(|surface| &surface.geometry)
+                else {
+                    continue;
+                };
+                let tolerance =
+                    blend_spine_cache_fit_tolerance_with_index(&index, ir, surface, *fit_tolerance);
                 let inconsistent = parameters
                     .iter()
                     .zip(points)
                     .filter_map(|(parameter, point)| {
                         let uv = pcurve_uv(pcurve, *parameter)?;
-                        decoded_surface_point_inner(&index, surface, uv.u, uv.v, 0)
-                            .map(|actual| point_distance(actual, *point) > tolerance)
+                        decoded_surface_point_with_geometry(
+                            &index, surface, geometry, uv.u, uv.v, 0,
+                        )
+                        .map(|actual| point_distance(actual, *point) > tolerance)
                     })
                     .any(|inconsistent| inconsistent);
                 if inconsistent {
@@ -381,11 +448,18 @@ pub(crate) fn pending_support_lanes_requiring_completion(
         .sum()
 }
 
-pub(crate) fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+fn complete_support_uv_wave(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+    support_budget: &SupportUvBudget<'_>,
+) {
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+        if support_uv_budget_exhausted(support_budget) {
+            break;
+        }
         let Some(procedural) = ir
             .model
             .procedural_curves
@@ -398,24 +472,68 @@ pub(crate) fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11Su
             continue;
         };
         for side in 0..2 {
+            if support_uv_budget_exhausted(support_budget) {
+                break;
+            }
             if !pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
                 continue;
             }
             let Some(surface_id) = &context.sides[side].surface else {
                 continue;
             };
-            let Some(surface) = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| &surface.id == surface_id)
-            else {
+            let Some(surface) = model_index.surfaces(surface_id.0.as_str()) else {
                 continue;
             };
-            let effective_fit_tolerance =
-                blend_spine_cache_fit_tolerance(ir, surface_id, *fit_tolerance);
-            let mut uv = Vec::with_capacity(points.len());
+            let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
+                &model_index,
+                ir,
+                surface_id,
+                *fit_tolerance,
+            );
+            let other_support = {
+                let other_side = &context.sides[1 - side];
+                other_side
+                    .surface
+                    .as_ref()
+                    .zip(other_side.pcurve.as_ref())
+                    .and_then(|(other_surface, other_pcurve)| {
+                        let geometry = model_index
+                            .surfaces(other_surface.0.as_str())
+                            .map(|surface| &surface.geometry)?;
+                        Some((other_surface, other_pcurve, geometry))
+                    })
+            };
+            let other_contact =
+                other_support.and_then(|(other_surface, other_pcurve, other_geometry)| {
+                    let (supports, spine, radius, _) =
+                        blend_surface_definition_with_index(&model_index, surface_id)?;
+                    let boundaries = supports
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, candidate)| {
+                            parameterization_equivalent_surfaces(ir, candidate, other_surface)
+                        })
+                        .map(|(boundary, _)| boundary)
+                        .collect::<Vec<_>>();
+                    let [boundary] = boundaries.as_slice() else {
+                        return None;
+                    };
+                    let contact_pcurve =
+                        spine_contact_pcurve(ir, other_surface, &spine, radius, 0)?;
+                    Some((
+                        other_surface,
+                        other_pcurve,
+                        other_geometry,
+                        contact_pcurve,
+                        *boundary,
+                    ))
+                });
+            let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
             for (point_index, point) in points.iter().enumerate() {
+                if !support_budget.charge() {
+                    uv.clear();
+                    break;
+                }
                 let seed =
                     pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index)
                         .or_else(|| uv.last().copied());
@@ -426,18 +544,21 @@ pub(crate) fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11Su
                         seed,
                         effective_fit_tolerance,
                     ),
-                    SurfaceGeometry::Procedural { .. } => {
-                        let other_side = &context.sides[1 - side];
-                        other_side
-                            .surface
-                            .as_ref()
-                            .zip(other_side.pcurve.as_ref())
-                            .and_then(|(other_surface, other_pcurve)| {
-                                blend_boundary_parameter_from_support_pcurve(
+                    SurfaceGeometry::Procedural { .. } => other_contact
+                        .and_then(
+                            |(
+                                other_surface,
+                                other_pcurve,
+                                other_geometry,
+                                contact_pcurve,
+                                boundary,
+                            )| {
+                                blend_boundary_parameter_from_contact_pcurve_with_geometry(
                                     &model_index,
-                                    ir,
-                                    surface_id,
                                     other_surface,
+                                    other_geometry,
+                                    contact_pcurve,
+                                    boundary,
                                     other_pcurve,
                                     parameters[point_index],
                                     BoundaryInverseTarget {
@@ -446,45 +567,45 @@ pub(crate) fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11Su
                                         tolerance: effective_fit_tolerance,
                                     },
                                 )
-                            })
-                            .or_else(|| {
-                                offset_surface_parameters_with_tolerance_with_index(
-                                    &model_index,
-                                    surface_id,
-                                    *point,
-                                    seed,
-                                    Some(effective_fit_tolerance),
-                                )
-                            })
-                            .or_else(|| {
-                                blend_surface_parameters_for_fit_with_grid(
-                                    &model_index,
-                                    surface_id,
-                                    *point,
-                                    seed,
-                                    effective_fit_tolerance,
-                                    BlendParameterGrid::Disabled,
-                                )
-                            })
-                            .or_else(|| {
-                                let blend_grid = blend_parameter_grids
-                                    .entry(surface_id.clone())
-                                    .or_insert_with(|| {
-                                        blend_surface_parameter_grid_with_index(
-                                            &model_index,
-                                            surface_id,
-                                            0,
-                                        )
-                                    });
-                                blend_surface_parameters_from_grid_for_fit(
-                                    &model_index,
-                                    surface_id,
-                                    *point,
-                                    effective_fit_tolerance,
-                                    blend_grid.as_deref()?,
-                                )
-                            })
-                    }
+                            },
+                        )
+                        .or_else(|| {
+                            offset_surface_parameters_with_tolerance_with_index(
+                                &model_index,
+                                surface_id,
+                                *point,
+                                seed,
+                                Some(effective_fit_tolerance),
+                            )
+                        })
+                        .or_else(|| {
+                            blend_surface_parameters_for_fit_with_grid(
+                                &model_index,
+                                surface_id,
+                                *point,
+                                seed,
+                                effective_fit_tolerance,
+                                BlendParameterGrid::Disabled,
+                            )
+                        })
+                        .or_else(|| {
+                            let blend_grid = blend_parameter_grids
+                                .entry(surface_id.clone())
+                                .or_insert_with(|| {
+                                    blend_surface_parameter_grid_with_index(
+                                        &model_index,
+                                        surface_id,
+                                        0,
+                                    )
+                                });
+                            blend_surface_parameters_from_grid_for_fit(
+                                &model_index,
+                                surface_id,
+                                *point,
+                                effective_fit_tolerance,
+                                blend_grid.as_deref()?,
+                            )
+                        }),
                     geometry => analytic_surface_parameters(geometry, *point),
                 };
                 let Some(parameters) = parameters else {
@@ -509,8 +630,15 @@ pub(crate) fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11Su
                 }
             }
             let reproduces_chart = uv.iter().zip(points).all(|(uv, point)| {
-                decoded_surface_point_inner(&model_index, surface_id, uv.u, uv.v, 0)
-                    .is_some_and(|actual| point_distance(actual, *point) <= effective_fit_tolerance)
+                decoded_surface_point_with_geometry(
+                    &model_index,
+                    surface_id,
+                    &surface.geometry,
+                    uv.u,
+                    uv.v,
+                    0,
+                )
+                .is_some_and(|actual| point_distance(actual, *point) <= effective_fit_tolerance)
             });
             if reproduces_chart {
                 replacements.push((
@@ -560,15 +688,28 @@ pub(crate) fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11Su
             }
         }
     }
-    complete_coupled_support_uv(ir, pending);
+    if !support_uv_budget_exhausted(support_budget) {
+        complete_coupled_support_uv(ir, pending, support_budget);
+    }
 }
 
-pub(crate) fn blend_spine_cache_fit_tolerance(
+#[cfg(test)]
+pub(super) fn blend_spine_cache_fit_tolerance(
     ir: &CadIr,
     surface: &SurfaceId,
     fit_tolerance: f64,
 ) -> f64 {
-    blend_surface_definition(ir, surface)
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    blend_spine_cache_fit_tolerance_with_index(&index, ir, surface, fit_tolerance)
+}
+
+pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    ir: &CadIr,
+    surface: &SurfaceId,
+    fit_tolerance: f64,
+) -> f64 {
+    blend_surface_definition_with_index(index, surface)
         .and_then(|(_, spine, _, _)| {
             ir.model
                 .procedural_curves
@@ -580,7 +721,11 @@ pub(crate) fn blend_spine_cache_fit_tolerance(
         .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance)
 }
 
-pub(crate) fn complete_coupled_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+fn complete_coupled_support_uv(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+    support_budget: &SupportUvBudget<'_>,
+) {
     let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         let Some(procedural) = ir
@@ -614,6 +759,10 @@ pub(crate) fn complete_coupled_support_uv(ir: &mut CadIr, pending: &[PendingExt1
         });
         if !unresolved_procedural_support {
             continue;
+        }
+        let missing_lanes = missing.iter().filter(|missing| **missing).count();
+        if !support_budget.charge_by(points.len().saturating_mul(missing_lanes).max(1)) {
+            break;
         }
         let seeds = context
             .sides

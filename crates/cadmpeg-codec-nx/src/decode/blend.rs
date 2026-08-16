@@ -11,11 +11,12 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, model_surface_point_by_id,
-    nurbs_surface_parameter_within_tolerance, pcurve_tangent, pcurve_uv,
+    nurbs_surface_parameter_within_tolerance, pcurve_tangent, pcurve_uv, surface_point,
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve,
-    PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    PcurveGeometry, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -30,6 +31,18 @@ pub(crate) fn decoded_surface_point_inner(
     (depth < 32).then_some(())?;
     model_surface_point_by_id(index, surface, u, v)
         .or_else(|| blend_surface_point_inner_with_index(index, surface, u, v, depth + 1))
+}
+
+pub(crate) fn decoded_surface_point_with_geometry(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    depth: usize,
+) -> Option<Point3> {
+    surface_point(geometry, u, v)
+        .or_else(|| decoded_surface_point_inner(index, surface, u, v, depth))
 }
 
 #[cfg(test)]
@@ -97,8 +110,7 @@ pub(crate) fn blend_surface_parameters_inner(
     depth: usize,
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
         if let Some(parameters) =
             refine_blend_surface_parameters_with_index(index, surface, point, seed, depth + 1)
@@ -242,8 +254,7 @@ pub(crate) fn blend_surface_parameter_grid_with_index(
     depth: usize,
 ) -> Option<Vec<(Point2, Point3)>> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     let curve = index.curves(spine.0.as_str())?;
     let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         return None;
@@ -321,8 +332,7 @@ pub(crate) fn refine_blend_surface_parameters_with_index(
     depth: usize,
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     let u_domain = index
         .curves(spine.0.as_str())
         .and_then(|curve| match &curve.geometry {
@@ -515,8 +525,7 @@ pub(crate) fn blend_surface_u_derivative_with_index(
     depth: usize,
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
+    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     let carrier = index.curves(spine.0.as_str())?;
     let center = curve_point(&carrier.geometry, u)?;
     let velocity = curve_tangent(&carrier.geometry, u)?;
@@ -680,8 +689,7 @@ pub(crate) fn blend_surface_frame_with_index(
     depth: usize,
 ) -> Option<BlendSurfaceFrame> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
+    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     let center = model_curve_point_with_index(index, &spine, u)?;
     let tangent = model_curve_tangent_with_index(index, &spine, u)?;
     let first = spine_contact_direction_with_index(
@@ -738,8 +746,7 @@ pub(crate) fn blend_boundary_point_with_index(
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
+    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     spine_contact_point_with_index(
         index,
         supports.get(boundary)?,
@@ -760,8 +767,7 @@ pub(crate) fn blend_boundary_parameter_with_index(
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     // A circular blend's u parameter is its spine parameter. Invert that
     // defining carrier directly, then certify the requested boundary point.
     closest_spine_parameter_with_index(index, &spine, point, seed).filter(|parameter| {
@@ -786,30 +792,172 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve(
     curve_parameter: f64,
     target: BoundaryInverseTarget,
 ) -> Option<Point2> {
-    let (supports, spine, radius, _) = blend_surface_definition(ir, blend)?;
-    let boundary = supports
+    let support_geometry = ir
+        .model
+        .surfaces
         .iter()
-        .position(|candidate| parameterization_equivalent_surfaces(ir, candidate, support))?;
-    if supports
+        .find(|candidate| &candidate.id == support)
+        .map(|surface| &surface.geometry)?;
+    blend_boundary_parameter_from_support_pcurve_with_geometry(
+        index,
+        ir,
+        blend,
+        support,
+        support_geometry,
+        support_pcurve,
+        curve_parameter,
+        target,
+    )
+}
+
+// Keep the support carrier explicit so repeated support-UV samples avoid index lookups.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_geometry(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    ir: &CadIr,
+    blend: &SurfaceId,
+    support: &SurfaceId,
+    support_geometry: &SurfaceGeometry,
+    support_pcurve: &PcurveGeometry,
+    curve_parameter: f64,
+    target: BoundaryInverseTarget,
+) -> Option<Point2> {
+    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, blend)?;
+    let matches = supports
         .iter()
-        .filter(|candidate| parameterization_equivalent_surfaces(ir, candidate, support))
-        .count()
-        != 1
-    {
+        .enumerate()
+        .filter(|(_, candidate)| parameterization_equivalent_surfaces(ir, candidate, support))
+        .map(|(boundary, _)| boundary)
+        .collect::<Vec<_>>();
+    let [boundary] = matches.as_slice() else {
         return None;
-    }
-    let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
+    };
     let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, 0)?;
-    closest_pcurve_parameters(contact_pcurve, support_uv, target.seed.map(|seed| seed.u))?
+    blend_boundary_parameter_from_contact_pcurve_with_geometry(
+        index,
+        support,
+        support_geometry,
+        contact_pcurve,
+        *boundary,
+        support_pcurve,
+        curve_parameter,
+        target,
+    )
+}
+
+// Keep the support carrier explicit so repeated transfer samples avoid index lookups.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn blend_boundary_parameter_from_contact_pcurve_with_geometry(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    support: &SurfaceId,
+    support_geometry: &SurfaceGeometry,
+    contact_pcurve: &PcurveGeometry,
+    boundary: usize,
+    support_pcurve: &PcurveGeometry,
+    curve_parameter: f64,
+    target: BoundaryInverseTarget,
+) -> Option<Point2> {
+    let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
+    let parameter = target
+        .seed
+        .and_then(|seed| closest_pcurve_parameter_from_seed(contact_pcurve, support_uv, seed.u))
+        .or_else(|| closest_pcurve_parameter_from_coarse_grid(contact_pcurve, support_uv))?;
+    [parameter]
         .into_iter()
         .find(|parameter| {
-            blend_boundary_point_with_index(index, blend, *parameter, boundary, 0).is_some_and(
-                |candidate| point_distance(candidate, target.point) <= target.tolerance,
-            )
+            let Some(uv) = pcurve_uv(contact_pcurve, *parameter) else {
+                return false;
+            };
+            decoded_surface_point_with_geometry(index, support, support_geometry, uv.u, uv.v, 0)
+                .is_some_and(|candidate| {
+                    point_distance(candidate, target.point) <= target.tolerance
+                })
         })
         .map(|parameter| Point2::new(parameter, boundary as f64))
 }
 
+const LOCAL_PCURVE_SEARCH_STEPS: usize = 12;
+const COARSE_PCURVE_SEARCH_INTERVALS: usize = 16;
+
+fn pcurve_domain(pcurve: &PcurveGeometry) -> Option<([f64; 2], bool)> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        periodic,
+        ..
+    } = pcurve
+    else {
+        return None;
+    };
+    let degree = usize::try_from(*degree).ok()?;
+    let count = control_points.len();
+    if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
+        return None;
+    }
+    let domain = [*knots.get(degree)?, *knots.get(count)?];
+    (domain[0].is_finite() && domain[1].is_finite() && domain[0] < domain[1])
+        .then_some((domain, *periodic))
+}
+
+fn closest_pcurve_parameter_from_coarse_grid(
+    pcurve: &PcurveGeometry,
+    point: Point2,
+) -> Option<f64> {
+    let (domain, _) = pcurve_domain(pcurve)?;
+    let mut closest = None;
+    for index in 0..=COARSE_PCURVE_SEARCH_INTERVALS {
+        let parameter = domain[0]
+            + (domain[1] - domain[0]) * index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64;
+        let candidate = pcurve_uv(pcurve, parameter)?;
+        let distance = (candidate.u - point.u).powi(2) + (candidate.v - point.v).powi(2);
+        if !distance.is_finite() {
+            continue;
+        }
+        if closest.is_none_or(|(_, current)| distance < current) {
+            closest = Some((parameter, distance));
+        }
+    }
+    closest.and_then(|(parameter, _)| closest_pcurve_parameter_from_seed(pcurve, point, parameter))
+}
+
+fn closest_pcurve_parameter_from_seed(
+    pcurve: &PcurveGeometry,
+    point: Point2,
+    seed: f64,
+) -> Option<f64> {
+    let (domain, periodic) = pcurve_domain(pcurve)?;
+    let mut parameter = if periodic {
+        canonical_periodic_parameter(domain, true, seed)
+    } else {
+        seed.clamp(domain[0], domain[1])
+    };
+    for _ in 0..LOCAL_PCURVE_SEARCH_STEPS {
+        let candidate = pcurve_uv(pcurve, parameter)?;
+        let tangent = pcurve_tangent(pcurve, parameter)?;
+        let speed_squared = tangent.u * tangent.u + tangent.v * tangent.v;
+        if !speed_squared.is_finite() || speed_squared <= f64::EPSILON {
+            return None;
+        }
+        let gradient = (candidate.u - point.u) * tangent.u + (candidate.v - point.v) * tangent.v;
+        let step = gradient / speed_squared;
+        if !step.is_finite() {
+            return None;
+        }
+        let next = if periodic {
+            canonical_periodic_parameter(domain, true, parameter - step)
+        } else {
+            (parameter - step).clamp(domain[0], domain[1])
+        };
+        if (next - parameter).abs() <= 64.0 * f64::EPSILON * (1.0 + parameter.abs()) {
+            return Some(next);
+        }
+        parameter = next;
+    }
+    Some(parameter)
+}
+
+#[cfg(test)]
 pub(crate) fn closest_pcurve_parameters(
     pcurve: &PcurveGeometry,
     point: Point2,
@@ -890,7 +1038,8 @@ pub(crate) struct HomogeneousCurveSpans<const DIMENSION: usize> {
     pub(crate) coordinate_tolerance: f64,
 }
 
-pub(crate) fn homogeneous_pcurve_spans(
+#[cfg(test)]
+fn homogeneous_pcurve_spans(
     degree: usize,
     knots: &[f64],
     control_points: &[Point2],
@@ -1736,6 +1885,20 @@ pub(crate) fn blend_surface_definition(
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
     let procedural = procedural_surface_for_carrier(ir, surface)?;
+    blend_surface_definition_from_procedural(procedural)
+}
+
+pub(crate) fn blend_surface_definition_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
+    let procedural = index.procedural_surface_for_surface(surface.0.as_str())?;
+    blend_surface_definition_from_procedural(procedural)
+}
+
+fn blend_surface_definition_from_procedural(
+    procedural: &ProceduralSurface,
+) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
     let ProceduralSurfaceDefinition::Blend {
         supports: [Some(first), Some(second)],
         spine: Some(spine),

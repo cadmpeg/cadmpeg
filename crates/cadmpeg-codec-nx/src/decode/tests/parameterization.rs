@@ -842,7 +842,7 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
         Some(vec![[0.0, 0.0], [0.0, 0.01]]),
     ];
 
-    let assigned = crate::decode::assign_ext11_support_uv_to_surfaces(
+    let assigned = crate::decode::support_uv::assign_ext11_support_uv_to_surfaces(
         result.ir(),
         [&surfaces[0], &surfaces[1]],
         &[
@@ -1060,7 +1060,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         [None, None],
     )];
 
-    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition
@@ -1214,7 +1214,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         ),
     ];
 
-    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition
@@ -1259,7 +1259,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         [None, None],
     )];
 
-    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition
@@ -1312,7 +1312,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     )];
 
     crate::decode::invalidate_inconsistent_support_uv(&mut result.ir_mut(), &pending);
-    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
 
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

@@ -258,7 +258,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         tolerance: Some(1.0e-8),
     });
 
-    super::complete_exact_boundary_intersection_pcurves(&mut ir, &mut AnnotationBuilder::new());
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
+        &mut ir,
+        &mut AnnotationBuilder::new(),
+    );
     let ProceduralCurveDefinition::TolerantIntersection {
         supports,
         parameterization: Some(parameterization),

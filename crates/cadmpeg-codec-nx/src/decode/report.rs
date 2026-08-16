@@ -21,6 +21,8 @@ use super::feature_completeness::{
     thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
     trim_surface_definition_is_incomplete, valid_feature_direction,
 };
+use super::pcurves::{MAX_COMPLETION_TRANSFER_SAMPLES, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES};
+use super::support_uv::{pcurve_requires_completion, MAX_SUPPORT_UV_SAMPLES};
 use super::{summary_notes, Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
@@ -31,6 +33,15 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CompletionBudgetStatus {
+    pub(crate) exact_boundary_exhausted: bool,
+    pub(crate) transfer_exhausted: bool,
+    pub(crate) support_uv_exhausted: bool,
+}
+
+// Keep the independent report facts explicit at the decode/report boundary.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_geometry_report(
     scan: &Scan,
     ir: &CadIr,
@@ -39,6 +50,7 @@ pub(crate) fn build_geometry_report(
     has_unresolved_sub_bodies: bool,
     tessellation_count: usize,
     model: &crate::native::NativeModel,
+    completion_budget: CompletionBudgetStatus,
 ) -> DecodeReport {
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
@@ -91,6 +103,50 @@ pub(crate) fn build_geometry_report(
             counts.intersection_rejections.missing_start_term,
             counts.intersection_rejections.missing_end_term,
             counts.intersection_rejections.endpoint_mismatch,
+        )));
+    }
+
+    let unresolved_intersection_lanes = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|procedural| {
+            let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+                &procedural.definition
+            else {
+                return None;
+            };
+            Some(
+                context
+                    .sides
+                    .iter()
+                    .filter(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+                    .count(),
+            )
+        })
+        .sum::<usize>();
+    if unresolved_intersection_lanes > 0
+        && (completion_budget.exact_boundary_exhausted
+            || completion_budget.transfer_exhausted
+            || completion_budget.support_uv_exhausted)
+    {
+        let mut bounded_phases = Vec::new();
+        if completion_budget.exact_boundary_exhausted {
+            bounded_phases.push("exact-boundary transfer");
+        }
+        if completion_budget.transfer_exhausted {
+            bounded_phases.push("opposite-chart transfer");
+        }
+        if completion_budget.support_uv_exhausted {
+            bounded_phases.push("EXT11 support-UV fitting");
+        }
+        losses.push(NxLossCode::IntersectionPcurveCompletionBounded.note(format!(
+            "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV point fits); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
+            bounded_phases.join(" and "),
+            MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+            MAX_COMPLETION_TRANSFER_SAMPLES,
+            MAX_SUPPORT_UV_SAMPLES,
+            unresolved_intersection_lanes,
         )));
     }
 

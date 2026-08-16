@@ -974,7 +974,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let point = crate::decode::blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
 
     assert_eq!(
-        crate::decode::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
+        crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
         0.25
     );
     ir.model.procedural_curves.push(ProceduralCurve {
@@ -1008,7 +1008,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         cache_fit_tolerance: Some(0.75),
     });
     assert_eq!(
-        crate::decode::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
+        crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
         1.0
     );
 
@@ -1157,7 +1157,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         param_range: Some([0.0, 1.0]),
         tolerance: Some(1.0e-8),
     });
-    crate::decode::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &ir.model.procedural_curves.last().unwrap().definition
     else {

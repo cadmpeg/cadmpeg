@@ -6,11 +6,15 @@ use super::emit::{
     retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream,
 };
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
-use super::report::build_geometry_report;
+use super::pcurves::{
+    transfer_budget_exhausted, MAX_COMPLETION_TRANSFER_SAMPLES, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+};
+use super::report::{build_geometry_report, CompletionBudgetStatus};
 use super::support_uv::{
-    assign_ext11_support_uv, attach_completed_intersection_pcurves, complete_ext11_support_uv,
-    complete_parameterization_equivalent_support_uv, complete_support_uv,
-    invalidate_inconsistent_support_uv, linear_knots, validate_serialized_support_uv,
+    assign_ext11_support_uv_with_index, attach_completed_intersection_pcurves,
+    complete_ext11_support_uv, complete_parameterization_equivalent_support_uv,
+    complete_support_uv_with_budget, invalidate_inconsistent_support_uv, linear_knots,
+    support_uv_budget_exhausted, validate_serialized_support_uv_with_index, MAX_SUPPORT_UV_SAMPLES,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
@@ -175,6 +179,9 @@ pub(crate) fn try_decode_geometry(
                 .map(|streams| (selected, streams, "terminal_feature_body_lineage"))
         });
     let preselection = rmfastload_preselection.or(terminal_preselection);
+    let exact_transfer_budget = ctx.work_budget(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES as u64);
+    let transfer_budget = ctx.work_budget(MAX_COMPLETION_TRANSFER_SAMPLES as u64);
+    let support_budget = ctx.work_budget(MAX_SUPPORT_UV_SAMPLES as u64);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -238,7 +245,6 @@ pub(crate) fn try_decode_geometry(
             }
             counts.points += 1;
         }
-
         for (fi, (offset, geometry, node)) in ordered_surface_candidates(semantic, graph)
             .into_iter()
             .enumerate()
@@ -279,7 +285,6 @@ pub(crate) fn try_decode_geometry(
                 surfaces_by_xmt.insert(node.xmt, id);
             }
         }
-
         for (fi, surf) in crate::nurbs::surfaces(semantic).into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
             let id = SurfaceId(format!("nx:s{si}:nurbs-surf#{fi}"));
@@ -296,7 +301,6 @@ pub(crate) fn try_decode_geometry(
                 surfaces_by_xmt.insert(node.xmt, id);
             }
         }
-
         let saved_offset_carriers = saved_offset_carriers(
             &ir,
             graph,
@@ -407,7 +411,6 @@ pub(crate) fn try_decode_geometry(
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;
         }
-
         for (procedural_index, support_xmts, offsets) in pending_blend_supports {
             let supports = [0, 1].map(|side| {
                 surfaces_by_xmt
@@ -473,7 +476,6 @@ pub(crate) fn try_decode_geometry(
                 curves_by_xmt.insert(node.xmt, id);
             }
         }
-
         for (ci, crv) in crate::nurbs::curves(semantic).into_iter().enumerate() {
             counts.nurbs_curves += 1;
             let id = CurveId(format!("nx:s{si}:nurbs-crv#{ci}"));
@@ -509,7 +511,6 @@ pub(crate) fn try_decode_geometry(
                 pcurves_by_xmt.insert(node.xmt, id);
             }
         }
-
         let intersection_scan = view.intersections.clone();
         counts
             .intersection_rejections
@@ -525,6 +526,40 @@ pub(crate) fn try_decode_geometry(
             .into_iter()
             .map(|curve| (curve.xmt, curve))
             .collect();
+        let intersection_support_uv = {
+            let model_index = cadmpeg_ir::index::ModelIndex::new(&ir);
+            intersection_constructions
+                .iter()
+                .filter_map(|construction| {
+                    let charted = charted_intersections.get(&construction.xmt)?;
+                    let mut support_uv = validate_serialized_support_uv_with_index(
+                        &ir,
+                        &model_index,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.support_uv,
+                    );
+                    if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
+                        &ir,
+                        &model_index,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.ext_support_uv,
+                    ) {
+                        for side in 0..2 {
+                            if support_uv[side].is_none() {
+                                support_uv[side].clone_from(&ext_support_uv[side]);
+                            }
+                        }
+                    }
+                    Some((construction.xmt, support_uv))
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
             let curve_id = CurveId(format!("nx:s{si}:intersection-crv#{ci}"));
             let procedural_id = ProceduralCurveId(format!("nx:s{si}:intersection#{ci}"));
@@ -604,28 +639,10 @@ pub(crate) fn try_decode_geometry(
                 id: procedural_id,
                 curve: curve_id.clone(),
                 definition: if let Some(charted) = charted {
-                    let mut support_uv = validate_serialized_support_uv(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports,
-                        &charted.points,
-                        charted.fit_tolerance,
-                        &charted.support_uv,
-                    );
-                    if let Some(ext_support_uv) = assign_ext11_support_uv(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports,
-                        &charted.points,
-                        charted.fit_tolerance,
-                        &charted.ext_support_uv,
-                    ) {
-                        for side in 0..2 {
-                            if support_uv[side].is_none() {
-                                support_uv[side].clone_from(&ext_support_uv[side]);
-                            }
-                        }
-                    }
+                    let support_uv = intersection_support_uv
+                        .get(&construction.xmt)
+                        .cloned()
+                        .unwrap_or([None, None]);
                     let first = intersection_side(
                         &ir,
                         &surfaces_by_xmt,
@@ -676,7 +693,6 @@ pub(crate) fn try_decode_geometry(
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
         }
-
         for (procedural_index, spine_xmt) in pending_blend_spines {
             let Some(spine) = curves_by_xmt.get(&spine_xmt).cloned() else {
                 continue;
@@ -755,7 +771,6 @@ pub(crate) fn try_decode_geometry(
                 break;
             }
         }
-
         retain_unresolved_topology_carriers(
             &mut ir,
             si,
@@ -766,7 +781,6 @@ pub(crate) fn try_decode_geometry(
             source_stream,
             &mut annotations,
         );
-
         emit_topology(
             &mut ir,
             si,
@@ -779,11 +793,13 @@ pub(crate) fn try_decode_geometry(
             &trim_ranges,
             source_stream,
             &mut annotations,
+            &exact_transfer_budget,
+            &transfer_budget,
         );
         invalidate_inconsistent_support_uv(&mut ir, &pending_ext11_support_uv);
         complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
         complete_parameterization_equivalent_support_uv(&mut ir);
-        complete_support_uv(&mut ir, &pending_ext11_support_uv);
+        complete_support_uv_with_budget(&mut ir, &pending_ext11_support_uv, &support_budget);
         attach_completed_intersection_pcurves(
             &mut ir,
             graph,
@@ -791,7 +807,6 @@ pub(crate) fn try_decode_geometry(
             source_stream,
             &mut annotations,
         );
-
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let mut unknown = unknown_stream(si, stream);
         unknown.links.extend(
@@ -864,6 +879,11 @@ pub(crate) fn try_decode_geometry(
     retain_live_unknown_links(&ir, &mut unknowns, &mut annotations);
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
+    let completion_budget = CompletionBudgetStatus {
+        exact_boundary_exhausted: transfer_budget_exhausted(&exact_transfer_budget),
+        transfer_exhausted: transfer_budget_exhausted(&transfer_budget),
+        support_uv_exhausted: support_uv_budget_exhausted(&support_budget),
+    };
     let mut report = build_geometry_report(
         scan,
         &ir,
@@ -872,6 +892,7 @@ pub(crate) fn try_decode_geometry(
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
         &model,
+        completion_budget,
     );
     report_untransferred_streams(scan, &mut report, true);
     Ok(Some((ir, report, annotations, unknowns)))
