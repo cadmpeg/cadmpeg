@@ -52,6 +52,7 @@ impl CodecBackend for StepCodec {
         if starts_with_step_magic(prefix) {
             Confidence::High
         } else if archive::has_root_marker(prefix)
+            || is_part26_hdf5(prefix)
             || is_part28_xml(prefix)
             || is_ap242_bo_model_xml(prefix)
         {
@@ -362,7 +363,7 @@ fn decode_zip(
 }
 
 fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    if bytes.starts_with(b"\x89HDF\r\n\x1a\n") {
+    if is_part26_hdf5(bytes) {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),
         ));
@@ -378,6 +379,10 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
         ));
     }
     Ok(())
+}
+
+fn is_part26_hdf5(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\x89HDF\r\n\x1a\n")
 }
 
 fn is_part28_xml(bytes: &[u8]) -> bool {

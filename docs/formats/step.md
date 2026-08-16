@@ -19,6 +19,91 @@ occurrence relationships carry identity and placement.
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
 
+ISO 10303-28:2007 defines an XML representation of EXPRESS schemas and data
+using XML Schema. It does not define one fixed AP203, AP214, or AP242 element
+vocabulary. A Part 28 XML grammar is the combination of the Part 28 document
+mapping, a configuration, and the XML Schema generated from the selected AP
+EXPRESS schema and edition. The configuration selects the XML namespace,
+target namespace, serialized unit-of-serialization element, and mapping
+options such as attribute-content and tagless encoding. The generated schema
+selects entity element names, attribute names, types, cardinalities,
+OPTIONAL values, SELECT values, aggregate representation, and reference
+attributes.
+
+In the terse configuration, the UOS element is commonly
+`iso_10303_28_terse`. The AP namespace identifies the EXPRESS schema mapping;
+the Part 28 namespace carries configuration elements such as `exp:header`;
+and the `schema` attribute carries the EXPRESS schema name. An entity instance
+is an XML element with an XML `id`; an entity reference is an IDREF-valued
+attribute or content value defined by the generated schema. The XML `id` is
+local to this population and is not a Part 21 `#` identifier. The XML graph
+therefore maps one EXPRESS entity instance to one graph node and one reference
+value to one graph edge. EXPRESS SET, LIST, ARRAY, BAG, and aggregation bounds
+remain the governing cardinality and ordering rules; XML serialization order
+does not add order to a SET or BAG. The configuration and generated schema
+also govern complex entity encoding and unset OPTIONAL attributes.
+
+ISO 10303-28:2003 is withdrawn. The current Part 28 edition is ISO
+10303-28:2007, edition 1. AP242 BO-Model XML uses ISO/TS 10303-3001 schemas,
+not the Part 28 mapping, and is a separate encoding.
+
+CADIR decision: the STEP codec admits Part 21 clear text and its ZIP container
+only. XML with the Part 28 XML declaration and Part 28 document marker is
+recognized as an alternate encoding and is refused with
+`NotImplemented("STEP Part 28 XML encoding")` before Part 21 parsing. The
+codec does not infer an AP schema or edition from an XML prefix, filename,
+UOS-local name, or namespace alone; it does not implement a generic
+schema-driven XML adapter and does not join XML data to a Part 21 file by
+filename or identifier. A caller that needs Part 28 must provide the exact
+Part 28 configuration, generated AP XML Schema, EXPRESS schema edition, and a
+separate graph-binding policy.
+
+ISO/TS 10303-26:2011 defines a binary representation of EXPRESS-driven data
+using HDF5 version 5. The mapping is schema-driven. A conforming population
+uses a schema encoding group directly below the HDF5 root, named from the
+schema with the `_encoding` suffix and carrying `iso_10303_26_schema`. Each
+population group carries `iso_10303-26_data` with the schema identifier and
+`iso_10303_26_data_set_names` with the population's entity dataset names.
+Optional population metadata does not change the graph mapping. One HDF5 file
+may contain several populations of the same schema.
+
+For each EXPRESS entity, the schema group defines a named HDF5 compound type.
+Its relative name is the schema-group name followed by the EXPRESS entity
+name; a complex entity joins its leaf entity names with `+` in alphabetical
+order. The first compound member is `set_unset_bitmap`; the second is
+`Entity-Instance-Identifier`. The remaining members represent explicit
+attributes, including inherited attributes, with the HDF5 types selected by
+the EXPRESS mapping. Derived and inverse attributes, EXPRESS WHERE and UNIQUE
+rules, and EXPRESS executable declarations are not stored as entity members.
+Primitive EXPRESS values map to the Part 26 HDF5 integer, floating-point,
+boolean/logical, string, binary, enumeration, and aggregate encodings.
+
+Entity instances are rows in datasets under the entity's HDF5 object group,
+using its compound type. An entity reference is a pair of HDF5 dataset and
+instance indexes; an aggregate is embedded or stored in an aggregate dataset
+according to the Part 26 storage rules and contains the corresponding element
+or reference values. The `Entity-Instance-Identifier` identifies an instance
+within its entity
+population; it is not a Part 21 `#` identifier. One HDF5 row maps to one
+EXPRESS entity node, compound members map to explicit attributes, bitmap bits
+map to OPTIONAL presence, and dataset/instance pairs map to graph edges.
+EXPRESS SET and BAG order has no semantic meaning; LIST and ARRAY order is
+preserved by their aggregate representation.
+
+ISO/TS 10303-26:2011 is edition 1 and remains the current confirmed edition.
+An HDF5 signature identifies an HDF5 file, not a valid Part 26 population or
+an AP203, AP214, or AP242 schema. The schema identifier, mapping version,
+population markers, compound types, and dataset conventions are all required
+to decode the graph.
+
+CADIR decision: the STEP codec refuses an input beginning with the HDF5
+signature `89 48 44 46 0d 0a 1a 0a` with
+`NotImplemented("STEP Part 26 binary/HDF5 encoding")` before Part 21 parsing.
+It does not treat arbitrary HDF5 as STEP, infer an AP schema or mapping from
+the signature, implement a schema-bound HDF5 adapter, or compose the HDF5
+graph with a Part 21 file. A caller that needs Part 26 must provide the exact
+EXPRESS schema, Part 26 mapping edition, and a separate graph-binding policy.
+
 An AP242 BO-Model XML exchange uses the XML Schema for its selected AP242 BO
 Model edition. AP242 Edition 1 (2014) uses the ISO/TS 10303-3001 edition-1
 schema; its 2016 technical corrigendum uses the edition-2 schema. The

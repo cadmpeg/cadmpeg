@@ -20,64 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-03. Part 28 XML grammar
-
-**Question.** What XML grammar represents an AP203, AP214, or AP242 exchange structure in Part 28?
-
-**Known.** ISO 10303-28 defines an EXPRESS-to-XML mapping and supplies the
-generic XML mapping rules. AP203, AP214, and AP242 still require the matching
-edition's EXPRESS schema and generated XML schema components. Part 21 syntax
-does not identify those XML namespaces or schema resources.
-
-**Note.** A generic XML parser does not establish the AP schema, select the
-edition, or decode schema-specific XML constructs. Read the matching EXPRESS
-schema and its generated XML schema components from the published stepmod or
-stepcode repository and the AP242 downloads.
-
-**Need.** We must know the grammar to parse record boundaries, values, and references from Part 28 XML.
-
-### CE-04. Part 28 graph mapping
-
-**Question.** How does each Part 28 XML construct map to the entity graph and invariants in `step.md`?
-
-**Known.** ISO 10303-28 defines the mapping from EXPRESS entities and values
-to XML elements, attributes, namespaces, and references. The mapping is
-schema-driven; it is not a second universal Part 21 record grammar.
-
-**Note.** Applying the mapping needs the exact AP schema and XML schema
-version, both published, and a mapping implementation for every supported
-construct. Read ISO 10303-28, then author the Part 28 witness input and the
-IR adapter.
-
-**Need.** We must know the mapping to apply schema decoding to a Part 28 exchange structure.
-
-### CE-05. Part 26 binary grammar
-
-**Question.** What HDF5 layout represents an AP203, AP214, or AP242 exchange structure in Part 26?
-
-**Known.** ISO/TS 10303-26 defines an EXPRESS-driven HDF5 mapping. The HDF5
-layout is schema- and mapping-version dependent; the HDF5 signature alone
-does not identify AP203, AP214, or AP242.
-
-**Note.** Derive the Part 26 mapping tables and the HDF5 reader from
-ISO/TS 10303-26.
-
-**Need.** We must know the layout to parse record boundaries, values, and references from Part 26 data.
-
-### CE-06. Part 26 graph mapping
-
-**Question.** How does each Part 26 HDF5 construct map to the entity graph and invariants in `step.md`?
-
-**Known.** Part 26 defines the schema-driven mapping from EXPRESS values and
-entity identity to HDF5 datasets, datatypes, and links. It does not make every
-HDF5 dataset self-describing as an AP203, AP214, or AP242 instance graph.
-
-**Note.** Applying the mapping needs the exact Part 26 mapping version and AP
-schema from the published texts. Read ISO/TS 10303-26, then author the Part 26
-witness input and the IR adapter.
-
-**Need.** We must know the mapping to apply schema decoding to a Part 26 exchange structure.
-
 ## 4. Signatures
 
 ## 5. Topology and pcurve decisions
