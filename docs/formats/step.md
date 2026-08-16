@@ -765,6 +765,20 @@ face may have this type. Section §5.5.19 defines `FACE.bounds` as
 `SET[1:?] OF FACE_BOUND`; its WR2 permits at most one `FACE_OUTER_BOUND`, and
 the outer role is optional. Other face bounds are not outer bounds.
 
+Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
+`orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
+no additional explicit attributes. Therefore, in a complex instance, the
+`FACE_BOUND` partial supplies the boundary parameters and the empty
+`FACE_OUTER_BOUND` partial supplies only the outer-boundary classification.
+
+CADIR decision: subtype classification checks for the presence of the
+`FACE_OUTER_BOUND` partial, while attribute lookup selects the partial that
+carries the three `FACE_BOUND` parameters. This remains true when the two
+partials are serialized in the opposite order. The latter order is
+noncanonical Part 21 source; CADIR retains it and reports the source-order
+loss, then applies the same attribute rule. An empty partial that supplies no
+boundary parameters cannot create a loop or an implicit surface.
+
 CADIR decision: when malformed input declares more than one outer bound, the
 decoder rejects the containing topology shell/root. It assigns no outer role,
 derives no implicit face carrier, retains the source face and its bound

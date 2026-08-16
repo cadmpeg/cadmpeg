@@ -150,6 +150,52 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
 }
 
 #[test]
+fn complex_face_bound_partials_keep_attributes_when_reordered() {
+    let source = String::from_utf8(include_bytes!("data/tp08_face_bound_partial.p21").to_vec())
+        .expect("fixture is UTF-8");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("decode complex face-bound witness");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.loops.len(), 1);
+    assert_eq!(
+        decoded.ir().model.loops[0].boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#implicit-face-8"
+            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+    }));
+
+    let reordered = source.replace(
+        "#7=(FACE_BOUND('outer',#6,.T.) FACE_OUTER_BOUND());",
+        "#7=(FACE_OUTER_BOUND() FACE_BOUND('outer',#6,.T.));",
+    );
+    let reordered = StepCodec::default()
+        .decode(&mut Cursor::new(reordered), &DecodeOptions::default())
+        .expect("decode reordered complex face-bound witness");
+    assert!(reordered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
+    assert_eq!(reordered.ir().model.bodies.len(), 1);
+    assert_eq!(reordered.ir().model.loops.len(), 1);
+    assert_eq!(
+        reordered.ir().model.loops[0].boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
+    assert!(reordered.ir().model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#implicit-face-8"
+            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+    }));
+    let validation =
+        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn implicit_face_plane_is_invariant_under_edge_ring_rotation() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())

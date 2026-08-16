@@ -231,33 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### TP-08. Face-bound partial dispatch
-
-**Question.** What STEP rule establishes face-bound partial dispatch?
-
-**Known.** The partial with the boundary parameters supplies the inherited
-`FACE_BOUND` attributes. An empty `FACE_OUTER_BOUND` partial supplies the
-outer-role classification.
-
-`has_type` matches a partial name exactly and does not walk the
-EXPRESS subtype hierarchy
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:4633`). Two sites choose
-the governing partial in opposite orders. The shell reader tries `FACE_BOUND`
-first (`topology.rs:2205`). The implicit-plane reader tries `FACE_OUTER_BOUND`
-first (`topology.rs:2978`). `FACE_OUTER_BOUND` adds no attributes to
-`FACE_BOUND`, so the second site reads attribute 1 of an empty partial and
-returns no loop.
-
-Face-bound classification reads the presence of
-`FACE_OUTER_BOUND`, while attribute lookup selects the first face-bound
-partial that carries the three boundary parameters. The shell reader and
-implicit-plane reader use this same dispatch. The synthesized complex-face
-fixture covers the inherited-attribute form.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-04. Chart write-back to the shared pcurve
 
 **Question.** What STEP rule establishes chart write-back to the shared pcurve?
