@@ -104,6 +104,23 @@ fn parser_retains_user_defined_entity_and_type_names() {
 }
 
 #[test]
+fn parser_retains_user_defined_typed_parameter_from_witness() {
+    let source = include_bytes!("../../reader/tests/data/ud01_user_defined_entity.p21");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("user-defined type witness");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        exchange.records[&2].partials[0].parameters[2],
+        crate::parse::Value::Typed(
+            "!VENDOR_TYPE".into(),
+            Box::new(crate::parse::Value::List(vec![
+                crate::parse::Value::Reference(1),
+            ])),
+        )
+    );
+}
+
+#[test]
 fn parser_does_not_repair_non_carrier_first_parameters() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=!VENDOR_ENTITY(1,#2);#2=KNOWN();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("non-carrier entity");

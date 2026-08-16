@@ -180,10 +180,20 @@ A parameter is an entity reference, value reference, named entity constant,
 named value constant, integer, real, enumeration, string, binary literal,
 resource, omitted value, derived value, list, or typed parameter. A list is a
 parenthesized comma-separated sequence. A typed parameter is a name followed
-by one parenthesized parameter. A user-defined type name does not assign
-value semantics; the wrapped parameter remains a typed opaque value. Empty
-lists are valid. Numeric value references
+by one parenthesized parameter. ISO 10303-21:2016 §5.5 Table 3 defines
+`TYPED_PARAMETER` as `KEYWORD ( PARAMETER )`; §7.1 permits it wherever a
+parameter occurs to represent a select value. Section §6.3 defines a keyword
+beginning with `!` as a user-defined keyword for a named entity or defined
+type, with its meaning agreed between the exchange partners. The wrapper and
+its wrapped parameter therefore have no universal value semantics from the
+`!` name alone. Empty lists are valid. Numeric value references
 and named constants are values, not local DATA entity identifiers.
+
+CADIR decision: the parser retains a user-defined typed parameter as its exact
+`!` name and recursively retained parameter value. Opaque-record retention
+recursively collects references inside lists and typed parameters. The reader
+does not promote a user-defined wrapper or its wrapped value to a neutral or
+typed native value without the agreed schema semantics.
 
 A simple entity instance is:
 

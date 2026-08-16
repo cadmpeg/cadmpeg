@@ -231,21 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### UD-02. User-defined type semantics
-
-**Known.** Part 21 does not assign semantics to a user-defined type name.
-The wrapped parameter remains a typed opaque value; the partners' agreed
-schema selects its type. The reader preserves the type name, wrapped value, record span,
-and links and does not select a neutral value type by name alone.
-
-**Question.** What value semantics does each user-defined `!` type name select?
-
-`step.md` §3 "user_name" defines the syntax of a user-defined name. `step.md` §5 "A parameter is an entity reference, value reference, named entity constant," through `step.md` §5 "A parameter is an entity reference, value reference, named entity constant," define a typed parameter as a name with one parameter.
-
-**Need.** We must know the semantics to decode the wrapped parameter as a typed value.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### SG-01. Signature method selection
 
 **Known.** Part 21 defines one signature method: a detached CMS
