@@ -106,6 +106,8 @@ pub enum StepLossCode {
     TessellationItemBodyUnresolved,
     /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
+    /// A repositioned tessellation item has no valid placement.
+    TessellationPlacementUnresolved,
     /// A detached tessellation item has multiple distinct repositioning placements.
     TessellationPlacementAmbiguous,
     /// A geometric validation measure unit scale did not resolve.
@@ -324,6 +326,7 @@ impl StepLossCode {
         Self::DraughtingAssociatedItemUntyped,
         Self::TessellationItemBodyUnresolved,
         Self::TessellationItemUndeclared,
+        Self::TessellationPlacementUnresolved,
         Self::TessellationPlacementAmbiguous,
         Self::ValidationMeasureUnitUnresolved,
         Self::NoExportableSolids,
@@ -465,6 +468,7 @@ impl StepLossCode {
             Self::DraughtingAssociatedItemUntyped => "drawing.draughting-associated-item-untyped",
             Self::TessellationItemBodyUnresolved => "tessellation.item-body-unresolved",
             Self::TessellationItemUndeclared => "tessellation.item-undeclared",
+            Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
             Self::TessellationPlacementAmbiguous => "tessellation.placement-ambiguous",
             Self::ValidationMeasureUnitUnresolved => "validation.measure-unit-unresolved",
             Self::NoExportableSolids => "export.no-exportable-solids",
@@ -708,6 +712,7 @@ impl StepLossCode {
             | Self::DrawingRevisionSheetUnresolved
             | Self::TessellationItemBodyUnresolved
             | Self::TessellationItemUndeclared
+            | Self::TessellationPlacementUnresolved
             | Self::TessellationPlacementAmbiguous => LossTaxonomy::ReferenceGraphNotClosed,
             Self::PcurveEndpointsDiscontinuous
             | Self::PcurveCarrierUnwritable
@@ -833,6 +838,7 @@ mod tests {
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
                 "tessellation.item-undeclared",
+                "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",
                 "validation.measure-unit-unresolved",
                 "export.no-exportable-solids",

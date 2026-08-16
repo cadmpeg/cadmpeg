@@ -542,13 +542,3 @@ QA audit: reopened after reviewing closing commit cbbbe401b. The closing commit 
 **Need.** We need the uniqueness rule for occurrence placement relations, and a witness file with two valid relations for one usage, including a record-order permutation.
 
 **Note.** Reordering the same two relations can change the occurrence transform without changing the represented usage. The current code silently selects one candidate.
-
-### TS-01. Invalid repositioned tessellation placement
-
-**Question.** What happens when a REPOSITIONED_TESSELLATED_ITEM has a missing, invalid, or unknown placement reference?
-
-**Known.** crates/cadmpeg-codec-step/src/reader/tessellation.rs:456-459 treats repositioned_placement returning None as if the wrapper supplied no local placement. repositioned_placement at tessellation.rs:537-545 returns None for a missing reference or placement entry. The specification defines valid repositioning and conflicting-placement refusal, but no invalid-single-placement disposition is recorded.
-
-**Need.** We need a malformed wrapper file with one invalid placement reference and an expected loss or source-native disposition that prevents coordinate substitution.
-
-**Note.** A tessellated leaf below a malformed repositioning wrapper can be emitted at the inherited or identity placement with no loss. The decoded coordinates then look valid but are silently in the wrong frame.

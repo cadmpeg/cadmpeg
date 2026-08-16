@@ -44,6 +44,7 @@ pub(super) fn decode(
     let mut losses = Vec::new();
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
     let mut item_placements = BTreeMap::<u64, Vec<Transform>>::new();
+    let mut unresolved_placements = BTreeSet::new();
     let mut declared_items = BTreeSet::new();
     let mut unresolved_containers = BTreeSet::new();
     let mut body_context_items = BTreeSet::new();
@@ -74,6 +75,7 @@ pub(super) fn decode(
             typed: &mut typed,
             geometry,
             placements: &mut item_placements,
+            unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             detached_annotation: false,
             declare_containers: true,
@@ -125,6 +127,7 @@ pub(super) fn decode(
             typed: &mut typed,
             geometry,
             placements: &mut item_placements,
+            unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             detached_annotation: false,
             declare_containers: false,
@@ -154,6 +157,7 @@ pub(super) fn decode(
             typed: &mut typed,
             geometry,
             placements: &mut item_placements,
+            unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             detached_annotation: true,
             declare_containers: false,
@@ -161,6 +165,13 @@ pub(super) fn decode(
             active: BTreeSet::new(),
         };
         associator.visit(item, 0, None);
+    }
+    for id in unresolved_placements {
+        let message = format!(
+            "repositioned tessellated item #{id} has no valid AXIS2_PLACEMENT_3D; mesh retained in source coordinates"
+        );
+        warnings.push(message.clone());
+        losses.push(StepLossCode::TessellationPlacementUnresolved.note(message));
     }
     for id in unresolved_containers {
         let Some(record) = exchange.records.get(&id) else {
@@ -437,6 +448,7 @@ struct TessellationItemAssociator<'a> {
     typed: &'a mut HashSet<u64>,
     geometry: &'a GeometryData,
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
+    unresolved_placements: &'a mut BTreeSet<u64>,
     body_context_items: &'a mut BTreeSet<u64>,
     detached_annotation: bool,
     declare_containers: bool,
@@ -453,10 +465,18 @@ impl TessellationItemAssociator<'_> {
             self.active.remove(&id);
             return;
         };
-        let placement = repositioned_placement(record, self.geometry)
-            .map_or(inherited_placement, |local| {
-                Some(inherited_placement.map_or(local, |parent| parent.compose(local)))
-            });
+        let local_placement = if has_entity(record, "REPOSITIONED_TESSELLATED_ITEM") {
+            let placement = repositioned_placement(record, self.geometry);
+            if placement.is_none() {
+                self.unresolved_placements.insert(id);
+            }
+            placement
+        } else {
+            None
+        };
+        let placement = local_placement.map_or(inherited_placement, |local| {
+            Some(inherited_placement.map_or(local, |parent| parent.compose(local)))
+        });
         if entity_kind(
             record,
             &[

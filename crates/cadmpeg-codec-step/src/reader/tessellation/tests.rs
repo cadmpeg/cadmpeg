@@ -333,6 +333,39 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
 }
 
 #[test]
+fn repositioned_annotation_mesh_with_missing_placement_keeps_source_coordinates() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ts01_repositioned_missing_placement.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode missing repositioned placement tessellation");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+        .expect("missing-placement tessellation");
+    assert_point3_close(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
+            && loss.message.contains("repositioned tessellated item #5")
+            && loss.message.contains("source coordinates")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP native namespace")
+        .iter()
+        .any(|record| record.id.0.ends_with("#5")));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn repositioned_annotation_mesh_rejects_conflicting_placements() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
