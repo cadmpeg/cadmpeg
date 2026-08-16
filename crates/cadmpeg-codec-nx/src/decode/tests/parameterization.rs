@@ -148,6 +148,129 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
 }
 
 #[test]
+fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
+    use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurface, Surface};
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::math::Point3;
+
+    const FIT_TOLERANCE: f64 = 0.000_001;
+    const PARAMETER_TOLERANCE: f64 = 0.001;
+
+    let support = SurfaceId("synthetic:wavy-support".into());
+    let offset = SurfaceId("synthetic:wavy-offset".into());
+    let construction = ProceduralSurfaceId("synthetic:wavy-offset-construction".into());
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(Surface {
+        id: support.clone(),
+        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 3,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 4,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(-3.0, 0.0, 0.0),
+                Point3::new(-3.0, 0.0, 1.0),
+                Point3::new(3.0, 2.0, 0.0),
+                Point3::new(3.0, 2.0, 1.0),
+                Point3::new(-3.0, 4.0, 0.0),
+                Point3::new(-3.0, 4.0, 1.0),
+                Point3::new(3.0, 6.0, 0.0),
+                Point3::new(3.0, 6.0, 1.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        }),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: offset.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction,
+        surface: offset.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support,
+            distance: 0.75,
+            u_sense: None,
+            v_sense: None,
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let expected = Point2::new(0.2, 0.45);
+    let point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&ir),
+        &offset,
+        expected.u,
+        expected.v,
+    )
+    .expect("offset point");
+    let actual = crate::decode::offset_surface_parameters_with_tolerance(
+        &ir,
+        &offset,
+        point,
+        Some(Point2::new(0.8, expected.v)),
+        Some(FIT_TOLERANCE),
+    )
+    .expect("global inverse fallback");
+
+    assert!((actual.u - expected.u).abs() <= PARAMETER_TOLERANCE);
+    assert!((actual.v - expected.v).abs() <= PARAMETER_TOLERANCE);
+
+    let nested = SurfaceId("synthetic:wavy-nested-offset".into());
+    let nested_construction =
+        ProceduralSurfaceId("synthetic:wavy-nested-offset-construction".into());
+    ir.model.surfaces.push(Surface {
+        id: nested.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: nested_construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: nested_construction,
+        surface: nested.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: offset.clone(),
+            distance: 0.5,
+            u_sense: None,
+            v_sense: None,
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+    let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&ir),
+        &nested,
+        expected.u,
+        expected.v,
+    )
+    .expect("nested offset point");
+    let nested_actual = crate::decode::offset_surface_parameters_with_tolerance(
+        &ir,
+        &nested,
+        nested_point,
+        Some(Point2::new(0.8, expected.v)),
+        Some(FIT_TOLERANCE),
+    )
+    .expect("nested global inverse fallback");
+    assert!((nested_actual.u - expected.u).abs() <= PARAMETER_TOLERANCE);
+    assert!((nested_actual.v - expected.v).abs() <= PARAMETER_TOLERANCE);
+}
+
+#[test]
 fn decode_tracks_fully_extended_offset_common_header() {
     let stream = offset_surface_with_fully_extended_common_header();
     assert_eq!(crate::topology::offset_surfaces(&stream).len(), 1);

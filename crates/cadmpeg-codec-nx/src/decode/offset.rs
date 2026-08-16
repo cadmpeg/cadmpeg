@@ -24,6 +24,9 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
+const OFFSET_NEWTON_ITERATIONS: usize = 32;
+const OFFSET_PARAMETER_STEP_EPSILON: f64 = 1.0e-12;
+
 pub(crate) fn saved_offset_carriers(
     ir: &CadIr,
     graph: &Graph,
@@ -845,59 +848,110 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         let tolerance = tolerance + distance.abs();
         tolerance.is_finite().then_some(tolerance)
     });
-    let mut parameters = seed
-        .or_else(|| initial_surface_parameters(ir, support, point, None, support_fit_tolerance))
-        .or_else(|| {
-            domain.and_then(|domain| coarse_model_surface_parameters(index, surface, point, domain))
-        })?;
-    clamp_surface_parameters(&mut parameters, domain);
-    for _ in 0..32 {
-        let position = model_surface_point_by_id(index, surface, parameters.u, parameters.v)?;
-        let residual = Vector3::new(
-            position.x - point.x,
-            position.y - point.y,
-            position.z - point.z,
-        );
-        if fit_tolerance.is_some_and(|tolerance| {
-            tolerance.is_finite()
-                && tolerance >= 0.0
-                && dot_vector(residual, residual) <= tolerance * tolerance
-        }) {
-            break;
-        }
-        let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
-        let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
-        let du = model_surface_derivative(
-            index,
-            surface,
-            parameters,
-            u_step,
-            true,
-            domain,
-            [None, None],
-        )?;
-        let dv = model_surface_derivative(
-            index,
-            surface,
-            parameters,
-            v_step,
-            false,
-            domain,
-            [None, None],
-        )?;
-        let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
-            break;
+    if fit_tolerance.is_some_and(|tolerance| !tolerance.is_finite() || tolerance < 0.0) {
+        return None;
+    }
+    let mut starts = Vec::with_capacity(3);
+    let mut add_start = |candidate: Option<Point2>| {
+        let Some(mut candidate) = candidate else {
+            return;
         };
-        parameters.u -= step_u;
-        parameters.v -= step_v;
-        clamp_surface_parameters(&mut parameters, domain);
-        if step_u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && step_v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
-        {
-            break;
+        if !candidate.u.is_finite() || !candidate.v.is_finite() {
+            return;
+        }
+        clamp_surface_parameters(&mut candidate, domain);
+        if !starts.contains(&candidate) {
+            starts.push(candidate);
+        }
+    };
+    add_start(seed);
+    add_start(initial_surface_parameters(
+        ir,
+        support,
+        point,
+        None,
+        support_fit_tolerance,
+    ));
+    add_start(
+        domain.and_then(|domain| coarse_model_surface_parameters(index, surface, point, domain)),
+    );
+
+    let mut best = None;
+    for mut parameters in starts {
+        for _ in 0..OFFSET_NEWTON_ITERATIONS {
+            if !geometry_budget.charge() {
+                break;
+            }
+            let Some(position) =
+                model_surface_point_by_id(index, surface, parameters.u, parameters.v)
+            else {
+                break;
+            };
+            let residual = Vector3::new(
+                position.x - point.x,
+                position.y - point.y,
+                position.z - point.z,
+            );
+            if fit_tolerance
+                .is_some_and(|tolerance| dot_vector(residual, residual) <= tolerance * tolerance)
+            {
+                break;
+            }
+            let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
+            let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
+            let Some(du) = model_surface_derivative(
+                index,
+                surface,
+                parameters,
+                u_step,
+                true,
+                domain,
+                [None, None],
+            ) else {
+                break;
+            };
+            let Some(dv) = model_surface_derivative(
+                index,
+                surface,
+                parameters,
+                v_step,
+                false,
+                domain,
+                [None, None],
+            ) else {
+                break;
+            };
+            let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
+                break;
+            };
+            parameters.u -= step_u;
+            parameters.v -= step_v;
+            clamp_surface_parameters(&mut parameters, domain);
+            if step_u.abs() <= OFFSET_PARAMETER_STEP_EPSILON * (1.0 + parameters.u.abs())
+                && step_v.abs() <= OFFSET_PARAMETER_STEP_EPSILON * (1.0 + parameters.v.abs())
+            {
+                break;
+            }
+        }
+        let Some(position) = model_surface_point_by_id(index, surface, parameters.u, parameters.v)
+        else {
+            continue;
+        };
+        let residual = point_distance(position, point);
+        if !residual.is_finite() {
+            continue;
+        }
+        if fit_tolerance.is_some_and(|tolerance| residual <= tolerance) {
+            return Some(parameters);
+        }
+        let replace = best.is_none_or(|(_, best_residual)| residual < best_residual);
+        if replace {
+            best = Some((parameters, residual));
         }
     }
-    Some(parameters)
+    fit_tolerance
+        .is_none()
+        .then(|| best.map(|(parameters, _)| parameters))?
 }
 
 pub(crate) fn coarse_model_surface_parameters(
@@ -954,10 +1008,17 @@ pub(crate) fn initial_surface_parameters(
                 ir.model.procedural_surfaces.iter().find(|candidate| {
                     &candidate.id == construction && &candidate.surface == surface
                 })?;
-            let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+            let ProceduralSurfaceDefinition::Offset {
+                support, distance, ..
+            } = &procedural.definition
+            else {
                 return None;
             };
-            initial_surface_parameters(ir, support, point, seed, fit_tolerance)
+            let support_fit_tolerance = fit_tolerance.and_then(|tolerance| {
+                let tolerance = tolerance + distance.abs();
+                tolerance.is_finite().then_some(tolerance)
+            });
+            initial_surface_parameters(ir, support, point, seed, support_fit_tolerance)
         }
         geometry => analytic_surface_parameters(geometry, point),
     }
