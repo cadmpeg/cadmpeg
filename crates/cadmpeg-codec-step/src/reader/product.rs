@@ -343,14 +343,19 @@ pub(super) fn decode(
         pending_occurrences.push_back((definition, id));
     }
     let mut ambiguous_placements = BTreeMap::new();
+    let mut competing_placements = BTreeMap::new();
     let placements = occurrence_placements(
         exchange,
         geometry,
         &usages,
         &mut warnings,
         &mut ambiguous_placements,
+        &mut competing_placements,
     );
     for (&usage_id, source_ids) in &ambiguous_placements {
+        if competing_placements.contains_key(&usage_id) {
+            continue;
+        }
         let records = source_ids
             .iter()
             .map(|id| format!("#{id}"))
@@ -358,6 +363,16 @@ pub(super) fn decode(
             .join(", ");
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
             "NAUO #{usage_id} has multiple resolved CONTEXT_DEPENDENT_SHAPE_REPRESENTATION placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
+        )));
+    }
+    for (&usage_id, source_ids) in &competing_placements {
+        let records = source_ids
+            .iter()
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
+            "NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
         )));
     }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
@@ -834,6 +849,7 @@ fn occurrence_placements(
     usages: &BTreeMap<u64, Usage>,
     warnings: &mut Vec<String>,
     ambiguous: &mut BTreeMap<u64, Vec<u64>>,
+    competing: &mut BTreeMap<u64, Vec<u64>>,
 ) -> BTreeMap<u64, Transform> {
     let pds = exchange
         .records
@@ -866,8 +882,9 @@ fn occurrence_placements(
             }
         }
     }
-    for (usage, mut source_ids) in context_candidates {
+    for (&usage, source_ids) in &context_candidates {
         if source_ids.len() > 1 {
+            let mut source_ids = source_ids.clone();
             source_ids.sort_unstable();
             source_ids.dedup();
             ambiguous.insert(usage, source_ids);
@@ -875,27 +892,27 @@ fn occurrence_placements(
     }
     let occurrence_representations = exchange
         .entities("SHAPE_DEFINITION_REPRESENTATION")
-        .filter_map(|(_, record)| {
+        .filter_map(|(record_id, record)| {
             let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
                 .and_then(ValueExt::reference)?;
             let usage = *pds.get(&shape)?;
             usages.contains_key(&usage).then_some((
                 usage,
-                named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
-                    .and_then(ValueExt::reference)?,
+                (
+                    record_id,
+                    named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+                        .and_then(ValueExt::reference)?,
+                ),
             ))
         })
         .fold(
-            BTreeMap::<u64, Vec<u64>>::new(),
+            BTreeMap::<u64, Vec<(u64, u64)>>::new(),
             |mut result, (usage, representation)| {
                 result.entry(usage).or_default().push(representation);
                 result
             },
         );
     for (&usage_id, representations) in &occurrence_representations {
-        if result.contains_key(&usage_id) {
-            continue;
-        }
         let Some(usage) = usages.get(&usage_id) else {
             continue;
         };
@@ -904,7 +921,7 @@ fn occurrence_placements(
             continue;
         };
         let mut candidates = Vec::new();
-        for &representation in representations {
+        for &(source_id, representation) in representations {
             let Some(record) = exchange.records.get(&representation) else {
                 continue;
             };
@@ -924,12 +941,27 @@ fn occurrence_placements(
                     continue;
                 };
                 if child_representations.contains(&mapped_representation) {
-                    candidates.push(transform);
+                    candidates.push((source_id, transform));
                 }
             }
         }
+        if result.contains_key(&usage_id)
+            && context_candidates
+                .get(&usage_id)
+                .is_some_and(|source_ids| !source_ids.is_empty())
+            && !candidates.is_empty()
+        {
+            let mut source_ids = context_candidates[&usage_id].clone();
+            source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
+            source_ids.sort_unstable();
+            source_ids.dedup();
+            result.remove(&usage_id);
+            ambiguous.insert(usage_id, source_ids.clone());
+            competing.insert(usage_id, source_ids);
+            continue;
+        }
         match candidates.as_slice() {
-            [transform] => {
+            [(_, transform)] => {
                 result.insert(usage_id, *transform);
             }
             [] => {}

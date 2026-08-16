@@ -70,7 +70,7 @@ pub enum StepLossCode {
     ShellDisconnectedFaces,
     /// A NAUO has no resolved occurrence transform.
     NauoPlacementUnresolved,
-    /// A NAUO has more than one resolved context-dependent placement.
+    /// A NAUO has competing resolved placement candidates.
     NauoPlacementAmbiguous,
     /// A body has conflicting standalone `MAPPED_ITEM` placements.
     BodyConflictingMappedPlacements,

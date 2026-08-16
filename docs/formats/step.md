@@ -1332,6 +1332,15 @@ rule requires a qualifying context-dependent relationship for each
 multiple qualifying relationships. ISO 10303-44 §4.4.8 defines each
 `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one individual constituent occurrence;
 distinct uses receive distinct occurrence instances.
+ISO/TS 10303-1345:2014-02 §F.2.1 defines the mapped-item and
+representation-relationship-with-transformation assembly shapes as two
+alternatives and states that mixed combinations are valid. §F.2.2 defines the
+mapped-item link through an occurrence-owned `SHAPE_REPRESENTATION`,
+`SHAPE_DEFINITION_REPRESENTATION`, and `PRODUCT_DEFINITION_SHAPE`.
+§F.2.3 defines the context-dependent link through
+`CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` and the
+`representation_relationship_with_transformation` between the child and
+parent representations. Neither alternative has precedence over the other.
 CADIR decision: a neutral occurrence admits exactly one resolved
 `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` placement. If more than one resolved
 relationship targets the same usage, the placement is ambiguous even when the
@@ -1342,6 +1351,16 @@ reports `product.nauo-placement-ambiguous`. It never
 substitutes an identity transform or selects a relation from Part 21 record
 order or numeric entity identifiers. A missing or otherwise unresolved sole
 relationship remains an unresolved placement.
+CADIR decision: when one usage has one or more resolved context-dependent
+placements and one or more resolved occurrence-owned mapped placements, the
+placement is ambiguous even when all transforms are equal. The decoder admits
+no neutral occurrence for that usage, retains the usage and every direct
+context-dependent placement relation and occurrence-owned
+`SHAPE_DEFINITION_REPRESENTATION` relation that supplied a qualifying mapped
+candidate as named opaque source records, and reports
+`product.nauo-placement-ambiguous`. It never gives one assembly mechanism
+precedence over the other or selects a mechanism from Part 21 record order or
+numeric entity identifiers.
 CADIR decision: a parent representation's mapped items do not bind repeated
 uses of one child definition to individual occurrences. When each child
 definition occurs once in a parent usage set and the complete mapped-child

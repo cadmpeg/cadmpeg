@@ -417,6 +417,69 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
 }
 
 #[test]
+fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
+    for input in [
+        include_bytes!("tests/data/ps08_mixed_placement_mechanisms_first.p21").as_slice(),
+        include_bytes!("tests/data/ps08_mixed_placement_mechanisms_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode PS-08 fixture");
+        assert!(result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .all(|occurrence| !occurrence.id.0.contains("#12")));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("NAUO #12")
+                && loss
+                    .message
+                    .contains("resolved context-dependent and occurrence-owned mapped placements")
+                && loss.message.contains("#43")
+                && loss.message.contains("#54")
+                && loss.message.contains("no neutral occurrence was admitted")
+                && loss.message.contains("remain opaque")
+        }));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+        let unknowns = result.ir().native_unknowns("step").unwrap();
+        let unknown_ids = unknowns
+            .iter()
+            .map(|record| record.id.0.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            unknown_ids,
+            std::collections::BTreeSet::from([
+                "step:data:context_dependent_shape_representation#54",
+                "step:data:next_assembly_usage_occurrence#12",
+                "step:data:shape_definition_representation#43",
+            ])
+        );
+        for id in &unknown_ids {
+            let retained = result
+                .source_fidelity()
+                .retained_record(id)
+                .expect("competing placement source record is retained");
+            assert_eq!(
+                retained.data.as_deref(),
+                Some(
+                    &input
+                        [retained.offset as usize..(retained.offset + retained.byte_len) as usize]
+                )
+            );
+        }
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 pub(crate) fn decode_builds_occurrence_placement_from_mapped_item() {
     let bytes = include_bytes!("../../../tests/fixtures/ap242_mapped_assembly.p21");
     let result = StepCodec::default()

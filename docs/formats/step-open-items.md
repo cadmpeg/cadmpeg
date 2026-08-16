@@ -150,16 +150,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** Refusing BO-Model XML avoids an accidental join but does not implement or settle cross-file composition.
 
-### PS-08. Cross-mechanism occurrence placement arbitration
-
-**Question.** How must the decoder arbitrate a valid context-dependent placement and a valid occurrence-owned mapped placement for one `NEXT_ASSEMBLY_USAGE_OCCURRENCE`?
-
-**Known.** `reader/product.rs:853-875` inserts each resolved `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` transform into the placement result. `reader/product.rs:895-897` skips occurrence-owned candidates when that result already contains the usage. The specification defines both placement patterns (`step.md` §8 "Product shape binds through", `step.md` §8 "ISO 10303-44 defines each") but gives no precedence between them.
-
-**Need.** Add an independent witness with distinct transforms from both valid mechanisms and define an order-independent rule that either binds one mechanism or withholds the placement while retaining both relations.
-
-**Conflict.** A valid context-dependent relation silently suppresses a valid occurrence-owned mapped relation. The decoder does not compare transforms or report a conflict.
-
 ### PS-09. Parent mapped-item salvage order
 
 **Question.** What source identity permits parent-representation mapped items to bind unique child usages when no occurrence-owned representation exists?
