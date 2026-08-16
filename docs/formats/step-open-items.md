@@ -444,21 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### BR-01. Topology root identity
-
-**Question.** What STEP rule establishes topology root identity?
-
-**Known.** The topology-root cache key includes the governing root type,
-the resolved shell identities, and shell orientations. Multiple
-representations that reach one root of the same type reuse its committed body
-identity. Distinct root records retain distinct bodies when their root types
-differ, even when they share shell carriers. Body kind is therefore
-independent of instance-number order.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### BR-02. Outer and void shell roles
 
 **Question.** What STEP rule establishes outer and void shell roles?

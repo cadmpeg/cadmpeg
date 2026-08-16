@@ -616,13 +616,39 @@ connected-face subset resolves its own member list. Its parent reference must
 resolve to the matching parent set type for the subset record to be typed;
 parent lineage remains in the source records.
 
-Each distinct topology root is an ownership boundary. When one distinct root
-exists, source edge and vertex identities remain shared within that root. When
-multiple distinct roots exist, every root scopes its shell, edge, and vertex
-identities by root instance; aliases with the same root key reuse the committed
-body. A root with multiple shell owners also scopes carriers by shell. This
-prevents independent roots from claiming one global CADIR identity and does
-not depend on source record order.
+ISO 10303-42 defines `SHELL_BASED_SURFACE_MODEL` as a geometric representation
+item with a nonempty SET of open or closed shells. Its shells may exist
+independently and coincident portions of different shells reference the same
+faces, edges, and vertices. `FACE_BASED_SURFACE_MODEL` has a nonempty SET of
+connected face sets. `MANIFOLD_SOLID_BREP` is a `solid_model` with one
+`outer : CLOSED_SHELL`; its B-rep uses one or more disjoint closed shells and
+the graph entities in one B-rep are unique. `BREP_WITH_VOIDS` is a
+`MANIFOLD_SOLID_BREP` with a nonempty SET of oriented closed-shell voids.
+`FACETED_BREP` is a `MANIFOLD_SOLID_BREP` whose faces are planar and whose
+edges are straight. These source roots define model meaning and topology
+constraints. They do not define a CADIR body identity across distinct root
+instances.
+
+CADIR decision: a topology root is identified by its most-specific source root
+type and its resolved root carriers. For shell-based surface models and solid
+roots, each carrier key is the base shell instance plus its resolved forward
+orientation; an oriented-shell chain resolves to its base shell and composes
+the orientation. For face-based surface models, each carrier key is the
+connected-face-set instance with forward orientation. Carrier SET order is not
+part of the key. A `BREP_WITH_VOIDS` key includes the outer shell and every
+void shell, with each resolved orientation.
+
+Roots with one identical key are aliases and reuse the body committed for the
+lowest STEP instance number in that key. Physical record order does not select
+the body. A different root type, carrier instance, or resolved shell
+orientation creates a distinct root even when the roots share source shell,
+edge, vertex, or face records. A distinct root is an ownership boundary. When
+one distinct root exists, source edge and vertex identities remain shared
+within that root. When multiple distinct roots exist, every root scopes its
+shell, edge, and vertex identities by root instance; a root with multiple shell
+owners also scopes carriers by shell. Solid roots are `Solid` bodies and
+surface roots are `Sheet` bodies. This preserves independent roots without
+claiming one global CADIR identity.
 
 Sheet and wire representations commit each independently resolvable shell or
 connected set. A failed member produces a decode loss. Solid roots, including

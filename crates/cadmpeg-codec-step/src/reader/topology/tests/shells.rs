@@ -360,6 +360,55 @@ fn aliased_topology_root_reuses_the_committed_body_identity() {
 }
 
 #[test]
+fn topology_root_identity_uses_kind_shell_and_orientation_not_record_order() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = include_bytes!("data/br01_topology_root_identity.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode topology root identity witness");
+
+    let bodies = &decoded.ir().model.bodies;
+    assert_eq!(bodies.len(), 3, "{:#?}", decoded.report().losses);
+    assert!(bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#32" && body.kind == BodyKind::Sheet }));
+    assert!(bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#34" && body.kind == BodyKind::Solid }));
+    assert!(bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#35" && body.kind == BodyKind::Sheet }));
+
+    let source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#35=SHELL_BASED_SURFACE_MODEL('reversed physical order',(#31));\n#33=SHELL_BASED_SURFACE_MODEL('alias',(#30));\n#34=MANIFOLD_SOLID_BREP('different root kind',#30);\n#32=SHELL_BASED_SURFACE_MODEL('first root',(#30));",
+            "#32=SHELL_BASED_SURFACE_MODEL('first root',(#30));\n#34=MANIFOLD_SOLID_BREP('different root kind',#30);\n#33=SHELL_BASED_SURFACE_MODEL('alias',(#30));\n#35=SHELL_BASED_SURFACE_MODEL('reversed physical order',(#31));",
+        );
+    let reordered = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode physically reordered topology roots");
+
+    let reordered_bodies = &reordered.ir().model.bodies;
+    assert_eq!(
+        reordered_bodies.len(),
+        3,
+        "{:#?}",
+        reordered.report().losses
+    );
+    assert!(reordered_bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#32" && body.kind == BodyKind::Sheet }));
+    assert!(reordered_bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#34" && body.kind == BodyKind::Solid }));
+    assert!(reordered_bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#35" && body.kind == BodyKind::Sheet }));
+}
+
+#[test]
 fn topology_root_kind_preserves_distinct_body_kinds_for_shared_shells() {
     use cadmpeg_ir::topology::BodyKind;
 
