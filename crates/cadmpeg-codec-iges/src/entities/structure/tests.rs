@@ -883,6 +883,18 @@ fn decode_rejects_label_display_without_leader() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D5")
+    );
     let label_display = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
         .iter()
         .find(|associativity| associativity.fields()["kind"] == "label_display")

@@ -55,16 +55,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-06. Type 402 Form 5 requires a non-null leader pointer
-
-**Question.** May a Type 402 Form 5 label placement have no leader?
-
-**Known.** `entities/structure.rs:288-297` requires a valid Type 214 pointer for every Form 5 placement. `entities/structure/tests.rs:874-890` rejects a label display without a leader, and the Product structure section of `iges.md` states the non-null requirement.
-
-**Need.** We need the nullability of the Form 5 leader field from the IGES specification or exporter-authored witness files.
-
-**Note.** Reopened by the 2026-08-16 audit. The requirement and fixture coverage are explicit, but the closure did not establish it from the IGES specification or from a witness file.
-
 ### PS-07. Type 406 Form 33 requires a file-global unique identity
 
 **Question.** Must a Type 406 Form 33 sheet identifier be unique across the file?
