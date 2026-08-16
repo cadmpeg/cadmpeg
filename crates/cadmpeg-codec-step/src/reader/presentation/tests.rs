@@ -576,6 +576,101 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
 }
 
 #[test]
+fn independent_face_style_permutations_do_not_select_by_instance_order() {
+    for input in [
+        include_bytes!("tests/data/ap05_independent_styles_first.p21").as_slice(),
+        include_bytes!("tests/data/ap05_independent_styles_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode independent style permutation");
+        let face = result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == "step:data:face#29")
+            .expect("styled face");
+        assert!(face.color.is_none());
+
+        let bindings = result
+            .ir()
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| {
+                matches!(
+                    &binding.target,
+                    cadmpeg_ir::appearance::AppearanceTarget::Face(face)
+                        if face.as_str() == "step:data:face#29"
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(bindings.len(), 2);
+        for (red, green, blue) in [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0)] {
+            assert!(result.ir().model.appearances.iter().any(|appearance| {
+                appearance
+                    .base_color
+                    .is_some_and(|color| color.r == red && color.g == green && color.b == blue)
+            }));
+        }
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::ConflictingScalarColors.kind()
+                && loss.message.contains("#47")
+                && loss.message.contains("#76")
+                && loss.message.contains("scalar color omitted")
+        }));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
+    const EPS_ALPHA: f32 = 0.000_001;
+
+    let source = String::from_utf8(
+        include_bytes!("tests/data/ap05_independent_styles_first.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#60=COLOUR_RGB('independent blue',0.,0.,1.);",
+        "#60=COLOUR_RGB('independent red transparent',1.,0.,0.);",
+    )
+    .replace(
+        "#43=SURFACE_STYLE_FILL_AREA(#42);",
+        "#43=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#40,(#77));",
+    )
+    .replace(
+        "#63=SURFACE_STYLE_FILL_AREA(#62);",
+        "#63=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#60,(#78));",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#77=SURFACE_STYLE_TRANSPARENT(0.25);\n#78=SURFACE_STYLE_TRANSPARENT(0.75);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode same-RGB independent styles");
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "step:data:face#29")
+        .expect("styled face");
+    let color = face.color.expect("same-RGB scalar face color");
+    assert!((color.a - 0.25).abs() < EPS_ALPHA);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::ConflictingScalarColors.kind() }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn same_type_surface_colors_do_not_select_by_alpha_or_source_order() {
     let source = "#1=COLOUR_RGB('red',1.,0.,0.);
 #2=COLOUR_RGB('blue',0.,0.,1.);

@@ -444,21 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-05. Style precedence for independent styled items
-
-**Question.** What STEP rule establishes style precedence for independent styled items?
-
-**Known.** Override chains remove their overridden base styles. Independent
-effective styles all remain appearance bindings. The reader sets a neutral
-face or body scalar color only when those styles produce one distinct color;
-duplicate colors collapse to that value. Conflicting colors leave the scalar
-unset and emit a `MetadataNotTransferred` loss naming every contributing
-styled item. Source instance order never selects a scalar color.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### AP-06. Surface style side selection
 
 **Question.** What STEP rule establishes surface style side selection?

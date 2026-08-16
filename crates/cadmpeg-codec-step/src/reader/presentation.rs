@@ -487,10 +487,16 @@ pub(super) fn decode(
         }
     }
     for (target, candidates) in scalar_color_candidates {
-        let mut colors = Vec::new();
+        let mut colors = Vec::<Color>::new();
         for (_, color) in &candidates {
-            if !colors.contains(color) {
+            let Some(existing) = colors.iter_mut().find(|existing| {
+                existing.r == color.r && existing.g == color.g && existing.b == color.b
+            }) else {
                 colors.push(*color);
+                continue;
+            };
+            if color.a < existing.a {
+                *existing = *color;
             }
         }
         if let [color] = colors.as_slice() {

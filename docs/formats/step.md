@@ -986,14 +986,28 @@ surface sides are handled by the CADIR side projection above. The format does
 not define a color or transparency precedence for other applicable style
 characteristics.
 
+ISO 10303-46 §6.2 states that it does not define the effect of a style
+conflict, including the case where one `representation_item` is used by
+several independent `STYLED_ITEM` instances. The `styles` attributes of
+`presentation_style_assignment` and `STYLED_ITEM` are SET aggregates. The
+`STYLED_ITEM` WR1 permits one style assignment, or more than one only when all
+assignments are `PRESENTATION_STYLE_BY_CONTEXT` instances. No aggregate
+position therefore selects one independent unscoped style over another.
+`PRESENTATION_STYLE_BY_CONTEXT` applies only in its `style_context`.
+`OVER_RIDING_STYLED_ITEM` is the explicit precedence relation: its style takes
+precedence over its `over_ridden_style` when both are included in one
+presentation.
+
 CADIR decision: the scalar surface projection ranks the side policy before
-color. It does not use alpha to choose between different RGB colors. Equal-
-rank candidates with different RGB colors leave the scalar color unset, retain
-the source style graph as named opaque data, and produce
-`presentation.conflicting-scalar-colors`. When equal-rank candidates have the
-same RGB color, the projection retains the lower alpha so a rendering
-transparency property is not lost beside an opaque fill color. Independent
-effective styled items retain separate appearance bindings.
+color. Independent effective styled items without an override relation have
+equal scalar rank. The projection does not use source instance order or alpha
+to choose between different RGB colors. Equal-rank candidates with different
+RGB colors leave the scalar color unset, retain every source style through its
+appearance binding, and produce `presentation.conflicting-scalar-colors`.
+When equal-rank candidates have the same RGB color, the projection retains the
+lower alpha so a rendering transparency property is not lost beside an opaque
+fill color. Independent effective styled items retain separate appearance
+bindings.
 
 Visibility remains binding-level and does not change visibility on a shared
 geometry carrier. The writer emits binding-specific `INVISIBILITY` records for
