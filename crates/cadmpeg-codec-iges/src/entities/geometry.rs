@@ -168,6 +168,8 @@ pub(crate) fn declared_unit_vector(
     vector: Vector3,
     precision: RealPrecision,
 ) -> bool {
+    // CADIR admission for an IGES unit-vector field uses its declared-real
+    // interval; IGES defines no separate receiver epsilon.
     if !is_finite_nonzero_vector(vector) {
         return false;
     }
@@ -189,6 +191,8 @@ pub(crate) fn declared_orthogonal_vectors(
     right: Vector3,
     precision: RealPrecision,
 ) -> bool {
+    // The same CADIR policy admits an orthogonal pair when its dot-product
+    // interval contains zero.
     let left_values = [left.x, left.y, left.z];
     let right_values = [right.x, right.y, right.z];
     let left = std::array::from_fn::<_, 3, _>(|offset| {

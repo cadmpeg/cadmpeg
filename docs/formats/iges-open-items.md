@@ -51,18 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-02. Unit-vector acceptance
-
-**Question.** What numeric rule admits a declared unit vector and an orthogonal vector pair?
-
-**Known.** `entities/geometry.rs:198-207` accepts a unit vector when its declared squared-norm interval contains `1` and accepts orthogonality when its dot-product interval contains `0`. The current specification applies this rule to axes and offset indicators without a direct IGES section citation.
-
-**Need.** Cite the source rule or classify the interval test as a CADIR policy. Unit-vector acceptance controls analytic surfaces, transformations, and topology carriers.
-
-**Conflict.** The specification states the interval rule as format authority while the closure evidence is implementation and synthetic tests only.
-
-**Note.** Reopened by QA audit 2026-08-16. The independent producer files do not isolate these acceptance boundaries.
-
 ### GE-03. Type 112 segment continuity
 
 **Question.** Which Type 112 continuity constraints are format requirements for `H=0`, `H=1`, and `H=2`?
