@@ -4019,11 +4019,18 @@ pub(crate) fn exact_scale_operation(
             {
                 return None;
             }
+            let center = exact_point_data_construction(
+                bytes,
+                records,
+                std::slice::from_ref(center_record_index),
+                stream_types,
+            )
+            .map(|point| (point.position, point.position_offset));
             (
                 *body_group_record_index,
                 *center_record_index,
                 start + 25,
-                None,
+                center,
             )
         } else if scope.kind == "Scale"
             && matches!(scope.reference_members.len(), 5 | 6)
