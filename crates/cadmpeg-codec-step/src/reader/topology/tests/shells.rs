@@ -474,6 +474,77 @@ fn topology_root_identity_uses_kind_shell_and_orientation_not_record_order() {
 }
 
 #[test]
+fn shared_edge_references_are_scoped_by_independent_roots_not_record_order() {
+    let source = include_bytes!("data/tp01_shared_edge_ownership.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode shared edge ownership witness");
+
+    let body_ids = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        body_ids,
+        ["step:data:body#32", "step:data:body#33"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    );
+    let edge_ids = decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(edge_ids.contains("step:data:edge#19-root-32-shell-31"));
+    assert!(edge_ids.contains("step:data:edge#19-root-33-shell-30"));
+    assert_eq!(
+        edge_ids
+            .iter()
+            .filter(|id| id.contains("root-32") || id.contains("root-33"))
+            .count(),
+        6
+    );
+    let vertex_ids = decoded
+        .ir()
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(vertex_ids.contains("step:data:vertex#6-root-32-shell-31"));
+    assert!(vertex_ids.contains("step:data:vertex#6-root-33-shell-30"));
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+
+    let reordered_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#32=SHELL_BASED_SURFACE_MODEL('second physical root',(#31));\n#33=SHELL_BASED_SURFACE_MODEL('first physical root',(#30));",
+            "#33=SHELL_BASED_SURFACE_MODEL('first physical root',(#30));\n#32=SHELL_BASED_SURFACE_MODEL('second physical root',(#31));",
+        );
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(reordered_source),
+            &DecodeOptions::default(),
+        )
+        .expect("decode physically reordered shared edge witness");
+    assert_eq!(reordered.ir().model.bodies.len(), 2);
+    let reordered_edge_ids = reordered
+        .ir()
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(edge_ids, reordered_edge_ids);
+}
+
+#[test]
 fn topology_root_kind_preserves_distinct_body_kinds_for_shared_shells() {
     use cadmpeg_ir::topology::BodyKind;
 

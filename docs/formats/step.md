@@ -665,21 +665,28 @@ connected-face subset resolves its own member list. Its parent reference must
 resolve to the matching parent set type for the subset record to be typed;
 parent lineage remains in the source records.
 
-ISO 10303-42 defines `SHELL_BASED_SURFACE_MODEL` as a geometric representation
-item with a nonempty SET of open or closed shells. Its shells may exist
-independently and coincident portions of different shells reference the same
-faces, edges, and vertices. `FACE_BASED_SURFACE_MODEL` has a nonempty SET of
-connected face sets. `MANIFOLD_SOLID_BREP` is a `solid_model` with one
-`outer : CLOSED_SHELL`; its B-rep uses one or more disjoint closed shells and
-the graph entities in one B-rep are unique; the outer shell normal points
-away from the solid interior. `BREP_WITH_VOIDS` is a
+ISO 10303-42:2021 §6.4.2 states that a `MANIFOLD_SOLID_BREP` graph is
+labelled, so every edge and vertex entity in that graph has a unique identity;
+its edge boundaries may be shared by at most one other face and its B-rep is
+represented by disjoint closed shells. Section 6.4.44 defines
+`SHELL_BASED_SURFACE_MODEL` as a geometric representation item with a
+nonempty SET of open or closed shells. A complete face may be shared by two
+shells, coincident portions of shells shall reference the same source faces,
+edges, and vertices, and a shell may exist independently of the model.
+`FACE_BASED_SURFACE_MODEL` has a nonempty SET of connected face sets, with the
+same common-face, common-edge, or common-vertex reference semantics for
+connected sets. `MANIFOLD_SOLID_BREP` is a `solid_model` with one
+`outer : CLOSED_SHELL`; the outer shell normal points away from the solid
+interior. `BREP_WITH_VOIDS` is a
 `MANIFOLD_SOLID_BREP` with a nonempty SET of oriented closed-shell voids. Each
 void is disjoint from and enclosed by the outer shell, is not the outer shell,
 and has its normal directed into the void (`orientation = FALSE`). `voids` is
 a SET, so its source order has no format meaning. `FACETED_BREP` is a
 `MANIFOLD_SOLID_BREP` whose faces are planar and whose edges are straight.
-These source roots define model meaning and topology constraints. They do not
-define a CADIR body identity across distinct root instances.
+These source roots define model meaning and topology constraints. Reusing one
+source edge or vertex reference preserves that source identity wherever the
+referencing graph permits sharing; the Part 42 model definitions do not assign
+that source entity to a CADIR body across distinct root instances.
 
 CADIR decision: a topology root is identified by its most-specific source root
 type and its resolved root carriers. For shell-based surface models and solid

@@ -231,23 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### TP-01. Shared-edge ownership
-
-**Question.** What STEP rule establishes shared-edge ownership?
-
-**Known.** A distinct committed topology root is an ownership boundary. If
-one distinct root key exists, source edge and vertex identities remain shared
-within that root. If multiple distinct root keys exist, every root scopes its
-shell, edge, and vertex identities by the root instance. Aliases with the same
-root key reuse the committed body. A root with multiple shell owners also
-scopes carriers by shell. The reader does not invent sharing between
-independent roots and does not make identity selection depend on source record
-order.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### TP-02. Seam pcurve selection
 
 **Question.** What STEP rule establishes seam pcurve selection?
