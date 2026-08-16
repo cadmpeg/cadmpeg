@@ -306,7 +306,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The decoder does not apply the stream rule. `chart_points` in `crates/cadmpeg-codec-nx/src/intersection.rs` tries the wide layout first, accepts it when every tangent is near unit norm and the native parameters ascend, and otherwise reads the same bytes with the narrow stride. The caller separates partition bytes from replacement-stream bytes already, so the stream kind is available and unused. A wide record that fails the norm test is then read as narrow triples that cross field boundaries, and the resulting point sequence is transferred as curve geometry. The same function rejects any coordinate at or above one hundred meters, which contradicts §6 and drops every charted intersection of a larger model.
 
-**Note.** The closure passes a `StreamKind` into the parser, but the ext11 branch still admits points through tangent and parameter plausibility checks. The stream-kind mapping and the synthetic fixtures were introduced together; no independent serialized chart establishes that outer stream kind is the layout discriminator.
+**Note.** The closure passes a `StreamKind` into the parser, but the ext11 branch still admits points through tangent and parameter plausibility checks. The stream-kind mapping and the synthetic fixtures were introduced together; a serialized chart from corpus records has not yet verified that outer stream kind is the layout discriminator.
 
 ### PS-34. B-spline form-code semantics
 
@@ -316,7 +316,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the meaning of each code. The decoder admits the codes `1`, `4`, `5`, and `6`, and transfers the single code `6` as the periodic flag of the surface, curve, or pcurve. A periodic carrier whose code is not `6` transfers as open, so its seam trims as a boundary. Periodicity also gates the offset-surface cache relation, so a wrong flag admits or discards that relation.
 
-**Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate and has no independent evidence for their semantics.
+**Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate; their semantics remain unverified against corpus records.
 
 ### PS-35. Escaped and direct fixed-record disambiguation
 
@@ -348,7 +348,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bounds, or confirm that the basis constraints are the only ones. The decoder locates these records by scanning the complete stream and admits a record only inside fixed numeric ranges for the array count, the degree, the pole count, and the distinct-knot count. A surface or curve outside those ranges is omitted, and its face keeps an unresolved carrier.
 
-**Note.** The closure changes several descriptor fields from narrow reads to wider reads and removes explicit ceilings, then validates basis cardinality. The synthetic large-cardinality tests are constructed for that interpretation; no independent record establishes the field widths or proves that no format/resource bound exists. The count and degree rule remains open.
+**Note.** The closure changes several descriptor fields from narrow reads to wider reads and removes explicit ceilings, then validates basis cardinality. The synthetic large-cardinality tests are constructed for that interpretation; corpus records have not yet verified the field widths or the absence of a format/resource bound. The count and degree rule remains open.
 
 ### PS-38. Fixed-record candidate ranking
 
@@ -552,7 +552,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
-**Note.** Commit `80222d179` removed this item as a documentation-only change. Refusing an equal-label join is a conservative ambiguity policy, not evidence that equal labels never identify a seed or that another serialized relation is absent. No independent pattern/profile record was supplied, so the item is reopened.
+**Note.** Commit `80222d179` removed this item as a documentation-only change. Refusing an equal-label join is a conservative ambiguity policy, not evidence that equal labels never identify a seed or that another serialized relation is absent. The closure cited no pattern/profile record from the corpus, so the item is reopened.
 
 ### OM-23. `POINT` header fields
 
@@ -620,7 +620,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** This item, the specification, and the decoder disagree, and the specification disagrees with itself. `siemens_nx.md` §7.1 "A `HOLE PACKAGE` operation related to one simple-hole construction group owns" states the ownership as fact and adds that the internal operations do not also project as neutral history features. `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" asserts the same ownership in its fourth sentence and then states that the equality does not assign hole parameters, placement, output, suppression, or dependency direction. The decoder applies the ownership: `hole_package_projection` in `crates/cadmpeg-codec-nx/src/native/attach.rs` collects the group's `SIMPLE HOLE` labels as internal operations, and `attach_feature_operations` removes them from the emitted features and transfers their output, diameter, treatments, and axis placements to the package. This item says that field is not yet identified, so one of the three must change. Resolve the specification against the serialized evidence before the decoder keeps deleting history features.
 
-**Note.** The closure commit matched four resolved blocks and used synthetic feature records to exercise the projection. `native/attach.rs:5753-5869` still infers ownership from block equality and suppresses the child operations. No independent NX record identifies a parent, child, or operation-role field. The equality was promoted to a hierarchy witness, so this item is reopened.
+**Note.** The closure commit matched four resolved blocks and used synthetic feature records to exercise the projection. `native/attach.rs:5753-5869` still infers ownership from block equality and suppresses the child operations. A parent, child, or operation-role field has not yet been identified in corpus NX records. The equality was promoted to a hierarchy witness, so this item is reopened.
 
 ### OM-31. Feature-history construction-order evidence
 
@@ -640,7 +640,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the state to separate the two cases. Without it, a part whose lineage evidence is missing transfers every emitted body as a current body instead of reporting the selection as unresolved.
 
-**Note.** `crates/cadmpeg-codec-nx/src/decode.rs:1948-2001` treats `mapped == emitted` as the resolved all-terminal case. A synthetic empty-lineage case produces the same set as a valid all-terminal file, and no independent serialized discriminator was found. This is a promotion of output compatibility to lineage evidence, so the item is reopened.
+**Note.** `crates/cadmpeg-codec-nx/src/decode.rs:1948-2001` treats `mapped == emitted` as the resolved all-terminal case. A synthetic empty-lineage case produces the same set as a valid all-terminal file, and a serialized discriminator has not yet been found in corpus records. This is a promotion of output compatibility to lineage evidence, so the item is reopened.
 
 ### OM-33. Decisive active-body membership
 
@@ -698,7 +698,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the position field. The decoder walks forward from the class marker and takes the first offset whose count word and following identity words fall inside fixed numeric ranges. The count must reach fifty, so a part with fewer active identities never matches its own table, and the active-body selection silently does not run. A count above the upper range is rejected the same way. This location rule supplies the input to the membership decision in OM-33.
 
-**Note.** `crates/cadmpeg-codec-nx/src/container.rs:400-435` takes the first count after the `UGS::Solid::Topol` marker whose candidate span reaches the product record. A plausible earlier count inside the bounded range can win before the real membership table, and the closure tests only synthetic placement. The first-candidate rule has no independent field or invalidation witness, so this item is reopened.
+**Note.** `crates/cadmpeg-codec-nx/src/container.rs:400-435` takes the first count after the `UGS::Solid::Topol` marker whose candidate span reaches the product record. A plausible earlier count inside the bounded range can win before the real membership table, and the closure tests only synthetic placement. The first-candidate rule is not yet verified by a corpus field or invalidation witness, so this item is reopened.
 
 ## 3. Assembly and material data
 
@@ -798,6 +798,6 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 
 **Need.** We must know the field to frame the packet sequence directly. The decoder tries lane counts from one to sixty-four and keeps the unique count that satisfies the agreement test. Sixty-four is not a format bound. A representation that carries more lanes matches no count, and the decoder then drops the topology, vertex-record, and coordinate-array data and every mesh derived from them.
 
-**Note.** The closure removed the `1..=64` ceiling and scans until a unique vertex-header agreement in `crates/cadmpeg-codec-nx/src/native/display_jt.rs:817-911`, but no independent JT representation establishes that the packet stream has no count field or maximum. The regression fixture was constructed with sixty-five lanes to exercise the new scan. The lane-count rule remains unsupported, so this item is reopened.
+**Note.** The closure removed the `1..=64` ceiling and scans until a unique vertex-header agreement in `crates/cadmpeg-codec-nx/src/native/display_jt.rs:817-911`, but a corpus JT representation has not yet verified that the packet stream has no count field or maximum. The regression fixture was constructed with sixty-five lanes to exercise the new scan. The lane-count rule remains unsupported, so this item is reopened.
 
 ## 4. Test evidence
