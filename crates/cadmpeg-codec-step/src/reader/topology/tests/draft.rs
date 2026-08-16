@@ -3,7 +3,7 @@ use super::super::*;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -13,8 +13,6 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::loss::StepLossCode;
-
-const EPS_PCURVE_LOCI_DISTANCE: f64 = 1.0e-6;
 
 fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
@@ -62,53 +60,6 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 }
 
 #[test]
-fn pcurve_fit_keeps_exact_points_at_a_degenerate_surface_boundary() {
-    let surface_id = SurfaceId("step:data:surface#boundary".into());
-    let surface_geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        weights: None,
-        u_periodic: false,
-        v_periodic: false,
-    });
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: surface_geometry.clone(),
-        source_object: None,
-    });
-    let index = ModelIndex::new(&ir);
-    let pcurve = PcurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-    };
-
-    let fit = pcurve_endpoint_fit(
-        &index,
-        &surface_id,
-        &pcurve,
-        &surface_geometry,
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-    )
-    .expect("surface points should be evaluable at the boundary");
-
-    assert_eq!(fit.start_parameter, 0.0);
-    assert_eq!(fit.end_parameter, 1.0);
-    assert!(fit.score <= f64::EPSILON);
-}
-
-#[test]
 fn trimmed_pcurve_fit_uses_declared_endpoints() {
     let surface_id = SurfaceId("step:data:surface#trimmed-endpoints".into());
     let surface_geometry = SurfaceGeometry::Plane {
@@ -136,97 +87,58 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         }),
     };
 
-    let fit = pcurve_endpoint_fit(
+    let fit = pcurve_declared_endpoint_fit(
         &ModelIndex::new(&ir),
         &surface_id,
         &pcurve,
-        &surface_geometry,
+        [
+            std::f64::consts::FRAC_PI_2,
+            5.0 * std::f64::consts::FRAC_PI_2,
+        ],
         Point3::new(0.0, 1.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
     )
     .expect("declared pcurve endpoints should be evaluable");
 
-    assert_eq!(fit.start_parameter, std::f64::consts::FRAC_PI_2);
-    assert_eq!(fit.end_parameter, 5.0 * std::f64::consts::FRAC_PI_2);
-    assert!(fit.score <= 2.0 * f64::EPSILON);
+    assert!(fit <= 2.0 * f64::EPSILON);
 }
 
 #[test]
-fn pcurve_locus_check_rejects_a_narrow_between_sample_crossing() {
-    let surface_id = SurfaceId("step:data:surface#locus-crossing".into());
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        source_object: None,
-    });
-    let left = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
-    let right = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 0.415, 0.421, 0.428, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(0.415, 0.0),
-            Point2::new(0.421, 1.0),
-            Point2::new(0.428, 0.0),
-            Point2::new(1.0, 0.0),
-        ],
-        weights: None,
-        periodic: false,
-    };
+fn competing_same_surface_pcurves_remain_detached() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp09_competing_pcurves.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode competing pcurve witness");
 
-    assert!(!pcurve_loci_equivalent(
-        &ModelIndex::new(&ir),
-        &surface_id,
-        &left,
-        [0.0, 1.0],
-        &right,
-        [0.0, 1.0],
-        EPS_PCURVE_LOCI_DISTANCE,
-    ));
-}
-
-#[test]
-fn bounded_pcurve_locus_witness_refuses_when_refinement_is_unresolved() {
-    let surface_id = SurfaceId("step:data:surface#locus-unresolved".into());
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        source_object: None,
-    });
-    let bowed = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(0.5, 1.0),
-            Point2::new(1.0, 0.0),
-        ],
-        weights: None,
-        periodic: false,
-    };
-
-    assert!(!pcurve_loci_equivalent(
-        &ModelIndex::new(&ir),
-        &surface_id,
-        &bowed,
-        [0.0, 1.0],
-        &bowed,
-        [0.0, 1.0],
-        0.0,
-    ));
+    assert!(decoded.ir().model.pcurves.is_empty());
+    let edge_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#19")
+        .expect("competing pcurve edge use");
+    assert!(edge_use.pcurves.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("curve #57")
+            && loss.message.contains("2 pcurves")
+            && loss.message.contains("surface #28")
+    }));
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#56"));
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#69"));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -347,77 +259,6 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn periodic_surface_line_seeds_cover_both_parameter_axes() {
-    let surface_id = SurfaceId("step:data:surface#periodic-seeds".into());
-    let surface_geometry = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 2.0,
-        minor_radius: 1.0,
-    };
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: surface_geometry.clone(),
-        source_object: None,
-    });
-    let index = ModelIndex::new(&ir);
-
-    for direction in [Point2::new(1.0, 0.0), Point2::new(0.0, 1.0)] {
-        let geometry = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction,
-        };
-        let seeds = pcurve_selection_seeds(&index, &surface_id, &geometry, &surface_geometry);
-        assert!(seeds
-            .iter()
-            .any(|seed| { (*seed - std::f64::consts::PI).abs() <= 1.0e-12 }));
-    }
-}
-
-#[test]
-fn bounded_nurbs_pcurve_seeds_cover_each_knot_span() {
-    let surface_id = SurfaceId("step:data:surface#nurbs-seed-spans".into());
-    let surface_geometry = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: surface_geometry.clone(),
-        source_object: None,
-    });
-    let geometry = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 0.001, 0.999, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(0.0, 1.0),
-            Point2::new(1.0, 1.0),
-            Point2::new(1.0, 0.0),
-        ],
-        weights: None,
-        periodic: false,
-    };
-
-    let seeds = pcurve_selection_seeds(
-        &ModelIndex::new(&ir),
-        &surface_id,
-        &geometry,
-        &surface_geometry,
-    );
-    for expected in [0.001, 0.999, 0.0005, 0.5, 0.9995] {
-        assert!(
-            seeds.contains(&expected),
-            "missing NURBS knot-span seed {expected}: {seeds:?}"
-        );
-    }
 }
 
 #[test]

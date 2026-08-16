@@ -114,15 +114,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Topology and pcurve decisions
 
-### TP-09. Bounded pcurve admission
+### TP-09. Pcurve endpoint proof boundary
 
-**Question.** What proves endpoint fit and model-space locus equivalence for competing pcurve candidates?
+**Question.** What exact proof establishes endpoint fit for the unique
+non-seam pcurve candidate after source association, including a stale finite
+trim or an unbounded candidate?
 
-**Known.** `reader/topology.rs:3067-3072` fixes seed-grid, subdivision, depth, and flatness constants. The selector admits a bounded numerical result, withholds unresolved ties, and uses STEP identity for equivalent ties. Part 42 supplies the candidate list but no global numerical selector.
+**Known.** ISO 10303-42:2021 §5.2.2 and §5.2.2.1 require associated pcurves to
+describe the edge in model space and require parameter-space connectivity when
+multiple same-surface candidates exist. The CADIR policy now leaves every
+competing same-surface set detached; a single candidate uses the existing
+finite seeded endpoint witness, and a declared stale trim may retain the
+recovered edge interval on that coedge use. Candidate list order, STEP
+identity, and mapped-locus comparison do not select a competing carrier.
 
-**Need.** We need independent reordered, near-tied, crossing, and missed-minimum witnesses, plus exact inversion or validated interval bounds for endpoint fit and locus equivalence.
+**Need.** We need an independent mathematical proof or validated interval
+bound for the finite endpoint inversion and for the fallback from a stale trim.
+Until that proof exists, the bounded endpoint result remains a CADIR admission
+witness rather than a proven global minimum.
 
-**Note.** QA audit: commit `ed6dd2432` closed this item by declaring the bounded heuristic a CADIR admission rule. Naming the limits does not prove the selected candidate or settle the verification gap.
+**Note.** QA audit: commit `ed6dd2432` closed this item by declaring the
+bounded heuristic a CADIR admission rule. This pass settles the format's
+candidate-set and connectivity meaning and replaces numerical tie selection
+with conservative omission, but it deliberately leaves the endpoint-proof
+remainder open.
 
 ## 6. Units and measures
 

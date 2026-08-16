@@ -1153,31 +1153,29 @@ define the pcurve basis surface and require a seam curve's two pcurves to lie
 on the same surface. Section §5.2.2.1 and function §5.6.4 define the pcurve
 set associated with an edge curve: match a candidate's basis surface to the
 face surface, and when multiple candidates share that surface, check their
-connectivity in parameter space. A non-seam edge has no source field that
-selects one of those candidates.
+connectivity in parameter space. Section §5.2.2 states that every parametric
+space curve for one edge use describes the same model-space point set, and
+§4.5.49 requires each associated pcurve to have the same sense as `curve_3d`.
+A non-seam edge has no source field that selects one of multiple candidates.
 
 CADIR decision: a typed `SEAM_EDGE` uses its explicit pcurve only when the
 reference is decoded, is a member of the edge's `SEAM_CURVE` associated
 geometry, and has the coedge face surface as its basis. An invalid reference
 does not fall back to another pcurve; the coedge remains without a pcurve and
-reports a loss. For a non-seam edge with multiple same-surface candidates, the
-reader maps each candidate through that surface and accepts a unique bounded
-endpoint-continuity witness. If several candidates tie, bounded adaptive
-subdivision compares their mapped loci over the endpoint interval. Equivalent
-loci are one neutral carrier and the lowest STEP identity is retained; distinct
-tied or otherwise unresolved candidates remain detached and produce a topology
-loss. A declared pcurve trim is the endpoint witness when it maps to both edge
-vertices; a stale declared trim can be replaced by an independently inverted
-edge interval. Candidate list order does not select a non-seam carrier.
-
-This numeric procedure is a CADIR admission rule, not a STEP invariant. It
-does not claim a global endpoint minimum or mathematical equality of arbitrary
-curve/surface compositions. Endpoint inversion uses finite seeds, NURBS knot
-boundaries, knot-span midpoints, and bounded improvement steps. Locus
-comparison includes NURBS breaks and refines until the finite depth bound is
-met; if the witness cannot establish equivalence within that bound, the
-candidate remains detached. The tolerance is the larger of the STEP
-coincidence tolerance and the document linear tolerance.
+reports a loss. For a non-seam edge with exactly one same-surface candidate,
+the reader first checks a finite declared trim against both oriented edge
+vertices. If the declared trim is stale, the reader may recover an edge
+interval by bounded one-dimensional inversion of the mapped pcurve; an
+unbounded candidate uses the same endpoint witness. A result outside the
+larger of the STEP coincidence tolerance and the document linear tolerance
+omits the optional relation and reports
+`topology.pcurve-endpoints-discontinuous`. A recovered interval is retained
+only on the coedge use; the source pcurve remains unchanged. When two or more
+same-surface candidates exist, Part 42 supplies no selector for the oriented
+edge. CADIR leaves the optional relation detached and reports
+`topology.pcurve-association-ambiguous`; it does not compare mapped loci,
+choose a STEP identity, or use list order. An unowned candidate and its
+dependency closure follow the opaque-retention rule.
 
 ISO 10303-42 defines `SURFACE_CURVE.associated_geometry` as a list of one or
 two `PCURVE` or surface references. A selected pcurve identifies its basis

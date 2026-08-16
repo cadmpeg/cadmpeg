@@ -631,7 +631,7 @@ fn seam_source_with_one_endpoint_continuous_candidate() -> String {
 }
 
 #[test]
-fn equivalent_seam_pcurve_candidates_select_one_carrier() {
+fn equivalent_same_surface_pcurve_candidates_remain_detached() {
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(equivalent_seam_source()),
@@ -639,18 +639,16 @@ fn equivalent_seam_pcurve_candidates_select_one_carrier() {
         )
         .expect("decode equivalent seam pcurves");
 
-    let coedge = decoded
+    assert!(decoded
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| !coedge.pcurves.is_empty())
-        .expect("equivalent seam coedge");
-    assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
-    assert!(decoded.report().losses.iter().all(|loss| !loss
-        .message
-        .contains("no unique endpoint-continuous pcurve selects one")));
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("2 pcurves")
+    }));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -733,7 +731,7 @@ fn invalid_seam_edge_reference_does_not_fall_back_to_another_pcurve() {
 }
 
 #[test]
-fn equivalent_seam_pcurve_selection_is_independent_of_candidate_order() {
+fn reordered_same_surface_pcurve_candidates_remain_detached() {
     let source = equivalent_seam_source().replace(
         "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
         "#57=SEAM_CURVE('',#16,(#69,#56),.PCURVE_S1.);",
@@ -742,15 +740,16 @@ fn equivalent_seam_pcurve_selection_is_independent_of_candidate_order() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode reordered equivalent seam pcurves");
 
-    let coedge = decoded
+    assert!(decoded
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| !coedge.pcurves.is_empty())
-        .expect("reordered equivalent seam coedge");
-    assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("2 pcurves")
+    }));
 }
 
 #[test]
@@ -783,12 +782,12 @@ fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
     assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
     assert_eq!(
         losses[0].message,
-        "curve #57 associates 2 pcurves with surface #28; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+        "curve #57 associates 2 pcurves with surface #28; Part 42 provides no non-seam selector, so the coedge has no pcurve"
     );
 }
 
 #[test]
-fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
+fn endpoint_continuity_does_not_break_a_multiple_candidate_tie() {
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(seam_source_with_one_endpoint_continuous_candidate()),
@@ -796,18 +795,16 @@ fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
         )
         .expect("decode endpoint-continuous seam pcurve");
 
-    let coedge = decoded
+    assert!(decoded
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| !coedge.pcurves.is_empty())
-        .expect("seam coedge");
-    assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
-    assert!(decoded.report().losses.iter().all(|loss| !loss
-        .message
-        .contains("no unique endpoint-continuous pcurve selects one")));
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("2 pcurves")
+    }));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
