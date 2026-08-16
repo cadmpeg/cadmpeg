@@ -1510,6 +1510,8 @@ A body-reference field is `01 02 10, object_index, ff`. `object_index` uses the 
 
 A nested operation object-relation frame is `01 02, link_tag:u8, first:object_index, 97 75 01 02 11, second:object_index, ff`. Both object indices are non-null and use the canonical feature object-index form. The frame retains its link tag, ordered object indices, exact serialized index tokens, byte length, and absolute offsets. The frame does not assign a body, operand, input, or output role to either endpoint.
 
+A direct operation tagged-reference field is `01 02 17, object_index, ff 80 00 00 02`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the tag, object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.
+
 A bounded operation payload's terminal common-frame suffix is
 `local_ordinal, local_ordinal, object_index, 00`. Both local-ordinal tokens are
 non-null, byte-identical, and canonical. The object index is canonical and may

@@ -137,6 +137,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_operation_body_scalar_triples",
     "feature_operation_labels",
     "feature_operation_object_relations",
+    "feature_operation_tagged_references",
     "feature_operation_records",
     "feature_operation_common_frames",
     "feature_operation_terminal_discriminators",
@@ -859,13 +860,13 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 231, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 232, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| row.phase == Phase::GroupA)
             .count(),
-        108,
+        109,
         "group A family count"
     );
     assert_eq!(

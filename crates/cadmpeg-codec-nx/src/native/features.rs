@@ -121,6 +121,37 @@ pub struct FeatureOperationObjectRelation {
     pub source_offset: u64,
 }
 
+/// Exact direct tagged-reference field retained from one feature operation.
+///
+/// The tag and object identity are native evidence. They do not assign a
+/// body, operand, input, or output role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationTaggedReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Owning bounded operation-record identity.
+    pub operation_record: String,
+    /// Zero-based reference order within the operation payload.
+    pub ordinal: u32,
+    /// Byte between the opening `01 02` marker and the object index.
+    pub tag: u8,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Unique target in the native offset-store data-block arena, when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute offset of the object-index token.
+    pub object_index_source_offset: u64,
+    /// Exact serialized field byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
 /// Exactly framed common record in one bounded feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationCommonFrame {
@@ -2974,6 +3005,46 @@ pub fn feature_operation_object_relations(
         },
     );
     relations
+}
+
+/// Decode exact direct tagged-reference fields from bounded feature operations.
+pub fn feature_operation_tagged_references(
+    container: &Container,
+) -> Vec<FeatureOperationTaggedReference> {
+    let indexed = container.indexed_om_sections();
+    let mut references = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, reference) in crate::om::operation_tagged_references(record)
+                .into_iter()
+                .enumerate()
+            {
+                references.push(FeatureOperationTaggedReference {
+                    id: format!(
+                        "nx:feature-history:operation-tagged-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    tag: reference.tag,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index_source_offset: entry_offset
+                        + reference.object_index_offset as u64,
+                    byte_len: (reference.end_offset - reference.offset) as u64,
+                    source_offset: entry_offset + reference.offset as u64,
+                });
+            }
+        },
+    );
+    references
 }
 
 /// Decode every exact common frame from bounded feature operations.

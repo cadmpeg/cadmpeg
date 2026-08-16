@@ -2161,6 +2161,26 @@ pub struct OperationObjectRelation {
     pub end_offset: usize,
 }
 
+/// One exact direct tagged-reference field in a bounded operation record.
+///
+/// The field's tag is retained as native evidence; it does not assign a
+/// semantic role to the referenced object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationTaggedReference {
+    /// Absolute offset of the opening `01 02` marker.
+    pub offset: usize,
+    /// Byte between the opening marker and the object index.
+    pub tag: u8,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the object-index token.
+    pub object_index_offset: usize,
+    /// Exclusive absolute end offset after the fixed field suffix.
+    pub end_offset: usize,
+}
+
 /// Object-index reference in one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockObjectReference {
@@ -5452,6 +5472,47 @@ pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationO
         });
     }
     relations
+}
+
+/// Decode every exact direct `01 02 17 index ff 80 00 00 02` field.
+///
+/// The fixed suffix separates this field from the nested object-relation
+/// frame, which uses the same opening marker and tag but has a different
+/// middle sequence. The parser retains no endpoint or operation role.
+pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<OperationTaggedReference> {
+    const PREFIX: &[u8] = &[0x01, 0x02, 0x17];
+    const SUFFIX: &[u8] = &[0xff, 0x80, 0x00, 0x00, 0x02];
+    let mut references = Vec::new();
+    for marker in record
+        .payload
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
+    {
+        let token = marker + PREFIX.len();
+        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+            continue;
+        };
+        let raw_object_index = &record.payload[token..end];
+        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
+            continue;
+        }
+        let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
+            continue;
+        };
+        if record.payload.get(end..suffix_end) != Some(SUFFIX) {
+            continue;
+        }
+        references.push(OperationTaggedReference {
+            offset: record.payload_offset + marker,
+            tag: 0x17,
+            object_index,
+            raw_object_index: raw_object_index.to_vec(),
+            object_index_offset: record.payload_offset + token,
+            end_offset: record.payload_offset + suffix_end,
+        });
+    }
+    references
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
