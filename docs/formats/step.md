@@ -59,19 +59,29 @@ reference_entry = (entity_instance_name | value_instance_name) "=" resource ";"
 anchor_name     = "<" uri_fragment_identifier ">"
 ```
 
-Outside string escape sequences, implementation levels with a major value
-below `4` interpret character bytes as ISO-8859-1. Edition 3 uses
-implementation levels `4;1`, `4;2`, and `4;3` and interprets direct character
-bytes as UTF-8. Class 1 (`4;1`) forbids ANCHOR, REFERENCE, SCHEMA_POPULATION,
-and SIGNATURE sections. Class 2 (`4;2`) permits those sections but forbids
-value instances and EXPRESS constants. Class 3 (`4;3`) permits all edition-3
-occurrence forms. Historical levels `1`, `2`, `2;1`, and `2;2` require one
-unparameterized DATA section and no FILE_POPULATION, SECTION_LANGUAGE, or
-SECTION_CONTEXT header entity. Levels `3;1` and `3;2` require at least one
-DATA section and forbid ANCHOR, REFERENCE, SCHEMA_POPULATION, and SIGNATURE
-sections, value instances, EXPRESS constants, and resource values. Every
-UTF-8 sequence uses the shortest form, encodes one Unicode scalar value, and
-excludes surrogate code points.
+The edition of Part 21 fixes the direct character encoding; the
+`implementation_level` value identifies that edition and its syntactical
+conformance class. ISO 10303-21:2002 §5.2 defines the older basic alphabet as
+ISO 8859-1 positions `G(02/00)` through `G(07/14)`, represented by octets
+`0x20..=0x7e`. Characters outside that alphabet use the string control
+directives below. ISO 10303-21:2016 §§4.3 and 5.2 define the edition-3 basic
+alphabet as Unicode code points `U+0020..U+007E` and `U+0080..U+10FFFF`,
+represented by UTF-8. Thus a legacy level does not authorize direct high
+octets, and a level-4 file does not select an ISO 8859 code page.
+
+Edition 3 uses implementation levels `4;1`, `4;2`, and `4;3`. Class 1
+(`4;1`) forbids ANCHOR, REFERENCE, SCHEMA_POPULATION, and SIGNATURE sections.
+Class 2 (`4;2`) permits those sections but forbids value instances and
+EXPRESS constants. Class 3 (`4;3`) permits all edition-3 occurrence forms.
+Historical levels `1`, `2`, `2;1`, and `2;2` require one unparameterized DATA
+section and no FILE_POPULATION, SECTION_LANGUAGE, or SECTION_CONTEXT header
+entity. Levels `3;1` and `3;2` require at least one DATA section and forbid
+ANCHOR, REFERENCE, SCHEMA_POPULATION, and SIGNATURE sections, value instances,
+EXPRESS constants, and resource values. ISO 10303-21:2016 §8.2.2 permits
+`3;1` and `2;1` as compatibility declarations only under the listed legacy
+restrictions, including use of `\X2\` and `\X4\` for non-ASCII string
+characters. Every UTF-8 sequence uses the shortest form, encodes one Unicode
+scalar value, and excludes surrogate code points.
 
 Space, the explicit `\N\` and `\F\` print-control directives, and comments
 separate tokens. The `/*` delimiter starts a comment, and `*/` ends it.
@@ -158,7 +168,9 @@ punctuation tokens. A resource token contains a UTF-8 byte sequence between
 Two consecutive apostrophes encode one apostrophe. Two consecutive reverse
 solidus bytes encode one reverse solidus. Direct bytes in `0x20..=0x7e`, with
 apostrophe and reverse solidus handled by the preceding rules, encode
-themselves.
+themselves in every edition. In the 1994 and 2002 editions, this is the full
+direct string repertoire. In the 2016 edition, direct bytes above `0x7e` are
+the UTF-8 encoding of Unicode code points.
 
 The escape `\S\c` adds 128 to the seven-bit code of `c`. Selectors `\PA\`
 through `\PI\` choose the ISO 8859 part used by later `\S\` escapes. A
@@ -172,7 +184,16 @@ Hexadecimal digits ignore case. Direct ASCII, `\X2\`, and `\X4\` forms denote
 the same scalar values where their repertoires overlap.
 The print-control directives `\N\` and `\F\` do not contribute to effective
 string contents. A string occupies at most 32,769 source octets, including
-its opening and closing apostrophes.
+its opening and closing apostrophes. ISO 10303-21:2016 §6.4.3 retains the
+`\S\`, `\P\`, `\X2\`, and `\X4\` directives for compatibility with older
+editions; they do not change the direct encoding selected by the edition.
+CADIR decision: when a legacy-level source contains a direct octet above
+`0x7e`, the reader decodes that malformed source byte as an ISO-8859-1 scalar
+to salvage metadata and entity strings. This recovery does not make the
+source syntactically conforming. Edition-3 direct bytes that are not a valid
+UTF-8 sequence are rejected by header validation; in a semantic field the
+reader omits the affected value and records the applicable
+`metadata.string-invalid` or `attribute.string-invalid` loss.
 
 ## 5. Values and records
 
@@ -252,8 +273,13 @@ name alone.
 
 The header contains `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA` in that
 order. `FILE_DESCRIPTION` supplies description strings and implementation
-level. The major value in `implementation_level` selects the direct string
-repertoire: `4` selects UTF-8 and earlier levels select ISO-8859-1.
+level. `implementation_level` identifies the Part 21 edition and the
+syntactical conformance class; it is not a free-standing character-set
+selector. The edition-1 and edition-2 compatibility levels use the historical
+direct ASCII range and escape directives. The edition-3 levels `4;1`, `4;2`,
+and `4;3` use direct UTF-8 for high Unicode code points. The reader uses the
+legacy ISO-8859-1 interpretation only for the malformed-source salvage
+decision in §4.
 `FILE_NAME` supplies name, timestamp, authors, organizations,
 preprocessor version, originating system, and authorization. `FILE_SCHEMA`
 supplies one or more unique schema identifier strings. The first schema is the

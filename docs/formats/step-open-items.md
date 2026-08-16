@@ -253,23 +253,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### EL-01. Character encoding selection
-
-**Question.** What STEP rule establishes character encoding selection?
-
-**Known.** The major value in the raw `FILE_DESCRIPTION`
-`implementation_level` selects the direct string repertoire. Values `4;1`,
-`4;2`, and `4;3` use UTF-8. Earlier implementation levels use ISO-8859-1.
-The reader applies this selection to every semantic string and retains
-`\X2\` and `\X4\` escape decoding in both repertoires. Invalid direct UTF-8
-bytes produce a metadata loss.
-
-`step.md` §2 and §6 define the repertoire and its header selector.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### DR-01. Drawing target identity selection
 
 **Question.** Which neutral identity represents a drawing reference when one
