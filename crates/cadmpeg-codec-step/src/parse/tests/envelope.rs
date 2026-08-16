@@ -491,3 +491,43 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         Confidence::No
     );
 }
+
+#[test]
+fn bo_model_does_not_compose_with_part21_by_filename_or_identifier() {
+    let codec = StepCodec::default();
+    let part21 = include_bytes!("data/bm02_part21_base.p21");
+    let part21_result = codec
+        .decode(&mut Cursor::new(part21), &DecodeOptions::default())
+        .expect("decode the Part 21 side of the pair");
+    assert_eq!(part21_result.ir().model.product_definitions.len(), 1);
+    assert_eq!(
+        part21_result.ir().model.product_definitions[0]
+            .source_name
+            .as_deref(),
+        Some("P21 value")
+    );
+    assert_eq!(
+        part21_result.ir().model.product_definitions[0]
+            .label
+            .as_deref(),
+        Some("P21 value")
+    );
+    assert_eq!(
+        part21_result.ir().model.product_definitions[0]
+            .part_number
+            .as_deref(),
+        Some("P21_PRODUCT")
+    );
+
+    for xml in [
+        include_bytes!("data/bm02_bo_model_matching_name.stpx").as_slice(),
+        include_bytes!("data/bm02_bo_model_conflicting_value.stpx").as_slice(),
+    ] {
+        assert_eq!(codec.detect(xml), Confidence::Medium);
+        assert!(matches!(
+            codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
+            Err(cadmpeg_core::CodecError::NotImplemented(message))
+                if message == "AP242 BO-Model XML sidecar"
+        ));
+    }
+}

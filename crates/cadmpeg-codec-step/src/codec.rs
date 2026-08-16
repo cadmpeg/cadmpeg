@@ -353,6 +353,8 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
             "STEP Part 28 XML encoding".into(),
         ));
     }
+    // BM-02: alternate XML remains outside the Part 21 graph; no implicit
+    // sidecar composition occurs here.
     if is_ap242_bo_model_xml(bytes) {
         return Err(CodecError::NotImplemented(
             "AP242 BO-Model XML sidecar".into(),

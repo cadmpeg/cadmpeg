@@ -54,8 +54,38 @@ It does not recognize a local name, filename suffix, XML prefix, or
 `xsi:schemaLocation` alone. It does not validate the complete AP242 XSD or
 discover a same-stem XML file. A caller must explicitly bind the XML resource,
 declare its BO-Model schema and edition, and apply a separate XML-to-Part-21
-composition policy. Identity, value precedence, and conflict handling remain
-the BM-02 decision.
+composition policy.
+
+In the BO-Model XSD, `uid` identifies an XML object and `uidRef` is an XML
+`IDREF` to an object in the XML document. `Id.id` and `Identifier` values are
+BO-Model identifiers. `DigitalFile` and `ExternalItem` identify a target file;
+`ExternalItem.Id` supplies the target file name and `ExternalItem.Source`
+supplies its path or other agreed location. These fields do not identify a
+Part 21 numeric instance. The [edition-2 BO-Model schema](https://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model/bom.xsd)
+and [edition-2 common schema](https://standards.iso.org/iso/ts/10303/-3000/-ed-2/tech/xml-schema/common/common.xsd)
+contain no declaration that maps an XML identity or value to a Part 21 `#`
+occurrence.
+
+The [CAx-IF BO-Model XML recommended practice](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ap242xml_assy_struct_v2.1.pdf)
+§9.3 identifies nested XML components with a minimum set of XML `Identifier`
+values and file references. It states that XML `uid` values can differ for the
+same part version in different XML files. The [CAx-IF External (Element)
+Reference recommended practice](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ext_ref_v31.pdf)
+§§2 and 7.3–7.4 define explicit Part 21 external references and anchors. They
+limit the generic practice to Part 21 sources and state that EER gives
+navigation information in an existing graph; it does not replace that data.
+
+CADIR decision: a Part 21 exchange and a BO-Model XML resource remain separate
+source graphs. A matching filename, same stem, XML `Header.Name`,
+`DigitalFile.Id`, `ExternalItem.Id`, `ExternalItem.Source`, XML `uid`, XML
+`uidRef`, or matching identifier value does not merge the graphs and does not
+give one graph precedence. A caller that composes them must declare the
+resource binding, XML edition, object-identity map, and conflict policy. With
+no such map, both source identities and values remain separate. Equal values
+may be projected only by that caller's composition result. A conflict has no
+format-defined winner; the caller must retain source-scoped values or refuse
+the composition. The STEP codec provides no implicit XML-to-Part-21
+composition.
 
 A Part 21 ZIP container uses PKZIP 2.04g stored or Deflate entries. Its root
 member is named exactly `ISO-10303.p21` and is at the archive root. Every
