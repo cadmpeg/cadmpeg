@@ -62,6 +62,11 @@ fixtures, scores above L1 remain blocked.
   or vertical-distance constraints when their unique dimension parameter
   agrees with the solved one-axis coordinate difference and both point keys
   resolve to emitted loci.
+- Every parsed equation row without a typed transfer is retained as a native
+  equation constraint. The native record keeps the function and equation IDs,
+  row and table offsets, explicit argument count, ordered argument slots
+  including nulls, solver activity, and the source sketch reference; typed
+  rows are not duplicated.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs. Additive linear
   extrusions also accept a closed one-entity circle section, a closed single

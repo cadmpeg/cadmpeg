@@ -631,6 +631,115 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
     .collect()
 }
 
+pub(in super::super) fn section_equation_native_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    typed_offsets: &BTreeSet<usize>,
+) -> Vec<(SketchConstraint, usize)> {
+    let Some(table) = crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    table
+        .rows
+        .into_iter()
+        .filter(|equation| !typed_offsets.contains(&equation.offset))
+        .map(|equation| {
+            let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+            let native_ref = sketch_native_ref(sketch);
+            let argument_slots = equation
+                .arguments
+                .iter()
+                .enumerate()
+                .map(|(slot, argument)| match argument {
+                    Some(argument) => format!("{slot}:{argument}"),
+                    None => format!("{slot}:null"),
+                })
+                .collect::<Vec<_>>();
+            let null_argument_ordinals = equation
+                .arguments
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, argument)| argument.is_none().then_some(slot.to_string()))
+                .collect::<Vec<_>>();
+            let mut native_properties = BTreeMap::from([
+                ("equation_id".to_string(), equation.equation_id.to_string()),
+                ("function_id".to_string(), equation.function_id.to_string()),
+                ("offset".to_string(), equation.offset.to_string()),
+                ("table_offset".to_string(), table.offset.to_string()),
+                (
+                    "table_declared_count".to_string(),
+                    table.declared_count.to_string(),
+                ),
+                ("active".to_string(), active.to_string()),
+                ("argument_slots".to_string(), argument_slots.join(",")),
+            ]);
+            if let Some(explicit_argument_count) = equation.explicit_argument_count {
+                native_properties.insert(
+                    "explicit_argument_count".to_string(),
+                    explicit_argument_count.to_string(),
+                );
+            }
+            if let Some(entity_ref) = table.entity_ref {
+                native_properties.insert("table_entity_ref".to_string(), entity_ref.to_string());
+            }
+            if !null_argument_ordinals.is_empty() {
+                native_properties.insert(
+                    "null_argument_ordinals".to_string(),
+                    null_argument_ordinals.join(","),
+                );
+            }
+            let mut operands = vec![SketchNativeOperand {
+                native_kind: "eqtn_arr".to_string(),
+                native_field: Some("equation_id".to_string()),
+                native_role: None,
+                object_index: equation.equation_id,
+                native_ref: Some(native_ref.clone()),
+            }];
+            operands.extend(equation.arguments.iter().enumerate().filter_map(
+                |(slot, argument)| {
+                    argument.map(|object_index| SketchNativeOperand {
+                        native_kind: "var_arr".to_string(),
+                        native_field: Some(format!("arguments[{slot}]")),
+                        native_role: None,
+                        object_index,
+                        native_ref: Some(native_ref.clone()),
+                    })
+                },
+            ));
+            (
+                SketchConstraint {
+                    id: sketch_constraint_id(
+                        sketch,
+                        format_args!("equation:offset:{}", equation.offset),
+                    ),
+                    sketch: sketch.clone(),
+                    definition: SketchConstraintDefinition::Native {
+                        native_kind: format!("creo:equation:{}", equation.function_id),
+                        native_state: Some(u64::from(active)),
+                        native_flags: None,
+                        native_properties,
+                        entities: Vec::new(),
+                        parameter: None,
+                        operands,
+                    },
+                    name: None,
+                    driving: None,
+                    active: Some(active),
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
+                    native_ref: Some(native_ref),
+                },
+                equation.offset,
+            )
+        })
+        .collect()
+}
+
 pub(in super::super) fn section_equation_same_coordinate_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,

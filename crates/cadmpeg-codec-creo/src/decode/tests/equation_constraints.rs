@@ -3,12 +3,117 @@
 
 use crate::decode::sketch_transfer::{
     section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
-    section_equation_point_on_line_constraints, section_equation_unsigned_distance_constraints,
+    section_equation_native_constraints, section_equation_point_on_line_constraints,
+    section_equation_unsigned_distance_constraints,
 };
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchDistancePair, SketchEntityId, SketchLocus,
 };
+use std::collections::BTreeSet;
+
+#[test]
+fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x04\xf8\x03\xf6\x02\x03\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let constraints = section_equation_native_constraints(&definition, &sketch, &BTreeSet::new());
+    assert_eq!(constraints.len(), 1);
+    let (constraint, offset) = &constraints[0];
+    assert_eq!(*offset, 28);
+    assert_eq!(
+        constraint.id.0,
+        "creo:featdefs:sketch_constraint#40:equation:offset:28"
+    );
+    assert_eq!(constraint.active, Some(true));
+    let SketchConstraintDefinition::Native {
+        native_kind,
+        native_state,
+        native_properties,
+        operands,
+        ..
+    } = &constraint.definition
+    else {
+        panic!("equation fallback must be native");
+    };
+    assert_eq!(native_kind, "creo:equation:4");
+    assert_eq!(*native_state, Some(1));
+    assert_eq!(native_properties["equation_id"], "1");
+    assert_eq!(native_properties["function_id"], "4");
+    assert_eq!(native_properties["explicit_argument_count"], "3");
+    assert_eq!(native_properties["argument_slots"], "0:null,1:2,2:3");
+    assert_eq!(native_properties["null_argument_ordinals"], "0");
+    assert_eq!(operands.len(), 3);
+    assert_eq!(operands[0].native_kind, "eqtn_arr");
+    assert_eq!(operands[0].object_index, 1);
+    assert_eq!(operands[1].native_field.as_deref(), Some("arguments[1]"));
+    assert_eq!(operands[1].object_index, 2);
+    assert_eq!(operands[2].native_field.as_deref(), Some("arguments[2]"));
+    assert_eq!(operands[2].object_index, 3);
+    assert!(
+        section_equation_native_constraints(&definition, &sketch, &BTreeSet::from([28]),)
+            .is_empty()
+    );
+
+    let mut disabled = definition;
+    disabled.relations = Some(crate::feature::FeatureRelationTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: Vec::new(),
+        skamps: vec![crate::feature::FeatureSkamp {
+            id: 900,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: Vec::new(),
+            offset: 900,
+        }],
+        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 901,
+            offset: 900,
+        }),
+        triples: vec![crate::feature::FeatureRelationTriple {
+            relation_id: None,
+            equation_id: Some(1),
+            skamp_id: Some(900),
+            offset: 902,
+        }],
+        triples_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 903,
+            offset: 902,
+        }),
+        offset: 899,
+    });
+    let disabled_constraints =
+        section_equation_native_constraints(&disabled, &sketch, &BTreeSet::new());
+    assert_eq!(disabled_constraints[0].0.active, Some(false));
+    let SketchConstraintDefinition::Native { native_state, .. } =
+        &disabled_constraints[0].0.definition
+    else {
+        panic!("equation fallback must be native");
+    };
+    assert_eq!(*native_state, Some(0));
+}
 
 #[test]
 fn equation_function_thirty_three_emits_equal_distance_pairs() {

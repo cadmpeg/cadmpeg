@@ -26,13 +26,13 @@ use super::{
     native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
     reconcile_constraint_entity_references, resolved_profile_chains, section_degenerate_axis_line,
     section_dimension_constraints, section_equation_axis_distance_constraints,
-    section_equation_equal_distance_constraints, section_equation_point_on_line_constraints,
-    section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
-    section_segment_identity_suffix, section_segment_radius_constraints,
-    section_segment_verhor_definition, section_skamp_constraints_for_geometry,
-    solver_only_section_entities, solver_only_section_entity_family,
-    unique_saved_section_internal_ids, unique_section_segment_external_ids,
-    SectionEntityIncidenceFamily,
+    section_equation_equal_distance_constraints, section_equation_native_constraints,
+    section_equation_point_on_line_constraints, section_equation_same_coordinate_constraints,
+    section_equation_unsigned_distance_constraints, section_segment_identity_suffix,
+    section_segment_radius_constraints, section_segment_verhor_definition,
+    section_skamp_constraints_for_geometry, solver_only_section_entities,
+    solver_only_section_entity_family, unique_saved_section_internal_ids,
+    unique_section_segment_external_ids, SectionEntityIncidenceFamily,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
@@ -628,7 +628,7 @@ pub(in super::super) fn transfer_sketches(
             );
             constraints.push(constraint);
         }
-        for (mut constraint, offset) in
+        let equation_constraints =
             section_equation_axis_distance_constraints(definition, &sketch_id)
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
@@ -643,7 +643,9 @@ pub(in super::super) fn transfer_sketches(
                 .chain(section_equation_equal_distance_constraints(
                     definition, &sketch_id,
                 ))
-        {
+                .collect::<Vec<_>>();
+        let mut typed_equation_offsets = BTreeSet::new();
+        for (mut constraint, offset) in equation_constraints {
             if !reconcile_constraint_entity_references(
                 &mut constraint.definition,
                 &emitted_entity_ids,
@@ -656,6 +658,20 @@ pub(in super::super) fn transfer_sketches(
                 "FeatDefs",
                 offset as u64,
                 "section_equation_constraint",
+                Exactness::ByteExact,
+            );
+            typed_equation_offsets.insert(offset);
+            constraints.push(constraint);
+        }
+        for (constraint, offset) in
+            section_equation_native_constraints(definition, &sketch_id, &typed_equation_offsets)
+        {
+            annotate(
+                annotations,
+                &constraint.id.0,
+                "FeatDefs",
+                offset as u64,
+                "section_native_equation_constraint",
                 Exactness::ByteExact,
             );
             constraints.push(constraint);
