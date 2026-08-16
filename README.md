@@ -133,7 +133,7 @@ Run an end-to-end smoke test:
 
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
-cadmpeg export cube.cadir.json -f step -o cube.step
+cadmpeg convert cube.cadir.json -f step -o cube.step
 ```
 
 AI-assisted contributions are welcome when reviewed and concise. Clean-room rules apply: do not pass vendor SDK knowledge through a model.

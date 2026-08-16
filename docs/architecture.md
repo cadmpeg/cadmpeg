@@ -12,12 +12,11 @@ native CAD ── detect + inspect ──> container summary
                                 └── encode ──> .cadir.json | .step/.stp | .f3d | .sldprt | .3dm | .FCStd
 ```
 
+- `convert` loads or decodes, validates, then writes another format. `--allow-invalid` writes after validation errors.
 - `inspect` detects a codec and reports container structure without decoding geometry.
-- `decode` runs the selected codec and serializes `CadIr`, normally as `.cadir.json`.
-- `validate` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).
-- `export` reads or decodes an input and writes CADIR, STEP, SLDPRT, F3D, Rhino, or FreeCAD without validation.
-- `convert` loads or decodes, validates, then exports. `--allow-invalid` continues export after validation errors.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source metadata, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity. A source attribute whose key ends in `_local_sha256` holds a machine-local content digest, which no two platforms reproduce; `diff` reports a difference in one under a separate informational section and keeps status 0.
+- `validate` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).
+- `decode` runs the selected codec and serializes `CadIr`, normally as `.cadir.json`.
 
 CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
@@ -29,7 +28,7 @@ The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates impleme
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
+`decode` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
 Status 0 is success. Status 1 is semantic failure or a non-empty diff. Status 2 is operational failure.
 

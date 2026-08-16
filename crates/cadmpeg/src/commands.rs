@@ -302,7 +302,7 @@ pub fn validate_cmd(
     Ok(())
 }
 
-/// Convert a CAD file without validating.
+/// Hidden `export` spelling: convert a CAD file without validating.
 pub fn export(
     catalogs: &AppCatalogs,
     path: &Path,

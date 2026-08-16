@@ -395,6 +395,72 @@ impl LimitProfile {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Convert a CAD file to another format.
+    ///
+    /// Reads a CAD file, validates it, and writes another format.
+    /// The output path's extension selects the format. Pass `-f` when writing to stdout.
+    ///
+    /// `--allow-invalid` writes the file even if validation finds errors.
+    #[command(
+        display_order = 1,
+        after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.f3d -f step"
+    )]
+    Convert {
+        /// CAD file to convert.
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
+        /// Rejected placeholder: the artifact format comes from --format/-o and
+        /// the machine-readable report from --report.
+        #[arg(long, hide = true)]
+        json: bool,
+        /// Stream a binary output format to standard output anyway.
+        #[arg(long, hide = true)]
+        binary_stdout: bool,
+        /// Output format; inferred from the output extension when omitted.
+        #[arg(short, long, visible_alias = "to", value_enum)]
+        format: Option<Format>,
+        /// Output file; omit to write to standard output.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Replace an existing output file.
+        #[arg(long)]
+        force: bool,
+        /// Write a JSON report to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
+        /// Write output even if validation finds errors.
+        #[arg(long)]
+        allow_invalid: bool,
+        /// Write output even if no geometry was decoded.
+        #[arg(long)]
+        allow_empty: bool,
+        /// Do not write if decoding reported any loss.
+        #[arg(long)]
+        reject_lossy: bool,
+        /// Target Rhino archive version; valid only for Rhino output.
+        #[cfg(feature = "rhino")]
+        #[arg(long, value_enum)]
+        rhino_version: Option<RhinoVersion>,
+        /// Target IGES specification version; valid only for IGES output.
+        #[cfg(feature = "iges")]
+        #[arg(long, value_enum)]
+        iges_target: Option<IgesTarget>,
+        #[command(flatten)]
+        input_args: InputArgs,
+        #[command(flatten)]
+        decode: DecodeArgs,
+        #[cfg(feature = "step")]
+        #[command(flatten)]
+        step: StepOutputArgs,
+    },
     /// Show what is inside a CAD file.
     ///
     /// Prints the format, container layout, and stored streams.
@@ -481,7 +547,7 @@ enum Command {
     ///
     /// Reads JSON from `--report`, from decode, or from a decode sidecar.
     #[command(
-        display_order = 7,
+        display_order = 6,
         subcommand_help_heading = "Views",
         after_help = "Examples:\n  cadmpeg query losses part.convert.json\n  cadmpeg query counts part.cadir.json"
     )]
@@ -525,11 +591,9 @@ enum Command {
     },
     /// Convert without validating.
     ///
-    /// Same conversion as convert, without the validation step.
-    #[command(
-        display_order = 6,
-        after_help = "Examples:\n  cadmpeg export part.sldprt -o part.step"
-    )]
+    /// Hidden spelling of convert that skips the validation step.
+    /// Prefer `convert`. Pass `--allow-invalid` to write despite errors.
+    #[command(hide = true)]
     Export {
         /// CAD file to convert.
         #[arg(required_unless_present = "input_flag")]
@@ -615,72 +679,6 @@ enum Command {
         force: bool,
         #[command(flatten)]
         decode: DecodeArgs,
-    },
-    /// Convert a CAD file to another format.
-    ///
-    /// Reads a CAD file, validates it, and writes another format.
-    /// The output path's extension selects the format. Pass `-f` when writing to stdout.
-    ///
-    /// `export` writes the same conversion without validating.
-    #[command(
-        display_order = 1,
-        after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.f3d -f step"
-    )]
-    Convert {
-        /// CAD file to convert.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
-        /// Rejected placeholder: the artifact format comes from --format/-o and
-        /// the machine-readable report from --report.
-        #[arg(long, hide = true)]
-        json: bool,
-        /// Stream a binary output format to standard output anyway.
-        #[arg(long, hide = true)]
-        binary_stdout: bool,
-        /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, visible_alias = "to", value_enum)]
-        format: Option<Format>,
-        /// Output file; omit to write to standard output.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Replace an existing output file.
-        #[arg(long)]
-        force: bool,
-        /// Write a JSON report to this file.
-        #[arg(long)]
-        report: Option<PathBuf>,
-        /// Write output even if validation finds errors.
-        #[arg(long)]
-        allow_invalid: bool,
-        /// Write output even if no geometry was decoded.
-        #[arg(long)]
-        allow_empty: bool,
-        /// Do not write if decoding reported any loss.
-        #[arg(long)]
-        reject_lossy: bool,
-        /// Target Rhino archive version; valid only for Rhino output.
-        #[cfg(feature = "rhino")]
-        #[arg(long, value_enum)]
-        rhino_version: Option<RhinoVersion>,
-        /// Target IGES specification version; valid only for IGES output.
-        #[cfg(feature = "iges")]
-        #[arg(long, value_enum)]
-        iges_target: Option<IgesTarget>,
-        #[command(flatten)]
-        input_args: InputArgs,
-        #[command(flatten)]
-        decode: DecodeArgs,
-        #[cfg(feature = "step")]
-        #[command(flatten)]
-        step: StepOutputArgs,
     },
 }
 
