@@ -3,7 +3,19 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::standard_quad_topology_stream;
+use crate::test_support::{
+    compact_standard_triangle_topology_stream, standard_quad_topology_stream,
+};
+
+#[test]
+fn compact_standard_ports_reuse_handles_within_the_table_scope() {
+    let ports = crate::solve::missing_edge::standard_edge_port_identities(
+        &compact_standard_triangle_topology_stream(),
+    )
+    .expect("compact standard ports");
+
+    assert_eq!(ports, vec![[0, 1], [1, 2], [2, 0]]);
+}
 
 #[test]
 fn standard_mesh_ports_bridge_table_local_endpoint_names() {
@@ -340,7 +352,7 @@ fn standard_mesh_runs_include_flanking_segments() {
 }
 
 #[test]
-fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
+fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
     let mut bytes = standard_quad_topology_stream();
     for _ in 0..4 {
         let row = bytes
@@ -359,7 +371,7 @@ fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
     )
     .expect("native port-ordered full gap");
     assert_eq!(assignments.len(), 1);
-    assert_eq!(assignments[0].len(), 840);
+    assert_eq!(assignments[0].len(), 280);
     assert!(assignments[0].iter().all(|assignment| {
         assignment
             .iter()

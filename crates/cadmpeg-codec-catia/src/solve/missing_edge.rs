@@ -4,10 +4,12 @@
 
 use crate::families::standard::fbb::{
     boundary_cycles, largest_fbb_run, parse_edge_tables, parse_fbb_edge_tables,
-    parse_standard_edge_tables, parse_standard_edge_tables_with_width, parse_trim_chain,
+    parse_standard_edge_tables_scoped, parse_standard_edge_tables_with_width, parse_trim_chain,
     parse_vertex_table, selected_standard_run,
 };
-use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
+use crate::families::standard::topology::{
+    incidence_cycles, EdgeBoundaryLayout, EdgeRow, TrimRecord,
+};
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
@@ -29,14 +31,37 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = selected_standard_run(bytes)?;
-    let (edge_rows, _) = parse_standard_edge_tables(bytes, after_faces)?;
+    let (edge_rows, scopes, _, _) = parse_standard_edge_tables_scoped(bytes, after_faces)?;
+    let mut identity_by_handle = HashMap::new();
+    let mut next_identity = 0u32;
     edge_rows
         .iter()
-        .enumerate()
-        .map(|(edge, row)| {
+        .zip(scopes)
+        .map(|(row, scope)| {
             row.handles.first().zip(row.handles.last())?;
-            let start = edge.checked_mul(2)?;
-            Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+            if row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun {
+                let mut pair = [0; 2];
+                for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let identity = if let Some(identity) = identity_by_handle.get(&(scope, handle))
+                    {
+                        *identity
+                    } else {
+                        let identity = next_identity;
+                        next_identity = next_identity.checked_add(1)?;
+                        identity_by_handle.insert((scope, handle), identity);
+                        identity
+                    };
+                    pair[port] = identity;
+                }
+                Some(pair)
+            } else {
+                let start = next_identity;
+                next_identity = next_identity.checked_add(2)?;
+                Some([start, start.checked_add(1)?])
+            }
         })
         .collect()
 }
@@ -63,8 +88,9 @@ pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
 }
 
 /// Select the endpoint-identity grammar belonging to the detected spine
-/// family. Standard rows use row-local endpoint ports; FBB-only rows use
-/// table-scoped complete-boundary handles.
+/// family. Full-form standard rows use occurrence-local endpoint ports;
+/// compact standard and FBB-only rows use table-scoped complete-boundary
+/// handles.
 pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
 }

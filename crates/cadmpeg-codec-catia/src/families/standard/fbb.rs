@@ -626,12 +626,21 @@ pub(crate) fn parse_standard_edge_tables_with_width(
     bytes: &[u8],
     position: usize,
 ) -> Option<(Vec<EdgeRow>, usize, usize)> {
+    parse_standard_edge_tables_scoped(bytes, position)
+        .map(|(rows, _, vertex_header, handle_width)| (rows, vertex_header, handle_width))
+}
+
+pub(crate) fn parse_standard_edge_tables_scoped(
+    bytes: &[u8],
+    position: usize,
+) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
     // The full standard spine uses u16be rows and may contain one or more
     // counted tables. Keep that grammar first so a malformed standard walk
     // cannot silently enter the compact form below.
-    if let Some((rows, _, vertex_header)) = parse_edge_tables_scoped_width(bytes, position, 2) {
+    if let Some((rows, scopes, vertex_header)) = parse_edge_tables_scoped_width(bytes, position, 2)
+    {
         if parse_vertex_table(bytes, vertex_header).is_some() {
-            return Some((rows, vertex_header, 2));
+            return Some((rows, scopes, vertex_header, 2));
         }
     }
 
@@ -649,7 +658,7 @@ pub(crate) fn parse_standard_edge_tables_with_width(
         && rows
             .iter()
             .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun))
-    .then_some((rows, vertex_header, handle_width))
+    .then_some((rows, scopes, vertex_header, handle_width))
 }
 
 pub(crate) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
