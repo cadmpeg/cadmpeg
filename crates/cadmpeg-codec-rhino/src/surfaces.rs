@@ -832,7 +832,10 @@ pub(crate) fn read_nurbs_surface(
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
-    if dimension != 3 || !(rational == 0 || rational == 1) || u_count < u_order || v_count < v_order
+    if !(2..=3).contains(&dimension)
+        || !(rational == 0 || rational == 1)
+        || u_count < u_order
+        || v_count < v_order
     {
         return Err(error(reader.position(), "invalid NURBS surface header"));
     }
@@ -865,7 +868,8 @@ pub(crate) fn read_nurbs_surface(
     if stored_cv_count != expected_cv_count {
         return Err(error(reader.position(), "NURBS surface CV count mismatch"));
     }
-    let (control_points, weights) = read_poles(reader, stored_cv_count, rational != 0, scale)?;
+    let (control_points, weights) =
+        read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
     let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
     reader.skip_remaining()?;
@@ -945,6 +949,7 @@ fn read_poles(
     reader: &mut BoundedReader<'_>,
     count: usize,
     rational: bool,
+    dimension: i32,
     scale: f64,
 ) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
     let mut points = Vec::with_capacity(count);
@@ -952,7 +957,7 @@ fn read_poles(
     for _ in 0..count {
         let x = reader.f64()?;
         let y = reader.f64()?;
-        let z = reader.f64()?;
+        let z = if dimension == 3 { reader.f64()? } else { 0.0 };
         let weight = if rational { Some(reader.f64()?) } else { None };
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
             return Err(error(reader.position(), "NURBS pole is not finite"));

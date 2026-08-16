@@ -857,6 +857,26 @@ native fidelity retains the finite parameterization and clipping-control
 bytes. The code, specification, evidence, and gates for this slice are
 complete; the remaining TE-01 classes stay open below.
 
+The direct NURBS-surface slice is covered by
+`ON_NurbsSurface::IsValid`/`Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_nurbssurface.cpp:584-897`, the legacy
+surface UUID demotion in `/home/pcurve/side2/opennurbs/opennurbs_object.cpp:878-927`,
+and direct archive dispatch in
+`/home/pcurve/side2/opennurbs/opennurbs_archive.cpp:4513-4647`. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/nurbs_surface_witness.cpp`
+reports valid nonrational, rational, and dimension-2 surfaces in V4, V50, V6,
+and inch-unit V6. The Rust reader transfers all three surfaces after lifting
+dimension-2 poles with zero Z; its owner test is
+`surface_reads_a_valid_two_dimensional_lattice_and_lifts_zero_z`.
+The V6 canonical class UUID occurs at `0x0a13`, `0x0c9b`, and `0x0f75`; the
+class-data payloads begin at `0x0a3b`, `0x0cbb`, and `0x0f95`. `cadmpeg
+inspect` reads their headers as, respectively, dimension/rational/order/count
+`3/0/3/2/4/3`, `3/1/2/3/3/4`, and `2/0/2/2/3/3`. The same V6 payloads with
+the TL and old legacy UUIDs, authored by
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/nurbs_surface_alias_witness.cpp`
+and recomputed UUID CRCs, are read by OpenNURBS as three valid surfaces and
+by the Rust decoder as 3/3 surfaces with zero validation errors.
+
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
 outcome, and typed or opaque transfer result.

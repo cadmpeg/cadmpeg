@@ -2988,7 +2988,7 @@ U stored knots
 i32 V stored knot count
 V stored knots
 i32 stored CV count
-U-major CV sequence
+stored CV count × (dimension + rational) f64
 ```
 
 The U and V stored knot counts are `order + CV count - 2`; stored CV count is
@@ -3006,6 +3006,13 @@ homogeneous conversion. Periodicity in each direction is derived from its knot
 vector.
 The reader consumes the known major-1 prefix and skips any suffix before the
 bounded class-data end.
+
+OpenNURBS accepts a positive source dimension. `CADIR decision:` typed surface
+admission accepts dimensions 2 and 3; a dimension-2 pole receives a zero third
+coordinate. Pole coordinates are converted to millimetres. Orders, counts,
+knot vectors, parameter domains, weights, and periodicity are unchanged.
+The legacy class UUIDs `4760C817-0BE3-11D4-BFFE-0010830122F0` and
+`FA4FD4B5-1613-11D4-8000-0010830122F0` select this same payload grammar.
 
 ### 13.3 Plane surface
 

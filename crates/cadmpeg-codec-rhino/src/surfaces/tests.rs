@@ -115,6 +115,45 @@ fn surface_payload(
     bytes
 }
 
+fn surface_2d_payload(rational: bool) -> Vec<u8> {
+    let mut bytes = vec![0x10];
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, i32::from(rational));
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, 3);
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, 0);
+    push_i32(&mut bytes, 0);
+    bytes.extend([0; 48]);
+    let u_knots = [10.0, 11.0, 12.0];
+    push_i32(&mut bytes, u_knots.len() as i32);
+    for knot in u_knots {
+        push_f64(&mut bytes, knot);
+    }
+    let v_knots = [20.0, 21.0];
+    push_i32(&mut bytes, v_knots.len() as i32);
+    for knot in v_knots {
+        push_f64(&mut bytes, knot);
+    }
+    push_i32(&mut bytes, 6);
+    for i in 0..3 {
+        for j in 0..2 {
+            let weight = if rational {
+                1.0 + f64::from(i + j)
+            } else {
+                1.0
+            };
+            push_f64(&mut bytes, (100.0 + f64::from(i)) * weight);
+            push_f64(&mut bytes, (200.0 + f64::from(j)) * weight);
+            if rational {
+                push_f64(&mut bytes, weight);
+            }
+        }
+    }
+    bytes
+}
+
 fn plane_payload(version: u8, bad_frame: bool, bad_range: bool) -> Vec<u8> {
     let mut bytes = vec![version];
     push_f64(&mut bytes, 1.0);
@@ -452,6 +491,28 @@ fn surface_bytes_reconstruct_independent_knots_and_reject_count_mismatch() {
     bad[count_offset..count_offset + 4].copy_from_slice(&99_i32.to_le_bytes());
     let mut reader = BoundedReader::new(&bad, 0, bad.len()).expect("required invariant");
     assert!(read_nurbs_surface(&mut reader, 1.0).is_err());
+}
+
+#[test]
+fn surface_reads_a_valid_two_dimensional_lattice_and_lifts_zero_z() {
+    let bytes = surface_2d_payload(false);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid two-dimensional surface");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!((surface.u_count, surface.v_count), (3, 2));
+    assert_eq!(surface.control_points[1], Point3::new(200.0, 402.0, 0.0));
+    assert_eq!(surface.u_knots, vec![10.0, 10.0, 11.0, 12.0, 12.0]);
+    assert_eq!(surface.v_knots, vec![20.0, 20.0, 21.0, 21.0]);
+}
+
+#[test]
+fn surface_reads_a_rational_two_dimensional_lattice() {
+    let bytes = surface_2d_payload(true);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid rational surface");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!(surface.control_points[1], Point3::new(200.0, 402.0, 0.0));
+    assert_eq!(surface.weights, Some(vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0]));
 }
 
 #[test]
