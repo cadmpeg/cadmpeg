@@ -232,9 +232,56 @@ can therefore change a neutral design value without a loss.
 
 **Note.** New hostile-sweep finding.
 
-## 6. Product structure
+## 6. Semantic annotations
 
-## 7. Assembly joints
+### SA-03. Annotation value-root framing and attribute selection
+
+**Question.** Which direct value root and canonical attributes supply each registered annotation
+text, scalar, vector, and format property?
+
+**Known.** Registered annotation properties have exact runtime types. Standard property writers
+emit one direct root: `String` uses `value`, `PropertyVector` uses `valueX`, `valueY`, and `valueZ`,
+`Float` uses `value`, and `StringList` owns its ordered direct `String` children. The persistence
+layer retains every descendant as a `ValueRecord`. `annotation.rs:50-55` collects text from every
+retained descendant, while `annotation.rs:318-376` selects scalar, vector, and format values by
+retained-value count without checking the direct root tag. `annotation.rs:448-473` also accepts
+capitalized and generic text attributes that the registered property grammar does not define.
+
+**Need.** Enforce the direct root tag, root cardinality, owned child grammar, and canonical
+attributes for every registered annotation carrier before neutral transfer. Reject nested roots,
+unexpected descendants, and simultaneous or unsupported attribute spellings.
+
+**Conflict.** A registered scalar property with one nested parseable `Float` and no direct
+`Float` root passes `unique_value` and supplies a neutral position. A format `String` with both
+`value` and `Value` silently selects `value`, and an annotation text property can collect text from
+an unrelated nested descendant. Invalid nesting or attribute spelling can therefore create or
+change a neutral annotation without a loss.
+
+**Note.** New hostile-sweep finding.
+
+## 7. TechDraw projection
+
+### DG-05. Drawing scalar attribute spelling
+
+**Question.** Which attribute spelling supplies a registered TechDraw scalar value?
+
+**Known.** The registered application-property grammar and FreeCAD scalar writers use the
+lowercase `value` attribute. `drawing.rs:550-607` enforces the direct value-root tag and
+cardinality, but `drawing.rs:629-634` accepts `Value` when `value` is absent and selects `value`
+when both occur.
+
+**Need.** Enforce the producer's canonical scalar attribute and reject unsupported or duplicate
+spellings before transferring position, scale, or rotation.
+
+**Conflict.** `<Float Value="2"/>` supplies a neutral drawing scalar although it is outside the
+settled property grammar. `<Float value="1" Value="2"/>` silently selects `1`; deleting one
+attribute changes the result from `1` to `2` instead of making the contradictory carrier invalid.
+
+**Note.** New hostile-sweep finding.
+
+## 8. Product structure
+
+## 9. Assembly joints
 
 ### JN-05. Assembly joint value-root framing
 
@@ -258,6 +305,6 @@ nested carrier changes or silently omits joint state.
 
 **Note.** New hostile-sweep finding.
 
-## 8. Attachment and assembly
+## 10. Attachment and assembly
 
-## 9. Persistent graph admission
+## 11. Persistent graph admission
