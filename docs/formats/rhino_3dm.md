@@ -3253,11 +3253,58 @@ reader consumes its known prefix and skips remaining bytes before the bounded
 end. Unknown linetype extension codes at or above 7 terminate the known
 extension stream; the code byte is the only known byte of that item value.
 
-Text styles use the legacy packed font format through archive 50 and the
-anonymous model-component form in later archives. Font state includes the raw
-characteristics word, Windows and PostScript names, Windows and Apple weights,
-point size, family and localized names, the ten-byte PANOSE classification,
-and rich-text quartet member. Font point size is not a model length.
+Text styles use the legacy packed font format when the archive version is below
+60 or the OpenNURBS writer version is earlier than 6.0.2015-09-23. Later
+archives use an anonymous major-1 text-style record. Its minor-1 prefix is:
+
+```text
+anonymous version 1.1
+model-component attributes
+bool font-description-present
+if present: UTF-16 font description
+bool font-present
+if present: anonymous font record
+UUID text-style ID
+UTF-16 text-style name
+```
+
+The text-style reader accepts minor values greater than 1 by consuming this
+prefix and leaving the remaining bytes to the text-style chunk boundary. Minor
+0 omits the ID and name.
+
+The modern font child is an anonymous major-1 record. The current writer uses
+minor 6; each field added at a later minor is present when the font minor is at
+least that value:
+
+```text
+anonymous font version 1.minor
+u32 font characteristics
+UTF-8 string chunk Windows LOGFONT name
+UTF-16 PostScript name
+if minor >= 1: UTF-16 obsolete font description
+if minor >= 2: i32 Windows LOGFONT weight; f64 Apple weight trait
+if minor >= 3: f64 point size; bool obsolete LOGFONT block
+  if true: 4 × u8 obsolete values; 4 × i32 obsolete values
+if minor >= 4: UTF-16 family name
+if minor >= 5:
+  UTF-16 locale name
+  UTF-16 localized PostScript name
+  UTF-16 English PostScript name
+  UTF-16 localized Windows LOGFONT name
+  UTF-16 English Windows LOGFONT name
+  UTF-16 localized family name
+  UTF-16 English family name
+  UTF-16 localized face name
+  UTF-16 English face name
+  anonymous packed version 1.0 PANOSE record: 10 × u8
+if minor >= 6: u8 rich-text quartet member
+```
+
+The UTF-8 string chunk has format byte 0 for an empty value or format byte 1
+followed by the remaining UTF-8 bytes. It has no string count or terminator;
+the chunk boundary supplies its length. Font point size is not a model length.
+The modern font reader accepts later minor values, consumes the known prefix,
+and leaves the remaining bytes to the font chunk boundary.
 
 Dimension-style anonymous versions 1.0 through 1.9 store the common size,
 format, resolution, prefix, suffix, alternate-unit, suppression, and parent
@@ -3306,11 +3353,14 @@ dimensions store the two extension-line origin offsets in
 version 1.0 followed by two model-length `f64` values. When the userdata is
 absent, both offsets are `-1.0`. A negative offset disables the override.
 
-The V5 text-style record stores font weight and italic as separate `i32`
-fields. Italic is 0 or 1. It does not store the modern mixed-radix font
-characteristics word. Its description becomes the PostScript name only when
-it is nonempty, is not `Default`, and the archive runtime is Apple or the
-writer version is later than 23 February 2018.
+The V5 text-style record stores packed version 1.2, the archive index, a
+UTF-16 description, 64 fixed `u16` Windows LOGFONT face-name slots, and, for
+minor 1 and later, separate `i32` font weight, `i32` italic, and obsolete
+`f64` line-feed ratio fields. Minor 2 and later append the text-style UUID. It
+does not store the modern mixed-radix font-characteristics word. Its
+description becomes the PostScript name only when it is nonempty, is not
+`Default`, and the archive runtime is Apple or the writer version is later
+than 23 February 2018.
 
 ### 20.4 Views and document presentation
 

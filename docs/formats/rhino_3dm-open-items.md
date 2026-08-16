@@ -143,10 +143,15 @@ unknown item ID, and leaves its unlength-prefixed value to the containing
 attributes chunk boundary. `ON_Layer::Read` applies the same boundary rule to a
 nonzero extension ID outside its defined set after the fixed layer prefix and
 known extension payloads. `ON_Linetype::Read` applies it to an unknown major-2
-extension code after the component-attributes and segment prefix. Remaining
-strict rules are writer-band ceilings, direct readers with other version
-families, tagged item streams with explicit terminators, or versioned readers
-whose exact producer field gates have not yet been characterized individually.
+extension code after the component-attributes and segment prefix. `ON_Font::Read`
+accepts modern anonymous major-1 fonts, applies the minor 0 through 6 field
+gates, and ends at the font chunk boundary; its modern writer emits minor 6
+and its Windows LOGFONT name is a `TCODE_UTF8_STRING_CHUNK` with a format byte.
+The legacy V5 font branch remains a packed 1.2 record with its own minor gates.
+Remaining strict rules are writer-band ceilings, direct readers with other
+version families, tagged item streams with explicit terminators, or versioned
+readers whose exact producer field gates have not yet been characterized
+individually.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed

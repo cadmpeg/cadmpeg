@@ -17,6 +17,7 @@ use crate::wire::{scaled_coordinate, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
+const UTF8_STRING_CHUNK: u32 = 0x4000_8001;
 const MATERIAL_TABLE: u32 = 0x1000_0010;
 const LIGHT_TABLE: u32 = 0x1000_0012;
 const BITMAP_TABLE: u32 = 0x1000_0016;
@@ -581,6 +582,36 @@ fn component(
     value.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(Component { index, id, name })
+}
+
+fn wide_string(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<String, FramingError> {
+    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    if chunk.typecode != UTF8_STRING_CHUNK || chunk.short {
+        return Err(FramingError::structural(
+            reader.position(),
+            "wide-string wrapper is invalid",
+        ));
+    }
+    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let format = value.u8()?;
+    let result = match format {
+        0 if value.remaining() == 0 => String::new(),
+        1 => std::str::from_utf8(value.take(value.remaining())?)
+            .map(str::to_owned)
+            .map_err(|_| FramingError::structural(value.position(), "wide string is not UTF-8"))?,
+        _ => {
+            return Err(FramingError::structural(
+                value.position() - 1,
+                "wide-string format is unsupported",
+            ))
+        }
+    };
+    reader.skip(chunk.next_offset - reader.position())?;
+    Ok(result)
 }
 
 fn class_data(
@@ -2093,7 +2124,7 @@ fn parse_font(
     }
     let mut font = FontRecord {
         characteristics: value.u32()?,
-        windows_logfont_name: utf16(&mut value)?,
+        windows_logfont_name: wide_string(data, &mut value, archive)?,
         postscript_name: utf16(&mut value)?,
         ..FontRecord::default()
     };
@@ -2663,6 +2694,26 @@ mod tests {
         bytes
     }
 
+    fn wide_string_chunk(value: &str) -> Vec<u8> {
+        let mut payload = vec![1];
+        payload.extend(value.as_bytes());
+        payload.extend(crc32fast::hash(&payload).to_le_bytes());
+        let mut bytes = 0x4000_8001_u32.to_le_bytes().to_vec();
+        bytes.extend((payload.len() as i64).to_le_bytes());
+        bytes.extend(payload);
+        bytes
+    }
+
+    fn panose_chunk() -> Vec<u8> {
+        let mut payload = vec![0x10];
+        payload.extend([2, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        payload.extend(crc32fast::hash(&payload).to_le_bytes());
+        let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
+        bytes.extend((payload.len() as i64).to_le_bytes());
+        bytes.extend(payload);
+        bytes
+    }
+
     fn embedded_bitmap_payload(minor: u8, id: Uuid, compression_method: i32) -> Vec<u8> {
         let mut bytes = vec![0x10 | minor];
         bytes.extend(utf16("image.png"));
@@ -2940,6 +2991,41 @@ mod tests {
         assert_eq!(value.font.characteristics, 0);
         assert_eq!(value.font.legacy_italic, Some(true));
         assert_eq!(value.source_offset, 42);
+    }
+
+    #[test]
+    fn modern_font_matches_producer_wide_string_and_future_suffix() {
+        let mut body = 0x1234_5678_u32.to_le_bytes().to_vec();
+        body.extend(wide_string_chunk("Arial"));
+        body.extend(utf16("ArialMT"));
+        body.extend(utf16("Arial Regular"));
+        body.extend(400_i32.to_le_bytes());
+        body.extend(0.5_f64.to_le_bytes());
+        body.extend(12.0_f64.to_le_bytes());
+        body.push(0);
+        body.extend(utf16("Arial"));
+        for value in [
+            "en-US", "ArialMT", "ArialMT", "Arial", "Arial", "Arial", "Arial", "Regular", "Regular",
+        ] {
+            body.extend(utf16(value));
+        }
+        body.extend(panose_chunk());
+        body.push(2);
+        body.extend([0xaa, 0xbb]);
+        let bytes = anonymous(7, &body);
+        let value = parse_font(
+            &bytes,
+            &mut BoundedReader::new(&bytes, 0, bytes.len()).unwrap(),
+            ArchiveVersion::V8,
+            None,
+        )
+        .expect("modern font with future minor");
+        assert_eq!(value.characteristics, 0x1234_5678);
+        assert_eq!(value.windows_logfont_name, "Arial");
+        assert_eq!(value.postscript_name, "ArialMT");
+        assert_eq!(value.family_name, "Arial");
+        assert_eq!(value.panose, Some([2, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        assert_eq!(value.quartet_member, Some(2));
     }
 
     #[test]
