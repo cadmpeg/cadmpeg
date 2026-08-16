@@ -36,7 +36,8 @@ use super::endpoints::{
 };
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{
-    inline_arc_coordinates, legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
+    compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
+    legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
 };
 use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
@@ -1037,6 +1038,12 @@ pub(crate) fn project_marker_backed_sketches(
                                             &lane.native_payload,
                                             marker,
                                             &object_markers,
+                                        )
+                                    })
+                                    .or_else(|| {
+                                        compact_legacy_142_profile_curve_endpoints(
+                                            &lane.native_payload,
+                                            usize::try_from(marker.offset).ok()?,
                                         )
                                     })
                                 {

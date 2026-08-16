@@ -3713,6 +3713,177 @@ size = 2
 note = "Bytes +62 through +63 are not interpreted by this fixed form."
 
 [[record]]
+name = "compact_legacy_142_profile_curve"
+kind = "byte"
+section = "2"
+anchor = "native value u32 `2`, profile locus `04 00 02 00`"
+size = 142
+endianness = "little"
+note = "The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "The compact `ff ff 07 00 01` generation"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes at marker +5"
+
+[[record.field]]
+name = "shared_selector"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "f32 `-1` at marker +13"
+value = -1.0
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native value u32 `2`, profile locus `04 00 02 00`"
+value = 2
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "Zero bytes at marker +21 through +22."
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+value = 1
+
+[[record.gap]]
+offset = 29
+size = 2
+note = "Zero bytes at marker +29 through +30."
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at marker +48; bytes +39 through +47 are reserved."
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+value = 1.0
+
+[[record.gap]]
+offset = 56
+size = 8
+note = "Zero bytes at marker +56 through +63."
+
+[[record.field]]
+name = "curve_tag"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "Marker +64 stores `12 00`, `16 00`, or `1a 00`"
+
+[[record.field]]
+name = "auxiliary_first"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "the finite auxiliary pair is at marker +66 and +74"
+
+[[record.field]]
+name = "auxiliary_second"
+offset = 74
+type = "f64"
+source = "spec"
+anchor = "the finite auxiliary pair is at marker +66 and +74"
+
+[[record.field]]
+name = "body_kind"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "Marker +82 stores u32 `11`"
+value = 11
+
+[[record.gap]]
+offset = 86
+size = 6
+note = "Zero bytes at marker +86 through +91."
+
+[[record.field]]
+name = "variant"
+offset = 92
+type = "u32"
+source = "spec"
+anchor = "marker +92 stores an opaque variant u32"
+
+[[record.field]]
+name = "start_first"
+offset = 96
+type = "f64"
+source = "spec"
+anchor = "The finite start and end pairs are at marker +96/+104 and marker +112/+120"
+
+[[record.field]]
+name = "start_second"
+offset = 104
+type = "f64"
+source = "spec"
+anchor = "The finite start and end pairs are at marker +96/+104 and marker +112/+120"
+
+[[record.field]]
+name = "end_first"
+offset = 112
+type = "f64"
+source = "spec"
+anchor = "The finite start and end pairs are at marker +96/+104 and marker +112/+120"
+
+[[record.field]]
+name = "end_second"
+offset = 120
+type = "f64"
+source = "spec"
+anchor = "The finite start and end pairs are at marker +96/+104 and marker +112/+120"
+
+[[record.gap]]
+offset = 128
+size = 10
+note = "Zero bytes at marker +128 through +137."
+
+[[record.field]]
+name = "identity"
+offset = 138
+type = "u32"
+source = "spec"
+anchor = "marker +138 stores a nonzero, non-null feature-local identity"
+
+[[record]]
 name = "compact_legacy_code_two_profile_point"
 kind = "byte"
 section = "2"

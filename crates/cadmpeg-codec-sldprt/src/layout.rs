@@ -1223,6 +1223,64 @@ pub(crate) mod compact_legacy_90_geometry_line {
     pub(crate) const IDENTITY_SECOND: usize = 86;
 }
 
+/// Byte offsets for the `compact_legacy_142_profile_curve` record.
+///
+/// Spec §2. Record length 142 B.
+///
+/// ```text
+/// The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line.
+/// ```
+pub(crate) mod compact_legacy_142_profile_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 142;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`f32`, little-endian). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Stated value of `shared_selector` (`f32`). Spec §2.
+    pub(crate) const SHARED_SELECTOR_VALUE: f32 = -1.0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0002;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `curve_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const CURVE_TAG: usize = 64;
+    /// Offset of `auxiliary_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const AUXILIARY_FIRST: usize = 66;
+    /// Offset of `auxiliary_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const AUXILIARY_SECOND: usize = 74;
+    /// Offset of `body_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const BODY_KIND: usize = 82;
+    /// Stated value of `body_kind` (`u32`). Spec §2.
+    pub(crate) const BODY_KIND_VALUE: u32 = 0x0000_000b;
+    /// Offset of `variant` (`u32`, little-endian). Spec §2.
+    pub(crate) const VARIANT: usize = 92;
+    /// Offset of `start_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const START_FIRST: usize = 96;
+    /// Offset of `start_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const START_SECOND: usize = 104;
+    /// Offset of `end_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const END_FIRST: usize = 112;
+    /// Offset of `end_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const END_SECOND: usize = 120;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 138;
+}
+
 /// Byte offsets for the `compact_legacy_code_two_profile_point` record.
 ///
 /// Spec §2. Record length 132 B.

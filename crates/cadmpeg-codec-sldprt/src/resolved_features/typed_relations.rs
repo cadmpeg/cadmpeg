@@ -10,8 +10,9 @@ use super::endpoints::{
     wide_indexed_curve_record_is_complete, CompactIndexedCurveRecordEnd,
 };
 use super::markers::{
-    finite_coordinate_pair, inline_arc_coordinates, legacy_extended_profile_curve_kind,
-    marker_is_geometry_locus, marker_native_code, sketch_marker_prefix_at,
+    compact_legacy_142_profile_curve_endpoints, finite_coordinate_pair, inline_arc_coordinates,
+    legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
+    sketch_marker_prefix_at,
 };
 use super::relation_loci::{
     canonical_profile_loci, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
@@ -1688,6 +1689,11 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = inline_arc_endpoint_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
+    if let Some(endpoints) =
+        compact_legacy_142_profile_curve_endpoint_markers(payload, curve, markers)
+    {
+        return endpoints.to_vec();
+    }
     if let Some(endpoints) = one_based_point_roster_line_endpoint_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
@@ -2053,6 +2059,35 @@ fn inline_arc_endpoint_markers<'a>(
         candidates.next().is_none().then_some(candidate)
     };
     let endpoints = [endpoint(start)?, endpoint(end)?];
+    (endpoints[0].id != endpoints[1].id).then_some(endpoints)
+}
+
+fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    if curve.kind != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
+        return None;
+    }
+    let offset = usize::try_from(curve.offset).ok()?;
+    let [start, end] = compact_legacy_142_profile_curve_endpoints(payload, offset)?;
+    let resolve = |coordinates: [f64; 2]| {
+        let mut candidates = markers.iter().copied().filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+                && marker.coordinates_m.is_some_and(|point| {
+                    same_dimension_length(point[0], coordinates[0])
+                        && same_dimension_length(point[1], coordinates[1])
+                })
+        });
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(candidate)
+    };
+    let endpoints = [resolve(start)?, resolve(end)?];
     (endpoints[0].id != endpoints[1].id).then_some(endpoints)
 }
 

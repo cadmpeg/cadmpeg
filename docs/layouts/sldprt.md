@@ -996,6 +996,45 @@ Unstated regions:
 - `27..31` (4 B): The geometry-locus body stores zero bytes at marker +27 through +30 before the body tag.
 - `62..64` (2 B): Bytes +62 through +63 are not interpreted by this fixed form.
 
+## `compact_legacy_142_profile_curve`
+
+Spec §2 · layout: byte offsets · size: 142 B
+
+The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The compact `ff ff 07 00 01` generation |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `shared_selector` | `f32` | little | spec | f32 `-1` at marker +13 · value `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `2`, profile locus `04 00 02 00` · value `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 64 | 2 | `curve_tag` | `bytes[2]` | little | spec | Marker +64 stores `12 00`, `16 00`, or `1a 00` |
+| 66 | 8 | `auxiliary_first` | `f64` | little | spec | the finite auxiliary pair is at marker +66 and +74 |
+| 74 | 8 | `auxiliary_second` | `f64` | little | spec | the finite auxiliary pair is at marker +66 and +74 |
+| 82 | 4 | `body_kind` | `u32` | little | spec | Marker +82 stores u32 `11` · value `11` |
+| 92 | 4 | `variant` | `u32` | little | spec | marker +92 stores an opaque variant u32 |
+| 96 | 8 | `start_first` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 104 | 8 | `start_second` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 112 | 8 | `end_first` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 120 | 8 | `end_second` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 138 | 4 | `identity` | `u32` | little | spec | marker +138 stores a nonzero, non-null feature-local identity |
+
+Unstated regions:
+
+- `21..23` (2 B): Zero bytes at marker +21 through +22.
+- `29..31` (2 B): Zero bytes at marker +29 through +30.
+- `39..48` (9 B): The state value begins at marker +48; bytes +39 through +47 are reserved.
+- `56..64` (8 B): Zero bytes at marker +56 through +63.
+- `86..92` (6 B): Zero bytes at marker +86 through +91.
+- `128..138` (10 B): Zero bytes at marker +128 through +137.
+
 ## `compact_legacy_code_two_profile_point`
 
 Spec §2 · layout: byte offsets · size: 132 B

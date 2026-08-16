@@ -34,6 +34,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{BTreeMap, HashMap};
 
+use crate::layout::compact_legacy_142_profile_curve as legacy_142;
 use crate::layout::compact_legacy_code_two_profile_point as code_two;
 use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
@@ -1450,6 +1451,59 @@ fn opposite_corner_inline_arc_coordinates(
     validated_inline_arc_coordinates(center, start, end)
 }
 
+pub(super) fn compact_legacy_142_profile_curve_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[[f64; 2]; 3]> {
+    let end = offset.checked_add(legacy_142::LEN)?;
+    let record = payload.get(offset..end)?;
+    if record.get(legacy_142::MARKER..legacy_142::HEADER) != Some(LEGACY_SKETCH_MARKER)
+        || record.get(legacy_142::HEADER..legacy_142::SHARED_SELECTOR) != Some(&[0xff; 8])
+        || record.get(legacy_142::SHARED_SELECTOR..legacy_142::NATIVE_KIND)
+            != Some(&legacy_142::SHARED_SELECTOR_VALUE.to_le_bytes())
+        || record.get(legacy_142::NATIVE_KIND..legacy_142::NATIVE_KIND + 4)
+            != Some(&legacy_142::NATIVE_KIND_VALUE.to_le_bytes())
+        || record.get(legacy_142::PROFILE_LOCUS..legacy_142::ROLE)
+            != Some(&[0x04, 0x00, 0x02, 0x00])
+        || record.get(legacy_142::ROLE..legacy_142::ROLE + 2)
+            != Some(&legacy_142::ROLE_VALUE.to_le_bytes())
+        || record.get(legacy_142::NATIVE_KIND + 4..legacy_142::PROFILE_LOCUS) != Some(&[0; 2])
+        || record.get(legacy_142::ROLE + 2..legacy_142::SELECTOR) != Some(&[0; 2])
+        || record.get(legacy_142::SELECTOR..legacy_142::SELECTOR + 8)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || record.get(legacy_142::SELECTOR + 8..legacy_142::STATE_VALUE) != Some(&[0; 9])
+        || record.get(legacy_142::STATE_VALUE..legacy_142::STATE_VALUE + 8)
+            != Some(&legacy_142::STATE_VALUE_VALUE.to_le_bytes())
+        || record.get(legacy_142::STATE_VALUE + 8..legacy_142::CURVE_TAG) != Some(&[0; 8])
+        || !matches!(
+            record.get(legacy_142::CURVE_TAG..legacy_142::AUXILIARY_FIRST),
+            Some([0x12 | 0x16 | 0x1a, 0x00])
+        )
+        || record.get(legacy_142::BODY_KIND..legacy_142::BODY_KIND + 4)
+            != Some(&legacy_142::BODY_KIND_VALUE.to_le_bytes())
+        || record.get(legacy_142::BODY_KIND + 4..legacy_142::VARIANT) != Some(&[0; 6])
+        || !sketch_marker_prefix_at(payload, end)
+    {
+        return None;
+    }
+    let auxiliary = finite_coordinate_pair(record, legacy_142::AUXILIARY_FIRST)?;
+    let start = finite_coordinate_pair(record, legacy_142::START_FIRST)?;
+    let end_point = finite_coordinate_pair(record, legacy_142::END_FIRST)?;
+    let identity = View::u32_le_at(record, legacy_142::IDENTITY)?;
+    if identity == 0 || identity == u32::MAX || start == end_point {
+        return None;
+    }
+    Some([auxiliary, start, end_point])
+}
+
+pub(super) fn compact_legacy_142_profile_curve_endpoints(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[[f64; 2]; 2]> {
+    let [_, start, end] = compact_legacy_142_profile_curve_coordinates(payload, offset)?;
+    Some([start, end])
+}
+
 pub(super) fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64; 2]; 3]> {
     if packed_legacy_marker_body(payload, offset)
         && marker_native_code(payload, offset) == Some(2)
@@ -1562,6 +1616,11 @@ pub(super) fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[
         let start = finite_coordinate_pair(payload, offset + 88)?;
         let end = finite_coordinate_pair(payload, offset + 104)?;
         return opposite_corner_inline_arc_coordinates(corner, start, end);
+    }
+    if let Some([center, start, end]) =
+        compact_legacy_142_profile_curve_coordinates(payload, offset)
+    {
+        return validated_inline_arc_coordinates(center, start, end);
     }
     if !common
         || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
