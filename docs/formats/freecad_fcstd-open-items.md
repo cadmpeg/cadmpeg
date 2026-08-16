@@ -138,28 +138,6 @@ simple nested solids do not establish every OCCT topology class or equality case
 
 ## 4. Exact-topology transfer
 
-### XT-01. Edge endpoint child selection
-
-**Question.** What child-use cardinality and orientation grammar does a producer-valid degenerate
-edge use, and which malformed endpoint forms are invalid?
-
-**Known.** Exact-shape records retain ordered and oriented topology children. A normal edge has
-two endpoint uses, with `Forward` supplying the start and `Reversed` the end. A closed edge can
-use the same vertex identity in those two orientations. In authored `NormalEdge.Shape.brp`, the
-endpoint line is `+3 0 -2 0 *` at offset `0x2f8`; in `ClosedEdge.Shape.brp`, it is `+2 0 -2 0 *`
-at offset `0x329`.
-
-**Conflict.** A valid degenerate edge witness is not yet authored. The decoder's
-topology_transfer.rs:1691-1721 rejection of duplicate orientations or missing endpoint uses is
-not evidence for the producer's malformed-input boundary.
-
-**Need.** Author a valid degenerate edge with the headless producer, or read the FreeCAD/OCCT
-writer path that defines its endpoint uses. Author malformed duplicate, missing, and extra endpoint
-witnesses before assigning their validity.
-
-**Note.** This pass settled the normal and closed two-use forms from producer-authored bytes. The
-degenerate and malformed forms remain open.
-
 ### XT-02. Edge representation selection and uniqueness
 
 **Question.** When an edge has repeated 3D or polygon carriers, or more than one matching pcurve
