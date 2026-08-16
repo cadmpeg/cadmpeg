@@ -520,6 +520,36 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         &[8..8 + model_attributes.len()],
     ));
     payload.extend([36, 0, 0]);
+    let obsolete_idef_layer_settings = Uuid::from_canonical([
+        0x11, 0xee, 0x2c, 0x1f, 0xf9, 0x0d, 0x4c, 0x6a, 0xa7, 0xcd, 0xec, 0x85, 0x32, 0xe1, 0xe3,
+        0x2d,
+    ])
+    .to_wire();
+    let obsolete_layer_settings = Uuid::from_canonical([
+        0xbf, 0xb6, 0x3c, 0x09, 0x4b, 0xc7, 0x47, 0x27, 0x89, 0xbb, 0x7c, 0xc7, 0x54, 0x11, 0x82,
+        0x00,
+    ])
+    .to_wire();
+    let opennurbs5_application = Uuid::from_canonical([
+        0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc, 0x30,
+        0xd4,
+    ])
+    .to_wire();
+    let obsolete_userdata = [
+        class_userdata_with_payload(
+            archive,
+            obsolete_idef_layer_settings,
+            opennurbs5_application,
+            &[0xde, 0xad, 0xbe, 0xef],
+        ),
+        class_userdata_with_payload(
+            archive,
+            obsolete_layer_settings,
+            opennurbs5_application,
+            &[0xca, 0xfe, 0xba, 0xbe],
+        ),
+    ]
+    .concat();
     let class_uuid = [
         0x13, 0x98, 0x80, 0x95, 0x85, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
         0xf0,
@@ -532,13 +562,14 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         &[
             long_chunk(archive, 0x0002_fffb, &uuid_body),
             crc_chunk(archive, 0x0002_fffc, &payload),
+            obsolete_userdata,
             short_chunk(archive, 0x8002_7fff, 0),
         ]
         .concat(),
     );
     let (data, record) = metadata_record(0x2000_8050, class);
     let mut wrapper_warnings = Vec::new();
-    let class_descriptor = crate::objects::parse_class_wrapper(
+    let (class_descriptor, userdata) = crate::objects::parse_class_wrapper_with_userdata(
         &data,
         record.body.clone(),
         archive,
@@ -546,6 +577,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     )
     .expect("required invariant");
     assert_eq!(class_descriptor.class_data_range.len(), payload.len());
+    assert_eq!(userdata.len(), 2);
     let table = crate::container::Table {
         typecode: 0x1000_0011,
         range: 0..data.len(),

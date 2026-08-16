@@ -233,8 +233,10 @@ built-in hatch gradient userdata, the V5 dimension-style extra, and
 `ON_V4V5_MeshNgonUserData`, `ON_V5_BrepRegionTopologyUserData`, and
 `ON_SubDMeshProxyUserData`, and `ON_OBSOLETE_IDefAlternativePathUserData` are
 settled, including the Brep, extrusion, history, top-level SubD proxy, and
-linked-definition carriers where applicable; other future
-class-specific payload semantics remain open.
+linked-definition carriers where applicable. The obsolete
+`ON_OBSOLETE_IDefLayerSettingsUserData` and `ON_OBSOLETE_LayerSettingsUserData`
+classes are also settled as no-op V5 compatibility records under section
+7.2.8; other future class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

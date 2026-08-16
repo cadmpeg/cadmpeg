@@ -1040,6 +1040,27 @@ V5 file-reference has no source preference bit, so its paths transfer with
 recognized, well-framed carrier whose bounded payload is malformed is
 discarded and the linked definition remains admitted.
 
+#### 7.2.8 Obsolete layer-settings userdata
+
+`ON_OBSOLETE_IDefLayerSettingsUserData` uses class and item UUID
+`11EE2C1F-F90D-4C6A-A7CD-EC8532E1E32D`. `ON_OBSOLETE_LayerSettingsUserData`
+uses class and item UUID `BFB63C09-4BC7-4727-89BB-7CC754118200`. Both use the
+OpenNURBS 5 application UUID
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`.
+
+Both classes inherit `ON_Internal_ObsoleteUserData`. Its reader requires one
+anonymous child at the class-userdata payload boundary and skips the child
+without reading fields. The two derived classes add no payload members. Their
+archive policy is false and their delete-after-read policy is true: they are
+V5 compatibility records that are never written by the current producer and
+are discarded immediately after a successful read. The layer writer's current
+per-viewport state is a separate `ON__LayerExtensions` userdata item.
+
+CADIR assigns no neutral field to either obsolete class. A well-framed
+class-userdata item is consumed and discarded; the owning layer or instance
+definition remains admitted and its typed state is unchanged. The decoder does
+not interpret the obsolete child bytes.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
