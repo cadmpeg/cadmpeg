@@ -304,6 +304,21 @@ caller supplies resource access. It does not use `FILE_NAME.name`,
 base. For archive lookup it applies only path-component dot-segment
 processing; it does not normalize the scheme, authority, query, fragment, or
 percent encoding.
+
+CADIR decision: external resource access is an admission boundary outside the
+STEP codec. The codec does not make a network, filesystem, archive-download,
+or registry request for an `http`, `https`, `file`, `urn`, or UUID-only URI. It
+retains the exact URI and external occurrence and reports the dependency. A
+caller may resolve a dependency with an explicit resource service. That
+service owns its scheme allowlist, redirects, size and time limits,
+authentication, TLS and certificate rules, authorization scope, and optional
+digest or signature checks before it supplies resource bytes to a separate
+composition step. No resolver result enters the decoded STEP graph implicitly;
+missing or refused access remains an unresolved external dependency.
+Part 21 §10.2.2 assigns UUID-only service discovery to the processing system.
+Annex A.4 Note 2 names transport protocols such as `http`, `ftp`, and `file` as
+ways to deliver a resource, but selects no transport or authentication
+procedure.
 Each SIGNATURE section follows the exchange terminator. Its content is a
 detached CMS `SignedData` object as defined by RFC 5652, encoded as RFC 4648
 Base64. Digest and signature algorithm identifiers are inside that object, not

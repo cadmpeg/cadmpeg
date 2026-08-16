@@ -83,6 +83,39 @@ fn parser_keeps_standalone_external_uri_references_until_caller_resolution() {
 }
 
 #[test]
+fn parser_retains_resource_access_schemes_until_caller_resolution() {
+    let source = include_bytes!("data/er02_resource_access.p21");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("ER-02 access witness");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        exchange
+            .references
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.uri.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("#10", "https://example.invalid/part.p21#target"),
+            ("#11", "file:///var/lib/cadmpeg/part.p21#target"),
+            (
+                "#12",
+                "urn:uuid:97c6e1f0-3544-11e5-a2cb-0800200c9a66#target"
+            ),
+            ("#13", "#97c6e1f0-3544-11e5-a2cb-0800200c9a66"),
+        ]
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(10),
+            crate::parse::Value::Reference(11),
+            crate::parse::Value::Reference(12),
+            crate::parse::Value::Reference(13),
+        ]
+    );
+}
+
+#[test]
 fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#2;ENDSEC;REFERENCE;#10=<#shape>;ENDSEC;DATA;#1=ITEM(#10);#2=TARGET();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("local entity reference");

@@ -100,3 +100,42 @@ fn document_reference_source_is_metadata_not_a_part21_uri_base() {
         .iter()
         .any(|note| note.contains("internal resource")));
 }
+
+#[test]
+fn external_resource_uris_are_reported_without_implicit_access() {
+    let bytes = include_bytes!("../../parse/tests/data/er02_resource_access.p21");
+    let codec = StepCodec::default();
+    let result = codec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode ER-02 resource access witness");
+
+    assert_eq!(
+        result
+            .report()
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("external reference "))
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "external reference #10 -> https://example.invalid/part.p21#target",
+            "external reference #11 -> file:///var/lib/cadmpeg/part.p21#target",
+            "external reference #12 -> urn:uuid:97c6e1f0-3544-11e5-a2cb-0800200c9a66#target",
+            "external reference #13 -> #97c6e1f0-3544-11e5-a2cb-0800200c9a66",
+        ]
+    );
+
+    let summary = codec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("inspect ER-02 resource access witness");
+    let references = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "REFERENCE")
+        .expect("REFERENCE inventory");
+    assert_eq!(references.attributes["external_count"], "4");
+    assert_eq!(
+        references.attributes["external_uris"],
+        "https://example.invalid/part.p21#target,file:///var/lib/cadmpeg/part.p21#target,urn:uuid:97c6e1f0-3544-11e5-a2cb-0800200c9a66#target,#97c6e1f0-3544-11e5-a2cb-0800200c9a66"
+    );
+}
