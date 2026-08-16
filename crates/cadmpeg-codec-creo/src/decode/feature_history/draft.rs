@@ -582,34 +582,8 @@ pub(in super::super) fn schema_feature_definition(
             if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
                 return IrFeatureDefinition::DatumPlaneUnresolved;
             }
-            let local_planes = placed_planes(scan);
-            if let Some(plane) = reconciled_model_plane(&local_planes, ir, *surface_id) {
-                let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
-                let u_axis = placed_plane_surfaces(scan)
-                    .get(surface_id)
-                    .map(|(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]))
-                    .or_else(|| {
-                        let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-                        let surfaces = ir
-                            .model
-                            .surfaces
-                            .iter()
-                            .filter(|surface| surface.id == model_id)
-                            .collect::<Vec<_>>();
-                        match surfaces.as_slice() {
-                            [surface] => match &surface.geometry {
-                                SurfaceGeometry::Plane { u_axis, .. } => Some(*u_axis),
-                                _ => None,
-                            },
-                            _ => None,
-                        }
-                    })
-                    .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
-                return IrFeatureDefinition::DatumPlane {
-                    origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                    normal,
-                    u_axis,
-                };
+            if let Some(definition) = reconciled_datum_plane_definition(scan, ir, *surface_id) {
+                return definition;
             }
             return IrFeatureDefinition::DatumPlaneUnresolved;
         }
@@ -728,6 +702,40 @@ pub(in super::super) fn datum_plane_feature_definition(
     }
 }
 
+fn reconciled_datum_plane_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    surface_id: u32,
+) -> Option<IrFeatureDefinition> {
+    let plane = reconciled_model_plane(&placed_planes(scan), ir, surface_id)?;
+    let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+    let u_axis = placed_plane_surfaces(scan)
+        .get(&surface_id)
+        .map(|(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]))
+        .or_else(|| {
+            let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let surfaces = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == model_id)
+                .collect::<Vec<_>>();
+            let [surface] = surfaces.as_slice() else {
+                return None;
+            };
+            match &surface.geometry {
+                SurfaceGeometry::Plane { u_axis, .. } => Some(*u_axis),
+                _ => None,
+            }
+        })
+        .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
+    Some(IrFeatureDefinition::DatumPlane {
+        origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+        normal,
+        u_axis,
+    })
+}
+
 pub(in super::super) fn unbounded_feature_plane_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -748,29 +756,7 @@ pub(in super::super) fn unbounded_feature_plane_definition(
         && row.next_surface == 0
         && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(*row))
     .then_some(())?;
-    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| surface.id == id)
-        .collect::<Vec<_>>();
-    let [surface] = surfaces.as_slice() else {
-        return None;
-    };
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface.geometry
-    else {
-        return None;
-    };
-    Some(IrFeatureDefinition::DatumPlane {
-        origin,
-        normal,
-        u_axis,
-    })
+    reconciled_datum_plane_definition(scan, ir, row.id)
 }
 
 pub(in super::super) fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {
