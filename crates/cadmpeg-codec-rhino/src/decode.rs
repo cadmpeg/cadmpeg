@@ -4584,7 +4584,13 @@ fn serialized_brep_body_kind(
         .flatten();
     match stored {
         Some(1 | 2) => BodyKind::Solid,
-        Some(0) => BodyKind::Sheet,
+        Some(0) => {
+            if closed {
+                BodyKind::Solid
+            } else {
+                BodyKind::Sheet
+            }
+        }
         _ if closed => BodyKind::Solid,
         _ => BodyKind::Sheet,
     }

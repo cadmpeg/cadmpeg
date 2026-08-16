@@ -696,7 +696,7 @@ fn polymorphic_object_geometry_starts_with_v2() {
 }
 
 #[test]
-fn serialized_solid_state_clamps_unknown_values() {
+fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
     assert_eq!(
         serialized_brep_body_kind(2, Some(1), Some(200_210_020), false),
         BodyKind::Solid
@@ -707,6 +707,18 @@ fn serialized_solid_state_clamps_unknown_values() {
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(3), Some(200_210_020), false),
+        BodyKind::Sheet
+    );
+    assert_eq!(
+        serialized_brep_body_kind(2, Some(3), Some(200_210_020), true),
+        BodyKind::Solid
+    );
+    assert_eq!(
+        serialized_brep_body_kind(2, Some(0), Some(200_210_020), true),
+        BodyKind::Solid
+    );
+    assert_eq!(
+        serialized_brep_body_kind(2, Some(0), Some(200_210_020), false),
         BodyKind::Sheet
     );
     assert_eq!(

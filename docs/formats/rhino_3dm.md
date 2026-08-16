@@ -3440,13 +3440,21 @@ parsed, the slot is discarded independently and the decode report emits
 `brep.mesh-cache-degraded` with the diagnostic cause. The Brep remains
 admissible when its analytic topology is valid.
 
-For minor at least 2, `i32 is_solid` is 0 unset, 1 solid/outward, 2
-solid/inward, and 3 not-solid. Other values remain in native source data and
-use the unset neutral fallback. An unset value requires the reader to derive
-the solid state and orientation from the Brep.
-For an archive writer version before 2 October 2002, the stored value is unset.
-A Brep is closed when it has at least one face and every edge has exactly two
-trim uses. A closed Brep is solid; another Brep is a sheet.
+For minor at least 2, the writer copies the Brep `m_is_solid` cache to an
+`i32` without deriving it. Its OpenNURBS runtime meanings are 0 unset, 1 solid
+with outward normals, 2 solid with inward normals, and 3 not solid. The source
+reader resets a value below 0 or at least 3 to 0. It also resets the value to 0
+when the archive OpenNURBS writer version is before 2 October 2002. Thus 3 is a
+source-writable not-solid cache value, not a stable source-read value.
+
+CADIR decision: the parser retains the serialized `i32` in native fidelity and
+reports an enumeration degradation for values outside 0 through 2. Neutral
+body kind treats 1 and 2 as solid. It treats 0, a pre-2 October 2002 value, and
+an invalid value as unset and derives the result from the validated Brep. A
+Brep is closed when it has at least one face and every edge has exactly two
+trim uses. A closed Brep is solid; another Brep is a sheet. The outward and
+inward orientation distinction remains native fidelity because neutral
+`BodyKind` has no orientation field.
 
 For archive version 50, minor 2 stores region topology through the temporary
 `ON_V5_BrepRegionTopologyUserData` item in section 7.2.5 when the topology

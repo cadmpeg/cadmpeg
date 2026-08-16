@@ -877,12 +877,61 @@ the TL and old legacy UUIDs, authored by
 and recomputed UUID CRCs, are read by OpenNURBS as three valid surfaces and
 by the Rust decoder as 3/3 surfaces with zero validation errors.
 
+The direct analytic Brep slice is independently covered by
+`ON_Brep::Write`/`Read` and the primitive and array writers/readers in
+`/home/pcurve/side2/opennurbs/opennurbs_brep_io.cpp:24-353,355-825,883-1178`,
+topology validity and solid-state derivation in
+`/home/pcurve/side2/opennurbs/opennurbs_brep.cpp:4645-4735,6948-7199`, the
+closed-box producer in
+`/home/pcurve/side2/opennurbs/opennurbs_brep_tools.cpp:795-939`, and
+polymorphic dispatch in
+`/home/pcurve/side2/opennurbs/opennurbs_archive.cpp:4513-4647`. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/brep_witness.cpp` writes a
+source-valid one-face Brep with three C2 curves, three C3 curves, one plane
+surface, three vertices, three edges, three boundary trims, one loop, and one
+face in V4, V50, V6, and inch-unit V6 files. Source readback preserves those
+counts, asymmetric domains, tolerances, flags, and bounds in every version;
+`ON_BrepFace::Read` normalizes the witness face material channel from -7 to 0.
+
+The V6 witness class payload starts with packed version 3.3 at `0x0a17`.
+`cadmpeg inspect` reads the C2, C3, surface, vertex, edge, trim, loop, and
+face wrappers at `0x0a18`, `0x0be0`, `0x0da8`, `0x0eca`, `0x0f6f`, `0x1050`,
+`0x11f1`, and `0x1222`, followed by the bounding box, empty render and
+analysis side wrappers, raw `m_is_solid` value 3 at `0x12b1`, and a minor-3
+region wrapper whose presence byte is zero. V4 and V50 carry packed version
+3.2; their source readback and the inch differential establish the same
+topology and document-length conversion. The final Rust decode and validate
+results transfer one sheet with three curves, one surface, three vertices,
+three edges, three coedges, three pcurves, one loop, one face, one region, and
+one shell, with reciprocal links and no validation findings. The inch result
+scales spatial coordinates and plane-space pcurve coordinates while retaining
+parameter ranges and tolerances.
+
+The solid-state boundary is independently witnessed by
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/brep_solid_witness.cpp`, which
+uses `ON_BrepBox` to write three valid closed boxes per V4, V50, V6, and
+inch-unit V6 file: the default cache, explicit outward orientation, and
+explicit inward orientation. `cadmpeg inspect read` reads raw `m_is_solid`
+values 0, 1, and 2 at V6 offsets `0x399e`, `0x69db`, and `0x9a18`. All three
+boxes decode as solid and validate without findings after the selector was
+changed to derive a closed topology when the stored value is 0; invalid
+values use the same fallback and emit the enumeration loss. The complete
+differential, including the source-validity corrections and inspect commands,
+is `/home/pcurve/side2/tmp/agent-rhino-l9-20260816/brep_differential.txt`.
+
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
-outcome, and typed or opaque transfer result.
+outcome, and typed or opaque transfer result. The direct analytic Brep and
+solid-state slice is settled; Brep mesh-cache and region-topology carriers,
+legacy major-2 payloads, and untested trim and loop variants still need their
+own producer evidence and transfer checks.
 
-**Note.** Narrowed 2026-08-16. Aggregate floors and decoder tests do not answer
-the per-class field question. The light-class remainder is closed by the
+**Note.** Narrowed 2026-08-17. Aggregate floors and decoder tests do not answer
+the per-class field question. The direct analytic Brep and solid-state slice
+is closed by the source traces, the two authored witnesses, the V4/V50/V6 and
+inch `cadmpeg inspect` and validation results, and the focused body-kind owner
+test. Brep optional mesh, region, legacy-major, trim, and loop variants remain
+active. The light-class remainder is closed by the
 OpenNURBS writer/reader trace in `opennurbs_light.cpp` and
 `opennurbs_archive.cpp`, the authored V4/V5/V6 light witnesses, the
 `cadmpeg inspect` class-data and raw-field reads, and the owner tests
