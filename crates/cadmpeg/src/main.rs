@@ -589,64 +589,6 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Convert without validating.
-    ///
-    /// Hidden spelling of convert that skips the validation step.
-    /// Prefer `convert`. Pass `--allow-invalid` to write despite errors.
-    #[command(hide = true)]
-    Export {
-        /// CAD file to convert.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
-        /// Rejected placeholder: the artifact format comes from --format/-o and
-        /// the machine-readable report from --report.
-        #[arg(long, hide = true)]
-        json: bool,
-        /// Stream a binary output format to standard output anyway.
-        #[arg(long, hide = true)]
-        binary_stdout: bool,
-        /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, visible_alias = "to", value_enum)]
-        format: Option<Format>,
-        /// Output file; omit to write to standard output.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Replace an existing output file.
-        #[arg(long)]
-        force: bool,
-        /// Write a JSON report to this file.
-        #[arg(long)]
-        report: Option<PathBuf>,
-        /// Write output even if no geometry was decoded.
-        #[arg(long)]
-        allow_empty: bool,
-        /// Do not write if decoding reported any loss.
-        #[arg(long)]
-        reject_lossy: bool,
-        /// Target Rhino archive version; valid only for Rhino output.
-        #[cfg(feature = "rhino")]
-        #[arg(long, value_enum)]
-        rhino_version: Option<RhinoVersion>,
-        /// Target IGES specification version; valid only for IGES output.
-        #[cfg(feature = "iges")]
-        #[arg(long, value_enum)]
-        iges_target: Option<IgesTarget>,
-        #[command(flatten)]
-        input_args: InputArgs,
-        #[command(flatten)]
-        decode: DecodeArgs,
-        #[cfg(feature = "step")]
-        #[command(flatten)]
-        step: StepOutputArgs,
-    },
     /// Compare two CAD files.
     ///
     /// Compares decoded geometry and topology of two files.
@@ -781,57 +723,6 @@ fn main() -> ExitCode {
             force,
         )
         .map(|()| ExitCode::SUCCESS),
-        Command::Export {
-            input,
-            input_flag,
-            json,
-            binary_stdout,
-            format,
-            output,
-            force,
-            report,
-            allow_empty,
-            reject_lossy,
-            #[cfg(feature = "rhino")]
-            rhino_version,
-            #[cfg(feature = "iges")]
-            iges_target,
-            input_args,
-            decode,
-            #[cfg(feature = "step")]
-            step,
-        } => {
-            if json {
-                Err(misdirected_json("export"))
-            } else {
-                let plan = commands::ConversionPlan {
-                    force,
-                    report,
-                    binary_stdout,
-                    validation: commands::ValidationMode::Skipped,
-                    allow_empty,
-                    reject_lossy,
-                    #[cfg(feature = "rhino")]
-                    rhino_version: rhino_version.map(RhinoVersion::codec),
-                    #[cfg(feature = "step")]
-                    step_options: step.flag_present().then(|| step.options()),
-                    #[cfg(feature = "step")]
-                    step_flag_present: step.flag_present(),
-                    #[cfg(feature = "iges")]
-                    iges_options: iges_target.map(IgesTarget::options),
-                    forced_input: input_args.forced(),
-                };
-                commands::export(
-                    &catalogs,
-                    &resolve_input(input, input_flag),
-                    format,
-                    output.as_deref(),
-                    &plan,
-                    &decode,
-                )
-            }
-        }
-        .map(|()| ExitCode::SUCCESS),
         Command::Diff {
             a,
             b,
@@ -884,7 +775,7 @@ fn main() -> ExitCode {
                     force,
                     report,
                     binary_stdout,
-                    validation: commands::ValidationMode::Required { allow_invalid },
+                    allow_invalid,
                     allow_empty,
                     reject_lossy,
                     #[cfg(feature = "rhino")]

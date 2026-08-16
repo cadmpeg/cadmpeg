@@ -11,7 +11,6 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
-pub use crate::application::ValidationMode;
 use crate::application::{
     build_encoder, export_target, ArtifactStore, ConversionPolicy, ConversionRefusal,
     EncoderRequest, ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError,
@@ -73,8 +72,8 @@ pub struct ConversionPlan {
     pub report: Option<PathBuf>,
     /// Stream a binary output format to standard output instead of refusing.
     pub binary_stdout: bool,
-    /// Neutral validation policy.
-    pub validation: ValidationMode,
+    /// Write output even if validation finds errors.
+    pub allow_invalid: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
@@ -302,18 +301,6 @@ pub fn validate_cmd(
     Ok(())
 }
 
-/// Hidden `export` spelling: convert a CAD file without validating.
-pub fn export(
-    catalogs: &AppCatalogs,
-    path: &Path,
-    format: Option<Format>,
-    out: Option<&Path>,
-    plan: &ConversionPlan,
-    args: &DecodeArgs,
-) -> Result<()> {
-    execute_conversion(catalogs, path, format, out, plan, args, "export")
-}
-
 /// Convert a CAD file to another format.
 pub fn convert(
     catalogs: &AppCatalogs,
@@ -323,7 +310,7 @@ pub fn convert(
     plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
-    execute_conversion(catalogs, path, format, out, plan, args, "convert")
+    execute_conversion(catalogs, path, format, out, plan, args)
 }
 
 fn execute_conversion(
@@ -333,7 +320,6 @@ fn execute_conversion(
     out: Option<&Path>,
     plan: &ConversionPlan,
     args: &DecodeArgs,
-    command: &'static str,
 ) -> Result<()> {
     let format = resolve_format(format, out)?;
     let target = export_target(
@@ -361,7 +347,7 @@ fn execute_conversion(
         ConversionPolicy {
             force: plan.force,
             binary_stdout: plan.binary_stdout,
-            validation: plan.validation,
+            allow_invalid: plan.allow_invalid,
             allow_empty: plan.allow_empty,
             reject_lossy: plan.reject_lossy,
             destination: out.map(Path::to_path_buf),
@@ -373,11 +359,7 @@ fn execute_conversion(
                 let mut stderr = io::stderr();
                 if let Some(report) = refusal.decode_report() {
                     print_decode_report(&mut stderr, report)?;
-                    if matches!(plan.validation, ValidationMode::Skipped) {
-                        eprintln!("note: export skips IR validation; use `convert` to validate");
-                    } else {
-                        writeln!(stderr)?;
-                    }
+                    writeln!(stderr)?;
                 }
                 if let Some(validation) = refusal.validation_report() {
                     print_validation_report(&mut stderr, validation)?;
@@ -387,7 +369,7 @@ fn execute_conversion(
                         path,
                         plan.report.as_deref(),
                         plan.force,
-                        command,
+                        "convert",
                         CommandReportBody {
                             decode_report: refusal.decode_report(),
                             validation_report: refusal.validation_report(),
@@ -405,11 +387,7 @@ fn execute_conversion(
     let mut stderr = io::stderr();
     if let Some(report) = prepared.document.decode_report() {
         print_decode_report(&mut stderr, report)?;
-        if matches!(plan.validation, ValidationMode::Skipped) {
-            eprintln!("note: export skips IR validation; use `convert` to validate");
-        } else {
-            writeln!(stderr)?;
-        }
+        writeln!(stderr)?;
     }
     if let Some(validation) = &prepared.validation {
         print_validation_report(&mut stderr, validation)?;
@@ -421,7 +399,7 @@ fn execute_conversion(
         path,
         plan.report.as_deref(),
         plan.force,
-        command,
+        "convert",
         CommandReportBody {
             decode_report: decode_report.as_ref(),
             validation_report: validation.as_ref(),

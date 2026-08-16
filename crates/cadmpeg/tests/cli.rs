@@ -457,7 +457,7 @@ fn format_is_required_when_stdout_has_no_extension() {
     let input = fixture(dir.path(), "cube.json", &unit_cube());
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", input.to_str().unwrap()])
+        .args(["convert", input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("cannot infer format; pass -f"));
@@ -926,7 +926,7 @@ fn existing_output_requires_force() {
 }
 
 #[test]
-fn input_named_tmp_survives_export_and_temp_names_do_not_collide() {
+fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "part.tmp", &unit_cube());
     let original = fs::read(&input).unwrap();
@@ -937,7 +937,7 @@ fn input_named_tmp_survives_export_and_temp_names_do_not_collide() {
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 input.to_str().unwrap(),
                 "-f",
                 format,
@@ -995,7 +995,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             lossy.to_str().unwrap(),
             "-f",
             "step",
@@ -1028,7 +1028,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             lossy.to_str().unwrap(),
             "-f",
             "step",
@@ -1063,13 +1063,13 @@ fn convert_rejects_empty_native_geometry_unless_allowed() {
 }
 
 #[test]
-fn export_rejects_container_only_geometry_unless_allowed() {
+fn convert_rejects_container_only_geometry_unless_allowed() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             input.to_str().unwrap(),
             "-f",
             "step",
@@ -1082,7 +1082,7 @@ fn export_rejects_container_only_geometry_unless_allowed() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             input.to_str().unwrap(),
             "-f",
             "step",
@@ -1206,7 +1206,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             cube.to_str().unwrap(),
             "-o",
             inferred.to_str().unwrap(),
@@ -1248,7 +1248,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             cube.to_str().unwrap(),
             "-o",
             inferred.to_str().unwrap(),
@@ -1273,7 +1273,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 cube.to_str().unwrap(),
                 "-o",
                 native.to_str().unwrap(),
@@ -1299,7 +1299,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 persisted.to_str().unwrap(),
                 "-o",
                 replay.to_str().unwrap(),
@@ -1313,7 +1313,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 persisted.to_str().unwrap(),
                 "-o",
                 refused.to_str().unwrap(),
@@ -1381,7 +1381,7 @@ fn cadir_format_name_and_json_alias_both_work() {
     for format in ["cadir", "json"] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args(["export", input.to_str().unwrap(), "-f", format])
+            .args(["convert", input.to_str().unwrap(), "-f", format])
             .assert()
             .success()
             .stdout(predicate::str::starts_with("{"));
@@ -1396,7 +1396,7 @@ fn explicit_format_warns_when_known_extension_disagrees() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             input.to_str().unwrap(),
             "-f",
             "step",
@@ -1630,7 +1630,6 @@ fn input_flag_reaches_every_single_input_command() {
     for args in [
         vec!["decode", "--input-format", "cadir"],
         vec!["validate"],
-        vec!["export", "-f", "step"],
         vec!["convert", "-f", "step"],
     ] {
         let positional = Command::cargo_bin("cadmpeg")
@@ -1676,38 +1675,34 @@ fn json_on_artifact_commands_is_a_teaching_error() {
             predicate::str::contains("already JSON").and(predicate::str::contains("cadmpeg query")),
         );
 
-    for command in ["export", "convert"] {
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([command, path, "--json"])
-            .assert()
-            .code(2)
-            .stderr(
-                predicate::str::contains("not an output selector")
-                    .and(predicate::str::contains("--report")),
-            );
-    }
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "--json"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("not an output selector")
+                .and(predicate::str::contains("--report")),
+        );
 }
 
 #[test]
-fn export_and_convert_refuse_binary_output_to_stdout() {
+fn convert_refuses_binary_output_to_stdout() {
     let dir = tempdir().unwrap();
     let ir = unit_cube();
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
     let path = model.to_str().unwrap();
 
-    for command in ["convert", "export"] {
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([command, path, "--format", "sldprt"])
-            .assert()
-            .code(2)
-            .stderr(
-                predicate::str::contains("refusing to write binary sldprt")
-                    .and(predicate::str::contains("--input-format sldprt"))
-                    .and(predicate::str::contains("--binary-stdout")),
-            );
-    }
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "--format", "sldprt"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("refusing to write binary sldprt")
+                .and(predicate::str::contains("--input-format sldprt"))
+                .and(predicate::str::contains("--binary-stdout")),
+        );
 
     // With -o the write succeeds (Rhino is the binary writer that accepts a
     // source-less IR; the guard question is the destination, not the codec).
@@ -1753,7 +1748,7 @@ fn export_and_convert_refuse_binary_output_to_stdout() {
     // Text formats to stdout stay untouched by the guard.
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", path, "--format", "step"])
+        .args(["convert", path, "--format", "step"])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ISO-10303-21;"));
@@ -1797,7 +1792,7 @@ fn wrong_target_flags_refuse_before_reading_input() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", path, "-f", "step", "--iges-target", "5.3"])
+        .args(["convert", path, "-f", "step", "--iges-target", "5.3"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
@@ -1815,7 +1810,7 @@ fn wrong_target_flags_refuse_before_reading_input() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", path, "-f", "iges", "--reject-step-losses"])
+        .args(["convert", path, "-f", "iges", "--reject-step-losses"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
