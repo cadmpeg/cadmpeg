@@ -791,10 +791,14 @@ retain their governing root type, even when they share shell carriers.
 ISO 10303-44 defines each `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one individual
 constituent occurrence. A second use of the same child is a distinct
 `NEXT_ASSEMBLY_USAGE_OCCURRENCE` when position or orientation is assigned.
-ISO 10303-43 defines `representation.items` as a `SET`; the source order of
-mapped items therefore has no format meaning. The mapped-item assembly pattern
-binds one occurrence through a separate `SHAPE_REPRESENTATION` containing its
-mapped item, with `SHAPE_DEFINITION_REPRESENTATION` and
+ISO 10303-43 defines `representation.items` as `SET[1:?]` and
+`representation_map.map_usage` as `SET[1:?]`. A representation may contain
+several mapped items, and one representation map may be used by several mapped
+items. Each `MAPPED_ITEM` independently maps the source representation from
+its mapping origin to its mapping target. Neither multiplicity nor SET member
+order selects one mapped item. The mapped-item assembly pattern binds one
+occurrence through a separate `SHAPE_REPRESENTATION` containing its mapped
+item, with `SHAPE_DEFINITION_REPRESENTATION` and
 `PRODUCT_DEFINITION_SHAPE` identifying that occurrence. The
 context-dependent pattern binds the occurrence through
 `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`; its shape relationship uses the child
@@ -813,11 +817,12 @@ keeps the identity transform and reports `AssemblyPlacementsNotTransferred`.
 An inferred occurrence placement uses only a mapped item directly listed by a
 representation of the parent definition. A mapped item listed by an unrelated
 representation does not place the occurrence and produces an assembly-placement
-loss.
-Several standalone mapped items may share one body only when they resolve to
-one transform. Conflicting standalone placements leave the body unplaced and
-report an assembly-placement loss; occurrence-owned mappings remain
-occurrence transforms.
+loss. CADIR decision: for standalone mapped items that resolve to one body, an
+identical transform is assigned once to that body's `transform`. Distinct
+transforms cannot be represented by one body transform, so CADIR leaves the
+body transform unset and reports `AssemblyPlacementsNotTransferred`.
+Occurrence-owned mappings retain their occurrence transforms and do not enter
+this body-level decision.
 Repeated child uses without an
 occurrence-specific shape representation remain ambiguous and report the
 unresolved placement. A mapping whose origin and target are both 2D placement

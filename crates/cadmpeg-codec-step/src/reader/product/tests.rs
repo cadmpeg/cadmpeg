@@ -444,6 +444,47 @@ fn conflicting_standalone_mapped_body_placements_are_not_overwritten() {
 }
 
 #[test]
+fn ps03_repeated_mapped_body_placements_require_one_cadir_transform() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-03 fixture")
+    };
+
+    let same_transform = decode_fixture(include_bytes!(
+        "tests/data/ps03_repeated_mapped_placements_same_transform.p21"
+    ));
+    assert_eq!(same_transform.ir().model.bodies.len(), 1);
+    assert_eq!(
+        same_transform.ir().model.bodies[0]
+            .transform
+            .expect("one shared body transform")
+            .rows[0][3],
+        20.0
+    );
+    assert!(!same_transform
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::BodyConflictingMappedPlacements.kind() }));
+
+    for bytes in [
+        include_bytes!("tests/data/ps03_repeated_mapped_placements.p21").as_slice(),
+        include_bytes!("tests/data/ps03_repeated_mapped_placements_reordered.p21").as_slice(),
+    ] {
+        let conflicting = decode_fixture(bytes);
+        assert_eq!(conflicting.ir().model.bodies.len(), 1);
+        assert!(conflicting.ir().model.bodies[0].transform.is_none());
+        assert!(conflicting.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("#39")
+                && loss.message.contains("#40")
+        }));
+    }
+}
+
+#[test]
 fn drawing_mapped_items_do_not_place_exact_bodies() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),

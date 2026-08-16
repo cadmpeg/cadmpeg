@@ -444,21 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PS-03. Repeated mapped placements of one representation
-
-**Question.** What STEP rule establishes repeated mapped placements of one representation?
-
-**Known.** A body-producing representation may have several standalone
-`MAPPED_ITEM` records only when all records resolve to one transform. Distinct
-placements cannot be represented by one `Body.transform`; the reader leaves
-that body unplaced and reports `AssemblyPlacementsNotTransferred`. Mappings
-owned by product occurrences use occurrence transforms and are not part of
-this rule.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PS-04. Product and product-definition identity
 
 **Question.** What STEP rule establishes product and product-definition identity?
