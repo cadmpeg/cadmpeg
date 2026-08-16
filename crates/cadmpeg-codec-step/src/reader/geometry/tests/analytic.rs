@@ -315,6 +315,40 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
 }
 
 #[test]
+fn swept_surface_chart_ignores_pcurve_population() {
+    let check = |source: &[u8], expected_pcurve_u: f64| {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode swept-surface chart witness");
+        let surface_id = SurfaceId("step:data:surface#9".into());
+        let index = ModelIndex::new(decoded.ir());
+        assert_eq!(
+            model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
+            Some(Point3::new(5.0, 0.0, 0.0))
+        );
+        let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+            .expect("swept-surface chart partials");
+        assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
+        let pcurve = decoded
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#22")
+            .expect("swept-surface pcurve");
+        assert!(matches!(
+            pcurve.geometry,
+            PcurveGeometry::Line { direction, .. }
+                if direction.u == expected_pcurve_u && direction.v == 0.0
+        ));
+    };
+
+    check(include_bytes!("data/pc03_chart_valid.p21"), 10.0);
+    check(include_bytes!("data/pc03_chart_population.p21"), 100.0);
+}
+
+#[test]
 fn surface_of_revolution_selects_profile_parameter_pcurve() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())

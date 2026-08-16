@@ -516,23 +516,29 @@ domain. Deferred surface dependencies resolve by graph fixpoint, including
 forward and nested replicas. Its native entity is emitted again when those
 values are available.
 
-`SURFACE_OF_LINEAR_EXTRUSION` uses the directrix parameter as U and the stored
-vector as the V-direction displacement. `SURFACE_OF_REVOLUTION` uses the axis
-placement origin and direction as its rotation axis, the directrix parameter as
-V, and the plane angle in radians as U. A pcurve on either surface uses that
-same U/V parameterization. The pcurve population does not redefine the chart:
-trimmed pcurves cannot establish a surface-wide scale or direction, and a
-non-linear directrix keeps its native parameterization. Endpoint-derived
-calibration of a bounded or domain-valued procedural pcurve is a CADIR
-decision. The decoder keeps the native carrier and may add a use-scoped
-axis-aligned affine variant only for extrusion, linear-sweep, or revolution
-surfaces. For a source axis with a nonzero endpoint span, a zero destination
-span is rejected. A zero destination scale is allowed only when the source
-axis is constant over the 33 evenly spaced samples of its complete declared
-interval, including both endpoints. Equal source endpoints with interior
-variation are rejected, and distinct source and destination endpoint values
-use the affine map. Revolution U is preserved without scale or offset. A
-variant that fails these checks remains opaque; the native pcurve is not
+ISO 10303-42 defines each surface as `σ(u,v)` with independent parameters. For
+`SURFACE_OF_LINEAR_EXTRUSION`, if the directrix is `λ(u)` and the extrusion axis
+is `V`, the surface is `σ(u,v) = λ(u) + v V`; U follows the directrix
+parameterization and V is unbounded. The extrusion-vector magnitude defines the
+surface parameterization. For `SURFACE_OF_REVOLUTION`, if `C` is the axis
+origin, `V` is its direction, and the directrix is `λ(v)`, the surface is
+`σ(u,v) = C + (λ(v)-C) cos(u) + ((λ(v)-C)·V)V(1-cos(u)) + V × (λ(v)-C) sin(u)`;
+U is the rotation angle in the current plane-angle unit and V follows the
+directrix parameterization. A pcurve on either surface uses this U/V
+parameterization. Its population supplies curve values in the established
+chart; it does not establish a surface-wide scale or direction. A non-linear
+directrix keeps its native parameterization.
+
+Endpoint-derived calibration of a bounded or domain-valued procedural pcurve
+is a CADIR decision. The decoder keeps the native carrier and may add a
+use-scoped axis-aligned affine variant only for extrusion, linear-sweep, or
+revolution surfaces. For a source axis with a nonzero endpoint span, a zero
+destination span is rejected. A zero destination scale is allowed only when
+the source axis is constant over the 33 evenly spaced samples of its complete
+declared interval, including both endpoints. Equal source endpoints with
+interior variation are rejected, and distinct source and destination endpoint
+values use the affine map. Revolution U is preserved without scale or offset.
+A variant that fails these checks remains opaque; the native pcurve is not
 rewritten.
 
 The neutral chart conversion for a swept surface preserves the parameterization

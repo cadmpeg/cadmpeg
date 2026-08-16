@@ -422,22 +422,6 @@ fixture covers the inherited-attribute form.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PC-03. Surface chart remap from the pcurve population
-
-**Question.** What STEP rule establishes surface chart remap from the pcurve population?
-
-**Known.** A pcurve uses the parameterization of its owning surface. The
-surface population does not define or modify that chart. A linear extrusion
-inherits the directrix parameter as `u`; a revolution inherits the directrix
-parameter as `v` and uses the surface angle as `u`. A non-linear directrix
-therefore keeps its native parameterization. The reader does not infer a
-surface-wide affine map from trimmed pcurves. A bounded procedural pcurve may
-still receive a use-scoped endpoint calibration under PC-02.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-04. Chart write-back to the shared pcurve
 
 **Question.** What STEP rule establishes chart write-back to the shared pcurve?
