@@ -85,15 +85,16 @@ fn numeric_record(values: &[(usize, f64)]) -> ParameterRecord {
 #[test]
 fn source_parameter_map_uses_the_iges_domain_for_each_bounded_curve_form() {
     let neutral = [2.0, 5.0];
-    for (entity_type, form) in [
-        (102, 0),
-        (106, 11),
-        (106, 12),
-        (106, 13),
-        (106, 63),
-        (112, 0),
-        (126, 0),
-        (126, 5),
+    for (entity_type, form, native) in [
+        (102, 0, [2.0, 5.0]),
+        (110, 0, [0.0, 1.0]),
+        (106, 11, [2.0, 5.0]),
+        (106, 12, [2.0, 5.0]),
+        (106, 13, [2.0, 5.0]),
+        (106, 63, [2.0, 5.0]),
+        (112, 0, [2.0, 5.0]),
+        (126, 0, [2.0, 5.0]),
+        (126, 5, [2.0, 5.0]),
     ] {
         let map = super::source_parameter_map(
             &source_entry(entity_type, form),
@@ -101,9 +102,9 @@ fn source_parameter_map_uses_the_iges_domain_for_each_bounded_curve_form() {
             neutral,
         )
         .expect("bounded source domain");
-        assert_eq!(map.native, neutral, "Type {entity_type} Form {form}");
-        assert!((map.to_neutral(neutral[0]) - neutral[0]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
-        assert!((map.to_neutral(neutral[1]) - neutral[1]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+        assert_eq!(map.native, native, "Type {entity_type} Form {form}");
+        assert!((map.to_neutral(native[0]) - neutral[0]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+        assert!((map.to_neutral(native[1]) - neutral[1]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
     }
 }
 
@@ -129,6 +130,8 @@ fn source_parameter_map_preserves_absolute_and_explicit_native_domains() {
     )
     .expect("offset-curve domain");
     assert_eq!(explicit.native, [-4.0, 6.0]);
+    assert!((explicit.to_neutral(-4.0) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    assert!((explicit.to_neutral(6.0) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
 }
 
 #[test]
@@ -136,6 +139,28 @@ fn source_parameter_map_rejects_unbounded_line_forms() {
     for form in [1, 2] {
         assert!(super::source_parameter_map(
             &source_entry(110, form),
+            &numeric_record(&[]),
+            [0.0, 1.0],
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn source_parameter_map_rejects_non_affine_curve_and_non_curve_domains() {
+    for (entity_type, form) in [
+        (104, 0),
+        (104, 1),
+        (104, 2),
+        (104, 3),
+        (106, 1),
+        (106, 2),
+        (106, 3),
+        (106, 20),
+        (106, 40),
+    ] {
+        assert!(super::source_parameter_map(
+            &source_entry(entity_type, form),
             &numeric_record(&[]),
             [0.0, 1.0],
         )

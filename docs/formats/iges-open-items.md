@@ -51,16 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-07. The curve parameter-domain convention
-
-**Question.** Which parameter domain does each supported curve entity provide?
-
-**Known.** `entities/offsets.rs:82-116` maps Type 100 from endpoint angles, Type 110 Form 0 to `[0, 1]`, Type 130 from its declared bounds, and Types 102, 106, 112, and 126 to entity-defined neutral intervals. The Geometry section of `iges.md` records the same domains and fallbacks.
-
-**Need.** We need the parameter-domain rule for every supported curve form, including open, closed, and unbounded cases, and evidence for every fallback and affine mapping.
-
-**Note.** Reopened by the 2026-08-16 audit. The centralized mapping and coverage tests do not verify the mapping against the IGES specification or an exporter-authored witness file.
-
 ### GE-08. Type 106 duplicate points and closure
 
 **Question.** Which duplicate-point and closure patterns are valid in a Type 106 entity?
