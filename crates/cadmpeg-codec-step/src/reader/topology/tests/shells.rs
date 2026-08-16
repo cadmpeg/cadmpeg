@@ -97,6 +97,71 @@ fn disconnected_brep_outer_shell_is_rejected_without_role_corruption() {
 }
 
 #[test]
+fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
+    let source = include_bytes!("data/br02_outer_void_roles.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode outer and void shell witness");
+
+    let region = &decoded.ir().model.regions[0];
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(region.shells.len(), 3);
+    assert_eq!(region.shells[0].as_str(), "step:data:shell#30");
+    assert_eq!(
+        region.shells[1..]
+            .iter()
+            .map(cadmpeg_ir::ids::ShellId::as_str)
+            .collect::<Vec<_>>(),
+        ["step:data:shell#31", "step:data:shell#32"]
+    );
+    let face_sense = |document: &CadIr, shell_id: &cadmpeg_ir::ids::ShellId| {
+        let shell = document
+            .model
+            .shells
+            .iter()
+            .find(|shell| &shell.id == shell_id)
+            .expect("shell carrier");
+        let face_id = shell.faces.first().expect("shell face");
+        document
+            .model
+            .faces
+            .iter()
+            .find(|face| &face.id == face_id)
+            .expect("face carrier")
+            .sense
+    };
+    assert_eq!(
+        face_sense(decoded.ir(), &region.shells[0]),
+        cadmpeg_ir::topology::Sense::Forward
+    );
+    for shell_id in region.shells.iter().skip(1) {
+        assert_eq!(
+            face_sense(decoded.ir(), shell_id),
+            cadmpeg_ir::topology::Sense::Reversed
+        );
+    }
+
+    let reordered_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#50=BREP_WITH_VOIDS('outer and voids',#30,(#34,#33));",
+            "#50=BREP_WITH_VOIDS('outer and voids',#30,(#33,#34));",
+        );
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(reordered_source),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered outer and void shell witness");
+    assert_eq!(reordered.ir().model.regions[0].shells, region.shells);
+
+    for document in [decoded.ir(), reordered.ir()] {
+        let validation = cadmpeg_ir::validate_neutral(document, Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())

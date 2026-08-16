@@ -444,21 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### BR-02. Outer and void shell roles
-
-**Question.** What STEP rule establishes outer and void shell roles?
-
-**Known.** `BREP_WITH_VOIDS` attribute 1 is the outer shell and attribute 2
-contains the void shells. The IR stores the outer role in the first
-`Region.shells` entry. The reader rejects a solid root when the outer shell
-splits into multiple connected components, because the extra component cannot
-retain the outer role in the current IR. Sheet and general roots still retain
-each valid connected component.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PS-01. Placement binding for repeated child uses
 
 **Question.** What STEP rule establishes placement binding for repeated child uses?

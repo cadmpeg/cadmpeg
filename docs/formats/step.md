@@ -622,12 +622,15 @@ independently and coincident portions of different shells reference the same
 faces, edges, and vertices. `FACE_BASED_SURFACE_MODEL` has a nonempty SET of
 connected face sets. `MANIFOLD_SOLID_BREP` is a `solid_model` with one
 `outer : CLOSED_SHELL`; its B-rep uses one or more disjoint closed shells and
-the graph entities in one B-rep are unique. `BREP_WITH_VOIDS` is a
-`MANIFOLD_SOLID_BREP` with a nonempty SET of oriented closed-shell voids.
-`FACETED_BREP` is a `MANIFOLD_SOLID_BREP` whose faces are planar and whose
-edges are straight. These source roots define model meaning and topology
-constraints. They do not define a CADIR body identity across distinct root
-instances.
+the graph entities in one B-rep are unique; the outer shell normal points
+away from the solid interior. `BREP_WITH_VOIDS` is a
+`MANIFOLD_SOLID_BREP` with a nonempty SET of oriented closed-shell voids. Each
+void is disjoint from and enclosed by the outer shell, is not the outer shell,
+and has its normal directed into the void (`orientation = FALSE`). `voids` is
+a SET, so its source order has no format meaning. `FACETED_BREP` is a
+`MANIFOLD_SOLID_BREP` whose faces are planar and whose edges are straight.
+These source roots define model meaning and topology constraints. They do not
+define a CADIR body identity across distinct root instances.
 
 CADIR decision: a topology root is identified by its most-specific source root
 type and its resolved root carriers. For shell-based surface models and solid
@@ -658,6 +661,12 @@ connected IR shell; a split outer shell rejects the root because the IR stores
 the outer role by position. One STEP face shared by several shell occurrences
 maps to one owner-scoped CADIR face per occurrence. Boundary edges and
 vertices remain shared when their owner scope is unambiguous.
+
+CADIR decision: `Region.shells[0]` is the outer shell. The remaining entries
+are void shells sorted by resolved base shell instance, forward orientation,
+and source shell instance as a tie-break. The source `voids` SET order does
+not select a neutral shell slot. The outer shell is not repeated in the void
+suffix.
 
 A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or a
 `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a

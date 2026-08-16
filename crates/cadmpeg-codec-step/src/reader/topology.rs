@@ -1641,7 +1641,11 @@ struct RootBuilt {
     body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
 }
 
-fn root_shell_steps(root: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
+fn root_shell_steps(
+    root: &RawRecord,
+    exchange: &Exchange,
+    shell_definitions: &BTreeMap<u64, ShellDef>,
+) -> Option<Vec<u64>> {
     if has_type(root, "SHELL_BASED_SURFACE_MODEL") {
         return named_refs(root, "SHELL_BASED_SURFACE_MODEL", 1);
     }
@@ -1667,6 +1671,15 @@ fn root_shell_steps(root: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
     if has_type(root, "BREP_WITH_VOIDS") {
         let mut ids = vec![named_reference(root, "MANIFOLD_SOLID_BREP", 1, 0)?];
         ids.extend(named_refs(root, "BREP_WITH_VOIDS", 2)?);
+        // `voids` is a STEP SET. CADIR keeps the outer shell at index zero
+        // and canonicalizes the void suffix by resolved shell identity.
+        ids[1..].sort_unstable_by_key(|reference| {
+            shell_definitions
+                .get(reference)
+                .map_or((u64::MAX, true, *reference), |definition| {
+                    (definition.base, definition.forward, *reference)
+                })
+        });
         return Some(ids);
     }
     None
@@ -1689,7 +1702,7 @@ fn root_key(
     )?;
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
-    for shell in root_shell_steps(root, exchange)? {
+    for shell in root_shell_steps(root, exchange, shell_definitions)? {
         let key = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             Some((shell, Some(true)))
         } else {
@@ -1729,7 +1742,7 @@ fn build(
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
-    let Some(shell_steps) = root_shell_steps(root, exchange) else {
+    let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions) else {
         return BuildOutcome {
             built: Vec::new(),
             failed: 1,
