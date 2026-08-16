@@ -2984,8 +2984,9 @@ remaining bytes are skipped at the bounded chunk end.
 
 ### 13.5 Revolution surface
 
-Writers emit packed version `2.0`; majors 1 and 2 are accepted. The presence field is a
-one-byte `char`; transpose is an `i32`:
+Writers emit packed version `2.0`; the version byte is
+`(major << 4) | minor`, and majors 1 and 2 are accepted. The presence field is
+a one-byte `char`; transpose is an `i32`:
 
 ```
 u8 version
@@ -2999,9 +3000,27 @@ if present: polymorphic ON_Curve profile
 ```
 
 Major 1 defaults the surface parameter interval to the angular interval. A
-present profile is a curve. A profile control point on the revolution axis
-produces one exact axis control point at every angular control position.
-The known fields are followed by a bounded suffix that the reader skips.
+present profile is a curve. The axis endpoints and profile geometric values
+are document lengths. The angle interval is in radians. The surface parameter
+interval maps its endpoints to the angle interval endpoints and is not a
+length. `transposed = 0` makes angle the U parameter and the profile the V
+parameter; `transposed = 1` swaps those directions. A profile control point on
+the revolution axis produces one exact axis control point at every angular
+control position.
+
+The source writer emits presence `1` when `m_curve` is non-null and `0`
+otherwise. A zero is readable as an object payload, but it is not a valid
+`ON_RevSurface`: source validity requires a non-null valid three-dimensional
+profile. CADIR rejects a zero presence flag for typed transfer and retains the
+bounded source record. A present profile must have an exact NURBS
+representation for the decoder to construct the solved NURBS carrier; the
+profile remains the procedural surface's directrix child.
+
+`bounds` is the six-f64 cached `ON_RevSurface::m_bbox` value. Its coordinates
+are document lengths. CADIR consumes and bounds this field but does not place
+the cache in the procedural definition; it reconstructs the solved carrier
+from the axis, intervals, transpose flag, and directrix. The known fields are
+followed by a bounded suffix that the reader skips.
 
 ### 13.6 Sum surface
 

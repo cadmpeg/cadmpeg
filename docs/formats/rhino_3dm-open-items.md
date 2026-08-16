@@ -748,6 +748,17 @@ proxy-reversal byte, segment domains, and referenced-curve domains are
 settled. The Rust decoder preserves the construction values, resolves unique
 segment UUIDs to source-record links, and retains unresolved or ambiguous
 references as explicit reference losses.
+The `ON_RevSurface` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its packed version, axis line, angle interval, major-2
+surface-parameter interval, cached bounds, transpose integer, profile flag,
+and embedded profile boundary are settled. The Rust decoder normalizes the
+scaled axis to an origin and unit direction, transfers the profile as the
+directrix child, reconstructs the exact solved NURBS surface, and retains the
+angle, parameter, and transpose fields. Axis and profile coordinates scale in
+document units; angles, surface parameters, transpose, and profile parameter
+values do not. The cached bounds are framing input only and are not part of
+the procedural definition. A source object with no profile is invalid and is
+retained opaque rather than admitted as a typed surface.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -980,6 +991,35 @@ The owner test `decodes_persistent_polyedge_segment_construction` now also
 asserts the persisted segment UUID, and
 `accepts_empty_edge_and_trim_domains_for_a_source_curve_segment` gates the
 finite empty-interval sentinel.
+
+The revolution-surface slice is closed by `ON_RevSurface::Write`/`Read` and
+`ON_RevSurface::IsValid` in
+`/home/pcurve/side2/opennurbs/opennurbs_revsurface.cpp:160-209,241-319`,
+`ON_RevSurface::GetBBox` in
+`/home/pcurve/side2/opennurbs/opennurbs_revsurface.cpp:1499-1566`, and the
+primitive writers in `opennurbs_archive.cpp:1287-1299,1348-1361,1433-1442`.
+The packed-version rule is in `opennurbs_archive.cpp:5762-5790`. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/rev_surface_witness.cpp`
+writes valid V4, V50, V6, and inch-unit V6 models; the public `example_read`
+harness reads every file and reports the same axis, intervals, transpose,
+profile domain, and profile endpoints. The byte differential report is
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/rev_surface_differential.txt`.
+`cadmpeg inspect` finds the `ON_RevSurface` class UUID at V4 `0x08f2`, V50
+`0x09f0`, V6 `0x0a29`, and inch V6 `0x0a33`; the embedded `ON_LineCurve`
+UUID occurs at `0x09a4`, `0x0aae`, `0x0ae7`, and `0x0af1`. The four query
+results transfer one procedural surface, one solved surface, and one
+directrix curve. The inch result scales the axis origin, directrix endpoints,
+and solved carrier by `25.4` while retaining the angle `[0.5,2.75]`, surface
+parameter interval `[101,203]`, transpose `true`, and profile domain
+`[11,17]`. The separate
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/rev_surface_absent_witness.cpp`
+sets the profile flag to zero; OpenNURBS reads the archive but reports
+`m_curve is nullptr` as an invalid object, and CADIR retains the object with
+`geometry_transferred=false`. The owner tests
+`revolution_major_versions_decode_child_and_scale_coordinates_once` and
+`revolution_rejects_versions_axis_intervals_transpose_and_presence` gate the
+major-1 default, scaled coordinates, normalized axis, transpose admission,
+and invalid profile branch.
 
 ### FV-06. Later major payload admission
 
