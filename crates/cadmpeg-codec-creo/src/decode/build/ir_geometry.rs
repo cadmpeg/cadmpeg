@@ -183,6 +183,11 @@ pub(super) fn transfer_and_record_scanned_geometry(
         ":relation:",
         "creo:relation:",
     );
+    let equation_constraint_coverage = design_constraint_transfer_coverage(
+        &ir.model.sketch_constraints,
+        ":equation:",
+        "creo:equation:",
+    );
     let surface_coverage = surface_transfer_coverage(
         &scan.surfaces.rows,
         &ir.model.surfaces,
@@ -514,6 +519,32 @@ pub(super) fn transfer_and_record_scanned_geometry(
             coverage.insert(
                 format!("active_native_feature_relation_type_{kind}_constraint_count"),
                 *count,
+            );
+        }
+        if equation_constraint_coverage.transferred != 0 {
+            coverage.insert(
+                "transferred_feature_equation_constraint_count".to_string(),
+                equation_constraint_coverage.transferred,
+            );
+            coverage.insert(
+                "transferred_native_feature_equation_constraint_count".to_string(),
+                equation_constraint_coverage.native,
+            );
+            coverage.insert(
+                "transferred_typed_feature_equation_constraint_count".to_string(),
+                equation_constraint_coverage.typed(),
+            );
+            coverage.insert(
+                "active_feature_equation_constraint_count".to_string(),
+                equation_constraint_coverage.active,
+            );
+            coverage.insert(
+                "active_native_feature_equation_constraint_count".to_string(),
+                equation_constraint_coverage.active_native,
+            );
+            coverage.insert(
+                "active_typed_feature_equation_constraint_count".to_string(),
+                equation_constraint_coverage.active_typed(),
             );
         }
     }

@@ -352,9 +352,22 @@ pub(crate) fn section_equation_point_on_line_constraints(
 pub(crate) struct SectionEqualLengthConstraint {
     pub(crate) first: [u32; 2],
     pub(crate) second: [u32; 2],
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 pub(crate) fn section_equation_equal_length_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionEqualLengthConstraint> {
+    section_equation_equal_length_constraint_rows(definition, ambiguous_point_ids)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .collect()
+}
+
+pub(crate) fn section_equation_equal_length_constraint_rows(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionEqualLengthConstraint> {
@@ -379,7 +392,6 @@ pub(crate) fn section_equation_equal_length_constraints(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let mut rows = Vec::with_capacity(equation.arguments.len());
@@ -416,6 +428,9 @@ pub(crate) fn section_equation_equal_length_constraints(
             Some(SectionEqualLengthConstraint {
                 first: [first_u.key, second_u.key],
                 second: [third_u.key, fourth_u.key],
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
         .collect()

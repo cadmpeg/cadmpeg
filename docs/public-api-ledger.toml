@@ -392,6 +392,13 @@ item = "cadmpeg_ir::codec::DecodeResult::{ir_mut,source_fidelity_mut}"
 reason = "edit guards restore canonical order before a mutated result can be read"
 
 [[change]]
+commit = "4c65315c49407d9557866ecc1cfe3723f9186022"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::{SketchDistancePair,SketchConstraintDefinition::EqualDistance}"
+reason = "Creo function 33 transfers equality of two endpoint-pair distances as a typed sketch relation"
+
+[[change]]
 commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
 crate = "cadmpeg-core"
 kind = "deletion"

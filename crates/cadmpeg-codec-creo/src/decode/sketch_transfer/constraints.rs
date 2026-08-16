@@ -19,8 +19,8 @@ use super::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchEntityId, SketchId, SketchLocus,
-    SketchNativeOperand,
+    SketchConstraint, SketchConstraintDefinition, SketchDistancePair, SketchEntityId, SketchId,
+    SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -95,6 +95,12 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
             locus_emitted(first) && locus_emitted(second)
+        }
+        SketchConstraintDefinition::EqualDistance { first, second } => {
+            locus_emitted(&first.first)
+                && locus_emitted(&first.second)
+                && locus_emitted(&second.first)
+                && locus_emitted(&second.second)
         }
         SketchConstraintDefinition::Midpoint { point, entity } => {
             locus_emitted(point) && emitted.contains(entity)
@@ -200,6 +206,7 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::Tangent { .. }
         | SketchConstraintDefinition::TangentLoci { .. }
         | SketchConstraintDefinition::Equal { .. }
+        | SketchConstraintDefinition::EqualDistance { .. }
         | SketchConstraintDefinition::Fixed { .. } => true,
         SketchConstraintDefinition::Disabled
         | SketchConstraintDefinition::PointOnObject { .. }
@@ -573,6 +580,52 @@ pub(in super::super) fn section_segment_radius_constraints(
             },
         )
         .collect()
+}
+
+pub(in super::super) fn section_equation_equal_distance_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .filter(|variables| variables.is_complete())
+        .map(|variables| variables.reconciled_points().1)
+        .unwrap_or_default();
+    super::super::sketch::section_equation_equal_length_constraint_rows(
+        definition,
+        &ambiguous_point_ids,
+    )
+    .into_iter()
+    .filter_map(|equation| {
+        let first = SketchDistancePair {
+            first: section_point_locus(definition, sketch, equation.first[0])?,
+            second: section_point_locus(definition, sketch, equation.first[1])?,
+        };
+        let second = SketchDistancePair {
+            first: section_point_locus(definition, sketch, equation.second[0])?,
+            second: section_point_locus(definition, sketch, equation.second[1])?,
+        };
+        Some((
+            SketchConstraint {
+                id: sketch_constraint_id(sketch, format_args!("equation:{}", equation.equation_id)),
+                sketch: sketch.clone(),
+                definition: SketchConstraintDefinition::EqualDistance { first, second },
+                name: None,
+                driving: None,
+                active: Some(equation.active),
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: Some(sketch_native_ref(sketch)),
+            },
+            equation.offset,
+        ))
+    })
+    .collect()
 }
 
 pub(in super::super) fn circular_dimension_constraint(

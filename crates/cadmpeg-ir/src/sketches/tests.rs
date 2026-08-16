@@ -121,8 +121,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-        SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-        SketchLocus, SketchOffsetPair,
+        SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityId,
+        SketchGeometry, SketchId, SketchLocus, SketchOffsetPair,
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
@@ -190,6 +190,16 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::EqualDistance {
+            first: SketchDistancePair {
+                first: SketchLocus::Start(entity.clone()),
+                second: SketchLocus::End(entity.clone()),
+            },
+            second: SketchDistancePair {
+                first: SketchLocus::Center(entity.clone()),
+                second: SketchLocus::End(entity.clone()),
+            },
         },
         SketchConstraintDefinition::HorizontalDistance {
             first: SketchLocus::Start(entity.clone()),

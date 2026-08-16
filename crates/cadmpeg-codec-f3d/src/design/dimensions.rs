@@ -1848,6 +1848,7 @@ pub(crate) fn constraint_parameters(
         | Definition::Tangent { .. }
         | Definition::Curvature { .. }
         | Definition::Equal { .. }
+        | Definition::EqualDistance { .. }
         | Definition::ArcAngle { .. }
         | Definition::EllipseAngle { .. }
         | Definition::Fixed { .. }

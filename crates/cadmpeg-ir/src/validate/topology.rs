@@ -1669,6 +1669,15 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 Some(parameter.0.as_str()),
             ),
+            Definition::EqualDistance { first, second } => (
+                vec![
+                    locus_entity(&first.first).clone(),
+                    locus_entity(&first.second).clone(),
+                    locus_entity(&second.first).clone(),
+                    locus_entity(&second.second).clone(),
+                ],
+                None,
+            ),
             Definition::RepeatedDistance {
                 measurements,
                 parameter,

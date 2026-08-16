@@ -115,10 +115,10 @@ pub use report::{
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchCoordinateAxis, SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchNativeOperand, SketchPlacement, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry,
-    SpatialSketchId, SpatialSketchProfile,
+    SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
+    SketchPlacement, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
+    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{
     decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,

@@ -860,6 +860,17 @@ pub enum SketchDistanceMeasurement {
     },
 }
 
+/// One ordered pair of loci whose Euclidean separation participates in an
+/// equality relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchDistancePair {
+    /// First locus in the measured pair.
+    pub first: SketchLocus,
+    /// Second locus in the measured pair.
+    pub second: SketchLocus,
+}
+
 /// Meaning of an internal sketch alignment helper relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1163,6 +1174,13 @@ pub enum SketchConstraintDefinition {
         second: SketchLocus,
         /// Driving distance parameter.
         parameter: ParameterId,
+    },
+    /// Two explicit Euclidean locus pairs have equal separation.
+    EqualDistance {
+        /// First measured locus pair.
+        first: SketchDistancePair,
+        /// Second measured locus pair.
+        second: SketchDistancePair,
     },
     /// Horizontal separation between two explicit loci.
     HorizontalDistance {

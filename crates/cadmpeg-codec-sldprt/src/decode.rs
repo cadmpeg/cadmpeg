@@ -259,6 +259,7 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::TangentLoci { .. }
         | Constraint::Curvature { .. }
         | Constraint::Equal { .. }
+        | Constraint::EqualDistance { .. }
         | Constraint::Fixed { .. }
         | Constraint::ArcAngle { .. }
         | Constraint::EllipseAngle { .. }

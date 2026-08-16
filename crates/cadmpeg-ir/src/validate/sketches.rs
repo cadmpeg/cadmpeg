@@ -5,10 +5,12 @@
 use super::*;
 use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
-    SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus,
+    SketchConstraintDefinition as Constraint, SketchDistancePair, SketchGeometry, SketchLocus,
     SpatialSketchConstraintDefinition as SpatialConstraint, SpatialSketchGeometry,
 };
 use std::collections::{HashMap, HashSet};
+
+const EPS_EQUAL_DISTANCE: f64 = 1.0e-9;
 
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
     findings.push(Finding {
@@ -1430,6 +1432,22 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
+            Constraint::EqualDistance { first, second } => {
+                let measured_distance = |pair: &SketchDistancePair| {
+                    let first = sketch_locus_point(&pair.first, &geometry)?;
+                    let second = sketch_locus_point(&pair.second, &geometry)?;
+                    Some(distance2(first, second))
+                };
+                measured_distance(first)
+                    .zip(measured_distance(second))
+                    .is_none_or(|(first, second)| {
+                        (first - second).abs()
+                            <= ir
+                                .tolerances
+                                .linear
+                                .max(EPS_EQUAL_DISTANCE * (1.0 + first.abs().max(second.abs())))
+                    })
+            }
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();
                 !measurements.is_empty()
@@ -1842,6 +1860,35 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
     }
 }
 
+fn sketch_locus_point(
+    locus: &SketchLocus,
+    geometry: &HashMap<&crate::sketches::SketchEntityId, &SketchGeometry>,
+) -> Option<crate::math::Point2> {
+    let entity_geometry = geometry.get(locus_entity(locus))?;
+    match locus {
+        SketchLocus::Entity(_) => match entity_geometry {
+            SketchGeometry::Point { position } => Some(*position),
+            _ => None,
+        },
+        SketchLocus::Start(_) | SketchLocus::End(_) => {
+            let (start, end) = oriented_endpoints(entity_geometry, false)?;
+            Some(if matches!(locus, SketchLocus::Start(_)) {
+                start
+            } else {
+                end
+            })
+        }
+        SketchLocus::Center(_) => match entity_geometry {
+            SketchGeometry::Circle { center, .. }
+            | SketchGeometry::Arc { center, .. }
+            | SketchGeometry::Ellipse { center, .. }
+            | SketchGeometry::Hyperbola { center, .. } => Some(*center),
+            SketchGeometry::Parabola { vertex, .. } => Some(*vertex),
+            _ => None,
+        },
+    }
+}
+
 fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
     match definition {
         Constraint::CoincidentLoci { loci } => loci.iter().collect(),
@@ -1850,6 +1897,11 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
         Constraint::DistanceLoci { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => vec![first, second],
+        Constraint::EqualDistance { first, second } => {
+            [&first.first, &first.second, &second.first, &second.second]
+                .into_iter()
+                .collect()
+        }
         Constraint::RepeatedDistance { measurements, .. } => measurements
             .iter()
             .flat_map(|measurement| {
