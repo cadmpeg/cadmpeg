@@ -227,3 +227,35 @@ fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
         ]
     );
 }
+
+#[test]
+fn parser_resolves_anchor_and_reference_chain_before_name_recovery() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<named>='anchored line';<number>=2.;ENDSEC;REFERENCE;@10=<#named>;@11=<#number>;@12=<#missing>;ENDSEC;DATA;#1=LINE('literal',#6,#7);#2=LINE(<named>,#6,#7);#3=LINE(@10,#6,#7);#4=LINE(@11,#6,#7);#5=LINE(@12,#6,#7);#6=KNOWN();#7=KNOWN();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("resolve name branches");
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::OmittedEntityName
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters[0],
+        crate::parse::Value::String(b"literal".to_vec())
+    );
+    assert_eq!(
+        exchange.records[&2].partials[0].parameters[0],
+        crate::parse::Value::String(b"anchored line".to_vec())
+    );
+    assert_eq!(
+        exchange.records[&3].partials[0].parameters[0],
+        crate::parse::Value::String(b"anchored line".to_vec())
+    );
+    assert_eq!(
+        exchange.records[&4].partials[0].parameters[0],
+        crate::parse::Value::String(Vec::new())
+    );
+    assert_eq!(
+        exchange.records[&5].partials[0].parameters[0],
+        crate::parse::Value::Omitted
+    );
+}

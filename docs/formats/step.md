@@ -203,6 +203,14 @@ mapping. `*` marks an inherited attribute supplied by a sibling leaf. The
 merged instance retains every leaf name and parameter sequence. Schema
 accessors resolve inherited attributes against that representation.
 
+Part 21 simple-entity mapping supplies one parameter for each explicit
+attribute, in declaration order. Internal complex mapping supplies inherited
+explicit attributes before the attributes introduced by the leaf. External
+complex mapping supplies every partial's explicit attributes. `$` represents
+an absent OPTIONAL explicit attribute; no mapping removes an inherited
+attribute from its required position. A record that shifts a leaf parameter
+into an omitted inherited `name` position is invalid Part 21 source.
+
 Entity instance names share one namespace across all DATA sections. Forward
 and backward references resolve after all DATA sections are read. A reference
 to an absent local instance is a structural reference error. An entity or
@@ -287,6 +295,16 @@ values that name anchors resolve recursively before schema decoding and before
 omitted inherited `name` attributes are repaired. A cycle is a structural
 error. Resource references in tag values use the same recursive resolution
 rules as anchor values.
+
+CADIR decision: after ANCHOR values and local REFERENCE occurrences resolve,
+the reader salvages a single-partial record only when its entity name is in the
+reader's named-carrier set and it has no first parameter or its first resolved
+parameter is neither a string nor `$`. It inserts an empty string at parameter
+position zero. It does not shift complex records, non-carrier entities, or
+records whose first parameter is already a string or `$`. The reader reports
+this source repair as
+`NoncanonicalSourceSyntax` with the containing record's byte offset; salvage
+decode retains the recovered record and strict decode rejects the loss.
 
 REFERENCE entries bind an external entity or value occurrence name to a resource URI. Resource names and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
 Entity and value occurrence integers are unique across both prefixes, and

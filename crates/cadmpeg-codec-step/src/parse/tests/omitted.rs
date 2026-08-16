@@ -104,6 +104,34 @@ fn parser_retains_user_defined_entity_and_type_names() {
 }
 
 #[test]
+fn parser_does_not_repair_non_carrier_first_parameters() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=!VENDOR_ENTITY(1,#2);#2=KNOWN();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("non-carrier entity");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Integer(1),
+            crate::parse::Value::Reference(2),
+        ]
+    );
+}
+
+#[test]
+fn strict_decode_rejects_omitted_entity_name_recovery() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect_err("strict mode rejects omitted-name recovery");
+
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(error.to_string().contains("parse.noncanonical-syntax"));
+}
+
+#[test]
 fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,1.,2.));#2=GEOMETRIC_REPRESENTATION_CONTEXT(3);#3=MAPPED_ITEM(#1,#2);#4=SEAM_EDGE(*,*,#1,.T.,$);#5=SHAPE_REPRESENTATION((#1),$);#6=CLOSED_SHELL($,(#1));ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =

@@ -858,32 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### EL-06. Omitted entity name repair and anchor order
-
-**Question.** What STEP rule establishes omitted entity name repair and anchor order?
-
-**Known.** Omitted inherited `name` repair runs after edition-3 anchor
-values resolve.
-
-The parser holds a table of about 100 entity names and inserts an
-empty name when a single-partial record of one of those names has a first
-parameter that is neither a string nor omitted
-(`crates/cadmpeg-codec-step/src/parse.rs:323-435`, `:671-675`). The repair
-has its own diagnostic, produces a `NoncanonicalSourceSyntax` loss with byte
-provenance, and is rejected by strict decode. `step.md` states no attribute
-layout for these entities and this ledger has no item for the repair.
-
-The parser reads each raw record, resolves all anchors in anchor
-values and record parameters, then tests the first parameter of each single
-named carrier against the carrier's inherited `name` slot. A resource anchor
-that resolves to a string is therefore a real name and does not trigger repair.
-The existing carrier table remains the scope of repair; other entity layouts
-are not shifted.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### AP-08. Context-dependent style selection
 
 **Question.** How does a `STYLED_ITEM` select among valid
