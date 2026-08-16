@@ -51,16 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-09. Type 104 endpoints are not independently authoritative
-
-**Question.** Must Type 104 endpoint coordinates agree with the conic parameters, and what tolerance applies?
-
-**Known.** IGES 5.3 §4.5 says that the six coefficients and the ordered start and terminate points define the conic arc. Section 2.2.4.3.19 says that a receiving system considers coordinate locations less than the Global minimum resolution apart coincident. `entities/conics.rs:385-414` evaluates the coefficient-defined carrier, rejects an endpoint at or beyond the resolution, and retains the declared endpoint coordinate when it accepts the entity. The Geometry section of `iges.md` presents this rejection and vertex-retention policy as a format rule.
-
-**Need.** Separate the format rule from the CADIR admission decision. The primary text must establish whether endpoint disagreement makes a Type 104 entity invalid and whether the strict Global-resolution comparison is required, or the specification must mark those receiver choices as CADIR decisions.
-
-**Note.** The 2026-08-16 closure audit reopened GE-09. Commit `1c014ac71` cited §4.5 and §2.2.4.3.19 and used an authored differential witness. The primary text establishes both endpoint and coefficient fields and the general coincidence resolution, but it does not state the endpoint-evaluation rejection algorithm. The witness verifies the implementation, not an independent format requirement.
-
 ## 5. Surfaces and topology
 
 ## 6. Product structure, annotation, and presentation

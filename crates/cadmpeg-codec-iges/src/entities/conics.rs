@@ -395,6 +395,8 @@ pub(super) fn project(
             ));
             continue;
         };
+        // CADIR decision: IGES defines the carrier and ordered endpoints but
+        // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
         if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start, resolution) {
             losses.push(entity_loss(
