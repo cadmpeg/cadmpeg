@@ -3,6 +3,7 @@
 
 use super::super::sketch_transfer::{
     feature_recipe_effect, feature_revolution_extent, feature_schema_class,
+    feature_section_sweep_semantics_conflict,
 };
 use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
@@ -29,6 +30,13 @@ pub(in super::super) fn named_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
+    if feature_section_sweep_semantics_conflict(scan, feature_id)
+        && (matches!(kind, "Protrusion" | "Cut" | "Extrude" | "Revolve")
+            || numbered_feature_name_has_family(kind, "Extrude")
+            || numbered_feature_name_has_family(kind, "Revolve"))
+    {
+        return None;
+    }
     if numbered_feature_name_has_family(kind, "Fill") {
         return Some(filled_surface_feature_definition(scan, ir, feature_id));
     }

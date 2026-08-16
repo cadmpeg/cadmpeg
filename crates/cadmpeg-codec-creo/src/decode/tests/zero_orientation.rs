@@ -8,8 +8,9 @@ use crate::decode::analytic::{
 };
 use crate::decode::build::has_transferred_geometry;
 use crate::decode::feature_history::{
-    full_turn_revolution_carrier_axis, named_feature_definition, resolved_revolution_axis,
-    revolution_axis_for_transfer, schema_feature_definition,
+    full_turn_revolution_carrier_axis, named_feature_definition,
+    named_or_referenced_feature_definition, resolved_revolution_axis, revolution_axis_for_transfer,
+    schema_feature_definition,
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
@@ -699,6 +700,55 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     };
     assert_eq!(op, BooleanOp::NewBody);
     assert_eq!(solid, Some(true));
+}
+
+#[test]
+fn conflicting_section_sweep_names_remain_unresolved() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 822,
+            kind: "Extrude".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Extrude id 822".to_string()),
+            stored_name_bytes: Some(b"Extrude id 822".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: None,
+            recipe_conflict: true,
+            display_state_conflict: false,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .reference_names
+        .push(crate::feature::FeatureReferenceName {
+            feature_id: 822,
+            name: "Revolve 822".to_string(),
+            name_bytes: b"Revolve 822".to_vec(),
+            own_reference_id: 1,
+            reference_type: 0,
+            offset: 0,
+        });
+    let ir = CadIr::empty(Units::default());
+
+    for kind in [
+        "Protrusion",
+        "Cut",
+        "Extrude",
+        "Extrude 822",
+        "Revolve",
+        "Revolve 822",
+    ] {
+        assert!(
+            named_feature_definition(&scan, &ir, 822, kind).is_none(),
+            "conflicting section-sweep name projected: {kind}"
+        );
+    }
+    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
 }
 
 #[test]
