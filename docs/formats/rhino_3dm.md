@@ -3268,6 +3268,7 @@ leaves the ordinary mesh tessellation authoritative.
 
 ## 15. Brep
 
+`ON_Brep` major 2 uses the historical trimmed-face payload in section 15.0.
 `ON_Brep` major 3 uses payload version 3.minor. Minor 1 adds mesh-side
 chunks, minor 2 adds `is_solid`, and minor 3 adds region topology. Later
 minors append fields before the bounded end:
@@ -3287,6 +3288,89 @@ minor >= 1: render-mesh side chunk, analysis-mesh side chunk
 minor >= 2: i32 is_solid
 minor >= 3: anonymous region-topology chunk
 ```
+
+### 15.0 Legacy major 2
+
+The class UUID remains `ON_Brep`; the class-data payload starts with packed
+version `2.minor`. The reader requires positive face, edge, loop, and trim
+counts, then reads the following fields:
+
+```text
+i32 face count
+i32 edge count
+i32 loop count
+i32 trim count
+i32 outer flag
+ON_BoundingBox Brep bounds
+trim count × direct ON_PolyCurve C2 payloads
+edge count × direct ON_PolyCurve C3 payloads
+face count × direct ON_NurbsSurface payloads
+face count × {
+  i32 legacy face index
+  i32 obsolete material index
+  i32 reversed-surface flag
+  i32 legacy face-type flag
+  ON_BoundingBox face bounds
+  i32 loop count
+  loop count × {
+    i32 legacy loop index
+    i32 boundary type (-1 slit, 0 outer, 1 inner)
+    4 × f64 parameter-space bounds
+    i32 trim count
+    trim count × {
+      i32 legacy trim index
+      i32 legacy twin index
+      u8 managed-edge flag
+      i32 edge index
+      i32 reversed-3D flag
+      i32 legacy continuity flag
+      i32 legacy monotonicity flag
+      f64 legacy 3D tolerance
+      f64 legacy 2D tolerance
+    }
+  }
+}
+face count × u8 render-mesh-present flag and optional ON_Mesh class
+minor >= 1: face count × u8 analysis-mesh-present flag and optional ON_Mesh class
+```
+
+The C2 and C3 values are direct `ON_PolyCurve` payloads, not polymorphic
+class wrappers. The surface values are direct `ON_NurbsSurface` payloads.
+The source reader assigns C2 slot `trim index` to each trim. An invalid edge
+index becomes `-1`; a true managed-edge flag with an invalid index rejects the
+payload. The legacy twin, continuity, and monotonicity values are consumed as
+source-only fields; the source reader then derives trim ISO and trim-type
+flags from the loaded surface, loop, edge, and trim topology. The positional
+edge index and the ordered loop rings therefore control typed reconstruction.
+Major-2 has no serialized ISO value. CADIR does not infer the source-only ISO
+cache; its internal raw value is `not-iso`, and the neutral pcurve use leaves
+`isoparametric` unset.
+
+Legacy boundary type maps to loop type 3 for `-1`, 1 for `0`, 2 for `1`, and
+0 for another value. The trim type is derived as singular when the trim has no
+edge, boundary when its edge has one trim, seam when its edge has another trim
+in the same loop, and mated otherwise. The legacy 2D tolerance becomes both
+public trim tolerances; the legacy 3D tolerance is the edge tolerance maximum.
+Each vertex tolerance is the maximum incident edge tolerance and the distance
+from the averaged vertex position to its incident edge endpoint.
+
+Major-2 has no serialized vertex table. The source reader establishes vertex
+identity by walking each directed loop ring and by joining both uses of an
+edge, with `reversed-3D` selecting which trim endpoint corresponds to each
+edge endpoint. It then averages the incident C3 endpoints for the vertex
+position. The decoder applies this same endpoint-equivalence rule. An edge
+with no trim uses its C3 endpoints as independent vertex positions.
+
+The face, loop, and trim bounds are cached source boxes. The source reader
+fills missing trim and loop boxes from the C2 curves after topology loading;
+they do not replace the ordered topology or the C3-derived vertex positions.
+The render and analysis mesh sides are optional caches. A malformed or wrong-
+class present mesh is discarded while the Brep topology remains transferable.
+The outer flag is a legacy solid hint: the source reader sets its runtime
+`m_is_solid` cache to outward-solid only when the flag is 1 and the completed
+Brep passes `IsSolid()`. CADIR does not promote that conditional cache to a
+neutral field; major-2 body kind uses the validated topology rule in section
+15.5 and retains the original bytes.
 
 Polymorphic C2/C3/surface arrays are anonymous major-1, then `i32 count`
 and for each slot an `i32 present` flag followed by one polymorphic object when
@@ -3382,6 +3466,20 @@ trims use edge index -1 and identical endpoint vertices.
 A boundary trim is the only use of its edge. A mated trim has one edge mate in
 a different loop. A seam trim has one edge mate in the same loop.
 
+The source `ON_BrepTrim::Read` switch admits wire trim values 0 through 4 and
+leaves values 5, 6, and 7 as runtime `unknown`; `ON_BrepLoop::Read` likewise
+admits loop values 0 through 3 and leaves 4 and 5 as runtime `unknown`.
+Those reader switches do not change the wire meanings above. CADIR reads the
+wire values directly. A curve-on-surface loop (type 4) must contain exactly
+one curve-on-surface trim (type 5) and may be open or closed. A point-on-
+surface loop (type 5) must contain exactly one point-on-surface trim (type 6).
+The point trim has no edge or C2 reference; its runtime surface-parameter
+point box is not written by `ON_BrepTrim::Write`, so CADIR transfers the
+serialized coincident 3D vertex and does not invent a pcurve. A slit loop
+(type 3) is a closed directed ring. Trim value 7 is reserved and source-
+invalid; CADIR retains its raw enumeration only when the remaining typed
+references and ring invariants are admissible.
+
 ### 15.4 Loop and face
 
 Loop:
@@ -3420,8 +3518,10 @@ the region and does not replace the face orientation.
 
 Negative material channels map to zero. A vertex, edge, trim, loop, or face
 array position is authoritative and replaces a disagreeing stored positional
-index. References must be in range and non-null where required. Trim domains
-and loop rings must be finite, endpoint-continuous, and closed.
+index. References must be in range and non-null where required. Standard
+outer, inner, and slit loop rings must be finite, endpoint-continuous, and
+closed. Procedural loop types 4 and 5 use the single-trim rules above instead
+of the closed-ring test.
 
 ### 15.5 Mesh sides, solid state, and regions
 

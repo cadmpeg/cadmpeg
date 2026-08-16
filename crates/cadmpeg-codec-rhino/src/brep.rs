@@ -3,8 +3,10 @@
 //!
 //! Stops at a validated native representation; no topology IDs or IR carriers.
 
-use std::collections::BTreeSet;
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::ops::Range;
+
+use cadmpeg_ir::geometry::CurveGeometry;
 
 use crate::chunks::{
     chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
@@ -40,8 +42,8 @@ pub(crate) const MAX_BREP_ITEMS: usize = 1 << 20;
 /// Maximum nesting depth used while reading polymorphic children.
 pub(crate) const MAX_BREP_DEPTH: usize = 32;
 const ANONYMOUS: u32 = 0x4000_8000;
-const ON_UNSET_VALUE: f64 = 1.234_321_012_343_21e308;
-const ON_UNSET_NEGATIVE_VALUE: f64 = -ON_UNSET_VALUE;
+const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
+const ON_UNSET_POSITIVE_VALUE: f64 = -ON_UNSET_VALUE;
 const ON_BREP_FACE_SIDE: Uuid = Uuid::from_canonical([
     0x30, 0x93, 0x03, 0x70, 0x0d, 0x5b, 0x4e, 0xe4, 0x80, 0x83, 0xbd, 0x63, 0x5c, 0x73, 0x98, 0xa4,
 ]);
@@ -580,6 +582,17 @@ pub(crate) fn parse(
     let mut reader = BoundedReader::new(bytes, range.start, range.end)?;
     let version_offset = reader.position();
     let version = reader.u8()?;
+    if version >> 4 == 2 {
+        return parse_legacy_major2(
+            bytes,
+            range,
+            archive,
+            writer_version,
+            userdata,
+            version,
+            reader,
+        );
+    }
     if version >> 4 != 3 {
         return Err(GeometryError::unsupported(
             version_offset,
@@ -708,6 +721,730 @@ pub(crate) fn parse(
             warnings,
         }),
     }
+}
+
+#[derive(Debug, Clone)]
+struct LegacyCurveMeta {
+    range: Range<usize>,
+    domain: Interval,
+    endpoints: [Point3; 2],
+}
+
+fn parse_legacy_major2(
+    bytes: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    _writer_version: Option<i64>,
+    _userdata: &[UserdataDescriptor],
+    version: u8,
+    mut reader: BoundedReader<'_>,
+) -> Result<BrepParse, GeometryError> {
+    let minor = version & 0x0f;
+    let face_count = count(&mut reader, MAX_BREP_ITEMS)?;
+    let edge_count = count(&mut reader, MAX_BREP_ITEMS)?;
+    let loop_count = count(&mut reader, MAX_BREP_ITEMS)?;
+    let trim_count = count(&mut reader, MAX_BREP_ITEMS)?;
+    if face_count == 0 || edge_count == 0 || loop_count == 0 || trim_count == 0 {
+        return Err(error(
+            reader.position(),
+            "legacy Brep major-2 arrays must be nonempty",
+        ));
+    }
+    let _outer_flag = reader.i32()?;
+    let bounds = bbox(&mut reader)?;
+
+    let c2_start = reader.position();
+    let mut c2_slots = Vec::with_capacity(trim_count);
+    let mut c2_meta = Vec::with_capacity(trim_count);
+    for _ in 0..trim_count {
+        let curve_range = crate::curves::consume_legacy_polycurve_2d(bytes, &mut reader, archive)?;
+        let decoded = crate::curves::decode_2d(
+            bytes,
+            crate::curves::POLYCURVE,
+            curve_range.clone(),
+            archive,
+        )?;
+        let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
+        c2_meta.push(LegacyCurveMeta {
+            range: curve_range.clone(),
+            domain,
+            endpoints,
+        });
+        c2_slots.push(Some(RawBrepChild {
+            class_uuid: crate::curves::POLYCURVE,
+            class_data_range: curve_range.clone(),
+            source_range: curve_range,
+            base_type: RawBrepBaseType::Curve,
+        }));
+    }
+    let c2_range = c2_start..reader.position();
+
+    let c3_start = reader.position();
+    let mut c3_slots = Vec::with_capacity(edge_count);
+    let mut c3_meta = Vec::with_capacity(edge_count);
+    for _ in 0..edge_count {
+        let curve_range =
+            crate::curves::consume_legacy_polycurve(bytes, &mut reader, 1.0, archive)?;
+        let decoded = crate::curves::decode(
+            bytes,
+            crate::curves::POLYCURVE,
+            curve_range.clone(),
+            1.0,
+            archive,
+        )?;
+        let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
+        c3_meta.push(LegacyCurveMeta {
+            range: curve_range.clone(),
+            domain,
+            endpoints,
+        });
+        c3_slots.push(Some(RawBrepChild {
+            class_uuid: crate::curves::POLYCURVE,
+            class_data_range: curve_range.clone(),
+            source_range: curve_range,
+            base_type: RawBrepBaseType::Curve,
+        }));
+    }
+    let c3_range = c3_start..reader.position();
+
+    let surfaces_start = reader.position();
+    let mut surface_slots = Vec::with_capacity(face_count);
+    for _ in 0..face_count {
+        let start = reader.position();
+        let _surface = crate::surfaces::read_nurbs_surface_prefix(&mut reader, 1.0)?;
+        let surface_range = start..reader.position();
+        surface_slots.push(Some(RawBrepChild {
+            class_uuid: crate::surfaces::NURBS_SURFACE,
+            class_data_range: surface_range.clone(),
+            source_range: surface_range,
+            base_type: RawBrepBaseType::Surface,
+        }));
+    }
+    let surfaces_range = surfaces_start..reader.position();
+
+    let mut loops = Vec::with_capacity(loop_count);
+    let mut trims = Vec::with_capacity(trim_count);
+    let mut faces = Vec::with_capacity(face_count);
+    let mut warnings = Vec::new();
+    for face_position in 0..face_count {
+        let face_index = reader.i32()?;
+        let _obsolete_material = reader.i32()?;
+        let reversed_surface = reader.i32()?;
+        let _face_type = reader.i32()?;
+        let _face_bounds = bbox(&mut reader)?;
+        let boundary_count = count(&mut reader, MAX_BREP_ITEMS)?;
+        if boundary_count == 0 {
+            return Err(error(
+                reader.position(),
+                "legacy Brep face has no boundary loops",
+            ));
+        }
+        let mut face_loops = Vec::with_capacity(boundary_count);
+        for _ in 0..boundary_count {
+            let loop_source_start = reader.position();
+            let loop_index = reader.i32()?;
+            let boundary_type = reader.i32()?;
+            let _loop_bounds = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
+            let trim_in_loop = count(&mut reader, MAX_BREP_ITEMS)?;
+            if trim_in_loop == 0 {
+                return Err(error(reader.position(), "legacy Brep loop has no trims"));
+            }
+            let actual_loop_index = i32::try_from(loops.len())
+                .map_err(|_| error(loop_source_start, "legacy Brep loop index overflow"))?;
+            let loop_type = match boundary_type {
+                -1 => 3,
+                0 => 1,
+                1 => 2,
+                _ => 0,
+            };
+            let mut loop_trim_indexes = Vec::with_capacity(trim_in_loop);
+            for _ in 0..trim_in_loop {
+                let trim_source_start = reader.position();
+                let stored_trim_index = reader.i32()?;
+                let _twin_index = reader.i32()?;
+                let has_edge = reader.u8()?;
+                let edge_index = reader.i32()?;
+                let reversed_3d = reader.i32()?;
+                let _gcon = reader.i32()?;
+                let _mono = reader.i32()?;
+                let tolerance_3d = reader.f64()?;
+                let tolerance_2d = reader.f64()?;
+                let trim_index = i32::try_from(trims.len())
+                    .map_err(|_| error(trim_source_start, "legacy Brep trim index overflow"))?;
+                if stored_trim_index != trim_index {
+                    warnings.push(format!(
+                        "legacy Brep trim index {stored_trim_index} disagrees with array position {trim_index}"
+                    ));
+                }
+                let edge = if edge_index >= 0 && (edge_index as usize) < edge_count {
+                    edge_index
+                } else {
+                    if has_edge != 0 {
+                        return Err(error(
+                            trim_source_start,
+                            "legacy Brep managed trim edge is out of range",
+                        ));
+                    }
+                    -1
+                };
+                let curve = trim_index;
+                let domain = c2_meta
+                    .get(trim_index as usize)
+                    .ok_or_else(|| {
+                        error(trim_source_start, "legacy Brep C2 index is out of range")
+                    })?
+                    .domain;
+                trims.push(RawBrepTrim {
+                    index: trim_index,
+                    curve,
+                    proxy_domain: domain,
+                    edge,
+                    vertices: [-1, -1],
+                    reversed_3d: i32::from(reversed_3d != 0),
+                    trim_type: if edge < 0 { 4 } else { 0 },
+                    iso: 0,
+                    loop_index: actual_loop_index,
+                    tolerances: [tolerance_2d, tolerance_2d],
+                    domain,
+                    proxy_reversed: 0,
+                    reserved: Vec::new(),
+                    legacy_tolerances: [tolerance_2d, tolerance_3d],
+                    source_range: trim_source_start..reader.position(),
+                });
+                loop_trim_indexes.push(trim_index);
+            }
+            loops.push(RawBrepLoop {
+                index: loop_index,
+                trims: loop_trim_indexes,
+                loop_type,
+                face: i32::try_from(face_position)
+                    .map_err(|_| error(loop_source_start, "legacy Brep face index overflow"))?,
+                source_range: loop_source_start..reader.position(),
+            });
+            face_loops.push(actual_loop_index);
+        }
+        faces.push(RawBrepFace {
+            index: face_index,
+            loops: face_loops,
+            surface: i32::try_from(face_position)
+                .map_err(|_| error(reader.position(), "legacy Brep surface index overflow"))?,
+            reversed_surface: i32::from(reversed_surface != 0),
+            material_channel: 0,
+            uuid: None,
+            color: None,
+            source_range: 0..0,
+        });
+    }
+    if trims.len() != trim_count || loops.len() != loop_count {
+        return Err(error(
+            reader.position(),
+            "legacy Brep topology counts do not match the header",
+        ));
+    }
+
+    let edge_trim_indexes = (0..edge_count)
+        .map(|edge_index| {
+            trims
+                .iter()
+                .filter_map(|trim| (trim.edge == edge_index as i32).then_some(trim.index))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let endpoint_count = trim_count.checked_mul(2).ok_or_else(|| {
+        error(
+            reader.position(),
+            "legacy Brep trim endpoint count overflow",
+        )
+    })?;
+    let mut endpoint_parent = (0..endpoint_count).collect::<Vec<_>>();
+    for loop_record in &loops {
+        for pair in loop_record.trims.windows(2) {
+            legacy_union(
+                &mut endpoint_parent,
+                legacy_trim_endpoint(pair[0], 1),
+                legacy_trim_endpoint(pair[1], 0),
+            );
+        }
+        let first = *loop_record
+            .trims
+            .first()
+            .expect("legacy loops have at least one trim");
+        let last = *loop_record
+            .trims
+            .last()
+            .expect("legacy loops have at least one trim");
+        legacy_union(
+            &mut endpoint_parent,
+            legacy_trim_endpoint(last, 1),
+            legacy_trim_endpoint(first, 0),
+        );
+    }
+    for (trim_index, trim) in trims.iter().enumerate() {
+        if trim.edge < 0 {
+            legacy_union(
+                &mut endpoint_parent,
+                legacy_trim_endpoint(trim_index as i32, 0),
+                legacy_trim_endpoint(trim_index as i32, 1),
+            );
+        }
+    }
+    for trim_indexes in &edge_trim_indexes {
+        let Some(first) = trim_indexes.first() else {
+            continue;
+        };
+        for trim_index in trim_indexes.iter().skip(1) {
+            for edge_endpoint in 0..2 {
+                legacy_union(
+                    &mut endpoint_parent,
+                    legacy_trim_endpoint_for_edge(&trims[*first as usize], edge_endpoint),
+                    legacy_trim_endpoint_for_edge(&trims[*trim_index as usize], edge_endpoint),
+                );
+            }
+        }
+    }
+    let mut root_vertices = BTreeMap::new();
+    let mut vertices = Vec::new();
+    for endpoint in 0..endpoint_count {
+        let root = legacy_find(&mut endpoint_parent, endpoint);
+        if let Entry::Vacant(entry) = root_vertices.entry(root) {
+            let index = i32::try_from(vertices.len())
+                .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
+            entry.insert(index);
+            vertices.push(RawBrepVertex {
+                index,
+                point: Point3([0.0, 0.0, 0.0]),
+                edges: Vec::new(),
+                tolerance: 0.0,
+                source_range: 0..0,
+            });
+        }
+    }
+    let mut edge_endpoints = Vec::with_capacity(c3_meta.len());
+    let mut point_sums = Vec::new();
+    point_sums.try_reserve_exact(vertices.len()).map_err(|_| {
+        error(
+            reader.position(),
+            "legacy Brep vertex sum allocation failed",
+        )
+    })?;
+    point_sums.resize(vertices.len(), [0.0; 3]);
+    let mut point_counts = Vec::new();
+    point_counts
+        .try_reserve_exact(vertices.len())
+        .map_err(|_| {
+            error(
+                reader.position(),
+                "legacy Brep vertex count allocation failed",
+            )
+        })?;
+    point_counts.resize(vertices.len(), 0_usize);
+    for (edge_index, curve) in c3_meta.iter().enumerate() {
+        let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
+            let trim = &trims[*trim_index as usize];
+            let start_root =
+                legacy_find(&mut endpoint_parent, legacy_trim_endpoint_for_edge(trim, 0));
+            let end_root =
+                legacy_find(&mut endpoint_parent, legacy_trim_endpoint_for_edge(trim, 1));
+            [
+                *root_vertices
+                    .get(&start_root)
+                    .expect("legacy edge start root has a vertex"),
+                *root_vertices
+                    .get(&end_root)
+                    .expect("legacy edge end root has a vertex"),
+            ]
+        } else {
+            let start = legacy_vertex(&mut vertices, curve.endpoints[0]);
+            let end = legacy_vertex(&mut vertices, curve.endpoints[1]);
+            if vertices.len() > point_sums.len() {
+                let additional = vertices.len() - point_sums.len();
+                point_sums.try_reserve_exact(additional).map_err(|_| {
+                    error(
+                        reader.position(),
+                        "legacy Brep vertex sum allocation failed",
+                    )
+                })?;
+                point_sums.resize(vertices.len(), [0.0; 3]);
+                point_counts.try_reserve_exact(additional).map_err(|_| {
+                    error(
+                        reader.position(),
+                        "legacy Brep vertex count allocation failed",
+                    )
+                })?;
+                point_counts.resize(vertices.len(), 0);
+            }
+            [start, end]
+        };
+        for (vertex, point) in endpoints
+            .into_iter()
+            .zip([curve.endpoints[0], curve.endpoints[1]])
+        {
+            let index = vertex as usize;
+            point_sums[index][0] += point.0[0];
+            point_sums[index][1] += point.0[1];
+            point_sums[index][2] += point.0[2];
+            point_counts[index] += 1;
+        }
+        edge_endpoints.push(endpoints);
+    }
+    for (index, vertex) in vertices.iter_mut().enumerate() {
+        if point_counts[index] != 0 {
+            let count = point_counts[index] as f64;
+            vertex.point = Point3([
+                point_sums[index][0] / count,
+                point_sums[index][1] / count,
+                point_sums[index][2] / count,
+            ]);
+        }
+    }
+    let mut edges = Vec::with_capacity(edge_count);
+    for (edge_index, curve) in c3_meta.iter().enumerate() {
+        let edge_index_i32 = i32::try_from(edge_index)
+            .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
+        let trim_indexes = edge_trim_indexes[edge_index].clone();
+        let tolerance = trim_indexes
+            .iter()
+            .map(|trim| trims[*trim as usize].legacy_tolerances[1])
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .fold(0.0, f64::max);
+        edges.push(RawBrepEdge {
+            index: edge_index_i32,
+            curve: edge_index_i32,
+            proxy_reversed: 0,
+            proxy_domain: curve.domain,
+            vertices: edge_endpoints[edge_index],
+            trims: trim_indexes,
+            tolerance,
+            domain: curve.domain,
+            source_range: 0..0,
+        });
+    }
+    for trim in &mut trims {
+        let trim_index = trim.index as usize;
+        let start_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 0));
+        let end_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 1));
+        trim.vertices = [
+            *root_vertices
+                .get(&start_root)
+                .expect("legacy trim start root has a vertex"),
+            *root_vertices
+                .get(&end_root)
+                .expect("legacy trim end root has a vertex"),
+        ];
+        debug_assert_eq!(trim.index as usize, trim_index);
+    }
+    for edge in &edges {
+        for vertex in edge.vertices {
+            vertices[vertex as usize].edges.push(edge.index);
+        }
+    }
+    for edge in &edges {
+        for trim_index in &edge.trims {
+            let loop_index = trims[*trim_index as usize].loop_index;
+            let same_loop = edge
+                .trims
+                .iter()
+                .filter(|other| trims[**other as usize].loop_index == loop_index)
+                .count();
+            trims[*trim_index as usize].trim_type = if edge.trims.len() == 1 {
+                1
+            } else if same_loop > 1 {
+                3
+            } else {
+                2
+            };
+        }
+    }
+    for (vertex_index, vertex) in vertices.iter_mut().enumerate() {
+        let mut tolerance: f64 = 0.0;
+        for edge_index in &vertex.edges {
+            let edge = &edges[*edge_index as usize];
+            tolerance = tolerance.max(edge.tolerance);
+            let endpoint = if edge.vertices[0] == vertex_index as i32 {
+                0
+            } else if edge.vertices[1] == vertex_index as i32 {
+                1
+            } else {
+                continue;
+            };
+            let expected = c3_meta[edge.curve as usize].endpoints[endpoint];
+            let delta = [
+                vertex.point.0[0] - expected.0[0],
+                vertex.point.0[1] - expected.0[1],
+                vertex.point.0[2] - expected.0[2],
+            ];
+            tolerance = tolerance
+                .max((delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt());
+        }
+        vertex.tolerance = tolerance;
+    }
+
+    let (render_meshes, render_mesh_array_range) =
+        read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?;
+    let (analysis_meshes, analysis_mesh_array_range) = if minor >= 1 {
+        read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?
+    } else {
+        (Vec::new(), 0..0)
+    };
+    let skipped = reader.skip_remaining()?;
+    if skipped != 0 {
+        warnings.push(format!("legacy ON_Brep skipped {skipped} trailing bytes"));
+    }
+    let raw = RawBrep {
+        minor,
+        c2: RawBrepChildren {
+            slots: c2_slots,
+            source_range: c2_range,
+            expected_type: RawBrepBaseType::Curve,
+        },
+        c3: RawBrepChildren {
+            slots: c3_slots,
+            source_range: c3_range,
+            expected_type: RawBrepBaseType::Curve,
+        },
+        surfaces: RawBrepChildren {
+            slots: surface_slots,
+            source_range: surfaces_range,
+            expected_type: RawBrepBaseType::Surface,
+        },
+        vertices,
+        edges,
+        trims,
+        loops,
+        faces,
+        bounds,
+        render_meshes,
+        analysis_meshes,
+        render_mesh_array_range,
+        analysis_mesh_array_range,
+        is_solid: None,
+        face_sides: Vec::new(),
+        regions: Vec::new(),
+        region_wrapper_range: None,
+        source_range: range,
+        vertex_array_range: 0..0,
+        edge_array_range: 0..0,
+        trim_array_range: 0..0,
+        loop_array_range: 0..0,
+        face_array_range: 0..0,
+    };
+    match ValidatedRawBrep::try_new(raw.clone()) {
+        Ok(mut validated) => {
+            validated.warnings.splice(0..0, warnings);
+            Ok(BrepParse::Valid(validated))
+        }
+        Err(error) => Ok(BrepParse::SemanticInvalid {
+            raw,
+            error,
+            warnings,
+        }),
+    }
+}
+
+fn legacy_curve_shape(
+    decoded: &crate::curves::DecodedGeometry,
+    offset: usize,
+) -> Result<(Interval, [Point3; 2]), GeometryError> {
+    let crate::curves::DecodedGeometry::Curve { curve } = decoded else {
+        return Err(error(offset, "legacy Brep polycurve is not a curve"));
+    };
+    let parameters = curve
+        .compound
+        .as_ref()
+        .map(|compound| compound.parameters.as_slice())
+        .filter(|parameters| parameters.len() >= 2)
+        .ok_or_else(|| error(offset, "legacy Brep polycurve has no parameter range"))?;
+    let endpoints = legacy_decoded_curve_endpoints(curve, offset)?;
+    Ok((
+        Interval([
+            parameters[0],
+            *parameters.last().expect("range has two values"),
+        ]),
+        endpoints,
+    ))
+}
+
+fn legacy_decoded_curve_endpoints(
+    curve: &crate::curves::DecodedCurve,
+    offset: usize,
+) -> Result<[Point3; 2], GeometryError> {
+    if let Some(compound) = &curve.compound {
+        let first = compound
+            .children
+            .first()
+            .ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?;
+        let last = compound
+            .children
+            .last()
+            .ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?;
+        return Ok([
+            legacy_decoded_curve_endpoints(first, offset)?[0],
+            legacy_decoded_curve_endpoints(last, offset)?[1],
+        ]);
+    }
+    match &curve.geometry {
+        CurveGeometry::Nurbs(nurbs) => {
+            let first = nurbs
+                .control_points
+                .first()
+                .ok_or_else(|| error(offset, "legacy Brep curve has no first pole"))?;
+            let last = nurbs
+                .control_points
+                .last()
+                .ok_or_else(|| error(offset, "legacy Brep curve has no last pole"))?;
+            Ok([
+                Point3([first.x, first.y, first.z]),
+                Point3([last.x, last.y, last.z]),
+            ])
+        }
+        CurveGeometry::Circle {
+            center,
+            ref_direction,
+            radius,
+            ..
+        } => {
+            let endpoint = Point3([
+                center.x + ref_direction.x * radius,
+                center.y + ref_direction.y * radius,
+                center.z + ref_direction.z * radius,
+            ]);
+            Ok([endpoint, endpoint])
+        }
+        CurveGeometry::Degenerate { point } => {
+            let point = Point3([point.x, point.y, point.z]);
+            Ok([point, point])
+        }
+        _ => Err(error(offset, "legacy Brep curve has no finite endpoints")),
+    }
+}
+
+fn legacy_trim_endpoint(trim_index: i32, endpoint: usize) -> usize {
+    trim_index as usize * 2 + endpoint
+}
+
+fn legacy_trim_endpoint_for_edge(trim: &RawBrepTrim, edge_endpoint: usize) -> usize {
+    let trim_endpoint = if trim.reversed_3d == 0 {
+        edge_endpoint
+    } else {
+        1 - edge_endpoint
+    };
+    legacy_trim_endpoint(trim.index, trim_endpoint)
+}
+
+fn legacy_find(parent: &mut [usize], mut index: usize) -> usize {
+    while parent[index] != index {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
+    }
+    index
+}
+
+fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
+    let left_root = legacy_find(parent, left);
+    let right_root = legacy_find(parent, right);
+    if left_root != right_root {
+        parent[right_root] = left_root;
+    }
+}
+
+fn legacy_vertex(vertices: &mut Vec<RawBrepVertex>, point: Point3) -> i32 {
+    if let Some((index, _)) = vertices
+        .iter()
+        .enumerate()
+        .find(|(_, value)| value.point == point)
+    {
+        return index as i32;
+    }
+    let index = vertices.len();
+    vertices.push(RawBrepVertex {
+        index: index as i32,
+        point,
+        edges: Vec::new(),
+        tolerance: 0.0,
+        source_range: 0..0,
+    });
+    index as i32
+}
+
+fn read_legacy_mesh_sides(
+    bytes: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    face_count: usize,
+    warnings: &mut Vec<String>,
+) -> Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> {
+    let start = reader.position();
+    let mut slots = Vec::with_capacity(face_count);
+    for _ in 0..face_count {
+        let present = match reader.u8() {
+            Ok(value) => value != 0,
+            Err(error) => {
+                reader.skip_remaining()?;
+                warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
+                return Ok((empty_mesh_slots(face_count), start..reader.position()));
+            }
+        };
+        let (mesh, userdata) = if present {
+            let object_start = reader.position();
+            let object = match chunk_at(bytes, object_start, reader.end(), archive, false) {
+                Ok(object) => object,
+                Err(error) => {
+                    reader.skip_remaining()?;
+                    warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
+                    return Ok((empty_mesh_slots(face_count), start..reader.position()));
+                }
+            };
+            if let Err(error) = reader.skip(object.next_offset - object_start) {
+                reader.skip_remaining()?;
+                warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
+                return Ok((empty_mesh_slots(face_count), start..reader.position()));
+            }
+            match parse_class_wrapper_with_userdata(
+                bytes,
+                chunk_start_range(&object),
+                archive,
+                warnings,
+            ) {
+                Ok((class, userdata)) if supported_mesh(class.class_uuid) => (
+                    Some(RawBrepChild {
+                        class_uuid: class.class_uuid,
+                        class_data_range: class.class_data_range,
+                        source_range: object_start..object.next_offset,
+                        base_type: RawBrepBaseType::Other,
+                    }),
+                    userdata,
+                ),
+                Ok(_) => {
+                    warnings.push("legacy Brep mesh cache slot has wrong class".to_string());
+                    (None, Vec::new())
+                }
+                Err(error) => {
+                    warnings.push(format!("legacy Brep mesh cache slot degraded: {error}"));
+                    (None, Vec::new())
+                }
+            }
+        } else {
+            (None, Vec::new())
+        };
+        slots.push(RawBrepMeshSlot {
+            mesh,
+            present,
+            userdata,
+        });
+    }
+    Ok((slots, start..reader.position()))
+}
+
+fn empty_mesh_slots(count: usize) -> Vec<RawBrepMeshSlot> {
+    let mut slots = Vec::with_capacity(count);
+    for _ in 0..count {
+        slots.push(RawBrepMeshSlot {
+            mesh: None,
+            present: false,
+            userdata: Vec::new(),
+        });
+    }
+    slots
 }
 
 /// Returns whether a UUID is `ON_Brep`.
@@ -1334,15 +2071,29 @@ fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
         if loop_record.trims.is_empty() {
             return Err(error(loop_record.source_range.start, "loop ring is empty"));
         }
+        if matches!(loop_record.loop_type, 4 | 5) {
+            let trim = &raw.trims[loop_record.trims[0] as usize];
+            let expected_trim_type = if loop_record.loop_type == 4 { 5 } else { 6 };
+            if loop_record.trims.len() != 1 || trim.trim_type != expected_trim_type {
+                return Err(error(
+                    loop_record.source_range.start,
+                    "procedural Brep loop must contain its matching single trim",
+                ));
+            }
+            continue;
+        }
         for pair in loop_record.trims.windows(2) {
             let left = &raw.trims[pair[0] as usize];
             let right = &raw.trims[pair[1] as usize];
             let left_end = left.vertices[1];
             let right_start = right.vertices[0];
             if left_end != right_start {
-                return Err(error(
+                return Err(GeometryError::malformed(
                     loop_record.source_range.start,
-                    "loop ring is discontinuous",
+                    format!(
+                        "loop ring is discontinuous between trims {} and {} ({} != {})",
+                        pair[0], pair[1], left_end, right_start
+                    ),
                 ));
             }
         }
@@ -1550,12 +2301,12 @@ fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
                 .filter(|value| **value == edge_index as i32)
                 .count();
             if count != expected {
-                return Err(error(
+                return Err(GeometryError::malformed(
                     edge.source_range.start,
                     if edge.vertices[0] == edge.vertices[1] && endpoint == 1 {
-                        "closed edge incidence is duplicated incorrectly"
+                        format!("closed edge incidence is duplicated incorrectly for edge {edge_index} ({},{}): expected {expected}, got {count}", edge.vertices[0], edge.vertices[1])
                     } else {
-                        "edge/vertex incidence mismatch"
+                        format!("edge/vertex incidence mismatch for edge {edge_index} ({},{}), vertex {vertex}: expected {expected}, got {count}", edge.vertices[0], edge.vertices[1])
                     },
                 ));
             }
@@ -1576,8 +2327,10 @@ fn unique(values: &[i32], label: &str) -> Result<(), GeometryError> {
 
 fn finite_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
     let [low, high] = value.0;
-    let unset = low == ON_UNSET_VALUE && high == ON_UNSET_VALUE;
-    let empty = low == ON_UNSET_VALUE && high == ON_UNSET_NEGATIVE_VALUE;
+    let unset = (low == ON_UNSET_VALUE && high == ON_UNSET_VALUE)
+        || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_POSITIVE_VALUE);
+    let empty = (low == ON_UNSET_VALUE && high == ON_UNSET_POSITIVE_VALUE)
+        || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_VALUE);
     if !(unset || empty || low.is_finite() && high.is_finite() && low < high) {
         return Err(error(0, &format!("{label} is invalid")));
     }
@@ -1586,7 +2339,7 @@ fn finite_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
 
 fn finite_tolerance(value: f64, label: &str) -> Result<(), GeometryError> {
     if !(value == ON_UNSET_VALUE
-        || value == ON_UNSET_NEGATIVE_VALUE
+        || value == ON_UNSET_POSITIVE_VALUE
         || value.is_finite() && value >= 0.0)
     {
         return Err(error(0, &format!("{label} is invalid")));
@@ -2188,13 +2941,38 @@ mod tests {
     }
 
     #[test]
-    fn brep_major_is_structured_as_unsupported() {
+    fn legacy_brep_major_two_requires_its_payload() {
         let error = parse(&[0x20], 0..1, ArchiveVersion::V5, None, &[])
-            .expect_err("major two must be rejected");
-        assert!(matches!(
-            error,
-            GeometryError::UnsupportedVersion { offset: 0, .. }
-        ));
+            .expect_err("truncated major two must fail");
+        assert!(matches!(error, GeometryError::Malformed(_)));
+    }
+
+    #[test]
+    fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
+        let circle = crate::curves::DecodedCurve {
+            geometry: CurveGeometry::Circle {
+                center: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            compound: None,
+            warnings: Vec::new(),
+        };
+        assert_eq!(
+            legacy_decoded_curve_endpoints(&circle, 0).expect("circle endpoints"),
+            [Point3([3.0, 2.0, 3.0]); 2]
+        );
+        let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
+        let degenerate = crate::curves::DecodedCurve {
+            geometry: CurveGeometry::Degenerate { point },
+            compound: None,
+            warnings: Vec::new(),
+        };
+        assert_eq!(
+            legacy_decoded_curve_endpoints(&degenerate, 0).expect("degenerate endpoints"),
+            [Point3([4.0, 5.0, 6.0]); 2]
+        );
     }
 
     #[test]
@@ -2268,8 +3046,36 @@ mod tests {
     #[test]
     fn tolerance_accepts_explicit_signed_unset_values() {
         assert!(finite_tolerance(ON_UNSET_VALUE, "tolerance").is_ok());
-        assert!(finite_tolerance(ON_UNSET_NEGATIVE_VALUE, "tolerance").is_ok());
+        assert!(finite_tolerance(ON_UNSET_POSITIVE_VALUE, "tolerance").is_ok());
         assert!(finite_tolerance(-1.0, "tolerance").is_err());
+    }
+
+    #[test]
+    fn interval_accepts_explicit_signed_unset_values() {
+        for value in [
+            Interval([ON_UNSET_VALUE, ON_UNSET_VALUE]),
+            Interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_POSITIVE_VALUE]),
+            Interval([ON_UNSET_VALUE, ON_UNSET_POSITIVE_VALUE]),
+            Interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE]),
+        ] {
+            assert!(finite_interval(value, "interval").is_ok());
+        }
+        assert!(finite_interval(Interval([0.0, 0.0]), "interval").is_err());
+    }
+
+    #[test]
+    fn procedural_loops_use_one_matching_trim_without_ring_closure() {
+        let mut curve_loop = degenerate_trim_raw(5, 0);
+        curve_loop.loops[0].loop_type = 4;
+        assert!(validate_rings(&curve_loop).is_ok());
+
+        let mut point_loop = degenerate_trim_raw(6, -1);
+        point_loop.loops[0].loop_type = 5;
+        assert!(validate_rings(&point_loop).is_ok());
+
+        let mut mismatched = degenerate_trim_raw(6, -1);
+        mismatched.loops[0].loop_type = 4;
+        assert!(validate_rings(&mismatched).is_err());
     }
 
     #[test]
@@ -2280,6 +3086,21 @@ mod tests {
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("degraded cache");
         assert!(slots[0].mesh.is_none());
+        assert!(!warnings.is_empty());
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn legacy_mesh_side_degrades_truncated_present_slot() {
+        let bytes = [1_u8];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Vec::new();
+        let (slots, range) =
+            read_legacy_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
+                .expect("legacy cache degradation");
+        assert_eq!(range, 0..bytes.len());
+        assert_eq!(slots.len(), 1);
+        assert!(!slots[0].present);
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }

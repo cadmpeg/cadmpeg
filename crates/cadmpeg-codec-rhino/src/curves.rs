@@ -38,7 +38,7 @@ const ARC: Uuid = Uuid::from_canonical([
 const POLYLINE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xe6, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
-const POLYCURVE: Uuid = Uuid::from_canonical([
+pub(crate) const POLYCURVE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xe0, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
 const POLYCURVE_LEGACY: Uuid = Uuid::from_canonical([
@@ -1104,6 +1104,17 @@ fn read_polycurve_2d(
     })
 }
 
+/// Consumes one legacy Brep C2 polycurve payload and returns its byte range.
+pub(crate) fn consume_legacy_polycurve_2d(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Range<usize>, GeometryError> {
+    let start = reader.position();
+    let _ = read_polycurve_2d(data, reader, archive, 0)?;
+    Ok(start..reader.position())
+}
+
 fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
@@ -1451,6 +1462,18 @@ fn read_polycurve(
         }),
         warnings: Vec::new(),
     })
+}
+
+/// Consumes one legacy Brep C3 polycurve payload and returns its byte range.
+pub(crate) fn consume_legacy_polycurve(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    archive: ArchiveVersion,
+) -> Result<Range<usize>, GeometryError> {
+    let start = reader.position();
+    let _ = read_polycurve(data, reader, scale, archive, 0)?;
+    Ok(start..reader.position())
 }
 
 fn push_polycurve_parameter(

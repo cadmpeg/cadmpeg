@@ -815,6 +815,16 @@ pub(crate) fn read_nurbs_surface(
     reader: &mut BoundedReader<'_>,
     scale: f64,
 ) -> Result<NurbsSurface, GeometryError> {
+    let surface = read_nurbs_surface_prefix(reader, scale)?;
+    reader.skip_remaining()?;
+    Ok(surface)
+}
+
+/// Reads one NURBS surface without consuming bytes after its final pole.
+pub(crate) fn read_nurbs_surface_prefix(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<NurbsSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 {
@@ -872,7 +882,6 @@ pub(crate) fn read_nurbs_surface(
         read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
     let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
-    reader.skip_remaining()?;
     Ok(NurbsSurface {
         u_degree: u32::try_from(u_order - 1).expect("validated order fits u32"),
         v_degree: u32::try_from(v_order - 1).expect("validated order fits u32"),

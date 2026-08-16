@@ -3291,6 +3291,9 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let key = self.object_key(identity, source_order);
         let unknown = self.unknowns[source_order].id.clone();
+        self.ir
+            .set_native_unknowns_from("rhino", self.unknowns.iter().map(NativeUnknownRecord::from))
+            .expect("Rhino unknown records serialize");
         let staged = match &parsed {
             crate::brep::BrepParse::Valid(brep) => stage_brep(BrepTransferInput {
                 expand: self.expand,
