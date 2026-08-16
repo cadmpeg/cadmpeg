@@ -1492,6 +1492,46 @@ codec retains the complete containing object record for opaque source fidelity.
 For materials, the typed `rdk_instance_uuid` field comes from the material
 class-data record; the codec does not infer it from callback-owned RDK XML.
 
+#### 7.2.19 `MappingCRCCache`
+
+`MappingCRCCache` uses class UUID and item UUID
+`5A4971F3-AA73-493C-A385-2F7EB4288989`. Its application UUID is
+`ON_opennurbs_id`; the current OpenNURBS source defines that value as
+`50EDE5C9-1487-4B4C-B3AA-6840B460E3CF`. The userdata is attached to the
+custom mapping primitive by `ON_TextureMapping::SetCustomMappingPrimitive`,
+not to the `ON_TextureMapping` record. `ON_TextureMapping::Write` writes the
+primitive as a complete polymorphic object after the mapping name, so the
+cache is a class-userdata child of that primitive's class wrapper.
+
+Inside the generic class-userdata anonymous child, the class-owned payload is:
+
+```text
+i32 version = 1
+i32 mapping_crc
+```
+
+The anonymous child has the normal archive-version chunk length and checksum.
+The writer emits version `1`. The reader requires version `1` and reads the
+signed `i32` checksum. The cache's default member value is `-1` before a
+primitive checksum is assigned.
+
+`mapping_crc` is the primitive checksum used by `ON_TextureMapping::MappingCRC`;
+it is not the file-chunk checksum and it is not the aggregate texture-mapping
+CRC. The primitive checksum starts with state `0x12341234`. For an `ON_Mesh`,
+the source applies `ON_Mesh::DataCRC` to that state, then includes the texture
+coordinate array when present, then includes the bytes of
+`ON_3dPoint::UnsetPoint`. For an `ON_Brep` or `ON_Surface`, it applies that
+object's `DataCRC` to the same state. Other primitive classes leave the state
+at `0x12341234`. `SetCustomMappingPrimitive` stores the resulting value in the
+cache. If `MappingCRC` reads a primitive without a cache, it computes the same
+value, attaches a cache, and uses that value.
+
+The Rhino codec parses the complete primitive class wrapper and exposes its
+class UUID in `native.rhino.texture_mappings[].primitive_class_uuid`; it skips
+the nested `MappingCRCCache` userdata and does not add `mapping_crc` to the
+native mapping record. CADIR treats this value as recomputable source cache
+state, not an independently authored mapping property.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -4358,8 +4398,9 @@ bounded end. The texture-array wrapper is also an anonymous major-1,
 nonnegative-minor chunk; its count and complete class-wrapped elements are the
 known prefix, followed by a bounded suffix. Texture mappings store mapping and
 projection enums, primitive and UVW transforms, a primitive class object,
-texture-space enum, and capped flag. Material channels bind a UUID to an
-integer channel.
+texture-space enum, and capped flag. Class userdata belongs to the nested
+primitive object; the `MappingCRCCache` payload is defined in section 7.2.19.
+Material channels bind a UUID to an integer channel.
 
 ### 20.3 Drafting resources and annotations
 

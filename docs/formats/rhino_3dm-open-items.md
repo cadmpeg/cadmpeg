@@ -309,6 +309,15 @@ legacy-transfer behavior, and callback-owned XML boundary. The codec makes
 the CADIR decision to retain this XML only through the complete containing
 object record; it does not assign a neutral field grammar to RDK callbacks.
 
+The built-in `MappingCRCCache` userdata is also settled as a derived cache on
+custom texture-mapping primitives. Its class and item UUID is
+`5A4971F3-AA73-493C-A385-2F7EB4288989`, its application is `ON_opennurbs_id`,
+and section 7.2.19 defines its version-1 `i32` version/checksum payload, the
+primitive checksum inputs, and its placement inside the nested primitive class
+wrapper. The codec now reports the primitive class UUID, skips this cache, and
+does not invent a neutral `mapping_crc` field; this is the CADIR decision for
+recomputable source state.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
@@ -328,7 +337,7 @@ object-attributes compatibility carrier under section 7.2.9, and
 carrier under section 7.2.10. `ON_AnnotationTextFormula` is settled as a
 runtime-only helper with no serialized userdata under section 7.2.11; other
 future class-specific payload semantics, beyond the settled mesh-modifier,
-physically based material, and RDK carriers, remain open.
+physically based material, RDK, and mapping-CRC carriers, remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

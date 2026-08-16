@@ -2690,7 +2690,7 @@ fn parse_texture_mapping(
     let primitive_class_uuid = if object.short {
         None
     } else {
-        parse_class_wrapper(data, object.body.clone(), archive, &mut Vec::new())
+        parse_class_wrapper(data, object.range(), archive, &mut Vec::new())
             .ok()
             .map(|value| value.class_uuid.to_string())
     };
@@ -4429,6 +4429,36 @@ mod tests {
             .expect("version one physically based material");
         assert_eq!(material.version, 1);
         assert_eq!(material.alpha, 1.0);
+    }
+
+    #[test]
+    fn texture_mapping_reads_nested_primitive_class_wrapper() {
+        let mut body = crate::test_support::MESH_CLASS.to_vec();
+        body.extend(6_u32.to_le_bytes());
+        body.extend(1_u32.to_le_bytes());
+        for index in 0..16 {
+            body.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
+        }
+        for index in 0..16 {
+            body.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
+        }
+        body.extend(utf16("custom mesh mapping"));
+        body.extend(crate::test_support::test_dump::class_wrapper(
+            ArchiveVersion::V8,
+            crate::test_support::MESH_CLASS,
+            &[],
+        ));
+        body.extend(0_u32.to_le_bytes());
+        body.push(0);
+        let bytes = anonymous(1, &body);
+
+        let mapping = parse_texture_mapping(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
+            .expect("texture mapping with primitive class wrapper");
+        assert_eq!(mapping.mapping_type, 6);
+        assert_eq!(
+            mapping.primitive_class_uuid,
+            Some(Uuid::from_wire(crate::test_support::MESH_CLASS).to_string())
+        );
     }
 
     #[test]
