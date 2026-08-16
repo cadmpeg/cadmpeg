@@ -2,8 +2,8 @@
 //! Unit tests for section-equation constraint transfer.
 
 use crate::decode::sketch_transfer::{
-    section_equation_equal_distance_constraints, section_equation_point_on_line_constraints,
-    section_equation_unsigned_distance_constraints,
+    section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
+    section_equation_point_on_line_constraints, section_equation_unsigned_distance_constraints,
 };
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
@@ -459,6 +459,172 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         offset: 899,
     });
     let disabled_constraints = section_equation_unsigned_distance_constraints(&disabled, &sketch);
+    assert_eq!(disabled_constraints.len(), 1);
+    assert_eq!(disabled_constraints[0].0.active, Some(false));
+}
+
+#[test]
+fn equation_function_forty_three_emits_parameterized_axis_distance() {
+    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let definition = |second: [f64; 2], dimension_value| crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x2b\xf8\x08\x00\x01\x02\x03\x04\x05\x06\x07\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 8,
+            entity_ref: None,
+            rows: vec![
+                variable(1, 1, Some(0.0)),
+                variable(2, 1, Some(0.0)),
+                variable(1, 2, Some(second[0])),
+                variable(2, 2, Some(second[1])),
+                variable(4, 0, Some(0.0)),
+                variable(5, 0, Some(0.0)),
+                variable(0, 0, Some(10.0)),
+                variable(5, 1, Some(0.0)),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 10,
+                body: Vec::new(),
+                offset: 10,
+            }],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: Some(crate::feature::FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureDimension {
+                dimension_type: 1,
+                value: Some(dimension_value),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit: crate::feature::DimensionUnit::Millimeters,
+                direction_byte: 0,
+                auxiliary_value: None,
+                auxiliary_body: Vec::new(),
+                external_id: 27,
+                references: None,
+                offset: 0,
+            }],
+            offset: 0,
+        }),
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let horizontal =
+        section_equation_axis_distance_constraints(&definition([10.0, 0.0], 10.0), &sketch);
+    assert_eq!(horizontal.len(), 1);
+    assert_eq!(horizontal[0].0.active, Some(true));
+    assert_eq!(
+        horizontal[0].0.definition,
+        SketchConstraintDefinition::HorizontalDistance {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
+            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
+            parameter: ParameterId("creo:featdefs:parameter#40:27".into()),
+        }
+    );
+
+    let vertical =
+        section_equation_axis_distance_constraints(&definition([0.0, 10.0], 10.0), &sketch);
+    assert!(matches!(
+        vertical.first().map(|constraint| &constraint.0.definition),
+        Some(SketchConstraintDefinition::VerticalDistance { .. })
+    ));
+
+    let mut missing = definition([10.0, 0.0], 10.0);
+    let distance = &mut missing.variables.as_mut().expect("variables").rows[6];
+    distance.value = None;
+    distance.guess = None;
+    distance.guess_dimension_driven = true;
+    distance.dimension_driven = true;
+    assert_eq!(
+        section_equation_axis_distance_constraints(&missing, &sketch).len(),
+        1
+    );
+
+    assert!(
+        section_equation_axis_distance_constraints(&definition([10.0, 0.0], 9.0), &sketch,)
+            .is_empty()
+    );
+
+    let mut disabled = definition([10.0, 0.0], 10.0);
+    disabled.relations = Some(crate::feature::FeatureRelationTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: Vec::new(),
+        skamps: vec![crate::feature::FeatureSkamp {
+            id: 900,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: Vec::new(),
+            offset: 900,
+        }],
+        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 901,
+            offset: 900,
+        }),
+        triples: vec![crate::feature::FeatureRelationTriple {
+            relation_id: None,
+            equation_id: Some(1),
+            skamp_id: Some(900),
+            offset: 902,
+        }],
+        triples_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 903,
+            offset: 902,
+        }),
+        offset: 899,
+    });
+    let disabled_constraints = section_equation_axis_distance_constraints(&disabled, &sketch);
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }

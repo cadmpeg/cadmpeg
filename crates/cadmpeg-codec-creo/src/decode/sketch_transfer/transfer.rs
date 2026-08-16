@@ -25,13 +25,14 @@ use super::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
     native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
     reconcile_constraint_entity_references, resolved_profile_chains, section_degenerate_axis_line,
-    section_dimension_constraints, section_equation_equal_distance_constraints,
-    section_equation_point_on_line_constraints, section_equation_same_coordinate_constraints,
-    section_equation_unsigned_distance_constraints, section_segment_identity_suffix,
-    section_segment_radius_constraints, section_segment_verhor_definition,
-    section_skamp_constraints_for_geometry, solver_only_section_entities,
-    solver_only_section_entity_family, unique_saved_section_internal_ids,
-    unique_section_segment_external_ids, SectionEntityIncidenceFamily,
+    section_dimension_constraints, section_equation_axis_distance_constraints,
+    section_equation_equal_distance_constraints, section_equation_point_on_line_constraints,
+    section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
+    section_segment_identity_suffix, section_segment_radius_constraints,
+    section_segment_verhor_definition, section_skamp_constraints_for_geometry,
+    solver_only_section_entities, solver_only_section_entity_family,
+    unique_saved_section_internal_ids, unique_section_segment_external_ids,
+    SectionEntityIncidenceFamily,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
@@ -628,8 +629,11 @@ pub(in super::super) fn transfer_sketches(
             constraints.push(constraint);
         }
         for (mut constraint, offset) in
-            section_equation_unsigned_distance_constraints(definition, &sketch_id)
+            section_equation_axis_distance_constraints(definition, &sketch_id)
                 .into_iter()
+                .chain(section_equation_unsigned_distance_constraints(
+                    definition, &sketch_id,
+                ))
                 .chain(section_equation_point_on_line_constraints(
                     definition, &sketch_id,
                 ))

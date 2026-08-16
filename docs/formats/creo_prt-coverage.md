@@ -58,7 +58,10 @@ fixtures, scores above L1 remain blocked.
   resolves to an emitted point locus. Function-three equations transfer as
   typed horizontal- or vertical-distance constraints when their dimension
   ordinal resolves to one emitted parameter and both point keys resolve to
-  emitted loci.
+  emitted loci. Function-forty-three equations transfer as typed horizontal-
+  or vertical-distance constraints when their unique dimension parameter
+  agrees with the solved one-axis coordinate difference and both point keys
+  resolve to emitted loci.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs. Additive linear
   extrusions also accept a closed one-entity circle section, a closed single

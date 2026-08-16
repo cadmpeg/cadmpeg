@@ -820,11 +820,39 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_values(
         .collect()
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct SectionFunctionFortyThreeAxisDistance {
+    pub(crate) first: u32,
+    pub(crate) second: u32,
+    pub(crate) coordinate: usize,
+    pub(crate) scalar: SectionScalarVariable,
+    pub(crate) value: f64,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
+}
+
 pub(crate) fn section_equation_function_forty_three_axis_distance_values(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(SectionScalarVariable, f64)> {
+    section_equation_function_forty_three_axis_distance_rows(
+        definition,
+        coordinates,
+        ambiguous_point_ids,
+    )
+    .into_iter()
+    .filter(|constraint| constraint.active)
+    .map(|constraint| (constraint.scalar, constraint.value))
+    .collect()
+}
+
+pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionFunctionFortyThreeAxisDistance> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -851,7 +879,6 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_values(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter_map(|equation| {
             if equation.function_id != 43 || equation.arguments.len() != 8 {
                 return None;
@@ -925,12 +952,13 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_values(
                 return None;
             }
             let matches_distance = |value: f64| {
-                deltas.iter().filter_map(move |delta| {
+                deltas.iter().enumerate().filter_map(move |(coordinate, delta)| {
                     let scale = value.abs().max(delta.abs()).max(1.0);
-                    ((*delta - value).abs() <= 1e-9 * scale).then_some(*delta)
+                    ((*delta - value).abs() <= 1e-9 * scale)
+                        .then_some((coordinate, *delta))
                 })
             };
-            let value = if let Some(stored) = distance.value {
+            let (coordinate, value) = if let Some(stored) = distance.value {
                 if !stored.is_finite() || stored < 0.0 {
                     return None;
                 }
@@ -940,11 +968,23 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_values(
             } else {
                 let mut nonzero = deltas
                     .iter()
-                    .filter_map(|delta| (*delta > 1e-12).then_some(*delta));
+                    .enumerate()
+                    .filter_map(|(coordinate, delta)| {
+                        (*delta > 1e-12).then_some((coordinate, *delta))
+                    });
                 let value = nonzero.next()?;
                 nonzero.next().is_none().then_some(value)?
             };
-            Some(((distance.variable_type, distance.key), value))
+            Some(SectionFunctionFortyThreeAxisDistance {
+                first: first_u.key,
+                second: second_u.key,
+                coordinate,
+                scalar: (distance.variable_type, distance.key),
+                value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+            })
         })
         .collect()
 }
