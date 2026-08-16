@@ -540,6 +540,38 @@ fn duplicate_face_outer_bounds_reject_the_containing_topology_in_any_order() {
 }
 
 #[test]
+fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
+    for input in [
+        include_bytes!("data/tp10_duplicate_outer_first.p21").as_slice(),
+        include_bytes!("data/tp10_duplicate_outer_reordered.p21").as_slice(),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode duplicate outer-bound witness");
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::FaceMultipleOuterBounds.kind()
+                && loss.message.contains("face #10")
+                && loss
+                    .message
+                    .contains("omitting the containing topology shell")
+        }));
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::TopologyRootRejected.kind()
+                && loss.message.contains("face with multiple outer bounds")
+        }));
+        assert!(decoded.ir().model.bodies.is_empty());
+        assert!(decoded.ir().model.faces.is_empty());
+        assert!(decoded.ir().model.surfaces.is_empty());
+        assert!(decoded
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP native namespace")
+            .iter()
+            .any(|record| record.id.0.ends_with("#10")));
+    }
+}
+
+#[test]
 fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
     let mut ir = unit_cube();
     ir.model.faces[0].surface = ir.model.faces[1].surface.clone();

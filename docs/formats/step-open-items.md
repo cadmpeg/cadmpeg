@@ -461,29 +461,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### TP-10. Malformed duplicate outer-bound fallback
-
-**Question.** When malformed input gives one face more than one
-`FACE_OUTER_BOUND`, which loop role and implicit face carrier should the
-decoder retain?
-
-**Known.** ISO 10303-42 permits at most one `FACE_OUTER_BOUND` for a face.
-The current reader counts outer bounds before assigning a role. If more than
-one exists, it records `face.multiple-outer-bounds`, omits the containing
-topology shell, and does not derive an implicit face carrier
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:1989-2007`).
-
-**Note.** This is a conservative malformed-input refusal, not evidence that
-STEP prescribes omission of the whole topology shell. TP-04 was closed because
-conforming STEP prohibits multiple outer bounds; that closure does not
-establish this malformed-input disposition.
-
-**Need.** We need an explicit conservative salvage policy, recorded as a
-CADIR decision, or evidence that first-role retention is required, with
-reordered duplicate-outer fixtures and validation results.
-
-QA audit: reopened after reviewing closing commit 62e044540. The closing commit rejects a malformed duplicate outer-bound case. This is a conservative refusal policy, not evidence that the format requires this salvage disposition.
-
 ### DR-01. Drawing target identity selection
 
 **Question.** Which neutral identity represents a drawing reference when one

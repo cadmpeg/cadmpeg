@@ -698,11 +698,19 @@ partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Curve-only and point-only sets remain
 standalone geometry.
 
-A face has at most one `FACE_OUTER_BOUND`. Other face bounds are not outer
-bounds. When malformed input declares more than one outer bound, the decoder
-omits the containing topology shell without assigning an outer role or
-deriving an implicit face carrier. It retains the source records as opaque and
-reports the malformed face and rejected topology root.
+ISO 10303-42:2021 §5.5.18 defines `FACE_OUTER_BOUND` as a `FACE_BOUND` carrying
+the outer-boundary semantics and states that no more than one boundary of a
+face may have this type. Section §5.5.19 defines `FACE.bounds` as
+`SET[1:?] OF FACE_BOUND`; its WR2 permits at most one `FACE_OUTER_BOUND`, and
+the outer role is optional. Other face bounds are not outer bounds.
+
+CADIR decision: when malformed input declares more than one outer bound, the
+decoder rejects the containing topology shell/root. It assigns no outer role,
+derives no implicit face carrier, retains the source face and its bound
+records as opaque, and reports the malformed face and rejected topology root.
+This refusal is independent of the order of the bounds aggregate. It does not
+claim that ISO 10303-42 prescribes this salvage disposition for malformed
+input.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`
