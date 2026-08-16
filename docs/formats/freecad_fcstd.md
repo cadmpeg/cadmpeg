@@ -589,7 +589,7 @@ distance, float, float-constraint, and length properties contain `Float`. File, 
 persistent-object, and string properties contain `String`. Color, color-list, material,
 material-list, vector, bool-list, and Python-object properties contain `PropertyColor`,
 `ColorList`, `PropertyMaterial`, `MaterialList`, `PropertyVector`, `BoolList`, and `Python`,
-respectively. Each registered property contains exactly one value root. Scalar values use the
+respectively. Each core registered property contains exactly one value root. Scalar values use the
 `value` attribute. Vectors use `valueX`, `valueY`, and `valueZ`. Color-list and material-list
 values use one `file` attribute. Material values use four packed-color attributes plus finite `shininess` and
 `transparency` scalars. Boolean lists contain only `0` and `1`. Numeric values are finite, and
@@ -599,17 +599,68 @@ grammar. A registered property family remains typed even when no neutral present
 it. An unregistered GUI runtime type retains its exact ordered XML values without semantic
 dispatch, and its XML span is `named_opaque` in the logical ledger.
 
-The application registry also uses these GUI property forms: `App::PropertyFont` contains
+The application registry also uses these GUI property forms. `App::PropertyFont` contains
 `String`; `App::PropertyStringList` contains `StringList` with a count and ordered `String`
 elements; `App::PropertyIntegerList` contains `IntegerList` with a count and ordered `I` elements;
-`App::PropertyMap` contains `Map` with a count and `Item` key/value pairs; `App::PropertyMatrix`
-contains `PropertyMatrix` with attributes `a11` through `a44`; `App::PropertyPosition` and
-`App::PropertyDirection` contain `PropertyVector`; `App::PropertyQuantity` contains `Float`; and
-`App::PropertyRotation` contains `PropertyRotation`.
-A Sketcher view-provider `VisualLayerList` property contains one `VisualLayerList` root with a
-count and ordered `VisualLayer` records. Each record contains boolean `visible`, unsigned
-`linePattern`, and `lineWidth` attributes. The records are per-layer visual representation
-settings; the format does not replace them with a core scalar or list value root.
+`App::PropertyIntegerSet` contains `IntegerSet` with a count and sorted, unique `I` elements;
+`App::PropertyMap` contains `Map` with a count and key-sorted `Item` key/value pairs;
+`App::PropertyMatrix` contains `PropertyMatrix` with attributes `a11` through `a44`;
+`App::PropertyVectorDistance`, `App::PropertyPosition`, and `App::PropertyDirection` contain
+`PropertyVector`; `App::PropertyPrecision` and every registered quantity subtype contain `Float`;
+`App::PropertyRotation` contains `PropertyRotation`; and `App::PropertyPlacement` contains
+`PropertyPlacement` with finite `Px`, `Py`, and `Pz` plus finite quaternion or axis-angle
+components. The quantity subtype suffixes are `Acceleration`, `AmountOfSubstance`, `Angle`, `Area`,
+`CompressiveStrength`, `CurrentDensity`, `Density`, `DissipationRate`, `Distance`,
+`DynamicViscosity`, `ElectricalCapacitance`, `ElectricalConductance`, `ElectricalConductivity`,
+`ElectricalInductance`, `ElectricalResistance`, `ElectricCharge`, `SurfaceChargeDensity`,
+`VolumeChargeDensity`, `ElectricCurrent`, `ElectricPotential`, `ElectromagneticPotential`,
+`Frequency`, `Force`, `HeatFlux`, `InverseArea`, `InverseLength`, `InverseVolume`,
+`KinematicViscosity`, `Length`, `LuminousIntensity`, `MagneticFieldStrength`, `MagneticFlux`,
+`MagneticFluxDensity`, `Magnetization`, `Mass`, `Moment`, `Pressure`, `Power`, `Quantity`,
+`QuantityConstraint`, `ShearModulus`, `SpecificEnergy`, `SpecificHeat`, `Speed`, `Stiffness`,
+`StiffnessDensity`, `Stress`, `Temperature`, `ThermalConductivity`, `ThermalExpansionCoefficient`,
+`ThermalTransferCoefficient`, `Time`, `UltimateTensileStrength`, `VacuumPermittivity`, `Velocity`,
+`Volume`, `VolumeFlowRate`, `VolumetricThermalExpansionCoefficient`, `Work`, `YieldStrength`, and
+`YoungsModulus`. Each suffix is prefixed by `App::Property`. `App::PropertyPlacementLink` uses the
+link grammar.
+
+`App::PropertyFloatList`, `App::PropertyVectorList`, and `App::PropertyPlacementList` contain,
+respectively, `FloatList`, `VectorList`, and `PlacementList` with one `file` attribute. Their named
+side entries begin with a little-endian `u32` count and contain, respectively, `f64` values,
+three `f64` values per vector, or position `x y z` followed by quaternion `Q0 Q1 Q2 Q3` as seven
+little-endian `f64` values per placement. The side entry has no trailing bytes. A Python-object
+value is one inert `Python` value with its serialized attributes; decoding never executes it. A
+`PropertyExpressionEngine` value is one `ExpressionEngine` root whose `count` equals the ordered
+`Expression` children; each child has `path` and `expression` attributes and may have `comment`.
+An expression root may also carry the producer's cross-link records. `PropertyPath` uses `Path`
+with `value`; `PropertyUUID` uses `Uuid` with `value`; and `PropertyFileIncluded` uses
+`FileIncluded` with a named raw side entry. File properties use the string grammar.
+
+The loaded module registry adds `Materials::PropertyMaterial`, whose value is
+`PropertyMaterial` with a material `uuid`; `Part::PropertyPartShape`, whose value is `Part` and
+may carry `ElementMap` records and one exact-shape side entry; `Part::PropertyGeometryList`, whose
+value is `GeometryList` with a count and ordered `Geometry` records; `Part::PropertyFilletEdges`,
+whose value is `FilletEdges` with one named side entry containing the little-endian `u32` count and
+`i32`, `f64`, `f64` records; `Part::PropertyTopoShapeList`, whose value is `ShapeList` with a
+counted ordered set of `TopoShape` records and one named exact-shape side entry per file-backed
+record; and `Sketcher::PropertyConstraintList`, whose value is `ConstraintList` with a count and
+ordered `Constrain` records. `Part::PropertyShapeHistory` and `Part::PropertyShapeCache` emit no
+value element or side entry. The exact runtime type token selects these forms; a same-named value
+with another type does not select them.
+
+A Sketcher view-provider `VisualLayerList` property has type token `BadType` and contains one
+`VisualLayerList` root with a count and ordered `VisualLayer` records. Each record contains boolean
+`visible`, unsigned `linePattern`, and finite `lineWidth` attributes. The records are per-layer
+visual representation settings; the format does not replace them with a core scalar or list value
+root.
+
+The GUI registry is the producer's exact runtime property registry. It includes the standard, link,
+quantity, expression, material, Part, and Sketcher types above plus every module type whose exact
+application property grammar is registered. A provider property outside that registry retains its
+exact runtime type token, ordered value XML, referenced side-entry names and bytes, and property
+span as native data. It has no neutral presentation meaning. This is a CADIR decision: only the
+exact presentation carriers named below populate neutral fields; all other registered or
+provider-defined properties remain native, even when their producer serializer is known.
 
 A color-list side entry contains a little-endian `u32` count followed by that many little-endian
 packed `u32` colors. A material-list value has a format version from zero through three. Versions

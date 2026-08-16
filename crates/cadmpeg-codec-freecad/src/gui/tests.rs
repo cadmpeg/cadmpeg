@@ -295,6 +295,205 @@ fn accepts_and_validates_gui_custom_enumerations() {
 }
 
 #[test]
+fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Sketch"><Properties Count="1"><Property name="VisualLayerList" type="BadType">
+<VisualLayerList count="2"><VisualLayer visible="true" linePattern="65535" lineWidth="3.0"/><VisualLayer visible="false" linePattern="32382" lineWidth="1.5"/></VisualLayerList>
+</Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("Sketcher visual layers");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
+    let properties = namespace
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    let property = properties
+        .iter()
+        .find(|property| property.name == "VisualLayerList")
+        .expect("visual layers");
+    assert_eq!(property.type_name, "BadType");
+    assert_eq!(
+        property
+            .values
+            .iter()
+            .map(|value| value.tag.as_str())
+            .collect::<Vec<_>>(),
+        ["VisualLayerList", "VisualLayer", "VisualLayer"]
+    );
+    let logical = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    let span = logical
+        .iter()
+        .find(|span| span.owner.as_deref() == Some(property.id.as_str()))
+        .expect("visual layer span");
+    assert_eq!(span.classification, "typed");
+    assert!(crate::validate_native(result.ir()).is_empty());
+
+    for value in [
+        br#"<VisualLayerList count="1"><VisualLayer visible="maybe" linePattern="1" lineWidth="1"/></VisualLayerList>"#.as_slice(),
+        br#"<VisualLayerList count="2"><VisualLayer visible="true" linePattern="1" lineWidth="1"/></VisualLayerList>"#.as_slice(),
+        br#"<VisualLayerList count="1"><VisualLayer visible="true" linePattern="1" lineWidth="NaN"/></VisualLayerList>"#.as_slice(),
+    ] {
+        let gui = [
+            br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Sketch"><Properties Count="1"><Property name="VisualLayerList" type="BadType">"#.as_slice(),
+            value,
+            br#"</Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
+        ]
+        .concat();
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", &gui),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid visual layer list");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
+fn validates_dynamic_gui_property_registry_and_side_lists() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="12">
+<Property name="FloatList" type="App::PropertyFloatList"><FloatList file="FloatList"/></Property>
+<Property name="VectorList" type="App::PropertyVectorList"><VectorList file="VectorList"/></Property>
+<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
+<Property name="BoolList" type="App::PropertyBoolList"><BoolList value="101"/></Property>
+<Property name="IntegerSet" type="App::PropertyIntegerSet"><IntegerSet count="3"><I v="1"/><I v="4"/><I v="9"/></IntegerSet></Property>
+<Property name="Strings" type="App::PropertyStringList"><StringList count="2"><String value="alpha"/><String value="beta"/></StringList></Property>
+<Property name="Map" type="App::PropertyMap"><Map count="2"><Item key="alpha" value="one"/><Item key="beta" value="two"/></Map></Property>
+<Property name="Matrix" type="App::PropertyMatrix"><PropertyMatrix a11="1" a12="0" a13="0" a14="0" a21="0" a22="1" a23="0" a24="0" a31="0" a32="0" a33="1" a34="0" a41="0" a42="0" a43="0" a44="1"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="Rotation" type="App::PropertyRotation"><PropertyRotation A="0" Ox="0" Oy="0" Oz="1"/></Property>
+<Property name="Uuid" type="App::PropertyUUID"><Uuid value="01234567-89ab-cdef-0123-456789abcdef"/></Property>
+<Property name="Path" type="App::PropertyPath"><Path value="/var/tmp/path"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let mut float_list = Vec::new();
+    float_list.extend_from_slice(&2_u32.to_le_bytes());
+    float_list.extend_from_slice(&1.25_f64.to_le_bytes());
+    float_list.extend_from_slice(&2.5_f64.to_le_bytes());
+    let mut vector_list = Vec::new();
+    vector_list.extend_from_slice(&1_u32.to_le_bytes());
+    for value in [1.0_f64, 2.0, 3.0] {
+        vector_list.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut placement_list = Vec::new();
+    placement_list.extend_from_slice(&1_u32.to_le_bytes());
+    for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] {
+        placement_list.extend_from_slice(&value.to_le_bytes());
+    }
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+                ("FloatList", &float_list),
+                ("VectorList", &vector_list),
+                ("PlacementList", &placement_list),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("dynamic GUI registry");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
+    let properties = namespace
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert_eq!(properties.len(), 12);
+    assert!(properties.iter().all(|property| {
+        crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
+    }));
+    assert!(crate::validate_native(result.ir()).is_empty());
+
+    let bad_float_list = [0_u32.to_le_bytes().as_slice(), &[0xff]].concat();
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+                ("FloatList", &bad_float_list),
+                ("VectorList", &vector_list),
+                ("PlacementList", &placement_list),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("trailing dynamic float-list bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn validates_the_complete_loaded_dynamic_gui_registry() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="14">
+<Property name="Precision" type="App::PropertyPrecision"><Float value="0.001"/></Property>
+<Property name="VectorDistance" type="App::PropertyVectorDistance"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+<Property name="Position" type="App::PropertyPosition"><PropertyVector valueX="4" valueY="5" valueZ="6"/></Property>
+<Property name="Direction" type="App::PropertyDirection"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>
+<Property name="PlacementLink" type="App::PropertyPlacementLink"><Link value=""/></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="2"/></ExpressionEngine></Property>
+<Property name="MaterialReference" type="Materials::PropertyMaterial"><PropertyMaterial uuid="6b80c8f7-cf5f-4e7d-a6e3-88b3cd1db5a3"/></Property>
+<Property name="PartShape" type="Part::PropertyPartShape"><Part file="ProbeShape"/><ElementMap/></Property>
+<Property name="GeometryList" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ShapeHistory" type="Part::PropertyShapeHistory"/>
+<Property name="FilletEdges" type="Part::PropertyFilletEdges"><FilletEdges file="ProbeFillet"/></Property>
+<Property name="ShapeCache" type="Part::PropertyShapeCache"/>
+<Property name="TopoShapeList" type="Part::PropertyTopoShapeList"><ShapeList count="2"><TopoShape file="ProbeShapeList.0.brp"/><TopoShape file="ProbeShapeList.1.brp"/></ShapeList></Property>
+<Property name="ConstraintList" type="Sketcher::PropertyConstraintList"><ConstraintList count="0"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+                ("ProbeShape", b"shape-side-entry"),
+                ("ProbeFillet", &0_u32.to_le_bytes()),
+                ("ProbeShapeList.0.brp", b"shape-list-0"),
+                ("ProbeShapeList.1.brp", b"shape-list-1"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("complete dynamic GUI registry");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
+    let properties = namespace
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert_eq!(properties.len(), 14);
+    assert!(properties.iter().all(|property| {
+        crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
+    }));
+    assert!(crate::validate_native(result.ir()).is_empty());
+
+    let logical = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    assert!(properties.iter().all(|property| {
+        logical.iter().any(|span| {
+            span.owner.as_deref() == Some(property.id.as_str()) && span.classification == "typed"
+        })
+    }));
+}
+
+#[test]
 fn rejects_truncated_gui_material_list_payload() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">

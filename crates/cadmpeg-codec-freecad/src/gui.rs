@@ -26,9 +26,12 @@ pub(crate) struct Graph {
     pub(crate) properties: Vec<GuiPropertyRecord>,
 }
 
-/// Whether the shared application-property registry knows this GUI property type.
-pub(crate) fn has_registered_property_grammar(type_name: &str) -> bool {
+/// Whether the shared application-property registry knows this GUI property.
+pub(crate) fn has_registered_property_grammar(property_name: &str, type_name: &str) -> bool {
     gui_value_tag(type_name).is_some()
+        || is_gui_link_type(type_name)
+        || is_gui_custom_type(type_name)
+        || is_visual_layer_list(property_name, type_name)
         || !matches!(
             crate::persistence::property_family(type_name),
             crate::native::PropertyFamily::Unknown
@@ -823,6 +826,34 @@ fn validate_gui_property(
     property_name: &str,
     type_name: &str,
 ) -> Result<(), CodecError> {
+    if is_visual_layer_list(property_name, type_name) {
+        return validate_visual_layer_list(property, property_name);
+    }
+    match type_name {
+        "App::PropertyExpressionEngine" => {
+            return validate_gui_expression_engine(property, property_name);
+        }
+        "Materials::PropertyMaterial" => {
+            return validate_gui_material_reference(property, property_name);
+        }
+        "Part::PropertyPartShape" => {
+            return validate_gui_part_shape(property, property_name);
+        }
+        "Part::PropertyGeometryList" => {
+            return validate_gui_geometry_list(property, property_name);
+        }
+        "Part::PropertyFilletEdges" => {
+            return validate_gui_filletedges(property, property_name);
+        }
+        "Part::PropertyTopoShapeList" => {
+            return validate_gui_shape_list(property, property_name);
+        }
+        "Sketcher::PropertyConstraintList" => {
+            return validate_gui_constraint_list(property, property_name);
+        }
+        "Part::PropertyShapeHistory" | "Part::PropertyShapeCache" => return Ok(()),
+        _ => {}
+    }
     let Some(expected_tag) = gui_value_tag(type_name) else {
         return Ok(());
     };
@@ -939,12 +970,230 @@ fn validate_gui_property(
                 )));
             }
         }
+        "StringList" => validate_gui_string_list(root, property_name)?,
+        "IntegerList" => validate_gui_integer_list(root, property_name, false)?,
+        "IntegerSet" => validate_gui_integer_list(root, property_name, true)?,
+        "Map" => validate_gui_map(root, property_name)?,
+        "PropertyMatrix" => {
+            for row in 1..=4 {
+                for column in 1..=4 {
+                    let attribute = format!("a{row}{column}");
+                    let value = scalar(&attribute)?.parse::<f64>().map_err(|_| {
+                        CodecError::Malformed(format!(
+                            "GUI property {property_name} has an invalid matrix value"
+                        ))
+                    })?;
+                    if !value.is_finite() {
+                        return Err(CodecError::Malformed(format!(
+                            "GUI property {property_name} has a non-finite matrix value"
+                        )));
+                    }
+                }
+            }
+        }
+        "PropertyPlacement" => validate_gui_placement(root, property_name)?,
+        "PropertyRotation" => {
+            for attribute in ["A", "Ox", "Oy", "Oz"] {
+                let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
+                    CodecError::Malformed(format!(
+                        "GUI property {property_name} has an invalid rotation"
+                    ))
+                })?;
+                if !value.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "GUI property {property_name} has a non-finite rotation"
+                    )));
+                }
+            }
+        }
+        "Uuid" | "Path" => {
+            scalar("value")?;
+        }
+        "FloatList" | "VectorList" | "PlacementList" => {
+            scalar("file")?;
+        }
+        "FileIncluded" => {
+            if root.attribute("file").is_none() && root.attribute("data").is_none() {
+                return Err(CodecError::Malformed(format!(
+                    "GUI property {property_name} FileIncluded has no file or data attribute"
+                )));
+            }
+        }
         _ => unreachable!("closed GUI value-tag registry"),
     }
     if roots.len() != 1 {
         return Err(CodecError::Malformed(format!(
             "GUI property {property_name} requires exactly one {expected_tag} value"
         )));
+    }
+    Ok(())
+}
+
+fn validate_gui_string_list(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let count = gui_list_count(root, property_name, "StringList")?;
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if values.len() != count
+        || values
+            .iter()
+            .any(|value| !value.has_tag_name("String") || value.attribute("value").is_none())
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} StringList count or value is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_integer_list(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    require_sorted_unique: bool,
+) -> Result<(), CodecError> {
+    let tag = if require_sorted_unique {
+        "IntegerSet"
+    } else {
+        "IntegerList"
+    };
+    let count = gui_list_count(root, property_name, tag)?;
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if values.len() != count || values.iter().any(|value| !value.has_tag_name("I")) {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} {tag} count or value is invalid"
+        )));
+    }
+    let mut previous = None;
+    for value in values {
+        let number = value
+            .attribute("v")
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} {tag} value has no v attribute"
+                ))
+            })?
+            .parse::<i64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} {tag} value is not an integer"
+                ))
+            })?;
+        if require_sorted_unique && previous.is_some_and(|previous| number <= previous) {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} IntegerSet is not sorted and unique"
+            )));
+        }
+        previous = Some(number);
+    }
+    Ok(())
+}
+
+fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Result<(), CodecError> {
+    let count = gui_list_count(root, property_name, "Map")?;
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if values.len() != count || values.iter().any(|value| !value.has_tag_name("Item")) {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} Map count or item tag is invalid"
+        )));
+    }
+    let mut previous_key = None;
+    for value in values {
+        let key = value.attribute("key").ok_or_else(|| {
+            CodecError::Malformed(format!("GUI property {property_name} Map item has no key"))
+        })?;
+        if value.attribute("value").is_none() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} Map item has no value"
+            )));
+        }
+        if previous_key.is_some_and(|previous| key <= previous) {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} Map keys are not sorted and unique"
+            )));
+        }
+        previous_key = Some(key);
+    }
+    Ok(())
+}
+
+fn gui_list_count(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    tag: &str,
+) -> Result<usize, CodecError> {
+    root.attribute("count")
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("GUI property {property_name} {tag} has no count"))
+        })?
+        .parse::<usize>()
+        .map_err(|_| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} {tag} has an invalid count"
+            ))
+        })
+}
+
+fn validate_gui_placement(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    for attribute in ["Px", "Py", "Pz"] {
+        let value = root
+            .attribute(attribute)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has no {attribute}"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has an invalid {attribute}"
+                ))
+            })?;
+        if !value.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} placement has a non-finite {attribute}"
+            )));
+        }
+    }
+    let axis_attributes = ["A", "Ox", "Oy", "Oz"];
+    let quaternion_attributes = ["Q0", "Q1", "Q2", "Q3"];
+    let has_axis = root.attribute("A").is_some();
+    let orientation = if has_axis {
+        &axis_attributes[..]
+    } else {
+        &quaternion_attributes[..]
+    };
+    for &attribute in orientation {
+        let value = root
+            .attribute(attribute)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has no {attribute}"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has an invalid {attribute}"
+                ))
+            })?;
+        if !value.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} placement has a non-finite {attribute}"
+            )));
+        }
     }
     Ok(())
 }
@@ -987,6 +1236,9 @@ fn validate_gui_enumeration(
 }
 
 fn gui_value_tag(type_name: &str) -> Option<&'static str> {
+    if GUI_QUANTITY_TYPES.contains(&type_name) {
+        return Some("Float");
+    }
     let tag = match type_name {
         "App::PropertyBool" => "Bool",
         "App::PropertyEnumeration"
@@ -997,7 +1249,8 @@ fn gui_value_tag(type_name: &str) -> Option<&'static str> {
         | "App::PropertyDistance"
         | "App::PropertyFloat"
         | "App::PropertyFloatConstraint"
-        | "App::PropertyLength" => "Float",
+        | "App::PropertyLength"
+        | "App::PropertyPrecision" => "Float",
         "App::PropertyFile"
         | "App::PropertyFont"
         | "App::PropertyPersistentObject"
@@ -1006,12 +1259,223 @@ fn gui_value_tag(type_name: &str) -> Option<&'static str> {
         "App::PropertyColorList" => "ColorList",
         "App::PropertyMaterial" => "PropertyMaterial",
         "App::PropertyMaterialList" => "MaterialList",
-        "App::PropertyVector" => "PropertyVector",
+        "App::PropertyVector"
+        | "App::PropertyVectorDistance"
+        | "App::PropertyPosition"
+        | "App::PropertyDirection" => "PropertyVector",
         "App::PropertyBoolList" => "BoolList",
+        "App::PropertyFloatList" => "FloatList",
+        "App::PropertyIntegerList" => "IntegerList",
+        "App::PropertyIntegerSet" => "IntegerSet",
+        "App::PropertyStringList" => "StringList",
+        "App::PropertyMap" => "Map",
+        "App::PropertyMatrix" => "PropertyMatrix",
+        "App::PropertyPath" => "Path",
+        "App::PropertyPlacement" => "PropertyPlacement",
+        "App::PropertyPlacementList" => "PlacementList",
         "App::PropertyPythonObject" => "Python",
+        "App::PropertyRotation" => "PropertyRotation",
+        "App::PropertyUUID" => "Uuid",
+        "App::PropertyVectorList" => "VectorList",
+        "App::PropertyFileIncluded" => "FileIncluded",
         _ => return None,
     };
     Some(tag)
+}
+
+const GUI_QUANTITY_TYPES: &[&str] = &[
+    "App::PropertyAcceleration",
+    "App::PropertyAmountOfSubstance",
+    "App::PropertyAngle",
+    "App::PropertyArea",
+    "App::PropertyCompressiveStrength",
+    "App::PropertyCurrentDensity",
+    "App::PropertyDensity",
+    "App::PropertyDissipationRate",
+    "App::PropertyDistance",
+    "App::PropertyDynamicViscosity",
+    "App::PropertyElectricalCapacitance",
+    "App::PropertyElectricalConductance",
+    "App::PropertyElectricalConductivity",
+    "App::PropertyElectricalInductance",
+    "App::PropertyElectricalResistance",
+    "App::PropertyElectricCharge",
+    "App::PropertySurfaceChargeDensity",
+    "App::PropertyVolumeChargeDensity",
+    "App::PropertyElectricCurrent",
+    "App::PropertyElectricPotential",
+    "App::PropertyFrequency",
+    "App::PropertyForce",
+    "App::PropertyHeatFlux",
+    "App::PropertyInverseArea",
+    "App::PropertyInverseLength",
+    "App::PropertyInverseVolume",
+    "App::PropertyKinematicViscosity",
+    "App::PropertyLength",
+    "App::PropertyLuminousIntensity",
+    "App::PropertyMagneticFieldStrength",
+    "App::PropertyMagneticFlux",
+    "App::PropertyMagneticFluxDensity",
+    "App::PropertyMagnetization",
+    "App::PropertyElectromagneticPotential",
+    "App::PropertyMass",
+    "App::PropertyMoment",
+    "App::PropertyPressure",
+    "App::PropertyPower",
+    "App::PropertyQuantity",
+    "App::PropertyQuantityConstraint",
+    "App::PropertyShearModulus",
+    "App::PropertySpecificEnergy",
+    "App::PropertySpecificHeat",
+    "App::PropertySpeed",
+    "App::PropertyStiffness",
+    "App::PropertyStiffnessDensity",
+    "App::PropertyStress",
+    "App::PropertyTemperature",
+    "App::PropertyThermalConductivity",
+    "App::PropertyThermalExpansionCoefficient",
+    "App::PropertyThermalTransferCoefficient",
+    "App::PropertyTime",
+    "App::PropertyUltimateTensileStrength",
+    "App::PropertyVacuumPermittivity",
+    "App::PropertyVelocity",
+    "App::PropertyVolume",
+    "App::PropertyVolumeFlowRate",
+    "App::PropertyVolumetricThermalExpansionCoefficient",
+    "App::PropertyWork",
+    "App::PropertyYieldStrength",
+    "App::PropertyYoungsModulus",
+];
+
+fn is_visual_layer_list(property_name: &str, type_name: &str) -> bool {
+    property_name == "VisualLayerList" && type_name == "BadType"
+}
+
+fn is_gui_link_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyLink"
+            | "App::PropertyLinkChild"
+            | "App::PropertyLinkGlobal"
+            | "App::PropertyLinkHidden"
+            | "App::PropertyLinkSub"
+            | "App::PropertyLinkSubChild"
+            | "App::PropertyLinkSubGlobal"
+            | "App::PropertyLinkSubHidden"
+            | "App::PropertyLinkList"
+            | "App::PropertyLinkListChild"
+            | "App::PropertyLinkListGlobal"
+            | "App::PropertyLinkListHidden"
+            | "App::PropertyLinkSubList"
+            | "App::PropertyLinkSubListChild"
+            | "App::PropertyLinkSubListGlobal"
+            | "App::PropertyLinkSubListHidden"
+            | "App::PropertyXLink"
+            | "App::PropertyXLinkSub"
+            | "App::PropertyXLinkSubHidden"
+            | "App::PropertyXLinkSubList"
+            | "App::PropertyXLinkList"
+            | "App::PropertyPlacementLink"
+    )
+}
+
+fn is_gui_custom_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "Materials::PropertyMaterial"
+            | "Part::PropertyPartShape"
+            | "Part::PropertyGeometryList"
+            | "Part::PropertyShapeHistory"
+            | "Part::PropertyFilletEdges"
+            | "Part::PropertyShapeCache"
+            | "Part::PropertyTopoShapeList"
+            | "Sketcher::PropertyConstraintList"
+    )
+}
+
+fn validate_visual_layer_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires exactly one VisualLayerList value"
+        )));
+    };
+    if !root.has_tag_name("VisualLayerList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading VisualLayerList value"
+        )));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayerList has no count"
+            ))
+        })?
+        .parse::<usize>()
+        .map_err(|_| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayerList has an invalid count"
+            ))
+        })?;
+    let layers = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if layers.len() != count
+        || layers
+            .iter()
+            .any(|layer| !layer.has_tag_name("VisualLayer"))
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} VisualLayerList count or record tag is invalid"
+        )));
+    }
+    for layer in layers {
+        if !matches!(layer.attribute("visible"), Some("true" | "false")) {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayer has an invalid visible value"
+            )));
+        }
+        layer
+            .attribute("linePattern")
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has no linePattern"
+                ))
+            })?
+            .parse::<u32>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has an invalid linePattern"
+                ))
+            })?;
+        let line_width = layer
+            .attribute("lineWidth")
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has no lineWidth"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has an invalid lineWidth"
+                ))
+            })?;
+        if !line_width.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayer has a non-finite lineWidth"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_gui_material(
@@ -1061,6 +1525,212 @@ fn validate_gui_material(
     Ok(())
 }
 
+fn validate_gui_expression_engine(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one ExpressionEngine value"
+        )));
+    };
+    if !root.has_tag_name("ExpressionEngine") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading ExpressionEngine value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "ExpressionEngine")?;
+    let expressions = root
+        .children()
+        .filter(|child| child.is_element() && child.has_tag_name("Expression"))
+        .collect::<Vec<_>>();
+    if expressions.len() != count
+        || expressions.iter().any(|expression| {
+            expression.attribute("path").is_none() || expression.attribute("expression").is_none()
+        })
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} ExpressionEngine count or expression is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_material_reference(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one PropertyMaterial value"
+        )));
+    };
+    if !root.has_tag_name("PropertyMaterial") || root.attribute("uuid").is_none() {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} material reference is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_part_shape(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if (roots.is_empty() || roots[0].has_tag_name("Part"))
+        && roots
+            .iter()
+            .skip(1)
+            .all(|root| root.has_tag_name("ElementMap"))
+    {
+        return Ok(());
+    }
+    Err(CodecError::Malformed(format!(
+        "GUI property {property_name} Part shape value is invalid"
+    )))
+}
+
+fn validate_gui_geometry_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one GeometryList value"
+        )));
+    };
+    if !root.has_tag_name("GeometryList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading GeometryList value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "GeometryList")?;
+    let geometries = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if geometries.len() != count
+        || geometries
+            .iter()
+            .any(|geometry| !geometry.has_tag_name("Geometry"))
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} GeometryList count or record tag is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_filletedges(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one FilletEdges value"
+        )));
+    };
+    if !root.has_tag_name("FilletEdges") || root.attribute("file").is_none() {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} FilletEdges value is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_shape_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one ShapeList value"
+        )));
+    };
+    if !root.has_tag_name("ShapeList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading ShapeList value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "ShapeList")?;
+    let shapes = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if shapes.len() != count
+        || shapes.iter().any(|shape| {
+            !shape.has_tag_name("TopoShape")
+                || (shape.attribute("file").is_none()
+                    && shape.attribute("binary").is_none()
+                    && shape.attribute("brep").is_none())
+        })
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} ShapeList count or record is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_constraint_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one ConstraintList value"
+        )));
+    };
+    if !root.has_tag_name("ConstraintList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading ConstraintList value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "ConstraintList")?;
+    let constraints = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if constraints.len() != count
+        || constraints
+            .iter()
+            .any(|constraint| !constraint.has_tag_name("Constrain"))
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} ConstraintList count or record tag is invalid"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 struct GuiMaterial {
     ambient: u32,
@@ -1081,9 +1751,24 @@ fn validate_gui_list_payloads(
 ) -> Result<HashMap<String, Vec<GuiMaterial>>, CodecError> {
     let mut material_lists = HashMap::new();
     for property in properties {
-        let Some(entry_name) = property.side_entries.first() else {
+        if property.side_entries.is_empty() {
             continue;
-        };
+        }
+        if property.type_name == "Part::PropertyTopoShapeList" {
+            for entry_name in &property.side_entries {
+                entries.get(entry_name).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "GUI property {} references missing side entry {entry_name}",
+                        property.id
+                    ))
+                })?;
+            }
+            continue;
+        }
+        let entry_name = property
+            .side_entries
+            .first()
+            .expect("nonempty side entries");
         if property.side_entries.len() != 1 {
             return Err(CodecError::Malformed(format!(
                 "GUI property {} references more than one side entry",
@@ -1099,6 +1784,12 @@ fn validate_gui_list_payloads(
         match property.type_name.as_str() {
             "App::PropertyColorList" => {
                 parse_color_list(view, entry_name, requires_alpha_conversion)?;
+            }
+            "App::PropertyFloatList" => {
+                parse_float_list(view, entry_name)?;
+            }
+            "Part::PropertyFilletEdges" => {
+                parse_fillet_edges(view, entry_name)?;
             }
             "App::PropertyMaterialList" => {
                 let version = property
@@ -1120,6 +1811,12 @@ fn validate_gui_list_payloads(
                     property.id.clone(),
                     parse_material_list(view, version, &property.id, requires_alpha_conversion)?,
                 );
+            }
+            "App::PropertyPlacementList" => {
+                parse_placement_list(view, entry_name)?;
+            }
+            "App::PropertyVectorList" => {
+                parse_vector_list(view, entry_name)?;
             }
             _ => {}
         }
@@ -1149,6 +1846,115 @@ fn parse_color_list(
         .into_iter()
         .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
         .collect())
+}
+
+fn parse_float_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 8, View::f64_le)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "float-list entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(CodecError::Malformed(format!(
+            "float-list entry {entry_name} has a non-finite value"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "float-list entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_vector_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 24, |view| {
+            Some((view.f64_le()?, view.f64_le()?, view.f64_le()?))
+        })
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "vector-list entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values
+        .iter()
+        .flat_map(|value| [value.0, value.1, value.2])
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(format!(
+            "vector-list entry {entry_name} has a non-finite value"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "vector-list entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_placement_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 56, |view| {
+            Some([
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ])
+        })
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "placement-list entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(CodecError::Malformed(format!(
+            "placement-list entry {entry_name} has a non-finite value"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "placement-list entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 20, |view| {
+            Some((view.i32_le()?, view.f64_le()?, view.f64_le()?))
+        })
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "fillet-edges entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values
+        .iter()
+        .any(|(_, radius1, radius2)| !radius1.is_finite() || !radius2.is_finite())
+    {
+        return Err(CodecError::Malformed(format!(
+            "fillet-edges entry {entry_name} has a non-finite radius"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "fillet-edges entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_material_list(

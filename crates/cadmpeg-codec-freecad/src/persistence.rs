@@ -801,6 +801,7 @@ pub(crate) fn property_family(type_name: &str) -> PropertyFamily {
         "App::PropertyBoolList"
         | "App::PropertyFloatList"
         | "App::PropertyIntegerList"
+        | "App::PropertyIntegerSet"
         | "App::PropertyStringList"
         | "Part::PropertyTopoShapeList"
         | "Sketcher::PropertyConstraintList"
