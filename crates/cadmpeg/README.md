@@ -93,12 +93,6 @@ cadmpeg validate bracket.cadir.json
 cadmpeg validate bracket.f3d --json
 ```
 
-Use `export` to skip CADIR validation:
-
-```sh
-cadmpeg export bracket.cadir.json -o bracket.step
-```
-
 `--container-only` stops native decoding before geometry. It is useful for
 container diagnostics and normally requires `--allow-empty` when followed by a
 geometry export.
@@ -211,7 +205,7 @@ over a conflicting output extension and emits a warning.
 
 Native decoding prints whether geometry transferred and lists known losses.
 STEP export reports omitted, reduced, or normalized content. To save a
-versioned JSON record of a `decode`, `export`, or `convert` operation, pass
+versioned JSON record of a `decode` or `convert` operation, pass
 `--report`:
 
 ```sh

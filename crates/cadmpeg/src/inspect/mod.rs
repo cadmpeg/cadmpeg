@@ -52,21 +52,28 @@ pub enum ByteCommand {
 /// One format-agnostic byte tool.
 #[derive(Debug, Subcommand)]
 pub enum ByteTool {
-    /// Print a hexadecimal dump with absolute offsets and an ASCII gutter.
+    /// Dump bytes as hex.
+    ///
+    /// Prints a hexadecimal dump with absolute offsets and an ASCII gutter.
     Hex(HexArgs),
-    /// Read fixed-width scalars at an offset, optionally striding a record array.
+    /// Read numbers at an offset.
+    ///
+    /// Reads fixed-width scalars at an offset, optionally striding a record array.
     Read(ReadArgs),
-    /// Report every offset where a byte pattern or a text string occurs.
+    /// Search for a byte pattern or string.
     Find(FindArgs),
-    /// Extract printable strings.
+    /// List printable strings.
     Strings(StringsArgs),
-    /// Decode records with an inline `--layout` spec.
+    /// Decode records from a layout spec.
     Struct(StructArgs),
-    /// List ZIP entries with their physical offsets.
+    /// List ZIP entries.
     Container(ContainerArgs),
-    /// Write one ZIP entry or CFB stream to a file or standard output.
+    /// Write one ZIP entry or CFB stream.
     Extract(ExtractArgs),
-    /// Compare two files byte for byte at the same offsets.
+    /// Compare two files as raw bytes.
+    ///
+    /// Compares byte n of one file with byte n of the other.
+    /// `cadmpeg diff` compares decoded models.
     Diff(DiffArgs),
 }
 

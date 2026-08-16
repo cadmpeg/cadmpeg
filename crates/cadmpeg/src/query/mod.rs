@@ -32,23 +32,29 @@ pub use schema::SchemaArgs;
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
 pub enum QueryView {
-    /// Artifact kind and section counts. Accepts every artifact kind.
+    /// What this JSON file is.
+    ///
+    /// Accepts every artifact kind.
     Summary(QueryArgs),
-    /// Decode coverage counts. Accepts a command report or a decode
-    /// sidecar; empty coverage is not an error.
+    /// Decode coverage counts.
+    ///
+    /// Accepts a command report or a decode sidecar. Empty coverage is not an error.
     Coverage(QueryArgs),
-    /// Validation findings: severity, check, entity, message. Accepts a
-    /// command report written by `validate` or `convert`.
+    /// Validation errors and warnings.
+    ///
+    /// Accepts a command report written by `validate` or `convert`.
     Findings(QueryArgs),
-    /// Loss notes: severity, code, message. Accepts a command report or a
-    /// decode sidecar.
+    /// What was dropped or reduced.
+    ///
+    /// Accepts a command report or a decode sidecar.
     Losses(QueryArgs),
-    /// Per-arena entity counts. Accepts a CADIR document (arena lengths,
-    /// including `native.<codec>` arenas) or a command report
-    /// (`entity_counts`).
+    /// Entity counts.
+    ///
+    /// Accepts a CADIR document (arena lengths, including `native.<codec>`
+    /// arenas) or a command report (`entity_counts`).
     #[command(visible_alias = "arenas")]
     Counts(QueryArgs),
-    /// One or more arena records by ID (CADIR documents only).
+    /// One record by id.
     ///
     /// Arena names are the dotted keys from `query counts --json`
     /// (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
@@ -61,7 +67,7 @@ pub enum QueryView {
     /// in strings → `\t`/`\n`). Alias: `record` (also `get`).
     #[command(visible_alias = "record", alias = "get")]
     Item(ItemArgs),
-    /// The IR schema of one model arena's records (no FILE — compile time).
+    /// Fields of an entity type.
     ///
     /// Unlike the other views this takes no file: it prints what this
     /// binary's IR types allow — every field of an arena's element type,
@@ -74,7 +80,7 @@ pub enum QueryView {
     /// document actually has still comes from `query counts FILE`; native
     /// arena records are codec-owned — fetch one with `query item` instead.
     Schema(SchemaArgs),
-    /// Retained source records and annotations of a decode sidecar.
+    /// Retained source bytes.
     ///
     /// The bare view lists `retained_records` as a table (stream, offset,
     /// bytes, whether the bytes are retained, id) with annotation counts
@@ -88,7 +94,7 @@ pub enum QueryView {
 /// Input selection and output format for one query view.
 #[derive(Debug, Args)]
 pub struct QueryArgs {
-    /// Artifact file, or `-` for standard input.
+    /// JSON file, or `-` for standard input.
     pub file: PathBuf,
     /// Print the projected subtree as JSON instead of the table.
     #[arg(long)]
