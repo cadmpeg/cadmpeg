@@ -148,16 +148,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 7. Annotation, presentation, and tessellation
 
-### AP-08. Context-dependent style projection
-
-**Question.** How does CADIR preserve or select context-qualified style branches when no presentation context is requested?
-
-**Known.** Part 46 binds `PRESENTATION_STYLE_BY_CONTEXT` to its context. The reader retains every context-qualified branch as native data, records a loss, and transfers only unscoped styles.
-
-**Need.** We need a neutral context identity and an independent file in which different consumers select different valid style contexts.
-
-**Note.** QA audit: commit `2ca2addec` removed an incorrect direct-membership selector, but closed the item with a retain-native refusal. The refusal is safe and does not implement context projection.
-
 ### AP-11. Export precedence for repeated appearance bindings
 
 **Question.** How does STEP export represent or reject multiple CADIR appearance bindings that target the same body or face?

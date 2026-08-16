@@ -754,23 +754,12 @@ fn context_dependent_styles_are_not_flattened_without_context() {
 
 #[test]
 fn context_dependent_styles_remain_native_for_distinct_contexts() {
-    let result = decode_inline(
-        "#1=COLOUR_RGB('red',1.,0.,0.);
-#2=PRESENTATION_STYLE_ASSIGNMENT((#1));
-#8=COLOUR_RGB('blue',0.,0.,1.);
-#9=PRESENTATION_STYLE_ASSIGNMENT((#8));
-#3=CARTESIAN_POINT('styled point',(0.,0.,0.));
-#4=REPRESENTATION_CONTEXT('shaded','3D');
-#5=REPRESENTATION('shaded',(#3),#4);
-#6=REPRESENTATION_CONTEXT('wire','3D');
-#7=REPRESENTATION('wire',(#3),#6);
-#10=PRESENTATION_STYLE_BY_CONTEXT((#2),#5);
-#11=PRESENTATION_STYLE_BY_CONTEXT((#9),#7);
-#12=STYLED_ITEM('',(#10,#11),#3);
-#13=CARTESIAN_POINT('unscoped point',(1.,0.,0.));
-#14=PRESENTATION_STYLE_ASSIGNMENT((#1));
-#15=STYLED_ITEM('',(#14),#13);",
-    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("tests/data/ap08_context_styles.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode context-qualified style witness");
 
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(result.ir().model.appearance_bindings.len(), 1);
@@ -807,6 +796,44 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#3"));
+}
+
+#[test]
+fn context_style_retention_is_independent_of_style_set_order() {
+    for source in [
+        include_bytes!("tests/data/ap08_context_styles.p21").as_slice(),
+        include_bytes!("tests/data/ap08_context_styles_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode context style order witness");
+        assert!(result.ir().model.appearance_bindings.iter().all(|binding| {
+            !matches!(
+                &binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Point(point)
+                    if point.0 == "step:data:point#3"
+            )
+        }));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+                && loss.message.contains("#10 in #5")
+                && loss.message.contains("#11 in #7")
+        }));
+        let unknowns = result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena");
+        for id in [
+            "step:data:styled_item#12",
+            "step:data:presentation_style_by_context#10",
+            "step:data:presentation_style_by_context#11",
+        ] {
+            assert!(
+                unknowns.iter().any(|record| record.id.0 == id),
+                "missing {id}"
+            );
+        }
+    }
 }
 
 #[test]

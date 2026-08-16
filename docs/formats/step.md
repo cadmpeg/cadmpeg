@@ -1533,7 +1533,9 @@ and applies it only in its `style_context`. `style_context` can be a `group`,
 only context-qualified styles. ISO 10303-43 relates an item to a
 representation context when the item is directly in a representation for that
 context or is reached through any number of intervening representation or
-founded items. Distinct contexts have no format-defined precedence.
+founded items. The `style_context` reference is the branch discriminator;
+direct membership in a representation does not select a context-qualified
+style branch. Distinct contexts have no format-defined precedence.
 
 CADIR decision: the STEP decoder has no requested presentation context. It
 retains context-qualified style branches and their owning styled items as
