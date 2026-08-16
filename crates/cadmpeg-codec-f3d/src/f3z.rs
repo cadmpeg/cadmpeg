@@ -136,6 +136,7 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
     Ok(XrefTable {
         designs: namespace.arena_as("xref_designs").map_err(invalid)?,
         references: namespace.arena_as("xref_references").map_err(invalid)?,
+        placement_failures: Vec::new(),
     })
 }
 

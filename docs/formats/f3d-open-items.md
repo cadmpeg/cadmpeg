@@ -256,16 +256,6 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** We must know the targets to write a complete occurrence placement. A reader takes the target path, the discriminators, and the transform without them.
 
-### XR-07. Absent occurrence transform against the identity placement
-
-**Question.** How does a reader separate an occurrence that stores no transform from an occurrence whose placement did not decode?
-
-**Known.** `f3d.md` §1.4 states that an external occurrence without a serialized transform places the target document unchanged. `project_occurrences` in `xref.rs` substitutes the identity matrix for an absent transform. The absence has two causes: the record carried the identity marker, which is the documented form, and the placement did not decode or no placement named the role.
-
-The `.f3z` merge writes the note `(identity placement)` for the first cause. The plain `.f3d` path writes nothing, and `DesignProjectionGaps` holds no counter for a missing occurrence transform.
-
-**Need.** A component placed at the origin because its placement failed is indistinguishable from a component the document places at the origin. The decode must record a loss for the second cause.
-
 ## 3. Material assets
 
 ### MA-03. Distance unit-tag values

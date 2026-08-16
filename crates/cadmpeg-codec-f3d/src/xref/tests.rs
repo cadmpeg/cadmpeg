@@ -24,6 +24,7 @@ use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -60,6 +61,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             neutron_data: "data".into(),
             transform: Some(transform),
         }],
+        placement_failures: Vec::new(),
     };
 
     let occurrences = super::project_occurrences(&table);
@@ -222,6 +224,20 @@ fn identity_marked_placement_stores_no_matrix() {
 }
 
 #[test]
+fn malformed_role_placement_is_retained_as_a_decode_failure() {
+    let mut bytes = occurrence_record("role", 10, &[1], None);
+    bytes.pop();
+    let records = super::indexed_records(&bytes);
+
+    let (placements, failures) =
+        super::occurrence_placements_with_failures(&bytes, &records, None, None);
+
+    assert!(placements.is_empty());
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].link_names, vec!["role"]);
+}
+
+#[test]
 fn tagged_placement_tail_requires_the_modern_serializer_magic() {
     let modern = occurrence_record_with_serializer_magic(
         "role",
@@ -318,6 +334,67 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
         .transform
         .expect("tagged placement transform");
     assert!((transform[0][3] - 7.0).abs() < 1e-12);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::XrefPlacementUndecoded.kind()));
+}
+
+#[test]
+fn malformed_typed_role_placement_reports_a_loss() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let properties =
+        br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
+    let mut placement = occurrence_record_with_serializer_magic(
+        role,
+        10,
+        &[1],
+        None,
+        Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+    );
+    placement.pop();
+    placement[4..7].copy_from_slice(b"256");
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("Properties.dat", stored).unwrap();
+    zip.write_all(&(properties.len() as u32).to_le_bytes())
+        .unwrap();
+    zip.write_all(properties).unwrap();
+    zip.start_file("RedirectionsStream.dat", stored).unwrap();
+    zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
+        .unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design_metastream_with_records(
+        &[(
+            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &[10],
+        )],
+        &[(10, 0)],
+    ))
+    .unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&placement).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("synthetic malformed placement archive");
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind())
+        .expect("typed placement loss");
+    assert!(loss.message.contains("part.f3d"));
+    assert!(loss.message.contains(role));
 }
 
 #[test]

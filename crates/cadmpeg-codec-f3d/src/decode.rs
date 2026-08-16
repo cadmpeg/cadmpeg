@@ -2671,6 +2671,7 @@ impl<'a> F3dDecodeSession<'a> {
             annotate_docstruct(&mut self.ir, scan);
             match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
                 Ok(Some(table)) => {
+                    report_xref_placement_failures(&mut self.report, &table);
                     self.ir.model.occurrences = crate::xref::project_occurrences(&table);
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
@@ -2692,6 +2693,7 @@ impl<'a> F3dDecodeSession<'a> {
             let xref_table =
                 crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
             if let Ok(Some(table)) = &xref_table {
+                report_xref_placement_failures(&mut self.report, table);
                 self.ir.model.occurrences = crate::xref::project_occurrences(table);
                 crate::xref::bind_component_insert_features(
                     &mut self.ir.model.features,
@@ -3378,6 +3380,27 @@ fn annotate_docstruct(ir: &mut CadIr, scan: &ContainerScan) {
 fn xref_parse_loss(error: &CodecError) -> LossNote {
     F3dLossCode::XrefTableUndecoded
         .note(format!("external-reference table was not decoded: {error}"))
+}
+
+/// Report typed occurrence placements whose role path was readable but whose
+/// generation-specific payload did not close and had no valid carrier.
+fn report_xref_placement_failures(report: &mut DecodeReport, table: &crate::xref::XrefTable) {
+    for ordinal in &table.placement_failures {
+        let Some(reference) = table
+            .references
+            .iter()
+            .find(|reference| reference.ordinal == *ordinal)
+        else {
+            continue;
+        };
+        report
+            .losses
+            .push(F3dLossCode::XrefPlacementUndecoded.note(format!(
+                "external occurrence {} for role {} has a typed placement record that did not \
+                 decode under its generation grammar; no valid placement carrier was available",
+                reference.relative_path, reference.neutron_role
+            )));
+    }
 }
 
 /// Classify a mesh-body document.

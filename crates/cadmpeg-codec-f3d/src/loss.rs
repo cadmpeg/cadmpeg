@@ -108,6 +108,8 @@ pub enum F3dLossCode {
     MeshAttributeNotTransferred,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
+    /// A typed occurrence placement named a role but failed its payload grammar.
+    XrefPlacementUndecoded,
     /// Mesh body geometry stores vertex coordinates at f32 precision.
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
@@ -203,6 +205,7 @@ impl F3dLossCode {
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
+        Self::XrefPlacementUndecoded,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::AssemblyComponentsExternal,
@@ -279,6 +282,7 @@ impl F3dLossCode {
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
+            Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::AssemblyComponentsExternal => "assembly.components-external",
@@ -347,7 +351,8 @@ impl F3dLossCode {
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefUnitsMismatch => LossTaxonomy::AssemblyComponentsExternal,
+            | Self::XrefUnitsMismatch
+            | Self::XrefPlacementUndecoded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
@@ -489,6 +494,7 @@ mod tests {
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
+                "xref.placement-undecoded",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "assembly.components-external",

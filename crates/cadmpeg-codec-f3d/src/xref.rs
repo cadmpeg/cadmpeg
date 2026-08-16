@@ -43,6 +43,10 @@ pub struct XrefTable {
     pub designs: Vec<XrefDesign>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
     pub references: Vec<XrefReference>,
+    /// Source reference ordinals whose role-named placement records were
+    /// admitted by the type table but did not close under the generation's
+    /// placement grammar and had no other valid placement carrier.
+    pub(crate) placement_failures: Vec<u32>,
 }
 
 /// The `docstruct` document-type declaration of a JSON `Properties.dat`.
@@ -212,6 +216,7 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
     Ok(XrefTable {
         designs,
         references,
+        placement_failures: Vec::new(),
     })
 }
 
@@ -371,18 +376,19 @@ fn bind_occurrences(
             (None, None)
         };
         let headers = indexed_records(bytes);
-        let placements = occurrence_placements_filtered(
+        let (placements, failures) = occurrence_placements_with_failures(
             bytes,
             &headers,
             serializer_magic,
             placement_offsets.as_ref(),
         );
-        streams.push((placements, crate::ids::native_scope(&entry.name)));
+        streams.push((placements, failures, crate::ids::native_scope(&entry.name)));
     }
     let mut expanded = Vec::new();
+    let mut placement_failures = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
-        for (placements, stream) in &streams {
+        for (placements, _, stream) in &streams {
             let direct = select_component_insert_transforms(
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
@@ -399,6 +405,26 @@ fn bind_occurrences(
             ));
         }
         if occurrences.is_empty() {
+            if streams.iter().any(|(_, failures, stream)| {
+                let direct = select_component_insert_transforms(
+                    scopes.iter().filter_map(|scope| {
+                        let stream = crate::ids::native_stream(&scope.id)?;
+                        let construction = scope.component_insert_construction.as_ref()?;
+                        Some((stream, construction))
+                    }),
+                    stream,
+                    &reference.neutron_role,
+                );
+                direct.is_empty()
+                    && failures.iter().any(|failure| {
+                        failure
+                            .link_names
+                            .iter()
+                            .any(|name| name == &reference.neutron_role)
+                    })
+            }) {
+                placement_failures.push(reference.ordinal);
+            }
             expanded.push(reference.clone());
             continue;
         }
@@ -414,6 +440,7 @@ fn bind_occurrences(
         }
     }
     table.references = expanded;
+    table.placement_failures = placement_failures;
     Ok(())
 }
 
@@ -542,6 +569,12 @@ struct OccurrencePlacement {
     transform: Option<[[f64; 4]; 4]>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OccurrencePlacementFailure {
+    /// Link names recovered from the valid target-path prefix.
+    link_names: Vec<String>,
+}
+
 /// Parse every indexed record that closes exactly under the occurrence-placement
 /// grammar, in record order.
 #[cfg(test)]
@@ -555,53 +588,46 @@ fn occurrence_placements(
 
 /// Parse occurrence-placement records, optionally restricted by the
 /// `MetaStream` type-table admission set.
+#[cfg(test)]
 fn occurrence_placements_filtered(
     bytes: &[u8],
     records: &[IndexedRecord],
     serializer_magic: Option<u32>,
     typed_offsets: Option<&HashSet<usize>>,
 ) -> Vec<OccurrencePlacement> {
+    occurrence_placements_with_failures(bytes, records, serializer_magic, typed_offsets).0
+}
+
+/// Parse admitted placement records and retain role names from records whose
+/// target path is valid but whose remaining generation-specific payload is not.
+fn occurrence_placements_with_failures(
+    bytes: &[u8],
+    records: &[IndexedRecord],
+    serializer_magic: Option<u32>,
+    typed_offsets: Option<&HashSet<usize>>,
+) -> (Vec<OccurrencePlacement>, Vec<OccurrencePlacementFailure>) {
+    let mut placements = Vec::new();
+    let mut failures = Vec::new();
     records
         .iter()
         .filter(|record| typed_offsets.is_none_or(|offsets| offsets.contains(&record.offset)))
-        .filter_map(|record| {
-            occurrence_placement(bytes.get(record.offset..record.end)?, serializer_magic)
-        })
-        .collect()
+        .for_each(|record| {
+            let Some(body) = bytes.get(record.offset..record.end) else {
+                return;
+            };
+            if let Some(placement) = occurrence_placement(body, serializer_magic) {
+                placements.push(placement);
+            } else if let Some((link_names, _, _)) = occurrence_path(body) {
+                failures.push(OccurrencePlacementFailure { link_names });
+            }
+        });
+    (placements, failures)
 }
 
 /// Parse one record body, header included, requiring the member sequence to end
 /// exactly at the record end.
 fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<OccurrencePlacement> {
-    // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
-    // LP-ASCII record name.
-    let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
-    let mut at = after_tag.checked_add(8)?;
-    let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
-    at = after_name;
-    if body.get(at) != Some(&1) {
-        return None;
-    }
-    at += 1;
-    let count = usize::try_from(View::u32_le_at(body, at)?).ok()?;
-    if count == 0 || count > 4096 {
-        return None;
-    }
-    at += 4;
-    let mut link_names = Vec::new();
-    let mut discriminators = Vec::with_capacity(count);
-    for _ in 0..count {
-        let element = take_reference(body, &mut at)?;
-        if let Some(link_name) = element.link_name {
-            link_names.push(link_name);
-        }
-        discriminators.push(View::u32_le_at(body, at)?);
-        at += 4;
-    }
-    if body.get(at) != Some(&0) {
-        return None;
-    }
-    at += 1;
+    let (link_names, discriminators, at) = occurrence_path(body)?;
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
@@ -636,6 +662,40 @@ fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<Oc
         }
     }
     None
+}
+
+/// Parse the target-path prefix shared by every occurrence-placement form.
+fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, Vec<u32>, usize)> {
+    // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
+    // LP-ASCII record name.
+    let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
+    let mut at = after_tag.checked_add(8)?;
+    let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
+    at = after_name;
+    if body.get(at) != Some(&1) {
+        return None;
+    }
+    at += 1;
+    let count = usize::try_from(View::u32_le_at(body, at)?).ok()?;
+    if count == 0 || count > 4096 {
+        return None;
+    }
+    at += 4;
+    let mut link_names = Vec::new();
+    let mut discriminators = Vec::with_capacity(count);
+    for _ in 0..count {
+        let element = take_reference(body, &mut at)?;
+        if let Some(link_name) = element.link_name {
+            link_names.push(link_name);
+        }
+        discriminators.push(View::u32_le_at(body, at)?);
+        at += 4;
+    }
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    Some((link_names, discriminators, at))
 }
 
 /// Consume the three reference runs that close a placement, returning `Some`

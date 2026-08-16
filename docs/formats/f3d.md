@@ -197,6 +197,8 @@ The counted reference run after the matrix reaches both local and cross-document
 
 The transform belongs to the occurrence record rather than the referenced target. Each reference placement projects as one root external occurrence whose target path is `relativePath`; translation converts from centimetres to millimetres. An external occurrence without a serialized transform places the target document's model in the referencing document's frame unchanged.
 
+A type-admitted occurrence placement whose target path parses but whose remaining payload does not close under the selected generation grammar is an undecoded placement, not an identity placement. When no scope-bound construction carrier or other valid placement names the same occurrence role, the decoder retains the container reference at identity and records an `xref.placement-undecoded` loss. An identity marker that closes the placement record is not a loss, and a role with no placement record is not a placement decode failure.
+
 ### 1.5 Multi-document archives (`.f3z`)
 
 A `.f3z` is a ZIP archive holding `Manifest.json`, `DesignDescription.json`, and one `.f3d` member per document.
