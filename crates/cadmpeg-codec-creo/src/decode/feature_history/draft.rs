@@ -679,12 +679,14 @@ pub(in super::super) fn schema_feature_definition(
     if numbered_feature_name_has_family(kind, "Extrude")
         && !feature_is_sheet_extrusion(scan, feature_id)
     {
-        return extrude_feature_definition_with_profile(
-            scan,
-            ir,
-            feature_id,
-            BooleanOp::Unresolved,
+        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let op = section_sweep_boolean_operation(
+            feature_recipe_effect(scan, feature_id),
+            kind,
+            output_kind.is_some(),
+            preceding_features_establish_body(ir),
         );
+        return extrude_feature_definition_with_profile(scan, ir, feature_id, op);
     }
     if schema_class == 942
         && class_942_boundary_surface_entity_graph(

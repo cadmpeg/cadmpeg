@@ -9,7 +9,7 @@ use crate::decode::analytic::{
 use crate::decode::build::has_transferred_geometry;
 use crate::decode::feature_history::{
     full_turn_revolution_carrier_axis, named_feature_definition, resolved_revolution_axis,
-    revolution_axis_for_transfer,
+    revolution_axis_for_transfer, schema_feature_definition,
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
@@ -31,7 +31,10 @@ use crate::decode::sweep::{
 };
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Angle, BooleanOp, Length, RevolutionAxis, RevolveExtent, Termination};
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length, RevolutionAxis,
+    RevolveExtent, Termination,
+};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -670,6 +673,29 @@ fn named_extrude_with_evaluated_body_is_new_body() {
         named_feature_definition(&scan, &ir, 822, "Extrude")
     else {
         panic!("named extrude definition");
+    };
+    assert_eq!(op, BooleanOp::NewBody);
+    assert_eq!(solid, Some(true));
+}
+
+#[test]
+fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
+    let scan = crate::container::scan_bytes(Vec::new());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    let IrFeatureDefinition::Extrude { op, solid, .. } =
+        schema_feature_definition(&scan, &ir, 822, 0, "Extrude 822")
+    else {
+        panic!("schema numbered extrude definition");
     };
     assert_eq!(op, BooleanOp::NewBody);
     assert_eq!(solid, Some(true));
