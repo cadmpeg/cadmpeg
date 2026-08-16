@@ -741,11 +741,18 @@ pub(crate) fn parse_units(
     })
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum RenderingAttributesKind {
+    Layer,
+    Object,
+}
+
 /// Parses and consumes one bounded rendering-attributes payload.
 pub(crate) fn parse_rendering_attributes(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    kind: RenderingAttributesKind,
     warnings: &mut Vec<String>,
 ) -> Result<Range<usize>, FramingError> {
     let start = reader.position();
@@ -758,8 +765,8 @@ pub(crate) fn parse_rendering_attributes(
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let major = payload.i32()?;
-    let _minor = payload.i32()?;
-    if major != 1 {
+    let minor = payload.i32()?;
+    if major != 1 || (matches!(kind, RenderingAttributesKind::Object) && minor < 1) {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported rendering-attributes version",
@@ -811,6 +818,84 @@ pub(crate) fn parse_rendering_attributes(
         material_payload.skip_remaining()?;
         children.push(material.range());
         payload.skip(material.next_offset - payload.position())?;
+    }
+    if matches!(kind, RenderingAttributesKind::Object) {
+        let mapping_count = crate::chunks::checked_count_bytes(
+            payload.i32()?,
+            1,
+            payload.remaining(),
+            MAX_ARRAY_ITEMS,
+            payload.position(),
+        )?;
+        for _ in 0..mapping_count {
+            let mapping =
+                crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
+            if mapping.typecode != ANONYMOUS || mapping.short {
+                return Err(FramingError::structural(
+                    payload.position(),
+                    "rendering mapping reference must be anonymous",
+                ));
+            }
+            if let Some(warning) = checksum_warning(data, &mapping)? {
+                warnings.push(warning);
+            }
+            let mut mapping_payload =
+                BoundedReader::new(data, mapping.body.start, mapping.body.end)?;
+            if mapping_payload.i32()? != 1 {
+                return Err(FramingError::structural(
+                    mapping_payload.position() - 4,
+                    "unsupported rendering mapping reference version",
+                ));
+            }
+            mapping_payload.skip(16)?;
+            let channel_count = crate::chunks::checked_count_bytes(
+                mapping_payload.i32()?,
+                1,
+                mapping_payload.remaining(),
+                MAX_ARRAY_ITEMS,
+                mapping_payload.position(),
+            )?;
+            for _ in 0..channel_count {
+                let channel = crate::chunks::chunk_at(
+                    data,
+                    mapping_payload.position(),
+                    mapping_payload.end(),
+                    archive,
+                    false,
+                )?;
+                if channel.typecode != ANONYMOUS || channel.short {
+                    return Err(FramingError::structural(
+                        mapping_payload.position(),
+                        "rendering mapping channel must be anonymous",
+                    ));
+                }
+                let mut channel_payload =
+                    BoundedReader::new(data, channel.body.start, channel.body.end)?;
+                if channel_payload.i32()? != 1 {
+                    return Err(FramingError::structural(
+                        channel_payload.position() - 4,
+                        "unsupported rendering mapping channel version",
+                    ));
+                }
+                let channel_minor = channel_payload.i32()?;
+                channel_payload.skip(4 + 16)?;
+                if channel_minor >= 1 {
+                    channel_payload.skip(16 * 8)?;
+                }
+                channel_payload.skip_remaining()?;
+                mapping_payload.skip(channel.next_offset - mapping_payload.position())?;
+            }
+            mapping_payload.skip_remaining()?;
+            children.push(mapping.range());
+            payload.skip(mapping.next_offset - payload.position())?;
+        }
+        if minor >= 2 {
+            payload.bool()?;
+            payload.bool()?;
+        }
+        if minor >= 3 {
+            payload.bool()?;
+        }
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
@@ -1167,7 +1252,14 @@ fn parse_layer(
     };
     let rendering_range = if version.1 >= 7 {
         Some(
-            parse_rendering_attributes(data, &mut reader, archive, warnings).map_err(|error| {
+            parse_rendering_attributes(
+                data,
+                &mut reader,
+                archive,
+                RenderingAttributesKind::Layer,
+                warnings,
+            )
+            .map_err(|error| {
                 FramingError::structural(reader.position(), format!("rendering: {error}"))
             })?,
         )

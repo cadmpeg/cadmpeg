@@ -154,6 +154,16 @@ applies the minor 1 through 9 gates for the scale-value, font, text-mask, and
 control fields, and ends at the anonymous chunk boundary for later minors.
 The Rust dimension-style reader mirrors that prefix, each gate, and the later-
 minor boundary.
+`ON_RenderingAttributes::Write/Read` is the layer form: the writer emits
+anonymous version 1.0 with a material-reference array, and the major-1 reader
+consumes that array without a minor gate. `ON_ObjectRenderingAttributes` is the
+object form: its writer emits version 1.3 with material and mapping-reference
+arrays, then shadow flags at minor 2 and advanced texture preview at minor 3;
+its reader requires major 1 and minor at least 1, consumes those gates, and
+ends at the object chunk boundary for later minors. `ON_MappingRef` and
+`ON_MappingChannel` provide the nested mapping-array grammar; the latter adds
+its 16-double transform at minor 1. The Rust object and layer readers now
+select the correct outer class and consume the complete known object prefix.
 Remaining strict rules are writer-band ceilings, direct readers with other
 version families, tagged item streams with explicit terminators, or versioned
 readers whose exact producer field gates have not yet been characterized

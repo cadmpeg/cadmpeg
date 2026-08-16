@@ -118,7 +118,12 @@ pub(crate) fn fixed_attributes(minor: u8, mode: u8, visible: Option<bool>) -> Ve
         let rendering = crc_chunk(
             ArchiveVersion::V4,
             0x4000_8000,
-            &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            &[
+                1, 0, 0, 0, 3, 0, 0, 0, // object rendering version 1.3
+                0, 0, 0, 0, // material-reference count
+                0, 0, 0, 0, // mapping-reference count
+                1, 1, 0, // casts shadows, receives shadows, advanced preview
+            ],
         );
         bytes.extend(rendering);
     }

@@ -686,6 +686,7 @@ pub(crate) fn parse_attributes(
                 bytes,
                 &mut reader,
                 archive,
+                settings::RenderingAttributesKind::Object,
                 warnings,
             )?)
         } else {
@@ -866,6 +867,7 @@ pub(crate) fn parse_attributes(
                     bytes,
                     &mut reader,
                     archive,
+                    settings::RenderingAttributesKind::Object,
                     warnings,
                 )?);
             }

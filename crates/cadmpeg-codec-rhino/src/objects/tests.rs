@@ -134,7 +134,12 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
     let rendering = crc_chunk(
         ArchiveVersion::V8,
         0x4000_8000,
-        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        &[
+            1, 0, 0, 0, 3, 0, 0, 0, // object rendering version 1.3
+            0, 0, 0, 0, // material-reference count
+            0, 0, 0, 0, // mapping-reference count
+            1, 1, 0, // casts shadows, receives shadows, advanced preview
+        ],
     );
     let model_attributes = crc_chunk(ArchiveVersion::V8, 0x4000_8002, &[]);
     let mut direct_linetype = vec![2, 0, 0, 0, 1, 0, 0, 0];
@@ -269,6 +274,25 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
     assert!(parsed.embedded_section_style.is_some());
     assert_eq!(parsed.clipping_plane_label_style, 2);
     assert!(parsed.selective_clipping_list);
+}
+
+#[test]
+fn object_rendering_attributes_require_minor_one() {
+    let rendering = crc_chunk(
+        ArchiveVersion::V8,
+        0x4000_8000,
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    );
+    let bytes = tagged_attributes(&[(5, rendering)], 0);
+    assert!(crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .is_err());
 }
 
 #[test]

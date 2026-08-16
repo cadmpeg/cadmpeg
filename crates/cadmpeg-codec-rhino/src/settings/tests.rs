@@ -314,6 +314,69 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
 }
 
 #[test]
+fn rendering_attributes_accept_layer_future_minor_suffix() {
+    let bytes = crc_chunk(
+        ArchiveVersion::V8,
+        0x4000_8000,
+        &[1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0xaa, 0xbb],
+    );
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
+    let mut warnings = Vec::new();
+    let range = settings::parse_rendering_attributes(
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V8,
+        settings::RenderingAttributesKind::Layer,
+        &mut warnings,
+    )
+    .expect("layer reader preserves a later anonymous minor suffix");
+    assert_eq!(range, 0..bytes.len());
+    assert!(warnings.is_empty());
+}
+
+#[test]
+fn rendering_attributes_parse_object_mapping_and_future_suffix() {
+    let mut channel_body = 7_i32.to_le_bytes().to_vec();
+    channel_body.extend(uuid_bytes());
+    for value in 0..16 {
+        channel_body.extend((value as f64).to_le_bytes());
+    }
+    let channel = anonymous_chunk(ArchiveVersion::V8, 1, &channel_body);
+    let mut mapping_body = uuid_bytes();
+    mapping_body.extend(1_i32.to_le_bytes());
+    mapping_body.extend(channel);
+    let mapping = anonymous_chunk(ArchiveVersion::V8, 0, &mapping_body);
+
+    let mut rendering_body = vec![1, 0, 0, 0, 4, 0, 0, 0];
+    rendering_body.extend(0_i32.to_le_bytes());
+    rendering_body.extend(1_i32.to_le_bytes());
+    let mapping_start = rendering_body.len();
+    rendering_body.extend(mapping);
+    let mapping_end = rendering_body.len();
+    rendering_body.extend([1, 0, 1]);
+    rendering_body.extend([0xaa, 0xbb]);
+    #[allow(clippy::single_range_in_vec_init)] // The range is one direct child.
+    let bytes = crc_chunk_excluding(
+        ArchiveVersion::V8,
+        0x4000_8000,
+        &rendering_body,
+        &[mapping_start..mapping_end],
+    );
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
+    let mut warnings = Vec::new();
+    let range = settings::parse_rendering_attributes(
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V8,
+        settings::RenderingAttributesKind::Object,
+        &mut warnings,
+    )
+    .expect("object reader consumes mapping channels and leaves the suffix bounded");
+    assert_eq!(range, 0..bytes.len());
+    assert!(warnings.is_empty());
+}
+
+#[test]
 fn future_linetype_extension_stops_at_unknown_code() {
     let archive = ArchiveVersion::V8;
     let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);

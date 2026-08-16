@@ -1246,9 +1246,9 @@ References to the original index therefore resolve to the first record.
 
 ### 8.4 Rendering attributes
 
-Rendering attributes are shared by layer records and object attributes. The
-outer record is a long `TCODE_ANONYMOUS_CHUNK` with a CRC32-selected typecode.
-Its payload is:
+Layer records and object attributes use different rendering-attributes classes.
+Both outer records are long `TCODE_ANONYMOUS_CHUNK` records with a CRC32-selected
+typecode. A layer uses `ON_RenderingAttributes`:
 
 ```text
 i32 anonymous major = 1
@@ -1257,12 +1257,36 @@ i32 material-reference count
 count × anonymous material-reference chunk
 ```
 
-The count is nonnegative. Each material reference is a long
-`TCODE_ANONYMOUS_CHUNK` with this payload:
+The layer reader requires major 1 and reads the material-reference array. The
+minor value does not gate another known field; later bytes before the outer
+chunk end are a bounded suffix. The material-reference count is nonnegative.
+
+An object uses `ON_ObjectRenderingAttributes`. The writer emits minor 3. Its
+known prefix is:
 
 ```text
 i32 anonymous major = 1
-i32 anonymous minor = 0 or 1
+i32 anonymous minor
+i32 material-reference count
+count × anonymous material-reference chunk
+i32 mapping-reference count
+count × anonymous mapping-reference chunk
+minor >= 2: bool casts shadows
+minor >= 2: bool receives shadows
+minor >= 3: bool advanced texture preview
+```
+
+The object reader requires major 1 and minor at least 1. Minor 1 ends after
+the two arrays; minor 2 appends the two shadow flags; minor 3 appends the
+advanced-texture-preview flag. A later minor keeps this prefix and leaves the
+remaining bytes before the outer chunk end as a bounded suffix. Each `bool` is
+one byte. Both array counts are nonnegative.
+
+Each material reference is a long `TCODE_ANONYMOUS_CHUNK` with this payload:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor
 UUID plug-in ID                         16 bytes
 UUID front-face material ID             16 bytes
 i32 obsolete mapping-channel count
@@ -1273,13 +1297,40 @@ minor >= 1:
   u8 reserved[3]
 ```
 
-The obsolete mapping-channel array contains exactly the declared number of
-mapping-channel records. Its count is zero, so no mapping-channel bytes follow
-the count. Material-reference minor 0 ends after the empty mapping array.
-Minor 1 appends the back-face material UUID, one-byte material-source selector,
-and three reserved bytes in that order. Both anonymous chunks end exactly
-after their version-gated fields; their counts and nested chunk boundaries
-cannot exceed the containing rendering-attributes chunk.
+The current material-reference writer emits minor 1 and a zero obsolete
+mapping-channel count. A minor 0 record ends after the empty obsolete array.
+Minor 1 and later append the back-face material UUID, one-byte material-source
+selector, and three reserved bytes in that order. Later material-reference
+bytes are a bounded suffix after the fields selected by the minor. The
+material count and nested chunk boundaries cannot exceed the containing
+rendering-attributes chunk.
+
+An object mapping reference is a long anonymous chunk with this payload:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor = 0 when written
+UUID plug-in ID                         16 bytes
+i32 mapping-channel count
+count × anonymous mapping-channel chunk
+```
+
+The reader requires major 1 and reads the channel array; a later minor leaves
+its remaining bytes as a bounded suffix. A mapping channel is a long
+anonymous chunk:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor = 1 when written
+i32 mapping-channel ID
+UUID mapping ID                          16 bytes
+minor >= 1: ON_Xform, 16 × f64
+```
+
+The mapping-channel reader requires major 1. Minor 0 ends after the mapping
+ID; minor 1 and later include the 4×4 object transform, followed by any
+bounded suffix bytes. All mapping counts are nonnegative. Every child chunk
+has its own CRC and ends within its containing rendering-attributes chunk.
 
 ## 9. Object attributes
 
