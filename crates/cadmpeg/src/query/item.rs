@@ -19,7 +19,7 @@ use super::{detect, print_json, read_input, Artifact};
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
 pub struct ItemArgs {
-    /// Artifact file, or `-` for standard input.
+    /// JSON file, or `-` for standard input.
     pub file: std::path::PathBuf,
     /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as

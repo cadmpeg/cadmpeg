@@ -1,16 +1,15 @@
 # cadmpeg
 
-**One open pipeline for native CAD.**
-
-cadmpeg is a toolchain for reading, inspecting, converting, and writing native CAD files. The CLI converts and inspects documents. The libraries add vendor-file support to other applications.
+A CLI to read, inspect, convert, and write native CAD files. Built on top of libraries that allow other applications to add support for these formats.
 
 Decoders map vendor files into one documented IR: preview meshes, B-rep geometry, design intent, and parametric history where the format carries them. Validators, exporters, and downstream tools share that IR. Progress per format follows an [L0–L9 support ladder](docs/format-support.md#support-ladder).
 
 [Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
 
-## Why cadmpeg
+## Purpose
 
-Native CAD formats are proprietary and sparsely documented. cadmpeg recovers geometry and design data into one IR. Values retain source byte offsets. Inferred values are marked. Unsupported content is reported as loss.
+Native CAD formats are proprietary, sparsely documented and cumbersome to work with.
+Building applications that support these formats requires navigating a maze of translator and SDK services without any open source options. cadmpeg aims to offer an open source solution for this problem.
 
 Format knowledge comes from legally possessed CAD files and public documentation. Vendor SDKs, decompiled binaries, and confidential material are prohibited ([LEGAL.md](LEGAL.md)).
 
@@ -61,17 +60,17 @@ wrote part.step (2125 entities)
 
 ## Format support
 
-- **FreeCAD `.FCStd`** — [L5](docs/format-support.md#support-ladder) (schema 4 / file 1)
-- **Autodesk Fusion `.f3d`** — [L4](docs/format-support.md#support-ladder)
-- **Autodesk Inventor `.ipt`/`.iam`** — [L1](docs/format-support.md#support-ladder)
-- **SolidWorks `.sldprt`** — [L4](docs/format-support.md#support-ladder)
-- **Rhino `.3dm`** — [L1](docs/format-support.md#support-ladder) (archive 50/60/70/80 and V2–V4); [L0](docs/format-support.md#support-ladder) (V1 and archive 5)
-- **Siemens NX `.prt`** — [L3](docs/format-support.md#support-ladder) (selected or terminal-lineage-resolved body images); [L2](docs/format-support.md#support-ladder) (unresolved multi-partition history)
-- **CATIA V5 `.CATPart`** — [L2](docs/format-support.md#support-ladder) (standard-nested); [L1](docs/format-support.md#support-ladder) (other layouts)
-- **Creo `.prt`** — [L1](docs/format-support.md#support-ladder)
-- **STEP Part 21 AP203/AP214/AP242** — [L9](docs/format-support.md#support-ladder)
-- **IGES 5.1/5.2/5.3 Fixed ASCII** — [L8](docs/format-support.md#support-ladder)
-- **ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams** — [L3](docs/format-support.md#support-ladder) (admitted binary and text branches)
+- **FreeCAD `.FCStd`**: [L5](docs/format-support.md#support-ladder) (schema 4 / file 1)
+- **Autodesk Fusion `.f3d`**: [L4](docs/format-support.md#support-ladder)
+- **Autodesk Inventor `.ipt`/`.iam`**: [L1](docs/format-support.md#support-ladder)
+- **SolidWorks `.sldprt`**: [L4](docs/format-support.md#support-ladder)
+- **Rhino `.3dm`**: [L0](docs/format-support.md#support-ladder)
+- **Siemens NX `.prt`**: [L2](docs/format-support.md#support-ladder)
+- **CATIA V5 `.CATPart`**: [L1](docs/format-support.md#support-ladder)
+- **Creo `.prt`**: [L1](docs/format-support.md#support-ladder)
+- **STEP Part 21 AP203/AP214/AP242**: [L9](docs/format-support.md#support-ladder)
+- **IGES 5.1/5.2/5.3 Fixed ASCII**: [L8](docs/format-support.md#support-ladder)
+- **ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams**: [L3](docs/format-support.md#support-ladder) (admitted binary and text branches)
 
 [Format support](docs/format-support.md) holds profiles and scoring rules. [`docs/formats/`](docs/formats/) holds byte semantics and open items.
 
@@ -81,8 +80,6 @@ wrote part.step (2125 entities)
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-Decoders produce the IR. Validators check it. Exporters consume it.
-
 - [CAD IR version 5](docs/cad-ir.md)
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
@@ -90,22 +87,30 @@ Decoders produce the IR. Validators check it. Exporters consume it.
 
 ## CLI
 
-```text
-cadmpeg inspect  part.f3d
-cadmpeg decode   part.f3d -o part.cadir.json
-cadmpeg validate part.cadir.json
-cadmpeg export   part.cadir.json -f step -o part.step
-cadmpeg convert  part.f3d -f step -o part.step
-cadmpeg diff     a.cadir.json b.cadir.json
+Convert a native file to another format:
+
+```sh
+cadmpeg convert part.f3d -f step -o part.step
 ```
 
-Output formats are `cadir`, `step`, `fcstd`, `f3d`, `sldprt`, and `rhino`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection. Use `--step-target` and `--reject-step-losses` for STEP schema selection and strict loss refusal.
+Inspect a native file:
 
-Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 5`. That envelope version is independent of CAD IR `ir_version: "5"`.
+```sh
+cadmpeg inspect part.sldprt
+```
+
+```text
+format: sldprt (detected high)
+container: sldprt-blocks
+entries: 58
+...
+notes:
+  - active Parasolid B-rep candidate: Contents/Config-0-Partition
+```
 
 ## Contributing
 
-Public test files are the most immediate need. If you can dedicate a CAD file to the public domain under CC0, please [donate it to the corpus](corpus/README.md).
+Public test files are the current need. If you can dedicate a CAD file to the public domain under CC0, [donate it to the corpus](corpus/README.md).
 
 Other contributions:
 
@@ -128,10 +133,10 @@ Run an end-to-end smoke test:
 
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
-cadmpeg export cube.cadir.json -f step -o cube.step
+cadmpeg convert cube.cadir.json -f step -o cube.step
 ```
 
-AI-assisted contributions are welcome when reviewed and concise. Clean-room rules still apply: do not pass vendor SDK knowledge through a model.
+AI-assisted contributions are welcome when reviewed and concise. Clean-room rules apply: do not pass vendor SDK knowledge through a model.
 
 ## Licensing
 
