@@ -869,6 +869,8 @@ fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_array_empty(&fields, "display_materials")
         && json_array_empty(&fields, "rendering_materials")
         && json_array_empty(&fields, "clipping_plane_uuids")
+        && json_array_empty_or_missing(&fields, "user_strings")
+        && json_array_empty_or_missing(&fields, "attribute_user_strings")
 }
 
 type NativeFields = serde_json::Map<String, serde_json::Value>;
@@ -890,6 +892,12 @@ fn json_array_empty(fields: &NativeFields, name: &str) -> bool {
         .get(name)
         .and_then(serde_json::Value::as_array)
         .is_some_and(Vec::is_empty)
+}
+
+fn json_array_empty_or_missing(fields: &NativeFields, name: &str) -> bool {
+    fields
+        .get(name)
+        .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty))
 }
 
 fn planar_sheet_brep_payload(

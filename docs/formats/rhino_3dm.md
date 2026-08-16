@@ -730,6 +730,41 @@ skips a later bounded suffix. The userdata payload is owned by the userdata
 class and is skipped at its anonymous-child boundary when no typed reader owns
 that class.
 
+#### 7.2.1 `ON_UserStringList`
+
+The built-in `ON_UserStringList` class uses class UUID and item UUID
+`CE28DE29-F4C5-4FAA-A50A-C3A6849B6329`. Its application UUID is
+`17B3ECDA-17BA-4E45-9E67-A2B8D9BE520D`. Its userdata payload is the body of
+the outer anonymous userdata child from section 7.2. The body contains one
+anonymous major-1, nonnegative-minor list child:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor
+i32 user-string count
+count × anonymous user-string entry
+```
+
+Each entry is an anonymous major-1, nonnegative-minor child:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor
+UTF-16 key
+UTF-16 value
+```
+
+The list and entry readers consume the known fields and skip bytes through
+their own anonymous boundaries. The count is nonnegative and every entry is
+bounded by its child chunk. The writer emits major 1, minor 0 for the list and
+each entry.
+
+`ON_Object::SetUserString` rejects an empty key. A nonempty value updates the
+first existing key using case-insensitive ordinal comparison and preserves
+that entry's key and position. A null or empty value removes the first
+matching entry. A new nonempty key appends an entry. The serialized list keeps
+the resulting order.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -1495,6 +1530,25 @@ The effective display state is object visibility combined with layer visibility.
 Each color, material, linetype, plot color, and plot weight uses the object
 value only when its selector selects the object; otherwise it uses the layer or
 document value.
+
+### 9.3 Attribute userdata
+
+`TCODE_OBJECT_RECORD_ATTRIBUTES_USERDATA` is a long chunk after the object
+attributes chunk. Its body is the class-userdata stream from section 7.2 and
+ends with a short zero `TCODE_OPENNURBS_CLASS_END` marker. Each userdata item
+is a long `TCODE_OPENNURBS_CLASS_USERDATA` chunk. The reader stops at the class
+end marker and skips bounded suffix bytes through the containing record.
+
+The OpenNURBS object-attributes reader invokes the same class-userdata reader
+on the attributes object. After a successful stream read, it removes the
+first user-string entry whose key is `$temp_object$`, using the same
+case-insensitive ordinal comparison as `ON_UserStringList::SetUserString`.
+
+CADIR keeps object user strings and object-attributes user strings as separate
+ordered native arrays. It selects the first serialized `ON_UserStringList`
+item with matching class and item UUID in each owner. It applies the
+`$temp_object$` removal only to the attributes array; it does not merge the
+two arrays or remove that key from geometry userdata.
 
 ## 10. Compressed buffers
 

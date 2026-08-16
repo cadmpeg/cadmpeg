@@ -534,6 +534,7 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     valid_body.extend(1_i32.to_le_bytes());
     valid_body.extend([0; 128]);
     valid_body.extend(crc_chunk(ArchiveVersion::V4, 0x4000_8000, &[9, 8, 7]));
+    valid_body.extend(short_chunk(ArchiveVersion::V4, 0x8002_7fff, 0));
     let valid = long_chunk(ArchiveVersion::V4, 0x0002_7ffd, &valid_body);
     malformed.extend(valid);
     let mut warnings = Vec::new();
@@ -547,6 +548,39 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     assert!(descriptors[0].known);
     assert!(descriptors[0].range.start > 0);
     assert!(!warnings.is_empty());
+}
+
+#[test]
+fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
+    let archive = ArchiveVersion::V5;
+    let mut first = utf16_bytes("CaseKey");
+    first.extend(utf16_bytes("first"));
+    let mut second = utf16_bytes("casekey");
+    second.extend(utf16_bytes("second"));
+    let mut list_body = 2_i32.to_le_bytes().to_vec();
+    list_body.extend(anonymous_chunk(archive, 7, &first));
+    let mut second_entry = anonymous_chunk(archive, 9, &second);
+    second_entry.extend([0xaa, 0xbb]);
+    list_body.extend(second_entry);
+    let mut payload = anonymous_chunk(archive, 3, &list_body);
+    payload.extend([0xde, 0xad]);
+
+    let values = crate::objects::parse_user_string_list(&payload, 0..payload.len(), archive)
+        .expect("user-string list");
+    assert_eq!(
+        values,
+        [
+            ("CaseKey".to_string(), "first".to_string()),
+            ("casekey".to_string(), "second".to_string())
+        ]
+    );
+}
+
+#[test]
+fn user_string_list_rejects_a_negative_count() {
+    let archive = ArchiveVersion::V5;
+    let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
+    assert!(crate::objects::parse_user_string_list(&payload, 0..payload.len(), archive).is_err());
 }
 
 #[test]

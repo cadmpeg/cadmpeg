@@ -11,7 +11,10 @@ use serde::Serialize;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{Record, Scan};
 use crate::loss::RhinoLossCode;
-use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
+use crate::objects::{
+    parse_class_wrapper, parse_class_wrapper_with_userdata, parse_user_string_list,
+    AttributeUserdataDescriptor, UserdataDescriptor, USER_STRING_LIST,
+};
 use crate::settings::utf16;
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -447,7 +450,79 @@ struct ObjectPresentationRecord {
     section_fill_rule: u8,
     clipping_plane_label_style: u8,
     rendering_materials: Vec<RenderingMaterialReference>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    user_strings: Vec<UserStringRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    attribute_user_strings: Vec<UserStringRecord>,
     links: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct UserStringRecord {
+    key: String,
+    value: String,
+}
+
+fn user_string_records(entries: Vec<(String, String)>) -> Vec<UserStringRecord> {
+    entries
+        .into_iter()
+        .map(|(key, value)| UserStringRecord { key, value })
+        .collect()
+}
+
+fn first_user_string_records(
+    data: &[u8],
+    archive: ArchiveVersion,
+    class_userdata: &[UserdataDescriptor],
+    attribute_userdata: &[AttributeUserdataDescriptor],
+    source_offset: usize,
+    losses: &mut Vec<LossNote>,
+) -> (Vec<UserStringRecord>, Vec<UserStringRecord>) {
+    let geometry = class_userdata
+        .iter()
+        .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
+        .and_then(|value| {
+            match parse_user_string_list(data, value.payload_range.clone(), archive) {
+                Ok(entries) => Some(user_string_records(entries)),
+                Err(error) => {
+                    losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
+                        "object user-string userdata at offset {source_offset} could not be transferred: {error}"
+                    )));
+                    None
+                }
+            }
+        })
+        .unwrap_or_default();
+    let mut attributes = attribute_userdata
+        .iter()
+        .find(|value| {
+            value.class_uuid == Some(USER_STRING_LIST) && value.item_uuid == Some(USER_STRING_LIST)
+        })
+        .and_then(|value| {
+            let Some(payload_range) = value.payload_range.clone() else {
+                losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
+                    "object-attributes user-string userdata at offset {source_offset} has no payload"
+                )));
+                return None;
+            };
+            match parse_user_string_list(data, payload_range, archive) {
+                Ok(entries) => Some(user_string_records(entries)),
+                Err(error) => {
+                    losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
+                        "object-attributes user-string userdata at offset {source_offset} could not be transferred: {error}"
+                    )));
+                    None
+                }
+            }
+        })
+        .unwrap_or_default();
+    if let Some(index) = attributes
+        .iter()
+        .position(|value| value.key.eq_ignore_ascii_case("$temp_object$"))
+    {
+        attributes.remove(index);
+    }
+    (geometry, attributes)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -2819,6 +2894,14 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 )));
                         Vec::new()
                     });
+            let (user_strings, attribute_user_strings) = first_user_string_records(
+                scan.data,
+                scan.archive,
+                &object.userdata,
+                &object.attributes_userdata,
+                object.range.start,
+                &mut losses,
+            );
             object_presentation.push(ObjectPresentationRecord {
                 id: format!("rhino:presentation:object#{key}"),
                 source_offset: object.range.start as u64,
@@ -2865,6 +2948,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 section_fill_rule: attributes.section_fill_rule,
                 clipping_plane_label_style: attributes.clipping_plane_label_style,
                 rendering_materials,
+                user_strings,
+                attribute_user_strings,
                 links: vec![format!("rhino:object:record#{source_order:06}")],
             });
         }
@@ -3670,6 +3755,79 @@ mod tests {
         let mut invalid = base;
         invalid[0] = 0x25;
         assert!(parse_v5_dimension_style(&invalid, 0..invalid.len(), 1.0, 322, None).is_err());
+    }
+
+    #[test]
+    fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
+        let geometry = anonymous(
+            0,
+            &[
+                1_i32.to_le_bytes().as_slice(),
+                anonymous(0, &[utf16("GeometryKey"), utf16("geometry value")].concat()).as_slice(),
+            ]
+            .concat(),
+        );
+        let attributes = anonymous(
+            0,
+            &[
+                3_i32.to_le_bytes().as_slice(),
+                anonymous(0, &[utf16("$TEMP_OBJECT$"), utf16("temporary")].concat()).as_slice(),
+                anonymous(
+                    0,
+                    &[utf16("AttributeKey"), utf16("attribute value")].concat(),
+                )
+                .as_slice(),
+                anonymous(0, &[utf16("MixedCase"), utf16("mixed value")].concat()).as_slice(),
+            ]
+            .concat(),
+        );
+        let geometry_start = 0;
+        let attributes_start = geometry.len();
+        let data = [geometry, attributes].concat();
+        let descriptor = |range: Range<usize>| UserdataDescriptor {
+            range: range.clone(),
+            version: (2, 2),
+            class_uuid: USER_STRING_LIST,
+            item_uuid: USER_STRING_LIST,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: range,
+            unknown_version: false,
+        };
+        let attribute_descriptor = |range: Range<usize>| AttributeUserdataDescriptor {
+            range,
+            known: true,
+            class_uuid: Some(USER_STRING_LIST),
+            item_uuid: Some(USER_STRING_LIST),
+            payload_range: Some(attributes_start..data.len()),
+        };
+        let mut losses = Vec::new();
+        let (geometry_values, attribute_values) = first_user_string_records(
+            &data,
+            ArchiveVersion::V8,
+            &[descriptor(geometry_start..attributes_start)],
+            &[attribute_descriptor(attributes_start..data.len())],
+            42,
+            &mut losses,
+        );
+        assert!(losses.is_empty());
+        assert_eq!(geometry_values.len(), 1);
+        assert_eq!(geometry_values[0].key, "GeometryKey");
+        assert_eq!(geometry_values[0].value, "geometry value");
+        assert_eq!(
+            attribute_values
+                .iter()
+                .map(|value| (value.key.as_str(), value.value.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("AttributeKey", "attribute value"),
+                ("MixedCase", "mixed value")
+            ]
+        );
     }
 
     #[test]

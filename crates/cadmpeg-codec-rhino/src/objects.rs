@@ -25,6 +25,9 @@ const CLASS_UUID: u32 = 0x0002_fffb;
 const CLASS_DATA: u32 = 0x0002_fffc;
 const CLASS_END: u32 = 0x8002_7fff;
 const ANONYMOUS: u32 = 0x4000_8000;
+pub(crate) const USER_STRING_LIST: Uuid = Uuid::from_canonical([
+    0xce, 0x28, 0xde, 0x29, 0xf4, 0xc5, 0x4f, 0xaa, 0xa5, 0x0a, 0xc3, 0xa6, 0x84, 0x9b, 0x63, 0x29,
+]);
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
 const HIDDEN_OBJECT_MODE: u8 = 1;
@@ -537,6 +540,54 @@ pub(crate) fn parse_userdata(
     })
 }
 
+/// Reads the built-in `ON_UserStringList` payload from its outer userdata child.
+pub(crate) fn parse_user_string_list(
+    bytes: &[u8],
+    payload_range: Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<Vec<(String, String)>, FramingError> {
+    let list = child(
+        bytes,
+        payload_range.start,
+        payload_range.end,
+        archive,
+        false,
+    )?;
+    require_long(&list, ANONYMOUS)?;
+    let mut reader = BoundedReader::new(bytes, list.body.start, list.body.end)?;
+    let major = reader.i32()?;
+    let minor = reader.i32()?;
+    if major != 1 || minor < 0 {
+        return Err(FramingError::structural(
+            list.body.start,
+            "user-string list version is unsupported",
+        ));
+    }
+    let count = reader.i32()?;
+    let count_bytes = bounded_count(&reader, count, 1)?;
+    let mut values = Vec::with_capacity(count_bytes);
+    for _ in 0..count_bytes {
+        let entry = child(bytes, reader.position(), list.body.end, archive, false)?;
+        require_long(&entry, ANONYMOUS)?;
+        let mut entry_reader = BoundedReader::new(bytes, entry.body.start, entry.body.end)?;
+        let entry_major = entry_reader.i32()?;
+        let entry_minor = entry_reader.i32()?;
+        if entry_major != 1 || entry_minor < 0 {
+            return Err(FramingError::structural(
+                entry.body.start,
+                "user-string entry version is unsupported",
+            ));
+        }
+        let key = settings::utf16(&mut entry_reader)?;
+        let value = settings::utf16(&mut entry_reader)?;
+        entry_reader.skip_remaining()?;
+        values.push((key, value));
+        reader.skip(entry.next_offset - reader.position())?;
+    }
+    reader.skip_remaining()?;
+    Ok(values)
+}
+
 fn parse_history(
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
@@ -1037,6 +1088,12 @@ pub(crate) fn parse_attribute_userdata(
                 break;
             }
         };
+        if item.typecode == CLASS_END {
+            if let Err(error) = require_short_zero(&item, CLASS_END) {
+                warnings.push(format!("attribute userdata end degraded: {error}"));
+            }
+            break;
+        }
         if item.typecode != CLASS_USERDATA || item.short {
             warnings.push(format!(
                 "unknown attribute userdata chunk {:#x} at {}",

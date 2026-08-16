@@ -149,13 +149,20 @@ the nested anonymous 1.3 `ON_DimStyleExtra` payload are defined in section
 20.3. The extra class and item UUID is
 `513FDE53-7284-4065-8601-06CEA8B28D6F`, and the decoder retains its source
 fields under the native dimension-style record.
+The built-in `ON_UserStringList` class userdata is also settled. Its class and
+item UUID is `CE28DE29-F4C5-4FAA-A50A-C3A6849B6329`, its application UUID is
+`17B3ECDA-17BA-4E45-9E67-A2B8D9BE520D`, and section 7.2.1 defines the bounded
+list and entry chunks. The decoder keeps geometry and object-attributes
+user-string lists as separate ordered native arrays and applies the source
+`$temp_object$` cleanup only to the attributes list.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
-built-in hatch gradient userdata, and the V5 dimension-style extra are settled;
-other future class-specific payload semantics remain open.
+built-in hatch gradient userdata, the V5 dimension-style extra, and
+`ON_UserStringList` are settled; other future class-specific payload semantics
+remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

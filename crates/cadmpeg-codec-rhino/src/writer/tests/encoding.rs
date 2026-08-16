@@ -52,3 +52,52 @@ fn object_attribute_items_are_written_in_ascending_order() {
     );
     assert_eq!(&payload[21..], &[6, 255, 128, 0, 0, 11, 0, 13, 1, 0]);
 }
+
+#[test]
+fn nonempty_user_string_presentation_is_refused_before_output() {
+    let mut source = CadIr::empty(Units::default());
+    source.model.points.push(Point {
+        id: PointId("cadir:model:point#user-strings".into()),
+        position: Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
+    });
+    let mut bytes = Vec::new();
+    RhinoEncoder::new(RhinoArchiveVersion::V8)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("required invariant");
+    let mut decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("required invariant");
+    {
+        let mut ir = decoded.ir_mut();
+        let records = ir
+            .native
+            .namespace_mut("rhino")
+            .arenas
+            .get_mut("object_presentation")
+            .expect("decoded object presentation");
+        let original = records.first().expect("decoded object presentation record");
+        let id = original.id().to_string();
+        let mut fields = original.fields();
+        fields.insert(
+            "user_strings".into(),
+            serde_json::json!([{ "key": "name", "value": "value" }]),
+        );
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+    }
+
+    let mut output = vec![0xaa];
+    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: decoded.ir(),
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("user-string metadata must not be discarded");
+    assert!(error.to_string().contains("survival handling"));
+    assert_eq!(output, [0xaa]);
+}
