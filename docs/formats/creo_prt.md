@@ -3721,6 +3721,10 @@ ends independently. The directed cylinder axis is the extrusion direction and
 the common length is the blind extent. Duplicate rows, duplicate cylinder
 parameter records, other generated surface families, missing cylinder
 transfers, or inconsistent carriers leave direction and extent unresolved.
+For a class-29 cap table, each source-less cap identifier must resolve to one
+placed or transferred plane carrier. When both carriers exist, their plane
+equations must agree; a missing, duplicate, non-plane, or conflicting carrier
+leaves the cap extent unresolved.
 
 A transferred same-feature linear-extrusion surface also defines a bounded
 carrier when exactly one NURBS parameter direction is nonperiodic degree one

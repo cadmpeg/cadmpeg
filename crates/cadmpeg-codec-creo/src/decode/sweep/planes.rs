@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature plane equations and generated cylinder and cap extents.
 
-use super::super::analytic::{canonical_plane, dot, PlaneEquation};
+use super::super::analytic::{
+    canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
+};
 use super::super::holes::blind_extrude_side;
 use super::super::sketch::normalized;
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
 use std::collections::BTreeSet;
 
 pub(in super::super) fn feature_plane_equations(
@@ -231,28 +231,12 @@ pub(in super::super) fn generated_cap_plane_extent(
         && table.surface_ids.contains(&start_id?)
         && table.surface_ids.contains(&end_id?))
     .then_some(())?;
+    let local_planes = placed_planes(scan);
     let plane = |surface_id: u32| {
         let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
         (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-        let surfaces = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| surface.id == id)
-            .collect::<Vec<_>>();
-        let [Surface {
-            geometry: SurfaceGeometry::Plane { origin, normal, .. },
-            ..
-        }] = surfaces.as_slice()
-        else {
-            return None;
-        };
-        Some(PlaneEquation {
-            origin: [origin.x, origin.y, origin.z],
-            normal: [normal.x, normal.y, normal.z],
-        })
+        reconciled_model_plane(&local_planes, ir, surface_id)
     };
     ordered_parallel_cap_extent(plane(start_id?)?, plane(end_id?)?)
 }
@@ -321,3 +305,6 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
         direction,
     ))
 }
+
+#[cfg(test)]
+mod tests;
