@@ -138,6 +138,56 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
 }
 
 #[test]
+fn parser_retains_schema_population_metadata_and_reference_uri_spelling() {
+    let bytes = include_bytes!("data/er04_cache_identity.p21");
+    let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse cache identity witness");
+    assert!(diagnostics.is_empty());
+
+    let population = exchange
+        .header
+        .iter()
+        .find(|record| record.name == "SCHEMA_POPULATION")
+        .expect("schema population header");
+    let crate::parse::Value::List(entries) = &population.parameters[0] else {
+        panic!("schema population entries");
+    };
+    assert_eq!(
+        entries,
+        &vec![
+            crate::parse::Value::List(vec![
+                crate::parse::Value::String(b"https://example.invalid/model.p21".to_vec()),
+                crate::parse::Value::String(b"2026-08-15T00:00:00".to_vec()),
+                crate::parse::Value::Omitted,
+            ]),
+            crate::parse::Value::List(vec![
+                crate::parse::Value::String(b"https://example.invalid/model.p21".to_vec()),
+                crate::parse::Value::String(b"2026-08-17T00:00:00".to_vec()),
+                crate::parse::Value::Omitted,
+            ]),
+            crate::parse::Value::List(vec![
+                crate::parse::Value::String(
+                    b"https://example.invalid/model.p21?revision=2".to_vec(),
+                ),
+                crate::parse::Value::String(b"2026-08-17T00:00:00".to_vec()),
+                crate::parse::Value::Omitted,
+            ]),
+        ]
+    );
+    assert_eq!(
+        exchange
+            .references
+            .iter()
+            .map(|reference| reference.uri.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "https://example.invalid/model.p21#shape",
+            "https://example.invalid/./model.p21#shape",
+            "https://example.invalid/model.p21?revision=2#shape",
+        ]
+    );
+}
+
+#[test]
 fn parser_retains_unset_file_name_tail_metadata() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'',$,$);FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("unset producer metadata");

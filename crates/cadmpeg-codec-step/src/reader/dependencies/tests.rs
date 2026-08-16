@@ -139,3 +139,41 @@ fn external_resource_uris_are_reported_without_implicit_access() {
         "https://example.invalid/part.p21#target,file:///var/lib/cadmpeg/part.p21#target,urn:uuid:97c6e1f0-3544-11e5-a2cb-0800200c9a66#target,#97c6e1f0-3544-11e5-a2cb-0800200c9a66"
     );
 }
+
+#[test]
+fn external_resource_metadata_does_not_collapse_uri_references() {
+    let bytes = include_bytes!("../../parse/tests/data/er04_cache_identity.p21");
+    let codec = StepCodec::default();
+    let result = codec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode cache identity witness without resource access");
+
+    assert_eq!(
+        result
+            .report()
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("external reference "))
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "external reference #10 -> https://example.invalid/model.p21#shape",
+            "external reference #11 -> https://example.invalid/./model.p21#shape",
+            "external reference #12 -> https://example.invalid/model.p21?revision=2#shape",
+        ]
+    );
+
+    let summary = codec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("inspect cache identity witness");
+    let references = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "REFERENCE")
+        .expect("REFERENCE inventory");
+    assert_eq!(references.attributes["external_count"], "3");
+    assert_eq!(
+        references.attributes["external_uris"],
+        "https://example.invalid/model.p21#shape,https://example.invalid/./model.p21#shape,https://example.invalid/model.p21?revision=2#shape"
+    );
+}

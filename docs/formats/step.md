@@ -247,6 +247,18 @@ section selectors identify DATA sections. Implementation level `2;1` forbids
 FILE_POPULATION, SECTION_LANGUAGE, and SECTION_CONTEXT; level `3;1` forbids
 SCHEMA_POPULATION.
 
+In a `SCHEMA_POPULATION` triple, the address is the URI of the external
+exchange structure, the timestamp is the time when the resource was last
+visited, and the digest validates the referenced file bytes. If the timestamp
+is later than the timestamp in the referenced exchange's `FILE_NAME`, it
+asserts that the referenced exchange has not changed since the reference was
+created. A digest is permitted only when the referenced exchange has a
+signature section; the digest uses the hash algorithm of that exchange's
+first signature. These fields assert freshness and integrity. Part 21 does
+not define URI normalization, cache keys, validators, content negotiation, or
+equivalence of representations. [ISO 10303-21](https://www.steptools.com/stds/step/IS_final_p21e3.html)
+§8.2.5 and Annex F.4.3 define these meanings.
+
 ## 7. Edition 3 sections
 
 ANCHOR entries bind a resource name to an in-file parameter value and may carry
@@ -363,6 +375,17 @@ binding, verify the target and its schema, and apply its trust, digest or
 signature, unit, and coordinate-context policies before connecting that target
 to a local occurrence. The codec has no implicit cross-resource composition
 step. A missing, refused, or unverified target remains an external dependency.
+
+CADIR decision: the STEP codec has no external-resource cache and does not
+canonicalize URI spellings. A caller byte-cache key uses the resolved URI
+before its fragment, including its scheme, authority, path, and query, plus
+the caller's representation and request policy. The fragment selects an
+anchor after retrieval and is not part of the fetched-byte key. The source URI
+and occurrence remain exact provenance. A verified message digest, with its
+hash algorithm, may permit reuse of bytes across URI keys. A timestamp alone
+does not identify bytes. Different verified digests for one request are a
+conflict; the codec does not merge them. No cache result or retrieved bytes
+enter the decoded graph implicitly.
 
 ## 8. Entity-layer invariants
 
