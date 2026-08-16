@@ -6697,15 +6697,26 @@ fn resolve_singleton_mesh_endpoint_candidates(
         || edge_candidates
             .iter()
             .any(|candidates| candidates.len() != 1 || candidates[0][0] == candidates[0][1])
-        || assignments.iter().any(|face| face.len() != 1)
     {
         return None;
     }
 
     let selected = assignments
         .iter()
-        .map(|face| face.first().cloned())
+        .map(|face| {
+            let mut viable = face.iter().filter_map(|assignment| {
+                let directions = assignment
+                    .boundaries
+                    .iter()
+                    .map(|boundary| singleton_mesh_boundary_directions(boundary, edge_candidates))
+                    .collect::<Option<Vec<_>>>()?;
+                Some((assignment.clone(), directions))
+            });
+            let first = viable.next()?;
+            viable.next().is_none().then_some(first)
+        })
         .collect::<Option<Vec<_>>>()?;
+    let (selected, endpoint_labelled_directions): (Vec<_>, Vec<_>) = selected.into_iter().unzip();
     // An unresolved coedge direction does not select a point endpoint. It is
     // a row-orientation gauge. Let the exact coordinate binding prove the
     // resulting cycle, then try the endpoint-labelled gauge only when the
@@ -6738,16 +6749,6 @@ fn resolve_singleton_mesh_endpoint_candidates(
         return Some(resolved);
     }
 
-    let endpoint_labelled_directions = selected
-        .iter()
-        .map(|assignment| {
-            assignment
-                .boundaries
-                .iter()
-                .map(|boundary| singleton_mesh_boundary_directions(boundary, edge_candidates))
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>()?;
     resolve_singleton_mesh_selection(
         edge_rows,
         vertex_points,
@@ -7388,4 +7389,47 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
     };
     assert_eq!(topology.faces.len(), FACE_COUNT);
     assert_eq!(point_assignment.len(), FACE_COUNT * 4);
+}
+
+#[test]
+fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
+    let edge_rows = (0..3)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    let port_identities = vec![[0, 1], [2, 3], [4, 5]];
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 1,
+        reversed: None,
+    };
+    let assignments = vec![vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1), use_(0)]],
+        },
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1), use_(2)]],
+        },
+    ]];
+
+    let MeshEndpointResolve::Solved(topology, point_assignment) =
+        resolve_singleton_mesh_endpoint_candidates(
+            &edge_rows,
+            &vertex_points,
+            &edge_candidates,
+            &assignments,
+            &port_identities,
+        )
+        .expect("endpoint filtering should leave one face assignment")
+    else {
+        panic!("endpoint filtering did not solve");
+    };
+    assert_eq!(topology.faces.len(), 1);
+    assert_eq!(point_assignment, vec![0, 1, 2]);
 }
