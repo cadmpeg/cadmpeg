@@ -708,21 +708,23 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         knit_class_100_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
         Some(vec![192])
     );
+    let source_missing_entry = table(175, 67, vec![entry(192, 200, None)]);
     assert_eq!(
-        feature_entity_dependencies(&[producer.clone(), consumer.clone()], 416),
-        [175]
-    );
-    let wrong_entry_class = table(175, 67, vec![entry(192, 201, Some(175))]);
-    assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[wrong_entry_class.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids(416, &[source_missing_entry.clone(), consumer.clone()]),
         None
     );
-    assert!(feature_entity_dependencies(&[wrong_entry_class, consumer.clone()], 416).is_empty());
+    assert_eq!(
+        feature_entity_dependencies(&[source_missing_entry, consumer.clone()], 416),
+        [175]
+    );
     assert_eq!(
         knit_class_100_operand_entity_ids(416, &[consumer.clone(), producer.clone()]),
         None
     );
-    assert!(feature_entity_dependencies(&[consumer.clone(), producer.clone()], 416).is_empty());
+    assert_eq!(
+        feature_entity_dependencies(&[consumer.clone(), producer.clone()], 416),
+        [175]
+    );
     assert_eq!(
         native_feature_dependency_ids(
             &[],
