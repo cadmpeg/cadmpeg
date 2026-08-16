@@ -12,6 +12,7 @@ const DISPLACEMENT_SUB: &str = "sub";
 const EDGE_SOFTENING_ROOT: &str = "edge-softening-object-data";
 const THICKENING_ROOT: &str = "thickening-object-data";
 const CURVE_PIPING_ROOT: &str = "curve-piping-object-data";
+const SHUT_LINING_ROOT: &str = "shut-lining-object-data";
 
 /// The class UUID registered by `ON_DisplacementUserData`.
 pub(crate) const DISPLACEMENT_CLASS: Uuid = Uuid::from_canonical([
@@ -53,6 +54,16 @@ pub(crate) const CURVE_PIPING_ITEM: Uuid = Uuid::from_canonical([
     0x2b, 0x1a, 0x75, 0x8e, 0x7c, 0xb1, 0x45, 0xab, 0xa5, 0xbf, 0xdf, 0xcd, 0x6d, 0x3d, 0x13, 0x6d,
 ]);
 
+/// The class UUID registered by `ON_ShutLiningUserData`.
+pub(crate) const SHUT_LINING_CLASS: Uuid = Uuid::from_canonical([
+    0x42, 0x9d, 0xcd, 0x06, 0x56, 0x43, 0x42, 0x54, 0xbd, 0xe8, 0xc0, 0x55, 0x7f, 0x8f, 0xd0, 0x83,
+]);
+
+/// The item UUID returned by `ON_ShutLiningUserData::Uuid`.
+pub(crate) const SHUT_LINING_ITEM: Uuid = Uuid::from_canonical([
+    0x07, 0x50, 0x6e, 0xbe, 0x1d, 0x69, 0x43, 0x45, 0x9f, 0x0d, 0x2b, 0x9a, 0xa1, 0x90, 0x6e, 0xef,
+]);
+
 /// The application UUID registered by `ON_MeshModifier::PlugInId`.
 pub(crate) const MESH_MODIFIER_PLUGIN: Uuid = Uuid::from_canonical([
     0xf2, 0x93, 0xde, 0x5c, 0xd1, 0xff, 0x46, 0x7a, 0x9b, 0xd1, 0xca, 0xc8, 0xec, 0x4b, 0x2e, 0x6b,
@@ -69,6 +80,8 @@ pub(crate) struct MeshModifiers {
     pub(crate) thickening: Option<ThickeningModifier>,
     /// The curve-piping modifier, when the object carries one.
     pub(crate) curve_piping: Option<CurvePipingModifier>,
+    /// The shut-lining modifier, when the object carries one.
+    pub(crate) shut_lining: Option<ShutLiningModifier>,
 }
 
 /// The XML parameters written by `ON_DisplacementUserData`.
@@ -189,6 +202,42 @@ pub(crate) struct CurvePipingModifier {
     pub(crate) cap_type: String,
 }
 
+/// One ordered curve entry written by `ON_ShutLining`.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct ShutLiningCurve {
+    /// Curve object UUID; nil UUIDs are represented as `None`.
+    pub(crate) uuid: Option<Uuid>,
+    /// Shut-line radius.
+    pub(crate) radius: f64,
+    /// Shut-line profile.
+    pub(crate) profile: i32,
+    /// Whether this curve creates a shut-line.
+    pub(crate) enabled: bool,
+    /// Whether the curve is pulled to the surface.
+    pub(crate) pull: bool,
+    /// Whether the curve creates a bump instead of a dent.
+    pub(crate) is_bump: bool,
+}
+
+/// The XML parameters and ordered curves written by `ON_ShutLiningUserData`.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct ShutLiningModifier {
+    /// `ON_XMLUserData` payload version.
+    pub(crate) xml_version: i32,
+    /// Whether shut lining is enabled.
+    pub(crate) on: bool,
+    /// Whether shut lining is faceted.
+    pub(crate) faceted: bool,
+    /// Whether shut lining updates automatically.
+    pub(crate) auto_update: bool,
+    /// Whether shut lining updates are forced.
+    pub(crate) force_update: bool,
+    /// Direct curve children, including empty entries, in serialized order.
+    pub(crate) curves: Vec<ShutLiningCurve>,
+}
+
 /// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
 pub(crate) fn parse_attribute_userdata(
     bytes: &[u8],
@@ -204,10 +253,13 @@ pub(crate) fn parse_attribute_userdata(
         first_matching_descriptor(descriptors, THICKENING_CLASS, THICKENING_ITEM);
     let curve_piping_descriptor =
         first_matching_descriptor(descriptors, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM);
+    let shut_lining_descriptor =
+        first_matching_descriptor(descriptors, SHUT_LINING_CLASS, SHUT_LINING_ITEM);
     if displacement_descriptor.is_none()
         && edge_softening_descriptor.is_none()
         && thickening_descriptor.is_none()
         && curve_piping_descriptor.is_none()
+        && shut_lining_descriptor.is_none()
     {
         return None;
     }
@@ -288,15 +340,36 @@ pub(crate) fn parse_attribute_userdata(
             }
         }
     });
+    let shut_lining = shut_lining_descriptor.and_then(|descriptor| {
+        let Some(payload_range) = descriptor.payload_range.clone() else {
+            warnings.push(format!(
+                "shut-lining userdata at {} has no bounded payload",
+                descriptor.range.start
+            ));
+            return None;
+        };
+        match parse_shut_lining(bytes, payload_range) {
+            Ok(shut_lining) => Some(shut_lining),
+            Err(error) => {
+                warnings.push(format!(
+                    "shut-lining userdata at {} dropped: {error}",
+                    descriptor.range.start
+                ));
+                None
+            }
+        }
+    });
     (displacement.is_some()
         || edge_softening.is_some()
         || thickening.is_some()
-        || curve_piping.is_some())
+        || curve_piping.is_some()
+        || shut_lining.is_some())
     .then_some(MeshModifiers {
         displacement,
         edge_softening,
         thickening,
         curve_piping,
+        shut_lining,
     })
 }
 
@@ -343,6 +416,14 @@ fn parse_curve_piping(
 ) -> Result<CurvePipingModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
     parse_curve_piping_xml(&xml, xml_version)
+}
+
+fn parse_shut_lining(
+    bytes: &[u8],
+    payload_range: std::ops::Range<usize>,
+) -> Result<ShutLiningModifier, FramingError> {
+    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    parse_shut_lining_xml(&xml, xml_version)
 }
 
 fn parse_xml_userdata(
@@ -534,6 +615,52 @@ fn parse_curve_piping_xml(
     })
 }
 
+fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifier, FramingError> {
+    let document = roxmltree::Document::parse(xml).map_err(|error| {
+        FramingError::structural(0, format!("invalid shut-lining XML: {error}"))
+    })?;
+    let root = document.root_element();
+    if !same_name(root, "xml") {
+        return Err(FramingError::structural(
+            0,
+            format!(
+                "shut-lining XML root is `{}`, expected `xml`",
+                root.tag_name().name()
+            ),
+        ));
+    }
+    let shut_lining = direct_child(root, SHUT_LINING_ROOT).ok_or_else(|| {
+        FramingError::structural(
+            0,
+            format!("shut-lining XML has no `{SHUT_LINING_ROOT}` child"),
+        )
+    })?;
+    let curves = shut_lining
+        .children()
+        .filter(|node| node.is_element() && same_name(*node, "curve"))
+        .map(parse_shut_lining_curve)
+        .collect();
+    Ok(ShutLiningModifier {
+        xml_version,
+        on: field_bool(shut_lining, "on", false),
+        faceted: field_bool(shut_lining, "faceted", false),
+        auto_update: field_bool(shut_lining, "auto-update", false),
+        force_update: field_bool(shut_lining, "force-update", false),
+        curves,
+    })
+}
+
+fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> ShutLiningCurve {
+    ShutLiningCurve {
+        uuid: field_uuid_untyped(node, "uuid"),
+        radius: field_f64_untyped(node, "radius", 1.0),
+        profile: field_i32_untyped(node, "profile", 0),
+        enabled: field_bool_untyped(node, "enabled", false),
+        pull: field_bool_untyped(node, "pull", false),
+        is_bump: field_bool_untyped(node, "is-bump", false),
+    }
+}
+
 fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> DisplacementSubItem {
     DisplacementSubItem {
         face_index: field_i32(node, "sub-index", -1),
@@ -660,6 +787,46 @@ fn field_uuid(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
     parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil())
 }
 
+fn field_uuid_untyped(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
+    let node = direct_child(parent, name)?;
+    parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil())
+}
+
+fn field_bool_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> bool {
+    let Some(node) = direct_child(parent, name) else {
+        return default;
+    };
+    let text = node.text().unwrap_or_default().trim();
+    text.eq_ignore_ascii_case("true")
+        || text.eq_ignore_ascii_case("t")
+        || text.parse::<i32>().is_ok_and(|value| value != 0)
+}
+
+fn field_i32_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> i32 {
+    let Some(node) = direct_child(parent, name) else {
+        return default;
+    };
+    let text = node.text().unwrap_or_default().trim();
+    if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
+        1
+    } else {
+        text.parse::<f64>().ok().map_or(0, |value| value as i32)
+    }
+}
+
+fn field_f64_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) -> f64 {
+    let Some(node) = direct_child(parent, name) else {
+        return default;
+    };
+    let text = node.text().unwrap_or_default().trim();
+    let value = text.parse::<f64>().unwrap_or(0.0);
+    if value.is_finite() {
+        value
+    } else {
+        0.0
+    }
+}
+
 fn field_cap_type(parent: roxmltree::Node<'_, '_>, name: &str) -> String {
     let Some(node) = typed_child(parent, name) else {
         return "none".into();
@@ -739,6 +906,18 @@ mod tests {
             0..payload.len(),
             CURVE_PIPING_CLASS,
             CURVE_PIPING_ITEM,
+            application_uuid,
+        )
+    }
+
+    fn shut_lining_descriptor(
+        payload: &[u8],
+        application_uuid: Option<Uuid>,
+    ) -> AttributeUserdataDescriptor {
+        descriptor_with_ids(
+            0..payload.len(),
+            SHUT_LINING_CLASS,
+            SHUT_LINING_ITEM,
             application_uuid,
         )
     }
@@ -825,6 +1004,30 @@ mod tests {
 <accuracy type=\"int\">73</accuracy>\
 <cap-type type=\"string\">flat</cap-type>\
 </curve-piping-object-data></xml>";
+
+    const SHUT_LINING_XML: &str = "<xml><shut-lining-object-data>\
+<on type=\"bool\">true</on>\
+<faceted type=\"bool\">true</faceted>\
+<auto-update type=\"bool\">true</auto-update>\
+<force-update type=\"bool\">true</force-update>\
+<curve/>\
+<curve>\
+<uuid>10000000-0000-0000-0000-000000000001</uuid>\
+<radius>0.25</radius>\
+<profile>1</profile>\
+<enabled>true</enabled>\
+<pull>true</pull>\
+<is-bump>false</is-bump>\
+</curve>\
+<curve>\
+<uuid>20000000-0000-0000-0000-000000000002</uuid>\
+<radius>2.5</radius>\
+<profile>4</profile>\
+<enabled>false</enabled>\
+<pull>false</pull>\
+<is-bump>true</is-bump>\
+</curve>\
+</shut-lining-object-data></xml>";
 
     #[test]
     fn parses_v2_displacement_fields_and_sub_item() {
@@ -1022,6 +1225,106 @@ mod tests {
     }
 
     #[test]
+    fn parses_v2_shut_lining_fields_and_ordered_curves() {
+        let payload = v2_payload(SHUT_LINING_XML);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("shut-lining userdata");
+        let shut_lining = modifiers.shut_lining.expect("shut lining");
+        assert_eq!(shut_lining.xml_version, 2);
+        assert!(shut_lining.on);
+        assert!(shut_lining.faceted);
+        assert!(shut_lining.auto_update);
+        assert!(shut_lining.force_update);
+        assert_eq!(shut_lining.curves.len(), 3);
+        assert_eq!(shut_lining.curves[0].uuid, None);
+        assert_eq!(shut_lining.curves[0].radius, 1.0);
+        assert_eq!(shut_lining.curves[0].profile, 0);
+        assert!(!shut_lining.curves[0].enabled);
+        assert!(!shut_lining.curves[0].pull);
+        assert!(!shut_lining.curves[0].is_bump);
+        assert_eq!(
+            shut_lining.curves[1].uuid.map(|uuid| uuid.to_string()),
+            Some("10000000-0000-0000-0000-000000000001".into())
+        );
+        assert_eq!(shut_lining.curves[1].radius, 0.25);
+        assert_eq!(shut_lining.curves[1].profile, 1);
+        assert!(shut_lining.curves[1].enabled);
+        assert!(shut_lining.curves[1].pull);
+        assert!(!shut_lining.curves[1].is_bump);
+        assert_eq!(shut_lining.curves[2].radius, 2.5);
+        assert_eq!(shut_lining.curves[2].profile, 4);
+        assert!(!shut_lining.curves[2].enabled);
+        assert!(!shut_lining.curves[2].pull);
+        assert!(shut_lining.curves[2].is_bump);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn shut_lining_defaults_accept_untyped_case_insensitive_curve_fields() {
+        let xml = "<XML><SHUT-LINING-OBJECT-DATA>\
+<ON TYPE=\"BOOL\">false</ON>\
+<CURVE><UUID>30000000-0000-0000-0000-000000000003</UUID>\
+<RADIUS>3.25</RADIUS><PROFILE>7</PROFILE><ENABLED>TRUE</ENABLED>\
+<PULL>1</PULL><IS-BUMP>FALSE</IS-BUMP></CURVE>\
+</SHUT-LINING-OBJECT-DATA></XML>";
+        let payload = v2_payload(xml);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("shut-lining userdata");
+        let shut_lining = modifiers.shut_lining.expect("shut lining");
+        assert!(!shut_lining.on);
+        assert!(!shut_lining.faceted);
+        assert!(!shut_lining.auto_update);
+        assert!(!shut_lining.force_update);
+        assert_eq!(shut_lining.curves.len(), 1);
+        let curve = &shut_lining.curves[0];
+        assert_eq!(curve.radius, 3.25);
+        assert_eq!(curve.profile, 7);
+        assert!(curve.enabled);
+        assert!(curve.pull);
+        assert!(!curve.is_bump);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn parses_v1_shut_lining_userdata_and_defaults() {
+        let xml = "<xml><shut-lining-object-data><curve><radius>2.75</radius><profile>3</profile></curve></shut-lining-object-data></xml>";
+        let payload = v1_payload(xml);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[shut_lining_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V4,
+            &mut warnings,
+        )
+        .expect("v1 shut-lining userdata");
+        let shut_lining = modifiers.shut_lining.expect("shut lining");
+        assert_eq!(shut_lining.xml_version, 1);
+        assert!(!shut_lining.on);
+        assert!(!shut_lining.faceted);
+        assert!(!shut_lining.auto_update);
+        assert!(!shut_lining.force_update);
+        assert_eq!(shut_lining.curves.len(), 1);
+        assert_eq!(shut_lining.curves[0].radius, 2.75);
+        assert_eq!(shut_lining.curves[0].profile, 3);
+        assert!(!shut_lining.curves[0].enabled);
+        assert!(!shut_lining.curves[0].pull);
+        assert!(!shut_lining.curves[0].is_bump);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
     fn parses_all_mesh_modifiers_from_one_attributes_stream() {
         let displacement_payload = v2_payload("<xml><new-displacement-object-data/></xml>");
         let edge_start = displacement_payload.len();
@@ -1030,10 +1333,13 @@ mod tests {
         let thickening_payload = v2_payload(THICKENING_XML);
         let curve_piping_start = thickening_start + thickening_payload.len();
         let curve_piping_payload = v2_payload(CURVE_PIPING_XML);
+        let shut_lining_start = curve_piping_start + curve_piping_payload.len();
+        let shut_lining_payload = v2_payload(SHUT_LINING_XML);
         let mut bytes = displacement_payload;
         bytes.extend(&edge_payload);
         bytes.extend(&thickening_payload);
         bytes.extend(&curve_piping_payload);
+        bytes.extend(&shut_lining_payload);
         let descriptors = [
             descriptor(&bytes[..edge_start], Some(MESH_MODIFIER_PLUGIN)),
             descriptor_with_ids(
@@ -1049,9 +1355,15 @@ mod tests {
                 Some(MESH_MODIFIER_PLUGIN),
             ),
             descriptor_with_ids(
-                curve_piping_start..bytes.len(),
+                curve_piping_start..shut_lining_start,
                 CURVE_PIPING_CLASS,
                 CURVE_PIPING_ITEM,
+                Some(MESH_MODIFIER_PLUGIN),
+            ),
+            descriptor_with_ids(
+                shut_lining_start..bytes.len(),
+                SHUT_LINING_CLASS,
+                SHUT_LINING_ITEM,
                 Some(MESH_MODIFIER_PLUGIN),
             ),
         ];
@@ -1063,6 +1375,7 @@ mod tests {
         assert!(modifiers.edge_softening.is_some());
         assert!(modifiers.thickening.is_some());
         assert!(modifiers.curve_piping.is_some());
+        assert!(modifiers.shut_lining.is_some());
         assert!(warnings.is_empty());
     }
 
@@ -1176,6 +1489,22 @@ mod tests {
         .is_none());
         assert!(curve_piping_warnings.iter().any(|warning| {
             warning.contains("curve-piping userdata") && warning.contains("dropped")
+        }));
+
+        let malformed_shut_lining = v2_payload("<xml><shut-lining-object-data>");
+        let mut shut_lining_warnings = Vec::new();
+        assert!(parse_attribute_userdata(
+            &malformed_shut_lining,
+            &[shut_lining_descriptor(
+                &malformed_shut_lining,
+                Some(MESH_MODIFIER_PLUGIN),
+            )],
+            ArchiveVersion::V6,
+            &mut shut_lining_warnings,
+        )
+        .is_none());
+        assert!(shut_lining_warnings.iter().any(|warning| {
+            warning.contains("shut-lining userdata") && warning.contains("dropped")
         }));
     }
 }

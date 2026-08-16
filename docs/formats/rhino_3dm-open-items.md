@@ -276,6 +276,21 @@ The built-in `ON_CurvePipingUserData` class is also settled. Its class UUID is
 XML roots, and the source getter defaults. Section 7.2.15 and the decoder
 retain the inverse `weld`/`faceted` value and canonical cap type.
 
+The built-in `ON_ShutLiningUserData` class is also settled. Its class UUID is
+`429DCD06-5643-4254-BDE8-C0557F8FD083`, item UUID is
+`07506EBE-1D69-4345-9F0D-2B9AA1906EEF`, and application UUID is
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. Its object-attributes payload uses
+`ON_XMLUserData` version 1 or 2 framing and the `xml`/`shut-lining-object-data`
+XML roots. The four scalar fields use typed XML parameters with false getter
+defaults. Direct `curve` children are ordered; their UUID, radius, profile,
+enabled, pull, and is-bump fields use the default-property text grammar and
+getter defaults of nil UUID, 1.0, 0, false, false, and false. The source
+writer emits one empty curve for each managed curve, followed by serialized
+copies of all managed curves; the decoder retains all direct curve entries in
+order.
+Section 7.2.16 and the decoder retain the scalar fields and ordered curve
+records.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
@@ -294,7 +309,7 @@ object-attributes compatibility carrier under section 7.2.9, and
 `ON_PerObjectMeshParameters` is settled as the typed modern object-attributes
 carrier under section 7.2.10. `ON_AnnotationTextFormula` is settled as a
 runtime-only helper with no serialized userdata under section 7.2.11; other
-future class-specific payload semantics, including the other mesh-modifier
+future class-specific payload semantics, beyond the settled mesh-modifier
 classes, remain open.
 
 ### RS-01. Later-minor bounded suffixes

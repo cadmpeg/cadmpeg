@@ -397,6 +397,8 @@ struct MeshModifiersRecord {
     thickening: Option<ThickeningRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     curve_piping: Option<CurvePipingRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shut_lining: Option<ShutLiningRecord>,
 }
 
 #[derive(Debug, Serialize)]
@@ -468,12 +470,35 @@ struct CurvePipingRecord {
     cap_type: String,
 }
 
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct ShutLiningRecord {
+    xml_version: i32,
+    on: bool,
+    faceted: bool,
+    auto_update: bool,
+    force_update: bool,
+    curves: Vec<ShutLiningCurveRecord>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct ShutLiningCurveRecord {
+    uuid: Option<String>,
+    radius: f64,
+    profile: i32,
+    enabled: bool,
+    pull: bool,
+    is_bump: bool,
+}
+
 fn mesh_modifiers_record(modifiers: &crate::mesh_modifiers::MeshModifiers) -> MeshModifiersRecord {
     MeshModifiersRecord {
         displacement: modifiers.displacement.as_ref().map(displacement_record),
         edge_softening: modifiers.edge_softening.as_ref().map(edge_softening_record),
         thickening: modifiers.thickening.as_ref().map(thickening_record),
         curve_piping: modifiers.curve_piping.as_ref().map(curve_piping_record),
+        shut_lining: modifiers.shut_lining.as_ref().map(shut_lining_record),
     }
 }
 
@@ -549,6 +574,28 @@ fn curve_piping_record(
         faceted: curve_piping.faceted,
         accuracy: curve_piping.accuracy,
         cap_type: curve_piping.cap_type.clone(),
+    }
+}
+
+fn shut_lining_record(shut_lining: &crate::mesh_modifiers::ShutLiningModifier) -> ShutLiningRecord {
+    ShutLiningRecord {
+        xml_version: shut_lining.xml_version,
+        on: shut_lining.on,
+        faceted: shut_lining.faceted,
+        auto_update: shut_lining.auto_update,
+        force_update: shut_lining.force_update,
+        curves: shut_lining
+            .curves
+            .iter()
+            .map(|curve| ShutLiningCurveRecord {
+                uuid: curve.uuid.map(|uuid| uuid.to_string()),
+                radius: curve.radius,
+                profile: curve.profile,
+                enabled: curve.enabled,
+                pull: curve.pull,
+                is_bump: curve.is_bump,
+            })
+            .collect(),
     }
 }
 

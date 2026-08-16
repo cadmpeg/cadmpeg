@@ -1336,6 +1336,62 @@ recognized payload leaves the object attributes and geometry admitted, omits
 this native value, and retains the bounded userdata record for opaque fidelity
 handling.
 
+#### 7.2.16 `ON_ShutLiningUserData`
+
+`ON_ShutLiningUserData` uses class UUID
+`429DCD06-5643-4254-BDE8-C0557F8FD083`, item UUID
+`07506EBE-1D69-4345-9F0D-2B9AA1906EEF`, and application UUID
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. It is attached to the
+`ON_3dmObjectAttributes` mesh-modifier owner and uses the same XML userdata
+payload framing as section 7.2.12. The writer emits XML userdata version 2;
+the reader accepts versions 1 and 2 and skips remaining bytes at the bounded
+userdata payload boundary.
+
+The XML document has root `xml` and a direct child named
+`shut-lining-object-data`. The four modifier parameters use the typed XML
+parameter grammar. A parameter with no `type` property is absent to this
+reader. Unknown child elements are ignored. Missing parameters use the source
+getter defaults below:
+
+| XML child | Type | Meaning | Missing value |
+| --- | --- | --- | ---: |
+| `on` | bool | Enables shut lining | `false` |
+| `faceted` | bool | Uses faceted shut-line processing | `false` |
+| `auto-update` | bool | Updates shut lining automatically | `false` |
+| `force-update` | bool | Forces shut-line updates | `false` |
+
+The default userdata initializer writes all four typed fields with their false
+values. An otherwise empty `ON_ShutLining` modifier may serialize only the
+`shut-lining-object-data` root; omitted fields read as the same defaults.
+
+The direct `curve` children are an ordered sequence. Each curve reads its
+fields from the child node's default property, so these field elements do not
+need a `type` attribute. Curve field names are matched case-insensitively.
+Missing fields use these source getter defaults:
+
+| Curve child | Type | Meaning | Missing value |
+| --- | --- | --- | ---: |
+| `uuid` | UUID | Source curve identity; nil UUID means no identity | nil UUID |
+| `enabled` | bool | Enables this curve's shut line | `false` |
+| `radius` | double | Shut-line radius | `1.0` |
+| `profile` | int | Shut-line profile | `0` |
+| `pull` | bool | Pulls the curve to the surface | `false` |
+| `is-bump` | bool | Makes the curve a bump instead of a dent | `false` |
+
+The modifier writer's `AddCurve` path first leaves an empty `curve` child in
+the base node and `AddChildXML` then appends one serialized copy for every
+managed curve. Consequently, a write with N managed curves contains N empty
+curve elements followed by N populated copies. The reader retains every direct
+curve element, including empty entries, in serialized order.
+
+CADIR stores the recognized item under the owning object presentation's
+`mesh_modifiers.shut_lining` native value, including the scalar fields and
+ordered curve records. A nil curve UUID becomes null. The item does not create
+geometry or a second object identity. The first serialized matching
+class/item/application triple owns the typed value. A malformed recognized
+payload leaves the object attributes and geometry admitted, omits this native
+value, and retains the bounded userdata record for opaque fidelity handling.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2196,6 +2252,11 @@ The `ON_CurvePipingUserData` item is a typed attributes carrier. Its XML
 payload and curve-piping fields are specified in section 7.2.15; the resulting
 modifier is retained under the same object presentation without changing the
 transferred object geometry.
+
+The `ON_ShutLiningUserData` item is a typed attributes carrier. Its XML payload
+and scalar/curve fields are specified in section 7.2.16; the resulting modifier
+is retained under the same object presentation without changing the transferred
+object geometry.
 
 ## 10. Compressed buffers
 
