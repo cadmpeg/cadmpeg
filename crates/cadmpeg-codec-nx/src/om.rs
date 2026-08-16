@@ -2181,6 +2181,24 @@ pub struct OperationTaggedReference {
     pub end_offset: usize,
 }
 
+/// One exact direct operation data-block reference field.
+///
+/// The frame retains its object index and fixed suffix without assigning an
+/// operation or construction role to the target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationDataBlockReference {
+    /// Absolute offset of the opening `01 02` marker.
+    pub offset: usize,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the object-index token.
+    pub object_index_offset: usize,
+    /// Exclusive absolute end offset after the fixed field suffix.
+    pub end_offset: usize,
+}
+
 /// Object-index reference in one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockObjectReference {
@@ -5558,6 +5576,47 @@ pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<Operation
         references.push(OperationTaggedReference {
             offset: record.payload_offset + marker,
             tag: 0x17,
+            object_index,
+            raw_object_index: raw_object_index.to_vec(),
+            object_index_offset: record.payload_offset + token,
+            end_offset: record.payload_offset + suffix_end,
+        });
+    }
+    references
+}
+
+/// Decode every exact direct `01 02 03 index 01 00 00 00 00 00` field.
+///
+/// The object index is retained as native evidence. It does not assign a
+/// body, operand, input, output, seed, transform, or construction role.
+pub fn operation_data_block_references(
+    record: OperationRecord<'_>,
+) -> Vec<OperationDataBlockReference> {
+    const PREFIX: &[u8] = &[0x01, 0x02, 0x03];
+    const SUFFIX: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let mut references = Vec::new();
+    for marker in record
+        .payload
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
+    {
+        let token = marker + PREFIX.len();
+        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+            continue;
+        };
+        let raw_object_index = &record.payload[token..end];
+        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
+            continue;
+        }
+        let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
+            continue;
+        };
+        if record.payload.get(end..suffix_end) != Some(SUFFIX) {
+            continue;
+        }
+        references.push(OperationDataBlockReference {
+            offset: record.payload_offset + marker,
             object_index,
             raw_object_index: raw_object_index.to_vec(),
             object_index_offset: record.payload_offset + token,

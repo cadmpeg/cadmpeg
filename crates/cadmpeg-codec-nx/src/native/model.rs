@@ -130,6 +130,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
     pub(crate) feature_operation_object_relations: Vec<FeatureOperationObjectRelation>,
     pub(crate) feature_operation_tagged_references: Vec<FeatureOperationTaggedReference>,
+    pub(crate) feature_operation_data_block_references: Vec<FeatureOperationDataBlockReference>,
     pub(crate) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
     pub(crate) feature_operation_terminal_discriminators:
         Vec<FeatureOperationTerminalDiscriminator>,
@@ -495,6 +496,8 @@ impl NativeModel {
         let feature_operation_records = feature_operation_records(container);
         let feature_operation_object_relations = feature_operation_object_relations(container);
         let feature_operation_tagged_references = feature_operation_tagged_references(container);
+        let feature_operation_data_block_references =
+            feature_operation_data_block_references(container);
         let feature_operation_common_frames = feature_operation_common_frames(container);
         let feature_operation_terminal_discriminators =
             feature_operation_terminal_discriminators(container);
@@ -1056,6 +1059,7 @@ impl NativeModel {
                 feature_operation_records,
                 feature_operation_object_relations,
                 feature_operation_tagged_references,
+                feature_operation_data_block_references,
                 feature_operation_common_frames,
                 feature_operation_terminal_discriminators,
                 feature_operation_terminal_frames,
