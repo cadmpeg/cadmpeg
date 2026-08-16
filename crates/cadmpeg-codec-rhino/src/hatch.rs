@@ -14,7 +14,7 @@ use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::parse_class_wrapper;
 use crate::objects::UserdataDescriptor;
 use crate::settings::{Plane, Point3, Vector3};
-use crate::wire::{ExactVec, Uuid};
+use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
@@ -116,7 +116,7 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
 pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
-    _scale: f64,
+    scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Hatch, GeometryError> {
     let data = expand.data();
@@ -235,14 +235,14 @@ pub(crate) fn decode(
     }
     let basepoint = if minor >= 2 {
         let offset = body.position();
-        let basepoint = [body.req_f64_le()?, body.req_f64_le()?];
-        if !basepoint.into_iter().all(f64::is_finite) {
-            return Err(GeometryError::malformed(
-                offset,
-                "hatch basepoint is invalid",
-            ));
-        }
-        basepoint
+        [
+            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
+                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            })?,
+            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
+                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            })?,
+        ]
     } else {
         [0.0, 0.0]
     };
@@ -660,7 +660,7 @@ pub(crate) mod tests {
         assert_eq!(hatch.pattern_index, 7);
         assert_eq!(hatch.pattern_scale, 2.5);
         assert_eq!(hatch.pattern_rotation, 0.25);
-        assert_eq!(hatch.basepoint, [3.0, 4.0]);
+        assert_eq!(hatch.basepoint, [30.0, 40.0]);
         assert_eq!(hatch.loops.len(), 1);
         assert_eq!(hatch.loops[0].kind, LoopKind::Outer);
         assert!(matches!(

@@ -715,6 +715,12 @@ secondary-text gate, display bits, and document-unit center conversion are
 settled; the Rust annotation decoder transfers the complete known prefix to
 `native.rhino.text_dots` and keeps the record linked to its object without
 creating neutral geometry.
+The `ON_Hatch` class is independently covered by V4, V50, V6, and inch-unit
+V50/V6 witnesses. Its packed 1.1/1.2 payload, plane and loop boundaries,
+pattern fields, V5 basepoint userdata carrier, V6 inline basepoint, and
+document-unit scaling are settled. The Rust decoder emits the hatch feature
+and linked loop curves, retains the native pattern index and source object,
+and reports the specified non-neutral-fill boundary.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -820,6 +826,24 @@ the inch differential establishes the length conversion. The owner tests
 `text_dot_preserves_text_style_flags_and_scaled_location` and
 `text_dot_v10_omits_secondary_text_and_skips_suffix` gate the known prefix and
 bounded suffix behavior.
+
+The hatch-object slice is closed by `ON_Hatch::Write`/`Read` and
+`ON_HatchLoop::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_hatch.cpp:1178-1223,1496-1577`, the
+authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/hatch_object_witness.cpp`, and
+its V4/V50/V6 plus inch-unit V50/V6 outputs. `cadmpeg inspect` reads the
+class-data packed bytes `0x11`, `0x11`, and `0x12`, the plane origin, pattern
+fields, loop count 2, and the V50 userdata class/item UUID at the recorded
+offsets. OpenNURBS `example_read` reports the V4 missing basepoint carrier,
+the V50 userdata-restored basepoint, and the V6 inline basepoint. The initial
+inch differential exposed the missing V6 inline basepoint scale; the Rust fix
+now transfers both V50 and V6 basepoints as `[38.1,-57.15]` millimeters while
+scaling plane and loop geometry and preserving pattern scale/rotation. The
+three-version `cadmpeg query item` results show the hatch feature and outer /
+inner loop links; the report records the specified native-fill retention.
+The owner test `decodes_version_two_loop_geometry_and_pattern_state` now
+asserts the scaled inline basepoint.
 
 ### FV-06. Later major payload admission
 

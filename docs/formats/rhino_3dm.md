@@ -3818,6 +3818,15 @@ point, and no such extension remains attached to the hatch. CADIR maps the
 consumed base point to the hatch basepoint and retains no separate userdata
 field.
 
+For archive versions below 50, a nonzero base point has no serialized carrier;
+the CADIR basepoint is therefore `[0,0]`. For every accepted hatch object,
+CADIR creates one native hatch feature and one linked neutral curve for each
+ordered loop. The feature retains the pattern archive index, pattern scale,
+pattern rotation, and converted basepoint as native parameters. The hatch
+pattern is not converted into a neutral filled region; the source object record
+remains retained for native fidelity and this boundary emits the
+`hatch.fill-not-transferred` warning.
+
 Archive version 60 and later may attach `ON_GradientColorData` class userdata
 to an `ON_Hatch`. The userdata class UUID and item UUID are
 `0C1AD613-4EFA-4F47-A147-4D79D77FCB0C`. Its application UUID is
