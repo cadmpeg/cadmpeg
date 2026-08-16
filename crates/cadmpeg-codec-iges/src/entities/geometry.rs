@@ -1331,7 +1331,9 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };
-        let closed = start.distance(end) <= global.minimum_resolution_mm();
+        let endpoint_distance = start.distance(end);
+        let resolution = global.minimum_resolution_mm();
+        let closed = endpoint_distance == 0.0 || endpoint_distance < resolution;
         if flags[1] != Some(i64::from(closed)) {
             losses.push(entity_loss(
                 entry,

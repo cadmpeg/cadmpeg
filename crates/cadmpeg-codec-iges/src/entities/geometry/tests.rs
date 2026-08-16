@@ -169,6 +169,43 @@ fn decode_rejects_inconsistent_type_126_planar_and_closed_flags() {
 }
 
 #[test]
+fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
+    for (endpoint, prop2, decoded) in [
+        ("0.000999", 1, true),
+        ("0.001", 0, true),
+        ("0.001", 1, false),
+        ("0.001001", 0, true),
+    ] {
+        let parameters =
+            format!("126,1,1,1,{prop2},1,0,0,0,1,1,1,1,0,0,0,{endpoint},0,0,0,1,0,0,1;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.ir().model.curves.len(),
+            usize::from(decoded),
+            "endpoint={endpoint}, PROP2={prop2}"
+        );
+        assert_eq!(
+            result.report().losses.is_empty(),
+            decoded,
+            "endpoint={endpoint}, PROP2={prop2}: {:?}",
+            result.report().losses
+        );
+        if !decoded {
+            assert_eq!(
+                result.report().losses[0].code,
+                IgesLossCode::EntityNotProjected.kind()
+            );
+        }
+    }
+}
+
+#[test]
 fn declared_transform_validation_separates_frame_and_handedness_invariants() {
     let intervals = |rows: [[f64; 3]; 3]| {
         std::array::from_fn::<_, 9, _>(|index| {

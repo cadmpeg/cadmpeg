@@ -51,16 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-12. Type 126 property flags against the values
-
-**Question.** Which Type 126 representation flags are authoritative when they disagree with the values?
-
-**Known.** `entities/geometry.rs:1075-1086` validates the four flags, `entities/geometry.rs:1153-1163` compares the polynomial flag with weights, and `entities/geometry.rs:1252-1301` compares the planar flag and normal with the control-point geometry. The current specification records these precedence and rejection rules.
-
-**Need.** We need the precedence of flags, values, and derived ranges for every Type 126 form, plus the required behavior for inconsistent records.
-
-**Note.** Reopened by the 2026-08-16 audit. The consistency checks improve failure reporting, but they do not establish which fields are authoritative in a conformant file.
-
 ### GE-18. Native Type 106 tuples use a fallback width for invalid interpretation flags
 
 **Question.** What typed native tuple state is valid when Type 106 IP is absent, outside `1..=3`, or disagrees with the Directory form?
