@@ -1563,6 +1563,118 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
 }
 
 #[test]
+fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
+    use crate::history_records::AsmHistoricalPlane;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut scope = crate::records::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#42",
+        "Mirror",
+        42,
+    );
+    scope.history_state_id = Some(2);
+    scope.previous_history_state_id = Some(1);
+    scope.mirror_construction = Some(
+        serde_json::from_value(serde_json::json!({
+            "count": 2, "count_record_index": 11, "count_offset": 0,
+            "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+            "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+            "plane_group_record_index": 30, "plane_selection_record_index": 40,
+            "plane_origin": null, "plane_normal": null
+        }))
+        .expect("mirror construction"),
+    );
+    let group: crate::records::DesignConstructionOperandGroup =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
+            "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
+            "class_tag": "282", "members": [40], "member_offsets": [0],
+            "frame": {"member_count_offset": 0, "opaque_index": 1,
+                "opaque_index_offset": 0, "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 0, "variant": false},
+            "role": 21_474_836_480u64, "role_offset": 0,
+            "paired_class_tag": "261", "paired_byte_offset": 0
+        }))
+        .expect("mirror plane group");
+    let operand: crate::records::DesignEntitySelectionOperand =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
+            "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
+            "byte_offset": 0, "class_tag": "313", "asset_id": "asset",
+            "asset_id_offset": 0, "context_id": "context", "context_id_offset": 0,
+            "identity_record_index": 41, "identity_record_offset": 0,
+            "primary_identity": 10, "primary_identity_offset": 0,
+            "next_record_index": 42, "next_byte_offset": 0
+        }))
+        .expect("mirror plane selection");
+    let state = |state_id, topology, transition| crate::history_records::AsmDeltaState {
+        id: format!("history:state#{state_id}"),
+        parent: "history".into(),
+        byte_offset: 0,
+        state_id,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: state_id,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        record_table_complete: true,
+        topology: Some(topology),
+        transition,
+    };
+    let history = crate::history_records::AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        stream_size: None,
+        history_entry_count: None,
+        record_table_binding_budget_exceeded: false,
+        projection_finalized: false,
+        states: vec![
+            state(
+                2,
+                crate::history_records::AsmHistoricalTopology::default(),
+                Some(crate::history_records::AsmHistoricalTransition {
+                    previous_state_id: Some(1),
+                    records: Default::default(),
+                    topology: Default::default(),
+                }),
+            ),
+            state(
+                1,
+                crate::history_records::AsmHistoricalTopology {
+                    faces: vec![10],
+                    face_surfaces: vec![crate::history_records::AsmHistoricalCarrierBinding {
+                        entity: 10,
+                        carrier: 20,
+                    }],
+                    surface_planes: vec![AsmHistoricalPlane {
+                        surface: 20,
+                        origin: Point3::new(1.0, 2.0, 3.0),
+                        normal: Vector3::new(0.0, 0.0, 1.0),
+                    }],
+                    ..Default::default()
+                },
+                None,
+            ),
+        ],
+    };
+
+    bind_mirror_selection_planes(
+        std::slice::from_mut(&mut scope),
+        std::slice::from_ref(&group),
+        std::slice::from_ref(&operand),
+        &[],
+        std::slice::from_ref(&history),
+    );
+
+    let construction = scope.mirror_construction.expect("mirror construction");
+    assert_eq!(construction.plane_origin, Some(Point3::new(1.0, 2.0, 3.0)));
+    assert_eq!(construction.plane_normal, Some(Vector3::new(0.0, 0.0, 1.0)));
+}
+#[test]
 fn historical_loop_plane_requires_coincident_axis_bearing_curves() {
     use crate::history_records::{
         AsmHistoricalCoedge, AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding,

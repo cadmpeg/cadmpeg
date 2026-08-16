@@ -6276,22 +6276,19 @@ pub(crate) fn bind_mirror_selection_planes(
             crate::ids::native_stream(&identity.id) == stream
                 && identity.group_record_index == group.record_index
         });
-        let Some(identity) = matching_identities.next() else {
-            continue;
-        };
-        if matching_identities.next().is_some() {
+        let identity = matching_identities.next();
+        let duplicate_identity = matching_identities.next();
+        if duplicate_identity.is_some() {
             continue;
         }
-        let Some(local_id) = identity
-            .persistent_identity
-            .as_ref()
-            .map(|identity| identity.local_id)
-        else {
-            continue;
-        };
+        let persistent_candidates = identity
+            .and_then(|identity| identity.persistent_identity.as_ref())
+            .map_or_else(Vec::new, |identity| {
+                entity_selection_face_candidates(identity.local_id, histories)
+            });
         let Some(candidate) = unique_mirror_plane_candidate(
             entity_selection_face_candidates(operand.primary_identity, histories),
-            entity_selection_face_candidates(local_id, histories),
+            persistent_candidates,
         ) else {
             continue;
         };

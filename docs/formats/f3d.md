@@ -1012,6 +1012,8 @@ A guide-surface `Sweep` has two role-`0x0000004100000000` groups: one carries th
 
 A `SurfaceRuled` scope stores nine zero bytes after its indexed header, followed by a u32 direction law at offset 20: `0 = tangent`, `1 = normal`, and `2 = explicit direction`. Three zero bytes follow. The byte at offset 27 selects the opposite incident face when it is one. Marked references at offsets 28 and 39 name the ruled-angle and ruled-distance parameter owners. A u32 corner law at offset 50 is `0 = rounded` or `1 = mitered`. Offset 54 starts a counted marked-reference list of boundary-edge groups, followed by a zero u32, a counted auxiliary-reference list, another zero u32, and a second counted boundary-edge-group list. The concatenated boundary lists preserve edge order. Each boundary record is a role-`0x0000000800000000` construction-operand group with one edge-recipe member. A 36-code-unit LP-UTF16 direction entity identity follows the last list; the all-zero UUID means absent. Three zero bytes separate it from the generic scope reference table. That table starts with the distance owner and angle owner and contains each boundary group immediately followed by its edge-recipe member. Tangent and normal forms have no direction entity; an explicit-direction form has one.
 
+An absent auxiliary identity uses the same primary-candidate fallback as an auxiliary identity that has no historical candidate; the fallback remains subject to unique-candidate and exact-planar-carrier checks.
+
 ### 3.2 Materials
 
 Visual and physical materials are distinct serialized channels.
