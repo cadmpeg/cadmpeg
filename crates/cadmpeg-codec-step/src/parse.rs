@@ -132,7 +132,10 @@ pub struct SignatureSection {
     /// filtering. The range starts at `ISO-10303-21;` and ends at the `S` in
     /// this section's `SIGNATURE;` token.
     pub signed: Range<usize>,
-    /// Decoded CMS `SignedData` payload.
+    /// Structurally admitted, decoded CMS `SignedData` payload.
+    ///
+    /// This is not a cryptographic verification result. A downstream verifier
+    /// must apply the CMS content, key, and caller-supplied trust checks.
     pub cms: Vec<u8>,
 }
 
@@ -141,8 +144,9 @@ impl SignatureSection {
     ///
     /// The source range is retained separately because the signature input is
     /// defined by the alphabet projection, not by transport controls such as
-    /// line endings. `None` means that the supplied source does not contain
-    /// the recorded range.
+    /// line endings. A CMS verifier supplies these bytes as the detached
+    /// content. `None` means that the supplied source does not contain the
+    /// recorded range.
     #[allow(dead_code)] // Alphabet projection for signature verification; not on the decode path.
     pub fn signed_alphabet_bytes(&self, input: &[u8]) -> Option<Vec<u8>> {
         Some(

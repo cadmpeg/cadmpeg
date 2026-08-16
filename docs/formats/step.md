@@ -419,8 +419,28 @@ directives remain because their graphic characters are in the Table 1
 alphabet. A later section therefore also authenticates every earlier complete
 signature section and the alphabet bytes between it and the later
 `SIGNATURE;` token. The reader retains both the complete source span and the
-decoded CMS payload. Signature verification still requires a CMS verifier and
-caller-supplied trust policy.
+decoded CMS payload.
+
+For one signature, `valid` requires all of the following: the verifier computes
+the digest over the exact Table 1 alphabet projection of the preceding source;
+when `SignerInfo.signedAttrs` is present, it verifies the DER signed-attribute
+input, the `messageDigest` attribute equals that content digest, and the
+`content-type` attribute equals `encapContentInfo.eContentType`; it verifies the
+CMS `signature` OCTET STRING with the `signatureAlgorithm` identifier and the
+selected signer public key; and the caller's trust policy accepts the signer,
+certificate path, key usage, validity time, revocation evidence, and required
+authorization. `invalid` means that a cryptographic check or an explicitly
+required policy check fails. A source or CMS value that fails Part 21 or CMS
+structural admission is structurally invalid and is refused by the parser
+before a signature result is emitted. `indeterminate` means that the CMS is
+structurally admitted but required content, key, certificate, trust, time,
+revocation, or authorization evidence is unavailable. RFC 5652 §5.6 leaves
+public-key selection, certification-path validation, and other external
+context to the recipient; therefore the absence of a caller-supplied verifier
+or trust policy is indeterminate, never valid. CADIR decision: the STEP codec
+performs structural admission only, retains the source span and decoded CMS,
+and emits no cryptographic result; a downstream verifier reports the result
+for each signature section.
 
 DATA sections are optional in edition 3. One unnamed DATA section requires one
 FILE_SCHEMA identifier. If a DATA section has parameters, they contain a

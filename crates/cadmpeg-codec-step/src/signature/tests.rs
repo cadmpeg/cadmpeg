@@ -185,6 +185,36 @@ fn parser_exposes_the_detached_signature_contract() {
 }
 
 #[test]
+fn parser_does_not_verify_detached_content_during_structural_admission() {
+    let source = include_bytes!("tests/data/sg01_signature_method_selection.p21");
+    let (original, original_diagnostics) = crate::parse::parse(source).expect("original signature");
+    let mut tampered_source = source.to_vec();
+    let marker = b"SG-01 CMS method witness";
+    let marker_start = tampered_source
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("signature witness marker");
+    tampered_source[marker_start] = b'T';
+    let (tampered, tampered_diagnostics) =
+        crate::parse::parse(&tampered_source).expect("structural signature admission");
+
+    assert!(original_diagnostics.is_empty());
+    assert!(tampered_diagnostics.is_empty());
+    assert_eq!(
+        original.signature_sections[0].cms,
+        tampered.signature_sections[0].cms
+    );
+    assert_ne!(
+        original.signature_sections[0]
+            .signed_alphabet_bytes(source)
+            .expect("original signed content"),
+        tampered.signature_sections[0]
+            .signed_alphabet_bytes(&tampered_source)
+            .expect("tampered signed content")
+    );
+}
+
+#[test]
 fn signature_method_and_parameters_are_inside_cms_payload() {
     let source = include_bytes!("tests/data/sg01_signature_method_selection.p21");
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signature method witness");

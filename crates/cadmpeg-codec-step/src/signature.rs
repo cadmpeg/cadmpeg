@@ -225,6 +225,9 @@ fn require_empty(ber: &Ber<'_>) -> Result<(), &'static str> {
 }
 
 /// Checks the Part 21 CMS envelope and the detached-content invariant.
+///
+/// This admits structure only. It does not compute a content digest, verify a
+/// signature value, select a public key, or apply a caller trust policy.
 pub(crate) fn validate_detached_cms(input: &[u8]) -> Result<(), &'static str> {
     let mut content_info = Ber::new(input);
     let content_info_value = content_info.take_tag(0x30)?;

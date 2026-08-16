@@ -175,26 +175,6 @@ witness input and the IR adapter.
 
 ## 4. Signatures
 
-### SG-04. Signature verification result
-
-**Question.** Which validation conditions make each signature valid, invalid, or indeterminate?
-
-**Known.** Part 21 requires a detached CMS `SignedData` object and defines
-the exact external content and alphabet projection. RFC 5652 supplies the
-message-digest, signed-attribute, signature, certificate, and algorithm
-processing rules. A valid result also needs a certificate-chain, key-usage,
-revocation, time, and trust-anchor policy. An invalid result covers malformed
-CMS, a digest mismatch, a signature mismatch, or a failed required policy;
-indeterminate covers unavailable content, keys, certificates, or policy
-evidence.
-
-**Note.** Part 21 does not prescribe a trust store, revocation protocol,
-clock policy, or authorization policy. Verification therefore needs an
-explicit trust policy recorded as a CADIR decision; structural CMS parsing
-alone does not produce a valid/invalid result.
-
-**Need.** We must know the conditions to report a signature verification result.
-
 ## 5. Topology and pcurve decisions
 
 ### TP-09. Pcurve endpoint and tied-locus verification
