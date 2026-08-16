@@ -498,12 +498,6 @@ fn component(
     }
     if chunk.typecode == ANONYMOUS {
         let bits = value.u32()?;
-        if bits & !0x1f != 0 {
-            return Err(FramingError::structural(
-                value.position() - 4,
-                "model-component bits are invalid",
-            ));
-        }
         let id = if bits & 1 != 0 {
             uuid(&mut value)?
         } else {
@@ -532,52 +526,27 @@ fn component(
     match value.u8()? {
         0 | 2 => {}
         1 => value.skip(12)?,
-        _ => {
-            return Err(FramingError::structural(
-                value.position() - 1,
-                "invalid serial status",
-            ))
-        }
+        _ => {}
     }
     let id = match value.u8()? {
         0 | 2 => Uuid::nil(),
         1 => uuid(&mut value)?,
-        _ => {
-            return Err(FramingError::structural(
-                value.position() - 1,
-                "invalid UUID status",
-            ))
-        }
+        _ => Uuid::nil(),
     };
     match value.u8()? {
         0 | 2 => {}
         1 => value.skip(4)?,
-        _ => {
-            return Err(FramingError::structural(
-                value.position() - 1,
-                "invalid type status",
-            ))
-        }
+        _ => {}
     }
     let index = match value.u8()? {
         0 | 2 => None,
         1 => Some(value.i32()?),
-        _ => {
-            return Err(FramingError::structural(
-                value.position() - 1,
-                "invalid index status",
-            ))
-        }
+        _ => None,
     };
     let name = match value.u8()? {
         0 | 2 => String::new(),
         1 => utf16(&mut value)?,
-        _ => {
-            return Err(FramingError::structural(
-                value.position() - 1,
-                "invalid name status",
-            ))
-        }
+        _ => String::new(),
     };
     value.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
@@ -2749,6 +2718,33 @@ mod tests {
         bytes
     }
 
+    fn model_attributes_status_chunk(statuses: [u8; 5], name: &str, suffix: &[u8]) -> Vec<u8> {
+        let mut payload = 1_i32.to_le_bytes().to_vec();
+        payload.extend(0_i32.to_le_bytes());
+        payload.extend(statuses);
+        if statuses[0] == 1 {
+            payload.extend([1_u32, 2, 3].into_iter().flat_map(u32::to_le_bytes));
+        }
+        if statuses[1] == 1 {
+            payload.extend([0x22; 16]);
+        }
+        if statuses[2] == 1 {
+            payload.extend(4_u32.to_le_bytes());
+        }
+        if statuses[3] == 1 {
+            payload.extend(5_i32.to_le_bytes());
+        }
+        if statuses[4] == 1 {
+            payload.extend(utf16(name));
+        }
+        payload.extend(suffix);
+        payload.extend(crc32fast::hash(&payload).to_le_bytes());
+        let mut bytes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
+        bytes.extend((payload.len() as i64).to_le_bytes());
+        bytes.extend(payload);
+        bytes
+    }
+
     fn future_dimension_style_chunk() -> Vec<u8> {
         let mut body = model_attributes_chunk(7, "dimension style");
         for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0] {
@@ -3217,6 +3213,31 @@ mod tests {
         assert_eq!(record.archive_index, None);
         let json = serde_json::to_value(record).expect("linetype record JSON");
         assert!(json.get("archive_index").is_none());
+    }
+
+    #[test]
+    fn model_component_readers_follow_source_unknown_mask_and_status_rules() {
+        let mut legacy_body = 0x28_u32.to_le_bytes().to_vec();
+        legacy_body.extend(utf16("mask-compatible"));
+        legacy_body.extend([0xaa, 0xbb]);
+        let legacy = anonymous(0, &legacy_body);
+        let mut legacy_reader = BoundedReader::new(&legacy, 0, legacy.len()).unwrap();
+        let legacy_component = component(&legacy, &mut legacy_reader, ArchiveVersion::V8)
+            .expect("unknown legacy mask bit is ignored");
+        assert_eq!(legacy_component.index, None);
+        assert!(legacy_component.id.is_nil());
+        assert_eq!(legacy_component.name, "mask-compatible");
+        assert_eq!(legacy_reader.remaining(), 0);
+
+        let modern =
+            model_attributes_status_chunk([3, 2, 3, 2, 1], "status-compatible", &[0xcc, 0xdd]);
+        let mut modern_reader = BoundedReader::new(&modern, 0, modern.len()).unwrap();
+        let modern_component = component(&modern, &mut modern_reader, ArchiveVersion::V8)
+            .expect("unknown modern status values are ignored");
+        assert_eq!(modern_component.index, None);
+        assert!(modern_component.id.is_nil());
+        assert_eq!(modern_component.name, "status-compatible");
+        assert_eq!(modern_reader.remaining(), 0);
     }
 
     #[test]

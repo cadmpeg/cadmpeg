@@ -3278,13 +3278,34 @@ contains no local member geometry.
 A modern material is an anonymous major-1, nonnegative-minor chunk followed by
 model-component attributes. An early archive-60 component-attribute child uses
 anonymous type
-`0x40008000` and a `u32` presence mask: bits 0 through 4 gate UUID, parent UUID,
-archive index, UTF-16 name, and two component-status integers. Later component
-attributes use `0x40008002` and independent status bytes. The remaining
-material fields are six colors, index of refraction, reflectivity, shine,
-transparency, an anonymous texture array, material-channel pairs, shareable and
-lighting flags, Fresnel controls, reflection and refraction glossiness, an RDK
-instance UUID, and the diffuse-texture alpha switch.
+`0x40008000` and a version-1.0 body:
+
+```
+u32 presence mask
+if mask & 0x01: UUID component ID
+if mask & 0x02: UUID parent ID
+if mask & 0x04: i32 archive index
+if mask & 0x08: UTF-16 name
+if mask & 0x10:
+  u32 component-status mask
+  u32 component-status value
+```
+
+The component-status mask uses bit 0 for locked and bit 1 for hidden. The
+reader tests those known bits and ignores other presence-mask and
+component-status-mask bits. Later component attributes use `0x40008002` and a
+version-1.0 body with five independent status bytes in model-serial, component
+UUID, component type, archive index, and name order. Status 0 reads no value, 1
+is followed by the value, and 2 clears the value. The corresponding values are
+three `u32` model-serial numbers, a UUID, a `u32` component type, an `i32`
+archive index, and a UTF-16 string. Any other status value is treated as no
+value by the reader; the writer emits only 0, 1, and 2. Both component-attribute
+readers close their bounded child after the known body, so later direct bytes
+remain at the containing material or resource boundary. The remaining material
+fields are six colors, index of refraction, reflectivity, shine, transparency,
+an anonymous texture array, material-channel pairs, shareable and lighting
+flags, Fresnel controls, reflection and refraction glossiness, an RDK instance
+UUID, and the diffuse-texture alpha switch.
 Before writer version 1 December 2009, transparent RGB `(128,128,128)` is the
 obsolete default and the diffuse color replaces the complete transparent
 color.

@@ -107,6 +107,17 @@ dimension-style, view, and settings readers consume known bounded prefixes and
 skip source-defined suffixes. Tagged streams, explicit terminators, and
 writer-band ceilings remain grammar controls. An unknown table record has no
 typed fields from its typecode alone.
+The shared model-component child is also source-defined: the legacy anonymous
+version-1.0 form uses the five-bit UUID/parent/index/name/status presence mask,
+ignores other mask bits, and uses a two-`u32` locked/hidden status mask; the
+modern `0x40008002` version-1.0 form uses five status bytes for model serial,
+UUID, type, index, and name, where only 0, 1, and 2 have writer meanings and
+the reader treats other values as no field. Both children are bounded by their
+own chunk ends. This is established by
+`ON_ModelComponent::ReadModelComponentAttributes` and
+`ON_BinaryArchive::ReadModelComponentAttributes` in
+`/home/pcurve/side2/opennurbs/opennurbs_model_component.cpp` and by the public
+linetype status and legacy-mask witnesses recorded in the notebook.
 
 **Need.** Producer source or an independent witness for any later table-record
 major or changed layout that is to be admitted as typed data.
