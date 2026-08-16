@@ -344,6 +344,46 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         }
     );
 
+    let mut propagated_polar = definition.clone();
+    propagated_polar.body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+            \x01\x00\xf8\x06\x00\x01\x02\x03\x04\x05\xf6\xe2\
+            \x02\x05\xf8\x03\x05\x06\x07\xf6\xe2"
+        .to_vec();
+    let variables = propagated_polar.variables.as_mut().expect("variables");
+    variables.declared_count = 8;
+    variables.rows[2].value = None;
+    variables.rows[3].value = None;
+    variables.rows[5].value = None;
+    variables
+        .rows
+        .push(variable(6, 11, Some(std::f64::consts::FRAC_PI_2)));
+    variables.rows.push(variable(5, 0, Some(0.0)));
+    let propagated_constraints =
+        section_equation_polar_distance_constraints(&propagated_polar, &sketch);
+    assert_eq!(propagated_constraints.len(), 1);
+    assert_eq!(
+        propagated_constraints[0].0.definition,
+        SketchConstraintDefinition::PolarDistance {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into(),)),
+            distance: Length(2.0),
+            angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+            distance_parameter: None,
+        }
+    );
+    let mut conflicting_equality_polar = propagated_polar.clone();
+    conflicting_equality_polar
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows[5]
+        .value = Some(0.0);
+    assert!(
+        section_equation_polar_distance_constraints(&conflicting_equality_polar, &sketch)
+            .is_empty()
+    );
+
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::FeatureRelationTable {
         declared_count: 1,

@@ -840,6 +840,7 @@ pub(crate) fn section_equation_radial_constraint_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
@@ -876,12 +877,22 @@ pub(crate) fn section_equation_radial_constraint_rows(
             {
                 return None;
             }
-            let mut radius_value = match radius.value {
+            let radius_equality = scalar_equality_values
+                .get(&(radius.variable_type, radius.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let mut radius_value = match reconcile_equation_value(radius.value, radius_equality).ok()? {
                 Some(value) if value.is_finite() && value >= 0.0 => Some(value),
                 Some(_) => return None,
                 None => None,
             };
-            let mut angle_value = match angle.value {
+            let angle_equality = scalar_equality_values
+                .get(&(angle.variable_type, angle.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let mut angle_value = match reconcile_equation_value(angle.value, angle_equality).ok()? {
                 Some(value) if value.is_finite() => Some(value),
                 Some(_) => return None,
                 None => None,
