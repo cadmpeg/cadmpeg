@@ -254,6 +254,44 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
 }
 
 #[test]
+fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    let frame = legacy_class286_single_edge_flange_frame();
+    let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        "286",
+        "258",
+        &references,
+    )
+    .expect("legacy class-286 EdgeFlange operation");
+    assert_eq!(operation.edge_wrapper_record_indices, [201]);
+    assert_eq!(operation.edge_group_record_indices, [251]);
+    assert_eq!(operation.edge_operand_record_indices, [254]);
+    assert_eq!(operation.aggregate_group_record_index, 240);
+    assert_eq!(operation.aggregate_operand_record_indices, [243]);
+    assert_eq!(operation.height_owner_record_index, 204);
+    assert_eq!(operation.angle_owner_record_index, 218);
+    assert_eq!(operation.settings_record_index, 207);
+    assert!((operation.bend_radius - 0.25).abs() < EPS_BEND_RADIUS);
+    assert_eq!(operation.bend_radius_offset, 142);
+    assert_eq!(
+        operation.bend_position,
+        crate::records::DesignBendPosition::Adjacent
+    );
+    assert_eq!(
+        operation.height_datum,
+        crate::records::DesignSheetMetalHeightDatum::OuterFaces
+    );
+    assert_eq!(
+        operation.edge_width_mode(),
+        crate::records::DesignEdgeWidthMode::FullEdge
+    );
+    assert!(operation.width_distance_owner_record_indices.is_empty());
+}
+
+#[test]
 fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
     let references = [201, 204, 207, 218, 240, 243, 251, 255];
     let frame = edge_flange_frame(&EdgeFlangeFixture {
@@ -496,6 +534,42 @@ fn legacy_multi_edge_flange_frame() -> EdgeFlangeFrame {
     reference(&mut bytes, layout::AGGREGATE_GROUP_REFERENCE, 225);
     reference(&mut bytes, layout::EDGE_GROUP_ONE_REFERENCE, 204);
     reference(&mut bytes, layout::EDGE_GROUP_TWO_REFERENCE, 213);
+
+    EdgeFlangeFrame {
+        bytes,
+        paired_at,
+        bend_radius_offset: u64::try_from(layout::INSIDE_BEND_RADIUS)
+            .expect("bend radius offset fits u64"),
+    }
+}
+
+fn legacy_class286_single_edge_flange_frame() -> EdgeFlangeFrame {
+    use crate::layout::edge_flange_class286_single_edge_fixed_operation as layout;
+
+    fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    let paired_at = 483;
+    let mut bytes = vec![0; paired_at];
+    bytes[layout::BEND_POSITION..layout::BEND_POSITION + 4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[layout::EDGE_COUNT..layout::EDGE_COUNT + 4].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, layout::EDGE_WRAPPER_REFERENCE, 201);
+    reference(&mut bytes, layout::SETTINGS_REFERENCE, 207);
+    bytes[layout::HEIGHT_DATUM..layout::HEIGHT_DATUM + 4].copy_from_slice(&2u32.to_le_bytes());
+    reference(&mut bytes, layout::ANGLE_OWNER_REFERENCE, 218);
+    reference(&mut bytes, layout::HEIGHT_OWNER_REFERENCE, 204);
+    bytes[layout::REFERENCE_SIDE..layout::REFERENCE_SIDE + 4].copy_from_slice(&4u32.to_le_bytes());
+    bytes[layout::INSIDE_BEND_RADIUS..layout::INSIDE_BEND_RADIUS + 8]
+        .copy_from_slice(&0.25f64.to_le_bytes());
+    bytes[layout::RESULT_COUNT..layout::RESULT_COUNT + 4].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, layout::RESULT_REFERENCE, 501);
+    bytes[layout::RESULT_TRAILER..layout::RESULT_TRAILER + 4].copy_from_slice(&0u32.to_le_bytes());
+    bytes[layout::RESULT_SEPARATOR..layout::RESULT_SEPARATOR + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, layout::AGGREGATE_GROUP_REFERENCE, 240);
+    reference(&mut bytes, layout::EDGE_GROUP_REFERENCE, 251);
 
     EdgeFlangeFrame {
         bytes,
