@@ -3060,8 +3060,9 @@ fn associated_pcurves(
 
 /// Select the only non-seam pcurve candidate with an endpoint witness. Part 42
 /// supplies no selector for competing same-surface pcurves; the CADIR policy
-/// leaves that set detached. A sole candidate uses its declared trim or the
-/// bounded endpoint inverse when no finite trim is declared.
+/// leaves that set detached. A sole candidate uses its declared trim or a
+/// bounded search when no usable finite trim is declared. The search result is
+/// admitted only as an evaluated endpoint witness. It is not a global minimum.
 struct SelectedPcurve {
     id: PcurveId,
     parameter_range: Option<[f64; 2]>,
@@ -3073,7 +3074,10 @@ const PCURVE_ENDPOINT_GRID_DIVISIONS: usize = 64;
 struct PcurveEndpointFit {
     start_parameter: f64,
     end_parameter: f64,
-    score: f64,
+    /// Maximum model-space residual at the two returned parameters. This is
+    /// the admission witness. It does not claim that the search found a
+    /// global nearest point on the mapped pcurve.
+    max_residual: f64,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3114,7 +3118,7 @@ fn select_associated_pcurve(
         .and_then(|vertex| point_positions.get(vertex.point))
         .copied()?;
     let endpoint = pcurve_endpoint_fit(&index, &surface_id, geometry, &surface, start, end)?;
-    if !endpoint.score.is_finite() || !bound.is_finite() || endpoint.score > bound {
+    if !endpoint.max_residual.is_finite() || !bound.is_finite() || endpoint.max_residual > bound {
         return None;
     }
     let parameter_range = pcurve_declared_parameter_range(geometry).and_then(|range| {
@@ -3145,19 +3149,19 @@ fn pcurve_endpoint_fit(
             return Some(PcurveEndpointFit {
                 start_parameter: parameter_range[0],
                 end_parameter: parameter_range[1],
-                score: declared_score,
+                max_residual: declared_score,
             });
         }
         // A few producers retain a stale trim around an edge-local pcurve.
-        // Keep the declared endpoint as the first witness, but recover the
-        // edge interval only when an independent inverse finds both vertices.
+        // Search for an alternative interval, then use the evaluated residual
+        // as the witness. The search does not establish a global minimum.
         let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
         let start = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?;
         let end = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)?;
         return Some(PcurveEndpointFit {
             start_parameter: start.1,
             end_parameter: end.1,
-            score: start.0.max(end.0),
+            max_residual: start.0.max(end.0),
         });
     }
     let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
@@ -3166,7 +3170,7 @@ fn pcurve_endpoint_fit(
     Some(PcurveEndpointFit {
         start_parameter: start.1,
         end_parameter: end.1,
-        score: start.0.max(end.0),
+        max_residual: start.0.max(end.0),
     })
 }
 
@@ -3257,6 +3261,9 @@ fn pcurve_surface_closest(
     target: Point3,
     seeds: &[f64],
 ) -> Option<(f64, f64)> {
+    // The minimum is only over the finite seed set. The caller treats the
+    // directly evaluated result as a witness and omits the optional relation
+    // when no witness meets the tolerance.
     seeds
         .iter()
         .copied()
@@ -3264,9 +3271,11 @@ fn pcurve_surface_closest(
         .min_by(|left, right| left.0.total_cmp(&right.0))
 }
 
-/// Minimize the distance from one pcurve branch to a model-space endpoint.
-/// A pcurve and its 3D surface curve need not share parameter units, so this
-/// is an independent one-dimensional inverse rather than a parameter copy.
+/// Search for a low-residual parameter on one pcurve branch. A pcurve and its
+/// 3D surface curve need not share parameter units, so this is an independent
+/// one-dimensional inverse rather than a parameter copy. The returned distance
+/// is evaluated at the returned parameter and is an admission witness, not a
+/// proof of a global minimum.
 fn mapped_pcurve_closest(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,

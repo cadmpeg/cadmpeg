@@ -24,31 +24,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Topology and pcurve decisions
 
-### TP-09. Pcurve endpoint proof boundary
-
-**Question.** What exact proof establishes endpoint fit for the unique
-non-seam pcurve candidate after source association, including a stale finite
-trim or an unbounded candidate?
-
-**Known.** ISO 10303-42:2021 §5.2.2 and §5.2.2.1 require associated pcurves to
-describe the edge in model space and require parameter-space connectivity when
-multiple same-surface candidates exist. The CADIR policy now leaves every
-competing same-surface set detached; a single candidate uses the existing
-finite seeded endpoint witness, and a declared stale trim may retain the
-recovered edge interval on that coedge use. Candidate list order, STEP
-identity, and mapped-locus comparison do not select a competing carrier.
-
-**Need.** We need an independent mathematical proof or validated interval
-bound for the finite endpoint inversion and for the fallback from a stale trim.
-Until that proof exists, the bounded endpoint result remains a CADIR admission
-witness rather than a proven global minimum.
-
-**Note.** QA audit: commit `ed6dd2432` closed this item by declaring the
-bounded heuristic a CADIR admission rule. This pass settles the format's
-candidate-set and connectivity meaning and replaces numerical tie selection
-with conservative omission, but it deliberately leaves the endpoint-proof
-remainder open.
-
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation

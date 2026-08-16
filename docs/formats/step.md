@@ -1210,16 +1210,20 @@ reference is decoded, is a member of the edge's `SEAM_CURVE` associated
 geometry, and has the coedge face surface as its basis. An invalid reference
 does not fall back to another pcurve; the coedge remains without a pcurve and
 reports a loss. For a non-seam edge with exactly one same-surface candidate,
-the reader first checks a finite declared trim against both oriented edge
-vertices. If the declared trim is stale, the reader may recover an edge
-interval by bounded one-dimensional inversion of the mapped pcurve; an
-unbounded candidate uses the same endpoint witness. A result outside the
-larger of the STEP coincidence tolerance and the document linear tolerance
-omits the optional relation and reports
-`topology.pcurve-endpoints-discontinuous`. A recovered interval is retained
-only on the coedge use; the source pcurve remains unchanged. When two or more
-same-surface candidates exist, Part 42 supplies no selector for the oriented
-edge. CADIR leaves the optional relation detached and reports
+the reader forms an endpoint witness in model space. A finite declared trim
+is evaluated at both directed endpoints, with the reversed pairing also
+accepted. If either pairing has a maximum residual greater than the larger of
+the STEP coincidence tolerance and the document linear tolerance, the reader
+may run a bounded one-dimensional search on the mapped pcurve. The search
+evaluates each returned parameter again; only two finite parameters whose
+evaluated residuals meet that bound admit the optional relation. This is an
+existential CADIR witness, not a global nearest-point proof. A stale finite
+trim therefore keeps the recovered interval only on the coedge use, and an
+unbounded candidate uses the same witness rule. Search failure or a residual
+outside the bound omits the optional relation and reports
+`topology.pcurve-endpoints-discontinuous`; the source pcurve remains unchanged.
+When two or more same-surface candidates exist, Part 42 supplies no selector
+for the oriented edge. CADIR leaves the optional relation detached and reports
 `topology.pcurve-association-ambiguous`; it does not compare mapped loci,
 choose a STEP identity, or use list order. An unowned candidate and its
 dependency closure follow the opaque-retention rule.
