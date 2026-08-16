@@ -199,7 +199,7 @@ pub(super) fn project(
                     && (start + 1..=start + 2)
                         .all(|index| record.number(index).is_some_and(f64::is_finite))
                     && (entry.form == 0
-                        || match record.tokens.get(start + 3).map(|token| &token.value) {
+                        || match record.value(start + 3) {
                             None | Some(crate::parameter::TokenValue::Omitted) => true,
                             _ => record.number(start + 3).is_some_and(f64::is_finite),
                         })
@@ -357,7 +357,7 @@ pub(super) fn project(
                 last_view = view;
                 last_breakpoint = breakpoint;
                 let display_valid = record.integer(start + 2).is_some_and(display_flag_valid);
-                let color_valid = match record.tokens.get(start + 3).map(|token| &token.value) {
+                let color_valid = match record.value(start + 3) {
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 3).is_some_and(|value| {
                         standard_color_valid(value)
@@ -373,7 +373,7 @@ pub(super) fn project(
                                 .is_some()
                     }),
                 };
-                let font_valid = match record.tokens.get(start + 4).map(|token| &token.value) {
+                let font_valid = match record.value(start + 4) {
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 4).is_some_and(|value| {
                         value == 0
@@ -390,7 +390,7 @@ pub(super) fn project(
                                 .is_some()
                     }),
                 };
-                let weight_valid = match record.tokens.get(start + 5).map(|token| &token.value) {
+                let weight_valid = match record.value(start + 5) {
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 5).is_some_and(|value| value >= 0),
                 };

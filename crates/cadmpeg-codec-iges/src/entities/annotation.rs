@@ -19,7 +19,7 @@ fn exact_parameter_count(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start)
+        .map_or(record.parameter_end(), |groups| groups.token_start)
         == expected
 }
 
@@ -53,7 +53,7 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
         return false;
     };
     let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start);
+        .map_or(record.parameter_end(), |groups| groups.token_start);
     let last_string_start = 2 + (count - 1) * 12;
     (last_string_start < parameter_end && parameter_end <= 2 + count * 12)
         && (0..count).all(|index| {
@@ -95,7 +95,7 @@ fn new_general_note_valid(
         return false;
     };
     let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start);
+        .map_or(record.parameter_end(), |groups| groups.token_start);
     parameter_end <= 13 + count * 20
         && (1..=2).all(|index| {
             record
@@ -613,14 +613,14 @@ fn fill_pattern_valid(pattern: i64) -> bool {
 }
 
 fn zero_or_omitted(record: &ParameterRecord, index: usize) -> bool {
-    match record.tokens.get(index).map(|token| &token.value) {
+    match record.value(index) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
         _ => record.number(index) == Some(0.0),
     }
 }
 
 fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
-    match record.tokens.get(index).map(|token| &token.value) {
+    match record.value(index) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
         _ => finite(record, index),
     }

@@ -760,7 +760,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        if record.tokens.len() < required_parameter_count {
+        if record.parameter_end() < required_parameter_count {
             losses.push(entity_loss(
                 entry,
                 "spline-surface placeholder grid is truncated",

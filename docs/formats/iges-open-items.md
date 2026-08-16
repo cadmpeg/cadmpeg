@@ -49,18 +49,6 @@ from a conformant file.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-18. Semantic entity projection crosses trailing pointer groups
-
-**Question.** Does semantic projection stop every fixed and counted entity field at the selected entity-specific Parameter Data boundary?
-
-**Known.** `reader.rs:116-147` passes each complete `ParameterRecord` to `entities::geometry::project_geometry` without its selected boundary. Native Type 106 projection in `native.rs:1666-1687` applies `primary_end`, but `entities/copious.rs:244-339` reads the tuple count and tuple values from the full record. Other semantic projectors use the same unbounded access, including Type 126 in `entities/geometry.rs:1056-1119`, Types 502 and 504 in `entities/brep.rs:273-400`, and Types 141, 143, and 144 in `entities/trimming.rs:841-1018`.
-
-**Need.** Every semantic fixed field and counted list must stop at the entity-specific boundary, or the projector must use an entity layout that cannot consume a trailing group. A valid suffix must not become geometry.
-
-**Conflict.** The current IGES specification requires every counted sequence to fit before the entity-specific boundary and says the decoder applies that rule at the selected boundary. Its Parameter Data section defines the selected typed suffix. Native Type 106 honors this rule while semantic Type 106 projection does not.
-
-**Note.** Hostile substitution: a Type 106 Form 11 record with tokens `[106, 1, 2, 0, 0, 0, 1, 9, 0]` has two planar tuples declared, but only the first tuple fits before a valid trailing associativity group `[1, 9, 0]` for Type 402 Directory Entry 9. Native projection exposes no typed tuple. Semantic projection reads `(0, 0)` and `(1, 9)` and emits a curve without a loss. The same boundary failure can fabricate values in the other unbounded projectors listed above.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance

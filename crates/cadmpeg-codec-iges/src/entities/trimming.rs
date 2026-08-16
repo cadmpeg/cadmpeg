@@ -966,7 +966,7 @@ pub(super) fn project(
                     };
                     sequences.push(outer);
                 } else if !matches!(
-                    record.tokens.get(4).map(|token| &token.value),
+                    record.value(4),
                     None | Some(TokenValue::Omitted | TokenValue::Integer(0))
                 ) {
                     losses.push(entity_loss(

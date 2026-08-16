@@ -248,6 +248,7 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         line_range: 1..2,
         bytes: Vec::new(),
         tokens,
+        parameter_end: token_count,
         comment: Vec::new(),
     };
 
@@ -268,6 +269,7 @@ fn counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix() {
                 span: 0..0,
             })
             .collect(),
+        parameter_end: 21,
         comment: Vec::new(),
     };
     assert_eq!(
@@ -278,6 +280,7 @@ fn counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix() {
     let mut suffixed_tokens = vec![0, 2];
     suffixed_tokens.extend(std::iter::repeat_n(0, 20));
     suffixed_tokens.extend([1, 9]);
+    let suffixed_parameter_end = suffixed_tokens.len();
     let suffixed = ParameterRecord {
         directory_sequence: 1,
         line_range: 1..2,
@@ -289,12 +292,37 @@ fn counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix() {
                 span: 0..0,
             })
             .collect(),
+        parameter_end: suffixed_parameter_end,
         comment: Vec::new(),
     };
     assert_eq!(
         suffixed.count_with_stride_before_default_tail(1, 20, 22),
         None
     );
+}
+
+#[test]
+fn field_defaults_do_not_cross_the_selected_parameter_boundary() {
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [106, 1, 2, 1, 9, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 4,
+        comment: Vec::new(),
+    };
+
+    assert_eq!(record.integer_or(3, 7), Some(1));
+    assert_eq!(record.integer_or(4, 7), None);
+    assert_eq!(record.number_or(4, 7.0), None);
+    assert_eq!(record.string_or_empty(4), None);
+    assert_eq!(record.integer_or(99, 7), Some(7));
 }
 
 #[test]
@@ -310,6 +338,7 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
                 span: 0..0,
             })
             .collect(),
+        parameter_end: 4,
         comment: Vec::new(),
     };
 
@@ -337,6 +366,7 @@ fn earliest_valid_trailing_pointer_group_boundary_wins() {
                 span: 0..0,
             })
             .collect(),
+        parameter_end: 9,
         comment: Vec::new(),
     };
 

@@ -232,6 +232,35 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
 }
 
 #[test]
+fn semantic_copious_projection_stops_before_trailing_association_group() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_with_trailing_association_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("tuple array is truncated"))
+        .expect("boundary loss for the selected entity");
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
+
+    let native = result.ir().native.namespace("iges").unwrap();
+    let copious = &native.arenas["copious_data"][0];
+    assert_eq!(copious.fields()["declared_tuple_count"], 2);
+    assert!(copious.fields()["tuples"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn strict_decode_rejects_an_attributed_projection_loss() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let mut options = DecodeOptions::default();

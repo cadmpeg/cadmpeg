@@ -88,7 +88,7 @@ fn text_font_definition(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
     let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start);
+        .map_or(record.parameter_end(), |groups| groups.token_start);
     let directory_valid = entry.status.use_flag == 2
         && entry.structure == 0
         && entry.line_font == 0
@@ -105,7 +105,7 @@ fn text_font_definition(
     {
         return None;
     }
-    let supersedes = match record.tokens.get(3).map(|token| &token.value) {
+    let supersedes = match record.value(3) {
         None | Some(TokenValue::Omitted) => None,
         Some(TokenValue::Integer(value)) if *value >= 0 => None,
         Some(TokenValue::Integer(value)) => value
@@ -214,7 +214,7 @@ pub(super) fn project(
             continue;
         };
         let parameter_end = trailing_pointer_groups(record, &entries)
-            .map_or(record.tokens.len(), |groups| groups.token_start);
+            .map_or(record.parameter_end(), |groups| groups.token_start);
         let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| {
             font >= 0
@@ -364,7 +364,7 @@ pub(super) fn project(
             losses.push(loss(entry, "RGB percentage is outside 0 through 100"));
             continue;
         };
-        let name = match record.tokens.get(4).map(|token| &token.value) {
+        let name = match record.value(4) {
             None | Some(crate::parameter::TokenValue::Omitted) => None,
             Some(crate::parameter::TokenValue::String(_)) => record
                 .string(4)

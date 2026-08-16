@@ -34,14 +34,14 @@ fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
 
 fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
     matches!(
-        record.tokens.get(index).map(|token| &token.value),
+        record.value(index),
         Some(TokenValue::Omitted | TokenValue::Integer(0))
     )
 }
 
 fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
     matches!(
-        record.tokens.get(index).map(|token| &token.value),
+        record.value(index),
         Some(TokenValue::Omitted | TokenValue::Integer(0) | TokenValue::Real(0.0))
     )
 }

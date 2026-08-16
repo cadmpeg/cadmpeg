@@ -167,10 +167,7 @@ fn attribute_value_valid(
     data_type: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    match (
-        data_type,
-        record.tokens.get(index).map(|token| &token.value),
-    ) {
+    match (data_type, record.value(index)) {
         (1, Some(TokenValue::Integer(_)))
         | (3, Some(TokenValue::String(_)))
         | (5, Some(TokenValue::Omitted)) => true,
@@ -212,7 +209,7 @@ fn entity_parameter_end(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> usize {
     trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start)
+        .map_or(record.parameter_end(), |groups| groups.token_start)
 }
 
 fn generic_property_value_valid(
@@ -222,10 +219,7 @@ fn generic_property_value_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     match data_type {
-        0 => matches!(
-            record.tokens.get(index).map(|token| &token.value),
-            Some(TokenValue::Omitted)
-        ),
+        0 => matches!(record.value(index), Some(TokenValue::Omitted)),
         1 => record.integer(index).is_some(),
         2 => record.number(index).is_some_and(f64::is_finite),
         3 => record.string(index).is_some(),
@@ -1101,7 +1095,7 @@ pub(super) fn project(
             continue;
         };
         let name_valid = matches!(
-            record.tokens.get(1).map(|token| &token.value),
+            record.value(1),
             Some(TokenValue::String(_) | TokenValue::Omitted)
         );
         let list_type_valid = record
@@ -1116,12 +1110,13 @@ pub(super) fn project(
             let data_type = record
                 .integer(cursor + 1)
                 .filter(|value| matches!(value, 1..=6));
-            let value_count = match record.tokens.get(cursor + 2).map(|token| &token.value) {
-                None | Some(TokenValue::Omitted) => Some(1),
+            let value_count = match record.value(cursor + 2) {
+                None | Some(TokenValue::Omitted) => record.integer_or(cursor + 2, 1).map(|_| 1),
                 Some(TokenValue::Integer(value)) => {
                     usize::try_from(*value).ok().and_then(|count| {
-                        (entry.form == 0 || count <= record.tokens.len().saturating_sub(cursor + 3))
-                            .then_some(count)
+                        (entry.form == 0
+                            || count <= record.parameter_end().saturating_sub(cursor + 3))
+                        .then_some(count)
                     })
                 }
                 Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
@@ -1194,7 +1189,7 @@ pub(super) fn project(
         let row_count = declared_row_count
             .zip(values_per_row)
             .and_then(|(rows, width)| {
-                let available = record.tokens.len().saturating_sub(value_start);
+                let available = record.parameter_end().saturating_sub(value_start);
                 (width == 0 || rows <= available / width).then_some(rows)
             });
         let mut cursor = value_start;

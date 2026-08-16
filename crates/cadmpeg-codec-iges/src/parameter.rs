@@ -32,6 +32,12 @@ pub(crate) struct ParameterRecord {
     pub(crate) line_range: Range<u32>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) tokens: Vec<Token>,
+    /// Exclusive end of the entity-specific Parameter Data sequence.
+    ///
+    /// `tokens` retains the complete record so native preservation and
+    /// relationship analysis can inspect trailing pointer groups. Entity
+    /// accessors stop at this boundary.
+    pub(crate) parameter_end: usize,
     pub(crate) comment: Vec<u8>,
 }
 
@@ -58,23 +64,51 @@ pub(crate) struct TrailingPointer {
 }
 
 impl ParameterRecord {
+    pub(crate) fn parameter_end(&self) -> usize {
+        self.parameter_end.min(self.tokens.len())
+    }
+
+    pub(crate) fn token(&self, index: usize) -> Option<&Token> {
+        (index < self.parameter_end()).then(|| self.tokens.get(index))?
+    }
+
+    pub(crate) fn value(&self, index: usize) -> Option<&TokenValue> {
+        Some(&self.token(index)?.value)
+    }
+
+    fn raw_value(&self, index: usize) -> Option<&TokenValue> {
+        self.tokens.get(index).map(|token| &token.value)
+    }
+
+    fn raw_integer(&self, index: usize) -> Option<i64> {
+        match self.raw_value(index)? {
+            TokenValue::Integer(value) => Some(*value),
+            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
+        }
+    }
+
     pub(crate) fn integer(&self, index: usize) -> Option<i64> {
-        match self.tokens.get(index).map(|token| &token.value)? {
+        match self.value(index)? {
             TokenValue::Integer(value) => Some(*value),
             TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
     pub(crate) fn integer_or(&self, index: usize, default: i64) -> Option<i64> {
-        match self.tokens.get(index).map(|token| &token.value) {
-            None | Some(TokenValue::Omitted) => Some(default),
-            Some(TokenValue::Integer(value)) => Some(*value),
-            Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+        let token = match self.tokens.get(index) {
+            None => return Some(default),
+            Some(_) if index >= self.parameter_end() => return None,
+            Some(token) => token,
+        };
+        match &token.value {
+            TokenValue::Omitted => Some(default),
+            TokenValue::Integer(value) => Some(*value),
+            TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
     pub(crate) fn number(&self, index: usize) -> Option<f64> {
-        match self.tokens.get(index).map(|token| &token.value)? {
+        match self.value(index)? {
             TokenValue::Integer(value) => Some(*value as f64),
             TokenValue::Real(value) => Some(*value),
             TokenValue::Omitted | TokenValue::String(_) => None,
@@ -82,11 +116,16 @@ impl ParameterRecord {
     }
 
     pub(crate) fn number_or(&self, index: usize, default: f64) -> Option<f64> {
-        match self.tokens.get(index).map(|token| &token.value) {
-            None | Some(TokenValue::Omitted) => Some(default),
-            Some(TokenValue::Integer(value)) => Some(*value as f64),
-            Some(TokenValue::Real(value)) => Some(*value),
-            Some(TokenValue::String(_)) => None,
+        let token = match self.tokens.get(index) {
+            None => return Some(default),
+            Some(_) if index >= self.parameter_end() => return None,
+            Some(token) => token,
+        };
+        match &token.value {
+            TokenValue::Omitted => Some(default),
+            TokenValue::Integer(value) => Some(*value as f64),
+            TokenValue::Real(value) => Some(*value),
+            TokenValue::String(_) => None,
         }
     }
 
@@ -110,7 +149,7 @@ impl ParameterRecord {
     }
 
     fn number_significance_with(&self, index: usize, precision: RealPrecision) -> Option<u32> {
-        let token = self.tokens.get(index)?;
+        let token = self.token(index)?;
         if !matches!(token.value, TokenValue::Real(_)) {
             return None;
         }
@@ -123,17 +162,22 @@ impl ParameterRecord {
     }
 
     pub(crate) fn string(&self, index: usize) -> Option<&[u8]> {
-        match self.tokens.get(index).map(|token| &token.value)? {
+        match self.value(index)? {
             TokenValue::String(value) => Some(value),
             TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
 
     pub(crate) fn string_or_empty(&self, index: usize) -> Option<&[u8]> {
-        match self.tokens.get(index).map(|token| &token.value) {
-            None | Some(TokenValue::Omitted) => Some(&[]),
-            Some(TokenValue::String(value)) => Some(value),
-            Some(TokenValue::Integer(_) | TokenValue::Real(_)) => None,
+        let token = match self.tokens.get(index) {
+            None => return Some(&[]),
+            Some(_) if index >= self.parameter_end() => return None,
+            Some(token) => token,
+        };
+        match &token.value {
+            TokenValue::Omitted => Some(&[]),
+            TokenValue::String(value) => Some(value),
+            TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
 
@@ -147,7 +191,7 @@ impl ParameterRecord {
 
     /// Return a nonnegative declared count only when all fixed-width items fit.
     pub(crate) fn count_with_stride(&self, index: usize, stride: usize) -> Option<usize> {
-        self.count_with_stride_before(index, stride, self.tokens.len())
+        self.count_with_stride_before(index, stride, self.parameter_end())
     }
 
     /// Return a nonnegative declared count only when all fixed-width items fit
@@ -175,7 +219,7 @@ impl ParameterRecord {
             .integer(index)
             .and_then(|value| usize::try_from(value).ok())?;
         let required = count.checked_mul(stride)?;
-        let end = end.min(self.tokens.len());
+        let end = end.min(self.parameter_end());
         (required <= end.saturating_sub(item_start)).then_some(count)
     }
 
@@ -190,7 +234,7 @@ impl ParameterRecord {
         if stride == 0 {
             return None;
         }
-        let end = end.min(self.tokens.len());
+        let end = end.min(self.parameter_end());
         if end < self.tokens.len() {
             return self.count_with_stride_before(index, stride, end);
         }
@@ -248,12 +292,12 @@ fn pointer_group_candidate(
     non_integer_prefix: &[usize],
 ) -> Option<PointerGroupCandidate> {
     let association_count = record
-        .integer(association_count_index)
+        .raw_integer(association_count_index)
         .and_then(|value| usize::try_from(value).ok())?;
     let association_start = association_count_index.checked_add(1)?;
     let property_count_index = association_start.checked_add(association_count)?;
     let property_count = record
-        .integer(property_count_index)
+        .raw_integer(property_count_index)
         .and_then(|value| usize::try_from(value).ok())?;
     if association_count == 0 && property_count == 0 {
         return None;
@@ -279,7 +323,7 @@ fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerG
     non_integer_prefix.push(0);
     for index in 0..record.tokens.len() {
         non_integer_prefix
-            .push(non_integer_prefix[index] + usize::from(record.integer(index).is_none()));
+            .push(non_integer_prefix[index] + usize::from(record.raw_integer(index).is_none()));
     }
     (1..record.tokens.len())
         .filter_map(|association_count_index| {
@@ -295,7 +339,7 @@ fn pointer_is_valid(
     association: bool,
 ) -> bool {
     let Some(sequence) = record
-        .integer(index)
+        .raw_integer(index)
         .and_then(|value| u32::try_from(value).ok())
         .filter(|sequence| sequence % 2 == 1)
     else {
@@ -319,7 +363,7 @@ fn groups_for_candidate(
         .map(|token_index| {
             Some(TrailingPointer {
                 token_index,
-                raw_pointer: record.integer(token_index)?,
+                raw_pointer: record.raw_integer(token_index)?,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -329,7 +373,7 @@ fn groups_for_candidate(
         .map(|token_index| {
             Some(TrailingPointer {
                 token_index,
-                raw_pointer: record.integer(token_index)?,
+                raw_pointer: record.raw_integer(token_index)?,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -613,13 +657,17 @@ pub(crate) fn assemble_with_context(
                 "first parameter does not match the Directory Entry entity type",
             ));
         }
-        records.push(ParameterRecord {
+        let mut record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: actual_start..actual_end,
             comment: bytes[record_end..].to_vec(),
             bytes,
             tokens,
-        });
+            parameter_end: 0,
+        };
+        record.parameter_end = trailing_pointer_groups(&record, &entries)
+            .map_or(record.tokens.len(), |groups| groups.token_start);
+        records.push(record);
     }
     Ok(records)
 }

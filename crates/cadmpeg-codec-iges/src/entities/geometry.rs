@@ -557,7 +557,7 @@ fn consumed_support_sequences(
         let Some(count) = record.count(1) else {
             continue;
         };
-        for index in 0..count.min(record.tokens.len()) {
+        for index in 0..count.min(record.parameter_end()) {
             if let Some(sequence) = record
                 .integer(2 + count + index)
                 .and_then(positive_sequence)

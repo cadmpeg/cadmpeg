@@ -1480,7 +1480,7 @@ pub(crate) fn store(
         trailing_by_directory
             .get(&sequence)
             .and_then(|groups| groups.as_ref())
-            .map_or(record.tokens.len(), |groups| groups.token_start)
+            .map_or(record.parameter_end(), |groups| groups.token_start)
     };
     let parameter_resolver = ParameterResolver::new(directory);
     let mut required_back_pointer_members = std::collections::BTreeSet::new();
@@ -3233,7 +3233,7 @@ pub(crate) fn store(
                     let value_count = if entry.form == 0 {
                         Some(0)
                     } else {
-                        match record.tokens.get(cursor + 2).map(|token| &token.value) {
+                        match record.value(cursor + 2) {
                             Some(TokenValue::Omitted) => {
                                 (stride <= end.saturating_sub(cursor + 3)).then_some(1)
                             }
@@ -3335,15 +3335,18 @@ pub(crate) fn store(
             let values_per_row = (0..attribute_count)
                 .try_fold(0_usize, |total, index| {
                     let count_index = 6 + index * 3;
-                    let count = match definition_record
-                        .and_then(|record| record.tokens.get(count_index))
-                        .map(|token| &token.value)
-                    {
-                        None | Some(TokenValue::Omitted) => 1,
-                        Some(TokenValue::Integer(value)) => {
-                            usize::try_from(*value).unwrap_or_default()
-                        }
-                        Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                    let count = match definition_record {
+                        Some(record) => match record.value(count_index) {
+                            None | Some(TokenValue::Omitted) => record
+                                .integer_or(count_index, 1)
+                                .and_then(|value| usize::try_from(value).ok())
+                                .unwrap_or_default(),
+                            Some(TokenValue::Integer(value)) => {
+                                usize::try_from(*value).unwrap_or_default()
+                            }
+                            Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                        },
+                        None => 0,
                     };
                     total.checked_add(count)
                 })
@@ -3990,7 +3993,7 @@ pub(crate) fn store(
                 .unwrap_or_default();
             let value = |index| {
                 record
-                    .and_then(|record| record.tokens.get(index))
+                    .and_then(|record| record.token(index))
                     .map(token)
                     .map_or(NativeTokenValue::Omitted, |token| token.value)
             };
