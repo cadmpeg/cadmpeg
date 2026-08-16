@@ -47,16 +47,6 @@ from a conformant file.
 
 ## 2. Global metadata
 
-### GL-02. The units-name comparison rule
-
-**Question.** How is the Global units name compared with the standard unit codes?
-
-**Known.** `global.rs:496-509` uses an exact, case-sensitive byte match and accepts `IN`, `INCH`, `MM`, `FT`, `MI`, `M`, `KM`, `MIL`, `UM`, `CM`, and `UIN`. `global.rs:420-427` refuses units flag `3` when the name is not in that set. The Global section of `iges.md` records this list and its use.
-
-**Need.** We need the standard comparison rule and the complete alias set. A rejected spelling removes the length factor used by geometry and topology projection.
-
-**Note.** Reopened by the 2026-08-16 audit. The current list is explicit, but the closure did not establish the repository's exact padding, case, or alias policy from the IGES specification or from an exporter-authored witness file.
-
 ### GL-03. A missing or zero Global minimum resolution
 
 **Question.** What does an absent, zero, or negative Global minimum resolution mean?

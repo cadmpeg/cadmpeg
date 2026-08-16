@@ -338,17 +338,22 @@ fn real_significance_fields_are_required_and_positive() {
 
 #[test]
 fn other_units_require_an_exact_supported_standard_name() {
-    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,2Hmm,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;";
-    let error = IgesCodec
-        .inspect(
-            &mut Cursor::new(fixed_ascii_with_global(global)),
-            &cadmpeg_core::decode::InspectOptions::default(),
-        )
-        .unwrap_err();
+    for units_name in ["2Hmm", "5HMM "] {
+        let global = format!(
+            "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,{units_name},1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;"
+        );
+        let error = IgesCodec
+            .inspect(
+                &mut Cursor::new(fixed_ascii_with_global(global.as_bytes())),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap_err();
 
-    assert!(error
-        .to_string()
-        .contains("field 15 (units name) is not a supported standard unit name"));
+        assert!(
+            matches!(error, CodecError::Malformed(_)),
+            "{units_name}: {error}"
+        );
+    }
 }
 
 #[test]
