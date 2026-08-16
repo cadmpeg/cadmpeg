@@ -231,22 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### SG-03. Signature value encoding
-
-**Known.** The SIGNATURE section contains RFC 4648 Base64 text. Decoding
-produces the CMS `SignedData` object described by RFC 5652, including its
-signer information and any certificates or algorithm parameters carried by
-that object. The parser validates the Base64 framing and retains the raw
-section, payload range, and decoded CMS bytes.
-
-**Question.** How does each signature method encode its signature value and verification material in the SIGNATURE section?
-
-`step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." require retention of the complete SIGNATURE byte range. The specification gives no field grammar for the retained content.
-
-**Need.** We must know the encoding to extract the signature value, keys, certificates, and method parameters.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### TP-01. Shared-edge ownership
 
 **Question.** What STEP rule establishes shared-edge ownership?

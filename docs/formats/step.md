@@ -371,8 +371,13 @@ namespaces, schemas, units, or identities into the root graph. Subsidiary bytes
 remain archive resources.
 Each SIGNATURE section follows the exchange terminator. Its content is a
 detached CMS `SignedData` object as defined by RFC 5652, encoded as one RFC
-4648 Base64 token. Digest and signature algorithm identifiers are inside that
-object, not in a Part 21 field. The section has one `SIGNATURE;` token, one
+4648 Base64 token. RFC 5652 encodes CMS values with BER; signed attributes,
+when present, use DER even when the surrounding CMS value uses BER. The
+detached `SignedData.encapContentInfo` carries its content-type identifier and
+omits `eContent`. `SignerInfo.signature` is an OCTET STRING; signer identity,
+algorithm identifiers and parameters, signed or unsigned attributes, and
+optional certificates and revocation information are CMS fields. They are not
+additional Part 21 fields. The section has one `SIGNATURE;` token, one
 Base64 content token, and one `ENDSEC;` token. Space, print-control directives,
 and comments may separate these tokens. ASCII control octets are ignored,
 including inside the Base64 token. The section boundary is the first
