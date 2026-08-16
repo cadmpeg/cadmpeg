@@ -1138,6 +1138,24 @@ identity. A malformed recognized class payload is discarded at its bounded
 userdata item, the object attributes remain admitted, and the decoder records
 the bounded diagnostic. Duplicate selection follows section 7.2.
 
+#### 7.2.11 `ON_AnnotationTextFormula`
+
+`ON_AnnotationTextFormula` is runtime userdata on a legacy V5 annotation. Its
+class and item UUID are both
+`699FCC42-62D4-488C-9109-F1B7A37CE926`, and its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4` (`ON_opennurbs5_id`). The class does
+not archive: it inherits `ON_UserData::Archive() == false` and supplies no
+`Write` or `Read` override. `ON_OBSOLETE_V5_Annotation::SetTextFormula` may
+attach it for runtime access, but the generic userdata writer excludes it
+because `WriteToArchive` is false. No class-userdata wrapper or payload exists
+for this UUID.
+
+The formula itself is not userdata bytes. In the legacy common annotation
+chunk, the minor-2 field in section 18.3 is the direct UTF-16 text formula.
+Reading and writing that field updates the runtime userdata through
+`SetTextFormula`; CADIR uses the existing annotation text mapping and creates
+no separate userdata record.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:

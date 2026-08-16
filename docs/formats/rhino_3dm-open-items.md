@@ -235,6 +235,12 @@ class-owned anonymous version-1.0 wrapper, nested anonymous mesh child, and
 packed `ON_MeshParameters` body. The decoder applies the source custom and
 curvature side effects under the owning object presentation; a malformed
 payload leaves the object attributes admitted and records the bounded drop.
+The built-in `ON_AnnotationTextFormula` class is also settled as a
+runtime-only carrier. Its class and item UUID is
+`699FCC42-62D4-488C-9109-F1B7A37CE926`; it has no archive writer or reader and
+inherits `Archive() == false`, so it has no class-userdata payload. The formula
+is the direct minor-2 UTF-16 field of the legacy annotation record in section
+18.3.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -252,8 +258,9 @@ classes are also settled as no-op V5 compatibility records under section
 7.2.8. `ON_OBSOLETE_CCustomMeshUserData` is settled as the typed
 object-attributes compatibility carrier under section 7.2.9, and
 `ON_PerObjectMeshParameters` is settled as the typed modern object-attributes
-carrier under section 7.2.10; other future class-specific payload semantics
-remain open.
+carrier under section 7.2.10. `ON_AnnotationTextFormula` is settled as a
+runtime-only helper with no serialized userdata under section 7.2.11; other
+future class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 
