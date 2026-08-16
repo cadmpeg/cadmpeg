@@ -20,7 +20,7 @@ use crate::solve::incidence::{
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching,
     repair_distinct_domain_matching_with_budget, retain_distinct_matching_supports,
-    MatchingEdgeConstraint,
+    unique_coordinate_bijection, MatchingEdgeConstraint,
 };
 #[cfg(test)]
 use crate::solve::missing_edge::standard_mesh_boundary_assignments;
@@ -85,6 +85,7 @@ pub(crate) enum MeshCandidateExhaustion {
     QuotientPreparation,
     IncidenceEnumeration,
     EndpointResolution,
+    PreferredSolutionSearch,
 }
 
 #[derive(Debug)]
@@ -6650,6 +6651,7 @@ fn resolve_singleton_mesh_selection(
     selected: &[MeshFaceBoundaryAssignment],
     directions: &[Vec<Vec<bool>>],
     port_identities: &[[u32; 2]],
+    budget: &WorkBudget<'_>,
 ) -> Option<MeshEndpointResolve> {
     if selected.len() != directions.len()
         || edge_candidates.len() != edge_rows.len()
@@ -6663,13 +6665,62 @@ fn resolve_singleton_mesh_selection(
         selected,
         directions,
     )?;
-    let point_assignment = topology.bind_vertex_points(
-        &edge_candidates
-            .iter()
-            .map(|candidates| candidates[0])
-            .collect::<Vec<_>>(),
-    )?;
     let edge_vertices = topology.edge_vertices()?;
+    let mut quotient =
+        initial_mesh_quotient(edge_candidates, vertex_points.len(), port_identities)?;
+    let mut port_by_vertex = HashMap::<usize, usize>::new();
+    for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
+        for (port, vertex) in [(0, start), (1, end)] {
+            let node = edge * 2 + port;
+            if let Some(previous) = port_by_vertex.insert(vertex, node) {
+                quotient.merge(previous, node)?;
+            }
+        }
+    }
+    if !quotient.merge_singleton_coordinate_roots(edge_candidates) {
+        return None;
+    }
+    if !quotient.edge_domains_viable(edge_candidates) {
+        return None;
+    }
+    let roots = (0..quotient.union.len())
+        .filter(|node| quotient.union.find(*node) == *node)
+        .collect::<Vec<_>>();
+    if roots.len() != vertex_points.len() {
+        return None;
+    }
+    let root_indices = roots
+        .iter()
+        .enumerate()
+        .map(|(index, root)| (*root, index))
+        .collect::<HashMap<_, _>>();
+    let domain_sets = roots
+        .iter()
+        .map(|root| quotient.domains[*root].as_ref().clone())
+        .collect::<Vec<HashSet<_>>>();
+    if domain_sets.iter().any(HashSet::is_empty) {
+        return None;
+    }
+    let domain_values = domain_sets
+        .iter()
+        .map(|domain| {
+            let mut values = domain.iter().copied().collect::<Vec<_>>();
+            values.sort_unstable();
+            values
+        })
+        .collect::<Vec<_>>();
+    let unique_assignment = unique_coordinate_bijection(&domain_sets, vertex_points);
+    let first_assignment = unique_assignment.clone().or_else(|| {
+        distinct_domain_matching_with_budget(
+            domain_values.iter().map(Vec::as_slice),
+            vertex_points.len(),
+            Some(budget),
+            None,
+        )
+    });
+    let Some(first_assignment) = first_assignment else {
+        return budget.exhausted().then_some(MeshEndpointResolve::Exhausted);
+    };
     let mut edge_use_counts =
         alloc_filled(edge_rows.len(), 0usize, "catia_mesh_edge_use_counts").ok()?;
     for use_ in selected
@@ -6682,20 +6733,82 @@ fn resolve_singleton_mesh_selection(
     if edge_use_counts.iter().any(|count| *count > 2) {
         return None;
     }
-    let mut points_by_identity = HashMap::<u32, usize>::new();
-    for (edge, vertices) in edge_vertices.into_iter().enumerate() {
-        let points = [
-            *point_assignment.get(vertices[0])?,
-            *point_assignment.get(vertices[1])?,
-        ];
-        for (identity, point) in port_identities[edge].into_iter().zip(points) {
-            match points_by_identity.insert(identity, point) {
-                Some(previous) if previous != point => return None,
-                _ => {}
+    let mut materialize = |assignment: &[usize]| -> Option<(StandardTopology, Vec<usize>)> {
+        if assignment.len() != roots.len() {
+            return None;
+        }
+        let mut point_assignment = alloc_filled(
+            topology.logical_vertex_count,
+            None,
+            "catia_selection_singleton_point_assignment",
+        )
+        .ok()?;
+        let mut points_by_identity = HashMap::<u32, usize>::new();
+        for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
+            let points = [start, end]
+                .into_iter()
+                .enumerate()
+                .map(|(port, vertex)| {
+                    let root = quotient.union.find(edge * 2 + port);
+                    let root = *root_indices.get(&root)?;
+                    let point = *assignment.get(root)?;
+                    match point_assignment[vertex] {
+                        Some(stored) if stored != point => return None,
+                        Some(_) => {}
+                        None => point_assignment[vertex] = Some(point),
+                    }
+                    Some(point)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let points = <[usize; 2]>::try_from(points.as_slice()).ok()?;
+            let closed_ports = quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
+            if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
+                return None;
+            }
+            for (identity, point) in port_identities[edge].into_iter().zip(points) {
+                match points_by_identity.insert(identity, point) {
+                    Some(previous) if previous != point => return None,
+                    _ => {}
+                }
+            }
+        }
+        Some((
+            topology.clone(),
+            point_assignment.into_iter().collect::<Option<Vec<_>>>()?,
+        ))
+    };
+    let first = materialize(&first_assignment)?;
+    if unique_assignment.is_none() {
+        let ambiguous_roots = domain_values
+            .iter()
+            .enumerate()
+            .filter(|(_, domain)| domain.len() > 1)
+            .map(|(root, _)| root)
+            .collect::<Vec<_>>();
+        for root in ambiguous_roots {
+            let Some(alternate) = distinct_domain_matching_with_budget(
+                domain_values.iter().map(Vec::as_slice),
+                vertex_points.len(),
+                Some(budget),
+                Some(MatchingEdgeConstraint::Exclude(
+                    root,
+                    first_assignment[root],
+                )),
+            ) else {
+                if budget.exhausted() {
+                    return Some(MeshEndpointResolve::Exhausted);
+                }
+                continue;
+            };
+            let Some(alternate) = materialize(&alternate) else {
+                continue;
+            };
+            if !mesh_candidates_equivalent(&first, &alternate) {
+                return Some(MeshEndpointResolve::Ambiguous);
             }
         }
     }
-    Some(MeshEndpointResolve::Solved(topology, point_assignment))
+    Some(MeshEndpointResolve::Solved(first.0, first.1))
 }
 
 fn resolve_singleton_mesh_endpoint_candidates(
@@ -6704,6 +6817,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
     assignments: &[Vec<MeshFaceBoundaryAssignment>],
     port_identities: &[[u32; 2]],
+    budget: &WorkBudget<'_>,
 ) -> Option<MeshEndpointResolve> {
     if edge_candidates.len() != edge_rows.len()
         || port_identities.len() != edge_rows.len()
@@ -6758,6 +6872,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
         &selected,
         &fixed_directions,
         port_identities,
+        budget,
     ) {
         return Some(resolved);
     }
@@ -6769,6 +6884,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
         &selected,
         &endpoint_labelled_directions,
         port_identities,
+        budget,
     )
 }
 
@@ -6808,6 +6924,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         &edge_candidates,
         &assignments,
         port_identities,
+        budget,
     ) {
         return resolved;
     }
@@ -6867,16 +6984,20 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// shared with the exact ordered-domain fallback. Endpoint graphs must close
 /// every face; all surviving graphs must produce one topology modulo logical
 /// vertex labels, intrinsic edge direction, and boundary-cycle start.
-/// `pair_solution_valid` receives partial assignments during search. It must be
-/// monotone: once it rejects a selected subset, assigning more edges cannot
+/// `partial_solution_valid` receives partial assignments during search. It must
+/// be monotone: once it rejects a selected subset, assigning more edges cannot
 /// make that subset valid. `partial_constraint_edges` identifies every edge
 /// whose assignment can affect that predicate and must be kept in the same
 /// incidence component. `preferred_assignment_edges` identifies additional
 /// variables that should be selected before unrelated incidence variables;
 /// those variables do not require a single incidence component.
+///
+/// `complete_solution_valid` is evaluated only after every endpoint pair has
+/// been assigned. Use it for global preferences whose result cannot be known
+/// from a partial assignment.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn parse_standard_mesh_candidate_outcome<F>(
+pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -6885,11 +7006,14 @@ pub(crate) fn parse_standard_mesh_candidate_outcome<F>(
     preferred_assignment_edges: &[bool],
     assignment_dependencies: Option<&[Vec<usize>]>,
     budget: &WorkBudget<'_>,
-    pair_solution_valid: F,
+    partial_solution_valid: FP,
+    complete_solution_valid: FC,
 ) -> MeshCandidateSolve
 where
-    F: Fn(&[Option<[usize; 2]>]) -> bool,
+    FP: Fn(&[Option<[usize; 2]>]) -> bool,
+    FC: Fn(&[Option<[usize; 2]>]) -> bool,
 {
+    let endpoint_budget = budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
     let Some((
         face_count,
         edge_rows,
@@ -7001,7 +7125,16 @@ where
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
         );
     }
-    let constrained_pair_solution_valid = |pairs: &[Option<[usize; 2]>]| pair_solution_valid(pairs);
+    let constrained_partial_solution_valid =
+        |pairs: &[Option<[usize; 2]>]| partial_solution_valid(pairs);
+    let complete_preference_rejected = Cell::new(false);
+    let constrained_complete_solution_valid = |pairs: &[Option<[usize; 2]>]| {
+        let valid = complete_solution_valid(pairs);
+        if !valid {
+            complete_preference_rejected.set(true);
+        }
+        valid
+    };
     let mut incidence_solution = None;
     let mut incidence_ambiguity = None;
     let mut incidence_exhausted = false;
@@ -7019,11 +7152,13 @@ where
             coupled_edges: partial_constraint_edges,
             assignment_predecessors: Some(&assignment_predecessors),
             assignment_dependencies,
-            valid: &constrained_pair_solution_valid,
+            valid: &constrained_partial_solution_valid,
         }),
         Some(budget),
         &|pairs| {
-            constrained_pair_solution_valid(&pairs.iter().copied().map(Some).collect::<Vec<_>>())
+            constrained_complete_solution_valid(
+                &pairs.iter().copied().map(Some).collect::<Vec<_>>(),
+            )
         },
         &mut |pairs| {
             let singleton = pairs
@@ -7044,7 +7179,7 @@ where
                 &singleton,
                 mesh_assignments,
                 &port_identities,
-                budget,
+                &endpoint_budget,
             ) {
                 MeshEndpointResolve::Solved(topology, assignment) => (topology, assignment),
                 MeshEndpointResolve::Rejected => return ControlFlow::Continue(()),
@@ -7079,6 +7214,8 @@ where
     if incidence_exhausted || matches!(pair_solutions, IncidenceSolve::Exhausted) {
         return MeshCandidateSolve::Exhausted(if incidence_exhausted {
             MeshCandidateExhaustion::EndpointResolution
+        } else if complete_preference_rejected.get() {
+            MeshCandidateExhaustion::PreferredSolutionSearch
         } else {
             MeshCandidateExhaustion::IncidenceEnumeration
         });
@@ -7109,7 +7246,7 @@ where
             edge_candidates,
             assignments,
             &port_identities,
-            budget,
+            &endpoint_budget,
         ))
     })();
     match fallback {
@@ -7132,9 +7269,18 @@ where
 fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(matches!(
-        parse_standard_mesh_candidate_outcome(&[], &[], &[], &[], &[], &[], None, &budget, |_| {
-            true
-        },),
+        parse_standard_mesh_candidate_outcome(
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+            &budget,
+            |_| true,
+            |_| true,
+        ),
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
     ));
 }
@@ -7342,6 +7488,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
 #[test]
 fn singleton_mesh_path_handles_many_independent_face_cycles() {
     const FACE_COUNT: usize = 128;
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut edge_rows = Vec::with_capacity(FACE_COUNT * 4);
     let mut edge_candidates = Vec::with_capacity(FACE_COUNT * 4);
     let mut port_identities = Vec::with_capacity(FACE_COUNT * 4);
@@ -7394,6 +7541,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
             &edge_candidates,
             &assignments,
             &port_identities,
+            &budget,
         )
         .expect("singleton path applies")
     else {
@@ -7405,6 +7553,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
 
 #[test]
 fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let edge_rows = (0..3)
         .map(|_| EdgeRow {
             kind: 1,
@@ -7437,6 +7586,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
             &edge_candidates,
             &assignments,
             &port_identities,
+            &budget,
         )
         .expect("endpoint filtering should leave one face assignment")
     else {
@@ -7448,6 +7598,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
 
 #[test]
 fn singleton_mesh_path_handles_closed_endpoint_pairs() {
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let edge_rows = vec![EdgeRow {
         kind: 1,
         handles: Vec::new(),
@@ -7472,6 +7623,7 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
             &edge_candidates,
             &assignments,
             &port_identities,
+            &budget,
         )
         .expect("closed endpoint pair should use a direction gauge")
     else {

@@ -255,6 +255,19 @@ fn mesh_retry_runs_only_after_exact_rejection() {
     assert!(!called.get());
 
     let outcome = retry_rejected_mesh_solution(
+        MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::PreferredSolutionSearch),
+        || {
+            called.set(true);
+            MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+        },
+    );
+    assert!(matches!(
+        outcome,
+        MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+    ));
+    assert!(called.get());
+
+    let outcome = retry_rejected_mesh_solution(
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure),
         || {
             called.set(true);

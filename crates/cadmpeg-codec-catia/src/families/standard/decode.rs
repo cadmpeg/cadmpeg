@@ -1448,6 +1448,7 @@ pub(crate) fn try_decode_standard(
     );
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
+    let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let topology_result = attach_standard_topology(
         &mut topology_ir,
         &mut topology_annotations,
@@ -1461,7 +1462,7 @@ pub(crate) fn try_decode_standard(
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
         &object_evidence.limit_curves,
-        &work_budget,
+        &topology_budget,
         &mut topology_diagnostics,
         &mut bound_standard_limit_curve_count,
     )
@@ -1867,7 +1868,10 @@ fn retry_rejected_mesh_solution(
     fallback: impl FnOnce() -> mesh_quotient::MeshCandidateSolve,
 ) -> mesh_quotient::MeshCandidateSolve {
     match preferred {
-        mesh_quotient::MeshCandidateSolve::Rejected(_) => fallback(),
+        mesh_quotient::MeshCandidateSolve::Rejected(_)
+        | mesh_quotient::MeshCandidateSolve::Exhausted(
+            mesh_quotient::MeshCandidateExhaustion::PreferredSolutionSearch,
+        ) => fallback(),
         outcome => outcome,
     }
 }
@@ -3756,6 +3760,10 @@ fn attach_standard_topology(
         }
         let branch_assignment_dependencies = (!fbb_only)
             .then(|| standard_curve_branch_assignment_dependencies(&supports, &branch_groups));
+        let preferred_budget =
+            work_budget.session_child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+        let fallback_budget =
+            work_budget.session_child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             spine,
             &edge_faces,
@@ -3764,7 +3772,8 @@ fn attach_standard_topology(
             &circle_constraint_edges,
             &branch_preferred_edges,
             branch_assignment_dependencies.as_deref(),
-            work_budget,
+            &preferred_budget,
+            |_| true,
             |pairs| {
                 (fbb_only
                     || standard_curve_branch_assignment_is_ranked(
@@ -3772,7 +3781,7 @@ fn attach_standard_topology(
                         &solver_options,
                         &branch_groups,
                         pairs,
-                        Some(work_budget),
+                        None,
                     ))
                     && standard_circle_pair_solution_is_simple(
                         ir,
@@ -3794,16 +3803,16 @@ fn attach_standard_topology(
             // accept the unconstrained bounded result only when it is uniquely
             // determined.
             retry_rejected_mesh_solution(preferred, || {
-                let unconstrained = vec![false; circle_constraint_edges.len()];
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
                     spine,
                     &edge_faces,
                     &solver_options,
                     &edge_classes,
-                    &unconstrained,
+                    &circle_constraint_edges,
                     &branch_preferred_edges,
                     branch_assignment_dependencies.as_deref(),
-                    work_budget,
+                    &fallback_budget,
+                    |_| true,
                     |pairs| {
                         fbb_only
                             || standard_curve_branch_assignment_is_ranked(
@@ -3811,7 +3820,7 @@ fn attach_standard_topology(
                                 &solver_options,
                                 &branch_groups,
                                 pairs,
-                                Some(work_budget),
+                                None,
                             )
                     },
                 )
