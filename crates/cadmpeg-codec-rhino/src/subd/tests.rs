@@ -411,6 +411,132 @@ fn decode_fixture(fixture: Fixture, scale: f64) -> Result<DecodedSubd, SubdError
     )
 }
 
+fn proxy_userdata(
+    embedded: &[u8],
+    fingerprint: MeshProxyFingerprint,
+    transform_identity: bool,
+) -> (Vec<u8>, UserdataDescriptor) {
+    let mut bytes = Vec::new();
+    for index in 0..16 {
+        bytes.extend_from_slice(
+            &(if transform_identity && index % 5 == 0 {
+                1.0_f64
+            } else {
+                0.0_f64
+            })
+            .to_le_bytes(),
+        );
+    }
+    let transform_range = 0..bytes.len();
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_i32.to_le_bytes());
+    body.extend_from_slice(&1_i32.to_le_bytes());
+    body.push(1);
+    body.extend_from_slice(embedded);
+    body.extend_from_slice(
+        &i32::try_from(fingerprint.face_count)
+            .expect("proxy face count")
+            .to_le_bytes(),
+    );
+    body.extend_from_slice(
+        &i32::try_from(fingerprint.vertex_count)
+            .expect("proxy vertex count")
+            .to_le_bytes(),
+    );
+    for digest in [fingerprint.face_sha1, fingerprint.vertex_sha1] {
+        let mut hash = Vec::new();
+        hash.extend_from_slice(&1_i32.to_le_bytes());
+        hash.extend_from_slice(&0_i32.to_le_bytes());
+        hash.extend_from_slice(&digest);
+        body.extend_from_slice(&anonymous(&hash));
+    }
+    let payload_start = bytes.len();
+    bytes.extend_from_slice(&anonymous(&body));
+    let payload_range = payload_start..bytes.len();
+    let descriptor = UserdataDescriptor {
+        range: payload_range.clone(),
+        version: (2, 2),
+        class_uuid: SUBD_MESH_PROXY_USERDATA,
+        item_uuid: SUBD_MESH_PROXY_USERDATA,
+        copy_count: 1,
+        transform_range,
+        application_uuid: None,
+        last_saved_as_goo: Some(false),
+        archive_version: Some(50),
+        writer_version: Some(202_401_010),
+        payload_range,
+        unknown_version: false,
+    };
+    (bytes, descriptor)
+}
+
+#[test]
+fn mesh_proxy_requires_identity_and_parent_fingerprint() {
+    let fingerprint = MeshProxyFingerprint {
+        face_count: 4,
+        vertex_count: 4,
+        face_sha1: [0x11; 20],
+        vertex_sha1: [0x22; 20],
+    };
+    let embedded = payload(Fixture::default());
+    let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, true);
+    let decoded = decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        fingerprint,
+    )
+    .expect("valid proxy framing")
+    .expect("valid proxy transfer");
+    assert!(matches!(decoded, DecodedSubd::Surface { .. }));
+
+    let mut wrong_hash = fingerprint;
+    wrong_hash.face_sha1[0] ^= 1;
+    let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, true);
+    assert!(decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        wrong_hash,
+    )
+    .expect("wrong hash is an admission rejection")
+    .is_none());
+
+    let empty_parent = MeshProxyFingerprint {
+        face_count: 0,
+        vertex_count: 0,
+        face_sha1: EMPTY_CONTENT_SHA1,
+        vertex_sha1: EMPTY_CONTENT_SHA1,
+    };
+    let (bytes, descriptor) = proxy_userdata(&embedded, empty_parent, true);
+    assert!(decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        empty_parent,
+    )
+    .expect("empty parent is an admission rejection")
+    .is_none());
+
+    let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, false);
+    assert!(decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        fingerprint,
+    )
+    .expect("nonidentity userdata transform is an admission rejection")
+    .is_none());
+}
+
 #[test]
 fn decodes_empty_outer_subd_without_carrier() {
     assert!(matches!(

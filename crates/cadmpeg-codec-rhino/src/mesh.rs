@@ -14,12 +14,14 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
+use sha1::{Digest, Sha1};
 
 use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::curves::{error, GeometryError};
 use crate::objects::UserdataDescriptor;
+use crate::subd::MeshProxyFingerprint;
 use crate::wire::Uuid;
 
 /// Decode context and root view used for mesh expansion.
@@ -176,6 +178,8 @@ pub(crate) struct DecodedMesh {
     pub(crate) ngon_count: usize,
     /// Number of stored quadrilateral faces converted to neutral triangles.
     pub(crate) quad_count: usize,
+    /// Native mesh arrays used to validate an attached `SubD` proxy.
+    pub(crate) proxy_fingerprint: MeshProxyFingerprint,
 }
 
 /// Caller-owned identity and archive metadata for one mesh decode.
@@ -437,6 +441,12 @@ pub(crate) fn decode(
             }
         }
     }
+    let proxy_fingerprint = MeshProxyFingerprint {
+        face_count: faces.len(),
+        vertex_count: decoded.vertices.len(),
+        face_sha1: native_face_sha1(&faces),
+        vertex_sha1: native_vertex_sha1(&decoded.vertices),
+    };
     let source_vertices = double_vertices.unwrap_or_else(|| {
         decoded
             .vertices
@@ -484,7 +494,28 @@ pub(crate) fn decode(
         scaled: scale != 1.0,
         ngon_count,
         quad_count,
+        proxy_fingerprint,
     })
+}
+
+fn native_face_sha1(faces: &[[u32; 4]]) -> [u8; 20] {
+    let mut digest = Sha1::new();
+    for face in faces {
+        for index in face {
+            digest.update(index.to_ne_bytes());
+        }
+    }
+    digest.finalize().into()
+}
+
+fn native_vertex_sha1(vertices: &[[f32; 3]]) -> [u8; 20] {
+    let mut digest = Sha1::new();
+    for vertex in vertices {
+        for coordinate in vertex {
+            digest.update(coordinate.to_ne_bytes());
+        }
+    }
+    digest.finalize().into()
 }
 
 fn read_faces(

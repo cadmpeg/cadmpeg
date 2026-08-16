@@ -862,9 +862,65 @@ impl<'a> DecodeContext<'a> {
                 );
                 match decoded {
                     Ok(mesh) => {
-                        if self.commit_mesh(source_order, mesh) {
+                        let proxy = object
+                            .userdata
+                            .iter()
+                            .find(|extra| {
+                                extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                                    && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                            })
+                            .cloned();
+                        let mut proxy_transferred = false;
+                        if let Some(extra) = proxy {
+                            let subd_id: cadmpeg_ir::ids::SubdId =
+                                format!("rhino:object:subd#{key}").into();
+                            match crate::subd::decode_mesh_proxy(
+                                self.scan.data,
+                                &extra,
+                                self.archive(),
+                                scale,
+                                subd_id,
+                                mesh.proxy_fingerprint,
+                            ) {
+                                Ok(Some(crate::subd::DecodedSubd::Surface {
+                                    surface,
+                                    neutral_metadata,
+                                    enum_diagnostics,
+                                    warnings,
+                                })) => {
+                                    proxy_transferred = self.commit_subd_surface(
+                                        source_order,
+                                        *surface,
+                                        neutral_metadata,
+                                        enum_diagnostics,
+                                        warnings,
+                                        scale != 1.0,
+                                    );
+                                    if proxy_transferred {
+                                        self.mark_decoded(source_order);
+                                    } else {
+                                        self.scan_warning(
+                                            source_order,
+                                            "valid SubD mesh proxy rejected by IR validation; parent mesh retained",
+                                        );
+                                    }
+                                }
+                                Ok(None) => self.scan_warning(
+                                    source_order,
+                                    "SubD mesh proxy failed its validity or parent-mesh identity checks; parent mesh retained",
+                                ),
+                                Err(error) => self.scan_warning(
+                                    source_order,
+                                    &format!("SubD mesh proxy dropped: {error}; parent mesh retained"),
+                                ),
+                                Ok(Some(crate::subd::DecodedSubd::Empty)) => unreachable!(
+                                    "mesh proxy decoder does not admit an empty SubD"
+                                ),
+                            }
+                        }
+                        if !proxy_transferred && self.commit_mesh(source_order, mesh) {
                             self.mark_decoded(source_order);
-                        } else {
+                        } else if !proxy_transferred {
                             self.mark_failed(source_order);
                         }
                     }
@@ -2156,20 +2212,14 @@ impl<'a> DecodeContext<'a> {
                 enum_diagnostics,
                 warnings,
             }) => {
-                for warning in warnings {
-                    self.scan_warning(source_order, &warning);
-                }
-                for diagnostic in enum_diagnostics {
-                    self.typed_losses
-                        .push(RhinoLossCode::EnumerationValueDegraded.note(diagnostic.message()));
-                }
-                if neutral_metadata {
-                    self.scan_warning(
-                        source_order,
-                        "SubD cache, texture, symmetry, or packing metadata is retained without a neutral-IR mapping",
-                    );
-                }
-                if self.commit_subd(source_order, *surface, scale != 1.0) {
+                if self.commit_subd_surface(
+                    source_order,
+                    *surface,
+                    neutral_metadata,
+                    enum_diagnostics,
+                    warnings,
+                    scale != 1.0,
+                ) {
                     self.mark_decoded(source_order);
                 } else {
                     self.scan_warning(
@@ -2193,6 +2243,31 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
+    }
+
+    fn commit_subd_surface(
+        &mut self,
+        source_order: usize,
+        surface: cadmpeg_ir::subd::SubdSurface,
+        neutral_metadata: bool,
+        enum_diagnostics: Vec<crate::subd::SubdEnumDiagnostic>,
+        warnings: Vec<String>,
+        scaled: bool,
+    ) -> bool {
+        for warning in warnings {
+            self.scan_warning(source_order, &warning);
+        }
+        for diagnostic in enum_diagnostics {
+            self.typed_losses
+                .push(RhinoLossCode::EnumerationValueDegraded.note(diagnostic.message()));
+        }
+        if neutral_metadata {
+            self.scan_warning(
+                source_order,
+                "SubD cache, texture, symmetry, or packing metadata is retained without a neutral-IR mapping",
+            );
+        }
+        self.commit_subd(source_order, surface, scaled)
     }
 
     fn commit_subd(

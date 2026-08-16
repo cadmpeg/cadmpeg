@@ -951,6 +951,57 @@ item is discarded, the Brep remains admissible, and the decode report emits
 `container.redundant-field-repaired` with the diagnostic cause. A checksum
 mismatch follows the recoverable warning policy in §4.1.
 
+#### 7.2.6 `ON_SubDMeshProxyUserData`
+
+The built-in `ON_SubDMeshProxyUserData` class uses class UUID and item UUID
+`2868B9CD-28AE-4EA7-8073-BD390B3E97C8`. Its application UUID is
+`7B0B585D-7A31-45D0-925E-BDD7DDF3E4E3` (`ON_opennurbs6_id`). The class-userdata
+wrapper is the major-2, minor-2 form from this section. Its payload is an
+anonymous major-1 chunk with a positive minor; the writer emits minor 1:
+
+```text
+anonymous version 1.1
+bool proxy data is valid
+if false: no further proxy fields
+if true:
+  ON_SubD compatibility payload
+  i32 parent mesh face count
+  i32 parent mesh vertex count
+  anonymous SHA-1 version 1.0: 20 raw digest bytes
+  anonymous SHA-1 version 1.0: 20 raw digest bytes
+```
+
+The embedded compatibility payload is the `ON_SubD` payload from section 17:
+one `u8 has_subdimple` followed, when the value is 1, by one bounded
+anonymous SubDimple chunk. The `has_subdimple` byte and that nested chunk
+boundary delimit the embedded SubD; no additional length field surrounds it.
+Each SHA-1 record contains `i32 major = 1`, `i32 minor = 0`, and 20 digest
+bytes. The first digest is over the parent `ON_Mesh::m_F` array and the second
+is over its `m_V` array. The source arrays are raw memory: each mesh face is
+four `i32` values (16 bytes), and each float vertex is three `f32` values (12
+bytes), in native byte order. A V5 double-precision vertex userdata item does
+not replace `m_V` and does not change these proxy hashes.
+
+The runtime-object conversion gate is archive version 60: below 60, a runtime
+`ON_SubD` is written as an `ON_Mesh` control-net proxy; at 60 and later, the
+direct `ON_SubD` class is written. V3 through V5 object writers also emit the
+section 7.2.6 proxy item. V1 and V2 still write the mesh proxy class, but their
+object writers suppress all class-userdata items, so they do not contain this
+proxy item. The reader accepts a positive proxy-payload minor. A proxy item is
+valid only when its userdata transform is the identity, its embedded SubD
+pointer exists, its stored face count is positive, its stored vertex count is
+greater than 2, its stored hashes are not empty-content hashes, and the stored
+counts and hashes equal the current parent mesh arrays. `SubDFromMeshProxy`
+then returns the embedded SubD and removes the proxy userdata item.
+
+CADIR decision: a valid proxy on a top-level `ON_Mesh` transfers the embedded
+level-zero SubD surface and suppresses the proxy mesh tessellation. A proxy on
+a nested display or history mesh is not promoted because that mesh is a cache
+carrier, not the owning runtime object. A false validity flag, a nonidentity
+userdata transform, a count or hash mismatch, a malformed payload, or an
+embedded payload without a neutral control cage leaves the parent mesh as the
+admitted tessellation and does not create a second SubD entity.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2330,6 +2381,11 @@ source n-gon grouping; the mesh face table remains the neutral tessellation
 input. When both this item and the inline major-3 n-gon chunk are present, the
 inline count is authoritative for the neutral grouping loss.
 
+A top-level mesh object written from a runtime SubD in an archive below 60 can
+also carry the section 7.2.6 proxy item. Its parent-array counts and raw-array
+SHA-1 values are checked before the mesh is admitted as a SubD; a failed check
+leaves the ordinary mesh tessellation authoritative.
+
 ## 15. Brep
 
 `ON_Brep` major 3 uses payload version 3.minor. Minor 1 adds mesh-side
@@ -2655,6 +2711,12 @@ sequence above.
 followed by an anonymous SubDimple chunk. SubDimple uses anonymous major 1.
 Minor 0 is the base payload; later minors append fields. V5/V6 use minor 0;
 V7/V8 use minor 4.
+
+For archive versions below 60, `WriteObject` serializes a runtime SubD as an
+`ON_Mesh` control-net proxy. V3 through V5 include the section 7.2.6 userdata
+item; V1 and V2 suppress class-userdata items. For archive version 60 and
+later, `WriteObject` serializes the runtime object as this direct `ON_SubD`
+class. The embedded SubD in a proxy uses this same payload grammar.
 
 SubDimple fields:
 
@@ -3363,6 +3425,14 @@ endpoints; loop rings are directed, continuous, and closed.
 The SubDimple anonymous chunk is major 1. Minor 0 is the base payload; later
 minors append fields. The outer `ON_SubD` byte is `has_subdimple`: 0 means no
 following payload and 1 means one SubDimple chunk.
+
+The runtime-object write gate is archive version 60: below 60 the serialized
+class is `ON_Mesh`; V3 through V5 carry the SubD in section 7.2.6 class
+userdata, while V1 and V2 have no class-userdata stream. At 60 and later the
+serialized class is `ON_SubD`. Proxy admission requires the identity
+transform, positive face count, vertex count greater than 2, non-empty-content
+SHA-1 values, and exact parent-mesh face/float-vertex counts and SHA-1 values
+defined in section 7.2.6.
 
 SubDimple field order:
 

@@ -207,17 +207,26 @@ for archive version 50 when the Brep has faces and exactly twice as many face
 sides; `DeleteAfterRead` installs it only when no inline region topology is
 loaded. The decoder reuses the Brep region carriers and validation, so no new
 neutral field is introduced.
+The built-in `ON_SubDMeshProxyUserData` class is also settled. Its class and
+item UUID is `2868B9CD-28AE-4EA7-8073-BD390B3E97C8`, its application UUID is
+`7B0B585D-7A31-45D0-925E-BDD7DDF3E4E3`, and section 7.2.6 defines its positive
+minor-1 anonymous payload, embedded SubD boundary, raw mesh-array SHA-1
+records, identity-transform gate, archive-version write split, and parent-mesh
+transfer check. A valid top-level proxy is promoted to the neutral SubD; a
+failed admission retains the parent mesh under the CADIR decision in section
+7.2.6.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
 built-in hatch gradient userdata, the V5 dimension-style extra, and
-`ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`, and
-`ON_OBSOLETE_V5_TextExtra`, `ON_V5_MeshDoubleVertices`, and
-`ON_V4V5_MeshNgonUserData`, and `ON_V5_BrepRegionTopologyUserData` are settled,
-including the Brep, extrusion, and history carriers where applicable; other
-future class-specific payload semantics remain open.
+`ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`,
+`ON_OBSOLETE_V5_TextExtra`, `ON_V5_MeshDoubleVertices`,
+`ON_V4V5_MeshNgonUserData`, `ON_V5_BrepRegionTopologyUserData`, and
+`ON_SubDMeshProxyUserData` are settled, including the Brep, extrusion, history,
+and top-level SubD proxy carriers where applicable; other future
+class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

@@ -26,6 +26,7 @@ cadmpeg-container.workspace = true
 flate2.workspace = true
 crc32fast.workspace = true
 sha2.workspace = true
+sha1.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 tempfile.workspace = true
