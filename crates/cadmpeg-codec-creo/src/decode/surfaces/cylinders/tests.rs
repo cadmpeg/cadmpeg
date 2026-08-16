@@ -90,6 +90,93 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
     }
 }
 
+fn split_outline_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 1,
+            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 10,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 1,
+        },
+        crate::surface::SurfaceRow {
+            id: 2,
+            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 10,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 2,
+        },
+        crate::surface::SurfaceRow {
+            id: 3,
+            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 10,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 3,
+        },
+    ]);
+    scan.curves.topology_rows.extend([
+        crate::curve::CurveTopologyRow {
+            id: 11,
+            type_byte: 0,
+            feature_id: 10,
+            directions: [1, 1],
+            faces: [1, 2],
+            next_edges: [11, 11],
+            offset: 11,
+        },
+        crate::curve::CurveTopologyRow {
+            id: 12,
+            type_byte: 0,
+            feature_id: 10,
+            directions: [1, 1],
+            faces: [1, 3],
+            next_edges: [12, 12],
+            offset: 12,
+        },
+    ]);
+    let parameter = |surface_id, bounds| crate::surface::SurfaceParameterRecord {
+        surface_id,
+        body: Vec::new(),
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: Some(bounds),
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: surface_id as usize,
+        body_offset: surface_id as usize,
+    };
+    scan.surfaces.parameters.extend([
+        parameter(2, [[-0.3125, 1.3125], [0.3125, 1.625]]),
+        parameter(3, [[-0.3125, 1.625], [0.3125, 1.9375]]),
+    ]);
+    scan.planes
+        .positional_frames
+        .push(crate::surface::OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, -1.0],
+            normal: [0.0, 0.0, 1.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 1,
+        });
+    scan
+}
+
 #[test]
 fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_absent() {
     let scan = slot_fillet_scan();
@@ -116,6 +203,34 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(radius, 1.0);
+}
+
+#[test]
+fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
+    let scan = split_outline_scan();
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    assert_eq!(
+        super::transfer_split_outline_cylinders(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        2
+    );
+    assert!(ir.model.surfaces.iter().all(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Cylinder {
+                radius,
+                origin,
+                axis,
+                ..
+            } if radius == 0.3125
+                && origin == [0.0, 1.625, -1.0].into()
+                && axis == [0.0, 0.0, 1.0].into()
+        )
+    }));
 }
 
 #[test]
@@ -163,4 +278,22 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
         .surfaces
         .iter()
         .all(|surface| { surface.id.as_str() != "creo:visibgeom:surface#7" }));
+}
+
+#[test]
+fn split_outline_rejects_conflicting_model_plane_carrier() {
+    let scan = split_outline_scan();
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model
+        .surfaces
+        .push(model_plane(1, [0.0, 0.0, -0.5], [0.0, 0.0, 1.0]));
+
+    assert_eq!(
+        super::transfer_split_outline_cylinders(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        0
+    );
 }

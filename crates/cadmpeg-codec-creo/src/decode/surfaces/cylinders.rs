@@ -292,6 +292,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         .iter()
         .map(|row| (row.id, row))
         .collect::<BTreeMap<_, _>>();
+    let local_planes = placed_planes(scan);
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
     for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         if edge.type_byte != 0 {
@@ -344,16 +345,16 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         else {
             continue;
         };
-        let plane_id = SurfaceId(format!("creo:visibgeom:surface#{plane_id}"));
-        let Some(plane) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == plane_id)
-        else {
+        let Some(plane) = reconciled_model_plane(&local_planes, ir, plane_id) else {
             continue;
         };
-        let Some(geometry) = cylinder_from_complementary_outline_bounds(&plane.geometry, bounds)
+        let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+        let plane_geometry = SurfaceGeometry::Plane {
+            origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+            normal,
+            u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+        };
+        let Some(geometry) = cylinder_from_complementary_outline_bounds(&plane_geometry, bounds)
         else {
             continue;
         };
