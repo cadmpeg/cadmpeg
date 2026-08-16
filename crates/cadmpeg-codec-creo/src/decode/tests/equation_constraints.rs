@@ -509,6 +509,40 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         }
     );
 
+    let mut propagated_distance = definition.clone();
+    propagated_distance.body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+            \x01\x06\xf8\x05\x00\x01\x02\x03\x04\xf6\xe2\
+            \x02\x02\xf8\x02\x04\x05\xf6\xe2"
+        .to_vec();
+    let variables = propagated_distance.variables.as_mut().expect("variables");
+    variables.declared_count = 6;
+    for row in &mut variables.rows[..4] {
+        row.value = None;
+        row.guess = None;
+    }
+    variables.rows[4].value = None;
+    variables.rows.push(variable(3, 21, Some(5.0)));
+    let propagated_constraints =
+        section_equation_function_six_distance_constraints(&propagated_distance, &sketch);
+    assert_eq!(propagated_constraints.len(), 1);
+    assert_eq!(
+        propagated_constraints[0].0.definition,
+        constraints[0].0.definition
+    );
+    let mut conflicting_equality_distance = propagated_distance.clone();
+    conflicting_equality_distance
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows[4]
+        .value = Some(4.0);
+    assert!(section_equation_function_six_distance_constraints(
+        &conflicting_equality_distance,
+        &sketch,
+    )
+    .is_empty());
+
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::FeatureRelationTable {
         declared_count: 1,

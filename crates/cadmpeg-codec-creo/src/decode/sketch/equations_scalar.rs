@@ -14,6 +14,8 @@ use super::equations_coordinate::{
 const EPS_RADIAL_VALUE: f64 = 1e-9;
 const EPS_RADIAL_ANGLE: f64 = 1e-9;
 const EPS_RADIAL_ZERO: f64 = 1e-12;
+const EPS_AXIS_DISTANCE: f64 = 1e-9;
+const EPS_AXIS_ZERO: f64 = 1e-12;
 const EPS_SCALAR_EQUALITY: f64 = 1e-9;
 
 pub(crate) fn section_equation_coordinate_equalities(
@@ -245,7 +247,10 @@ pub(crate) struct SectionFunctionThirtyOnePointCoordinates {
     pub(crate) active: bool,
 }
 
-fn reconcile_equation_value(stored: Option<f64>, solved: Option<f64>) -> Result<Option<f64>, ()> {
+pub(crate) fn reconcile_equation_value(
+    stored: Option<f64>,
+    solved: Option<f64>,
+) -> Result<Option<f64>, ()> {
     if stored.is_some_and(|value| !value.is_finite())
         || solved.is_some_and(|value| !value.is_finite())
     {
@@ -727,7 +732,7 @@ pub(crate) fn section_equation_scalar_equalities(
         .collect()
 }
 
-fn section_equation_scalar_equality_values(
+pub(crate) fn section_equation_scalar_equality_values(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>> {
     let Some(variables) = definition
@@ -1035,6 +1040,7 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_values(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let row = |ordinal: u32| {
         usize::try_from(ordinal)
             .ok()
@@ -1058,15 +1064,51 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_values(
             else {
                 return None;
             };
+            let first_value = reconcile_equation_value(
+                first.value,
+                scalar_equality_values
+                    .get(&(first.variable_type, first.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?,
+            )
+            .ok()?;
+            let second_value = reconcile_equation_value(
+                second.value,
+                scalar_equality_values
+                    .get(&(second.variable_type, second.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?,
+            )
+            .ok()?;
+            let difference_value = reconcile_equation_value(
+                difference.value,
+                scalar_equality_values
+                    .get(&(difference.variable_type, difference.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?,
+            )
+            .ok()?;
+            let selector_value = reconcile_equation_value(
+                selector.value,
+                scalar_equality_values
+                    .get(&(selector.variable_type, selector.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?,
+            )
+            .ok()?;
             if first.variable_type != 4
                 || second.variable_type != 4
                 || difference.variable_type != 0
                 || selector.variable_type != 5
-                || selector.value != Some(0.0)
+                || selector_value != Some(0.0)
             {
                 return None;
             }
-            let (Some(first), Some(second)) = (first.value, second.value) else {
+            let (Some(first), Some(second)) = (first_value, second_value) else {
                 return None;
             };
             if !first.is_finite() || !second.is_finite() || first < second {
@@ -1076,7 +1118,7 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_values(
             if !value.is_finite() || value > std::f64::consts::PI {
                 return None;
             }
-            if difference.value.is_some_and(|stored| {
+            if difference_value.is_some_and(|stored| {
                 !stored.is_finite() || stored < 0.0 || !approximately_equal(stored, value)
             }) {
                 return None;
@@ -1137,6 +1179,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let row = |ordinal: u32| {
         usize::try_from(ordinal)
             .ok()
@@ -1198,12 +1241,40 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
                     .any(|row| {
                         row.value.is_some_and(|value| {
                             !value.is_finite()
-                                || row.variable_type == 5 && value.abs() > 1e-12
+                                || row.variable_type == 5 && value.abs() > EPS_AXIS_ZERO
                         })
                     })
             {
                 return None;
             }
+            let auxiliary_value = |row: &crate::feature::FeatureVariableRow| {
+                reconcile_equation_value(
+                    row.value,
+                    scalar_equality_values
+                        .get(&(row.variable_type, row.key))
+                        .copied()
+                        .unwrap_or(Ok(None))
+                        .ok()?,
+                )
+                .ok()
+            };
+            let auxiliary_values = [
+                (first_auxiliary, auxiliary_value(first_auxiliary)?),
+                (second_auxiliary, auxiliary_value(second_auxiliary)?),
+                (final_auxiliary, auxiliary_value(final_auxiliary)?),
+            ];
+            if auxiliary_values.into_iter().any(|(row, value)| {
+                value.is_some_and(|value| row.variable_type == 5 && value.abs() > EPS_AXIS_ZERO)
+            }) {
+                return None;
+            }
+            let distance_equality = scalar_equality_values
+                .get(&(distance.variable_type, distance.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let distance_value =
+                reconcile_equation_value(distance.value, distance_equality).ok()?;
             let first = coordinates
                 .get(&first_u.key)
                 .and_then(|point| Some([point[0]?, point[1]?]))?;
@@ -1220,11 +1291,11 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
             let matches_distance = |value: f64| {
                 deltas.iter().enumerate().filter_map(move |(coordinate, delta)| {
                     let scale = value.abs().max(delta.abs()).max(1.0);
-                    ((*delta - value).abs() <= 1e-9 * scale)
+                    ((*delta - value).abs() <= EPS_AXIS_DISTANCE * scale)
                         .then_some((coordinate, *delta))
                 })
             };
-            let (coordinate, value) = if let Some(stored) = distance.value {
+            let (coordinate, value) = if let Some(stored) = distance_value {
                 if !stored.is_finite() || stored < 0.0 {
                     return None;
                 }
@@ -1236,7 +1307,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
                     .iter()
                     .enumerate()
                     .filter_map(|(coordinate, delta)| {
-                        (*delta > 1e-12).then_some((coordinate, *delta))
+                        (*delta > EPS_AXIS_ZERO).then_some((coordinate, *delta))
                     });
                 let value = nonzero.next()?;
                 nonzero.next().is_none().then_some(value)?

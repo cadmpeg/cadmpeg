@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::feature_dimension_table_complete;
 use super::super::sketch_transfer::section_solver_equation_is_disabled;
-use super::equations_scalar::SectionScalarVariable;
+use super::equations_scalar::{
+    reconcile_equation_value, section_equation_scalar_equality_values, SectionScalarVariable,
+};
 use super::skamp::SectionPointSource;
 
 #[derive(Clone, Copy)]
@@ -55,6 +57,7 @@ pub(crate) fn section_equation_function_six_distance_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
@@ -94,10 +97,14 @@ pub(crate) fn section_equation_function_six_distance_rows(
             {
                 return None;
             }
-            let stored_distance = radius
-                .value
-                .filter(|value| value.is_finite() && *value > 0.0);
-            if radius.value.is_some() && stored_distance.is_none() {
+            let radius_equality = scalar_equality_values
+                .get(&(radius.variable_type, radius.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let radius_value = reconcile_equation_value(radius.value, radius_equality).ok()?;
+            let stored_distance = radius_value.filter(|value| value.is_finite() && *value > 0.0);
+            if radius_value.is_some() && stored_distance.is_none() {
                 return None;
             }
             let active = !section_solver_equation_is_disabled(definition, equation.equation_id);

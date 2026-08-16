@@ -17,6 +17,7 @@ mod admission;
 mod blind_circular;
 mod carrier_solver;
 mod equation_constraints;
+mod equation_scalar_propagation;
 mod generated_nurbs;
 mod generated_source;
 mod interpolation_spline;
