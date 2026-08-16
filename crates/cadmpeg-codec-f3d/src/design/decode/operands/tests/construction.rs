@@ -793,6 +793,45 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
     ));
 
+    for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
+        delete_scope.kind = "DeleteFace".into();
+        delete_scope.class_tag = class_tag.into();
+        delete_scope.paired_class_tag = paired_class_tag.into();
+        delete_scope.frame_length = 232 + reference_bytes;
+        delete_scope.kind_offset = delete_scope.byte_offset + 135 + reference_bytes;
+        let (features, _) = project_parameter_design(
+            &[],
+            &[],
+            std::slice::from_ref(&delete_scope),
+            std::slice::from_ref(&delete_group),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::DeleteFace { heal: true, .. }
+        ));
+    }
+
+    delete_scope.class_tag = "264".into();
+    delete_scope.paired_class_tag = "263".into();
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
+    ));
+
     let mut remove_scope = scope.clone();
     remove_scope.kind = "RemoveBody".into();
     let mut remove_group = group;

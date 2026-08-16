@@ -6126,6 +6126,14 @@ fn project_delete_face(
         .checked_sub(reference_bytes)?;
     let heal = match (scope.kind.as_str(), (base_frame_length, base_kind_offset)) {
         ("DeleteFace", (236, 139) | (241, 143)) => true,
+        ("DeleteFace", (232, 135))
+            if matches!(
+                (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+                ("264", "262") | ("383", "263")
+            ) =>
+        {
+            true
+        }
         ("SurfaceDeleteFace", (250, 140) | (251, 139)) => false,
         _ => return None,
     };
