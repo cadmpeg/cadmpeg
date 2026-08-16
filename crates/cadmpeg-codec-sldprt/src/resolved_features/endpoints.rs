@@ -38,6 +38,8 @@ use crate::layout::extended_geometry_locus_96_construction_line as locus_96;
 use crate::layout::extended_selector44_indexed_line_continuation as sel44_cont;
 use crate::layout::extended_selector44_indexed_line_control_terminal as sel44_term;
 use crate::layout::extended_wide_104_profile_curve as wide_104;
+use crate::layout::legacy_wide_104_profile_roster_curve as legacy_wide_104_roster;
+use crate::layout::legacy_wide_112_profile_roster_curve as legacy_wide_112_roster;
 
 // Curve endpoint-index decoders, one per record layout, tried in precedence
 // order. The first layout that accepts the bytes at `offset` yields the pair;
@@ -401,6 +403,9 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             && !boundary_relation)
     {
         return Vec::new();
+    }
+    if legacy_wide_profile_roster_curve(payload, offset) {
+        return coordinate_roster_curve_endpoint_markers(payload, curve, markers);
     }
     if let Some((endpoints, _)) = current_wide_arc_direct_markers(payload, curve, markers) {
         return endpoints.to_vec();
@@ -3502,6 +3507,9 @@ pub(super) fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -
     if legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_some() {
         return Some(64);
     }
+    if legacy_wide_profile_roster_curve(payload, offset) {
+        return Some(64);
+    }
     if !matches!(
         payload.get(offset + 23..offset + 27),
         Some(locus) if locus == [0x04, 0x00, 0x02, 0x00] || locus == [0x05, 0x00, 0x01, 0x00]
@@ -5118,6 +5126,90 @@ pub(super) fn wide_indexed_curve_endpoint_indices(
         return None;
     }
     one_based_u16_endpoint_pair(payload, offset, 64)
+}
+
+/// Recognize legacy profile curves whose endpoint fields are roster ordinals.
+///
+/// These records share the wide curve body with indexed records, but their
+/// endpoint namespace is the feature-local coordinate-bearing marker roster.
+/// Keep them outside `wide_indexed_curve_endpoint_indices`: that decoder's
+/// result is an object-index pair and feeds indexed-marker normalization.
+pub(super) fn legacy_wide_profile_roster_curve(payload: &[u8], offset: usize) -> bool {
+    let common = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+        == Some(LEGACY_SKETCH_MARKER)
+        && matches!(View::u32_le_at(payload, offset + 17), Some(0..=2))
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && matches!(
+            [
+                View::u16_le_at(payload, offset + 64),
+                View::u16_le_at(payload, offset + 66),
+            ],
+            [Some(first), Some(second)]
+                if first != second && first != u16::MAX && second != u16::MAX
+        )
+        && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes());
+    if !common {
+        return false;
+    }
+    let short = payload.get(
+        offset + legacy_wide_104_roster::ZERO_TRAILER_PREFIX
+            ..offset + legacy_wide_104_roster::LOCAL_ID,
+    ) == Some(&[0; 8])
+        && View::u32_le_at(payload, offset + legacy_wide_104_roster::LOCAL_ID)
+            .is_some_and(|identity| identity != u32::MAX)
+        && payload.get(
+            offset + legacy_wide_104_roster::ZERO_TRAILER_GAP
+                ..offset + legacy_wide_104_roster::TRAILER_TAG,
+        ) == Some(&[0; 4])
+        && payload.get(
+            offset + legacy_wide_104_roster::TRAILER_TAG
+                ..offset + legacy_wide_104_roster::NEXT_OBJECT_INDEX,
+        ) == Some(&4u32.to_le_bytes())
+        && payload.get(
+            offset + legacy_wide_104_roster::NEXT_OBJECT_INDEX
+                ..offset + legacy_wide_104_roster::LEN,
+        ) == Some(&1u32.to_le_bytes())
+        && sketch_marker_prefix_at(payload, offset.saturating_add(legacy_wide_104_roster::LEN));
+    let long = payload
+        .get(
+            offset + legacy_wide_112_roster::TRAILER_SELECTOR
+                ..offset + legacy_wide_112_roster::LOCAL_STATE,
+        )
+        .is_some_and(|selector| {
+            selector == (-1i32).to_le_bytes() || selector == 1i32.to_le_bytes()
+        })
+        && payload.get(
+            offset + legacy_wide_112_roster::LOCAL_STATE
+                ..offset + legacy_wide_112_roster::REFERENCE_SENTINELS,
+        ) == Some(&[0; 2])
+        && payload.get(
+            offset + legacy_wide_112_roster::REFERENCE_SENTINELS
+                ..offset + legacy_wide_112_roster::ZERO_TRAILER,
+        ) == Some(&[
+            0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+            0xff, 0xff,
+        ])
+        && payload.get(
+            offset + legacy_wide_112_roster::ZERO_TRAILER
+                ..offset + legacy_wide_112_roster::IDENTITY_FIRST,
+        ) == Some(&[0; 2])
+        && matches!(
+            [
+                View::u32_le_at(payload, offset + legacy_wide_112_roster::IDENTITY_FIRST),
+                View::u32_le_at(payload, offset + legacy_wide_112_roster::IDENTITY_SECOND),
+            ],
+            [Some(first), Some(second)]
+                if first != u32::MAX && second != u32::MAX && first != second
+        )
+        && sketch_marker_prefix_at(payload, offset.saturating_add(legacy_wide_112_roster::LEN));
+    short || long
 }
 
 fn current_extended_wide_curve_body(payload: &[u8], offset: usize) -> bool {

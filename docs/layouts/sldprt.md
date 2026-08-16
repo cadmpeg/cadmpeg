@@ -495,7 +495,7 @@ The endpoint fields are zero-based ordinals in the feature-owned coordinate-bear
 | 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
 | 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
 | 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
-| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 31 | 8 | `profile_selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
 | 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
 | 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 and +80 through +87 |
 | 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
@@ -507,6 +507,77 @@ The endpoint fields are zero-based ordinals in the feature-owned coordinate-bear
 | 92 | 4 | `trailer_tag1` | `bytes[4]` | little | spec | `00 00 01 00` at marker +88 and +92 |
 | 96 | 4 | `zero_trailer_suffix` | `bytes[4]` | little | spec | zero bytes at marker +96 through +99 |
 | 100 | 4 | `identity` | `u32` | little | spec | u32 `1` at marker +100 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `legacy_wide_112_profile_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 112 B
+
+The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster; this state-zero trailer is distinct from the object-index wide curve trailer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 112-byte profile-roster curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | eight zero bytes at marker +56 |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | Marker +68 stores u32 `1` |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | marker +72 stores f64 `-1` |
+| 80 | 4 | `trailer_selector` | `i32` | little | spec | marker +80 stores selector i32 `-1` or `1` |
+| 84 | 2 | `local_state` | `u16` | little | spec | marker +84 stores zero u16 |
+| 86 | 16 | `reference_sentinels` | `i32[4]` | little | spec | Four i32 `-2` reference sentinels occupy marker +86 through +101 |
+| 102 | 2 | `zero_trailer` | `bytes[2]` | little | spec | marker +102 stores zero u16 |
+| 104 | 4 | `identity_first` | `u32` | little | spec | distinct non-sentinel u32 identities occupy marker +104 and +108 |
+| 108 | 4 | `identity_second` | `u32` | little | spec | distinct non-sentinel u32 identities occupy marker +104 and +108 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `legacy_wide_104_profile_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 104-byte profile-roster curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | eight zero bytes at marker +56 |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | Marker +68 stores u32 `1` |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | marker +72 stores f64 `-1` |
+| 80 | 8 | `zero_trailer_prefix` | `bytes[8]` | little | spec | marker +80 through +87 are zero |
+| 88 | 4 | `local_id` | `u32` | little | spec | marker +88 stores the marker local identifier |
+| 92 | 4 | `zero_trailer_gap` | `bytes[4]` | little | spec | marker +92 through +95 are zero |
+| 96 | 4 | `trailer_tag` | `u32` | little | spec | marker +96 stores u32 `4` |
+| 100 | 4 | `next_object_index` | `u32` | little | spec | marker +100 stores u32 `1` |
 
 Unstated regions:
 

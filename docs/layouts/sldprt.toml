@@ -1419,7 +1419,7 @@ source = "spec"
 anchor = "role and state u16 values `1` at marker +27 and +29"
 
 [[record.field]]
-name = "selector"
+name = "profile_selector"
 offset = 31
 type = "bytes[8]"
 source = "spec"
@@ -1501,6 +1501,301 @@ offset = 100
 type = "u32"
 source = "spec"
 anchor = "u32 `1` at marker +100"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this profile layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "legacy_wide_112_profile_roster_curve"
+kind = "byte"
+section = "2"
+anchor = "A legacy-prefix 112-byte profile-roster curve has native kind u32"
+size = 112
+endianness = "little"
+note = "The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster; this state-zero trailer is distinct from the object-index wide curve trailer."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A legacy-prefix 112-byte profile-roster curve"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native kind u32 `0`, `1`, or `2`"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +56"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 66
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "Marker +68 stores u32 `1`"
+
+[[record.field]]
+name = "signed_selector"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "marker +72 stores f64 `-1`"
+
+[[record.field]]
+name = "trailer_selector"
+offset = 80
+type = "i32"
+source = "spec"
+anchor = "marker +80 stores selector i32 `-1` or `1`"
+
+[[record.field]]
+name = "local_state"
+offset = 84
+type = "u16"
+source = "spec"
+anchor = "marker +84 stores zero u16"
+
+[[record.field]]
+name = "reference_sentinels"
+offset = 86
+type = "i32[4]"
+source = "spec"
+anchor = "Four i32 `-2` reference sentinels occupy marker +86 through +101"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 102
+type = "bytes[2]"
+source = "spec"
+anchor = "marker +102 stores zero u16"
+
+[[record.field]]
+name = "identity_first"
+offset = 104
+type = "u32"
+source = "spec"
+anchor = "distinct non-sentinel u32 identities occupy marker +104 and +108"
+
+[[record.field]]
+name = "identity_second"
+offset = 108
+type = "u32"
+source = "spec"
+anchor = "distinct non-sentinel u32 identities occupy marker +104 and +108"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this profile layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "legacy_wide_104_profile_roster_curve"
+kind = "byte"
+section = "2"
+anchor = "A legacy-prefix 104-byte profile-roster curve has native kind u32"
+size = 104
+endianness = "little"
+note = "The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A legacy-prefix 104-byte profile-roster curve"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native kind u32 `0`, `1`, or `2`"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +56"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 66
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "Marker +68 stores u32 `1`"
+
+[[record.field]]
+name = "signed_selector"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "marker +72 stores f64 `-1`"
+
+[[record.field]]
+name = "zero_trailer_prefix"
+offset = 80
+type = "bytes[8]"
+source = "spec"
+anchor = "marker +80 through +87 are zero"
+
+[[record.field]]
+name = "local_id"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "marker +88 stores the marker local identifier"
+
+[[record.field]]
+name = "zero_trailer_gap"
+offset = 92
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +92 through +95 are zero"
+
+[[record.field]]
+name = "trailer_tag"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "marker +96 stores u32 `4`"
+
+[[record.field]]
+name = "next_object_index"
+offset = 100
+type = "u32"
+source = "spec"
+anchor = "marker +100 stores u32 `1`"
 
 [[record.gap]]
 offset = 5

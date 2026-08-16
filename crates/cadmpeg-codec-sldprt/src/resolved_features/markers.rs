@@ -10,8 +10,9 @@ use super::endpoints::{
     extended_identity_inline_line_record, extended_selector44_indexed_line,
     extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
     extended_wide_horizontal_relation_endpoint_indices, legacy_compact_profile_line,
-    legacy_referenced_wide_arc_endpoint_indices, marker_is_selected_construction_line,
-    marker_profile_curve_role, wide_indexed_curve_endpoint_indices,
+    legacy_referenced_wide_arc_endpoint_indices, legacy_wide_profile_roster_curve,
+    marker_is_selected_construction_line, marker_profile_curve_role,
+    wide_indexed_curve_endpoint_indices,
 };
 use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates;
@@ -780,7 +781,9 @@ pub(crate) fn reference_cells(
 pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
     let relative = if compact_legacy_code_two_profile_point_coordinates(payload, offset).is_some() {
         128
-    } else if marker_local_links(payload, offset).is_some() {
+    } else if legacy_wide_profile_roster_curve(payload, offset)
+        || marker_local_links(payload, offset).is_some()
+    {
         88
     } else if marker_coordinates(payload, offset).is_some()
         || marker_is_geometry_locus(payload, offset)

@@ -461,8 +461,8 @@ pub(crate) mod extended_wide_104_profile_curve {
     pub(crate) const ROLE: usize = 27;
     /// Offset of `state` (`u16`, little-endian). Spec §2.
     pub(crate) const STATE: usize = 29;
-    /// Offset of `selector` (`bytes[8]`). Spec §2.
-    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `profile_selector` (`bytes[8]`). Spec §2.
+    pub(crate) const PROFILE_SELECTOR: usize = 31;
     /// Offset of `state_value` (`f64`, little-endian). Spec §2.
     pub(crate) const STATE_VALUE: usize = 48;
     /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
@@ -485,6 +485,100 @@ pub(crate) mod extended_wide_104_profile_curve {
     pub(crate) const ZERO_TRAILER_SUFFIX: usize = 96;
     /// Offset of `identity` (`u32`, little-endian). Spec §2.
     pub(crate) const IDENTITY: usize = 100;
+}
+
+/// Byte offsets for the `legacy_wide_112_profile_roster_curve` record.
+///
+/// Spec §2. Record length 112 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster; this state-zero trailer is distinct from the object-index wide curve trailer.
+/// ```
+pub(crate) mod legacy_wide_112_profile_roster_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 112;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 56;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 64;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 66;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 68;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 72;
+    /// Offset of `trailer_selector` (`i32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_SELECTOR: usize = 80;
+    /// Offset of `local_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const LOCAL_STATE: usize = 84;
+    /// Offset of `reference_sentinels` (`i32[4]`, little-endian). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 86;
+    /// Offset of `zero_trailer` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 102;
+    /// Offset of `identity_first` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_FIRST: usize = 104;
+    /// Offset of `identity_second` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_SECOND: usize = 108;
+}
+
+/// Byte offsets for the `legacy_wide_104_profile_roster_curve` record.
+///
+/// Spec §2. Record length 104 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster.
+/// ```
+pub(crate) mod legacy_wide_104_profile_roster_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 104;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 56;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 64;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 66;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 68;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 72;
+    /// Offset of `zero_trailer_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_TRAILER_PREFIX: usize = 80;
+    /// Offset of `local_id` (`u32`, little-endian). Spec §2.
+    pub(crate) const LOCAL_ID: usize = 88;
+    /// Offset of `zero_trailer_gap` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_TRAILER_GAP: usize = 92;
+    /// Offset of `trailer_tag` (`u32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_TAG: usize = 96;
+    /// Offset of `next_object_index` (`u32`, little-endian). Spec §2.
+    pub(crate) const NEXT_OBJECT_INDEX: usize = 100;
 }
 
 /// Byte offsets for the `extended_geometry_104_indexed_arc` record.

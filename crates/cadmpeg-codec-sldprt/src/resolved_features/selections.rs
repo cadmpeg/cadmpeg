@@ -4,7 +4,10 @@ use super::component_paths::{
     component_path_input_features, component_path_terminal_feature, feature_precedes_consumer,
     surface_selection_producer_features,
 };
-use super::endpoints::{marker_profile_curve_role, wide_indexed_curve_endpoint_indices};
+use super::endpoints::{
+    legacy_wide_profile_roster_curve, marker_profile_curve_role,
+    wide_indexed_curve_endpoint_indices,
+};
 use super::markers::{
     linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_native_code,
 };
@@ -2855,7 +2858,9 @@ pub(super) fn operand_allows_compatible_ordinal_fallback(kind: FeatureInputOpera
 }
 
 pub(super) fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> {
-    if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
+    if legacy_wide_profile_roster_curve(payload, offset)
+        || wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+    {
         return None;
     }
     if payload.get(offset + 70..offset + 72)? != [0, 0]
