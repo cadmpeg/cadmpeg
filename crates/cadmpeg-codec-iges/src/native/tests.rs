@@ -272,6 +272,64 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
 }
 
 #[test]
+fn decode_native_type_106_does_not_invent_tuples_for_invalid_interpretation() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 11,
+            label: "VALID".into(),
+            status: "00000000",
+            parameters: "106,1,2,0,0,0,1,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 11,
+            label: "ABSENT".into(),
+            status: "00000000",
+            parameters: "106,,2,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 11,
+            label: "OUTRANGE".into(),
+            status: "00000000",
+            parameters: "106,4,2,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 11,
+            label: "MISMATCH".into(),
+            status: "00000000",
+            parameters: "106,2,2,0,0,0,1,0,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let record = |sequence| {
+        native.arenas["copious_data"]
+            .iter()
+            .find(|record| record.id() == format!("iges:native:copious-data#D{sequence}"))
+            .unwrap()
+    };
+
+    let valid = record(1).fields();
+    assert_eq!(valid["tuples"].as_array().unwrap().len(), 2);
+    assert_eq!(valid["tuples"][0].as_array().unwrap().len(), 2);
+    for (sequence, interpretation) in [(3, None), (5, Some(4)), (7, Some(2))] {
+        let fields = record(sequence).fields();
+        assert_eq!(fields["declared_tuple_count"], 2);
+        assert!(fields["common_z"].is_null());
+        assert!(fields["tuples"].as_array().unwrap().is_empty());
+        match interpretation {
+            Some(interpretation) => assert_eq!(fields["interpretation"], interpretation),
+            None => assert!(fields["interpretation"].is_null()),
+        }
+    }
+}
+
+#[test]
 fn decode_bounds_declared_brep_counts_by_record_tokens() {
     let bytes = owned_test_file(&[OwnedTestEntity {
         entity_type: 502,

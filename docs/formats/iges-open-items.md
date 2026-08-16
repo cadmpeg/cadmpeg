@@ -51,16 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-18. Native Type 106 tuples use a fallback width for invalid interpretation flags
-
-**Question.** What typed native tuple state is valid when Type 106 IP is absent, outside `1..=3`, or disagrees with the Directory form?
-
-**Known.** `native.rs:1637-1646` reads IP and maps every value other than `1`, `2`, or `3` to tuple start `3` and width `1`. `native.rs:1651-1668` then emits tuples with that fabricated one-value layout. `entities/copious.rs:152-187` and `entities/copious.rs:232-245` reject an invalid or form-disagreeing IP and record an entity loss. The Geometry section of `iges.md` states that IP and Directory form are redundant required constraints, that disagreement is malformed, and that IP does not override form semantics.
-
-**Need.** An invalid interpretation must retain raw tokens and an explicit empty or malformed typed state. It must not produce one-component tuples that a native consumer can mistake for a valid layout.
-
-**Note.** New finding from the 2026-08-16 hostile selection and substitution sweep. The semantic projection rejects the record, but the retained native arena fabricates a tuple layout without a native loss or malformed discriminator.
-
 ## 5. Surfaces and topology
 
 ### TP-04. The Type 140 offset sign uses a per-kind representative normal

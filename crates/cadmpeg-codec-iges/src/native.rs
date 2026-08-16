@@ -87,6 +87,21 @@ struct NativeCopiousData {
     tuples: Vec<Vec<Option<f64>>>,
 }
 
+fn copious_tuple_layout(form: i64, interpretation: Option<i64>) -> Option<(usize, usize)> {
+    let expected = match form {
+        1 | 11 | 20 | 21 | 31..=38 | 40 | 63 => 1,
+        2 | 12 => 2,
+        3 | 13 => 3,
+        _ => return None,
+    };
+    match (expected, interpretation) {
+        (1, Some(1)) => Some((4, 2)),
+        (2, Some(2)) => Some((3, 3)),
+        (3, Some(3)) => Some((3, 6)),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeColorDefinition {
     id: String,
@@ -1642,34 +1657,31 @@ pub(crate) fn store(
             let parameters = by_directory.get(&entry.sequence).copied();
             let interpretation = parameters.and_then(|record| record.integer(1));
             let declared_tuple_count = parameters.and_then(|record| record.integer(2));
-            let common_z = (interpretation == Some(1))
+            let layout = copious_tuple_layout(entry.form, interpretation);
+            let common_z = (layout == Some((4, 2)))
                 .then(|| parameters.and_then(|record| record.number(3)))
                 .flatten();
-            let (start, width) = match interpretation {
-                Some(1) => (4, 2),
-                Some(2) => (3, 3),
-                Some(3) => (3, 6),
-                _ => (3, 1),
-            };
-            let tuples = parameters
-                .map(|record| {
-                    let end = primary_end(entry.sequence, record);
-                    let count = record
-                        .count_with_stride_at(2, start, width, end)
-                        .unwrap_or_default();
-                    (0..count)
-                        .map(|tuple| {
-                            (0..width)
-                                .map(|component| {
-                                    tuple
-                                        .checked_mul(width)
-                                        .and_then(|offset| offset.checked_add(start))
-                                        .and_then(|offset| offset.checked_add(component))
-                                        .and_then(|index| record.number(index))
-                                })
-                                .collect()
-                        })
-                        .collect()
+            let tuples = layout
+                .and_then(|(start, width)| {
+                    parameters.map(|record| {
+                        let end = primary_end(entry.sequence, record);
+                        let count = record
+                            .count_with_stride_at(2, start, width, end)
+                            .unwrap_or_default();
+                        (0..count)
+                            .map(|tuple| {
+                                (0..width)
+                                    .map(|component| {
+                                        tuple
+                                            .checked_mul(width)
+                                            .and_then(|offset| offset.checked_add(start))
+                                            .and_then(|offset| offset.checked_add(component))
+                                            .and_then(|index| record.number(index))
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
                 })
                 .unwrap_or_default();
             NativeCopiousData {
