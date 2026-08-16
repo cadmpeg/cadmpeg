@@ -1572,6 +1572,8 @@ pub struct FeaturePatternReference {
     pub id: String,
     /// Owning pattern operation label.
     pub operation_label: String,
+    /// Exact byte layout that framed the reference field.
+    pub layout: FeaturePatternReferenceLayout,
     /// Zero-based non-null slot order in the exact reference field.
     pub ordinal: u32,
     /// Serialized object index.
@@ -1594,6 +1596,8 @@ pub struct FeaturePatternConstructionPayload {
     pub operation_label: String,
     /// Exact operation family selecting the graph grammar.
     pub operation_kind: String,
+    /// Exact byte layout shared by the construction-reference graph.
+    pub reference_layout: FeaturePatternReferenceLayout,
     /// Ordered non-null construction-reference records.
     pub construction_references: Vec<String>,
     /// Ordered source blocks.
@@ -1608,6 +1612,18 @@ pub struct FeaturePatternConstructionPayload {
     pub block_byte_lengths: Vec<u64>,
     /// Absolute source-block offsets.
     pub block_source_offsets: Vec<u64>,
+}
+
+/// Byte layout selected by a pattern construction-reference field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeaturePatternReferenceLayout {
+    /// The `61`/`ff 00 ff 01`/`ff 62` graph framing.
+    CanonicalGraph,
+    /// The `3b`/`ff 00 01`/`ff 3c` graph framing.
+    CompactGraph,
+    /// The one-reference `Geometry Instance` framing.
+    GeometryInstance,
 }
 
 /// Canonical printable string in a reconstructed pattern payload.
@@ -6148,29 +6164,44 @@ pub fn feature_projected_curve_construction_strings(
 /// Decode and resolve exact ordered construction references in pattern
 /// payloads without assigning seed or transform semantics to their slots.
 pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternReference> {
-    resolved_feature_payload_references(container, |record| {
-        crate::om::pattern_payload_references(record).map(|field| field.references)
-    })
-    .into_iter()
-    .map(|reference| {
-        let operation_label = format!(
-            "nx:feature-history:operation-label#{}-{:010}",
-            reference.section_key, reference.operation_ordinal
-        );
-        FeaturePatternReference {
-            id: format!(
-                "nx:feature-history:pattern-reference#{}-{:010}-{:010}",
-                reference.section_key, reference.operation_ordinal, reference.ordinal
-            ),
-            operation_label,
-            ordinal: reference.ordinal as u32,
-            object_index: reference.object_index,
-            raw_object_index: reference.raw_object_index,
-            data_block: reference.data_block,
-            source_offset: reference.source_offset,
-        }
-    })
-    .collect()
+    let indexed = container.indexed_om_sections();
+    let mut references = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(decoded) = crate::om::pattern_payload_references(record) else {
+                return;
+            };
+            let layout = match decoded.layout {
+                crate::om::PatternPayloadReferenceLayout::CanonicalGraph => {
+                    FeaturePatternReferenceLayout::CanonicalGraph
+                }
+                crate::om::PatternPayloadReferenceLayout::CompactGraph => {
+                    FeaturePatternReferenceLayout::CompactGraph
+                }
+                crate::om::PatternPayloadReferenceLayout::GeometryInstance => {
+                    FeaturePatternReferenceLayout::GeometryInstance
+                }
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
+                FeaturePatternReference {
+                    id: format!(
+                        "nx:feature-history:pattern-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    layout,
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            }));
+        },
+    );
+    references
 }
 
 /// Reconstruct ordered logical payloads from complete pattern-reference graphs.
@@ -6204,6 +6235,9 @@ pub fn feature_pattern_construction_payloads(
                     .iter()
                     .enumerate()
                     .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+                || graph
+                    .iter()
+                    .any(|reference| reference.layout != graph[0].layout)
             {
                 return None;
             }
@@ -6225,6 +6259,7 @@ pub fn feature_pattern_construction_payloads(
                 id: format!("nx:feature-history:pattern-construction-payload#{operation_key}"),
                 operation_label: operation_label.to_string(),
                 operation_kind: operation_kind.to_string(),
+                reference_layout: graph[0].layout,
                 construction_references: graph
                     .iter()
                     .map(|reference| reference.id.clone())

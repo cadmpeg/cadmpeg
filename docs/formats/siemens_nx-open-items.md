@@ -516,7 +516,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which ordered references in `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` select the seed, transform, and pattern controls?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the construction graph, logical payload, and counted row forms.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the two construction graph framings, logical payload, and counted row forms.
 
 **Need.** We must know the roles to construct neutral pattern dependencies and transforms.
 
@@ -548,7 +548,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
 
-**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
+**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
 
 **Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
