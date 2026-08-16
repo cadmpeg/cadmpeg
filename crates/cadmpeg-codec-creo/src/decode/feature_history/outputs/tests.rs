@@ -3,8 +3,8 @@
 use super::feature_output_bodies;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FaceSelection, Feature, FeatureDefinition, GeneratedFaceRef};
-use cadmpeg_ir::ids::BodyId;
-use cadmpeg_ir::topology::{Body, BodyKind};
+use cadmpeg_ir::ids::{BodyId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
+use cadmpeg_ir::topology::{Body, BodyKind, Face, Region, Shell};
 use cadmpeg_ir::units::Units;
 use std::collections::BTreeMap;
 
@@ -105,5 +105,84 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     assert_eq!(
         ir.model.features[0].outputs,
         vec![BodyId("creo:feature:extrusion#50:body".to_string())]
+    );
+}
+
+#[test]
+fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 10,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    });
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:extrusion#50:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:generated:result#10".to_string()),
+        kind: BodyKind::Sheet,
+        regions: vec![RegionId("creo:generated:region#10".to_string())],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: RegionId("creo:generated:region#10".to_string()),
+        body: BodyId("creo:generated:result#10".to_string()),
+        shells: vec![ShellId("creo:generated:shell#10".to_string())],
+    });
+    ir.model.shells.push(Shell {
+        id: ShellId("creo:generated:shell#10".to_string()),
+        region: RegionId("creo:generated:region#10".to_string()),
+        faces: vec![FaceId("creo:generated:face#7".to_string())],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    ir.model.faces.push(Face {
+        id: FaceId("creo:generated:face#7".to_string()),
+        shell: ShellId("creo:generated:shell#10".to_string()),
+        surface: SurfaceId("creo:visibgeom:surface#7".to_string()),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: vec![LoopId("creo:generated:loop#7".to_string())],
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    ir.model.features.push(Feature::new(
+        "creo:model:feature#10".into(),
+        0,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Generated {
+                faces: vec![GeneratedFaceRef {
+                    feature: "creo:model:feature#50".into(),
+                    local_id: "surface#7".to_string(),
+                }],
+                native: "creo:generated-face#7".to_string(),
+            },
+            thickness: None,
+            side: None,
+        },
+    ));
+
+    assert_eq!(
+        feature_output_bodies(&scan, &ir, 10),
+        vec![
+            BodyId("creo:generated:result#10".to_string()),
+            BodyId("creo:feature:extrusion#50:body".to_string()),
+        ]
     );
 }

@@ -67,31 +67,27 @@ fn feature_output_bodies_with_history(
         _ => Vec::new(),
     };
     let generated_input_outputs = generated_input_output_bodies(scan, ir, feature_id, visiting);
-    if edge_outputs.is_empty() && generated_input_outputs.is_empty() {
-        for surface in generated_surfaces {
-            for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
-                let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell)
-                else {
-                    continue;
-                };
-                let Some(region) = ir
-                    .model
-                    .regions
-                    .iter()
-                    .find(|region| region.id == shell.region)
-                else {
-                    continue;
-                };
-                if !outputs.contains(&region.body) {
-                    outputs.push(region.body.clone());
-                }
+    for surface in generated_surfaces {
+        for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
+            let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell) else {
+                continue;
+            };
+            let Some(region) = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == shell.region)
+            else {
+                continue;
+            };
+            if !outputs.contains(&region.body) {
+                outputs.push(region.body.clone());
             }
         }
-    } else {
-        for body in edge_outputs.into_iter().chain(generated_input_outputs) {
-            if !outputs.contains(&body) {
-                outputs.push(body);
-            }
+    }
+    for body in edge_outputs.into_iter().chain(generated_input_outputs) {
+        if !outputs.contains(&body) {
+            outputs.push(body);
         }
     }
     visiting.remove(&feature_id);
