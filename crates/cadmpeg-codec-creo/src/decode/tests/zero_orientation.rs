@@ -197,7 +197,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].len(), 4);
+    assert_eq!(profiles[0].len(), 3);
 
     let mut arcs = definition.clone();
     arcs.trim_entities = Some(crate::feature::FeatureTrimEntityTable {

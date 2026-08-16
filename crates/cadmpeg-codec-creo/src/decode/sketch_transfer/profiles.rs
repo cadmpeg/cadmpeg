@@ -22,46 +22,15 @@ pub(in super::super) fn resolved_profile_chains(
         return resolved_segment_profile_chains(definition, sketch, emitted);
     };
     if !table.has_complete_bucket_frame() || !table.has_unique_external_ids() {
-        return resolved_segment_profile_chains(definition, sketch, emitted);
+        // A present trim table is authoritative; its failure cannot authorize
+        // the point-incidence fallback reserved for an absent table.
+        return Vec::new();
     }
     let rows = table
         .rows
         .iter()
         .filter_map(|row| Some((row, trim_segment_id(definition, row)?)))
         .collect::<Vec<_>>();
-    let trimmed_ids = rows
-        .iter()
-        .map(|(_, external_id)| *external_id)
-        .collect::<BTreeSet<_>>();
-    let trimmed_points = definition
-        .segments
-        .iter()
-        .flat_map(|segments| &segments.rows)
-        .filter(|segment| trimmed_ids.contains(&segment.external_id))
-        .flat_map(|segment| segment.point_ids)
-        .collect::<BTreeSet<_>>();
-    if definition
-        .segments
-        .iter()
-        .flat_map(|segments| &segments.rows)
-        .filter(|segment| {
-            emitted.contains(&segment.external_id)
-                && !trimmed_ids.contains(&segment.external_id)
-                && matches!(
-                    segment.kind,
-                    crate::feature::FeatureSegmentKind::Line
-                        | crate::feature::FeatureSegmentKind::Arc
-                )
-        })
-        .any(|segment| {
-            segment
-                .point_ids
-                .into_iter()
-                .any(|point| trimmed_points.contains(&point))
-        })
-    {
-        return resolved_segment_profile_chains(definition, sketch, emitted);
-    }
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, row) in rows.iter().enumerate() {
         for vertex in row.0.vertices {
