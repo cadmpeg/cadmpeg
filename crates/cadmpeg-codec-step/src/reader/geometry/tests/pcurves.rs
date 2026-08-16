@@ -472,6 +472,45 @@ fn degree_valued_cylindrical_pcurve_is_not_reinterpreted() {
 }
 
 #[test]
+fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
+    let source = include_bytes!("data/pc01_surface_parameter.p21");
+    let valid = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode pi-valued cylindrical pcurve");
+    let pcurve = valid
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
+        .expect("surface-chart pcurve");
+    assert!(matches!(
+        pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
+            if (origin.u - std::f64::consts::PI).abs() < 1.0e-12
+                && origin.v.abs() < 1.0e-12
+                && direction.u.abs() < 1.0e-12
+                && (direction.v - 10.0).abs() < 1.0e-12
+    ));
+
+    let invalid_source = String::from_utf8(source.to_vec())
+        .expect("fixture is UTF-8")
+        .replace("3.141592653589793", "180.");
+    let invalid = StepCodec::default()
+        .decode(
+            &mut Cursor::new(invalid_source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode degree-looking cylindrical pcurve");
+    assert!(invalid.ir().model.pcurves.is_empty());
+    assert!(invalid.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
+            && loss.message.contains("curve #33")
+            && loss.message.contains("pcurve is omitted")
+    }));
+}
+
+#[test]
 fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())

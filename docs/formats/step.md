@@ -541,9 +541,16 @@ conversion and its V coordinate uses the directrix scale. A composite
 directrix whose parameterization has no single affine scale does not admit
 typed pcurve conversion and remains opaque.
 
-A pcurve has no separate angular-unit override. The reader does not choose a
-degree or radian interpretation from endpoint fit; an angular coordinate that
-fails the owning surface chart remains an unusable pcurve carrier.
+ISO 10303-42 defines `PCURVE` as the composition `g(f(t))`, where `f(t)` is
+the referenced two-dimensional curve in the parameter space of
+`basis_surface` and `g(u,v)` is the surface parameterization. The two-dimensional
+curve is not in the basis surface's representation context; its coordinates
+are the surface parameters `u,v`, not Cartesian coordinates or a separate
+plane-angle measure, and the curve is defined only within the surface
+parameter range. A pcurve has no separate angular-unit override. The reader
+does not choose a degree or radian interpretation from endpoint fit; an
+angular-looking coordinate that fails the owning surface chart remains an
+unusable pcurve carrier.
 
 Orientation composes at each topology relation through face-bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and

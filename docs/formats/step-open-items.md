@@ -422,22 +422,6 @@ fixture covers the inherited-attribute form.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PC-01. Angular parameter unit repair
-
-**Question.** What STEP rule establishes angular parameter unit repair?
-
-**Known.** A pcurve does not have its own angular unit. Its coordinates use
-the parameterization of its owning surface after the representation and
-record-specific unit scales have been applied. The reader does not generate
-degree/radian alternatives or rescale an angular axis from endpoint evidence.
-If the declared coordinates do not form a usable topological carrier, the
-coedge remains without a pcurve and the machine-readable topology loss records
-that omission.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-02. Synthesized pcurve chart
 
 **Question.** May the decoder replace a pcurve's parameterization with an
