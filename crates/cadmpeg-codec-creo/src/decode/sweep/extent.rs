@@ -552,6 +552,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .all(|row| row.kind == crate::surface::SurfaceKind::Plane))
     .then_some(())?;
 
+    let local_planes = placed_planes(scan);
     let mut planes = Vec::with_capacity(rows.len());
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
@@ -563,20 +564,24 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        let (origin, normal) = match surfaces.as_slice() {
-            [Surface {
-                geometry: SurfaceGeometry::Plane { origin, normal, .. },
-                ..
-            }] => (*origin, *normal),
+        let plane = match surfaces.as_slice() {
+            [] => return None,
             [Surface {
                 geometry: SurfaceGeometry::Unknown { .. },
                 ..
-            }] => continue,
+            }] => local_planes.get(&row.id).copied(),
+            [Surface {
+                geometry: SurfaceGeometry::Plane { .. },
+                ..
+            }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
             _ => return None,
         };
+        let Some(plane) = plane else {
+            continue;
+        };
         let plane = canonical_plane(PlaneEquation {
-            origin: [origin.x, origin.y, origin.z],
-            normal: [normal.x, normal.y, normal.z],
+            origin: plane.origin,
+            normal: plane.normal,
         })?;
         planes.push((plane, row.reversed));
     }

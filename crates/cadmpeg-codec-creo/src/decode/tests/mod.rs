@@ -20,6 +20,7 @@ mod equation_constraints;
 mod equation_scalar_propagation;
 mod generated_nurbs;
 mod generated_nurbs_extent;
+mod generated_rectilinear_extent;
 mod generated_source;
 mod interpolation_spline;
 mod numbered_intersect;
