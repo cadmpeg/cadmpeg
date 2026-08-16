@@ -239,6 +239,25 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         Some((0x01ca, 0))
     );
     assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+
+    // The common sparse form has its marker at +22 and final token at +38.
+    lane.native_payload[trailer + 16..trailer + 40].fill(0);
+    lane.native_payload[trailer + 6] = 2;
+    lane.native_payload[trailer + 22..trailer + 24].copy_from_slice(&[1, 0]);
+    lane.native_payload[trailer + 24..trailer + 26].copy_from_slice(&0x04efu16.to_le_bytes());
+    lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x008bu16.to_le_bytes());
+    assert_eq!(
+        feature_inline_operation_fields(&lane, &name),
+        Some((0x01ca, 2))
+    );
+    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+
+    // An older schema stores u64(1) in the field before the final token.
+    lane.native_payload[trailer + 30] = 1;
+    assert_eq!(
+        feature_inline_operation_fields(&lane, &name),
+        Some((0x01ca, 2))
+    );
 }
 
 #[test]

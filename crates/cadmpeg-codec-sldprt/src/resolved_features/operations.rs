@@ -260,10 +260,16 @@ pub(super) fn feature_inline_operation_fields(
                     && suffix[sparse_tr::OPTIONAL_IDENTITY - sparse_tr::SPARSE_ZERO_PREFIX
                         ..sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
                         != [0xff; 4]
-                    && suffix[sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
+                    // The common sparse form places its second token at +38.
+                    // Older files use u64(1) in the otherwise-zero field at +30.
+                    && (suffix[sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
                         ..sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
                         == [0; 8]
-                    && suffix[sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX..] != [0, 0])
+                        || suffix[sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
+                            ..sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
+                            == [1, 0, 0, 0, 0, 0, 0, 0])
+                    && suffix[sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX..]
+                        != [0, 0])
                     || (suffix[..4] == [0, 0, 1, 0]
                         && suffix[4..8] != [0; 4]
                         && suffix[8..18] == [0; 10]
