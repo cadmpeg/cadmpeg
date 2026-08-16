@@ -465,6 +465,18 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         Confidence::Medium
     );
 
+    for xml in [
+        include_bytes!("data/ce03_part28_ap214_terse.xml").as_slice(),
+        include_bytes!("data/ce03_part28_ap214_uos.xml").as_slice(),
+    ] {
+        assert_eq!(codec.detect(xml), Confidence::Medium);
+        assert!(matches!(
+            codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
+            Err(cadmpeg_core::CodecError::NotImplemented(message))
+                if message == "STEP Part 28 XML encoding"
+        ));
+    }
+
     for bytes in [
         include_bytes!("data/bm01_ap242_bo_model_ed1.stpx").as_slice(),
         include_bytes!("data/bm01_ap242_bo_model_ed2.stpx").as_slice(),

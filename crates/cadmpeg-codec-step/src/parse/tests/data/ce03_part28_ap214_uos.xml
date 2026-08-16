@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uos
+    xmlns="urn:oid:1.0.10303.214.3.0.1"
+    xmlns:exp="urn:oid:1.0.10303.28.2.1.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    id="uos-1"
+    xsi:schemaLocation="urn:oid:1.0.10303.214.3.0.1 https://example.invalid/ap214.xsd">
+  <exp:header>
+    <exp:name>CE-03 AP214 UOS witness</exp:name>
+    <exp:preprocessor_version>cadmpeg witness</exp:preprocessor_version>
+  </exp:header>
+</uos>

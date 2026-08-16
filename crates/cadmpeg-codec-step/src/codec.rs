@@ -364,16 +364,42 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
 }
 
 fn is_part28_xml(bytes: &[u8]) -> bool {
-    let lower = bytes
+    let bytes = &bytes[..bytes.len().min(4096)];
+    let Some((name, attributes)) = xml_root_start_tag(bytes) else {
+        return false;
+    };
+    let local_name = name
         .iter()
-        .take(4096)
-        .map(u8::to_ascii_lowercase)
-        .collect::<Vec<_>>();
-    lower.starts_with(b"<?xml")
-        && (lower.windows(12).any(|window| window == b"iso_10303_28")
-            || lower
-                .windows(21)
-                .any(|window| window == b"iso:std:iso:10303:-28"))
+        .rposition(|byte| *byte == b':')
+        .map_or(name, |separator| &name[separator + 1..]);
+    if local_name.eq_ignore_ascii_case(b"iso_10303_28")
+        || ascii_starts_with(local_name, b"iso_10303_28_")
+    {
+        return true;
+    }
+
+    // CE-03: a Part 28:2007 UOS document can omit the document wrapper and a
+    // configured UOS can use a local name other than `uos`. Its governing-
+    // schema namespace varies by AP, but the Part 28 common namespace remains
+    // the bounded admission marker. Schema selection and the derived XML
+    // Schema remain caller inputs.
+    PART28_COMMON_NAMESPACES
+        .iter()
+        .any(|namespace| has_namespace_value(attributes, namespace))
+}
+
+const PART28_COMMON_NAMESPACES: [&[u8]; 3] = [
+    b"urn:oid:1.0.10303.28.2.1.1",
+    b"urn:iso:std:iso:10303:-28:ed-2:tech:XMLschema:common",
+    b"urn:iso.org:standard:10303:part(28):version(2):xmlschema:common",
+];
+
+fn ascii_starts_with(value: &[u8], prefix: &[u8]) -> bool {
+    value.len() >= prefix.len()
+        && value[..prefix.len()]
+            .iter()
+            .zip(prefix)
+            .all(|(value, prefix)| value.eq_ignore_ascii_case(prefix))
 }
 
 const AP242_BO_MODEL_NAMESPACES: [&[u8]; 2] = [
@@ -477,6 +503,26 @@ fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
 }
 
 fn namespace_for_prefix<'a>(attributes: &'a [u8], prefix: &[u8]) -> Option<&'a [u8]> {
+    xml_attribute_value(attributes, |name, _value| {
+        if prefix.is_empty() {
+            name == b"xmlns"
+        } else {
+            name.strip_prefix(b"xmlns:") == Some(prefix)
+        }
+    })
+}
+
+fn has_namespace_value(attributes: &[u8], expected: &[u8]) -> bool {
+    xml_attribute_value(attributes, |name, value| {
+        (name == b"xmlns" || name.starts_with(b"xmlns:")) && value == expected
+    })
+    .is_some()
+}
+
+fn xml_attribute_value(
+    attributes: &[u8],
+    mut matches: impl FnMut(&[u8], &[u8]) -> bool,
+) -> Option<&[u8]> {
     let mut cursor = 0;
     while cursor < attributes.len() {
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
@@ -517,12 +563,7 @@ fn namespace_for_prefix<'a>(attributes: &'a [u8], prefix: &[u8]) -> Option<&'a [
         }
         let value = &attributes[value_start..cursor];
         cursor += 1;
-        let matches_prefix = if prefix.is_empty() {
-            name == b"xmlns"
-        } else {
-            name.strip_prefix(b"xmlns:") == Some(prefix)
-        };
-        if matches_prefix {
+        if matches(name, value) {
             return Some(value);
         }
     }

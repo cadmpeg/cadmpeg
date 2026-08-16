@@ -22,20 +22,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-03. Part 28 XML grammar
-
-**Question.** What XML grammar represents an AP203, AP214, or AP242 exchange structure in Part 28?
-
-**Known.** ISO 10303-28 defines an EXPRESS-to-XML mapping and supplies the
-generic XML mapping rules. AP203, AP214, and AP242 still require the matching
-edition's EXPRESS schema and generated XML schema components. Part 21 syntax
-does not identify those XML namespaces or schema resources.
-
-**Note.** A generic XML parser cannot establish the AP schema, select the
-edition, or decode schema-specific XML constructs without those inputs.
-
-**Need.** We must know the grammar to parse record boundaries, values, and references from Part 28 XML.
-
 ### CE-04. Part 28 graph mapping
 
 **Question.** How does each Part 28 XML construct map to the entity graph and invariants in `step.md`?

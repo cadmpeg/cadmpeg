@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<iso_10303_28_terse
+    xmlns="urn:oid:1.0.10303.214.3.0.1"
+    xmlns:exp="urn:oid:1.0.10303.28.2.1.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    schema="automotive_design">
+  <exp:header>
+    <exp:name>CE-03 AP214 Part 28 witness</exp:name>
+    <exp:preprocessor_version>cadmpeg witness</exp:preprocessor_version>
+  </exp:header>
+  <Application_context id="id1" Application="Core Data for Automotive Mechanical Design Process"/>
+  <Product_context id="id2" Name="3D Mechanical Parts" Frame_of_reference="id1" Discipline_type="mechanical"/>
+  <Product id="id3" Id="CE03-P214" Name="grammar witness" Description="" Frame_of_reference="id2"/>
+</iso_10303_28_terse>

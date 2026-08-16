@@ -16,6 +16,52 @@ identity and placement.
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
 
+[ISO 10303-28:2007](https://www.iso.org/standard/40646.html) defines the XML
+Schema binding for EXPRESS schemas and data. It defines a document-level XML
+schema and a derived XML Schema for the governing EXPRESS schema. A `uos`
+document has a `uos` root. Its data set conforms to one governing EXPRESS
+schema, and its XML infoset validates against the derived XML Schema. The
+document-level wrapper is `iso_10303_28`; a configured unit of serialization
+can use a different local name. The document model also carries the header,
+schema, configuration, and unit of serialization elements.
+
+The default binding is derived from an empty or default-only Part 28
+configuration. A configured binding is derived when a configuration directive
+changes a default. The configuration can change XML element, attribute,
+aggregate, reference, and type representations. The governing EXPRESS schema,
+the Part 28 configuration, and the derived XML Schema are therefore part of
+the grammar. The XML document cannot supply a complete replacement for those
+inputs. The [Part 28 implementation documentation](https://steptools.com/docs/roselib/read_write.html)
+uses the Part 28 common namespace for `exp:header`, an AP-specific target
+namespace for entity elements, and a configured `iso_10303_28_terse` unit of
+serialization. Its `id`, `ref`, and accessor attributes are results of that
+schema and configuration, not universal Part 28 record syntax.
+
+The 2003 technical specification used DTD and late-binding forms. The 2007
+XML-Schema revision is not upward compatible with that grammar. A 2003 DTD
+document is not a 2007 Part 28 document.
+
+AP203, AP214, and AP242 do not have one interchangeable Part 28 XML grammar.
+Each exchange binds the exact AP edition's EXPRESS schema, Part 28 binding
+edition, configuration, derived XML Schema, target namespace, and imported
+schemas. A namespace identifies a target namespace. `xsi:schemaLocation`
+identifies a schema location. Neither value supplies the missing schema or
+configuration, and a file suffix does not select them. The [published EXPRESS
+schema catalog](https://www.mbx-if.org/home/mbx/resources/express-schemas/)
+lists distinct schema identifiers for AP203, AP214, and each AP242 edition.
+The AP242 BO-Model XML profile above has its own edition-specific XSD and is
+not a universal replacement for an AP242 Part 28 binding.
+
+CADIR decision: the STEP codec classifies a Part 28 document wrapper or any
+root that declares the Part 28 common namespace as a medium confidence
+alternate encoding and refuses it with `STEP Part 28 XML encoding`. It does
+not infer the governing AP, EXPRESS schema, configuration, target namespace,
+or derived XML Schema from the XML root, namespace, `schema` attribute,
+`xsi:schemaLocation`, or filename. A future Part 28 adapter must receive
+those exact inputs, validate the XML against the selected derived schema, and
+then apply the schema-specific graph mapping. No Part 28 XML element or
+reference enters the Part 21 CADIR graph implicitly.
+
 An AP242 BO-Model XML document uses the XML Schema for its BO-Model edition.
 The edition-1 schema has target namespace
 `http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model`
