@@ -340,6 +340,17 @@ section selectors identify DATA sections. Implementation level `2;1` forbids
 FILE_POPULATION, SECTION_LANGUAGE, and SECTION_CONTEXT; level `3;1` forbids
 SCHEMA_POPULATION.
 
+The Part 21 schema population is separate from the decoded instance graph. It
+contains every entity in the local DATA sections. If `SCHEMA_POPULATION` is
+present, it also contains the schema population of every listed exchange
+structure. A `REFERENCE` section adds the schema populations of its referenced
+exchange structures. The inclusion is transitive, and an entity occurs at most
+once. A resource that does not resolve to an exchange structure contributes no
+entities. This population is the conformance population; it does not import a
+referenced file's numeric DATA names into the local exchange.
+ISO 10303-21:2016 §§8.2.5, 10.2, 11.2, and Annex J define this population and
+the distributed exchange meaning.
+
 ## 7. Edition 3 sections
 
 ANCHOR entries bind a resource name to an in-file parameter value and may carry
@@ -376,6 +387,16 @@ ISO 10303-21:2016 §6.5.2 requires the resource token to contain an IETF URI;
 §10.2.1 makes a URI without a fragment resolve to `$`, and §§10.2.2–10.2.7
 define UUID, local-anchor, and legacy numeric-fragment handling.
 
+For a resolved external resource, the referenced `ANCHOR_ITEM` supplies one
+entity or value at the local occurrence. URI forwarding repeats this lookup.
+It does not copy the resource's DATA records, numeric instance names, schema
+sections, units, or other records into the local exchange. Numeric instance
+names are unique within their own exchange structure; the URI fragment and
+anchor name identify the cross-resource target. A target that is not an entity
+or value in the current `FILE_SCHEMA`, or that cannot be resolved, has the
+format result `$`. ISO 10303-21:2016 §§10.2.5–10.2.7 and Annex J define this
+single-target substitution across distributed exchange structures.
+
 CADIR decision: a standalone clear-text input has no implicit transport base
 URI. The codec does not derive one from `FILE_NAME.name`, any other header
 field, an application `DOCUMENT_REFERENCE` or `EXTERNAL_SOURCE` string, or
@@ -408,11 +429,19 @@ message-digest or signature checks before it supplies resource bytes to a
 separate composition step. No resolver result enters the decoded STEP graph
 implicitly; a missing or refused access result remains an unresolved external
 dependency.
-For an edition-3 ZIP, the Part 21 schema population includes all DATA entities
-in the exchange and the schema populations of REFERENCE targets transitively.
-Each entity occurs at most once. An unresolved target contributes no entities.
-A root ANCHOR whose value is a URI can forward a root reference to an entity or
-value in a subsidiary member.
+For an edition-3 ZIP, the root exchange has the schema-population and
+REFERENCE rules above. A root ANCHOR whose value is a URI can forward a root
+reference to an entity or value in a subsidiary member.
+
+CADIR decision: the STEP codec admits only the root exchange graph. It keeps
+each external occurrence bound to its exact resource URI and anchor fragment;
+it does not assign a subsidiary numeric instance to a root identity and does
+not merge subsidiary DATA, schemas, units, or coordinate contexts. A caller
+that chooses composition must provide a resolver-qualified resource binding,
+verify the supplied target and its schema, and apply its trust, digest or
+signature, unit, and coordinate-context policies before connecting that target
+to a local occurrence. The codec has no implicit cross-resource composition
+step. A missing, refused, or unverified target remains an external dependency.
 
 ISO 10303-21:2016 §14.1 defines each signature as CMS for external content
 and requires the CMS structure to be encoded as Base64. RFC 5652 §5 places
