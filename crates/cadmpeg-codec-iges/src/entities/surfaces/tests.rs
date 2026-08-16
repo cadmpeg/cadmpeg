@@ -47,6 +47,34 @@ fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {
 }
 
 #[test]
+fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
+    for indicator in [
+        "-0.4082482904638631D0,-0.4082482904638631D0,0.8164965809277261D0",
+        "0,0,1",
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(offset_nurbs_surface_file(indicator)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id.0 == "iges:model:surface#D1"));
+        assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+        assert_eq!(result.report().losses.len(), 1);
+        assert_eq!(
+            result.report().losses[0].code,
+            IgesLossCode::EntityNotProjected.kind()
+        );
+    }
+}
+
+#[test]
 fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
     let error = IgesCodec
         .decode(

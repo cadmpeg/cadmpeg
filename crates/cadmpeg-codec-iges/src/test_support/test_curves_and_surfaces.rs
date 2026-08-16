@@ -1215,6 +1215,31 @@ pub(crate) fn offset_plane_file(indicator_z: f64, distance: f64) -> Vec<u8> {
     offset_plane_file_with_indicator("0", "0", &indicator_z.to_string(), distance)
 }
 
+pub(crate) fn offset_nurbs_surface_file(indicator: &str) -> Vec<u8> {
+    let surface_parameters = [
+        "128", "1", "1", "1", "1", "0", "0", "1", "0", "0", "0", "0", "1", "1", "0", "0", "1", "1",
+        "1", "1", "1", "1", "0", "0", "0", "1", "0", "0", "0", "1", "0", "1", "1", "1", "0", "1",
+        "0", "1",
+    ]
+    .join(",");
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 128,
+            form: 0,
+            label: "SADDLE".into(),
+            status: "00000000",
+            parameters: format!("{surface_parameters};"),
+        },
+        OwnedTestEntity {
+            entity_type: 140,
+            form: 0,
+            label: "OFFSET".into(),
+            status: "00000000",
+            parameters: format!("140,{indicator},1,1;"),
+        },
+    ])
+}
+
 pub(crate) fn offset_plane_file_with_indicator(
     indicator_x: &str,
     indicator_y: &str,

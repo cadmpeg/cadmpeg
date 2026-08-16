@@ -53,16 +53,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-04. The Type 140 offset sign uses a per-kind representative normal
-
-**Question.** Which normal determines the sign of a Type 140 offset indicator?
-
-**Known.** `entities/surfaces.rs:185-210` evaluates a support-surface normal at the bounded midpoint and uses `(0, 0)` when complete bounds are unavailable. `entities/surfaces.rs:1181-1193` refuses an indicator that does not agree with that normal. The Topology section of `iges.md` states this representative-parameter rule.
-
-**Need.** We need the source rule for the offset sign and a representative point that is valid for bounded, unbounded, and varying-normal surfaces.
-
-**Note.** Reopened by the 2026-08-16 audit. The implementation, documentation, and fixtures changed together. Neither midpoint selection nor the `(0, 0)` fallback is established from the IGES specification or from an exporter-authored witness file.
-
 ### TP-06. Type 180 Form 1 requires a direct Type 186 operand
 
 **Question.** Does a Type 180 Form 1 Boolean tree accept a Type 186 solid directly, or through a complete operand subtree?
