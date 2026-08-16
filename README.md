@@ -87,18 +87,26 @@ input file ──▶ container decoder ──▶ format decoder ──▶ IR ─
 
 ## CLI
 
-```text
-cadmpeg inspect  part.f3d
-cadmpeg decode   part.f3d -o part.cadir.json
-cadmpeg validate part.cadir.json
-cadmpeg export   part.cadir.json -f step -o part.step
-cadmpeg convert  part.f3d -f step -o part.step
-cadmpeg diff     a.cadir.json b.cadir.json
+Convert a native file to another format:
+
+```sh
+cadmpeg convert part.f3d -f step -o part.step
 ```
 
-Output formats are `cadir`, `step`, `fcstd`, `f3d`, `sldprt`, and `rhino`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection. Use `--step-target` and `--reject-step-losses` for STEP schema selection and strict loss refusal.
+Inspect a native file:
 
-Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 5`. That envelope version is independent of CAD IR `ir_version: "5"`.
+```sh
+cadmpeg inspect part.sldprt
+```
+
+```text
+format: sldprt (detected high)
+container: sldprt-blocks
+entries: 58
+...
+notes:
+  - active Parasolid B-rep candidate: Contents/Config-0-Partition
+```
 
 ## Contributing
 
