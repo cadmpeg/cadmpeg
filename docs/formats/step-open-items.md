@@ -422,24 +422,6 @@ fixture covers the inherited-attribute form.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PC-02. Synthesized pcurve chart
-
-**Question.** May the decoder replace a pcurve's parameterization with an
-affine map that it derives from the edge endpoints?
-
-**Known.** Endpoint-derived calibration is allowed only when it preserves
-every source coordinate. A destination axis may have zero scale only when the
-source coordinate is constant over the complete declared pcurve interval.
-Distinct source and destination endpoint values still use an affine map. A
-source axis with equal endpoints but interior variation, or a varying source
-axis mapped to equal destination endpoints, rejects the synthesized variant;
-the pcurve remains opaque rather than losing its locus. Coordinate bounds use
-33 samples over the declared interval, including both endpoints.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-03. Surface chart remap from the pcurve population
 
 **Question.** What STEP rule establishes surface chart remap from the pcurve population?

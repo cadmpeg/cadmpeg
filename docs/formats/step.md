@@ -523,10 +523,17 @@ V, and the plane angle in radians as U. A pcurve on either surface uses that
 same U/V parameterization. The pcurve population does not redefine the chart:
 trimmed pcurves cannot establish a surface-wide scale or direction, and a
 non-linear directrix keeps its native parameterization. Endpoint-derived
-calibration of a bounded procedural pcurve is accepted only when every source
-coordinate that the affine map collapses is constant across the pcurve's
-declared parameter interval. Otherwise the pcurve remains opaque and the
-decoder does not replace its native parameterization.
+calibration of a bounded or domain-valued procedural pcurve is a CADIR
+decision. The decoder keeps the native carrier and may add a use-scoped
+axis-aligned affine variant only for extrusion, linear-sweep, or revolution
+surfaces. For a source axis with a nonzero endpoint span, a zero destination
+span is rejected. A zero destination scale is allowed only when the source
+axis is constant over the 33 evenly spaced samples of its complete declared
+interval, including both endpoints. Equal source endpoints with interior
+variation are rejected, and distinct source and destination endpoint values
+use the affine map. Revolution U is preserved without scale or offset. A
+variant that fails these checks remains opaque; the native pcurve is not
+rewritten.
 
 The neutral chart conversion for a swept surface preserves the parameterization
 of each defining equation. A linear-extrusion U coordinate uses the directrix

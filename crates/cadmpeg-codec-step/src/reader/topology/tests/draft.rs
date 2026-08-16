@@ -219,13 +219,17 @@ fn synthesized_pcurve_chart_rejects_a_collapsed_bowed_axis() {
         parameter_range: [0.0, 1.0],
         same_sense: true,
     };
-    assert!(endpoint_parameter_transform(
+    let transform = endpoint_parameter_transform(
         &isoparametric,
         [Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
         [[3.0, 4.0], [3.0, 5.0]],
         [false, false],
     )
-    .is_some());
+    .expect("constant source axis may collapse to a constant destination");
+    assert_eq!(
+        transform.rows,
+        [[0.0, 0.0, 3.0], [0.0, 1.0, 4.0], [0.0, 0.0, 1.0]]
+    );
 }
 
 #[test]
