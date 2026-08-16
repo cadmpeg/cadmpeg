@@ -242,7 +242,8 @@ cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
 cadmpeg query summary report.json      # artifact kind and section counts
-cadmpeg query schema model.features    # the arena's record type (no FILE)
+cadmpeg query schema model.features    # the arena's IR record type (no FILE)
+cadmpeg query schema part.cadir.json native.nx.class_definitions  # inferred native fields
 cadmpeg query fidelity part.cadir.fidelity.json  # retained source records
 cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 ```
@@ -255,12 +256,13 @@ cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 suffix, accepts several IDs in one call, and with no ID prints the first
 record (`--head N` for the first N). Follow `links` and run `item` again to
 join. `--fields a,b.c` projects those paths as TSV (projection only — no
-`--where`). `schema` is the one view that takes no file: it prints the IR's
-compile-time record type for a model arena — every field, whether it is
-required, and every variant of a tagged union — or, bare, every model arena
-and its element type (`sidecar` prints the decode-sidecar shape). Which
-arenas a document actually has still comes from `counts`; native arena
-records are codec-owned, so `schema` refuses them and names `item` instead.
+`--where`). `schema` with no file prints the IR's compile-time record type
+for a model arena — every field, whether it is required, and every variant of
+a tagged union — or, bare, every model arena and its element type (`sidecar`
+prints the decode-sidecar shape). `schema FILE ARENA` infers native (and
+other) arena fields from the records: each dotted path's presence, JSON type,
+and an example. An unknown arena name lists every addressable arena and its
+entry count. Which arenas a document actually has also comes from `counts`.
 `fidelity` lists a decode sidecar's retained source records (the extraction
 address space) and, with `--stream NAME`, reassembles that stream's retained
 bytes byte-exactly into `-o FILE` — refusing gapped extents and extent-only

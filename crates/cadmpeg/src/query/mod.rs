@@ -12,6 +12,7 @@
 mod fidelity;
 mod item;
 mod schema;
+mod schema_infer;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -69,16 +70,20 @@ pub enum QueryView {
     Item(ItemArgs),
     /// Fields of an entity type.
     ///
-    /// Unlike the other views this takes no file: it prints what this
-    /// binary's IR types allow — every field of an arena's element type,
-    /// which fields are optional, and every variant of a tagged union
-    /// (`FaceSelection`'s `value` is absent, a string, an array, or an
-    /// object depending on `kind`; the discriminator of a feature's
-    /// `definition` is `.definition.definition`). Bare `query schema`
-    /// lists every model arena and its element type; `sidecar` prints the
-    /// `<stem>.fidelity.json` decode-sidecar shape. Which arenas a given
-    /// document actually has still comes from `query counts FILE`; native
-    /// arena records are codec-owned — fetch one with `query item` instead.
+    /// With no FILE this prints what this binary's IR types allow — every
+    /// field of an arena's element type, which fields are optional, and
+    /// every variant of a tagged union (`FaceSelection`'s `value` is
+    /// absent, a string, an array, or an object depending on `kind`; the
+    /// discriminator of a feature's `definition` is
+    /// `.definition.definition`). Bare `query schema` lists every model
+    /// arena and its element type; `sidecar` prints the
+    /// `<stem>.fidelity.json` decode-sidecar shape.
+    ///
+    /// Native arena records are per-document. `query schema FILE ARENA`
+    /// infers each dotted path's presence, JSON type, and an example from
+    /// the records (`layout_prefix  435/710  array`). Unknown arena names
+    /// list every addressable arena and its entry count. Which arenas a
+    /// given document actually has also comes from `query counts FILE`.
     Schema(SchemaArgs),
     /// Retained source bytes.
     ///

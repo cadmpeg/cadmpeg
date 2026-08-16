@@ -857,25 +857,15 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
 }
 
 #[test]
-fn schema_teaches_on_native_file_and_unknown_arguments() {
+fn schema_teaches_on_native_without_file_and_unknown_ir_arena() {
     let native = cadmpeg()
         .args(["query", "schema", "native.creo.rows"])
         .output()
         .unwrap();
     assert_eq!(native.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&native.stderr);
-    assert!(stderr.contains("query item"), "{stderr}");
-
-    let file = cadmpeg()
-        .args(["query", "schema", "doc.json"])
-        .output()
-        .unwrap();
-    assert_eq!(file.status.code(), Some(2));
-    let stderr = String::from_utf8_lossy(&file.stderr);
-    assert!(
-        stderr.contains("takes an arena name, not a file"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("query schema FILE"), "{stderr}");
+    assert!(stderr.contains("native.creo.rows"), "{stderr}");
 
     let unknown = cadmpeg()
         .args(["query", "schema", "model.bogus"])
@@ -885,6 +875,123 @@ fn schema_teaches_on_native_file_and_unknown_arguments() {
     let stderr = String::from_utf8_lossy(&unknown.stderr);
     assert!(stderr.contains("the IR defines:"), "{stderr}");
     assert!(stderr.contains("faces"), "{stderr}");
+}
+
+#[test]
+fn schema_infers_native_fields_from_a_document() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    cadmpeg()
+        .args(["query", "schema", path, "native.creo.curve_parameters"])
+        .assert()
+        .success()
+        .stdout(
+            "path\tpresence\ttype\texample\n\
+             feature_id\t2/2\tnumber\t11372\n\
+             id\t2/2\tstring\tcreo:curve#818\n\
+             type_byte\t2/2\tnumber\t8\n",
+        )
+        .stderr(predicate::str::contains(
+            "inferred from 2 records in native.creo.curve_parameters",
+        ));
+
+    let output = cadmpeg()
+        .args(["query", "schema", path, "model.sketch_entities"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("path\tpresence\ttype\texample\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("optional\t1/4\tstring\tpresent"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("meta.note\t1/4\tstring\tx\\ty"), "{stdout}");
+    assert!(stdout.contains("meta.tag\t4/4\tstring\ta"), "{stdout}");
+    assert!(stdout.contains("links\t1/4\tarray\t[1,2]"), "{stdout}");
+    assert!(!stdout.contains("links.0"), "{stdout}");
+
+    let json = cadmpeg()
+        .args([
+            "query",
+            "schema",
+            "--json",
+            path,
+            "native.creo.curve_parameters",
+        ])
+        .output()
+        .unwrap();
+    assert!(json.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(value["command"], "query schema");
+    assert_eq!(value["schema"]["inferred"], true);
+    assert_eq!(value["schema"]["arena"], "native.creo.curve_parameters");
+    assert_eq!(value["schema"]["records"], 2);
+    let fields = value["schema"]["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0]["path"], "feature_id");
+    assert_eq!(fields[0]["present"], 2);
+    assert_eq!(fields[0]["type"], "number");
+}
+
+#[test]
+fn schema_document_unknown_arena_lists_counts() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    let missing = cadmpeg()
+        .args(["query", "schema", path, "native.creo.missing"])
+        .output()
+        .unwrap();
+    assert_eq!(missing.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&missing.stderr);
+    assert!(
+        stderr.contains("unknown arena native.creo.missing"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("native.creo.curve_parameters\t2"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("model.sketch_entities\t4"), "{stderr}");
+    assert!(stderr.contains("model.empty_arena\t0"), "{stderr}");
+    assert!(!stderr.contains("model.null_arena"), "{stderr}");
+
+    let file_only = cadmpeg().args(["query", "schema", path]).output().unwrap();
+    assert_eq!(file_only.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&file_only.stderr);
+    assert!(stderr.contains("needs an arena name"), "{stderr}");
+    assert!(
+        stderr.contains("native.creo.curve_parameters\t2"),
+        "{stderr}"
+    );
+
+    cadmpeg()
+        .args(["query", "schema", path, "model.empty_arena"])
+        .assert()
+        .success()
+        .stdout("path\tpresence\ttype\texample\n")
+        .stderr(predicate::str::contains("(arena is empty)"));
+
+    let report = write(dir.path(), "report.json", CHECK_REPORT);
+    cadmpeg()
+        .args([
+            "query",
+            "schema",
+            report.to_str().unwrap(),
+            "native.creo.rows",
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("command report").and(predicate::str::contains("dump SOURCE")),
+        );
 }
 
 #[test]
