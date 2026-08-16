@@ -340,6 +340,32 @@ fn future_linetype_extension_stops_at_unknown_code() {
 }
 
 #[test]
+fn future_section_style_extension_stops_at_unknown_code() {
+    let archive = ArchiveVersion::V8;
+    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
+    let mut body = Vec::new();
+    body.extend(1_i32.to_le_bytes());
+    body.extend(4_i32.to_le_bytes());
+    body.extend(&model_attributes);
+    body.extend([12, 0xaa, 0xbb, 0, 0xde]);
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
+    let chunk = crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &body,
+        &[8..8 + model_attributes.len()],
+    );
+    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
+    let mut warnings = Vec::new();
+    let descriptor =
+        settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
+            .expect("future section-style code is bounded by the anonymous chunk");
+    assert_eq!(descriptor.version, (1, 4));
+    assert_eq!(reader.remaining(), 0);
+    assert!(warnings.is_empty());
+}
+
+#[test]
 fn parses_selector_widths_from_their_serialized_forms() {
     let mut settings_value = settings::DocumentSettings::default();
     let mut material_data = 42_i32.to_le_bytes().to_vec();

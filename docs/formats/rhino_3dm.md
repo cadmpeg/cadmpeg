@@ -3272,6 +3272,12 @@ decimal separator. Sizes, baseline spacing, fixed extension length, leader
 landing length, and plot weights are length values. Scale factors, rotations,
 fractions, rounding values, colors, enums, and override bits are not scaled.
 
+Section-style anonymous records use major 1. Minor 1 is the current writer
+version; later minor values retain the known model-component prefix and
+extension item grammars. A nonzero extension code outside 1 through 11
+terminates the known stream; only the code byte is known, and the remaining
+value bytes are bounded by the anonymous chunk.
+
 Bounded font, text-style, dimension-style, hatch, rendering-attribute,
 texture-mapping, material, group, and light readers consume their known
 major-1 prefixes and skip later suffix bytes before the containing bound.

@@ -991,7 +991,7 @@ pub(crate) fn parse_direct_section_style<'a>(
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
         begin_direct_object(data, reader, archive, "embedded section style")?;
-    if version.0 != 1 || !(0..=1).contains(&version.1) {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported embedded section-style version",
@@ -1036,10 +1036,12 @@ pub(crate) fn parse_direct_section_style<'a>(
                 );
             }
             _ => {
-                return Err(FramingError::structural(
-                    payload.position(),
-                    format!("unknown embedded section-style item {item}"),
-                ))
+                // Extension items have no length prefix. The source reader
+                // consumes only this code and lets the anonymous-chunk
+                // boundary discard the value bytes it cannot type.
+                finish(&mut payload, "future embedded section style")?;
+                terminated = true;
+                break;
             }
         }
     }
