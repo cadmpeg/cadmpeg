@@ -17,7 +17,7 @@ use crate::decode::sketch_transfer::{
     feature_is_first_material_operation, first_material_feature_by_definition_order,
     reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
     resolved_feature_schema_class_from_classes, row_feature_schema_classes,
-    unique_feature_revolution_extent_kind,
+    section_equation_same_coordinate_constraints, unique_feature_revolution_extent_kind,
 };
 use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
 use crate::decode::uniqueness::{
@@ -1082,6 +1082,19 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         dimension_driven: false,
         offset: 0,
     };
+    let line = |external_id, point_ids| crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
     let definition = crate::feature::FeatureDefinition {
         id: 40,
         owner_feature_id: None,
@@ -1098,7 +1111,20 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
             points: Vec::new(),
             offset: 0,
         }),
-        segments: None,
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![line(10, [1, 2])],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
@@ -1112,6 +1138,18 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     assert_eq!(
         resolved_section_coordinates(&definition).get(&2),
         Some(&[None, Some(4.5)])
+    );
+    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].0.active, Some(true));
+    assert_eq!(
+        constraints[0].0.definition,
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::V,
+        }
     );
 
     let mut nonzero_auxiliary = definition;

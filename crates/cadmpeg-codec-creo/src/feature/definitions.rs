@@ -1786,7 +1786,9 @@ pub fn equation_table(payload: &[u8], start: usize, end: usize) -> Option<Featur
         let row_end = if payload.get(cursor) == Some(&0xe2) {
             cursor += 1;
             cursor
-        } else if cursor == rows_end {
+        } else if cursor == rows_end
+            || payload.get(cursor..cursor + 2) == Some(&[0xf2, psb::token::ENTITY_REF])
+        {
             cursor
         } else {
             break;

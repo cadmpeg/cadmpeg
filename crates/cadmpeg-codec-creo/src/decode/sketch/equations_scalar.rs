@@ -15,6 +15,28 @@ pub(crate) fn section_equation_coordinate_equalities(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(u32, u32, usize)> {
+    section_equation_coordinate_equality_rows(definition, ambiguous_point_ids)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .map(|constraint| (constraint.first, constraint.second, constraint.axis))
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SectionEquationCoordinateEquality {
+    pub(crate) first: u32,
+    pub(crate) second: u32,
+    pub(crate) axis: usize,
+    pub(crate) function_id: u32,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
+}
+
+pub(crate) fn section_equation_coordinate_equality_rows(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionEquationCoordinateEquality> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -36,7 +58,6 @@ pub(crate) fn section_equation_coordinate_equalities(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter_map(|equation| {
             let (first, second, auxiliary) = match equation.function_id {
                 2 if equation.arguments.len() == 2 => {
@@ -72,7 +93,15 @@ pub(crate) fn section_equation_coordinate_equalities(
             {
                 return None;
             }
-            Some((first.key, second.key, usize::from(first.variable_type == 2)))
+            Some(SectionEquationCoordinateEquality {
+                first: first.key,
+                second: second.key,
+                axis: usize::from(first.variable_type == 2),
+                function_id: equation.function_id,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+            })
         })
         .collect()
 }

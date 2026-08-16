@@ -580,6 +580,25 @@ fn equation_table_replays_direct_and_counted_rows() {
 }
 
 #[test]
+fn equation_table_accepts_final_row_at_table_separator() {
+    let payload = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\
+            \xe0\x05fcn_id\0\x02\
+            \xe0\x08arg_arr\0\xf8\x02\x11\x12\
+            \xe0\x01aux_data\0\xf6\
+            \xf1\xf7\x80\x9f\xe2\
+            \x01\x04\x11\x12\xf6\xf2\xf7\x39\x99\x88\
+            \xe0\x02scale\0\x99\x88";
+
+    let table = equation_table(payload, 0, payload.len()).expect("eqtn_arr table");
+
+    assert_eq!(table.declared_count, 2);
+    assert_eq!(table.rows.len(), 1);
+    assert_eq!(table.rows[0].equation_id, 1);
+    assert_eq!(table.rows[0].body, [1, 4, 0x11, 0x12, 0xf6]);
+}
+
+#[test]
 fn positional_relation_table_replays_rows_after_its_prototype() {
     let payload = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
             prototype\xf1\xf7\x64\xe2\
