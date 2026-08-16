@@ -444,20 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-07. Triangle strip winding
-
-**Question.** What STEP rule establishes triangle strip winding?
-
-**Known.** A strip with indices `v[0]` through `v[n]` produces
-`[v[i], v[i+1], v[i+2]]` for an even `i` and
-`[v[i+1], v[i], v[i+2]]` for an odd `i`. Fans keep their first index and
-advance the other two. The reader applies this rule and the regression covers
-the first two triangles of one strip.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### EL-01. Character encoding selection
 
 **Question.** What STEP rule establishes character encoding selection?

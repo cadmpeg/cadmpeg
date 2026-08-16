@@ -934,12 +934,23 @@ directions, measure representation items, and placements. The reader applies
 its context to reachable item units and uses its item set for inherited
 representation membership, including validation properties. Unsupported item
 semantics remain source-native.
-Tessellated indices are one-based. PNINDEX maps local points to shared
-coordinates. Triangle and fan indices address local points in listed order. A
-triangle strip alternates the first two indices for each odd triangle so
-adjacent triangles keep one surface orientation. A normal aggregate of length
-one applies to every local point; other normal aggregates align with the local
+ISO 10303-42 §6.4.64 defines `COMPLEX_TRIANGULATED_FACE` and §6.4.71 defines
+`COMPLEX_TRIANGULATED_SURFACE_SET` as tessellated geometry arranged in triangle
+strips and triangle fans. `triangle_strips` and `triangle_fans` are lists of
+integer-index lists; each sublist supplies the vertex order through the
+`COORDINATES_LIST` or `pnindex` table, and each sublist has at least three
+indices. The point order shown in Figure 32 expands a strip row
+`v[0]...v[n]` into `[v[i], v[i+1], v[i+2]]` for even `i` and
+`[v[i+1], v[i], v[i+2]]` for odd `i`. A fan row expands into
+`[v[0], v[i], v[i+1]]` for `i` from 1 through `n - 2`. Tessellated indices are
+one-based. PNINDEX maps local points to shared coordinates. Triangle and fan
+indices address local points in listed order. A normal aggregate of length one
+applies to every local point; other normal aggregates align with the local
 point table.
+
+CADIR decision: a strip or fan row with fewer than three indices is invalid and
+is skipped. Valid rows in the same complex triangulated entity still transfer;
+the decoder does not invent a triangle from an invalid row.
 `TESSELLATED_CURVE_SET` uses its `COORDINATES_LIST` and one-based `line_strips`
 indices to transfer each strip as a separate polyline carrier. The reader does
 not join strips or invent source parameters or a chordal bound.

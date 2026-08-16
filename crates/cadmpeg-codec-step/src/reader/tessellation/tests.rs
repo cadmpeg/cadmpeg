@@ -610,6 +610,27 @@ fn complex_triangle_strip_alternates_winding() {
 }
 
 #[test]
+fn complex_strip_and_malformed_strip_witnesses_preserve_winding() {
+    let cases = [
+        (
+            include_bytes!("tests/data/ap07_complex_strip_and_fan.p21").as_slice(),
+            vec![[0, 1, 2], [2, 1, 3], [0, 3, 4]],
+        ),
+        (
+            include_bytes!("tests/data/ap07_malformed_short_strip.p21").as_slice(),
+            vec![[0, 1, 2], [2, 1, 3]],
+        ),
+    ];
+    for (input, expected) in cases {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode strip witness");
+        assert_eq!(result.ir().model.tessellations.len(), 1);
+        assert_eq!(result.ir().model.tessellations[0].triangles, expected);
+    }
+}
+
+#[test]
 fn non_finite_tessellation_coordinates_are_rejected() {
     let result = decode_inline(
         "#1=COORDINATES_LIST('',1,((1E400,0.,0.)));
