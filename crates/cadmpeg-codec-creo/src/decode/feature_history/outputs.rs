@@ -7,6 +7,7 @@ use super::super::sketch_transfer::{
     feature_schema_class, unique_feature_revolution_extent_kind,
 };
 use super::super::uniqueness::unique_feature_definition_for_transform;
+use super::dependencies::feature_generated_dependencies;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
@@ -65,7 +66,8 @@ fn feature_output_bodies_with_history(
         }
         _ => Vec::new(),
     };
-    if edge_outputs.is_empty() {
+    let generated_input_outputs = generated_input_output_bodies(scan, ir, feature_id, visiting);
+    if edge_outputs.is_empty() && generated_input_outputs.is_empty() {
         for surface in generated_surfaces {
             for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
                 let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell)
@@ -86,7 +88,7 @@ fn feature_output_bodies_with_history(
             }
         }
     } else {
-        for body in edge_outputs {
+        for body in edge_outputs.into_iter().chain(generated_input_outputs) {
             if !outputs.contains(&body) {
                 outputs.push(body);
             }
@@ -94,6 +96,38 @@ fn feature_output_bodies_with_history(
     }
     visiting.remove(&feature_id);
     outputs
+}
+
+fn generated_input_output_bodies(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    visiting: &mut BTreeSet<u32>,
+) -> Vec<BodyId> {
+    let feature_id_text = format!("creo:model:feature#{feature_id}");
+    let Some(feature) = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == feature_id_text)
+    else {
+        return Vec::new();
+    };
+    feature_generated_dependencies(&feature.definition)
+        .into_iter()
+        .filter_map(|producer| {
+            producer
+                .as_str()
+                .strip_prefix("creo:model:feature#")
+                .and_then(|value| value.parse::<u32>().ok())
+        })
+        .flat_map(|producer_id| feature_output_bodies_with_history(scan, ir, producer_id, visiting))
+        .fold(Vec::new(), |mut outputs, body| {
+            if !outputs.contains(&body) {
+                outputs.push(body);
+            }
+            outputs
+        })
 }
 
 fn generated_edge_output_bodies(

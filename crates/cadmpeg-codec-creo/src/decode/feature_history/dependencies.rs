@@ -411,6 +411,22 @@ pub(in super::super) fn reconcile_feature_links(
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
 ) {
+    let output_updates = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let feature_id = feature
+                .id
+                .as_str()
+                .strip_prefix("creo:model:feature#")
+                .and_then(|value| value.parse::<u32>().ok())?;
+            Some((
+                feature.id.clone(),
+                super::outputs::feature_output_bodies(scan, ir, feature_id),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
     let emitted = ir
         .model
         .features
@@ -426,6 +442,9 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
+        if let Some(outputs) = output_updates.get(&feature.id) {
+            feature.outputs.clone_from(outputs);
+        }
         let native_dependencies = native_feature_dependency_ids(
             &scan.features.affected_ids,
             &scan.features.operations,

@@ -2,9 +2,11 @@
 
 use super::feature_output_bodies;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{FaceSelection, Feature, FeatureDefinition, GeneratedFaceRef};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::{Body, BodyKind};
 use cadmpeg_ir::units::Units;
+use std::collections::BTreeMap;
 
 #[test]
 fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() {
@@ -62,5 +64,46 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
     assert_eq!(
         feature_output_bodies(&scan, &ir, 10),
         vec![BodyId("creo:feature:extrusion#70:body".to_string())]
+    );
+}
+
+#[test]
+fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
+    let scan = crate::container::scan_bytes(Vec::new());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:extrusion#50:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.features.push(Feature::new(
+        "creo:model:feature#10".into(),
+        0,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Generated {
+                faces: vec![GeneratedFaceRef {
+                    feature: "creo:model:feature#50".into(),
+                    local_id: "surface#7".to_string(),
+                }],
+                native: "creo:generated-face#7".to_string(),
+            },
+            thickness: None,
+            side: None,
+        },
+    ));
+
+    assert_eq!(
+        feature_output_bodies(&scan, &ir, 10),
+        vec![BodyId("creo:feature:extrusion#50:body".to_string())]
+    );
+
+    super::super::dependencies::reconcile_feature_links(&scan, &mut ir, &BTreeMap::new());
+    assert_eq!(
+        ir.model.features[0].outputs,
+        vec![BodyId("creo:feature:extrusion#50:body".to_string())]
     );
 }
