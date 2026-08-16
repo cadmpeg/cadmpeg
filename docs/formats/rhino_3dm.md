@@ -4704,13 +4704,101 @@ The same class-data payload is used when `ON_Light` appears in an object
 record; the object record then uses the common object-attributes and
 object-record-end children instead of the light-table children.
 
-Linetype records use anonymous major 1 or 2 versions. Major 1 minor 0 stores
-the index, name, and segments; minor 1 and later add the UUID. Major 2 minor 0
-stores component attributes and segments; minor 1 and later add the ordered
-extension items. Major 2 minor values greater than 3 are future minors. Each
-reader consumes its known prefix and skips remaining bytes before the bounded
-end. Unknown linetype extension codes at or above 7 terminate the known
-extension stream; the code byte is the only known byte of that item value.
+The linetype class UUID is
+`26F10A24-7D13-4F05-8FDA-8E364DAF8EA6`. A linetype table record contains one
+class wrapper and no record-specific child after it:
+
+```text
+LINETYPE_RECORD long
+  OPENNURBS_CLASS long
+    OPENNURBS_CLASS_UUID long: linetype class UUID and CRC
+    OPENNURBS_CLASS_DATA long: linetype payload
+    zero or more CLASS_USERDATA chunks
+    OPENNURBS_CLASS_END short, value 0
+```
+
+For archives below version 60, the class-data payload is anonymous version
+1.1:
+
+```text
+anonymous version 1.1
+i32 archive linetype index
+UTF-16 linetype name
+i32 segment count
+count × {
+  f64 segment length
+  u32 segment type tag
+}
+minor >= 1: UUID linetype ID
+```
+
+The writer emits minor 1. The segment type tag is 0 for a line, 1 for a
+space, and `0xffffffff` for the unset type. Other tags are underlying segment
+enum values. Segment lengths are the `ON_LinetypeSegment::m_length` values.
+
+For archives version 60 and later, the class-data payload is anonymous version
+2.3:
+
+```text
+anonymous version 2.3
+MODEL_ATTRIBUTES long, version 1.0
+i32 segment count
+count × {
+  f64 segment length
+  u32 segment type tag
+}
+extension item stream
+```
+
+The model-attributes body has five independent status/value pairs in this
+order: model serial number, component UUID, component type, archive index, and
+name. Status 0 has no value, status 1 is followed by the value, and status 2
+clears the value. The corresponding values are three `u32` serial numbers, a
+UUID, a `u32` component type, an `i32` archive index, and a UTF-16 string. The
+linetype writer uses model-attributes chunk type `0x40008002`; its normal
+attribute filter leaves model serial and component type absent and writes the
+UUID, archive index, and name statuses.
+
+The modern extension stream is a sequence of an item byte, its value, and the
+next item byte. The writer emits items in ascending order and then item zero:
+
+```text
+minor >= 1: item 1: u8 line cap style
+minor >= 1: item 2: u8 line join style
+minor >= 2: item 3: f64 width
+minor >= 2: item 4: u8 width unit-system code
+minor >= 2: item 5: i32 taper count, count × { f64 x, f64 y }
+minor >= 3: item 6: bool always model distances
+item 0: extension terminator
+```
+
+The cap styles are round `0`, flat `1`, and square `2`. The join styles are
+round `0`, miter `1`, and bevel `2`. The default values are round cap, round
+join, width `1.0`, width units `none` (`0`), no taper points, and false for
+always model distances. The writer omits items 1 and 2 at their defaults, item
+3 when width differs from `1.0` by no more than `ON_EPSILON`, item 4 when the
+unit is `none`, item 5 when the taper is empty, and item 6 when the flag is
+false. The width unit-system code uses the table in section 8.2: `none` means
+pixels, `unset` (`255`) means the document unit system, and another code names
+that explicit unit system. Taper `x` is the fraction along the curve and taper
+`y` is the width at that fraction.
+
+The reader applies item gates from the minor version, accepts future modern
+minor values after the known prefix, and closes the anonymous chunk at its
+boundary. An item code greater than 6 terminates the known extension scan; its
+unlength-prefixed value and all later bytes remain a bounded suffix. The
+anonymous class-data reader accepts major 1 and major 2 only.
+
+`ON_LinetypeSegment::m_length` is in millimeters on printed output. A legacy
+major-1 record has no model-distance flag and therefore carries print-millimeter
+segment lengths. In a modern record, false `always model distances` has the
+same print/layout interpretation. True `always model distances` interprets
+segment lengths in document units; CADIR transfers those values to
+`segments[].length_millimeters` by multiplying by the document's millimeters-
+per-unit scale. CADIR retains `width`, `width_units`, and taper ordinates as
+stored values with their unit selector; it does not apply that segment scale to
+them. A nil linetype UUID is not a source identity; CADIR keys that record by
+its source record offset and leaves `source_uuid` unset.
 
 Text styles use the legacy packed font format when the archive version is below
 60 or the OpenNURBS writer version is earlier than 6.0.2015-09-23. Later

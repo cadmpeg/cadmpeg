@@ -1656,10 +1656,7 @@ fn push_light(
     lights.push(light);
 }
 
-fn segments(
-    reader: &mut BoundedReader<'_>,
-    scale: f64,
-) -> Result<Vec<LinetypeSegment>, FramingError> {
+fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<LinetypeSegment>, FramingError> {
     let count = reader.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -1671,9 +1668,6 @@ fn segments(
     let mut values = Vec::with_capacity(bytes / 12);
     for _ in 0..bytes / 12 {
         let length = read_finite(reader, "linetype segment length")?;
-        let length = scaled_coordinate(length, scale).ok_or_else(|| {
-            FramingError::structural(reader.position() - 8, "scaled linetype segment is invalid")
-        })?;
         values.push(LinetypeSegment {
             length_millimeters: length,
             segment_type: reader.u32()?,
@@ -1698,7 +1692,7 @@ fn parse_linetype(
             id: Uuid::nil(),
             name,
         };
-        let values = segments(&mut reader, scale)?;
+        let values = segments(&mut reader)?;
         let id = if version.1 >= 1 {
             uuid(&mut reader)?
         } else {
@@ -1725,7 +1719,7 @@ fn parse_linetype(
             "linetype version is unsupported",
         ));
     };
-    let values = segments(&mut reader, scale)?;
+    let mut values = segments(&mut reader)?;
     let mut item = if version.1 >= 1 { reader.u8()? } else { 0 };
     let mut cap = 0;
     let mut join = 0;
@@ -1774,6 +1768,17 @@ fn parse_linetype(
     if version.1 >= 3 && item == 6 {
         always = reader.bool()?;
         item = reader.u8()?;
+    }
+    if always {
+        for segment in &mut values {
+            segment.length_millimeters = scaled_coordinate(segment.length_millimeters, scale)
+                .ok_or_else(|| {
+                    FramingError::structural(
+                        reader.position(),
+                        "scaled model-distance linetype segment is invalid",
+                    )
+                })?;
+        }
     }
     if item > 6 {
         item = 0;
@@ -4742,7 +4747,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_linetype_scales_pattern_lengths() {
+    fn legacy_linetype_preserves_print_lengths_and_wire_segment_tags() {
         let mut body = 4_i32.to_le_bytes().to_vec();
         body.extend(utf16("dash"));
         body.extend(2_i32.to_le_bytes());
@@ -4756,8 +4761,99 @@ mod tests {
         let value = parse_linetype(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0)
             .expect("required invariant");
         assert_eq!(value.name, "dash");
-        assert_eq!(value.segments[0].length_millimeters, 20.0);
+        assert_eq!(value.segments[0].length_millimeters, 2.0);
+        assert_eq!(value.segments[0].segment_type, 0);
+        assert_eq!(value.segments[1].length_millimeters, 1.0);
         assert_eq!(value.segments[1].segment_type, 1);
+    }
+
+    #[test]
+    fn modern_linetype_scales_only_model_distance_segments() {
+        fn modern_linetype(always_model_distance: bool) -> Vec<u8> {
+            let mut component = 1_i32.to_le_bytes().to_vec();
+            component.extend(0_i32.to_le_bytes());
+            component.push(0);
+            component.push(1);
+            component.extend([0x33; 16]);
+            component.push(0);
+            component.push(1);
+            component.extend(9_i32.to_le_bytes());
+            component.push(1);
+            component.extend(utf16("modern dash"));
+            component.extend(crc32fast::hash(&component).to_le_bytes());
+            let mut attributes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
+            attributes.extend((component.len() as i64).to_le_bytes());
+            attributes.extend(component);
+
+            let mut body = attributes;
+            body.extend(2_i32.to_le_bytes());
+            body.extend(2.5_f64.to_le_bytes());
+            body.extend(0_u32.to_le_bytes());
+            body.extend(1.25_f64.to_le_bytes());
+            body.extend(1_u32.to_le_bytes());
+            body.extend([1, 1, 2, 2]);
+            body.push(3);
+            body.extend(2.75_f64.to_le_bytes());
+            body.extend([4, 2]);
+            body.push(5);
+            body.extend(3_i32.to_le_bytes());
+            for value in [[0.0_f64, 0.5], [0.35_f64, 1.25], [1.0_f64, 2.5]] {
+                body.extend(value[0].to_le_bytes());
+                body.extend(value[1].to_le_bytes());
+            }
+            if always_model_distance {
+                body.extend([6, 1]);
+            }
+            body.push(0);
+
+            let mut payload = 2_i32.to_le_bytes().to_vec();
+            payload.extend(3_i32.to_le_bytes());
+            payload.extend(body);
+            payload.extend(crc32fast::hash(&payload).to_le_bytes());
+            let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
+            bytes.extend((payload.len() as i64).to_le_bytes());
+            bytes.extend(payload);
+            bytes
+        }
+
+        let model_distance_bytes = modern_linetype(true);
+        let model_distance = parse_linetype(
+            &model_distance_bytes,
+            0..model_distance_bytes.len(),
+            ArchiveVersion::V8,
+            25.4,
+            0,
+        )
+        .expect("model-distance linetype");
+        assert_eq!(model_distance.name, "modern dash");
+        assert_eq!(model_distance.archive_index, Some(9));
+        assert_eq!(model_distance.segments[0].length_millimeters, 63.5);
+        assert_eq!(model_distance.segments[0].segment_type, 0);
+        assert_eq!(model_distance.segments[1].length_millimeters, 31.75);
+        assert_eq!(model_distance.segments[1].segment_type, 1);
+        assert_eq!(model_distance.line_cap, 1);
+        assert_eq!(model_distance.line_join, 2);
+        assert_eq!(model_distance.width, 2.75);
+        assert_eq!(model_distance.width_units, 2);
+        assert_eq!(
+            model_distance.taper_points,
+            vec![[0.0, 0.5], [0.35, 1.25], [1.0, 2.5]]
+        );
+        assert!(model_distance.always_model_distance);
+
+        let print_distance_bytes = modern_linetype(false);
+        let print_distance = parse_linetype(
+            &print_distance_bytes,
+            0..print_distance_bytes.len(),
+            ArchiveVersion::V8,
+            25.4,
+            0,
+        )
+        .expect("print-distance linetype");
+        assert_eq!(print_distance.segments[0].length_millimeters, 2.5);
+        assert_eq!(print_distance.segments[1].length_millimeters, 1.25);
+        assert!(!print_distance.always_model_distance);
+        assert_eq!(print_distance.taper_points, model_distance.taper_points);
     }
 
     #[test]

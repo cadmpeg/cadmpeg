@@ -119,6 +119,11 @@ record writer and reader in `ON_BinaryArchive::Write3dmGroup` and
 `Read3dmGroup` contain that wrapper directly in the CRC-bearing group record.
 The Rust decoder consumes that prefix and resolves object-attribute group
 indexes to unique group records.
+`ON_Linetype::Write` and `Read` define the linetype class wrapper's legacy
+anonymous 1.1 and modern anonymous 2.3 payloads. The modern payload contains
+the five-status model-attributes child, segment array, and minor-gated item
+stream for cap, join, width, width units, taper, and always-model-distance.
+`ON_BinaryArchive::WriteLinetypeSegment` defines the line/space wire tags.
 `ON_HatchPattern::WriteV5`/`ReadV5` define the below-version-60 packed 1.2
 prefix and packed 1.1 hatch-line elements. The version-60 writer uses an
 anonymous major-1 pattern body with model-component attributes, a nested
@@ -411,7 +416,11 @@ unknown item ID, and leaves its unlength-prefixed value to the containing
 attributes chunk boundary. `ON_Layer::Read` applies the same boundary rule to a
 nonzero extension ID outside its defined set after the fixed layer prefix and
 known extension payloads. `ON_Linetype::Read` applies it to an unknown major-2
-extension code after the component-attributes and segment prefix. `ON_Font::Read`
+extension code after the component-attributes and segment prefix. Its known
+item gates are minor 1 for cap/join, minor 2 for width/units/taper, and minor 3
+for always-model-distance; its writer emits modern minor 3. The legacy major-1
+reader has the archive index, name, segment array, and minor-1 UUID prefix.
+`ON_Font::Read`
 accepts modern anonymous major-1 fonts, applies the minor 0 through 6 field
 gates, and ends at the font chunk boundary; its modern writer emits minor 6
 and its Windows LOGFONT name is a `TCODE_UTF8_STRING_CHUNK` with a format byte.
@@ -637,6 +646,14 @@ witnesses. Its class wrapper, V4/V5 packed 1.2 identity/description/fill/line
 fields, V6 anonymous component/line-list branch, line units, and nested line
 boundary are settled; the Rust hatch-pattern record preserves the fields in all
 three archive versions.
+The `ON_Linetype` class is independently covered by V4, V5, and V6 witnesses.
+Its class UUID, table-record wrapper, V4/V5 anonymous 1.1 identity and segment
+payload, V6 anonymous 2.3 model-attributes and item stream, segment type tags,
+and minor-gated defaults are settled. The false/true model-distance differential
+also establishes the CADIR conversion boundary: legacy and print-distance
+segments remain print millimeters, while true model-distance segments use the
+document millimeters-per-unit scale; width and taper values retain their unit
+selector.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -666,6 +683,15 @@ and `ON_BinaryArchive::Write3dmHatchPattern`/`Read3dmHatchPattern`, the
 authored V4/V5/V6 hatch witness, `cadmpeg inspect` reads of the legacy and
 anonymous payload branches, the three-version `cadmpeg query item` result,
 and the owner test `modern_hatch_pattern_reads_nested_line_chunks`.
+The linetype slice is closed by `ON_Linetype::Write`/`Read`,
+`ON_BinaryArchive::WriteLinetypeSegment`/`ReadLinetypeSegment`,
+`ON_BinaryArchive::Write3dmLinetype`/`Read3dmLinetype`, and
+`ON_BinaryArchive::WriteModelComponentAttributes`/
+`ReadModelComponentAttributes`, the authored V4/V5/V6 linetype witnesses and
+inch-unit differential witnesses, the `cadmpeg inspect` table/class-data and
+segment-tag reads, the three-version `cadmpeg query item` results, and the
+owner tests `legacy_linetype_preserves_print_lengths_and_wire_segment_tags` and
+`modern_linetype_scales_only_model_distance_segments`.
 
 ### FV-06. Later major payload admission
 
