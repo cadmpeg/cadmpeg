@@ -31,6 +31,30 @@ use super::super::sketch_transfer::{
 };
 use super::super::uniqueness::unique_feature_datum_plane;
 
+fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
+    let output_updates = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let feature_id = feature
+                .id
+                .as_str()
+                .strip_prefix("creo:model:feature#")
+                .and_then(|value| value.parse::<u32>().ok())?;
+            Some((
+                feature.id.clone(),
+                feature_output_bodies(scan, ir, feature_id),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for feature in &mut ir.model.features {
+        if let Some(outputs) = output_updates.get(&feature.id) {
+            feature.outputs.clone_from(outputs);
+        }
+    }
+}
+
 pub(super) fn emit_model_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -117,6 +141,7 @@ pub(super) fn emit_model_features(
             definition: IrFeatureDefinition::StoredGeometry,
             native_ref: None,
         });
+        refresh_feature_outputs(scan, ir);
         geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
@@ -243,6 +268,7 @@ pub(super) fn emit_model_features(
                     existing.outputs.push(output);
                 }
             }
+            refresh_feature_outputs(scan, ir);
             continue;
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
@@ -275,6 +301,7 @@ pub(super) fn emit_model_features(
             definition,
             native_ref,
         });
+        refresh_feature_outputs(scan, ir);
     }
     for feature_id in row_feature_ids {
         let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
@@ -365,6 +392,7 @@ pub(super) fn emit_model_features(
             definition,
             native_ref: owning_feature_definition_ref(scan, feature_id),
         });
+        refresh_feature_outputs(scan, ir);
     }
     geometry_generator_feature_count
 }
