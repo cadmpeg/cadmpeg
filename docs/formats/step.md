@@ -634,14 +634,14 @@ conversion and its V coordinate uses the directrix scale. A composite
 directrix whose parameterization has no single affine scale does not admit
 typed pcurve conversion and remains opaque.
 
-ISO 10303-42 defines `PCURVE` as the composition `g(f(t))`, where `f(t)` is
-the referenced two-dimensional curve in the parameter space of
-`basis_surface` and `g(u,v)` is the surface parameterization. The two-dimensional
-curve is not in the basis surface's representation context; its coordinates
-are the surface parameters `u,v`, not Cartesian coordinates or a separate
-plane-angle measure, and the curve is defined only within the surface
-parameter range. A pcurve has no separate angular-unit override. The reader
-does not choose a degree or radian interpretation from endpoint fit; an
+ISO 10303-42:2021 §4.5.47 defines `PCURVE` as the composition `g(f(t))`,
+where `f(t)` is the referenced two-dimensional curve in the parameter space of
+`basis_surface` and `g(u,v)` is the surface parameterization. The
+two-dimensional curve is not in the basis surface's representation context;
+its coordinates are the surface parameters `u,v`, not Cartesian coordinates
+or a separate plane-angle measure, and the curve is defined only within the
+surface parameter range. A pcurve has no separate angular-unit override. The
+reader does not choose a degree or radian interpretation from endpoint fit; an
 angular-looking coordinate that fails the owning surface chart remains an
 unusable pcurve carrier.
 
@@ -774,20 +774,28 @@ claim that ISO 10303-42 prescribes this salvage disposition for malformed
 input.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
-conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`
-definitional representation transfers one exact 2D line, circle, ellipse,
+conic. Its positive-v axis is the counterclockwise perpendicular. ISO
+10303-42:2021 §4.5.47 requires a pcurve's definitional representation to have
+exactly one item, that item to be a `CURVE`, and its dimensionality to be two.
+Sections §4.5.56 and §4.6.2 require a `CURVE_REPLICA` transformation to have
+the parent's dimension and require the replica graph to be acyclic.
+
+CADIR decision: the reader admits one exact 2D line, circle, ellipse,
 parabola, hyperbola, polyline, NURBS, trimmed curve, offset curve, or curve
-replica. A 2D `CURVE_REPLICA` retains its parent pcurve and parameterization;
-its 2D affine operator maps the parent coordinates to the replica coordinates.
-The definitional representation supplies exactly one 2D item. Active-record
-cycles and graphs at depth 256 or greater remain opaque; the recursion guard
-releases its active record on every return path. An unrecognized composite 2D
-carrier remains opaque rather than becoming an approximate pcurve.
-An unsupported 2D representation stays opaque and remains detached from the
-coedge. ISO 10303-42:2021 §5.5.7 defines `SEAM_EDGE` as an `ORIENTED_EDGE`
-with a `pcurve_reference`; its WR1 requires an `EDGE_CURVE` whose geometry is
-a `SEAM_CURVE`, and its WR2 requires the reference to be one of that seam
-curve's `associated_geometry` pcurves. The inherited edge orientation refers
+replica from the definitional representation. A 2D `CURVE_REPLICA` retains its
+parent parameterization and its 2D affine operator maps the parent coordinates
+to the replica coordinates. After the one carrier is admitted, the reader
+applies the owning surface chart scale once; it does not reinterpret the
+coordinates as Cartesian values or apply a second document angle scale. An
+active-record cycle or a graph at depth 256 or greater remains opaque, and the
+recursion guard releases its active record on every return path. An
+unrecognized composite 2D carrier remains opaque rather than becoming an
+approximate pcurve. An unsupported 2D representation stays opaque and remains
+detached from the coedge. ISO 10303-42:2021 §5.5.7 defines `SEAM_EDGE` as an
+`ORIENTED_EDGE` with a `pcurve_reference`; its WR1 requires an `EDGE_CURVE`
+whose geometry is a `SEAM_CURVE`, and its WR2 requires the reference to be one
+of that seam curve's `associated_geometry` pcurves. The inherited edge
+orientation refers
 to the edge element, not to the pcurve sense. Sections §4.5.47 and §4.5.49
 define the pcurve basis surface and require a seam curve's two pcurves to lie
 on the same surface. Section §5.2.2.1 and function §5.6.4 define the pcurve

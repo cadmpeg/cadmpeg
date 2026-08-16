@@ -58,6 +58,52 @@ fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
 }
 
 #[test]
+fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
+    let source = include_bytes!("data/tp07_pcurve_recursion.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode pcurve recursion witness");
+
+    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#31")
+        .expect("valid pcurve");
+    assert_eq!(
+        pcurve.geometry,
+        PcurveGeometry::Line {
+            origin: Point2::new(2.0, 3.0),
+            direction: Point2::new(2.0, 0.0),
+        }
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("CURVE_REPLICA #34 has invalid or unresolved parent/operator")
+    }));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("PCURVE #36 has no decoded surface or 2D curve")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#33"));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#36"));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn surface_curve_retains_direct_surface_support() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())

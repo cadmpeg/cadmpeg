@@ -231,25 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### TP-07. Pcurve recursion and normalization
-
-**Question.** What STEP rule establishes pcurve recursion and normalization?
-
-**Known.** A `PCURVE` definition must resolve to exactly one item in its
-`DEFINITIONAL_REPRESENTATION`. The reader decodes 2D line, analytic conic,
-polyline, NURBS, trimmed, offset, and affine-replica carriers. A 2D line
-uses its referenced point and vector directly; its coordinates are then
-converted once into the owning surface chart. A recursive carrier returns no
-typed geometry when an active record repeats or the graph reaches depth 256;
-the active set is released on every return path. Unsupported composite or
-otherwise unrecognized 2D carriers remain named opaque records and are not
-attached to a coedge. Topology that needs such a carrier records a
-machine-readable pcurve omission loss.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### TP-08. Face-bound partial dispatch
 
 **Question.** What STEP rule establishes face-bound partial dispatch?
