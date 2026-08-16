@@ -231,22 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### SG-02. Signed byte sequence
-
-**Known.** A signature covers the Part 21 alphabet bytes from the first
-`ISO-10303-21;` token through the byte before its `SIGNATURE;` token. The
-alphabet filter removes transport controls and retains the permitted Part 21
-characters. Each later signature covers the earlier signature sections too.
-The parser records this source range for every signature.
-
-**Question.** Which exact bytes does each signature method authenticate?
-
-`step.md` §2 "A clear-text exchange structure uses this outer grammar:" through `step.md` §2 "A clear-text exchange structure uses this outer grammar:" place each SIGNATURE section after the exchange terminator. `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define the byte boundary of the SIGNATURE section.
-
-**Need.** We must know the byte sequence to calculate the verification input.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### SG-03. Signature value encoding
 
 **Known.** The SIGNATURE section contains RFC 4648 Base64 text. Decoding

@@ -378,12 +378,18 @@ and comments may separate these tokens. ASCII control octets are ignored,
 including inside the Base64 token. The section boundary is the first
 token-boundary `ENDSEC;` after its `SIGNATURE;` token. `ENDSEC;` text inside a
 comment or inside the Base64 token is content, not a section boundary.
-Multiple sections are retained in source order and may be adjacent. The
-signature authenticates the Part 21 alphabet bytes from `ISO-10303-21;`
-through the byte before that section's `SIGNATURE;` token. A later section
-therefore also authenticates every earlier signature section. The reader
-retains both the complete source span and the decoded CMS payload. Signature
-verification still requires a CMS verifier and caller-supplied trust policy.
+Multiple sections are retained in source order and may be adjacent. ISO
+10303-21:2016 §14.1 defines the CMS message-digest input as the source
+characters in Table 1's alphabet. The signed byte range starts at the `I` in
+`ISO-10303-21;` and ends immediately before the `S` in that section's
+`SIGNATURE;` token. ASCII control octets are omitted from the range because
+§5.2 requires them to be ignored; spaces, comments, and print-control
+directives remain because their graphic characters are in the Table 1
+alphabet. A later section therefore also authenticates every earlier complete
+signature section and the alphabet bytes between it and the later
+`SIGNATURE;` token. The reader retains both the complete source span and the
+decoded CMS payload. Signature verification still requires a CMS verifier and
+caller-supplied trust policy.
 
 DATA sections are optional in edition 3. One unnamed DATA section requires one
 FILE_SCHEMA identifier. If a DATA section has parameters, they contain a

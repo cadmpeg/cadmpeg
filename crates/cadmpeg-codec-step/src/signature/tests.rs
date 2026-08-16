@@ -165,6 +165,42 @@ fn signature_method_and_parameters_are_inside_cms_payload() {
 }
 
 #[test]
+fn parser_projects_each_signature_to_preceding_alphabet_bytes() {
+    let source = include_bytes!("tests/data/sg02_signed_byte_sequence.p21");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("signed byte witness");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.signature_sections.len(), 2);
+    let first = &exchange.signature_sections[0];
+    let second = &exchange.signature_sections[1];
+    assert_eq!(first.signed.start, 0);
+    assert_eq!(first.signed.end, first.span.start);
+    assert_eq!(second.signed.start, 0);
+    assert_eq!(second.signed.end, second.span.start);
+    assert_eq!(
+        first.signed_alphabet_bytes(source).expect("first signed bytes"),
+        b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('SG-02 signed byte sequence witness'),'4;2');FILE_NAME('sg02_signed_byte_sequence','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PRODUCT('P1','Part','',());#2=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#3=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#2,#3)) REPRESENTATION_CONTEXT('model','3D'));ENDSEC;END-ISO-10303-21;/*FIRST*/\\N\\"
+    );
+    let mut expected_second = first
+        .signed_alphabet_bytes(source)
+        .expect("first signed bytes")
+        .clone();
+    expected_second.extend_from_slice(
+        b"SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=ENDSEC;/*SECOND*/\\F\\",
+    );
+    assert_eq!(
+        second
+            .signed_alphabet_bytes(source)
+            .expect("second signed bytes"),
+        expected_second
+    );
+    assert_eq!(
+        &source[first.span.clone()],
+        b"SIGNATURE;\nMFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;"
+    );
+}
+
+#[test]
 fn parser_ignores_controls_inside_signature_terminators() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nEN\nDSEC;";
     let (exchange, _) = crate::parse::parse(source).expect("split signature terminator");
