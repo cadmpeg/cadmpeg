@@ -30,6 +30,7 @@ sha1.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 tempfile.workspace = true
+roxmltree.workspace = true
 
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.

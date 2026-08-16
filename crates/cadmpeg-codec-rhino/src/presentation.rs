@@ -388,6 +388,88 @@ struct RenderingMaterialReference {
 }
 
 #[derive(Debug, Serialize)]
+struct MeshModifiersRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    displacement: Option<DisplacementRecord>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct DisplacementRecord {
+    xml_version: i32,
+    on: bool,
+    texture: Option<String>,
+    channel: i32,
+    black_point: f64,
+    white_point: f64,
+    sweep_pitch: i32,
+    refine_steps: i32,
+    refine_sensitivity: f64,
+    face_count_limit_enabled: bool,
+    face_count_limit: i32,
+    post_weld_angle: f64,
+    mesh_memory_limit: i32,
+    fairing_enabled: bool,
+    fairing_amount: i32,
+    sub_object_count: Option<i32>,
+    sweep_resolution_formula: i32,
+    sub_items: Vec<DisplacementSubItemRecord>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct DisplacementSubItemRecord {
+    face_index: i32,
+    on: bool,
+    texture: Option<String>,
+    channel: i32,
+    black_point: f64,
+    white_point: f64,
+}
+
+fn mesh_modifiers_record(modifiers: &crate::mesh_modifiers::MeshModifiers) -> MeshModifiersRecord {
+    MeshModifiersRecord {
+        displacement: modifiers.displacement.as_ref().map(displacement_record),
+    }
+}
+
+fn displacement_record(
+    displacement: &crate::mesh_modifiers::DisplacementModifier,
+) -> DisplacementRecord {
+    DisplacementRecord {
+        xml_version: displacement.xml_version,
+        on: displacement.on,
+        texture: displacement.texture.map(|uuid| uuid.to_string()),
+        channel: displacement.channel,
+        black_point: displacement.black_point,
+        white_point: displacement.white_point,
+        sweep_pitch: displacement.sweep_pitch,
+        refine_steps: displacement.refine_steps,
+        refine_sensitivity: displacement.refine_sensitivity,
+        face_count_limit_enabled: displacement.face_count_limit_enabled,
+        face_count_limit: displacement.face_count_limit,
+        post_weld_angle: displacement.post_weld_angle,
+        mesh_memory_limit: displacement.mesh_memory_limit,
+        fairing_enabled: displacement.fairing_enabled,
+        fairing_amount: displacement.fairing_amount,
+        sub_object_count: displacement.sub_object_count,
+        sweep_resolution_formula: displacement.sweep_resolution_formula,
+        sub_items: displacement
+            .sub_items
+            .iter()
+            .map(|item| DisplacementSubItemRecord {
+                face_index: item.face_index,
+                on: item.on,
+                texture: item.texture.map(|uuid| uuid.to_string()),
+                channel: item.channel,
+                black_point: item.black_point,
+                white_point: item.white_point,
+            })
+            .collect(),
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct LayerPerViewportPresentationRecord {
     viewport_uuid: String,
     settings_mask: u32,
@@ -469,6 +551,8 @@ struct ObjectPresentationRecord {
     attribute_user_strings: Vec<UserStringRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     custom_render_mesh: Option<settings::MeshParameters>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mesh_modifiers: Option<MeshModifiersRecord>,
     links: Vec<String>,
 }
 
@@ -2966,6 +3050,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 user_strings,
                 attribute_user_strings,
                 custom_render_mesh: attributes.custom_render_mesh.clone(),
+                mesh_modifiers: attributes
+                    .mesh_modifiers
+                    .as_ref()
+                    .map(mesh_modifiers_record),
                 links: vec![format!("rhino:object:record#{source_order:06}")],
             });
         }
@@ -3832,6 +3920,7 @@ mod tests {
             known: true,
             class_uuid: Some(USER_STRING_LIST),
             item_uuid: Some(USER_STRING_LIST),
+            application_uuid: None,
             writer_version: None,
             payload_range: Some(attributes_start..data.len()),
         };

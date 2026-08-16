@@ -34,6 +34,7 @@ pub(crate) mod legacy;
 #[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
 pub(crate) mod loss;
 pub(crate) mod mesh;
+pub(crate) mod mesh_modifiers;
 pub(crate) mod morph;
 pub(crate) mod objects;
 pub(crate) mod polyedge;

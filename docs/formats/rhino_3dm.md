@@ -1156,6 +1156,83 @@ Reading and writing that field updates the runtime userdata through
 `SetTextFormula`; CADIR uses the existing annotation text mapping and creates
 no separate userdata record.
 
+#### 7.2.12 `ON_DisplacementUserData`
+
+`ON_DisplacementUserData` uses class UUID
+`B8C04604-B4EF-43B7-8C26-1AFB8F1C54EB`, item UUID
+`8224A7C4-5590-4AC4-A32C-DE85DC2FFDAE`, and application UUID
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. It is attached to the
+`ON_3dmObjectAttributes` mesh-modifier owner. The model writer collects each
+mesh-modifier userdata item from that owner, so the item remains in the
+object-attributes userdata stream even though its XML is combined with the
+other mesh-modifier nodes when the owner is queried.
+
+The payload is the body of the anonymous userdata child from section 7.2:
+
+```text
+i32 XML userdata version
+if version = 1: UTF-16 XML string
+if version = 2: i32 UTF-8 byte count; raw UTF-8 XML bytes
+```
+
+The writer emits version 2. The reader accepts versions 1 and 2 and skips
+remaining bytes at the anonymous payload boundary. Version 1 uses the archive
+UTF-16 string grammar from section 7.3. Version 2 uses a byte count and does
+not require an archive string terminator.
+
+The XML document has root `xml` and a direct child named
+`new-displacement-object-data`. Parameter and property names are matched
+case-insensitively. A parameter with no `type` property is absent to the
+parameter reader. Unknown child elements are ignored. Missing parameters use
+the class getter defaults below; a nil UUID is no texture:
+
+| XML child | Type | Meaning | Missing value |
+| --- | --- | --- | ---: |
+| `on` | bool | Enables displacement | `false` |
+| `texture` | UUID | Texture used to compute displacement | nil UUID |
+| `channel` | int | Texture mapping channel | `0` |
+| `black-point` | double | Displacement amount at texture black | `0.0` |
+| `white-point` | double | Displacement amount at texture white | `1.0` |
+| `sweep-pitch` | int | Initial subdivision density; lower values produce higher resolution | `1000` |
+| `refine-steps` | int | Number of refinement passes | `1` |
+| `refine-sensitivity` | double | Contrast sensitivity used to split edges during refinement | `0.5` |
+| `face-count-limit-enabled` | bool | Enables post-process face reduction | `false` |
+| `face-count-limit` | int | Target face count for that reduction | `10000` |
+| `post-weld-angle` | double | Maximum adjacent-face normal angle welded together, in degrees | `40.0` |
+| `mesh-memory-limit` | int | Displacement mesh memory limit, in megabytes | `512` |
+| `fairing-enabled` | bool | Enables fairing | `false` |
+| `fairing-amount` | int | Number of fairing steps | `4` |
+| `sub-object-count` | int | Serialized sub-object count parameter | absent |
+| `sweep-res-formula` | int | Sweep-resolution formula: `0` default, `1` absolute-tolerance-dependent | archive-dependent |
+
+The `sub-object-count` parameter does not delimit the sub-item sequence. The
+reader enumerates every direct `sub` child in document order. Each `sub` child
+overrides the top-level displacement parameters for one polysurface or SubD
+face:
+
+```text
+sub-index       int       component face index; >= 0 selects the face
+sub-on          bool      displacement override
+sub-texture     UUID      texture override; nil means no texture
+sub-channel     int       mapping-channel override
+sub-black-point double    black-point override
+sub-white-point double    white-point override
+```
+
+Missing sub-item values are `-1`, `false`, nil UUID, `0`, `0.0`, and `1.0` in
+that order. For archive versions below 60, a missing `sweep-res-formula` is
+materialized as `1` (`AbsoluteToleranceDependent`) by the userdata reader. For
+archive version 60 and later, the missing value is the enum default `0`.
+The class's public enum defines no other formula values; an unrecognized
+serialized integer remains an integer field.
+
+CADIR stores the recognized item under the owning object presentation's
+`mesh_modifiers.displacement` native value. It does not create a mesh or a
+second object identity. The first serialized matching class/item/application
+triple owns the typed value. A malformed recognized payload leaves the object
+attributes and geometry admitted, omits this native value, and retains the
+bounded userdata record for opaque fidelity handling.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -1996,6 +2073,11 @@ The `ON_PerObjectMeshParameters` item is a typed attributes carrier. Its
 generic payload contains the class-owned nested anonymous chunks specified in
 section 7.2.10, and the resulting mesh parameters are retained under the
 owning native object presentation.
+
+The `ON_DisplacementUserData` item is a typed attributes carrier. Its XML
+payload and displacement/sub-item fields are specified in section 7.2.12; the
+resulting modifier is retained under the same object presentation without
+changing the transferred object geometry.
 
 ## 10. Compressed buffers
 

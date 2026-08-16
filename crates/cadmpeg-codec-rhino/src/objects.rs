@@ -79,6 +79,8 @@ pub(crate) struct AttributeUserdataDescriptor {
     pub(crate) class_uuid: Option<Uuid>,
     /// Userdata item UUID when the framing supplied one.
     pub(crate) item_uuid: Option<Uuid>,
+    /// Userdata application UUID from a major-2 minor-1 header.
+    pub(crate) application_uuid: Option<Uuid>,
     /// Userdata writer version from a major-2 header.
     pub(crate) writer_version: Option<i64>,
     /// Bounded anonymous payload range.
@@ -191,6 +193,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) embedded_section_style: Option<settings::EmbeddedDescriptor>,
     /// Per-object custom render-mesh settings.
     pub(crate) custom_render_mesh: Option<settings::MeshParameters>,
+    /// Per-object mesh modifier userdata.
+    pub(crate) mesh_modifiers: Option<crate::mesh_modifiers::MeshModifiers>,
 }
 
 /// Resolved source identity and display state for one object.
@@ -831,6 +835,7 @@ pub(crate) fn parse_attributes(
             embedded_linetype: None,
             embedded_section_style: None,
             custom_render_mesh: None,
+            mesh_modifiers: None,
         });
     }
     if version.0 != 2 || archive.value() < 50 {
@@ -895,6 +900,7 @@ pub(crate) fn parse_attributes(
         embedded_linetype: None,
         embedded_section_style: None,
         custom_render_mesh: None,
+        mesh_modifiers: None,
     };
     while reader.remaining() > 0 {
         let item = reader.u8()?;
@@ -1131,6 +1137,7 @@ pub(crate) fn parse_attribute_userdata(
                 known: false,
                 class_uuid: None,
                 item_uuid: None,
+                application_uuid: None,
                 writer_version: None,
                 payload_range: None,
             });
@@ -1141,6 +1148,9 @@ pub(crate) fn parse_attribute_userdata(
                     known: !value.unknown_version,
                     class_uuid: (!value.unknown_version).then_some(value.class_uuid),
                     item_uuid: (!value.unknown_version).then_some(value.item_uuid),
+                    application_uuid: (!value.unknown_version)
+                        .then_some(value.application_uuid)
+                        .flatten(),
                     writer_version: (!value.unknown_version)
                         .then_some(
                             value
@@ -1537,6 +1547,12 @@ pub(crate) fn parse_object_record(
             &mut warnings,
         );
         attributes.custom_render_mesh = obsolete_custom_mesh.or(modern_custom_mesh);
+        attributes.mesh_modifiers = crate::mesh_modifiers::parse_attribute_userdata(
+            bytes,
+            &attributes_userdata,
+            archive,
+            &mut warnings,
+        );
     }
     Ok(ObjectDescriptor {
         range: record.range.clone(),

@@ -870,6 +870,7 @@ fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_array_empty(&fields, "display_materials")
         && json_array_empty(&fields, "rendering_materials")
         && fields.get("custom_render_mesh").is_none()
+        && fields.get("mesh_modifiers").is_none()
         && json_array_empty(&fields, "clipping_plane_uuids")
         && json_array_empty_or_missing(&fields, "user_strings")
         && json_array_empty_or_missing(&fields, "attribute_user_strings")

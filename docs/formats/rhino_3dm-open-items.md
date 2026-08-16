@@ -241,6 +241,15 @@ runtime-only carrier. Its class and item UUID is
 inherits `Archive() == false`, so it has no class-userdata payload. The formula
 is the direct minor-2 UTF-16 field of the legacy annotation record in section
 18.3.
+The built-in `ON_DisplacementUserData` class is also settled. Its class UUID
+is `B8C04604-B4EF-43B7-8C26-1AFB8F1C54EB`, item UUID is
+`8224A7C4-5590-4AC4-A32C-DE85DC2FFDAE`, and application UUID is
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. Its object-attributes payload uses
+`ON_XMLUserData` version 1 or 2 framing, the `xml`/
+`new-displacement-object-data` XML roots, the source getter defaults, the
+pre-V6 formula insertion, and ordered `sub` overrides. Section 7.2.12 and the
+decoder retain the serialized sub-object count without using it as the child
+count.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -260,7 +269,8 @@ object-attributes compatibility carrier under section 7.2.9, and
 `ON_PerObjectMeshParameters` is settled as the typed modern object-attributes
 carrier under section 7.2.10. `ON_AnnotationTextFormula` is settled as a
 runtime-only helper with no serialized userdata under section 7.2.11; other
-future class-specific payload semantics remain open.
+future class-specific payload semantics, including the other mesh-modifier
+classes, remain open.
 
 ### RS-01. Later-minor bounded suffixes
 
