@@ -534,7 +534,9 @@ anchor result. For a UUID-only URI, §10.2.2 assigns the processing system the
 task of finding a service that identifies the exchange structure. These rules
 define the resource token and resolution result; they do not define a
 transport, authentication, redirect, certificate, authorization, or freshness
-procedure.
+procedure. Section 8.2.5 states that a later last-visited timestamp is a
+freshness assertion and that a digest validates the referenced bytes; it does
+not define a cache key or representation-equivalence test.
 
 The Part 21 schema population is separate from the decoded instance graph. It
 contains every entity in the local DATA sections. If `SCHEMA_POPULATION` is

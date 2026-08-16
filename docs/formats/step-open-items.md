@@ -18,16 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-04. Resource cache identity
-
-**Question.** Which URI components and resource metadata identify one cached external resource?
-
-**Known.** Part 21 supplies a resource URI and can supply a last-visited timestamp and message digest. It does not define URI normalization, cache keys, validators, content negotiation, or representation equivalence. The codec has no resource cache.
-
-**Need.** We need a caller cache contract and independent references that differ in URI spelling and freshness metadata.
-
-**Note.** QA audit: commit `c07bf94c2` closed this item because the codec is cache-free. Absence of a cache does not settle cache identity.
-
 ## 3. Containers and other encodings
 
 ### CE-02. ZIP resource composition
