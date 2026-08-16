@@ -20,14 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
-### DR-05. Recipe records of a non-locus parameter companion
-
-**Question.** How do the recipe records inside one non-locus indexed-parameter-companion variant relate to each other as an operation?
-
-**Known.** `f3d.md` §3.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §3.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §3.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus.
-
-**Need.** We must know the operation to build a neutral dimension from more than one recipe record.
-
 ### DR-09A. Sheet-metal `Hem` fixed-section semantics
 
 **Question.** What independent native settings do the four retained fixed-section fields and the indexed settings record carry?
