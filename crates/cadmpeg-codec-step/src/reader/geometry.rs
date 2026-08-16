@@ -179,6 +179,104 @@ impl UnitScales {
     }
 }
 
+fn resolve_source_curve_parameter_scales(
+    exchange: &Exchange,
+    unit_scales: &UnitScales,
+    default_length: f64,
+    default_angle: f64,
+) -> BTreeMap<u64, f64> {
+    exchange
+        .records
+        .keys()
+        .filter_map(|id| {
+            source_curve_parameter_scale(
+                *id,
+                exchange,
+                unit_scales,
+                default_length,
+                default_angle,
+                &mut BTreeSet::new(),
+            )
+            .map(|scale| (*id, scale))
+        })
+        .collect()
+}
+
+fn source_curve_parameter_scale(
+    id: u64,
+    exchange: &Exchange,
+    unit_scales: &UnitScales,
+    default_length: f64,
+    default_angle: f64,
+    active: &mut BTreeSet<u64>,
+) -> Option<f64> {
+    if !active.insert(id) {
+        return None;
+    }
+    let scale = (|| {
+        let record = exchange.records.get(&id)?;
+        if record.partial("LINE").is_some() {
+            let magnitude = named_parameter(record, "LINE", 2)
+                .and_then(Value::reference)
+                .and_then(|vector| exchange.records.get(&vector))
+                .filter(|vector| vector.partial("VECTOR").is_some())
+                .and_then(|vector| named_parameter(vector, "VECTOR", 2))
+                .and_then(Value::number)
+                .filter(|magnitude| magnitude.is_finite() && *magnitude > 0.0)?;
+            let scale = magnitude * unit_scales.length(id, default_length);
+            return scale.is_finite().then_some(scale);
+        }
+        if record.partial("CIRCLE").is_some() || record.partial("ELLIPSE").is_some() {
+            return Some(unit_scales.angle(id, default_angle));
+        }
+        if record.partial("PARABOLA").is_some()
+            || record.partial("HYPERBOLA").is_some()
+            || record.partial("POLYLINE").is_some()
+            || record.partials.iter().any(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "B_SPLINE_CURVE_WITH_KNOTS"
+                        | "UNIFORM_CURVE"
+                        | "QUASI_UNIFORM_CURVE"
+                        | "BEZIER_CURVE"
+                )
+            })
+        {
+            return Some(1.0);
+        }
+        let parent = ["CURVE_REPLICA", "TRIMMED_CURVE", "OFFSET_CURVE_3D"]
+            .into_iter()
+            .find_map(|name| {
+                named_parameter(record, name, 1)
+                    .and_then(Value::reference)
+                    .and_then(|parent| curve_carrier_record(parent, exchange))
+            })
+            .or_else(|| {
+                record
+                    .partials
+                    .iter()
+                    .any(|partial| {
+                        matches!(
+                            partial.name.as_str(),
+                            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+                        )
+                    })
+                    .then(|| surface_curve_basis(record))
+                    .flatten()
+            })?;
+        source_curve_parameter_scale(
+            parent,
+            exchange,
+            unit_scales,
+            default_length,
+            default_angle,
+            active,
+        )
+    })();
+    active.remove(&id);
+    scale
+}
+
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
@@ -194,6 +292,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         1.0
     });
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
+    let source_curve_parameter_scales =
+        resolve_source_curve_parameter_scales(exchange, &unit_scales, scale, angle_scale);
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
@@ -990,6 +1090,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             Some("SURFACE_OF_LINEAR_EXTRUSION") => {
                 named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 1)
                     .and_then(Value::reference)
+                    .and_then(|curve| curve_carrier_record(curve, exchange))
                     .filter(|curve| carrier_index.curves.contains_key(curve))
                     .map(|curve| CurveId(StepIdentity::data("curve", curve)))
                     .zip(
@@ -1006,6 +1107,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             }
             Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
+                .and_then(|curve| curve_carrier_record(curve, exchange))
                 .filter(|curve| carrier_index.curves.contains_key(curve))
                 .map(|curve| CurveId(StepIdentity::data("curve", curve)))
                 .zip(
@@ -1249,8 +1351,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 surface_waiting_on.entry(support_step).or_default().push(id);
                 continue;
             };
-            let parameter_scales =
-                surface_parameter_scales(&geometry, record_scale, record_angle_scale);
+            let Some(parameter_scales) = surface_parameter_scales_for_step(
+                ir,
+                &SurfaceId(StepIdentity::data("surface", support_step)),
+                &geometry,
+                record_scale,
+                record_angle_scale,
+                &source_curve_parameter_scales,
+            ) else {
+                warnings.push(format!(
+                    "RECTANGULAR_TRIMMED_SURFACE #{id} has no established support parameterization"
+                ));
+                continue;
+            };
             for (range, parameter_scale) in parameter_ranges.iter_mut().zip(parameter_scales) {
                 range[0] *= parameter_scale;
                 range[1] *= parameter_scale;
@@ -1589,6 +1702,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 &surface.geometry,
                 unit_scales.length(id, scale),
                 unit_scales.angle(id, angle_scale),
+                &source_curve_parameter_scales,
             )?;
             Some((id, scales))
         })
@@ -1622,16 +1736,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             warnings.push(format!("PCURVE #{id} has no decoded surface or 2D curve"));
             continue;
         };
+        let Some(scales) = surface_step.and_then(|surface| surface_parameter_scales.get(&surface))
+        else {
+            warnings.push(format!(
+                "PCURVE #{id} has no established owning surface parameterization"
+            ));
+            continue;
+        };
         let mut geometry = geometry.clone();
-        if let Some(scales) =
-            surface_step.and_then(|surface| surface_parameter_scales.get(&surface))
-        {
-            if !scale_pcurve_geometry(&mut geometry, *scales) {
-                warnings.push(format!(
-                    "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
-                ));
-                continue;
-            }
+        if !scale_pcurve_geometry(&mut geometry, *scales) {
+            warnings.push(format!(
+                "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
+            ));
+            continue;
         }
         ir.model.pcurves.push(Pcurve {
             id: PcurveId(StepIdentity::data("pcurve", id)),
@@ -3991,35 +4108,13 @@ fn pcurve_nurbs_parameter_period(degree: u32, knots: &[f64], count: usize) -> Op
     (lower.is_finite() && upper.is_finite() && upper > lower).then_some(upper - lower)
 }
 
-fn surface_parameter_scales(
-    geometry: &SurfaceGeometry,
-    length_scale: f64,
-    angle_scale: f64,
-) -> [f64; 2] {
-    match geometry {
-        SurfaceGeometry::Plane { .. } => [length_scale, length_scale],
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            [angle_scale, length_scale]
-        }
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
-            [angle_scale, angle_scale]
-        }
-        SurfaceGeometry::Transformed { basis, .. } => {
-            surface_parameter_scales(basis, length_scale, angle_scale)
-        }
-        SurfaceGeometry::Nurbs { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Unknown { .. } => [1.0, 1.0],
-    }
-}
-
 fn surface_parameter_scales_for_step(
     ir: &CadIr,
     surface_id: &SurfaceId,
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
+    source_curve_parameter_scales: &BTreeMap<u64, f64>,
 ) -> Option<[f64; 2]> {
     procedural_surface_parameter_scales(
         ir,
@@ -4027,6 +4122,7 @@ fn surface_parameter_scales_for_step(
         geometry,
         length_scale,
         angle_scale,
+        source_curve_parameter_scales,
         &mut BTreeSet::new(),
     )
 }
@@ -4037,6 +4133,7 @@ fn procedural_surface_parameter_scales(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
+    source_curve_parameter_scales: &BTreeMap<u64, f64>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     if !active.insert(surface_id.clone()) {
@@ -4048,6 +4145,7 @@ fn procedural_surface_parameter_scales(
         geometry,
         length_scale,
         angle_scale,
+        source_curve_parameter_scales,
         active,
     );
     active.remove(surface_id);
@@ -4060,6 +4158,7 @@ fn surface_geometry_parameter_scales(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
+    source_curve_parameter_scales: &BTreeMap<u64, f64>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     match geometry {
@@ -4077,6 +4176,7 @@ fn surface_geometry_parameter_scales(
             basis,
             length_scale,
             angle_scale,
+            source_curve_parameter_scales,
             active,
         ),
         SurfaceGeometry::Procedural { construction } => ir
@@ -4090,6 +4190,7 @@ fn surface_geometry_parameter_scales(
                     &procedural.definition,
                     length_scale,
                     angle_scale,
+                    source_curve_parameter_scales,
                     active,
                 )
             }),
@@ -4108,6 +4209,7 @@ fn surface_geometry_parameter_scales(
                 &procedural.definition,
                 length_scale,
                 angle_scale,
+                source_curve_parameter_scales,
                 active,
             )
         }
@@ -4120,6 +4222,7 @@ fn procedural_definition_parameter_scales(
     definition: &ProceduralSurfaceDefinition,
     length_scale: f64,
     angle_scale: f64,
+    source_curve_parameter_scales: &BTreeMap<u64, f64>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     let support_scales = |support: &SurfaceId, active: &mut BTreeSet<SurfaceId>| {
@@ -4134,25 +4237,44 @@ fn procedural_definition_parameter_scales(
             &carrier.geometry,
             length_scale,
             angle_scale,
+            source_curve_parameter_scales,
             active,
         )
     };
     match definition {
         ProceduralSurfaceDefinition::Extrusion { directrix, .. }
         | ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => Some([
-            directrix_parameter_scale(ir, directrix, length_scale, angle_scale)?,
-            length_scale,
+            directrix_parameter_scale(
+                ir,
+                directrix,
+                length_scale,
+                angle_scale,
+                source_curve_parameter_scales,
+            )?,
+            1.0,
         ]),
         ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => Some([
             angle_scale,
-            directrix_parameter_scale(ir, directrix, length_scale, angle_scale)?,
+            directrix_parameter_scale(
+                ir,
+                directrix,
+                length_scale,
+                angle_scale,
+                source_curve_parameter_scales,
+            )?,
         ]),
         ProceduralSurfaceDefinition::Revolution {
             directrix,
             transposed,
             ..
         } => {
-            let directrix = directrix_parameter_scale(ir, directrix, length_scale, angle_scale)?;
+            let directrix = directrix_parameter_scale(
+                ir,
+                directrix,
+                length_scale,
+                angle_scale,
+                source_curve_parameter_scales,
+            )?;
             Some(if *transposed {
                 [angle_scale, directrix]
             } else {
@@ -4177,7 +4299,13 @@ fn directrix_parameter_scale(
     curve_id: &CurveId,
     length_scale: f64,
     angle_scale: f64,
+    source_curve_parameter_scales: &BTreeMap<u64, f64>,
 ) -> Option<f64> {
+    if let Some(source_scale) =
+        step_instance_id(&curve_id.0).and_then(|id| source_curve_parameter_scales.get(&id))
+    {
+        return Some(*source_scale);
+    }
     directrix_parameter_scale_inner(
         ir,
         curve_id,
@@ -4224,11 +4352,11 @@ fn directrix_geometry_parameter_scale(
 ) -> Option<f64> {
     match geometry {
         CurveGeometry::Line { .. } => Some(length_scale),
-        CurveGeometry::Circle { .. }
-        | CurveGeometry::Ellipse { .. }
-        | CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. } => Some(angle_scale),
-        CurveGeometry::Nurbs(_) => Some(1.0),
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => Some(angle_scale),
+        CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. }
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline { .. } => Some(1.0),
         CurveGeometry::Transformed { basis, .. } => {
             directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
         }
@@ -4242,7 +4370,8 @@ fn directrix_geometry_parameter_scale(
                 | ProceduralCurveDefinition::SpatialOffset { source, .. }
                 | ProceduralCurveDefinition::Subset { source, .. }
                 | ProceduralCurveDefinition::VectorOffset { source, .. }
-                | ProceduralCurveDefinition::Projection { source, .. } => {
+                | ProceduralCurveDefinition::Projection { source, .. }
+                | ProceduralCurveDefinition::Replica { source, .. } => {
                     directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
                 }
                 ProceduralCurveDefinition::Deformable {
@@ -4253,7 +4382,6 @@ fn directrix_geometry_parameter_scale(
             }),
         CurveGeometry::Degenerate { .. }
         | CurveGeometry::Composite { .. }
-        | CurveGeometry::Polyline { .. }
         | CurveGeometry::Unknown { .. } => None,
     }
 }

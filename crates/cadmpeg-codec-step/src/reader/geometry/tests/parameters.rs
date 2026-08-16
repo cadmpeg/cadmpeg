@@ -89,15 +89,38 @@ fn surface_parameter_units_follow_the_surface_chart() {
         basis: Box::new(cylinder.clone()),
         transform: Transform::identity(),
     };
-    assert_eq!(surface_parameter_scales(&plane, 10.0, 0.25), [10.0, 10.0]);
     assert_eq!(
-        surface_parameter_scales(&cylinder, 10.0, 0.25),
-        [0.25, 10.0]
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("plane".into()),
+            &plane,
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        Some([10.0, 10.0])
     );
-    assert_eq!(surface_parameter_scales(&sphere, 10.0, 0.25), [0.25, 0.25]);
     assert_eq!(
-        surface_parameter_scales(&transformed, 10.0, 0.25),
-        [0.25, 10.0]
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("cylinder".into()),
+            &cylinder,
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        Some([0.25, 10.0])
+    );
+    assert_eq!(
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("sphere".into()),
+            &sphere,
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        Some([0.25, 0.25])
     );
     assert_eq!(
         surface_parameter_scales_for_step(
@@ -106,12 +129,31 @@ fn surface_parameter_units_follow_the_surface_chart() {
             &transformed,
             10.0,
             0.25,
+            &BTreeMap::new(),
         ),
         Some([0.25, 10.0])
     );
     assert_eq!(
-        surface_parameter_scales(&SurfaceGeometry::Unknown { record: None }, 10.0, 0.25),
-        [1.0, 1.0]
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("transformed".into()),
+            &transformed,
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        Some([0.25, 10.0])
+    );
+    assert_eq!(
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("unknown".into()),
+            &SurfaceGeometry::Unknown { record: None },
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        None
     );
 }
 
@@ -174,8 +216,9 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             &ir.model.surfaces[0].geometry,
             length_scale,
             angle_scale,
+            &BTreeMap::new(),
         ),
-        Some([length_scale, length_scale])
+        Some([length_scale, 1.0])
     );
     assert_eq!(
         surface_parameter_scales_for_step(
@@ -184,8 +227,47 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             &ir.model.surfaces[1].geometry,
             length_scale,
             angle_scale,
+            &BTreeMap::new(),
         ),
         Some([angle_scale, length_scale])
+    );
+}
+
+#[test]
+fn directrix_parameter_units_follow_step_curve_equations() {
+    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let angle_scale = std::f64::consts::PI / 180.0;
+    let parabola = CurveGeometry::Parabola {
+        vertex: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        focal_distance: 2.0,
+    };
+    let hyperbola = CurveGeometry::Hyperbola {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 2.0,
+        minor_radius: 1.0,
+    };
+    let polyline = CurveGeometry::Polyline {
+        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        parameters: None,
+        chordal_deflection: 0.0,
+    };
+    let mut active = BTreeSet::new();
+
+    assert_eq!(
+        directrix_geometry_parameter_scale(&ir, &parabola, 0.001, angle_scale, &mut active),
+        Some(1.0)
+    );
+    assert_eq!(
+        directrix_geometry_parameter_scale(&ir, &hyperbola, 0.001, angle_scale, &mut active),
+        Some(1.0)
+    );
+    assert_eq!(
+        directrix_geometry_parameter_scale(&ir, &polyline, 0.001, angle_scale, &mut active),
+        Some(1.0)
     );
 }
 
@@ -225,6 +307,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             &ir.model.surfaces[0].geometry,
             0.001,
             std::f64::consts::PI / 180.0,
+            &BTreeMap::new(),
         ),
         None
     );
@@ -267,6 +350,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
             &ir.model.surfaces[0].geometry,
             10.0,
             std::f64::consts::PI / 180.0,
+            &BTreeMap::new(),
         ),
         Some([std::f64::consts::PI / 180.0, 10.0])
     );

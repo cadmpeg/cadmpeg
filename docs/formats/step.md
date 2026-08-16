@@ -398,13 +398,28 @@ domain. Deferred surface dependencies resolve by graph fixpoint, including
 forward and nested replicas. Its native entity is emitted again when those
 values are available.
 
-`SURFACE_OF_LINEAR_EXTRUSION` uses the directrix parameter as U and the stored
-vector as the V-direction displacement. `SURFACE_OF_REVOLUTION` uses the axis
-placement origin and direction as its rotation axis, the directrix parameter as
-V, and the plane angle in radians as U. A pcurve on either surface uses that
-same U/V parameterization. The pcurve population does not redefine the chart:
-trimmed pcurves cannot establish a surface-wide scale or direction, and a
-non-linear directrix keeps its native parameterization. Endpoint-derived
+ISO 10303-42 §4.5.67 defines `SURFACE_OF_LINEAR_EXTRUSION` as
+`sigma(u,v) = lambda(u) + v V`. U keeps the directrix parameter. V is
+dimensionless because the `VECTOR` magnitude is a length and is already part
+of `V`. §4.5.68 defines `SURFACE_OF_REVOLUTION` with the directrix as
+`lambda(v)` and U as the rotation angle. U uses the current plane-angle unit;
+V keeps the directrix parameter. A pcurve on either surface uses this same
+U/V chart.
+
+The directrix parameter scales are fixed by the defining curve equations.
+`LINE` uses its `VECTOR` magnitude multiplied by the representation length
+unit. `CIRCLE` and `ELLIPSE` use the representation plane-angle unit.
+`PARABOLA`, `HYPERBOLA`, `POLYLINE`, and the B-spline curve family use their
+stored dimensionless parameters. A `CURVE_REPLICA`, `TRIMMED_CURVE`, or
+`OFFSET_CURVE_3D` inherits the parameterization of its parent. A
+`SURFACE_CURVE` uses the parameterization of its `curve_3d` carrier; its
+associated pcurve remains in the support surface's chart. A composite
+directrix has a piecewise accumulated parameterization and has no single
+affine scale. Unsupported directrix forms and composite directrices remain
+opaque for typed pcurve conversion.
+
+Surface wrappers that retain a support chart use that chart's parameter
+scales. A pcurve population does not redefine the chart. Endpoint-derived
 calibration of a bounded procedural pcurve is accepted only when every source
 coordinate that the affine map collapses is constant across the pcurve's
 declared parameter interval. Otherwise the pcurve remains opaque and the

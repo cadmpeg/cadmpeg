@@ -206,32 +206,6 @@ cannot produce a valid/invalid result.
 
 ## 5. Topology and pcurve decisions
 
-### TP-03. Non-planar pcurve units
-
-**Question.** Which scale does each pcurve axis use for elementary and swept
-support surfaces, including the directrix and extrusion-vector cases?
-
-**Known.** ISO 10303-42 defines a pcurve in its support surface's `(u,v)`
-parameter space. The analytic surface equations identify plane axes from the
-representation length context, cylinder and cone axes as `(plane angle,
-length)`, and sphere and torus axes as `(plane angle, plane angle)`. A linear
-extrusion is `lambda(u) + v V`; the referenced curve defines `u` and the
-extrusion vector magnitude defines the parameterization for `v`. A revolution
-uses plane angle for `u` and the referenced curve's parameter for `v`.
-
-**Note.** Commit `f41f2898c` promoted a scale table into `docs/formats/step.md`
-and removed this item. The implementation and `reader/geometry.rs` tests use
-synthetic IR variants. They do not establish the directrix unit mapping for
-every curve kind. In particular, the decoder scales the extrusion vector to
-document units and also applies a document length scale to the pcurve's
-second axis. The source equation does not by itself justify treating that
-axis as an independent length coordinate. This item is reopened.
-
-**Need.** We need a parameter-scale table that preserves the source
-parameterization and vector magnitudes for every supported directrix and
-surface wrapper, derived from the ISO 10303-42 equations and checked against
-exporter-authored witness files, before this rule is settled.
-
 ### TP-09. Pcurve endpoint and tied-locus verification
 
 **Question.** What evidence proves that a non-seam pcurve candidate is the

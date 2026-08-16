@@ -33,6 +33,8 @@ use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
 
+const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
+
 #[test]
 pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     let source = StepCodec::default()
@@ -194,7 +196,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
 }
 
 #[test]
-fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
+fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
@@ -227,37 +229,76 @@ fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter())
         .next()
-        .expect("calibrated linear-extrusion pcurve use")
+        .expect("source-parameterized linear-extrusion pcurve use")
         .pcurve
         .clone();
-    assert!(used_id.as_str().starts_with("step:data:pcurve#56-use-"));
+    assert_eq!(used_id.as_str(), "step:data:pcurve#56");
     let used = decoded
         .ir()
         .model
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == used_id)
-        .expect("calibrated linear-extrusion pcurve");
+        .expect("source-parameterized linear-extrusion pcurve");
     assert!(matches!(
         &used.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Transformed {
-            basis,
-            transform,
-        } if matches!(
-            basis.as_ref(),
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                degree: 1,
-                control_points,
-                ..
-        } if control_points == &[Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
-        ) && (transform.rows[0][0] - 10.0).abs() < 1.0e-12
-            && transform.rows[1][1].abs() < 1.0e-12
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+            degree: 1,
+            control_points,
+            ..
+        } if control_points == &[Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
     ));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn directrix_parameter_scale_witness_preserves_line_and_angle_units() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp03_parameter_scales.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode directrix parameter scale witness");
+
+    let line_pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#21")
+        .expect("line-directrix pcurve");
+    let PcurveGeometry::Line { direction, .. } = &line_pcurve.geometry else {
+        panic!("line-directrix witness did not retain a line pcurve");
+    };
+    assert!((direction.u - 254.0).abs() < EPS_TP03_PARAMETER_SCALE);
+    assert!((direction.v - 1.0).abs() < EPS_TP03_PARAMETER_SCALE);
+
+    let revolution_pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#31")
+        .expect("circle-directrix pcurve");
+    let PcurveGeometry::Line { direction, .. } = &revolution_pcurve.geometry else {
+        panic!("circle-directrix witness did not retain a line pcurve");
+    };
+    let degree_to_radian = std::f64::consts::PI / 180.0;
+    assert!((direction.u - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
+    assert!((direction.v - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
+
+    assert_eq!(decoded.ir().model.procedural_surfaces.len(), 2);
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("pcurve is omitted")));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
