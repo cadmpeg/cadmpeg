@@ -109,8 +109,14 @@ fn new_general_note_valid(
             let fixed = record.integer_or(start, 0);
             let character_width = record.number_or(start + 1, 0.0);
             let character_height = record.number_or(start + 2, 0.0);
-            let spacing = record.number_or(start + 3, 0.0);
+            // PS-01: variable-width CSPACE has an explicit default of one;
+            // fixed-width CSPACE uses the generic real default of zero.
+            let spacing_default = if fixed == Some(1) { 1.0 } else { 0.0 };
+            let spacing = record.number_or(start + 3, spacing_default);
             let text = record.string_or_empty(start + 19);
+            // PS-01: Type 213 FONT has no explicit default; the generic
+            // integer default is zero.
+            let font_style = record.integer_or(start + 11, 0);
             let metrics_valid = character_width
                 .zip(character_height)
                 .zip(spacing)
@@ -135,7 +141,7 @@ fn new_general_note_valid(
                 })
                 && record.string_or_empty(start + 7).is_some()
                 && record
-                    .integer_or(start + 8, 0)
+                    .integer(start + 8)
                     .and_then(|value| usize::try_from(value).ok())
                     .zip(text)
                     .is_some_and(|(declared, text)| declared == text.len())
@@ -144,9 +150,7 @@ fn new_general_note_valid(
                         .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
-                && record
-                    .integer_or(start + 11, 1)
-                    .is_some_and(|value| font_valid(value, entries))
+                && font_style.is_some_and(|value| font_valid(value, entries))
                 && record
                     .number_or(start + 12, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)

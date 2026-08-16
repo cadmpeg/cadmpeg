@@ -194,6 +194,23 @@ fn decode_applies_defaults_and_accepts_zero_text_box_dimensions() {
 }
 
 #[test]
+fn decode_does_not_default_wrong_typed_view_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_view_parameter_type_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .count();
+    assert_eq!(losses, 1, "{:#?}", result.report().losses);
+}
+
+#[test]
 fn decode_types_view_visibility_and_display_overrides() {
     let result = IgesCodec
         .decode(

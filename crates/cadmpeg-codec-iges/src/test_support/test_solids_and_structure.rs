@@ -1731,12 +1731,49 @@ pub(crate) fn defaulted_new_general_note_file() -> Vec<u8> {
     new_general_note_file_with_character_metrics("1", "1")
 }
 
+pub(crate) fn variable_spacing_default_new_general_note_file() -> Vec<u8> {
+    new_general_note_file_with_fields("1", "1", "1", "", "0")
+}
+
 pub(crate) fn zero_character_metrics_new_general_note_file() -> Vec<u8> {
     new_general_note_file_with_character_metrics("0", "0")
 }
 
 pub(crate) fn omitted_character_metrics_new_general_note_file() -> Vec<u8> {
     new_general_note_file_with_character_metrics("", "")
+}
+
+pub(crate) fn omitted_character_count_new_general_note_file() -> Vec<u8> {
+    new_general_note_file_with_fields("0", "1", "1", "", "")
+}
+
+pub(crate) fn malformed_general_note_parameter_types_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "BAD212".into(),
+            status: "00000100",
+            parameters: "212,1,1,1,1,1.0,,,,,,,,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "BAD213".into(),
+            status: "00000100",
+            parameters: "213,0,0,2.0,0,0,0,0,0,0,0,0,1,0,1,1,,,,,0,,,,,,,,,,;".into(),
+        },
+    ])
+}
+
+pub(crate) fn malformed_view_parameter_type_file() -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 410,
+        form: 0,
+        label: "BADVIEW".into(),
+        status: "00000000",
+        parameters: "410,1.0,1.,,,,,,;".into(),
+    }])
 }
 
 pub(crate) fn negative_text_box_dimensions_file() -> Vec<u8> {
@@ -1762,31 +1799,41 @@ fn new_general_note_file_with_character_metrics(
     character_width: &str,
     character_height: &str,
 ) -> Vec<u8> {
+    new_general_note_file_with_fields("0", character_width, character_height, "", "0")
+}
+
+fn new_general_note_file_with_fields(
+    fixed_or_variable: &str,
+    character_width: &str,
+    character_height: &str,
+    character_spacing: &str,
+    character_count: &str,
+) -> Vec<u8> {
     let mut fields = vec![String::from("213")];
     fields.extend((0..11).map(|_| String::new()));
     fields.push(String::from("1"));
     fields.extend(
         [
-            "0", // FIXVAR
+            fixed_or_variable,
             character_width,
             character_height,
-            "",  // CSPACE
-            "",  // LSPACE
-            "",  // FONT
-            "",  // CHRANG
-            "",  // CCTEXT
-            "0", // NC
-            "",  // WT
-            "",  // HT
-            "",  // CHRSET
-            "",  // SL
-            "",  // A
-            "",  // M
-            "",  // VH
-            "",  // XS
-            "",  // YS
-            "",  // ZS
-            "",  // TEXT
+            character_spacing,
+            "", // LSPACE
+            "", // FONT
+            "", // CHRANG
+            "", // CCTEXT
+            character_count,
+            "", // WT
+            "", // HT
+            "", // CHRSET
+            "", // SL
+            "", // A
+            "", // M
+            "", // VH
+            "", // XS
+            "", // YS
+            "", // ZS
+            "", // TEXT
         ]
         .into_iter()
         .map(str::to_owned),

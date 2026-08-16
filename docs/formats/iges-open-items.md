@@ -55,18 +55,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-01. Parameter defaults are honored at selected token indices only
-
-**Question.** Which Type 410, Type 212, and Type 213 fields are optional, and what defaults do they receive?
-
-**Known.** `entities/annotation.rs:51-165` and `entities/drawing.rs:13-23` apply defaults with `integer_or`, `number_or`, and `string_or_empty`. The current specification states the current defaults, but it gives no direct IGES field-table citation for these records. The closure change supplied code and synthetic tests, not independent field evidence.
-
-**Need.** Trace each optional field and default to its IGES entity definition. Distinguish an omitted field from a malformed supplied field.
-
-**Conflict.** The specification presents the defaults as format rules while the cited source coverage does not identify the Type 410, Type 212, or Type 213 field tables.
-
-**Note.** Reopened by QA audit 2026-08-16. The current code and tests cannot establish source optionality.
-
 ### PS-04. Enumerated value tables exist only in the source
 
 **Question.** What are the complete enumerated tables for the supported view, annotation, leader, and presentation fields?

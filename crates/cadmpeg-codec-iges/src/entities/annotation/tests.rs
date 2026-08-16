@@ -87,6 +87,58 @@ fn decode_applies_new_general_note_defaults_with_positive_metrics() {
 }
 
 #[test]
+fn decode_applies_variable_spacing_default() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(variable_spacing_default_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 1);
+    assert!(annotation.fields()["strings"][0]["character_spacing"].is_null());
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_requires_new_general_note_character_count() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(omitted_character_count_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_does_not_default_wrong_typed_general_note_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_general_note_parameter_types_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .count();
+    assert_eq!(losses, 2, "{:#?}", result.report().losses);
+}
+
+#[test]
 fn decode_rejects_zero_new_general_note_character_metrics() {
     let result = IgesCodec
         .decode(
