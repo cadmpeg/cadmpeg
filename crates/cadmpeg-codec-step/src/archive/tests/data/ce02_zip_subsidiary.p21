@@ -1,0 +1,13 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('CE-02 ZIP subsidiary witness'),'4;2');
+FILE_NAME('ce02-zip-subsidiary.p21','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg','cadmpeg','');
+FILE_SCHEMA(('AP242'));
+ENDSEC;
+ANCHOR;
+<remote_item>=#1;
+ENDSEC;
+DATA;
+#1=ITEM('subsidiary');
+ENDSEC;
+END-ISO-10303-21;

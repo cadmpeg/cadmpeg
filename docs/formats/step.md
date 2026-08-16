@@ -375,6 +375,17 @@ of the member name. Only `ISO-10303.p21` is addressable from outside the
 archive. Annex A.5 applies the same root-directory rule to a directory that
 contains `ISO-10303.p21`.
 
+Annex A.4 names `ISO-10303.p21` the root and every other archive member a
+subsidiary. A subsidiary remains a separate exchange structure with its own
+DATA instance names. A subsidiary entity or value that must be exposed to an
+outside caller is exposed by an ANCHOR in the root that forwards the root
+REFERENCE occurrence to the subsidiary target. The root and subsidiary
+structures can therefore form one distributed product meaning through
+external occurrences, but the archive does not create one merged DATA
+namespace or renumber a subsidiary instance. The root is the only archive
+member addressable from outside. Part 21 Annex A.4 and Annex J define this
+root, subsidiary, and forwarding model.
+
 The `DOCUMENT_REFERENCE.source` attribute is an ISO 10303-41 `label` stating
 the origination of the assigned document. It is application metadata, not a
 Part 21 resource URI and not a base for URI resolution.
@@ -447,6 +458,13 @@ binding, verify the target and its schema, and apply its trust, digest or
 signature, unit, and coordinate-context policies before connecting that target
 to a local occurrence. The codec has no implicit cross-resource composition
 step. A missing, refused, or unverified target remains an external dependency.
+
+For a ZIP input, the codec opens and decodes only `ISO-10303.p21`. It resolves
+root relative references to member paths and reports the member and exact URI,
+but it does not read subsidiary ANCHOR or DATA sections. A subsidiary instance
+number therefore cannot enter the root CADIR identity universe. A caller that
+needs the distributed product graph must resolve each member and perform the
+resource-qualified composition explicitly.
 
 CADIR decision: the STEP codec has no external-resource cache and does not
 canonicalize URI spellings. A caller byte-cache key uses the resolved URI
