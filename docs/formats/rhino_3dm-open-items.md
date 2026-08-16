@@ -257,6 +257,23 @@ The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
 major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
 `ON_3dmApplication` reads its three strings without a major/minor gate; all
 three stop at their containing property-record boundaries.
+`ON_InstanceDefinition::Internal_ReadV5` in
+`/home/pcurve/side2/opennurbs/opennurbs_instance.cpp` requires packed major 1,
+gates the V5 prefix through minor 1.7, and returns after the optional 1.7
+file-reference record, leaving the obsolete linked-layer-settings Boolean and
+later bytes at the class-data boundary. `Internal_ReadV6` requires anonymous
+major 1 for the outer and linked-type chunks and closes each bounded child
+after its fixed prefix. `ON_UnitSystem::Read`, `ON_FileReference::Read`,
+`ON_ContentHash::Read`, `ON_SHA1_Hash::Read`, and
+`ON_ReferencedComponentSettings::Read` use the same major-1 bounded-child
+rule; file references add the embedded-file UUID at minor 1. Referenced
+component settings has an outer major-1 presence wrapper and an optional
+major-1 implementation child containing the two layer arrays and optional
+parent layer. The Rust instance parser now matches both boundaries. Owner
+tests cover future outer minors, the abandoned V5 tail, a future
+file-reference suffix, and source-shaped referenced-component settings. The
+remaining RS-01 residue is the uncharacterized direct-reader, writer-band,
+and tagged-stream families.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(unused_imports, dead_code, clippy::disallowed_methods)]
 
-use super::{anonymous, parse_reference, scale_translation};
+use super::{
+    anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
@@ -105,6 +107,20 @@ fn reference_bytes(transform: Transform) -> Vec<u8> {
     bytes
 }
 
+fn set_anonymous_minor(chunk: &mut [u8], minor: i32) {
+    chunk[16..20].copy_from_slice(&minor.to_le_bytes());
+}
+
+fn append_crc_suffix(chunk: &mut Vec<u8>, suffix: &[u8]) {
+    let crc_offset = chunk.len() - 4;
+    chunk.splice(crc_offset..crc_offset, suffix.iter().copied());
+    let length = i64::from_le_bytes(chunk[4..12].try_into().expect("chunk header"));
+    chunk[4..12].copy_from_slice(&(length + suffix.len() as i64).to_le_bytes());
+    let crc = crc32fast::hash(&chunk[12..chunk.len() - 4]);
+    let crc_offset = chunk.len() - 4;
+    chunk[crc_offset..].copy_from_slice(&crc.to_le_bytes());
+}
+
 #[test]
 fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future_suffix() {
     let valid = reference_bytes(Transform::identity());
@@ -142,6 +158,59 @@ fn instance_reference_rejects_nil_definition_and_nonfinite_transform() {
     nonfinite.rows[1][2] = f64::NAN;
     let nonfinite = reference_bytes(nonfinite);
     assert!(parse_reference(&nonfinite, 0..nonfinite.len()).is_err());
+}
+
+#[test]
+fn instance_definition_readers_follow_source_minor_boundaries() {
+    let definition_id = [0x10; 16];
+    let member_id = [0x20; 16];
+
+    let mut v5_payload =
+        v5_definition_payload(ArchiveVersion::V5, 7, definition_id, &[member_id], true);
+    v5_payload.extend([0xde, 0xad, 0xbe, 0xef]);
+    let v5_record = definition_record(ArchiveVersion::V5, &v5_payload);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        ArchiveVersion::V5,
+        &[v5_record],
+        &[],
+    ))
+    .expect("required invariant");
+    assert_eq!(scan.definitions.definitions.len(), 1);
+    assert!(scan.definitions.definitions[0].file_reference.is_some());
+
+    let mut v6_payload = v6_definition_payload(
+        ArchiveVersion::V7,
+        [0x30; 16],
+        &[member_id],
+        1,
+        false,
+        false,
+    );
+    set_anonymous_minor(&mut v6_payload, 9);
+    append_crc_suffix(&mut v6_payload, &[0xca, 0xfe]);
+    let v6_record = definition_record(ArchiveVersion::V7, &v6_payload);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "70",
+        ArchiveVersion::V7,
+        &[v6_record],
+        &[],
+    ))
+    .expect("required invariant");
+    assert_eq!(scan.definitions.definitions.len(), 1);
+    assert_eq!(
+        scan.definitions.definitions[0].members,
+        vec![Uuid::from_wire(member_id)]
+    );
+
+    let mut reference = file_reference(ArchiveVersion::V6, "/full/source.3dm", "source.3dm");
+    set_anonymous_minor(&mut reference, 9);
+    append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
+    let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
+    let parsed = parse_file_reference(&reference, &mut reader, ArchiveVersion::V6, &mut Vec::new())
+        .expect("future file-reference suffix is bounded");
+    assert_eq!(parsed.full_path, "/full/source.3dm");
+    assert_eq!(reader.remaining(), 0);
 }
 
 #[test]

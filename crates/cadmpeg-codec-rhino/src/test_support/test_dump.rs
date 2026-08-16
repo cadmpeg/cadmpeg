@@ -272,9 +272,12 @@ pub(crate) fn model_component_attributes(
 }
 
 pub(crate) fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
-    let mut body = 0_i32.to_le_bytes().to_vec();
-    body.extend(0_i32.to_le_bytes());
-    body.push(0);
+    let mut implementation_body = 0_i32.to_le_bytes().to_vec();
+    implementation_body.extend(0_i32.to_le_bytes());
+    implementation_body.push(0);
+    let implementation = anonymous_chunk(archive, 0, &implementation_body);
+    let mut body = vec![1];
+    body.extend(implementation);
     anonymous_chunk(archive, 0, &body)
 }
 

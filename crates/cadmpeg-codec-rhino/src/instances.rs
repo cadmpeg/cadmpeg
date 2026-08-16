@@ -522,20 +522,63 @@ fn reference_settings<'a>(
             "unsupported reference settings version",
         ));
     }
-    let mut children = skip_object_array(data, &mut payload, archive)?;
-    children.extend(skip_object_array(data, &mut payload, archive)?);
+    let mut implementation_range = None;
     if payload.bool()? {
-        let parent = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-        if parent.short {
+        let (implementation, mut implementation_payload, implementation_version) =
+            anonymous_versioned(
+                data,
+                &mut payload,
+                archive,
+                "reference settings implementation",
+                false,
+                warnings,
+            )?;
+        if implementation_version.0 != 1 || implementation_version.1 < 0 {
             return Err(FramingError::structural(
-                payload.position(),
-                "reference parent layer is short-framed",
+                implementation_payload.position(),
+                "unsupported reference settings implementation version",
             ));
         }
-        children.push(parent.range());
-        payload.skip(parent.next_offset - payload.position())?;
+        let mut children = skip_object_array(data, &mut implementation_payload, archive)?;
+        children.extend(skip_object_array(
+            data,
+            &mut implementation_payload,
+            archive,
+        )?);
+        if implementation_payload.bool()? {
+            let parent = chunk_at(
+                data,
+                implementation_payload.position(),
+                implementation_payload.end(),
+                archive,
+                false,
+            )?;
+            if parent.short {
+                return Err(FramingError::structural(
+                    implementation_payload.position(),
+                    "reference parent layer is short-framed",
+                ));
+            }
+            children.push(parent.range());
+            implementation_payload.skip(parent.next_offset - implementation_payload.position())?;
+        }
+        finish(
+            &mut implementation_payload,
+            "reference settings implementation",
+        )?;
+        checksum_warning_excluding(
+            data,
+            &implementation,
+            &children,
+            "reference settings implementation",
+            warnings,
+        )?;
+        implementation_range = Some(implementation.range());
     }
     finish(&mut payload, "reference settings")?;
+    let children = implementation_range
+        .as_ref()
+        .map_or_else(Vec::new, |range| vec![range.clone()]);
     checksum_warning_excluding(data, &chunk, &children, "reference settings", warnings)?;
     Ok(chunk.range())
 }

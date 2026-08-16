@@ -3172,6 +3172,33 @@ minor >= 7:
   if true: file-reference record
 ```
 
+The packed V5 reader requires major version 1. It reads each field through the
+minor-1.6 appearance field. At minor 1.7 it reads the file-reference presence
+byte and, when set, the file-reference record; the writer then emits one
+obsolete linked-layer-settings Boolean. The reader does not assign that final
+Boolean a field meaning and returns after the file-reference record, so the
+obsolete Boolean and any later bytes are an abandoned suffix at the enclosing
+class-data boundary.
+
+The anonymous V6 reader requires major version 1 and consumes the fixed prefix
+above without a minor gate. The linked-type child has the same major-version
+rule and bounded suffix behavior. Model-component attributes, unit-system
+detail, file-reference, content-hash, SHA-1, and referenced-component-settings
+children are each bounded anonymous major-1 chunks. Model-component attributes
+consume status bytes for model serials, UUID, component type, index, and name;
+the instance-definition writer selects only index, UUID, and name. Unit-system
+detail consumes a unit enum, meters-per-unit value, and custom-unit name.
+File-reference minor 1 adds the embedded-file UUID; content-hash and SHA-1
+writers use minor 0. Each reader closes its own chunk after its known prefix,
+so later-minor direct bytes remain at that child boundary.
+
+Referenced-component settings has an outer anonymous major-1 chunk containing
+a presence Boolean. When present, the Boolean is followed by an anonymous
+major-1 implementation chunk containing two layer-object arrays and a parent
+layer presence Boolean with an optional layer object. The outer reader closes
+after that implementation child; the implementation reader closes after its
+known arrays and optional parent layer.
+
 The V5 member array is empty for linked definitions and contains member UUIDs
 for static and linked-and-embedded definitions. Definition type values are 0
 or 1 static, 2 linked-and-embedded, 3 linked, and `0xffffffff` unset. A
@@ -3234,6 +3261,12 @@ anonymous content-hash major-1 chunk:
 u32 path status
 minor >= 1: UUID embedded-file component
 ```
+
+The file-reference reader requires major version 1, reads the embedded-file
+UUID at minor 1 and later, and closes the bounded chunk after the path-status
+field or embedded UUID. The content-hash child and both SHA-1 children require
+major version 1 and have fixed prefixes; later direct bytes remain at their
+respective child boundaries.
 
 The first SHA-1 identifies the normalized name and the second identifies the
 content. A linked instance definition and a texture image reference use this
