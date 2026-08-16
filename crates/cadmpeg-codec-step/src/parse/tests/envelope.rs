@@ -474,6 +474,10 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             "STEP Part 28 XML encoding",
         ),
         (
+            include_bytes!("data/ce03_part28_ap238_step_tools.xml").as_slice(),
+            "STEP Part 28 XML encoding",
+        ),
+        (
             b"<?xml version='1.0'?><business_object_model/>",
             "AP242 BO-Model XML sidecar",
         ),
@@ -500,6 +504,10 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     );
     assert_eq!(
         codec.detect(include_bytes!("data/ce03_part28_ap242.xml")),
+        Confidence::Medium
+    );
+    assert_eq!(
+        codec.detect(include_bytes!("data/ce03_part28_ap238_step_tools.xml")),
         Confidence::Medium
     );
     let canonical = include_bytes!("data/bm01_ap242_bo_model_ed2.stpx");
