@@ -258,24 +258,4 @@ remains open.
 
 ## 8. Attachment and assembly
 
-### AT-02. Native map-mode representation
-
-**Question.** Should the neutral `AttachmentRecord.map_mode` expose the fixed `MapMode` name or
-retain the persisted zero-based index after the producer enum has been validated?
-
-**Known.** FreeCAD writes `AttachmentSupport` as `App::PropertyLinkSubList` and `MapMode` as one
-`App::PropertyEnumeration` `Integer` value. The specification records the complete index-to-name
-table and the out-of-range rule. The decoder now enforces those carriers and rejects invalid
-indexes while retaining the index text in the existing native field.
-
-**Need.** Settle the neutral field spelling without changing the frozen golden snapshots in this
-migration.
-
-**Conflict.** The producer name is semantic, but the existing native arena contract stores the
-persisted index text.
-
-**Note.** This pass settled the producer carrier grammar, support cardinality, fixed enum table,
-and out-of-range behavior with current source and an authored witness. The neutral spelling is a
-smaller remaining implementation question.
-
 ## 9. Persistent graph admission

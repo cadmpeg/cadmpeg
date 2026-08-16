@@ -829,6 +829,9 @@ carrier occurs at most once. `AttachmentSupport` is an `App::PropertyLinkSubList
 `IntersectionPoint`, `Vertex`, `ProximityPoint1`, `ProximityPoint2`, `AxisOfInertia1`,
 `AxisOfInertia2`, `AxisOfInertia3`, `InertialCS`, `FaceNormal`, `OZX`, `OZY`, `OXY`, `OXZ`,
 `OYZ`, `OYX`, `ParallelPlane`, and `MidPoint`. An index outside this list is malformed.
+CADIR decision: no separate neutral map-mode field is introduced. `AttachmentRecord.map_mode` is
+a native record field and retains the persisted zero-based index as decimal text; the fixed names
+are validation metadata, not a replacement value.
 Each placement carrier is an `App::PropertyPlacement` property with at most one
 `PropertyPlacement` value containing finite position and quaternion or axis-angle components.
 Duplicate carriers or values are malformed.
