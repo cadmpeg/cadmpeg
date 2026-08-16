@@ -4830,7 +4830,6 @@ pub(crate) struct MeshSelectionSearch<'a> {
     pub(crate) edge_rows: &'a [EdgeRow],
     pub(crate) vertex_points: &'a [[f64; 3]],
     pub(crate) selected: Vec<MeshFaceSelection>,
-    pub(crate) states: usize,
     pub(crate) solution: Option<(StandardTopology, Vec<usize>)>,
     pub(crate) ambiguous: bool,
     pub(crate) exhausted: bool,
@@ -6055,8 +6054,6 @@ impl MeshSelectionSearch<'_> {
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
     ) {
-        const MAX_SELECTION_STATES: usize = 512;
-
         if self.should_stop() {
             return;
         }
@@ -6286,16 +6283,18 @@ impl MeshSelectionSearch<'_> {
         if supported == 0 {
             return;
         }
+        let remaining_work = budget.remaining();
+        if remaining_work == 0 {
+            self.exhausted = true;
+            return;
+        }
         let mut options = Vec::new();
         for assignment_index in 0..self.assignments[face].len() {
             if !budget.charge() {
                 self.exhausted = true;
                 return;
             }
-            let remaining = MAX_SELECTION_STATES
-                .saturating_sub(self.states)
-                .saturating_add(1)
-                .saturating_sub(options.len());
+            let remaining = remaining_work.saturating_sub(options.len());
             if remaining == 0 {
                 break;
             }
@@ -6332,7 +6331,6 @@ impl MeshSelectionSearch<'_> {
                 .fold(0usize, usize::saturating_add);
             (root_count, domain_freedom, *assignment, directions.clone())
         });
-        let branching = options.len() > 1;
         for (assignment_index, directions, next_quotient) in options {
             let changed_edges = changed_quotient_edges(&measured, &next_quotient);
             self.selected[face] = Some((assignment_index, directions));
@@ -6340,14 +6338,6 @@ impl MeshSelectionSearch<'_> {
                 if let Some(next_quotient) =
                     self.prepare_selected_branch(&next_quotient, &changed_edges, propagation_budget)
                 {
-                    if branching {
-                        if self.states >= MAX_SELECTION_STATES {
-                            self.exhausted = true;
-                            self.selected[face] = None;
-                            return;
-                        }
-                        self.states += 1;
-                    }
                     // `prepare_selected_branch` has already applied the recursive
                     // entry preflight to this quotient.
                     self.search_from_state(&next_quotient, true, budget, propagation_budget);
@@ -6961,7 +6951,6 @@ fn resolve_standard_mesh_endpoint_candidates(
         edge_rows,
         vertex_points,
         selected: vec![None; face_count],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,

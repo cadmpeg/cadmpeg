@@ -853,7 +853,6 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
             Some((0, vec![vec![false, false]])),
             Some((0, vec![vec![false, false]])),
         ],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -939,7 +938,6 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
             Some((0, vec![vec![false, false]])),
             None,
         ],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -982,7 +980,6 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![Some((0, vec![vec![false, false]])), None, None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1032,7 +1029,6 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         edge_rows: &edge_rows,
         vertex_points: &vertex_points,
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1114,7 +1110,6 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None; 2],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1167,7 +1162,6 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1208,7 +1202,6 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1244,7 +1237,6 @@ fn remaining_equation_components_require_a_coordinate_matching() {
         edge_rows: &[],
         vertex_points: &[],
         selected: Vec::new(),
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1280,7 +1272,6 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
         edge_rows: &[],
         vertex_points: &[[0.0, 0.0, 0.0]; 3],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1318,7 +1309,6 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
         edge_rows: &edge_rows,
         vertex_points: &vertex_points,
         selected: Vec::new(),
-        states: 512,
         solution: Some((
             StandardTopology {
                 faces: Vec::new(),
@@ -1347,7 +1337,6 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
         edge_rows: &[],
         vertex_points: &[],
         selected: Vec::new(),
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1407,7 +1396,6 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         edge_rows: &[],
         vertex_points: &[[0.0; 3], [1.0, 0.0, 0.0]],
         selected,
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1428,7 +1416,7 @@ fn mesh_selection_finishes_the_active_face_component_first() {
 }
 
 #[test]
-fn forced_face_selection_does_not_consume_the_branch_budget() {
+fn forced_face_selection_does_not_exhaust_the_work_budget() {
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -1455,7 +1443,6 @@ fn forced_face_selection_does_not_consume_the_branch_budget() {
         edge_rows: &edge_rows,
         vertex_points: &[[0.0, 0.0, 0.0]],
         selected: vec![None],
-        states: 512,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1470,11 +1457,10 @@ fn forced_face_selection_does_not_consume_the_branch_budget() {
     search.search(&quotient);
 
     assert!(!search.exhausted);
-    assert_eq!(search.states, 512);
 }
 
 #[test]
-fn overmerged_face_options_do_not_consume_the_branch_budget() {
+fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -1512,7 +1498,6 @@ fn overmerged_face_options_do_not_consume_the_branch_budget() {
         edge_rows: &edge_rows,
         vertex_points: &[[0.0, 0.0, 0.0]; 3],
         selected: vec![None],
-        states: 512,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1527,7 +1512,6 @@ fn overmerged_face_options_do_not_consume_the_branch_budget() {
     search.search(&quotient);
 
     assert!(!search.exhausted);
-    assert_eq!(search.states, 512);
     assert!(search.solution.is_none());
 }
 
@@ -1569,7 +1553,6 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1617,7 +1600,6 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1663,7 +1645,6 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1710,7 +1691,6 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
@@ -1761,7 +1741,6 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         edge_rows: &[],
         vertex_points: &[],
         selected: vec![None],
-        states: 0,
         solution: None,
         ambiguous: false,
         exhausted: false,
