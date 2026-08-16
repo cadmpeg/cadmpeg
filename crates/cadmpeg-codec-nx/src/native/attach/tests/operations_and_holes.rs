@@ -759,6 +759,53 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
 }
 
 #[test]
+fn nx_extract_body_projects_its_primary_source_namespace() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let roots = BTreeMap::from([(20, 20)]);
+    let bodies = BTreeMap::from([(20, vec![BodyId("body".to_string())])]);
+    assert_eq!(
+        super::extract_body_feature_definition(Some(20), &[], &roots, &bodies),
+        FeatureDefinition::ExtractBody {
+            source: BodySelection::Resolved {
+                bodies: vec![BodyId("body".to_string())],
+                native: "nx:om-object-index#20".to_string(),
+            },
+        }
+    );
+    assert_eq!(
+        super::extract_body_feature_definition(
+            None,
+            &[(72, "nx:om-data-blocks-2:block#72".to_string())],
+            &roots,
+            &BTreeMap::new(),
+        ),
+        FeatureDefinition::ExtractBody {
+            source: BodySelection::Local {
+                bodies: vec!["nx:om-data-blocks-2:block#72".to_string()],
+                native: "nx:om-object-index#72".to_string(),
+            },
+        }
+    );
+    assert_eq!(
+        super::extract_body_feature_definition(
+            None,
+            &[
+                (72, "nx:om-data-blocks-2:block#72".to_string()),
+                (73, "nx:om-data-blocks-2:block#73".to_string()),
+            ],
+            &roots,
+            &BTreeMap::new(),
+        ),
+        FeatureDefinition::ExtractBody {
+            source: BodySelection::Unresolved,
+        }
+    );
+}
+
+#[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
         BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,

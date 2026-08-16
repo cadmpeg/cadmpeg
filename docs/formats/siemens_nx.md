@@ -1650,7 +1650,14 @@ The `EXTEND_SHEET` operation label identifies a surface-extension construction.
 Its selected input faces, distance, and continuation law remain unresolved.
 Output face ownership does not identify the pre-operation face selection.
 
-The `EXTRACT_BODY` operation label identifies a body-extraction construction. Neutral projection retains an unresolved source-body selection independently of the operation's output bodies.
+The `EXTRACT_BODY` operation label identifies a body-extraction construction. Its
+source is the operation's unique primary-body field `01 02 10 reference_index
+ff`. A source field in the segment-object namespace uses the body-image alias
+and selection rules above. A source field in one offset-only store retains the
+exact local data-block identity when that store contains exactly one matching
+block. A missing, repeated, or ambiguous primary-body field or store relation
+leaves the source selection unresolved. This source relation is independent of
+the operation's output bodies.
 
 An `EXTRACT_STRING` operation with four null operation-label object-index fields, no body output, no body-reference field, no body operand, no payload-string frame, one operation record, one terminal frame, and no common frame is a non-modeling history node. Its operation label, operation record, terminal frame, and bounded bytes remain retained. It assigns no string value, body relation, or feature output. A record that does not satisfy every condition remains a native operation.
 

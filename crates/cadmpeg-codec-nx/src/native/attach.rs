@@ -3202,6 +3202,16 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
+        let extract_body_projection = (label.value == "EXTRACT_BODY").then(|| {
+            extract_body_feature_definition(
+                body_references.get(label.id.as_str()).copied(),
+                offset_store_bodies_by_operation
+                    .get(label.id.as_str())
+                    .map_or([].as_slice(), Vec::as_slice),
+                &body_alias_roots,
+                &bodies_by_object_index,
+            )
+        });
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
@@ -3227,6 +3237,7 @@ fn attach_feature_operations(
         let definition = boolean_definition.unwrap_or_else(|| {
             trim_body_projection
                 .or(delete_projection)
+                .or(extract_body_projection)
                 .or(sew_projection)
                 .or(extrude_projection)
                 .or_else(|| blend_projection.map(|(definition, _)| definition))
@@ -7446,6 +7457,34 @@ fn delete_body_feature_definition(
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
     })
+}
+
+/// Project the exact source body of an `EXTRACT_BODY` operation.
+fn extract_body_feature_definition(
+    body_object_index: Option<u32>,
+    offset_store_bodies: &[(u32, String)],
+    body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+) -> FeatureDefinition {
+    let source = body_object_index.map_or_else(
+        || match offset_store_bodies {
+            [(object_index, data_block)] => BodySelection::Local {
+                bodies: vec![data_block.clone()],
+                native: format!("nx:om-object-index#{object_index}"),
+            },
+            _ => BodySelection::Unresolved,
+        },
+        |body| {
+            feature_body_selection(
+                &[body],
+                body_alias_roots,
+                bodies_by_object_index,
+                format!("nx:om-object-index#{body}"),
+            )
+            .selection
+        },
+    );
+    FeatureDefinition::ExtractBody { source }
 }
 
 /// Project exact feature-local input-store identities for a trim target and

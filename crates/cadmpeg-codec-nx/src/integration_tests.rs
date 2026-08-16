@@ -252,6 +252,28 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
 }
 
 #[test]
+fn object_model_pipeline_projects_extract_body_source_from_offset_store() {
+    let result = decode(extract_body_feature_history_prt());
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("EXTRACT_BODY"))
+        .expect("EXTRACT_BODY feature");
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::ExtractBody {
+            source: cadmpeg_ir::features::BodySelection::Local { bodies, native },
+        } if bodies.len() == 1
+            && bodies[0].ends_with(":block#1")
+            && native == "nx:om-object-index#1"
+    ));
+    assert!(feature.outputs.is_empty());
+    assert_valid(&result);
+}
+
+#[test]
 fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
     let result = decode(offset_store_primary_body_lineage_prt());
     let older = result

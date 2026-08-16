@@ -22,6 +22,17 @@ pub(crate) fn composed_feature_history_prt() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
+/// A single body-extraction operation whose primary body field resolves to one
+/// feature-history-local offset-store block.
+pub(crate) fn extract_body_feature_history_prt() -> Vec<u8> {
+    let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
+    let body_reference = vec![0x01, 0x02, 0x10, 0x01, 0xff];
+    let operations = [(input_slots, "EXTRACT_BODY", body_reference)];
+    let store_records: [&[u8]; 2] = [b"\0", b"\0"];
+    let payload = composed_feature_history_payload(&operations, &store_records);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 /// A synthetic history whose two body writers select the same exact
 /// offset-store block. The source record order is newest first, so the
 /// decoder must attach the older operation as the writer dependency of the
