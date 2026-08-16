@@ -207,6 +207,57 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
 }
 
 #[test]
+fn curve_markers_can_contain_unmatched_construction_loci() {
+    let mut lane = lane();
+    lane.sketch_entities = [[-0.07, 0.011], [0.07, 0.011], [0.0, -0.004], [0.0, 0.011]]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, coordinates_m)| SketchInputEntity {
+            id: format!("curve-marker-{ordinal}"),
+            parent: "lane".into(),
+            feature_ref: Some("position".into()),
+            ordinal: ordinal as u32,
+            offset: ordinal as u64,
+            object_index: Some((ordinal + 1) as u32),
+            local_id: None,
+            kind: SketchInputKind::Arc,
+            state_value: Some(1.0),
+            coordinates_m: Some(coordinates_m),
+            links: Vec::new(),
+            link_selector: None,
+        })
+        .collect();
+    let surfaces = [-70.0, 70.0]
+        .into_iter()
+        .enumerate()
+        .map(|(id, x)| Surface {
+            id: SurfaceId(format!("carrier-{id}")),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(x, 11.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 3.0,
+            },
+            source_object: None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        marker_pattern_bore_axes(&lane, "position", 3.0, &surfaces, None),
+        Some(vec![
+            HolePlacement::Axis {
+                origin: Point3::new(-70.0, 11.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            HolePlacement::Axis {
+                origin: Point3::new(70.0, 11.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+        ])
+    );
+}
+
+#[test]
 fn paired_object_loci_select_a_congruent_bore_pattern() {
     let marker = |id: &str, ordinal, object_index, kind, coordinates_m| SketchInputEntity {
         id: id.into(),

@@ -3510,9 +3510,6 @@ fn match_marker_loci_to_bore_axes(
             })
             .collect::<Vec<_>>();
         candidates.sort_unstable_by_key(|(point, _, _)| *point);
-        if candidates.len() < marker_loci.len() {
-            continue;
-        }
         let candidate_loci = candidates
             .iter()
             .map(|([x, y, z], ..)| {
@@ -3523,6 +3520,40 @@ fn match_marker_loci_to_bore_axes(
                 )
             })
             .collect::<Vec<_>>();
+        if candidates.len() < marker_loci.len() {
+            // A position sketch can retain construction curves that have no
+            // current B-rep carrier. Accept the topology carrier set only
+            // when it consumes one unique congruent subset of those curves.
+            if !has_unique_marker_loci_subset(marker_loci, &candidate_loci) {
+                continue;
+            }
+            let placements = candidates
+                .iter()
+                .map(|(_, origin, axis)| HolePlacement::Axis {
+                    origin: *origin,
+                    axis: *axis,
+                })
+                .collect::<Vec<_>>();
+            let key = placements
+                .iter()
+                .map(|placement| match placement {
+                    HolePlacement::Axis { origin, axis } => [
+                        quantize_scalar(origin.x),
+                        quantize_scalar(origin.y),
+                        quantize_scalar(origin.z),
+                        quantize_scalar(axis.x),
+                        quantize_scalar(axis.y),
+                        quantize_scalar(axis.z),
+                    ],
+                    HolePlacement::Directed { .. } => [0; 6],
+                })
+                .collect::<Vec<_>>();
+            solutions.insert(key, placements);
+            if solutions.len() > 1 {
+                return None;
+            }
+            continue;
+        }
         let mut subsets = HashSet::new();
         if congruent_bore_axis_subsets(
             0,
@@ -3631,6 +3662,77 @@ fn congruent_bore_axis_subsets(
         used.remove(&candidate_index);
     }
     false
+}
+
+fn has_unique_marker_loci_subset(marker_loci: &[Point2], candidate_loci: &[Point3]) -> bool {
+    fn collect_subsets(
+        candidate_index: usize,
+        marker_loci: &[Point2],
+        candidate_loci: &[Point3],
+        assigned: &mut Vec<usize>,
+        used: &mut HashSet<usize>,
+        subsets: &mut HashSet<Vec<usize>>,
+    ) -> bool {
+        if candidate_index == candidate_loci.len() {
+            let mut subset = assigned.clone();
+            subset.sort_unstable();
+            subsets.insert(subset);
+            return subsets.len() > 1;
+        }
+        for marker_index in 0..marker_loci.len() {
+            if !used.insert(marker_index) {
+                continue;
+            }
+            let valid = assigned.iter().copied().enumerate().all(
+                |(previous_candidate, previous_marker)| {
+                    let marker_delta = Vector3::new(
+                        marker_loci[marker_index].u - marker_loci[previous_marker].u,
+                        marker_loci[marker_index].v - marker_loci[previous_marker].v,
+                        0.0,
+                    );
+                    let candidate_delta = Vector3::new(
+                        candidate_loci[candidate_index].x - candidate_loci[previous_candidate].x,
+                        candidate_loci[candidate_index].y - candidate_loci[previous_candidate].y,
+                        candidate_loci[candidate_index].z - candidate_loci[previous_candidate].z,
+                    );
+                    same_dimension_length(marker_delta.norm(), candidate_delta.norm())
+                },
+            );
+            if valid {
+                assigned.push(marker_index);
+                let ambiguous = collect_subsets(
+                    candidate_index + 1,
+                    marker_loci,
+                    candidate_loci,
+                    assigned,
+                    used,
+                    subsets,
+                );
+                assigned.pop();
+                used.remove(&marker_index);
+                if ambiguous {
+                    return true;
+                }
+                continue;
+            }
+            used.remove(&marker_index);
+        }
+        false
+    }
+
+    if candidate_loci.is_empty() || candidate_loci.len() > marker_loci.len() {
+        return false;
+    }
+    let mut subsets = HashSet::new();
+    collect_subsets(
+        0,
+        marker_loci,
+        candidate_loci,
+        &mut Vec::new(),
+        &mut HashSet::new(),
+        &mut subsets,
+    );
+    subsets.len() == 1
 }
 
 pub(super) fn feature_object_byte_ranges<'a>(
