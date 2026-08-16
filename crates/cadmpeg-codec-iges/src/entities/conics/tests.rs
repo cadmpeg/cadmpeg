@@ -120,15 +120,30 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
             assert!(result.report().losses.is_empty(), "{point_name}");
         } else {
             assert_eq!(result.report().losses.len(), 1, "{point_name}");
-            assert!(
-                result.report().losses[0]
-                    .message
-                    .contains(&format!("conic {point_name} point disagrees")),
-                "{point_name}: {:?}",
-                result.report().losses
+            assert_eq!(
+                result.report().losses[0].code,
+                IgesLossCode::EntityNotProjected.kind(),
+                "{point_name}"
             );
         }
     }
+}
+
+#[test]
+fn decode_rejects_a_conic_endpoint_at_exact_global_resolution() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(conic_arc_file(3, b"104,1,0,0,0,4,0,0,0.001,1,-0.25;")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        result.report().losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
 }
 
 #[test]
@@ -173,8 +188,8 @@ fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
         .expect("coefficient-defined carrier evaluates at its end");
     assert!(start.position.distance(evaluated_start) > 0.0);
     assert!(end.position.distance(evaluated_end) > 0.0);
-    assert!(start.position.distance(evaluated_start) <= 0.001);
-    assert!(end.position.distance(evaluated_end) <= 0.001);
+    assert!(start.position.distance(evaluated_start) < 0.001);
+    assert!(end.position.distance(evaluated_end) < 0.001);
 }
 
 #[test]

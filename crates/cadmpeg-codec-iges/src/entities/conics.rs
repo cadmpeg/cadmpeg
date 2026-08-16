@@ -85,7 +85,8 @@ fn endpoint_agrees_with_coefficient_carrier(
     evaluated: Point3,
     resolution: f64,
 ) -> bool {
-    endpoint.distance(evaluated) <= resolution
+    let distance = endpoint.distance(evaluated);
+    distance == 0.0 || distance < resolution
 }
 
 pub(super) fn project(

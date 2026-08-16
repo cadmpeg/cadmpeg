@@ -51,16 +51,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-09. Type 104 endpoints are not independently authoritative
-
-**Question.** Must Type 104 endpoint coordinates agree with the conic parameters, and what tolerance applies?
-
-**Known.** `entities/conics.rs:384-413` evaluates the coefficient-derived carrier at its selected parameter range and compares both declared endpoints against it using Global minimum resolution. The Geometry section of `iges.md` makes the endpoint agreement rule part of admission.
-
-**Need.** We need the source authority between the analytic coefficients and endpoint fields, and the tolerance for disagreement.
-
-**Note.** Reopened by the 2026-08-16 audit. Endpoint validation is implemented, but the closure did not establish the authority or the tolerance from the IGES specification or from a witness file.
-
 ### GE-12. Type 126 property flags against the values
 
 **Question.** Which Type 126 representation flags are authoritative when they disagree with the values?
