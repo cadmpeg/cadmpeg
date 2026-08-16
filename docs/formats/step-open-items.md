@@ -444,20 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-02. Dimension nominal value selection
-
-**Question.** What STEP rule establishes dimension nominal value selection?
-
-**Known.** The characteristic representation collects all reachable
-measure representation items from its item aggregate. A unique item named
-`nominal value` supplies the nominal. Without that name, exactly one measure
-item supplies it. Multiple unnamed items remain ambiguous, produce a metadata
-warning, and do not select a source-order value.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### AP-03. Geometric tolerance kind selection
 
 **Question.** What STEP rule establishes geometric tolerance kind selection?

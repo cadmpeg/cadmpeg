@@ -1031,10 +1031,25 @@ therefore retains its `identification` even when a recoverable noncanonical
 partial order places `DATUM` after another partial.
 A complex dimension uses its dimensional partial for its kind and all inherited
 partials for its name, targets, and characteristic value.
-Its characteristic representation collects every measure representation item.
-A unique item named `nominal value` supplies the nominal. When that name is
-absent, exactly one measure item supplies the nominal; multiple unnamed items
-are ambiguous and do not supply one. Complex measure records referenced by a
+ISO 10303-47 defines `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION` as the
+association of a dimension with its explicit representation. Its
+`SHAPE_DIMENSION_REPRESENTATION.items` attribute is a `SET[1:?]` of
+`shape_dimension_representation_item`; the item alternatives include
+`MEASURE_REPRESENTATION_ITEM` and `COMPOUND_REPRESENTATION_ITEM`, so the
+serialized aggregate order has no meaning. CAx-IF AP242 PMI Recommended
+Practices 4.1 §5.2.1 identifies a nominal value by a
+`MEASURE_REPRESENTATION_ITEM` whose inherited `REPRESENTATION_ITEM.name` is
+`nominal value`, and requires that value even when no range is present. For a
+value range, §5.2.4 identifies the items by `nominal value`, `upper limit`, and
+`lower limit`.
+CADIR decision: the reader traverses the complete item graph and compares the
+specified names case-insensitively. One named nominal item supplies the
+nominal. Multiple named nominal items are ambiguous and produce
+`pmi.dimensional-nominal-ambiguous`. If no named nominal item exists, exactly
+one reachable measure is accepted as malformed-source salvage; multiple
+measures are ambiguous and produce
+`pmi.dimensional-unnamed-measure-ambiguous`. Neither aggregate order nor
+entity identity selects a value. Complex measure records referenced by a
 characteristic representation remain typed measure carriers.
 `GEOMETRIC_ITEM_SPECIFIC_USAGE` resolves a shape-aspect definition, including a
 definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified

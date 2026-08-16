@@ -353,6 +353,69 @@ fn dimensional_characteristic_selects_the_named_nominal_measure() {
 }
 
 #[test]
+fn dimensional_nominal_selection_ignores_set_order_and_rejects_ambiguity() {
+    use cadmpeg_ir::pmi::{PmiDefinition, PmiValue};
+
+    let decode = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode AP-02 nominal-selection witness")
+    };
+    let nominal = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result.ir().model.pmi.iter().find_map(|annotation| {
+            let PmiDefinition::Dimension {
+                nominal: Some(PmiValue { value, .. }),
+                ..
+            } = &annotation.definition
+            else {
+                return None;
+            };
+            Some(*value)
+        })
+    };
+
+    let named_first = decode(include_bytes!("tests/data/ap02_named_nominal_first.p21"));
+    let named_reordered = decode(include_bytes!(
+        "tests/data/ap02_named_nominal_reordered.p21"
+    ));
+    assert_eq!(nominal(&named_first), Some(12.0));
+    assert_eq!(nominal(&named_reordered), Some(12.0));
+    assert!(!named_first
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("nominal is ambiguous")));
+    assert!(!named_reordered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("nominal is ambiguous")));
+
+    let unnamed_single = decode(include_bytes!("tests/data/ap02_unnamed_single.p21"));
+    assert_eq!(nominal(&unnamed_single), Some(7.5));
+    assert!(!unnamed_single
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("nominal is ambiguous")));
+
+    let unnamed_first = decode(include_bytes!(
+        "tests/data/ap02_unnamed_ambiguous_first.p21"
+    ));
+    let unnamed_reordered = decode(include_bytes!(
+        "tests/data/ap02_unnamed_ambiguous_reordered.p21"
+    ));
+    assert_eq!(nominal(&unnamed_first), None);
+    assert_eq!(nominal(&unnamed_reordered), None);
+    for result in [&unnamed_first, &unnamed_reordered] {
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.message
+                .contains("unnamed measure values; the nominal is ambiguous")
+        }));
+    }
+}
+
+#[test]
 fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
