@@ -170,6 +170,37 @@ fn parameter_card_count_must_equal_the_owned_contiguous_range() {
 }
 
 #[test]
+fn parameter_back_pointers_must_match_declared_ranges() {
+    let mut bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "FIRST".into(),
+            status: "00010000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "SECOND".into(),
+            status: "00010000",
+            parameters: "116,4,5,6,0;".into(),
+        },
+    ]);
+    let marker = bytes
+        .windows(8)
+        .position(|window| window == b"P      2")
+        .expect("second Parameter Data card");
+    let card_start = marker - 72;
+    bytes[card_start + 64..card_start + 72].copy_from_slice(b"       1");
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
 fn parameter_card_count_includes_comment_card_payload() {
     let comment = "comment".repeat(12);
     let parameters = format!("116,1,2,3,0;{comment}");

@@ -45,16 +45,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-05. Disagreement between the declared and actual Parameter Data card count
-
-**Question.** Is the Directory Entry card count or the set of back-pointers authoritative?
-
-**Known.** `parameter.rs:484-545` groups Parameter Data cards by their back-pointer, checks the declared start and contiguous range, and requires the owned-card count to equal the Directory count. The Parameter Data section of `iges.md` states the same exact-range rule. A count/back-pointer disagreement is refused in both directions.
-
-**Need.** We need the authority rule for both directions of count disagreement. If the format permits recovery in either direction, the decoder must retain the unused cards or the missing-card condition with an attributed loss.
-
-**Note.** Reopened by the 2026-08-16 audit. The equality policy is implemented and documented, but the closure changed code, tests, and specification without citing the IGES specification or an exporter-authored witness file for count authority.
-
 ## 2. Global metadata
 
 ### GL-01. Global defaults, and defaults applied to unparseable fields
