@@ -49,16 +49,6 @@ from a conformant file.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-04. One malformed subfigure definition blocks every inferred occurrence root
-
-**Question.** How is a top-level product instance identified when a subfigure definition is malformed?
-
-**Known.** `native.rs:4421-4455` retains a Type 308 or 320 definition with an empty or filtered member list and records its sequence as malformed. `native.rs:4525-4543` suppresses all Type 408 and 420 root inference when any definition is malformed. `reader.rs:201-207` reports `occurrence.root-inference-blocked`; tests in `entities/structure/tests.rs:1282-1356` assert the suppression. The Product structure section of `iges.md` states the all-or-nothing root rule.
-
-**Need.** We need a source rule for per-member recovery or for blocking root inference after a malformed definition. The decoder must not fabricate occurrences or silently discard valid independent roots.
-
-**Note.** Reopened by the 2026-08-16 audit. The code and synthetic tests implement a conservative project recovery policy, but the rule that one malformed definition invalidates every root inference is not established from the IGES specification or from an exporter-authored witness file.
-
 ### DR-16. Native counted records retain partial prefixes after a malformed nested count
 
 **Question.** What native list state is exposed after a nested counted sequence stops before its declared width?
