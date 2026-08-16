@@ -203,6 +203,11 @@ mapping. `*` marks an inherited attribute supplied by a sibling leaf. The
 merged instance retains every leaf name and parameter sequence. Schema
 accessors resolve inherited attributes against that representation.
 
+A complex instance whose partial records are not in ascending entity-name order
+does not conform to Part 21. CADIR salvage retains the observed partial order,
+resolves attributes by partial name, and reports `NoncanonicalSourceSyntax`
+with the containing record's byte offset. Strict decode rejects the record.
+
 Part 21 simple-entity mapping supplies one parameter for each explicit
 attribute, in declaration order. Internal complex mapping supplies inherited
 explicit attributes before the attributes introduced by the leaf. External
@@ -1015,8 +1020,15 @@ referenced surface carrier. A native presentation carrier without a neutral
 geometry arena retains its carrier identity as the style target. Semantic PMI
 retains every supported STEP `SHAPE_ASPECT` subtype as a shape-aspect target,
 including a simple leaf subtype and a shape-aspect partial in a complex datum
-feature. A complex datum reads identification from its `DATUM` partial and
-name, targets, and product shape from its inherited `SHAPE_ASPECT` partial.
+feature. ISO 10303-47 defines `DATUM` as a `SHAPE_ASPECT` subtype with the
+explicit `identification` attribute. In external mapping, the `DATUM` partial
+supplies `identification`; the inherited `SHAPE_ASPECT` partial supplies
+`name`, `description`, `of_shape`, and `product_definitional`. A datum requires
+an empty `name` and `product_definitional = .F.`. CADIR reads these fields by
+partial name, retains the source datum identity as a shape-aspect target, and
+does not use the first complex partial as an attribute source. A complex datum
+therefore retains its `identification` even when a recoverable noncanonical
+partial order places `DATUM` after another partial.
 A complex dimension uses its dimensional partial for its kind and all inherited
 partials for its name, targets, and characteristic value.
 Its characteristic representation collects every measure representation item.

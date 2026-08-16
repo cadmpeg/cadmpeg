@@ -936,7 +936,7 @@ fn complex_datum_names_use_the_inherited_shape_aspect_name() {
 
     let result = decode_inline(
         "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
-#7=(DATUM('A') SHAPE_ASPECT('datum name','',#5,.F.));
+#7=(DATUM('A') SHAPE_ASPECT('','',#5,.F.));
 #8=(DATUM_SYSTEM((#20)) SHAPE_ASPECT('system name','',#5,.F.));
 #20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,());
 #99=UNRESOLVED_PRODUCT();",
@@ -954,26 +954,38 @@ fn complex_datum_names_use_the_inherited_shape_aspect_name() {
         })
         .map(|annotation| annotation.name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, [Some("datum name"), Some("system name")]);
+    assert_eq!(names, [None, Some("system name")]);
 }
 
 #[test]
 fn complex_datum_reads_identification_from_its_named_partial() {
     use cadmpeg_ir::pmi::{PmiDefinition, PmiTarget};
 
-    let result = decode_inline(
-        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
-#7=(COMMON_DATUM() DATUM('A') DATUM_FEATURE() SHAPE_ASPECT('datum name','',#5,.F.));
-#99=UNRESOLVED_PRODUCT();",
-    );
-    let datum = result
+    let canonical = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ap01_complex_datum_canonical.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode canonical complex datum");
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ap01_complex_datum_reordered.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered complex datum");
+
+    let datum = canonical
         .ir()
         .model
         .pmi
         .iter()
         .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
         .expect("complex datum");
-    assert_eq!(datum.name.as_deref(), Some("datum name"));
+    assert_eq!(datum.name, None);
     assert!(matches!(
         &datum.definition,
         PmiDefinition::Datum { identification } if identification == "A"
@@ -984,6 +996,22 @@ fn complex_datum_reads_identification_from_its_named_partial() {
             source_id: "#7".into()
         }]
     );
+
+    let reordered_datum = reordered
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
+        .expect("reordered complex datum");
+    assert_eq!(reordered_datum.name, datum.name);
+    assert_eq!(reordered_datum.targets, datum.targets);
+    assert_eq!(reordered_datum.definition, datum.definition);
+    assert!(reordered.report().losses.iter().any(|loss| loss.code
+        == StepLossCode::ParseNoncanonicalSyntax.kind()
+        && loss
+            .message
+            .contains("complex partial records are not alphabetical")));
 }
 
 #[test]

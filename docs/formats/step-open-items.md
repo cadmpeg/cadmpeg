@@ -444,29 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-01. Datum identification for a complex datum
-
-**Question.** What STEP rule establishes datum identification for a complex datum?
-
-**Known.** The `DATUM` partial supplies the `identification` attribute of
-a complex `DATUM` instance. The inherited `SHAPE_ASPECT` partial supplies its
-name, target, and product shape.
-
-`RecordExt::parameters` returns the parameters of the first partial
-only (`crates/cadmpeg-codec-step/src/reader/pmi.rs:1274-1279`). The datum
-reader scans those parameters for the identification text and substitutes the
-synthetic string `#<id>` when it finds none (`pmi.rs:59-73`). Part 21 orders
-complex partials alphabetically, and the parser enforces that order.
-
-The reader looks up datum identification by partial name instead of
-using the first complex partial. A synthesized complex datum with an empty
-`COMMON_DATUM` partial retains identification `A` and its inherited
-`SHAPE_ASPECT` target.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### AP-02. Dimension nominal value selection
 
 **Question.** What STEP rule establishes dimension nominal value selection?
