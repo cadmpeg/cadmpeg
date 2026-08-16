@@ -32,8 +32,8 @@ struct TargetContext<'a> {
 }
 
 impl TargetContext<'_> {
-    fn target(&self, id: u64) -> Option<DrawingTarget> {
-        target_for(
+    fn targets(&self, id: u64) -> Vec<DrawingTarget> {
+        targets_for(
             id,
             self.target_identities,
             self.known_typed,
@@ -264,13 +264,17 @@ fn add_reference_fields(
         let mut references = Vec::new();
         collect_references(value, &mut references);
         for target_id in references {
-            let Some(target) = target_context.target(target_id) else {
+            let targets = target_context.targets(target_id);
+            if targets.is_empty() {
                 losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
                     )));
                 continue;
-            };
-            relationships.entry(role.into()).or_default().push(target);
+            }
+            relationships
+                .entry(role.into())
+                .or_default()
+                .extend(targets);
         }
     }
 }
@@ -294,19 +298,19 @@ fn add_sheet_revision_usages(
         })
         .collect::<Vec<_>>();
     for (usage_id, sheet_id, revision_id, sequence) in usages {
-        let sheet_target = target_context.target(revision_id);
-        let revision_target = target_context.target(sheet_id);
+        let sheet_targets = target_context.targets(revision_id);
+        let revision_targets = target_context.targets(sheet_id);
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
-            if let Some(target) = sheet_target {
+            if sheet_targets.is_empty() {
+                losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
+                    "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
+                )));
+            } else {
                 sheet
                     .relationships
                     .entry("drawing_revision".into())
                     .or_default()
-                    .push(target);
-            } else {
-                losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
-                        "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
-                    )));
+                    .extend(sheet_targets);
             }
             if let Some(sequence) = sequence.and_then(|value| {
                 value_text(
@@ -323,16 +327,16 @@ fn add_sheet_revision_usages(
             }
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
-            if let Some(target) = revision_target {
+            if revision_targets.is_empty() {
+                losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
+                    "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
+                )));
+            } else {
                 revision
                     .relationships
                     .entry("sheet_revision".into())
                     .or_default()
-                    .push(target);
-            } else {
-                losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
-                        "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
-                    )));
+                    .extend(revision_targets);
             }
         }
     }
@@ -352,20 +356,19 @@ fn add_draughting_model_associations(
         let Some(model) = drawings.get_mut(&model_id) else {
             continue;
         };
-        if let Some(definition) = parameters
-            .get(2)
-            .and_then(value_reference)
-            .and_then(|id| target_context.target(id))
-        {
-            model
-                .relationships
-                .entry("semantic_definition".into())
-                .or_default()
-                .push(definition);
-        } else if parameters.get(2).and_then(value_reference).is_some() {
-            losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(format!(
-                        "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
+        if let Some(definition_id) = parameters.get(2).and_then(value_reference) {
+            let definitions = target_context.targets(definition_id);
+            if definitions.is_empty() {
+                losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(format!(
+                    "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
                 )));
+            } else {
+                model
+                    .relationships
+                    .entry("semantic_definition".into())
+                    .or_default()
+                    .extend(definitions);
+            }
         }
         let Some(items) = parameters.get(4) else {
             continue;
@@ -373,59 +376,66 @@ fn add_draughting_model_associations(
         let mut references = Vec::new();
         collect_references(items, &mut references);
         for item_id in references {
-            if let Some(item) = target_context.target(item_id) {
+            let targets = target_context.targets(item_id);
+            if targets.is_empty() {
+                losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(format!(
+                    "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
+                )));
+            } else {
                 model
                     .relationships
                     .entry("associated_items".into())
                     .or_default()
-                    .push(item);
-            } else {
-                losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(format!(
-                        "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
-                    )));
+                    .extend(targets);
             }
         }
     }
 }
 
-fn target_for(
+fn targets_for(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-) -> Option<DrawingTarget> {
-    if let Some(identity) = target_identities
-        .get(&id)
-        .and_then(|identities| identities.iter().next())
-    {
-        return Some(DrawingTarget {
-            target: Some(identity.clone()),
-            external_document: None,
-            external_object: None,
-            is_null: false,
-            subelements: Vec::new(),
-        });
+) -> Vec<DrawingTarget> {
+    if let Some(identities) = target_identities.get(&id) {
+        return identities
+            .iter()
+            .map(|identity| DrawingTarget {
+                target: Some(identity.clone()),
+                external_document: None,
+                external_object: None,
+                is_null: false,
+                subelements: Vec::new(),
+            })
+            .collect();
     }
     if let Some(uri) = external_documents.get(&id) {
-        return Some(DrawingTarget {
+        return vec![DrawingTarget {
             target: None,
             external_document: Some((*uri).into()),
             external_object: Some(format!("#{id}")),
             is_null: false,
             subelements: Vec::new(),
-        });
+        }];
     }
     if known_typed.contains(&id) {
-        return None;
+        return Vec::new();
     }
-    exchange.records.get(&id).map(|record| DrawingTarget {
-        target: Some(opaque_record_id(record).0),
-        external_document: None,
-        external_object: None,
-        is_null: false,
-        subelements: Vec::new(),
-    })
+    exchange
+        .records
+        .get(&id)
+        .map(|record| {
+            vec![DrawingTarget {
+                target: Some(opaque_record_id(record).0),
+                external_document: None,
+                external_object: None,
+                is_null: false,
+                subelements: Vec::new(),
+            }]
+        })
+        .unwrap_or_default()
 }
 
 fn collect_references(value: &Value, output: &mut Vec<u64>) {

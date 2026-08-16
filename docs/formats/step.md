@@ -587,6 +587,14 @@ records use the parameters of their `PRODUCT` partial. A presentation layer
 item that references a `PRODUCT` expands to every CADIR product-definition
 view derived from that product, in source-definition order.
 
+A drawing relationship preserves the source record that its STEP parameter
+references. CADIR expands a reference whose source record has multiple neutral
+identities to one `DrawingTarget` per identity, in ascending canonical
+identity order. This is a CADIR decision: source DATA order, identity
+insertion order, and a lexical first-identity selection do not select one
+target. The original source parameter remains in the drawing's stored
+parameters, and the drawing keeps its source identity.
+
 A shape representation contains at least one representation item. The two
 items of an `ITEM_DEFINED_TRANSFORMATION` belong to the two representations
 connected by its representation relationship. An occurrence placement belongs

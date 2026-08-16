@@ -97,3 +97,58 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         matches!(error, StepError::Unsupported(message) if message.contains("drawing/presentation"))
     );
 }
+
+fn decode_product_view_drawing(definition_order: &str) -> cadmpeg_ir::codec::DecodeResult {
+    decode_inline(&format!(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','Part','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('v1','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
+{definition_order}
+#9=REPRESENTATION_CONTEXT('','');
+#10=PRESENTATION_VIEW('front',(#3),#9);
+#11=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#12=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#13=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#11,#12)) REPRESENTATION_CONTEXT('model','3D'));"
+    ))
+}
+
+#[test]
+fn drawing_reference_expands_all_product_definition_views_in_any_data_order() {
+    let forward = decode_product_view_drawing(
+        "#6=PRODUCT_DEFINITION('design view','',#4,#5);
+#8=PRODUCT_DEFINITION('manufacturing view','',#7,#5);",
+    );
+    let reverse = decode_product_view_drawing(
+        "#8=PRODUCT_DEFINITION('manufacturing view','',#7,#5);
+#6=PRODUCT_DEFINITION('design view','',#4,#5);",
+    );
+
+    for result in [&forward, &reverse] {
+        let view = result
+            .ir()
+            .model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.runtime_type == "PRESENTATION_VIEW")
+            .expect("presentation view");
+        let targets = view.relationships.get("items").expect("view items");
+        let identities = targets
+            .iter()
+            .filter_map(|target| target.target.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            identities,
+            [
+                "step:product:product#3-definition-6",
+                "step:product:product#3-definition-8",
+            ]
+        );
+        assert!(!result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
+                && loss.message.contains("relationship items")
+        }));
+    }
+}

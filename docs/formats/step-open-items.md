@@ -262,27 +262,3 @@ reordered, near-tied, and crossing candidates.
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation
-
-### DR-01. Drawing target identity selection
-
-**Question.** Which neutral identity represents a drawing reference when one
-STEP source record maps to more than one neutral model identity?
-
-**Known.** `record_targets` collects every neutral identity derived from a
-source record into a `BTreeSet`
-(`crates/cadmpeg-codec-step/src/reader/mod.rs:1038-1051`). The drawing target
-resolver returns `identities.iter().next()` and does not retain the remaining
-identities (`crates/cadmpeg-codec-step/src/reader/drawing.rs:406-444`). A
-source record with multiple product-definition views can therefore receive
-the lexicographically first identity.
-
-**Note.** This is an ownership inference from neutral identity ordering. If a
-drawing annotation or presentation reference targets a source record with two
-valid product-definition identities, changing identity spelling or insertion
-order can retarget the drawing without changing the STEP reference. The
-presentation layer expands all applicable product views, but the drawing
-target path does not. No existing STEP item settles this projection.
-
-**Need.** We need the drawing-reference target entity and product-definition
-scope rule, plus an independent multi-view file that shows whether all views
-are targets, one view is authoritative, or the reference is ambiguous.
