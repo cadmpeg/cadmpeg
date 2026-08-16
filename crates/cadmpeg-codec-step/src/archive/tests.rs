@@ -249,6 +249,43 @@ fn codec_resolves_root_references_relative_to_the_archive_directory() {
 }
 
 #[test]
+fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip forwarded reference'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<target>=<parts/child.p21#target>;ENDSEC;REFERENCE;#10=<#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Stored),
+        (
+            "parts/child.p21",
+            b"not a STEP exchange structure",
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect forwarded ZIP reference");
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+
+    let missing = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Stored)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(missing), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root without parsing subsidiary");
+    assert!(result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+}
+
+#[test]
 fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
     let root = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();

@@ -133,6 +133,7 @@ pub(crate) fn root_reference_notes(
         .collect::<Vec<_>>();
     let mut notes = Vec::new();
     for (name, uri) in uris {
+        let uri = forwarded_reference_uri(&exchange, uri);
         match resolve_uri(ROOT_NAME, uri)? {
             ReferenceTarget::Internal { member, fragment } => {
                 if archive.entry(&member).is_none() {
@@ -149,6 +150,21 @@ pub(crate) fn root_reference_notes(
         }
     }
     Ok(notes)
+}
+
+fn forwarded_reference_uri<'a>(exchange: &'a crate::parse::Exchange, uri: &'a str) -> &'a str {
+    let Some(fragment) = uri.strip_prefix('#') else {
+        return uri;
+    };
+    exchange
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == fragment)
+        .and_then(|anchor| match &anchor.value {
+            crate::parse::Value::Resource(uri) => Some(uri.as_str()),
+            _ => None,
+        })
+        .unwrap_or(uri)
 }
 
 fn has_uri_scheme(uri: &str) -> bool {

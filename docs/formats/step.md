@@ -20,10 +20,12 @@ Deflate entries. PKZIP 2.04g excludes encryption, Unicode filename support,
 and Deflate64. The archive may contain multiple exchange files, directories,
 nested ZIP archives, and ancillary data. Its root member is named exactly
 `ISO-10303.p21` and is at the archive root. Every other member is a
-subsidiary. The root member contains the Part 21 exchange structure and is
-the only member that an external reference may address. An internal relative
-address is resolved from the directory of its referencing member and cannot
-address a file outside the archive. Archive member paths use `/`; the reader
+subsidiary. The root member contains the Part 21 exchange structure. It is the
+only member that a URI from outside the archive may address. A root
+`REFERENCE` entry or a root `ANCHOR` forwarding a resource may address a
+subsidiary. An internal relative address is resolved from the directory of its
+referencing member and cannot address a file outside the archive. Archive
+member paths use `/`; the reader
 rejects an unsafe path, a duplicate name, an encrypted or Unicode-name entry,
 an unsupported compression method, or a root member with a size or CRC
 mismatch. For each member it retains the central-directory name, compression,
@@ -275,6 +277,19 @@ an ANCHOR that supplies an entity for a `#id` occurrence or a value for an
 failed or cyclic resolution produces `$`. A resource path or UUID that cannot
 be obtained remains an external dependency until the caller supplies resource
 access. External occurrence names do not create local DATA entity identities.
+For an edition-3 ZIP, the Part 21 schema population includes all DATA entities
+in the exchange and the schema populations of REFERENCE targets transitively.
+Each entity occurs at most once. An unresolved target contributes no entities.
+A root ANCHOR whose value is a URI can forward a root reference to an entity or
+value in a subsidiary member.
+
+CADIR decision: the STEP codec admits only the root member's exchange graph
+into CADIR. It checks that each root REFERENCE binding that resolves to an
+internal member, including a binding forwarded through a root ANCHOR, names an
+archive member. It records the binding as an external dependency and
+decode-report note. It does not open subsidiary members or merge their DATA
+namespaces, schemas, units, or identities into the root graph. Subsidiary bytes
+remain archive resources.
 Each SIGNATURE section follows the exchange terminator. Its content is a
 detached CMS `SignedData` object as defined by RFC 5652, encoded as RFC 4648
 Base64. Digest and signature algorithm identifiers are inside that object, not

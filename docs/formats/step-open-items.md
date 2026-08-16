@@ -115,25 +115,6 @@ conflict policy recorded as a CADIR decision.
 
 ## 3. Containers and other encodings
 
-### CE-02. ZIP resource composition
-
-**Question.** How do references between exchange resources in an edition-3 ZIP container resolve?
-
-**Known.** Annex A.4 defines the container rule: a relative URI is resolved
-against the directory of the referencing member, `..` cannot escape the
-archive, and only `ISO-10303.p21` can be referenced from outside. Dot segments
-are removed. The root reader applies this rule to its REFERENCE entries and
-checks each resolved internal member. A root ANCHOR forwards a reference to an
-entity or value in a subsidiary member. The rule does not define how a
-subsidiary exchange graph is merged into the root graph.
-
-**Note.** The reader implements path resolution and root-member checks. It
-does not import subsidiary DATA graphs; a resource-qualified identity universe
-and a cross-file schema and unit merge policy need an explicit CADIR
-decision.
-
-**Need.** We must know the resolution rule to combine the contained resources into one product graph.
-
 ### CE-03. Part 28 XML grammar
 
 **Question.** What XML grammar represents an AP203, AP214, or AP242 exchange structure in Part 28?
