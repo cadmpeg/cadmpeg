@@ -31,6 +31,9 @@ pub(crate) const USER_STRING_LIST: Uuid = Uuid::from_canonical([
 pub(crate) const OBSOLETE_CUSTOM_MESH_USERDATA: Uuid = Uuid::from_canonical([
     0x69, 0xf2, 0x76, 0x95, 0x30, 0x11, 0x4f, 0xba, 0x82, 0xc1, 0xe5, 0x29, 0xf2, 0x5b, 0x5f, 0xd9,
 ]);
+pub(crate) const PER_OBJECT_MESH_PARAMETERS_USERDATA: Uuid = Uuid::from_canonical([
+    0xb5, 0x62, 0x8c, 0xa9, 0x82, 0xc4, 0x4c, 0xae, 0x98, 0x83, 0x48, 0x7b, 0x3e, 0x4a, 0xb2, 0x8b,
+]);
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
 const HIDDEN_OBJECT_MODE: u8 = 1;
@@ -186,7 +189,7 @@ pub(crate) struct ObjectAttributes {
     pub(crate) embedded_linetype: Option<settings::EmbeddedDescriptor>,
     /// Direct embedded section style.
     pub(crate) embedded_section_style: Option<settings::EmbeddedDescriptor>,
-    /// Converted obsolete per-object custom render-mesh settings.
+    /// Per-object custom render-mesh settings.
     pub(crate) custom_render_mesh: Option<settings::MeshParameters>,
 }
 
@@ -1201,6 +1204,78 @@ fn parse_obsolete_custom_mesh_userdata(
     }
 }
 
+fn parse_per_object_mesh_userdata(
+    bytes: &[u8],
+    descriptors: &[AttributeUserdataDescriptor],
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Option<settings::MeshParameters> {
+    let descriptor = descriptors.iter().find(|descriptor| {
+        descriptor.class_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
+            && descriptor.item_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
+    })?;
+    let Some(payload_range) = descriptor.payload_range.clone() else {
+        warnings.push(format!(
+            "per-object mesh userdata at {} has no bounded payload",
+            descriptor.range.start
+        ));
+        return None;
+    };
+    let parsed = (|| {
+        let outer = child(
+            bytes,
+            payload_range.start,
+            payload_range.end,
+            archive,
+            false,
+        )?;
+        require_long(&outer, ANONYMOUS)?;
+        let mut outer_reader = BoundedReader::new(bytes, outer.body.start, outer.body.end)?;
+        let major = outer_reader.i32()?;
+        let _minor = outer_reader.i32()?;
+        if major != 1 {
+            return Err(FramingError::structural(
+                outer.body.start,
+                "per-object mesh userdata version is unsupported",
+            ));
+        }
+        let inner = child(
+            bytes,
+            outer_reader.position(),
+            outer.body.end,
+            archive,
+            false,
+        )?;
+        require_long(&inner, ANONYMOUS)?;
+        if inner.value <= 0 || inner.body.is_empty() {
+            return Err(FramingError::structural(
+                inner.header_start,
+                "per-object mesh userdata mesh child is empty",
+            ));
+        }
+        let mut mesh_reader = BoundedReader::new(bytes, inner.body.start, inner.body.end)?;
+        let mut mesh = settings::parse_mesh_parameters(bytes, &mut mesh_reader, archive, true)?;
+        mesh_reader.skip_remaining()?;
+        outer_reader.skip_remaining()?;
+
+        // ON_PerObjectMeshParameters::Read applies these class invariants after
+        // reading the nested mesh body.
+        mesh.custom_settings = Some(true);
+        mesh.compute_curvature = false;
+        Ok::<_, FramingError>(mesh)
+    })();
+    match parsed {
+        Ok(mesh) => Some(mesh),
+        Err(error) => {
+            warnings.push(format!(
+                "per-object mesh userdata at {} dropped: {error}",
+                descriptor.range.start
+            ));
+            None
+        }
+    }
+}
+
 fn resolve_identity(
     descriptor: &mut ObjectDescriptor,
     layers: &HashMap<i32, &crate::settings::LayerRecord>,
@@ -1453,12 +1528,15 @@ pub(crate) fn parse_object_record(
         .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
     if let Some(attributes) = attributes.as_mut() {
-        attributes.custom_render_mesh = parse_obsolete_custom_mesh_userdata(
+        let modern_custom_mesh =
+            parse_per_object_mesh_userdata(bytes, &attributes_userdata, archive, &mut warnings);
+        let obsolete_custom_mesh = parse_obsolete_custom_mesh_userdata(
             bytes,
             &attributes_userdata,
             archive,
             &mut warnings,
         );
+        attributes.custom_render_mesh = obsolete_custom_mesh.or(modern_custom_mesh);
     }
     Ok(ObjectDescriptor {
         range: record.range.clone(),

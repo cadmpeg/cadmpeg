@@ -228,6 +228,13 @@ outer-anonymous payload contains the legacy integer, in-use Boolean, and
 `ON_MeshParameters` body. The object-attributes reader applies the source
 custom-render-mesh setter side effects and the decoder retains the converted
 settings under the owning native object presentation.
+The built-in `ON_PerObjectMeshParameters` class is also settled. Its class and
+item UUID is `B5628CA9-82C4-4CAE-9883-487B3E4AB28B`, its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 7.2.10 defines its
+class-owned anonymous version-1.0 wrapper, nested anonymous mesh child, and
+packed `ON_MeshParameters` body. The decoder applies the source custom and
+curvature side effects under the owning object presentation; a malformed
+payload leaves the object attributes admitted and records the bounded drop.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -243,8 +250,10 @@ linked-definition carriers where applicable. The obsolete
 `ON_OBSOLETE_IDefLayerSettingsUserData` and `ON_OBSOLETE_LayerSettingsUserData`
 classes are also settled as no-op V5 compatibility records under section
 7.2.8. `ON_OBSOLETE_CCustomMeshUserData` is settled as the typed
-object-attributes compatibility carrier under section 7.2.9; other future
-class-specific payload semantics remain open.
+object-attributes compatibility carrier under section 7.2.9, and
+`ON_PerObjectMeshParameters` is settled as the typed modern object-attributes
+carrier under section 7.2.10; other future class-specific payload semantics
+remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

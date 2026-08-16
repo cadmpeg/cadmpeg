@@ -1102,6 +1102,42 @@ discarded at its bounded payload, the object attributes remain admitted, and
 the decoder records the bounded diagnostic; a later duplicate does not replace
 the first matching item.
 
+#### 7.2.10 `ON_PerObjectMeshParameters`
+
+`ON_PerObjectMeshParameters` is an archived object-attributes userdata class.
+Its class and item UUID are both
+`B5628CA9-82C4-4CAE-9883-487B3E4AB28B`. Its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4` (`ON_opennurbs5_id`). It is attached to
+the `ON_3dmObjectAttributes` owner, not to the object's geometry class.
+
+The generic userdata payload child from section 7.2 contains one class-owned
+anonymous long chunk. That class-owned chunk has an ordinary anonymous chunk
+version followed by one bounded anonymous long child:
+
+```text
+anonymous long chunk
+  i32 major = 1
+  i32 minor (writer emits 0)
+  anonymous long child, positive declared length
+    packed ON_MeshParameters version 1.5
+```
+
+The `ON_MeshParameters` body uses the grammar in section 20.4. Its fields are
+bounded by the nested child; the mesh reader consumes the known minor-gated
+prefix and skips its suffix at that child boundary. The class-owned outer
+chunk and the generic payload child likewise skip their direct suffixes at
+their own boundaries. The class-owned reader requires outer major `1` and does
+not use the outer minor.
+
+After reading the nested mesh parameters, the class forces `custom_settings`
+to true and `compute_curvature` to false. The parsed
+`custom_settings_enabled` value remains effective. CADIR stores the resulting
+wire fields in the owning native object presentation's optional
+`custom_render_mesh` record and does not create another geometry or userdata
+identity. A malformed recognized class payload is discarded at its bounded
+userdata item, the object attributes remain admitted, and the decoder records
+the bounded diagnostic. Duplicate selection follows section 7.2.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -1937,6 +1973,11 @@ two arrays or remove that key from geometry userdata.
 The `ON_OBSOLETE_CCustomMeshUserData` item is the other typed attributes
 carrier. Its direct outer-anonymous body is converted as specified in section
 7.2.9; it is not parsed as a nested anonymous payload.
+
+The `ON_PerObjectMeshParameters` item is a typed attributes carrier. Its
+generic payload contains the class-owned nested anonymous chunks specified in
+section 7.2.10, and the resulting mesh parameters are retained under the
+owning native object presentation.
 
 ## 10. Compressed buffers
 
