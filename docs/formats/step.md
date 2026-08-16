@@ -396,6 +396,18 @@ a URI scheme or network-path reference as external. It checks the resulting
 member name against the archive central directory. Root ANCHOR forwarding is
 resolved before this member check; subsidiary members remain resources and are
 not read into the root graph.
+
+CADIR decision: external resource access is an admission boundary outside the
+STEP codec. The codec performs no network, filesystem, archive-download, or
+registry request for an `http`, `https`, `file`, `urn`, or UUID-only URI. It
+retains the exact URI and external occurrence and reports the dependency. A
+caller may resolve a dependency with an explicit resolver, but that resolver
+must apply its own scheme allowlist, redirect, size and time limits,
+authentication, TLS and certificate rules, authorization scope, and optional
+message-digest or signature checks before it supplies resource bytes to a
+separate composition step. No resolver result enters the decoded STEP graph
+implicitly; a missing or refused access result remains an unresolved external
+dependency.
 For an edition-3 ZIP, the Part 21 schema population includes all DATA entities
 in the exchange and the schema populations of REFERENCE targets transitively.
 Each entity occurs at most once. An unresolved target contributes no entities.

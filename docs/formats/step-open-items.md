@@ -18,20 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-02. Resource access
-
-**Question.** Which retrieval and authentication procedure applies to each external resource URI?
-
-**Known.** Part 21 defines the required result of a resource resolution, but
-it does not define a transport, authentication mechanism, authorization scope,
-redirect policy, certificate policy, or registry protocol. A fragment-only
-UUID may require a registry service.
-
-**Note.** Resource retrieval and authentication need an explicit policy
-recorded as a CADIR decision.
-
-**Need.** We must know the procedure to obtain the selected external resource.
-
 ### ER-03. Resource composition
 
 **Question.** How does each external resource combine with the local instance graph?

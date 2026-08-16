@@ -89,6 +89,39 @@ fn standalone_relative_uri_is_retained_without_filesystem_resolution() {
 }
 
 #[test]
+fn resource_schemes_and_uuid_references_require_external_access() {
+    let bytes = include_bytes!("../../parse/tests/data/er02_resource_access_witness.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode resource access witness without transport access");
+
+    for note in [
+        "external reference #10 -> https://example.invalid/part.p21#shape",
+        "external reference #11 -> file:///definitely/not/a/real/part.p21#shape",
+        "external reference #12 -> urn:uuid:123e4567-e89b-12d3-a456-426614174000#shape",
+        "external reference #13 -> #123e4567-e89b-12d3-a456-426614174000",
+    ] {
+        assert!(
+            result.report().notes.contains(&note.into()),
+            "missing {note}"
+        );
+    }
+
+    let summary = StepCodec::default()
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("inspect resource access witness");
+    let references = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "REFERENCE")
+        .expect("reference inventory");
+    assert_eq!(
+        references.attributes["external_uris"],
+        "https://example.invalid/part.p21#shape,file:///definitely/not/a/real/part.p21#shape,urn:uuid:123e4567-e89b-12d3-a456-426614174000#shape,#123e4567-e89b-12d3-a456-426614174000"
+    );
+}
+
+#[test]
 fn complex_document_dependency_records_use_inherited_fields() {
     let result = decode_inline(
         "#1=DOCUMENT_TYPE('digital');
