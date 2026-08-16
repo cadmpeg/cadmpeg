@@ -4959,6 +4959,30 @@ long  TCODE_VIEW_ATTRIBUTES               (archive >= 4)
 short TCODE_ENDOFTABLE = 0
 ```
 
+`TCODE_VIEW_POSITION` is a long child. Its body is:
+
+```text
+packed version 1.0 below archive version 5; 1.1 at archive version 5 and later
+i32 maximized flag
+f64 normalized window left
+f64 normalized window right
+f64 normalized window top
+f64 normalized window bottom
+if minor >= 1: u8 floating viewport monitor count
+```
+
+The writer emits the version shown for the archive band. The reader initializes
+the position to `maximized = false`, bounds `[0,1,0,1]`, and floating viewport
+`0`. A major other than 1 leaves those defaults and consumes no versioned
+fields. For major 1, a nonzero maximized value is true; every minor at least 1
+reads the floating-viewport byte. Each horizontal and vertical pair is repaired
+in order: swap its endpoints when the lower value is greater than the upper
+value, clamp the lower value below 0 to 0, clamp the upper value at or above 1
+to 1, and replace the pair with `[0,1]` when the lower value is not less than
+the upper value. Remaining bytes are skipped at the `TCODE_VIEW_POSITION`
+boundary. CADIR stores the packed version, repaired bounds, maximized flag, and
+floating-viewport byte in the native view's `window_position` value.
+
 The view reader accepts these children in any order, skips unknown complete
 chunks, and stops typed-child decoding at the short zero-valued
 `TCODE_ENDOFTABLE`. Bytes after that marker remain an untyped suffix through

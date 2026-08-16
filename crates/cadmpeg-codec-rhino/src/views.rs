@@ -47,6 +47,7 @@ struct ViewRecord {
     list_index: usize,
     name: String,
     target_millimeters: Option<[f64; 3]>,
+    window_position: Option<WindowPosition>,
     show_construction_grid: bool,
     show_construction_axes: bool,
     show_world_axes: bool,
@@ -116,6 +117,17 @@ struct Viewport {
     target_millimeters: Option<[f64; 3]>,
     camera_frame_valid: Option<bool>,
     view_scale: Option<[f64; 3]>,
+}
+
+#[derive(Debug, Serialize)]
+struct WindowPosition {
+    version: [u8; 2],
+    maximized: bool,
+    left: f64,
+    right: f64,
+    top: f64,
+    bottom: f64,
+    floating_viewport: u8,
 }
 
 #[derive(Debug, Serialize)]
@@ -486,6 +498,63 @@ fn child_kind(typecode: u32) -> &'static str {
     }
 }
 
+fn parse_window_position(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+) -> Result<WindowPosition, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let packed = reader.u8()?;
+    let version = [packed >> 4, packed & 0x0f];
+    let mut result = WindowPosition {
+        version,
+        maximized: false,
+        left: 0.0,
+        right: 1.0,
+        top: 0.0,
+        bottom: 1.0,
+        floating_viewport: 0,
+    };
+    if version[0] == 1 {
+        result.maximized = reader.i32()? != 0;
+        result.left = reader.f64()?;
+        result.right = reader.f64()?;
+        result.top = reader.f64()?;
+        result.bottom = reader.f64()?;
+        if version[1] >= 1 {
+            result.floating_viewport = reader.u8()?;
+        }
+
+        if result.left > result.right {
+            std::mem::swap(&mut result.left, &mut result.right);
+        }
+        if result.left < 0.0 {
+            result.left = 0.0;
+        }
+        if result.right >= 1.0 {
+            result.right = 1.0;
+        }
+        if result.left >= result.right {
+            result.left = 0.0;
+            result.right = 1.0;
+        }
+        if result.top > result.bottom {
+            std::mem::swap(&mut result.top, &mut result.bottom);
+        }
+        if result.top < 0.0 {
+            result.top = 0.0;
+        }
+        if result.bottom >= 1.0 {
+            result.bottom = 1.0;
+        }
+        if result.top >= result.bottom {
+            result.top = 0.0;
+            result.bottom = 1.0;
+        }
+    }
+    reader.skip_remaining()?;
+    Ok(result)
+}
+
 fn parse_attributes(
     data: &[u8],
     body: std::ops::Range<usize>,
@@ -693,6 +762,7 @@ fn parse_view(
     let mut offset = record.body.start;
     let mut name = String::new();
     let mut target = None;
+    let mut window_position = None;
     let mut show_grid = true;
     let mut show_axes = true;
     let mut show_world_axes = true;
@@ -765,6 +835,9 @@ fn parse_view(
                 reader.skip_remaining()?;
                 target = Some(point);
             }
+            VIEW_POSITION if !child.short => {
+                window_position = Some(parse_window_position(data, child.body.clone())?);
+            }
             VIEW_SHOW_GRID if child.short => show_grid = child.value != 0,
             VIEW_SHOW_AXES if child.short => show_axes = child.value != 0,
             VIEW_SHOW_WORLD_AXES if child.short => show_world_axes = child.value != 0,
@@ -805,6 +878,7 @@ fn parse_view(
         list_index,
         name,
         target_millimeters: target,
+        window_position,
         show_construction_grid: show_grid,
         show_construction_axes: show_axes,
         show_world_axes,
@@ -1012,8 +1086,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 #[cfg(test)]
 mod tests {
     use super::{
-        legacy_clipping_depth, parse_attributes, parse_list, parse_viewport, Viewport,
-        NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
+        legacy_clipping_depth, parse_attributes, parse_list, parse_viewport, parse_window_position,
+        Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
@@ -1075,6 +1149,45 @@ mod tests {
         assert_eq!(legacy_clipping_depth(2.5), (2.5, true));
         assert_eq!(legacy_clipping_depth(-1.0), (0.0, false));
         assert_eq!(legacy_clipping_depth(UNSET_POSITIVE_FLOAT), (0.0, false));
+    }
+
+    #[test]
+    fn window_position_repairs_bounds_and_skips_future_suffix() {
+        let mut body = vec![0x12];
+        body.extend(1_i32.to_le_bytes());
+        for value in [0.9_f64, 0.1, -0.25, 1.5] {
+            body.extend(value.to_le_bytes());
+        }
+        body.push(3);
+        body.extend([0xde, 0xad, 0xbe, 0xef]);
+
+        let value = parse_window_position(&body, 0..body.len()).expect("window position");
+        assert_eq!(value.version, [1, 2]);
+        assert!(value.maximized);
+        assert_eq!(value.left, 0.1);
+        assert_eq!(value.right, 0.9);
+        assert_eq!(value.top, 0.0);
+        assert_eq!(value.bottom, 1.0);
+        assert_eq!(value.floating_viewport, 3);
+    }
+
+    #[test]
+    fn unknown_window_position_major_keeps_source_default() {
+        let mut body = vec![0x20];
+        body.extend(1_i32.to_le_bytes());
+        for value in [0.2_f64, 0.8, 0.3, 0.7] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend([0x13, 0x57, 0x9b, 0xdf]);
+
+        let value = parse_window_position(&body, 0..body.len()).expect("window position");
+        assert_eq!(value.version, [2, 0]);
+        assert!(!value.maximized);
+        assert_eq!(
+            [value.left, value.right, value.top, value.bottom],
+            [0.0, 1.0, 0.0, 1.0]
+        );
+        assert_eq!(value.floating_viewport, 0);
     }
 
     #[test]

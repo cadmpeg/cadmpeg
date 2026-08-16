@@ -500,7 +500,11 @@ reader invokes `ON_3dmPageSettings::Read` at outer minor 2. Its anonymous child
 has version 1.0 on write, a page number, width and height, four millimeter
 margins, and a UTF-16 printer name; the major-1 reader accepts every
 nonnegative minor and skips later bytes at the child boundary before continuing
-with the outer fields.
+with the outer fields. `ON_3dmViewPosition::Write/Read` uses the direct packed
+1.0/1.1 body, with the four normalized window bounds, maximized flag, and the
+archive-5 floating-viewport byte. Its reader repairs the bounds, leaves source
+defaults for unknown majors, and lets the enclosing long child skip later bytes.
+The Rust view parser now decodes this value into the native view record.
 The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
 major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
 `ON_3dmApplication` reads its three strings without a major/minor gate; all
