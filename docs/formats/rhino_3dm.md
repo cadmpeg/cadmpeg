@@ -5182,14 +5182,34 @@ in the modern `views` or `construction_planes` arenas. The top-level short
 `TCODE_ENDOFTABLE` is structural and is not retained.
 
 A view record is an ordered child-chunk list terminated by `TCODE_ENDOFTABLE`.
-The construction-plane child stores packed version 1.0 or 1.1, plane, grid and
-snap spacing, grid counts, UTF-16 name, and depth-buffer flag. The viewport
-child stores packed version 1.0 through 1.5, validity flags, projection, camera
-location and frame vectors, six frustum coordinates, six integer port bounds,
-viewport UUID, five camera/frustum lock flags, target point, camera-frame
-validity, and three dimensionless view-scale values. Camera locations, targets,
-frustum coordinates, construction-plane origins, and grid spacing are length
-values. Camera axes and view scale are not scaled.
+The `TCODE_VIEW_CPLANE` child has this body:
+
+```text
+u8 packed version = 1.minor
+ON_Point origin: 3 × f64
+ON_Vector x axis: 3 × f64
+ON_Vector y axis: 3 × f64
+ON_Vector z axis: 3 × f64
+ON_PlaneEquation x, y, z, d: 4 × f64
+f64 grid spacing
+f64 snap spacing
+i32 grid line count
+i32 thick-line frequency
+UTF-16 name
+if minor >= 1: bool depth-buffer flag
+```
+
+The construction-plane writer emits packed version 1.1 in every archive band.
+The reader requires major version 1, initializes the depth-buffer flag to true,
+reads the flag for minor 1 and later, and skips remaining bytes at the child
+boundary. Plane origins, the plane-equation `d` value, grid spacing, and snap
+spacing are document lengths; plane axes and the equation normal are
+dimensionless. The viewport child stores packed version 1.0 through 1.5,
+validity flags, projection, camera location and frame vectors, six frustum
+coordinates, six integer port bounds, viewport UUID, five camera/frustum lock
+flags, target point, camera-frame validity, and three dimensionless view-scale
+values. Camera locations, targets, and frustum coordinates are length values.
+Camera axes and view scale are not scaled.
 
 A saved or active view list has this body:
 

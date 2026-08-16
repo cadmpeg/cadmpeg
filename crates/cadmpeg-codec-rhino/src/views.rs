@@ -1086,8 +1086,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 #[cfg(test)]
 mod tests {
     use super::{
-        legacy_clipping_depth, parse_attributes, parse_list, parse_trace_image, parse_viewport,
-        parse_wallpaper, parse_window_position, Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
+        legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
+        parse_viewport, parse_wallpaper, parse_window_position, Viewport, NAMED_CPLANES,
+        UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
@@ -1111,6 +1112,46 @@ mod tests {
                 .into_iter()
                 .flat_map(f64::to_le_bytes),
         );
+    }
+
+    fn construction_plane() -> Vec<u8> {
+        let mut bytes = vec![0x11];
+        point(&mut bytes, [1.0, -2.0, 3.0]);
+        point(&mut bytes, [1.0, 0.0, 0.0]);
+        point(&mut bytes, [0.0, 0.0, 1.0]);
+        point(&mut bytes, [0.0, -1.0, 0.0]);
+        bytes.extend(
+            [0.0_f64, -1.0, 0.0, -2.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+        bytes.extend(2.5_f64.to_le_bytes());
+        bytes.extend(0.75_f64.to_le_bytes());
+        for value in [42_i32, 3] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(utf16_bytes("construction-plane"));
+        bytes.push(0);
+        bytes.extend([0xde, 0xad]);
+        bytes
+    }
+
+    #[test]
+    fn construction_plane_scales_spatial_fields_and_reads_depth_flag() {
+        let bytes = construction_plane();
+        let value = parse_cplane(&bytes, 0..bytes.len(), 2.0).expect("construction plane");
+
+        assert_eq!(value.plane_origin_mm, [2.0, -4.0, 6.0]);
+        assert_eq!(value.plane_x_axis, [1.0, 0.0, 0.0]);
+        assert_eq!(value.plane_y_axis, [0.0, 0.0, 1.0]);
+        assert_eq!(value.plane_z_axis, [0.0, -1.0, 0.0]);
+        assert_eq!(value.plane_equation_mm, [0.0, -1.0, 0.0, -4.0]);
+        assert_eq!(value.grid_spacing_mm, 5.0);
+        assert_eq!(value.snap_spacing_mm, 1.5);
+        assert_eq!(value.grid_line_count, 42);
+        assert_eq!(value.thick_line_frequency, 3);
+        assert_eq!(value.name, "construction-plane");
+        assert!(!value.depth_buffer);
     }
 
     fn viewport() -> Vec<u8> {

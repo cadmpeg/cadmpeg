@@ -480,6 +480,14 @@ document lengths to 63.5/19.05 millimeters in the Rust arena. The owner test
 covers a future minor suffix and the length transfer. The Rust document-
 settings reader now consumes the complete known prefix and leaves only the
 respective containing boundary suffix.
+`ON_3dmConstructionPlane::Write/Read` similarly defines the
+`TCODE_VIEW_CPLANE` child as packed 1.1, a 16-double plane, two document-length
+spacing values, two counts, a UTF-16 name, and a minor-1 depth-buffer flag. The
+construction-plane witness `construction_plane_witness.cpp` produced this
+body in V4, V5, and V6 with a non-axis-aligned frame, and the inch V6
+differential transferred its origin, equation offset, and spacings to
+millimeters while preserving the axes. The owner test covers the spatial
+scaling, name, depth flag, and bounded suffix.
 `ON_3dmUnitsAndTolerances::Read` accepts direct versions 100–199, gates display
 fields at 101 and custom-unit fields at 102, and relies on the outer settings
 chunk for future suffix bytes; the Rust units reader now matches that band.
