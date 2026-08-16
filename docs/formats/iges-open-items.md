@@ -59,16 +59,6 @@ from a conformant file.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-16. Native counted records retain partial prefixes after a malformed nested count
-
-**Question.** What native list state is exposed after a nested counted sequence stops before its declared width?
-
-**Known.** `native.rs:3426-3457` appends each valid Type 406 Form 11 independent-variable list before it validates later lists. When a later declared count is malformed, exceeds the selected primary boundary, or overflows the Cartesian product, `native.rs:3459-3471` clears only the dependent values and returns the already-appended independent-variable prefix. The current specification requires an incomplete counted sequence to have an empty typed list and forbids sibling reinterpretation. IGES 5.3 §4.107 defines the complete `NVALI`/`VALI`/`VALD` sequence before additional pointers.
-
-**Need.** An incomplete Type 406 Form 11 nested list must expose an empty typed independent-variable list, or an explicit malformed state. A valid first list followed by an invalid later list must not look complete to a native consumer.
-
-**Note.** The 2026-08-16 closure audit reopened DR-16. Commit `3af28ce00` claimed complete Type 406 Form 11 cardinalities, but the current code still retains a partial independent-variable prefix. The earlier test covered incomplete fixed-width records but did not fail after one valid independent list and one invalid later list.
-
 ### DR-17. Native counted fields are not bounded before trailing pointer groups
 
 **Question.** Must every native counted field stop at the selected entity-specific boundary before association and property pointer groups?

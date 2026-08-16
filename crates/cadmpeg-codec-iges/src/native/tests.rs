@@ -272,6 +272,34 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
 }
 
 #[test]
+fn decode_type_406_form_11_does_not_expose_a_partial_independent_prefix() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 406,
+        form: 11,
+        label: "TABLATE".into(),
+        status: "00000200",
+        parameters: "406,8,5,1,2,1,2,1,99,10;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = &native.arenas["entities"][0];
+    let property = &native.arenas["properties"][0];
+
+    assert_eq!(entity.fields()["parameters"].as_array().unwrap().len(), 10);
+    assert_eq!(property.fields()["declared_dependent_count"], 1);
+    assert!(property.fields()["independent_variables"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(property.fields()["dependent_values"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_native_type_106_does_not_invent_tuples_for_invalid_interpretation() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
