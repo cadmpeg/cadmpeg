@@ -817,6 +817,7 @@ pub fn bind_sketch_profiles(
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Revolve)
             || scope.kind == "BaseFlange"
     }) {
         let Some(stream) = native_stream(&scope.id) else {
@@ -842,6 +843,8 @@ pub fn bind_sketch_profiles(
                 scope.base_flange_profile = Some(profile.clone());
             } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep) {
                 scope.sweep_profile = Some(profile.clone());
+            } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Revolve) {
+                scope.revolve_profile = Some(profile.clone());
             } else {
                 scope.extrude_profile = Some(profile.clone());
             }

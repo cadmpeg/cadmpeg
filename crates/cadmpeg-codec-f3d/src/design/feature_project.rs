@@ -1900,6 +1900,7 @@ fn scope_properties(
     if let Some(profile) = scope
         .extrude_profile
         .as_ref()
+        .or(scope.revolve_profile.as_ref())
         .or(scope.base_flange_profile.as_ref())
     {
         if let Some(placement) = placements.iter().find(|placement| {
@@ -4596,9 +4597,25 @@ pub(crate) fn project_fixed_revolve_with_entities(
     } else {
         return None;
     };
+    let profile_ref = match scope.revolve_profile.as_ref() {
+        Some(profile_operand) => {
+            let matches = placements
+                .iter()
+                .filter(|placement| {
+                    native_stream(&placement.id) == Some(stream)
+                        && placement.entity_id == profile_operand.entity_id
+                })
+                .collect::<Vec<_>>();
+            match matches.as_slice() {
+                [placement] => ProfileRef::Sketch(neutral_sketch_id(placement)),
+                _ => ProfileRef::Native(profile.id.clone()),
+            }
+        }
+        None => ProfileRef::Native(profile.id.clone()),
+    };
     Some(FeatureDefinition::Revolve {
         construction: RevolutionConstruction {
-            profile: Some(ProfileRef::Native(profile.id.clone())),
+            profile: Some(profile_ref),
             axis,
             extent: Some(RevolveExtent::OneSided {
                 termination: Termination::Angle {

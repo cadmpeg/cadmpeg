@@ -17,6 +17,7 @@ mod form;
 mod mirror;
 mod parameters;
 mod prelude;
+mod revolve;
 mod sheet_metal;
 mod surface;
 mod timeline;
