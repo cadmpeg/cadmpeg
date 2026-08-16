@@ -300,6 +300,39 @@ fn decode_type_406_form_11_does_not_expose_a_partial_independent_prefix() {
 }
 
 #[test]
+fn decode_definition_levels_stop_before_trailing_property_group() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 1,
+            label: "LEVELS".into(),
+            status: "00000200",
+            parameters: "406,3,7,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 7,
+            label: "PROP".into(),
+            status: "00000200",
+            parameters: "406,1,1HX;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = &native.arenas["entities"][0];
+    let levels = &native.arenas["definition_levels"][0];
+
+    assert_eq!(
+        entity.fields()["property_links"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(levels.fields()["declared_count"], 3);
+    assert!(levels.fields()["levels"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn decode_native_type_106_does_not_invent_tuples_for_invalid_interpretation() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {

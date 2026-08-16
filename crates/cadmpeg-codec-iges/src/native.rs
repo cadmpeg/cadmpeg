@@ -1913,7 +1913,9 @@ pub(crate) fn store(
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let count = parameters
-                .and_then(|record| record.count(1))
+                .and_then(|record| {
+                    record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             NativeDefinitionLevels {
                 id: format!("iges:presentation:definition-levels#D{}", entry.sequence),
