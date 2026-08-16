@@ -3588,10 +3588,60 @@ after the buffer. Minor 1 and later append the component UUID and UTF-16 name.
 The reader accepts major 1, applies those minor gates, and leaves any remaining
 bytes before the bounded class-data end as a suffix.
 
-Global annotation settings store drafting sizes, unit and format enums, font
-face, text and hatch scales, model/layout scaling flags, and optional dimension
-layer identity. Grid defaults store grid/snap spacing, line counts, and grid and
-axis visibility.
+Global annotation settings are the direct body of
+`TCODE_SETTINGS_ANNOTATION`. The body starts with a packed one-byte version
+`1.minor` (major in the high nibble, minor in the low nibble):
+
+```text
+u8 packed version = 1.minor
+7 × f64: dimension scale, text height, extension-line extension,
+  extension-line offset, arrow length, arrow width, center mark
+i32 dimension unit system
+i32 arrow type
+i32 angular units
+i32 length format
+i32 angle format
+i32 obsolete text alignment
+i32 resolution
+UTF-16 font face
+if minor >= 1: f64 world-view text scale, u8 annotation-scaling flag
+if minor >= 2: f64 world-view hatch scale, u8 hatch-scaling flag
+if minor >= 3: u8 model-space scaling flag, u8 layout-space scaling flag
+if minor >= 4: bool use dimension layer, ON_UUID dimension-layer identity
+```
+
+The writer emits minor 2 through archive V5 and minor 4 for V6 and later.
+Major version 1 is the reader's admitted family. Dimension units use the
+values in section 8.2. The stored arrow type is the `ON_Arrowhead` enum ordinal
+minus 2, so 0 is a solid triangle. Angular units are 0 degrees and 1 radians.
+Length-format values are 0 decimal, 1 fractional, and 2 feet-and-inches; other
+values select model units. Angle-format values are 0 decimal degrees, 1
+degrees-minutes-seconds, 2 radians, and 3 gradians. Resolution is interpreted
+according to the selected length format. The dimension-layer identity is used
+only when its flag is true; a nil identity selects the current layer.
+
+Grid defaults are the direct body of `TCODE_SETTINGS_GRID_DEFAULTS`:
+
+```text
+u8 packed version = 1.minor
+f64 grid spacing
+f64 snap spacing
+i32 grid line count
+i32 thick-line frequency
+i32 show-grid flag
+i32 show-grid-axes flag
+i32 show-world-axes flag
+```
+
+The grid-default writer emits packed version 1.0 and the reader requires major
+version 1; the minor does not gate any field. Grid spacing and snap spacing are
+lengths. A thick-line frequency of 0 disables thick lines, 1 makes every line
+thick, and `N >= 2` makes every Nth line thick. The three visibility flags are
+nonzero-true `i32` values.
+
+Both bodies are contained directly by their length-bounded top-level settings
+records. After the known fields, the outer `TCODE_SETTINGS_ANNOTATION` or
+`TCODE_SETTINGS_GRID_DEFAULTS` boundary consumes any remaining suffix.
 
 The `TCODE_SETTINGS_RENDER` record contains one render-settings body. When
 `ON_3dmRenderSettings::Write` writes archive version 50 or earlier, it uses the

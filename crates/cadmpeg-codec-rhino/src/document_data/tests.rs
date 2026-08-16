@@ -1,4 +1,4 @@
-use super::{render_settings, ANONYMOUS};
+use super::{annotation_settings, grid_defaults, render_settings, ANONYMOUS};
 use crate::chunks::ArchiveVersion;
 use crate::test_support::test_dump::{crc_chunk, utf16_bytes};
 
@@ -84,6 +84,46 @@ fn modern_body(minor: i32) -> Vec<u8> {
     bytes
 }
 
+fn annotation_body(minor: u8) -> Vec<u8> {
+    let mut bytes = vec![0x10 | minor];
+    for value in [1.0, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5] {
+        push_f64(&mut bytes, value);
+    }
+    push_i32(&mut bytes, 2);
+    for value in [4, 1, 2, 3, 2, 6] {
+        push_i32(&mut bytes, value);
+    }
+    bytes.extend(utf16_bytes("WitnessFace"));
+    if minor >= 1 {
+        push_f64(&mut bytes, 1.25);
+        bytes.push(0);
+    }
+    if minor >= 2 {
+        push_f64(&mut bytes, 2.5);
+        bytes.push(0);
+    }
+    if minor >= 3 {
+        bytes.extend([1, 0]);
+    }
+    if minor >= 4 {
+        bytes.push(1);
+        bytes.extend([0; 16]);
+    }
+    bytes.extend([0xde, 0xad]);
+    bytes
+}
+
+fn grid_body() -> Vec<u8> {
+    let mut bytes = vec![0x1f];
+    push_f64(&mut bytes, 2.5);
+    push_f64(&mut bytes, 0.75);
+    for value in [42, 3, 0, 1, 0] {
+        push_i32(&mut bytes, value);
+    }
+    bytes.extend([0xde, 0xad]);
+    bytes
+}
+
 #[test]
 fn legacy_render_settings_gate_each_v5_suffix() {
     let value_100 = render_settings(
@@ -117,6 +157,48 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         .expect("legacy version 103 settings");
     assert!(value_103.scale_background_to_fit);
     assert_eq!(value_103.shadowmap_size_pixels, [2048, 1024]);
+}
+
+#[test]
+fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
+    for minor in 0..=4 {
+        let bytes = annotation_body(minor);
+        let value = annotation_settings(&bytes, 0..bytes.len(), 19, 2.0)
+            .expect("annotation settings packed version");
+
+        assert_eq!(value.source_offset, 19);
+        assert_eq!(value.dimension_scale, 1.0);
+        assert_eq!(value.text_height_mm, 5.0);
+        assert_eq!(value.dimension_units, 2);
+        assert_eq!(value.font_face, "WitnessFace");
+        assert_eq!(value.world_view_text_scale, (minor >= 1).then_some(1.25));
+        assert_eq!(value.annotation_scaling, (minor >= 1).then_some(false));
+        assert_eq!(value.world_view_hatch_scale, (minor >= 2).then_some(2.5));
+        assert_eq!(value.hatch_scaling, (minor >= 2).then_some(false));
+        assert_eq!(
+            value.model_space_annotation_scaling,
+            (minor >= 3).then_some(true)
+        );
+        assert_eq!(
+            value.layout_space_annotation_scaling,
+            (minor >= 3).then_some(false)
+        );
+        assert_eq!(value.use_dimension_layer, (minor >= 4).then_some(true));
+        assert_eq!(value.dimension_layer_uuid, None);
+    }
+}
+
+#[test]
+fn grid_defaults_accept_future_minor_and_scale_lengths() {
+    let bytes = grid_body();
+    let value = grid_defaults(&bytes, 0..bytes.len(), 23, 2.0).expect("grid defaults");
+
+    assert_eq!(value.source_offset, 23);
+    assert_eq!(value.grid_spacing_mm, 5.0);
+    assert_eq!(value.snap_spacing_mm, 1.5);
+    assert_eq!(value.grid_line_count, 42);
+    assert_eq!(value.thick_line_frequency, 3);
+    assert!(!value.show_grid && value.show_grid_axes && !value.show_world_axes);
 }
 
 #[test]
