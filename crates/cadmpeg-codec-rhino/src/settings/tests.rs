@@ -314,6 +314,32 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
 }
 
 #[test]
+fn future_linetype_extension_stops_at_unknown_code() {
+    let archive = ArchiveVersion::V8;
+    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
+    let mut body = Vec::new();
+    body.extend(2_i32.to_le_bytes());
+    body.extend(4_i32.to_le_bytes());
+    body.extend(&model_attributes);
+    body.extend(0_i32.to_le_bytes());
+    body.extend([7, 0xaa, 0xbb, 0, 0xde]);
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
+    let chunk = crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &body,
+        &[8..8 + model_attributes.len()],
+    );
+    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
+    let mut warnings = Vec::new();
+    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("future linetype code is bounded by the anonymous chunk");
+    assert_eq!(descriptor.version, (2, 4));
+    assert_eq!(reader.remaining(), 0);
+    assert!(warnings.is_empty());
+}
+
+#[test]
 fn parses_selector_widths_from_their_serialized_forms() {
     let mut settings_value = settings::DocumentSettings::default();
     let mut material_data = 42_i32.to_le_bytes().to_vec();

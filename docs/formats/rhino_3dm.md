@@ -3248,9 +3248,10 @@ state; minor 1 and later add length and width; minor 2 and later add hotspot.
 Linetype records use anonymous major 1 or 2 versions. Major 1 minor 0 stores
 the index, name, and segments; minor 1 and later add the UUID. Major 2 minor 0
 stores component attributes and segments; minor 1 and later add the ordered
-extension items. Each reader consumes its known prefix and skips remaining
-bytes before the bounded end. Unknown linetype extension codes at or above 7
-terminate the known extension stream.
+extension items. Major 2 minor values greater than 3 are future minors. Each
+reader consumes its known prefix and skips remaining bytes before the bounded
+end. Unknown linetype extension codes at or above 7 terminate the known
+extension stream; the code byte is the only known byte of that item value.
 
 Text styles use the legacy packed font format through archive 50 and the
 anonymous model-component form in later archives. Font state includes the raw

@@ -898,7 +898,7 @@ pub(crate) fn parse_direct_linetype<'a>(
         begin_direct_object(data, reader, archive, "embedded linetype")?;
     let mut children = Vec::new();
     if (archive.value() < 60 && version != (1, 1))
-        || (archive.value() >= 60 && (version.0 != 2 || !(1..=3).contains(&version.1)))
+        || (archive.value() >= 60 && (version.0 != 2 || version.1 < 1))
     {
         return Err(FramingError::structural(
             payload.position(),
@@ -953,10 +953,12 @@ pub(crate) fn parse_direct_linetype<'a>(
                     let _ = payload.bool()?;
                 }
                 _ => {
-                    return Err(FramingError::structural(
-                        payload.position(),
-                        format!("unknown embedded linetype item {item}"),
-                    ))
+                    // Extension items have no length prefix. The source reader
+                    // consumes only this code and lets the anonymous-chunk
+                    // boundary discard the value bytes it cannot type.
+                    finish(&mut payload, "future embedded linetype")?;
+                    terminated = true;
+                    break;
                 }
             }
         }

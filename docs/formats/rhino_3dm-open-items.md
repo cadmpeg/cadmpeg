@@ -142,9 +142,11 @@ views, document settings, presentation resources, and object-class suffixes.
 unknown item ID, and leaves its unlength-prefixed value to the containing
 attributes chunk boundary. `ON_Layer::Read` applies the same boundary rule to a
 nonzero extension ID outside its defined set after the fixed layer prefix and
-known extension payloads. Remaining strict rules are writer-band ceilings,
-tagged item streams with explicit terminators, or versioned readers whose exact
-producer field gates have not yet been characterized individually.
+known extension payloads. `ON_Linetype::Read` applies it to an unknown major-2
+extension code after the component-attributes and segment prefix. Remaining
+strict rules are writer-band ceilings, tagged item streams with explicit
+terminators, or versioned readers whose exact producer field gates have not yet
+been characterized individually.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
