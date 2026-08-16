@@ -193,6 +193,83 @@ pub fn nonperiodic_nurbs_edge_parameter_range(
     }
 }
 
+/// Orient a non-periodic NURBS carrier to the topological edge direction.
+///
+/// Edge parameter ranges are canonical and therefore increasing. When the
+/// native edge reverses the carrier direction, reverse the NURBS definition
+/// and keep the same geometric parameter domain.
+pub fn orient_nonperiodic_nurbs_edge_carrier(
+    geometry: &mut CurveGeometry,
+    points: [[f64; 3]; 2],
+) -> Option<[f64; 2]> {
+    let range = nonperiodic_nurbs_edge_parameter_range(geometry, points)?;
+    let CurveGeometry::Nurbs(nurbs) = &*geometry else {
+        return None;
+    };
+    let degree = usize::try_from(nurbs.degree).ok()?;
+    let intrinsic_range = nurbs_intrinsic_parameter_range(nurbs)?;
+    if degree == 1 {
+        let (first, second) = {
+            let CurveGeometry::Nurbs(nurbs) = &*geometry else {
+                return None;
+            };
+            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
+            let first = degree_one_nurbs_point_parameter(
+                &*geometry,
+                nurbs,
+                points[0],
+                intrinsic_range,
+                tolerance,
+            )?;
+            let second = degree_one_nurbs_point_parameter(
+                &*geometry,
+                nurbs,
+                points[1],
+                intrinsic_range,
+                tolerance,
+            )?;
+            (first, second)
+        };
+        if first <= second {
+            return Some([first, second]);
+        }
+        let CurveGeometry::Nurbs(nurbs) = geometry else {
+            return None;
+        };
+        reverse_nonperiodic_nurbs(nurbs, intrinsic_range);
+        let sum = intrinsic_range[0] + intrinsic_range[1];
+        return Some([sum - first, sum - second]);
+    }
+
+    let mapped = intrinsic_range.map(|parameter| {
+        cadmpeg_ir::eval::curve_point(&*geometry, parameter)
+            .map(|point| [point.x, point.y, point.z])
+    });
+    let [Some(first), Some(second)] = mapped else {
+        return None;
+    };
+    match point_pair_alignments([first, second], points) {
+        [true, false] => Some(range),
+        [false, true] => {
+            let CurveGeometry::Nurbs(nurbs) = geometry else {
+                return None;
+            };
+            reverse_nonperiodic_nurbs(nurbs, intrinsic_range);
+            Some(range)
+        }
+        _ => None,
+    }
+}
+
+fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) {
+    let sum = range[0] + range[1];
+    nurbs.control_points.reverse();
+    if let Some(weights) = &mut nurbs.weights {
+        weights.reverse();
+    }
+    nurbs.knots = nurbs.knots.iter().rev().map(|knot| sum - knot).collect();
+}
+
 pub fn full_periodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     point: [f64; 3],

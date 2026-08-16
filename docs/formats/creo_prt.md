@@ -1546,7 +1546,7 @@ neither carrier equation and does not assign native parameter semantics.
 
 ## 5. Topology and section records
 
-Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Shells follow connected components of face references.
+Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
 
 Use the following order to select a body count:
 
@@ -1554,10 +1554,14 @@ Use the following order to select a body count:
 2. `Geomlists.first_quilt_ptr == 0` as a single-body discriminator.
 3. Face-reference adjacency component count when it is the only byte-backed source.
 
-Emit neutral body and shell ownership only when the selected count equals the
-number of complete connected face-reference components admitted to the neutral
-B-rep. A mismatch leaves the native topology records available without a
-neutral body assignment.
+Emit neutral body and region ownership only when the selected
+count equals the number of native components and every component has an
+admitted face or a solved edge. Group admitted faces into shells by shared
+edges or vertices. A solved edge not used by an admitted face loop is a shell
+wire edge; a component containing wire edges is a `General` body. An admitted
+face group with no shared topology uses its own shell in the same region. A
+component with no admitted face or solved edge, or a body-count mismatch,
+leaves native topology records available without neutral body assignment.
 
 ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, joined by `ext_id`.
 

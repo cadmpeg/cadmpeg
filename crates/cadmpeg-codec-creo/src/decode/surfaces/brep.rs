@@ -22,8 +22,8 @@ use crate::topology::HalfEdgeId;
 use super::super::analytic::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
     full_periodic_nurbs_edge_parameter_range, geometry_section_record, meridian_circle_pcurve,
-    native_face_orientations, nonperiodic_conic_edge_parameter_range,
-    nonperiodic_nurbs_edge_parameter_range, ordered_face_loops, orient_line_edge_carrier,
+    native_face_orientations, nonperiodic_conic_edge_parameter_range, ordered_face_loops,
+    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
     pcurve_backed_periodic_conic_parameter_range, placed_carriers, planar_curve_pcurve,
     ruled_generator_line_pcurve, solved_topological_vertices,
     surface_of_revolution_parallel_pcurve, unique_oriented_native_pcurve, CarrierEquation,
@@ -33,6 +33,73 @@ use super::super::native::annotate;
 use super::super::sweep::line_pcurve;
 
 use super::fc05_model_frame;
+
+#[derive(Debug, PartialEq, Eq)]
+struct NeutralShellSpec {
+    faces: Vec<u32>,
+    wire_curves: BTreeSet<u32>,
+}
+
+/// Partition one native component into valid neutral shells.
+///
+/// Face shells follow admitted face connectivity through edges or vertices.
+/// Solved curves excluded from a face loop remain wire topology, attached to
+/// a touching face shell when possible and otherwise grouped in a wire shell.
+fn split_neutral_component_shells(
+    faces: &[u32],
+    wire_curves: &BTreeSet<u32>,
+    face_adjacency: &BTreeMap<u32, BTreeSet<u32>>,
+    face_vertices: &BTreeMap<u32, BTreeSet<u32>>,
+    edge_vertices: &BTreeMap<u32, [u32; 2]>,
+) -> Vec<NeutralShellSpec> {
+    let mut remaining_faces = faces.iter().copied().collect::<BTreeSet<_>>();
+    let mut face_groups = Vec::<Vec<u32>>::new();
+    while let Some(start) = remaining_faces.pop_first() {
+        let mut group = BTreeSet::from([start]);
+        let mut pending = vec![start];
+        while let Some(face_id) = pending.pop() {
+            for neighbour in face_adjacency.get(&face_id).into_iter().flatten().copied() {
+                if remaining_faces.remove(&neighbour) {
+                    group.insert(neighbour);
+                    pending.push(neighbour);
+                }
+            }
+        }
+        face_groups.push(group.into_iter().collect());
+    }
+
+    let mut shell_specs = face_groups
+        .into_iter()
+        .map(|faces| NeutralShellSpec {
+            faces,
+            wire_curves: BTreeSet::new(),
+        })
+        .collect::<Vec<_>>();
+    let mut unattached_wire_curves = BTreeSet::new();
+    for curve_id in wire_curves {
+        let curve_vertices = edge_vertices[curve_id].into_iter().collect::<BTreeSet<_>>();
+        if let Some(shell) = shell_specs.iter_mut().find(|shell| {
+            shell
+                .faces
+                .iter()
+                .any(|face_id| !face_vertices[face_id].is_disjoint(&curve_vertices))
+        }) {
+            shell.wire_curves.insert(*curve_id);
+        } else {
+            unattached_wire_curves.insert(*curve_id);
+        }
+    }
+    if !unattached_wire_curves.is_empty() {
+        shell_specs.push(NeutralShellSpec {
+            faces: Vec::new(),
+            wire_curves: unattached_wire_curves,
+        });
+    }
+    shell_specs
+}
+
+#[cfg(test)]
+mod tests;
 
 pub(in super::super) fn transfer_native_brep(
     scan: &ContainerScan,
@@ -100,10 +167,8 @@ pub(in super::super) fn transfer_native_brep(
     }
     let native_edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
-    let edge_vertices = scan
-        .curves
-        .topology_rows
-        .iter()
+    let edge_vertices = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+        .into_iter()
         .filter_map(|row| {
             let vertices = native_edge_vertices.get(&row.id).copied()?;
             vertices
@@ -166,13 +231,6 @@ pub(in super::super) fn transfer_native_brep(
         })
         .copied()
         .collect::<BTreeSet<_>>();
-    let emitted_curves = face_curves.clone();
-    let used_vertices = emitted_curves
-        .iter()
-        .filter_map(|curve| edge_vertices.get(curve))
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>();
     let row_offsets = scan
         .curves
         .topology_rows
@@ -184,48 +242,52 @@ pub(in super::super) fn transfer_native_brep(
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
 
-    let mut face_adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for face_id in eligible_faces.keys() {
-        face_adjacency.entry(*face_id).or_default();
-    }
-    for curve_id in &emitted_curves {
-        let faces = emitted_half_edges
-            .iter()
-            .filter(|half_edge| half_edge.curve_id == *curve_id)
-            .filter_map(|half_edge| half_edges.get(half_edge))
-            .map(|half_edge| half_edge.face_id)
-            .collect::<Vec<_>>();
-        if let [first, second] = faces.as_slice() {
-            if eligible_faces.contains_key(first) && eligible_faces.contains_key(second) {
-                face_adjacency.entry(*first).or_default().insert(*second);
-                face_adjacency.entry(*second).or_default().insert(*first);
-            }
-        }
-    }
-    let mut remaining = face_adjacency.keys().copied().collect::<BTreeSet<_>>();
-    let mut components = Vec::new();
-    while let Some(start) = remaining.pop_first() {
-        let mut component = BTreeSet::from([start]);
-        let mut pending = vec![start];
-        while let Some(face) = pending.pop() {
-            for neighbour in face_adjacency.get(&face).into_iter().flatten() {
-                if remaining.remove(neighbour) {
-                    component.insert(*neighbour);
-                    pending.push(*neighbour);
-                }
-            }
-        }
-        components.push(component);
-    }
+    let neutral_edge_curves = scan
+        .topology
+        .face_components
+        .iter()
+        .flat_map(|component| component.curve_ids.iter().copied())
+        .filter(|curve_id| edge_vertices.contains_key(curve_id))
+        .collect::<BTreeSet<_>>();
+    let body_components = scan
+        .topology
+        .face_components
+        .iter()
+        .map(|component| {
+            let faces = component
+                .face_ids
+                .iter()
+                .copied()
+                .filter(|face_id| eligible_faces.contains_key(face_id))
+                .collect::<Vec<_>>();
+            let curves = component
+                .curve_ids
+                .iter()
+                .copied()
+                .filter(|curve_id| neutral_edge_curves.contains(curve_id))
+                .collect::<BTreeSet<_>>();
+            (faces, curves)
+        })
+        .collect::<Vec<_>>();
     let selected_body_count = crate::topology::selected_body_count(
         scan.framing.declared_body_count,
         scan.framing.first_quilt_ptr,
         scan.topology.face_components.len(),
     );
-    if selected_body_count != Some(components.len()) {
+    if selected_body_count != Some(body_components.len())
+        || body_components
+            .iter()
+            .any(|(faces, curves)| faces.is_empty() && curves.is_empty())
+    {
         return (0, 0);
     }
 
+    let used_vertices = neutral_edge_curves
+        .iter()
+        .filter_map(|curve| edge_vertices.get(curve))
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
     let solved_point_count = used_vertices.len();
     for vertex_id in used_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
@@ -261,7 +323,7 @@ pub(in super::super) fn transfer_native_brep(
             tolerance: None,
         });
     }
-    for curve_id in &emitted_curves {
+    for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
         let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
         let points = [solved_vertices[&start], solved_vertices[&end]];
@@ -277,53 +339,57 @@ pub(in super::super) fn transfer_native_brep(
             && ir.model.curves.iter().any(|candidate| {
                 candidate.id == curve && matches!(candidate.geometry, CurveGeometry::Line { .. })
             });
-        let param_range = if derived_line {
-            ir.model
-                .curves
-                .iter_mut()
-                .find(|candidate| candidate.id == curve)
-                .and_then(|candidate| orient_line_edge_carrier(&mut candidate.geometry, points))
-        } else {
-            ir.model
-                .curves
-                .iter()
-                .find(|candidate| candidate.id == curve)
-                .and_then(|candidate| {
-                    exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
-                        nonperiodic_nurbs_edge_parameter_range(&candidate.geometry, points).or_else(
-                            || {
-                                nonperiodic_conic_edge_parameter_range(&candidate.geometry, points)
+        let param_range =
+            if derived_line {
+                ir.model
+                    .curves
+                    .iter_mut()
+                    .find(|candidate| candidate.id == curve)
+                    .and_then(|candidate| orient_line_edge_carrier(&mut candidate.geometry, points))
+            } else {
+                ir.model
+                    .curves
+                    .iter_mut()
+                    .find(|candidate| candidate.id == curve)
+                    .and_then(|candidate| {
+                        orient_nonperiodic_nurbs_edge_carrier(&mut candidate.geometry, points)
+                            .or_else(|| {
+                                exact_line_edge_parameter_range(&candidate.geometry, points)
                                     .or_else(|| {
-                                        pcurve_backed_periodic_conic_parameter_range(
+                                        nonperiodic_conic_edge_parameter_range(
                                             &candidate.geometry,
-                                            *curve_id,
-                                            *curve_faces.get(curve_id)?,
-                                            &native_pcurves,
-                                            &ir.model.surfaces,
                                             points,
                                         )
-                                    })
-                                    .or_else(|| {
-                                        unbacked_closed_edge.then_some(()).and_then(|()| {
-                                            full_periodic_conic_edge_parameter_range(
+                                        .or_else(|| {
+                                            pcurve_backed_periodic_conic_parameter_range(
                                                 &candidate.geometry,
-                                                points[0],
+                                                *curve_id,
+                                                *curve_faces.get(curve_id)?,
+                                                &native_pcurves,
+                                                &ir.model.surfaces,
+                                                points,
                                             )
                                         })
-                                    })
-                                    .or_else(|| {
-                                        unbacked_closed_edge.then_some(()).and_then(|()| {
-                                            full_periodic_nurbs_edge_parameter_range(
-                                                &candidate.geometry,
-                                                points[0],
-                                            )
+                                        .or_else(|| {
+                                            unbacked_closed_edge.then_some(()).and_then(|()| {
+                                                full_periodic_conic_edge_parameter_range(
+                                                    &candidate.geometry,
+                                                    points[0],
+                                                )
+                                            })
+                                        })
+                                        .or_else(|| {
+                                            unbacked_closed_edge.then_some(()).and_then(|()| {
+                                                full_periodic_nurbs_edge_parameter_range(
+                                                    &candidate.geometry,
+                                                    points[0],
+                                                )
+                                            })
                                         })
                                     })
-                            },
-                        )
+                            })
                     })
-                })
-        };
+            };
         let id = EdgeId(format!("creo:visibgeom:edge#{curve_id}"));
         annotate(
             annotations,
@@ -369,23 +435,24 @@ pub(in super::super) fn transfer_native_brep(
         }
     }
 
-    for (component_index, faces) in components.iter().enumerate() {
+    for (component_index, (faces, component_curves)) in body_components.iter().enumerate() {
         let body_id = BodyId(format!("creo:visibgeom:body#{}", component_index + 1));
         let region_id = RegionId(format!("creo:visibgeom:region#{}", component_index + 1));
-        let shell_id = ShellId(format!("creo:visibgeom:shell#{}", component_index + 1));
         for (id, tag) in [
             (body_id.to_string(), "native_component_body"),
             (region_id.to_string(), "native_component_region"),
-            (shell_id.to_string(), "native_component_shell"),
         ] {
             annotate(annotations, id, "VisibGeom", 0, tag, Exactness::Derived);
         }
-        let component_curves = eligible_loops
-            .iter()
-            .filter(|lp| faces.contains(&lp.face_id))
-            .flat_map(|lp| lp.half_edges.iter().map(|half_edge| half_edge.curve_id))
+        let component_face_curves = component_curves
+            .intersection(&face_curves)
+            .copied()
             .collect::<BTreeSet<_>>();
-        let closed = component_curves.iter().all(|curve_id| {
+        let wire_curves = component_curves
+            .difference(&face_curves)
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let closed = component_face_curves.iter().all(|curve_id| {
             let adjacent = emitted_half_edges
                 .iter()
                 .filter(|half_edge| half_edge.curve_id == *curve_id)
@@ -394,9 +461,98 @@ pub(in super::super) fn transfer_native_brep(
                 .collect::<BTreeSet<_>>();
             adjacent.len() == 2 && adjacent.iter().all(|face| faces.contains(face))
         });
+
+        let mut face_adjacency = faces
+            .iter()
+            .copied()
+            .map(|face_id| (face_id, BTreeSet::new()))
+            .collect::<BTreeMap<_, _>>();
+        let mut face_vertices = BTreeMap::<u32, BTreeSet<u32>>::new();
+        let mut faces_by_curve = BTreeMap::<u32, BTreeSet<u32>>::new();
+        let mut faces_by_vertex = BTreeMap::<u32, BTreeSet<u32>>::new();
+        for face_id in faces {
+            let vertices = face_vertices.entry(*face_id).or_default();
+            for native_loop in &eligible_faces[face_id] {
+                for half_edge in &native_loop.half_edges {
+                    faces_by_curve
+                        .entry(half_edge.curve_id)
+                        .or_default()
+                        .insert(*face_id);
+                    let [start, end] = edge_vertices[&half_edge.curve_id];
+                    vertices.extend([start, end]);
+                    faces_by_vertex.entry(start).or_default().insert(*face_id);
+                    faces_by_vertex.entry(end).or_default().insert(*face_id);
+                }
+            }
+        }
+        for incident_faces in faces_by_curve.values().chain(faces_by_vertex.values()) {
+            let incident_faces = incident_faces.iter().copied().collect::<Vec<_>>();
+            for (index, first) in incident_faces.iter().enumerate() {
+                face_adjacency
+                    .entry(*first)
+                    .or_default()
+                    .extend(incident_faces.iter().skip(index + 1).copied());
+                for second in incident_faces.iter().skip(index + 1) {
+                    face_adjacency.entry(*second).or_default().insert(*first);
+                }
+            }
+        }
+        let shell_specs = split_neutral_component_shells(
+            faces,
+            &wire_curves,
+            &face_adjacency,
+            &face_vertices,
+            &edge_vertices,
+        );
+
+        let mut face_shell_ids = BTreeMap::<u32, ShellId>::new();
+        let shell_ids = shell_specs
+            .iter()
+            .enumerate()
+            .map(|(shell_index, shell)| {
+                let shell_id = if shell_index == 0 {
+                    ShellId(format!("creo:visibgeom:shell#{}", component_index + 1))
+                } else {
+                    ShellId(format!(
+                        "creo:visibgeom:shell#{}:{}",
+                        component_index + 1,
+                        shell_index + 1
+                    ))
+                };
+                annotate(
+                    annotations,
+                    shell_id.to_string(),
+                    "VisibGeom",
+                    0,
+                    "native_component_shell",
+                    Exactness::Derived,
+                );
+                for face_id in &shell.faces {
+                    face_shell_ids.insert(*face_id, shell_id.clone());
+                }
+                ir.model.shells.push(Shell {
+                    id: shell_id.clone(),
+                    region: region_id.clone(),
+                    faces: shell
+                        .faces
+                        .iter()
+                        .map(|face| FaceId(format!("creo:visibgeom:face#{face}")))
+                        .collect(),
+                    wire_edges: shell
+                        .wire_curves
+                        .iter()
+                        .map(|curve_id| EdgeId(format!("creo:visibgeom:edge#{curve_id}")))
+                        .collect(),
+                    free_vertices: Vec::new(),
+                });
+                shell_id
+            })
+            .collect::<Vec<_>>();
         ir.model.bodies.push(Body {
             id: body_id.clone(),
-            kind: if closed {
+            kind: if !wire_curves.is_empty() {
+                BodyKind::General
+            } else if closed {
                 BodyKind::Solid
             } else {
                 BodyKind::Sheet
@@ -410,21 +566,12 @@ pub(in super::super) fn transfer_native_brep(
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id,
-            shells: vec![shell_id.clone()],
-        });
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id,
-            faces: faces
-                .iter()
-                .map(|face| FaceId(format!("creo:visibgeom:face#{face}")))
-                .collect(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
+            shells: shell_ids,
         });
         for face_id in faces {
             let native_loops = &eligible_faces[face_id];
             let face = FaceId(format!("creo:visibgeom:face#{face_id}"));
+            let shell_id = face_shell_ids[face_id].clone();
             let loop_ids = (0..native_loops.len())
                 .map(|index| {
                     if index == 0 {
@@ -666,7 +813,7 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
     }
-    (solved_point_count, emitted_curves.len())
+    (solved_point_count, neutral_edge_curves.len())
 }
 
 pub(in super::super) fn transfer_cap_pair_cylinders(

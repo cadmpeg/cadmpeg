@@ -25,9 +25,9 @@ pub(super) use edges::{
     nonperiodic_conic_edge_parameter_range, nonperiodic_conic_frame, nonperiodic_conic_parameter,
     nonperiodic_nurbs_edge_parameter_range, nonperiodic_nurbs_endpoint_points,
     nurbs_control_extent, nurbs_intrinsic_parameter_range, orient_line_edge_carrier,
-    periodic_conic_edge_parameter_range, periodic_conic_frame, planar_conic_equation,
-    point_pair_alignments, NonperiodicConicFamily, NonperiodicConicFrame, PeriodicConicFrame,
-    PlanarConicEquation,
+    orient_nonperiodic_nurbs_edge_carrier, periodic_conic_edge_parameter_range,
+    periodic_conic_frame, planar_conic_equation, point_pair_alignments, NonperiodicConicFamily,
+    NonperiodicConicFrame, PeriodicConicFrame, PlanarConicEquation,
 };
 #[allow(unused_imports)]
 pub(super) use equations::{
