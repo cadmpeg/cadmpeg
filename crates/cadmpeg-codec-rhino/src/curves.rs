@@ -70,7 +70,8 @@ pub(crate) enum DecodedGeometry {
         /// Whether a unit conversion was applied.
         scaled: bool,
     },
-    /// One point cloud and its optional native channels.
+    /// One point cloud; optional native channels are consumed by the bounded
+    /// reader and retained by the source record rather than mapped to points.
     PointCloud(PointCloud),
     /// A curve and ordered embedded children.
     Curve {
@@ -84,7 +85,7 @@ pub(crate) enum DecodedGeometry {
     },
 }
 
-/// Point-cloud channels retained by the native namespace boundary.
+/// Point-cloud geometry transferred to the neutral model.
 #[derive(Debug, Clone)]
 pub(crate) struct PointCloud {
     /// Ordered points.
@@ -270,6 +271,41 @@ mod alias_tests {
         let cloud = read_cloud(&mut reader, 1.0).expect("optional channel is recoverable");
         assert_eq!(cloud.points.len(), 2);
         assert_eq!(cloud.warnings.len(), 1);
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn point_cloud_consumes_matching_native_channels_before_neutral_transfer() {
+        let mut bytes = vec![0x12];
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        for coordinate in [1.0_f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&coordinate.to_le_bytes());
+        }
+        for value in [
+            0.0_f64, 0.0, 0.0, // plane origin
+            1.0, 0.0, 0.0, // plane X
+            0.0, 1.0, 0.0, // plane Y
+            0.0, 0.0, 1.0, // plane Z
+            0.0, 0.0, 1.0, 0.0, // plane equation
+            0.0, 0.0, 0.0, // bounding-box minimum
+            1.0, 1.0, 1.0, // bounding-box maximum
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3_i32.to_le_bytes());
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        for value in [0.0_f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.extend_from_slice(&[11, 22, 33, 44]);
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.extend_from_slice(&12.5_f64.to_le_bytes());
+
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
+        let cloud = read_cloud(&mut reader, 1.0).expect("matching channels are recoverable");
+        assert_eq!(cloud.points, vec![Point3::new(1.0, 2.0, 3.0)]);
+        assert!(cloud.warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
 }

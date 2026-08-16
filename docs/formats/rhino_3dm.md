@@ -2670,9 +2670,30 @@ minor >= 2:
   value count × f64
 ```
 
-Optional counts are zero or the point count. Flags bit 0 means ordered points;
-bit 1 means the plane is set. Writers emit version 1.2. A major-1 reader uses
-the minor gates above and skips a later bounded suffix.
+Optional counts are nonnegative and bounded by the containing payload. A
+source writer emits zero or the point count for a channel. Flags bit 0 means
+ordered points; bit 1 means the plane is set. Writers emit version 1.2. A
+major-1 reader uses the minor gates above and skips a later bounded suffix.
+
+The point array is the source point sequence. The plane origin and bounding-box
+endpoints are document-length values. Plane axes and point normals are
+dimensionless vectors. Point colors are direct RGBA bytes; the alpha byte is
+transparency. Point values are scalar intensity values. `ON_PointCloud::IsValid`
+requires only a positive point count. The source `HasPointNormals`,
+`HasPointColors`, and `HasPointValues` accessors report a channel only when its
+count equals the point count; a source reader can still consume a bounded
+nonmatching array, which then has no channel meaning. The runtime hidden-point
+array is not serialized.
+
+CADIR transfers one neutral point and one free vertex for each stored point, in
+source order, and converts the point coordinates to millimetres. CADIR assigns
+no neutral field to the plane, cached bounds, flags, normals, colors, or scalar
+values. The complete object record remains linked through the Rhino native
+unknown record and source-fidelity bytes, which are authoritative for those
+fields. A nonzero optional-channel count that differs from the point count is
+consumed and dropped with `container.redundant-field-repaired`; a zero count
+means that channel is absent. Point-cloud runtime hidden flags are absent after
+readback because they have no wire representation.
 
 ### 12.3 Line curve
 
@@ -4097,7 +4118,7 @@ built-in payload families.
 | Class              | Framing     | Written version | Accepted major/minor                                       | Required invariants                                                                       |
 | ------------------ | ----------- | --------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `ON_Point`         | packed byte | 1.0             | major 1; minor ignored                                     | three finite coordinates                                                                  |
-| `ON_PointCloud`    | packed byte | 1.2             | major 1; minor 0/1/2 gates arrays                          | nonnegative count; optional counts zero or point count                                    |
+| `ON_PointCloud`    | packed byte | 1.2             | major 1; minor 0/1/2 gates arrays                          | positive point count; finite points; bounded nonnegative channel counts                  |
 | `ON_LineCurve`     | packed byte | 1.0             | major 1; minor ignored                                     | finite distinct endpoints; increasing domain; dimension 2 or 3                            |
 | `ON_ArcCurve`      | packed byte | 1.0             | major 1; minor ignored                                     | positive radius; finite plane; increasing angle and curve domains                         |
 | `ON_PolylineCurve` | packed byte | 1.0             | major 1; minor ignored                                     | at least two points; parameter count equals point count; strict parameter increase        |

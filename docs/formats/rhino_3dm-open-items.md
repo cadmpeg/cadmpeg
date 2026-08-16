@@ -775,6 +775,18 @@ miter directions, transpose, asymmetric cap flags, and minor-3 cache boundary
 are settled. The Rust decoder scales profile/path/cap geometry, preserves
 parameter values, directions, weights, and cap flags, constructs the lateral
 carrier and cap plane, and retains a missing-profile object opaque.
+The `ON_PointCloud` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its direct class UUID, packed 1.2 payload, ordered
+point sequence, plane and cached-bounds fields, flag bits, parallel normal,
+color, and scalar arrays, and runtime-only hidden-point state are settled.
+The Rust decoder transfers the point sequence as ordered free vertices and
+converts those coordinates to document millimetres. Plane, bounds, flags,
+valid matching channels, and the runtime hidden state have no neutral-IR
+mapping; their complete source record remains available through the native
+unknown and source-fidelity boundary. A source-readable differential with
+nonmatching optional counts confirms the CADIR repair rule: each nonzero
+mismatch is consumed and dropped with `container.redundant-field-repaired`,
+while the point sequence remains transferred.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
