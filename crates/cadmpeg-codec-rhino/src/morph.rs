@@ -662,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_cage_morph_captives_options_and_unit_scaling() {
+    fn decodes_cage_morph_future_minor_and_unit_scaling() {
         let mut transform = Vec::new();
         for value in [
             1.0_f64, 0.0, 0.0, 2.0, 0.0, 1.0, 0.0, 3.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 1.0,
@@ -682,7 +682,8 @@ mod tests {
         content.extend(localizers);
         content.extend(0.01_f64.to_le_bytes());
         content.extend([1, 0]);
-        let bytes = anonymous(2, 1, &content);
+        content.extend(0x1234_5678_i32.to_le_bytes());
+        let bytes = anonymous(2, 2, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
             decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
@@ -726,6 +727,18 @@ mod tests {
             panic!("expected a native morph definition");
         };
         assert_eq!(parameters["captive_0_object"], "rhino:object:record#000007");
+    }
+
+    #[test]
+    fn rejects_unknown_morph_control_major() {
+        let bytes = anonymous(3, 0, &[]);
+        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 1.0, ArchiveVersion::V8)
+        });
+        assert!(matches!(
+            result,
+            Err(GeometryError::UnsupportedVersion { .. })
+        ));
     }
 
     #[test]

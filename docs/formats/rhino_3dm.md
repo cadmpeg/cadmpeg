@@ -3822,7 +3822,14 @@ Knot values and weights are unscaled.
 
 ### 18.5 Morph controls
 
-Current `ON_MorphControl` payloads use anonymous version 2.0 or 2.1:
+`ON_MorphControl::Write` emits anonymous version 2.1. Its version-2 reader
+accepts every nonnegative minor, consumes the fields below, and skips later
+minor bytes at the outer anonymous boundary. Version 1 is the legacy cage
+form; its reader also consumes the known prefix through the outer boundary.
+Only major versions 1 and 2 have a payload grammar. Other major versions are
+rejected.
+
+The modern payload is:
 
 ```text
 i32 variant

@@ -511,6 +511,12 @@ tests cover future outer minors, the abandoned V5 tail, a future
 file-reference suffix, and source-shaped referenced-component settings. The
 remaining RS-01 residue is the uncharacterized direct-reader, writer-band,
 and tagged-stream families.
+`ON_MorphControl::Write` emits anonymous major 2 minor 1. Its reader accepts
+major 1 and major 2 with nonnegative minors, consumes the known major-specific
+prefix, and closes the outer anonymous boundary; other major versions are
+rejected. The Rust morph parser now mirrors this gate and its owner tests cover
+a major-2 future-minor suffix and a rejected major 3. The producer-shaped
+version witness is recorded in the notebook.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
