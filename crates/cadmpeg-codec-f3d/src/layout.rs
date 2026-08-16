@@ -1932,6 +1932,46 @@ pub(crate) mod work_plane_legacy_class_400_matrix_frame {
     pub(crate) const MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `work_axis_direct_carrier_class_297` record.
+///
+/// Spec §3.1. Record length 215 B.
+///
+/// ```text
+/// Offsets are relative to the class-297 primary indexed axis carrier paired with class 262.
+/// ```
+pub(crate) mod work_axis_direct_carrier_class_297 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 215;
+    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const VALUE_COUNT: usize = 21;
+    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
+    pub(crate) const AXIS_VALUES: usize = 25;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 89;
+    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
+}
+
+/// Byte offsets for the `work_axis_direct_carrier_class_335` record.
+///
+/// Spec §3.1. Record length 195 B.
+///
+/// ```text
+/// Offsets are relative to the class-335 primary indexed axis carrier paired with class 258.
+/// ```
+pub(crate) mod work_axis_direct_carrier_class_335 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 195;
+    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const VALUE_COUNT: usize = 21;
+    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
+    pub(crate) const AXIS_VALUES: usize = 25;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 89;
+    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
+}
+
 /// Byte offsets for the `coil_compact_placement_matrix_frame` record.
 ///
 /// Spec §3.1. Record length 341 B.

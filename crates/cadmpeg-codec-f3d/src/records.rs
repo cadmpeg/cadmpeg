@@ -1888,7 +1888,37 @@ pub struct DesignDraftOperation {
     pub opposite_angle_offset: u64,
 }
 
-/// Exact solved construction carried by a two-point `WorkAxis` scope.
+/// Source form for an exact solved `WorkAxis` construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum DesignWorkAxisSource {
+    /// The axis carrier and two endpoint point carriers are cross-checked.
+    TwoPoint {
+        /// Ordered endpoint carrier record indices.
+        point_record_indices: [u32; 2],
+        /// Byte offsets of the first coordinate in each endpoint carrier.
+        point_offsets: [u64; 2],
+    },
+    /// A generation-specific carrier stores the axis directly and has one
+    /// additional construction-support record in the enclosing scope.
+    DirectCarrier {
+        /// Indexed record carrying the origin and displacement values.
+        carrier_record_index: u32,
+        /// Enclosing scope's second ordered construction record.
+        support_record_index: u32,
+    },
+}
+
+impl Default for DesignWorkAxisSource {
+    fn default() -> Self {
+        Self::TwoPoint {
+            point_record_indices: [0; 2],
+            point_offsets: [0; 2],
+        }
+    }
+}
+
+/// Exact solved construction carried by a `WorkAxis` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkAxisConstruction {
@@ -1900,10 +1930,9 @@ pub struct DesignWorkAxisConstruction {
     pub origin_offset: u64,
     /// Byte offset of the first displacement component.
     pub displacement_offset: u64,
-    /// Ordered point-carrier record indices corroborating the two endpoints.
-    pub point_record_indices: [u32; 2],
-    /// Byte offsets of the first coordinate in each point carrier.
-    pub point_offsets: [u64; 2],
+    /// Native record form that supplied or corroborated the axis geometry.
+    #[serde(default)]
+    pub source: DesignWorkAxisSource,
 }
 
 /// One source-record reference used by a `WorkPoint` construction rule.

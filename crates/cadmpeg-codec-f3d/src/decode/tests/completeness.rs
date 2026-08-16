@@ -27,6 +27,31 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
 }
 
 #[test]
+fn datum_axes_require_a_finite_nonzero_direction() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::DatumAxis {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DatumAxis {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(0.0, 0.0, 0.0),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DatumAxis {
+            origin: Point3::new(f64::NAN, 2.0, 3.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        }
+    ));
+}
+
+#[test]
 fn coordinate_systems_require_a_finite_right_handed_frame() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point3, Vector3};

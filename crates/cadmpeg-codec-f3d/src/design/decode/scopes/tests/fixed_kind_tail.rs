@@ -418,7 +418,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(construction.displacement, [0.0, -3.0, 4.0]);
     assert_eq!(construction.origin_offset, 25);
     assert_eq!(construction.displacement_offset, 49);
-    assert_eq!(construction.point_record_indices, [102, 104]);
+    assert!(matches!(
+        construction.source,
+        crate::records::DesignWorkAxisSource::TwoPoint {
+            point_record_indices: [102, 104],
+            ..
+        }
+    ));
     axis_scope.work_axis_construction = Some(construction);
     let (axis_features, _) = project_parameter_design(
         &[],
@@ -1886,5 +1892,100 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         assert_eq!(decoded.form, form);
         assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
         assert_eq!(decoded.transform_offset, (frame_at + 48) as u64);
+    }
+}
+
+#[test]
+fn direct_work_axis_carriers_project_both_admitted_generations() {
+    struct Case {
+        scope: (&'static str, &'static str),
+        carrier: (&'static str, &'static str),
+        lengths: (usize, usize),
+        values: [f64; 8],
+    }
+    let cases = [
+        Case {
+            scope: ("302", "262"),
+            carrier: ("297", "306"),
+            lengths: (268, 215),
+            values: [1.5, 2.5, 3.5, 0.0, -3.0, 4.0, 0.0, 0.0],
+        },
+        Case {
+            scope: ("361", "258"),
+            carrier: ("335", "349"),
+            lengths: (254, 195),
+            values: [4.0, 5.0, 6.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+        },
+    ];
+
+    for Case {
+        scope: (scope_class, scope_paired_class),
+        carrier: (carrier_class, support_class),
+        lengths: (scope_length, carrier_length),
+        values,
+    } in cases
+    {
+        let carrier_record_index: u32 = 100;
+        let support_record_index: u32 = 200;
+        let mut bytes = vec![0; carrier_length];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(carrier_class.as_bytes());
+        bytes[7..11].copy_from_slice(&carrier_record_index.to_le_bytes());
+        bytes[21..25].copy_from_slice(&8u32.to_le_bytes());
+        for (ordinal, value) in values.into_iter().enumerate() {
+            let at = 25 + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[89..93].copy_from_slice(&6u32.to_le_bytes());
+        bytes[93..97].copy_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(scope_paired_class.as_bytes());
+        bytes.extend_from_slice(&carrier_record_index.to_le_bytes());
+
+        let support_start = bytes.len();
+        bytes.resize(support_start + 293, 0);
+        bytes[support_start..support_start + 4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[support_start + 4..support_start + 7].copy_from_slice(support_class.as_bytes());
+        bytes[support_start + 7..support_start + 11]
+            .copy_from_slice(&support_record_index.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(scope_paired_class.as_bytes());
+        bytes.extend_from_slice(&support_record_index.to_le_bytes());
+
+        let mut scope = DesignParameterScope::empty("f3d:test:work-axis#1", "WorkAxis", 1);
+        scope.class_tag = scope_class.into();
+        scope.paired_class_tag = scope_paired_class.into();
+        scope.frame_length = scope_length as u64;
+        scope.reference_members = vec![carrier_record_index, support_record_index];
+        let construction =
+            exact_work_axis_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+                .expect("direct WorkAxis carrier");
+        assert_eq!(construction.origin_offset, 25);
+        assert_eq!(construction.displacement_offset, 49);
+        assert!(matches!(
+            construction.source,
+            crate::records::DesignWorkAxisSource::DirectCarrier {
+                carrier_record_index: 100,
+                support_record_index: 200,
+            }
+        ));
+        scope.work_axis_construction = Some(construction);
+        let (features, _) = project_parameter_design(
+            &[],
+            &[],
+            std::slice::from_ref(&scope),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            features.as_slice(),
+            [Feature {
+                definition: FeatureDefinition::DatumAxis { .. },
+                ..
+            }]
+        ));
     }
 }

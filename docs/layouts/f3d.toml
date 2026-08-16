@@ -4531,6 +4531,108 @@ size = 168
 note = "The class-400 construction-reference tail is retained as a named opaque carrier."
 
 [[record]]
+name = "work_axis_direct_carrier_class_297"
+kind = "byte"
+section = "3.1"
+anchor = "The class-297/262 carrier is 215 bytes"
+size = 215
+note = "Offsets are relative to the class-297 primary indexed axis carrier paired with class 262."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed carrier header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Bytes 11 through 20 are zero."
+
+[[record.field]]
+name = "value_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "u32 value count 8 at offset 21"
+
+[[record.field]]
+name = "axis_values"
+offset = 25
+type = "f64[8]"
+source = "spec"
+anchor = "eight f64 values at offset 25"
+
+[[record.field]]
+name = "reference_count"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "u32 reference count 6 at offset 89"
+
+[[record.field]]
+name = "reference_preamble"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "u32 value 1 at offset 93"
+
+[[record.gap]]
+offset = 97
+size = 118
+note = "The generation-specific construction/reference tail ends at the paired header."
+
+[[record]]
+name = "work_axis_direct_carrier_class_335"
+kind = "byte"
+section = "3.1"
+anchor = "class-335/258 carrier is 195 bytes"
+size = 195
+note = "Offsets are relative to the class-335 primary indexed axis carrier paired with class 258."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed carrier header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Bytes 11 through 20 are zero."
+
+[[record.field]]
+name = "value_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "u32 value count 8 at offset 21"
+
+[[record.field]]
+name = "axis_values"
+offset = 25
+type = "f64[8]"
+source = "spec"
+anchor = "eight f64 values at offset 25"
+
+[[record.field]]
+name = "reference_count"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "u32 reference count 6 at offset 89"
+
+[[record.field]]
+name = "reference_preamble"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "u32 value 1 at offset 93"
+
+[[record.gap]]
+offset = 97
+size = 98
+note = "The generation-specific construction/reference tail ends at the paired header."
+
+[[record]]
 name = "coil_compact_placement_matrix_frame"
 kind = "byte"
 section = "3.1"

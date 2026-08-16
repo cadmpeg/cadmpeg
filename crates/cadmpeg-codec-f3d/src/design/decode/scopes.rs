@@ -60,6 +60,8 @@ use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
 use crate::layout::thread_standard_scope_prefix as thread_standard;
+use crate::layout::work_axis_direct_carrier_class_297 as work_axis_297;
+use crate::layout::work_axis_direct_carrier_class_335 as work_axis_335;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
@@ -87,8 +89,8 @@ use crate::records::{
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
-    DesignThreadForm, DesignWorkAxisConstruction, DesignWorkPointConstruction,
-    DesignWorkPointInput, DesignWorkPointRule,
+    DesignThreadForm, DesignWorkAxisConstruction, DesignWorkAxisSource,
+    DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointRule,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -4713,6 +4715,15 @@ pub(crate) fn exact_work_axis_construction(
     if scope.kind != "WorkAxis" {
         return None;
     }
+    exact_two_point_work_axis_construction(bytes, records, scope)
+        .or_else(|| exact_direct_work_axis_construction(bytes, records, scope))
+}
+
+fn exact_two_point_work_axis_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignWorkAxisConstruction> {
     let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
         scope.reference_members.as_slice()
     else {
@@ -4778,8 +4789,119 @@ pub(crate) fn exact_work_axis_construction(
         displacement,
         origin_offset: u64::try_from(axis_start + 25).ok()?,
         displacement_offset: u64::try_from(axis_start + 49).ok()?,
-        point_record_indices,
-        point_offsets,
+        source: DesignWorkAxisSource::TwoPoint {
+            point_record_indices,
+            point_offsets,
+        },
+    })
+}
+
+fn exact_direct_work_axis_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignWorkAxisConstruction> {
+    let [carrier_record_index, support_record_index] = scope.reference_members.as_slice() else {
+        return None;
+    };
+    let (
+        carrier_class,
+        carrier_paired_class,
+        carrier_length,
+        support_class,
+        support_paired_class,
+        value_count_offset,
+        axis_values_offset,
+        reference_count_offset,
+        reference_preamble_offset,
+    ) = match (
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+        scope.frame_length,
+    ) {
+        ("302", "262", 268) => (
+            "297",
+            "262",
+            work_axis_297::LEN,
+            "306",
+            "262",
+            work_axis_297::VALUE_COUNT,
+            work_axis_297::AXIS_VALUES,
+            work_axis_297::REFERENCE_COUNT,
+            work_axis_297::REFERENCE_PREAMBLE,
+        ),
+        ("361", "258", 254) => (
+            "335",
+            "258",
+            work_axis_335::LEN,
+            "349",
+            "258",
+            work_axis_335::VALUE_COUNT,
+            work_axis_335::AXIS_VALUES,
+            work_axis_335::REFERENCE_COUNT,
+            work_axis_335::REFERENCE_PREAMBLE,
+        ),
+        _ => return None,
+    };
+    let carrier_frames = records.frames(*carrier_record_index).collect::<Vec<_>>();
+    let [(carrier_start, carrier_paired)] = carrier_frames.as_slice() else {
+        return None;
+    };
+    let carrier_primary_class =
+        exact_indexed_header_at(bytes, *carrier_start, *carrier_record_index)?;
+    let carrier_paired_class_tag =
+        exact_indexed_header_at(bytes, *carrier_paired, *carrier_record_index)?;
+    if carrier_paired.checked_sub(*carrier_start)? != carrier_length
+        || carrier_primary_class != carrier_class
+        || carrier_paired_class_tag != carrier_paired_class
+    {
+        return None;
+    }
+    let support_frames = records.frames(*support_record_index).collect::<Vec<_>>();
+    let [(support_start, support_paired)] = support_frames.as_slice() else {
+        return None;
+    };
+    let support_primary_class =
+        exact_indexed_header_at(bytes, *support_start, *support_record_index)?;
+    let support_paired_class_tag =
+        exact_indexed_header_at(bytes, *support_paired, *support_record_index)?;
+    if support_paired.checked_sub(*support_start)? != 293
+        || support_primary_class != support_class
+        || support_paired_class_tag != support_paired_class
+    {
+        return None;
+    }
+    if bytes.get(*carrier_start + 11..*carrier_start + 21) != Some(&[0; 10])
+        || View::u32_le_at(bytes, *carrier_start + value_count_offset)? != 8
+        || View::u32_le_at(bytes, *carrier_start + reference_count_offset)? != 6
+        || View::u32_le_at(bytes, *carrier_start + reference_preamble_offset)? != 1
+    {
+        return None;
+    }
+    let values = f64s_at(bytes, (*carrier_start).checked_add(axis_values_offset)?, 8)?;
+    if values.iter().any(|value| !value.is_finite()) || values[6..] != [0.0, 0.0] {
+        return None;
+    }
+    let origin: [f64; 3] = values[..3].try_into().ok()?;
+    let displacement: [f64; 3] = values[3..6].try_into().ok()?;
+    let displacement_length = displacement[0]
+        .hypot(displacement[1])
+        .hypot(displacement[2]);
+    if displacement_length <= f64::EPSILON {
+        return None;
+    }
+    Some(DesignWorkAxisConstruction {
+        origin,
+        displacement,
+        origin_offset: u64::try_from((*carrier_start).checked_add(axis_values_offset)?).ok()?,
+        displacement_offset: u64::try_from(
+            (*carrier_start).checked_add(axis_values_offset + 3 * 8)?,
+        )
+        .ok()?,
+        source: DesignWorkAxisSource::DirectCarrier {
+            carrier_record_index: *carrier_record_index,
+            support_record_index: *support_record_index,
+        },
     })
 }
 

@@ -530,6 +530,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             normal,
             u_axis,
         } => !datum_plane_frame_is_resolved(origin, normal, u_axis),
+        FeatureDefinition::DatumAxis { origin, direction } => {
+            !point_is_finite(origin) || !vector_is_finite(direction) || direction.unit().is_none()
+        }
         FeatureDefinition::DatumCoordinateSystem {
             origin,
             x_axis,
