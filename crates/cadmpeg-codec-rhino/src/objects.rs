@@ -754,7 +754,7 @@ pub(crate) fn parse_attributes(
             embedded_section_style: None,
         });
     }
-    if version.0 != 2 || archive.value() < 50 || version.1 > 13 {
+    if version.0 != 2 || archive.value() < 50 {
         return Err(FramingError::structural(
             body_range.start,
             "unsupported tagged object-attributes version",
@@ -836,6 +836,13 @@ pub(crate) fn parse_attributes(
             39 => 11,
             40 => 12,
             41 => 13,
+            _ if version.1 > 13 => {
+                // A future item has no length prefix. The source reader consumes
+                // only its ID and lets the enclosing chunk boundary discard the
+                // value bytes it cannot type.
+                finish_attributes(&mut reader, "future tagged object attributes")?;
+                return Ok(attributes);
+            }
             _ => {
                 return Err(FramingError::structural(
                     reader.position() - 1,

@@ -272,7 +272,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
 }
 
 #[test]
-fn tagged_attributes_reject_unknown_items_gates_and_missing_terminator() {
+fn tagged_attributes_reject_bad_gates_and_missing_terminator() {
     for (minor, item) in [(0, 22), (1, 23), (2, 27), (8, 36), (12, 41)] {
         let bytes = tagged_attributes(&[(item, vec![0])], minor);
         assert!(
@@ -309,6 +309,42 @@ fn tagged_attributes_reject_unknown_items_gates_and_missing_terminator() {
         &mut Vec::new()
     )
     .is_err());
+}
+
+#[test]
+fn future_tagged_attributes_stop_at_unknown_item_and_preserve_suffix() {
+    let mut bytes = tagged_attributes(&[(42, vec![0xaa, 0xbb])], 14);
+    bytes.extend([0xde, 0xad]);
+    let parsed = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .expect("future unknown item is bounded by the containing chunk");
+    assert_eq!(parsed.version, (2, 14));
+    assert_eq!(parsed.object_id, Uuid::nil());
+    assert_eq!(parsed.layer_index, -1);
+    assert!(parsed.name.is_empty());
+}
+
+#[test]
+fn future_tagged_attributes_accept_known_prefix_and_suffix() {
+    let mut bytes = tagged_attributes(&[(1, utf16_bytes("future"))], 14);
+    bytes.extend([0xde, 0xad]);
+    let parsed = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .expect("future minor with a known prefix");
+    assert_eq!(parsed.version, (2, 14));
+    assert_eq!(parsed.name, "future");
 }
 
 #[test]
