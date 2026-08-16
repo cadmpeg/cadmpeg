@@ -308,6 +308,129 @@ fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) 
     )
 }
 
+fn add_cylindrical_patch_face(
+    model: &mut cadmpeg_ir::document::Model,
+    name: &str,
+    min_z: f64,
+    max_z: f64,
+) -> FaceId {
+    let radius = 5.0;
+    let angles = [0.0, std::f64::consts::FRAC_PI_2];
+    let point_at = |angle: f64, z: f64| Point3::new(radius * angle.cos(), radius * angle.sin(), z);
+    let corners = [
+        point_at(angles[0], min_z),
+        point_at(angles[1], min_z),
+        point_at(angles[1], max_z),
+        point_at(angles[0], max_z),
+    ];
+    let face_id = FaceId(format!("face-{name}"));
+    let loop_id = LoopId(format!("loop-{name}"));
+    let surface_id = SurfaceId(format!("surface-{name}"));
+    model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        },
+        source_object: None,
+    });
+
+    let vertex_ids = corners
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let point_id = PointId(format!("point-{name}-{index}"));
+            let vertex_id = VertexId(format!("vertex-{name}-{index}"));
+            model.points.push(Point {
+                id: point_id.clone(),
+                position: *point,
+                source_object: None,
+            });
+            model.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
+            vertex_id
+        })
+        .collect::<Vec<_>>();
+    let coedge_ids = (0..4)
+        .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
+        .collect::<Vec<_>>();
+    let curve_geometries = [
+        CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, min_z),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        },
+        CurveGeometry::Line {
+            origin: corners[1],
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, max_z),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        },
+        CurveGeometry::Line {
+            origin: corners[3],
+            direction: Vector3::new(0.0, 0.0, -1.0),
+        },
+    ];
+    for (index, geometry) in curve_geometries.into_iter().enumerate() {
+        let next = (index + 1) % 4;
+        let curve_id = CurveId(format!("curve-{name}-{index}"));
+        let edge_id = EdgeId(format!("edge-{name}-{index}"));
+        model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry,
+            source_object: None,
+        });
+        model.edges.push(Edge {
+            id: edge_id.clone(),
+            curve: Some(curve_id),
+            start: vertex_ids[index].clone(),
+            end: vertex_ids[next].clone(),
+            param_range: None,
+            tolerance: None,
+        });
+        model.coedges.push(Coedge {
+            id: coedge_ids[index].clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            next: coedge_ids[next].clone(),
+            previous: coedge_ids[(index + 3) % 4].clone(),
+            radial_next: coedge_ids[index].clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+    }
+    model.loops.push(Loop {
+        id: loop_id.clone(),
+        face: face_id.clone(),
+        boundary_role: LoopBoundaryRole::Outer,
+        coedges: coedge_ids,
+        vertex_uses: Vec::new(),
+    });
+    model.faces.push(Face {
+        id: face_id.clone(),
+        shell: ShellId("shell".into()),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: vec![loop_id],
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    face_id
+}
+
 fn model_with_body() -> cadmpeg_ir::document::Model {
     cadmpeg_ir::document::Model {
         bodies: vec![Body {
@@ -377,6 +500,41 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     model.tessellations[0].faces.clear();
     assert!(assign_unique_analytic_owners(&mut model).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn bounded_cylindrical_trim_selects_between_coincident_supports() {
+    let mut model = model_with_body();
+    let lower = add_cylindrical_patch_face(&mut model, "lower", 0.0, 1.0);
+    let upper = add_cylindrical_patch_face(&mut model, "upper", 2.0, 3.0);
+    model.shells[0].faces = vec![lower.clone(), upper.clone()];
+    model.tessellations.push(Tessellation {
+        id: "lower-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(5.0, 0.0, 0.25),
+            Point3::new(0.0, 5.0, 0.25),
+            Point3::new(5.0, 0.0, 0.75),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert_eq!(
+        assign_unique_analytic_owners(&mut model),
+        vec!["lower-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![lower]);
+    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
 }
 
 #[test]

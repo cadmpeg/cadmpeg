@@ -16,6 +16,8 @@ use crate::layout::display_lists_scene_source_binding as scene_src;
 
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
+const EPS_DISPLAY_QUANTIZATION: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Summary {
@@ -353,7 +355,7 @@ pub fn summary(scan: &ContainerScan) -> Summary {
 /// Bind a face-tessellation table when its vertices select one analytic face.
 ///
 /// Display coordinates are stored as f32, while the B-rep carriers are f64.
-/// The relative tolerance below covers that quantization. Complete planar
+/// The relative tolerance below covers that quantization. Complete analytic
 /// trims can distinguish faces on a shared analytic carrier.
 pub(crate) fn assign_unique_analytic_owners(
     model: &mut cadmpeg_ir::document::Model,
@@ -424,7 +426,7 @@ pub(crate) fn assign_unique_analytic_owners(
                 *surfaces.get(&face.surface)?,
                 face.tolerance.unwrap_or(0.0),
                 inverse,
-                planar_trim(
+                analytic_trim(
                     face,
                     *surfaces.get(&face.surface)?,
                     &loops,
@@ -448,7 +450,8 @@ pub(crate) fn assign_unique_analytic_owners(
             .iter()
             .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
             .fold(1.0_f64, f64::max);
-        let quantization_tolerance = coordinate_scale * f64::from(f32::EPSILON) * 8.0 + 1.0e-9;
+        let quantization_tolerance =
+            coordinate_scale * f64::from(f32::EPSILON) * 8.0 + EPS_DISPLAY_QUANTIZATION;
         let mut owners = candidates
             .iter()
             .filter(|(_, _, surface, tolerance, inverse, _)| {
@@ -499,10 +502,55 @@ struct CircularHole {
 }
 
 #[derive(Debug, Clone)]
+enum AnalyticTrim {
+    Planar(PlanarTrim),
+    Cylindrical(CylindricalTrim),
+}
+
+impl AnalyticTrim {
+    fn contains_mesh(
+        &self,
+        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        inverse_body: cadmpeg_ir::transform::Transform,
+        tolerance: f64,
+    ) -> bool {
+        match self {
+            Self::Planar(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
+            Self::Cylindrical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct PlanarTrim {
     frame: PlaneFrame,
     outer: Vec<Point2>,
     holes: Vec<CircularHole>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CylindricalTrim {
+    origin: Point3,
+    axis: Vector3,
+    min_axial: f64,
+    max_axial: f64,
+}
+
+impl CylindricalTrim {
+    fn contains_mesh(
+        self,
+        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        inverse_body: cadmpeg_ir::transform::Transform,
+        tolerance: f64,
+    ) -> bool {
+        mesh.vertices.iter().all(|point| {
+            let point = inverse_body.apply_point(*point);
+            let axial = point.vector_from(self.origin).dot(self.axis);
+            axial.is_finite()
+                && axial >= self.min_axial - tolerance
+                && axial <= self.max_axial + tolerance
+        })
+    }
 }
 
 impl PlanarTrim {
@@ -551,7 +599,7 @@ fn planar_trim(
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<PlanarTrim> {
     let frame = plane_frame(surface)?;
-    let tolerance = face.tolerance.unwrap_or(0.0).max(1.0e-9);
+    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
     let mut polygons = Vec::new();
     let mut holes = Vec::new();
     for loop_id in &face.loops {
@@ -582,7 +630,7 @@ fn planar_trim(
             let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
             if !radius.is_finite()
                 || *radius <= tolerance
-                || axis.dot(frame.normal).abs() < 1.0 - 1.0e-9
+                || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || analytic_surface_residual(surface, *center)? > tolerance
                 || analytic_surface_residual(surface, boundary_point)? > tolerance
                 || (boundary_point.distance(*center) - radius).abs() > tolerance
@@ -654,6 +702,119 @@ fn planar_trim(
         outer: outer.clone(),
         holes,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cylindrical_trim(
+    face: &cadmpeg_ir::topology::Face,
+    surface: &SurfaceGeometry,
+    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
+    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
+    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
+    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
+    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
+    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+) -> Option<CylindricalTrim> {
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        radius,
+        ..
+    } = surface
+    else {
+        return None;
+    };
+    let axis = axis.unit()?;
+    if !radius.is_finite() || *radius <= EPS_DISPLAY_QUANTIZATION {
+        return None;
+    }
+    let [loop_id] = face.loops.as_slice() else {
+        return None;
+    };
+    let loop_ = *loops.get(loop_id)?;
+    if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
+        return None;
+    }
+    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
+    let mut axial_bounds = None::<(f64, f64)>;
+    for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+        let coedge = *coedges.get(coedge_id)?;
+        if coedge.owner_loop != loop_.id
+            || coedge.next != loop_.coedges[(index + 1) % loop_.coedges.len()]
+            || coedge.previous
+                != loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()]
+        {
+            return None;
+        }
+        let edge = *edges.get(&coedge.edge)?;
+        let curve = curves.get(edge.curve.as_ref()?)?;
+        match curve {
+            CurveGeometry::Line { direction, .. } => {
+                if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
+                    return None;
+                }
+            }
+            CurveGeometry::Circle {
+                axis: curve_axis,
+                radius: curve_radius,
+                ..
+            } => {
+                if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || !curve_radius.is_finite()
+                    || (*curve_radius - *radius).abs() > tolerance
+                {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        for vertex_id in [edge.start.clone(), edge.end.clone()] {
+            let point = *points.get(&vertices.get(&vertex_id)?.point)?;
+            if analytic_surface_residual(surface, point)? > tolerance {
+                return None;
+            }
+            let axial = point.vector_from(*origin).dot(axis);
+            if !axial.is_finite() {
+                return None;
+            }
+            axial_bounds = Some(match axial_bounds {
+                Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
+                None => (axial, axial),
+            });
+        }
+    }
+    let (min_axial, max_axial) = axial_bounds?;
+    (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
+        origin: *origin,
+        axis,
+        min_axial,
+        max_axial,
+    })
+}
+
+// The trim grammars share the same indexed topology maps.
+#[allow(clippy::too_many_arguments)]
+fn analytic_trim(
+    face: &cadmpeg_ir::topology::Face,
+    surface: &SurfaceGeometry,
+    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
+    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
+    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
+    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
+    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
+    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+) -> Option<AnalyticTrim> {
+    match surface {
+        SurfaceGeometry::Plane { .. } => planar_trim(
+            face, surface, loops, coedges, edges, vertices, points, curves,
+        )
+        .map(AnalyticTrim::Planar),
+        SurfaceGeometry::Cylinder { .. } => cylindrical_trim(
+            face, surface, loops, coedges, edges, vertices, points, curves,
+        )
+        .map(AnalyticTrim::Cylindrical),
+        _ => None,
+    }
 }
 
 fn plane_frame(surface: &SurfaceGeometry) -> Option<PlaneFrame> {
