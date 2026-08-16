@@ -1904,6 +1904,20 @@ pub(crate) mod work_plane_legacy_325_matrix_frame {
     pub(crate) const MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `work_plane_legacy_337_matrix_frame` record.
+///
+/// Spec §3.1. Record length 337 B.
+///
+/// ```text
+/// Offsets are relative to either the class-350 or class-409 primary indexed placement header paired with class 258. The placement carriers share a 39-byte zero prefix and matrix offset.
+/// ```
+pub(crate) mod work_plane_legacy_337_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 337;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 50;
+}
+
 /// Byte offsets for the `work_plane_legacy_class_400_matrix_frame` record.
 ///
 /// Spec §3.1. Record length 345 B.

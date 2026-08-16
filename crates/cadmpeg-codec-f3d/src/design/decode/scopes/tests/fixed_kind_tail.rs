@@ -9,6 +9,7 @@
 )]
 use super::prelude::*;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
+use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
 
 #[test]
@@ -1777,6 +1778,41 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
         assert_eq!(decoded.transform_offset, work_plane_325::MATRIX as u64);
         assert_eq!(decoded.reference, None);
     }
+}
+
+#[test]
+fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
+    const EPS_WORK_PLANE_CLASS_350_TEST_VALUE: f64 = 1e-12;
+
+    let transform: [[f64; 4]; 4] = [
+        [0.0, -1.0, 0.0, 4.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, -1.5],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut bytes = vec![0; work_plane_337::LEN];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"350");
+    bytes[7..11].copy_from_slice(&76u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = work_plane_337::MATRIX + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"258");
+    bytes.extend_from_slice(&76u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    scope.reference_members = vec![76];
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("class-350 WorkPlane frame");
+    for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
+        for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {
+            assert!((actual - expected).abs() < EPS_WORK_PLANE_CLASS_350_TEST_VALUE);
+        }
+    }
+    assert_eq!(decoded.transform_offset, work_plane_337::MATRIX as u64);
+    assert_eq!(decoded.reference, None);
 }
 
 #[test]

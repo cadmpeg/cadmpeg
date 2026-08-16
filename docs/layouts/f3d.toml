@@ -4471,6 +4471,36 @@ size = 148
 note = "The placement carrier tail is retained as a named opaque carrier."
 
 [[record]]
+name = "work_plane_legacy_337_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 337-byte class-350/258 and class-409/258 placement frames use a third 337-byte layout"
+size = 337
+note = "Offsets are relative to either the class-350 or class-409 primary indexed placement header paired with class 258. The placement carriers share a 39-byte zero prefix and matrix offset."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 39
+note = "The fixed placement prefix is zero."
+
+[[record.field]]
+name = "matrix"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "The 337-byte class-350/258 and class-409/258 placement frames use a third 337-byte layout"
+
+[[record.gap]]
+offset = 178
+size = 159
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
 name = "work_plane_legacy_class_400_matrix_frame"
 kind = "byte"
 section = "3.1"

@@ -1433,6 +1433,22 @@ Unstated regions:
 - `11..49` (38 B): The fixed placement prefix is zero.
 - `177..325` (148 B): The placement carrier tail is retained as a named opaque carrier.
 
+## `work_plane_legacy_337_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 337 B
+
+Offsets are relative to either the class-350 or class-409 primary indexed placement header paired with class 258. The placement carriers share a 39-byte zero prefix and matrix offset.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 50 | 128 | `matrix` | `f64[16]` | little | spec | The 337-byte class-350/258 and class-409/258 placement frames use a third 337-byte layout |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..50` (39 B): The fixed placement prefix is zero.
+- `178..337` (159 B): The placement carrier tail is retained as a named opaque carrier.
+
 ## `work_plane_legacy_class_400_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 345 B

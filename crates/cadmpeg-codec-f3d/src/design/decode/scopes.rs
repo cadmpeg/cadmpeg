@@ -61,6 +61,7 @@ use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
 use crate::layout::thread_standard_scope_prefix as thread_standard;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
+use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
 use crate::layout::work_plane_legacy_class_400_matrix_frame as work_plane_legacy;
 use crate::records::{
@@ -4654,11 +4655,17 @@ pub(crate) fn exact_work_plane_frame(
                 {
                     (start + 50, None)
                 }
-                337 if bytes.get(start + 4..start + 7) == Some(b"409")
-                    && bytes.get(paired + 4..paired + 7) == Some(b"258")
-                    && bytes.get(start + 11..start + 50) == Some(&[0u8; 39][..]) =>
+                work_plane_337::LEN
+                    if matches!(
+                        (
+                            bytes.get(start + 4..start + 7),
+                            bytes.get(paired + 4..paired + 7),
+                        ),
+                        (Some(b"350" | b"409"), Some(b"258"))
+                    ) && bytes.get(start + 11..start + work_plane_337::MATRIX)
+                        == Some(&[0u8; work_plane_337::MATRIX - 11][..]) =>
                 {
-                    (start + 50, None)
+                    (start + work_plane_337::MATRIX, None)
                 }
                 352 | 363 | 374
                     if bytes.get(start + 55) == Some(&1)
