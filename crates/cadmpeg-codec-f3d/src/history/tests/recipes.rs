@@ -1074,6 +1074,53 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
+        } if bodies == &[body.id.clone()] && native == group_id
+    ));
+
+    let mut move_scope = scope;
+    move_scope.kind = "Move".into();
+    move_scope.history_state_id = Some(42);
+    move_scope.previous_history_state_id = Some(41);
+    let move_history = crate::history_records::AsmHistory {
+        id: "f3d:history".into(),
+        byte_offset: 0,
+        stream_size: None,
+        history_entry_count: None,
+        record_table_binding_budget_exceeded: false,
+        projection_finalized: true,
+        states: Vec::new(),
+    };
+    let move_inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&move_scope),
+        groups: std::slice::from_ref(&scale_group),
+        body_recipe_operands: std::slice::from_ref(&operand),
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: std::slice::from_ref(&move_history),
+        bodies: std::slice::from_ref(&body),
+        regions: std::slice::from_ref(&region),
+        shells: std::slice::from_ref(&shell),
+    };
+    let mut move_feature = Feature::new(
+        FeatureId("f3d:feature#move".into()),
+        0,
+        FeatureDefinition::MoveBody {
+            bodies: BodySelection::Native(group_id.into()),
+            translation: cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+            rotation: None,
+            copies: 0,
+        },
+    );
+    move_feature.native_ref = Some(move_scope.id.clone());
+    super::super::bind_feature_body_selections(
+        std::slice::from_mut(&mut move_feature),
+        &move_inputs,
+    );
+    assert!(matches!(
+        move_feature.definition,
+        FeatureDefinition::MoveBody {
+            bodies: BodySelection::Resolved { ref bodies, ref native },
+            ..
         } if bodies == &[body.id] && native == group_id
     ));
 }

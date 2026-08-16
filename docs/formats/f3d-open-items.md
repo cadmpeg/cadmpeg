@@ -129,14 +129,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** We must know the meaning to build face topology from a recipe without the edge-recipe rule.
 
-### DR-21. Body identity of a `Move` or `RemoveBody` group
-
-**Question.** Which join connects a `Move` or `RemoveBody` construction-group identity with role `0x0000000400000000` to a neutral body identity?
-
-**Known.** `f3d.md` §3.1 "A `Move` scope references" and `f3d.md` §3.1 "A `RemoveBody` scope references" give the record layout.
-
-**Need.** Without the join, the neutral model has no body selection for these two features.
-
 ### DR-22. Form-33 `Combine` body recipe
 
 **Question.** Which field selects the input body for a form-33 `Combine` body-recipe identity that intersects more than one input body and has no matching occurrence elsewhere in the Design stream?

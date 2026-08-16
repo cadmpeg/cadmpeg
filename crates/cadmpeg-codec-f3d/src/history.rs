@@ -1177,6 +1177,7 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         };
         let Some(Some(state)) = states.get(&state_id) else {
+            bind_direct_body_recipe_body_selection(bodies, scope, inputs);
             continue;
         };
         let body = match proof {
