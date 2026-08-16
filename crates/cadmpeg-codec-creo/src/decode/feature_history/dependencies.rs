@@ -165,26 +165,24 @@ pub(in super::super) fn feature_entity_dependencies(
     dependencies
 }
 
-pub(in super::super) fn feature_entity_producers(
+pub(in super::super) fn preceding_feature_entity_producers(
     tables: &[crate::feature::FeatureEntityTable],
-) -> BTreeMap<u32, BTreeSet<u32>> {
+    entity_id: u32,
+    consumer_offset: usize,
+) -> Vec<u32> {
     tables
         .iter()
         .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
         .flat_map(|(owner, table)| {
-            table
-                .entries
-                .iter()
-                .filter(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
-                .map(move |entry| (entry.entity_id, owner))
+            table.entries.iter().filter_map(move |entry| {
+                (entry.class_id == 200
+                    && entry.entity_id == entity_id
+                    && entry.source_entity_id.is_some()
+                    && entry.offset < consumer_offset)
+                    .then_some(owner)
+            })
         })
-        .fold(
-            BTreeMap::<u32, BTreeSet<u32>>::new(),
-            |mut owners, (entity, owner)| {
-                owners.entry(entity).or_default().insert(owner);
-                owners
-            },
-        )
+        .collect()
 }
 
 pub(in super::super) fn agreed_surface_merge_replay_quilt_ids(
@@ -222,6 +220,48 @@ pub(in super::super) fn surface_merge_quilt_ids<'a>(
     agreed_surface_merge_replay_quilt_ids(replay, feature_id).filter(|ids| !ids.is_empty())
 }
 
+pub(in super::super) fn surface_merge_quilt_state_offset(
+    affected_ids: &[crate::feature::FeatureAffectedIds],
+    replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    feature_id: u32,
+    quilt_ids: &[u32],
+) -> Option<usize> {
+    if let Some(ids) = agreed_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return (ids == quilt_ids)
+            .then(|| {
+                affected_ids
+                    .iter()
+                    .filter(|record| {
+                        record.feature_id == feature_id
+                            && record.kind == crate::feature::AffectedIdKind::Quilts
+                            && record.ids == quilt_ids
+                    })
+                    .map(|record| record.offset)
+                    .min()
+            })
+            .flatten();
+    }
+    if has_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return None;
+    }
+    let ids = agreed_surface_merge_replay_quilt_ids(replay, feature_id)?;
+    (ids == quilt_ids).then(|| {
+        replay
+            .iter()
+            .filter(|record| record.feature_id == feature_id && record.quilt_ids == quilt_ids)
+            .map(|record| record.offset)
+            .min()
+    })?
+}
+
 pub(in super::super) fn surface_merge_entity_dependencies(
     affected_ids: &[crate::feature::FeatureAffectedIds],
     replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
@@ -231,13 +271,18 @@ pub(in super::super) fn surface_merge_entity_dependencies(
     let Some(ids) = surface_merge_quilt_ids(affected_ids, replay, feature_id) else {
         return Vec::new();
     };
-    let producers = feature_entity_producers(tables);
+    let Some(consumer_offset) =
+        surface_merge_quilt_state_offset(affected_ids, replay, feature_id, ids)
+    else {
+        return Vec::new();
+    };
     ids.iter()
         .filter_map(|entity_id| {
-            let owners = producers.get(entity_id)?;
-            let mut owners = owners.iter().copied();
-            let owner = owners.next()?;
-            (owners.next().is_none() && owner != feature_id).then_some(owner)
+            let producers = preceding_feature_entity_producers(tables, *entity_id, consumer_offset);
+            let [owner] = producers.as_slice() else {
+                return None;
+            };
+            (*owner != feature_id).then_some(*owner)
         })
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {

@@ -843,24 +843,24 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
 
 #[test]
 fn surface_merge_quilt_roster_links_every_unique_generator() {
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, source_entity_id, offset| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id: 200,
         source_entity_id: Some(source_entity_id),
         related_entity_id: None,
         related_entity_state: None,
         prefixed: true,
-        offset: 0,
-        end_offset: 0,
+        offset,
+        end_offset: offset + 1,
     };
-    let producer = |feature_id, entity_id| crate::feature::FeatureEntityTable {
+    let producer = |feature_id, entity_id, offset| crate::feature::FeatureEntityTable {
         feature_id: Some(feature_id),
         table_class_id: 67,
         entry_ids: vec![entity_id],
-        entries: vec![entry(entity_id, feature_id)],
+        entries: vec![entry(entity_id, feature_id, offset + 1)],
         surface_ids: Vec::new(),
         non_surface_entity_ids: vec![entity_id],
-        offset: 0,
+        offset,
     };
     let replay = crate::feature::FeatureSurfaceMergeAffectedIds {
         feature_id: 416,
@@ -870,9 +870,13 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         geometry_extent: crate::feature::ReplayExtentSource::Explicit,
         edge_extent: crate::feature::ReplayExtentSource::Explicit,
         quilt_extent: crate::feature::ReplayExtentSource::Inherited,
-        offset: 0,
+        offset: 100,
     };
-    let tables = [producer(97, 103), producer(175, 192), producer(312, 329)];
+    let tables = [
+        producer(97, 103, 10),
+        producer(175, 192, 20),
+        producer(312, 329, 30),
+    ];
 
     assert_eq!(
         surface_merge_entity_dependencies(&[], std::slice::from_ref(&replay), &tables, 416),
@@ -893,22 +897,41 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
             related_entity_id: None,
             related_entity_state: None,
             prefixed: true,
-            offset: 0,
+            offset: 20,
             end_offset: 0,
         }],
         surface_ids: Vec::new(),
         non_surface_entity_ids: vec![192],
-        offset: 0,
+        offset: 20,
     };
     assert_eq!(
         surface_merge_entity_dependencies(
             &[],
             std::slice::from_ref(&replay),
-            &[producer(97, 103), wrong_class, producer(312, 329)],
+            &[producer(97, 103, 10), wrong_class, producer(312, 329, 30)],
             416,
         ),
         [97, 312]
     );
+
+    let future = producer(400, 777, 200);
+    let future_replay = crate::feature::FeatureSurfaceMergeAffectedIds {
+        feature_id: 417,
+        geometry_ids: Vec::new(),
+        edge_ids: Vec::new(),
+        quilt_ids: vec![777],
+        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::ReplayExtentSource::Explicit,
+        offset: 100,
+    };
+    assert!(surface_merge_entity_dependencies(
+        &[],
+        std::slice::from_ref(&future_replay),
+        std::slice::from_ref(&future),
+        417,
+    )
+    .is_empty());
 }
 
 #[test]
@@ -1100,19 +1123,21 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
 
 #[test]
 fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        entity_id,
-        class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-    };
+    let entry =
+        |entity_id, class_id, source_entity_id, offset| crate::feature::FeatureEntityTableEntry {
+            entity_id,
+            class_id,
+            source_entity_id,
+            related_entity_id: None,
+            related_entity_state: None,
+            prefixed: true,
+            offset,
+            end_offset: offset + 1,
+        };
     let table = |feature_id: u32,
                  table_class_id: u32,
-                 entries: Vec<crate::feature::FeatureEntityTableEntry>| {
+                 entries: Vec<crate::feature::FeatureEntityTableEntry>,
+                 offset: usize| {
         crate::feature::FeatureEntityTable {
             feature_id: Some(feature_id),
             table_class_id,
@@ -1120,7 +1145,7 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
             entries,
             surface_ids: Vec::new(),
             non_surface_entity_ids: Vec::new(),
-            offset: 0,
+            offset,
         }
     };
     let row = |id, feature_id| crate::surface::SurfaceRow {
@@ -1133,14 +1158,27 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         next_surface: 0,
         offset: 0,
     };
+    let replay = |feature_id, quilt_ids, offset| crate::feature::FeatureSurfaceMergeAffectedIds {
+        feature_id,
+        geometry_ids: Vec::new(),
+        edge_ids: Vec::new(),
+        quilt_ids,
+        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::ReplayExtentSource::Explicit,
+        offset,
+    };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables = vec![
-        table(97, 67, vec![entry(103, 200, Some(97))]),
-        table(97, 100, vec![entry(103, 98, None)]),
-        table(144, 67, vec![entry(150, 200, Some(144))]),
-        table(144, 100, vec![entry(150, 145, None)]),
+        table(97, 67, vec![entry(103, 200, Some(97), 11)], 10),
+        table(97, 100, vec![entry(103, 98, None, 21)], 20),
+        table(144, 67, vec![entry(150, 200, Some(144), 31)], 30),
+        table(144, 100, vec![entry(150, 145, None, 41)], 40),
     ];
     scan.surfaces.rows = vec![row(98, 97), row(145, 144)];
+    scan.features
+        .surface_merge_replay_affected_ids
+        .push(replay(416, vec![103, 150], 100));
 
     assert_eq!(
         knit_operand_surface_ids(&scan, 416, &[103, 150]),
@@ -1149,8 +1187,16 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
 
     scan.features
         .entity_tables
-        .push(table(312, 67, vec![entry(103, 200, Some(312))]));
+        .push(table(312, 67, vec![entry(103, 200, Some(312), 51)], 50));
     assert_eq!(knit_operand_surface_ids(&scan, 416, &[103, 150]), None);
+
+    scan.features
+        .entity_tables
+        .push(table(400, 67, vec![entry(777, 200, Some(400), 201)], 200));
+    scan.features
+        .surface_merge_replay_affected_ids
+        .push(replay(417, vec![777], 100));
+    assert_eq!(knit_operand_surface_ids(&scan, 417, &[777]), None);
 }
 
 #[test]
