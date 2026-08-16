@@ -1485,15 +1485,43 @@ carrier.
 
 The writer archives the userdata only when the XML root has at least one child.
 On a non-material parent, the source reader keeps the userdata attached. On an
-`ON_Material` parent, the source reader treats pre-V6 RDK material userdata as
+`ON_Material` parent, the source reader treats RDK material userdata as
 obsolete: it sets the material plug-in ID to the universal render engine,
 reads `render-content-manager-data/material/@instance-id`, transfers that UUID
 to the material RDK instance-ID member, and deletes the userdata.
 
+The V4/V5 compatibility writer uses the same class and item UUIDs for an
+internal `ON_RdkMaterialInstanceIdObsoleteUserData` carrier. It is written
+when the material RDK instance-ID is non-nil and the archive version is at
+most 50. Its class-owned payload is a direct, non-terminated XML form:
+
+```text
+i32 version = 2
+i32 byte_count                    // 0 through 1024
+byte_count raw UTF-8 XML bytes    // no terminating 0x00
+```
+
+The XML root is `xml`, its direct data child is
+`render-content-manager-data`, and that element has a direct `material` child
+whose `instance-id` attribute is the UUID transferred to the material. The
+reader accepts a bounded suffix after the counted bytes. The V6 material
+writer stores the same UUID in its class-data minor-5 UUID field and does not
+write this compatibility carrier. The universal render-engine UUID is
+`99999999-9999-9999-9999-999999999999`.
+
+The direct, non-terminated form is the compatibility carrier. A generic
+`ON_RdkUserData` payload uses the version-2 UTF-8 form above and includes its
+terminating `0x00`; its callback-owned XML is not assigned a neutral field
+grammar by CADIR. For a material, the Rhino codec transfers only the
+compatibility form to `rdk_instance_uuid`, gives it precedence over the
+class-data UUID, and sets `plugin_uuid` to the universal render-engine UUID.
+This is a CADIR decision that keeps callback-owned RDK XML opaque while
+preserving the source-defined material compatibility field.
+
 CADIR does not promote callback-owned RDK XML to typed native fields. The Rhino
 codec retains the complete containing object record for opaque source fidelity.
 For materials, the typed `rdk_instance_uuid` field comes from the material
-class-data record; the codec does not infer it from callback-owned RDK XML.
+class-data record unless the compatibility carrier above supplies it.
 
 #### 7.2.19 `MappingCRCCache`
 

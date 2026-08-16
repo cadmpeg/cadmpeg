@@ -39,6 +39,18 @@ const PHYSICALLY_BASED_MATERIAL_USERDATA: Uuid = Uuid::from_canonical([
 const OPENNURBS6_APPLICATION: Uuid = Uuid::from_canonical([
     0x7b, 0x0b, 0x58, 0x5d, 0x7a, 0x31, 0x45, 0xd0, 0x92, 0x5e, 0xbd, 0xd7, 0xdd, 0xf3, 0xe4, 0xe3,
 ]);
+const RDK_CLASS: Uuid = Uuid::from_canonical([
+    0xaf, 0xa8, 0x27, 0x72, 0x15, 0x25, 0x43, 0xdd, 0xa6, 0x3c, 0xc8, 0x4a, 0xc5, 0x80, 0x69, 0x11,
+]);
+const RDK_USERDATA: Uuid = Uuid::from_canonical([
+    0xb6, 0x3e, 0xd0, 0x79, 0xcf, 0x67, 0x41, 0x6c, 0x80, 0x0d, 0x22, 0x02, 0x3a, 0xe1, 0xbe, 0x21,
+]);
+const RDK_APPLICATION: Uuid = Uuid::from_canonical([
+    0x16, 0x59, 0x2d, 0x58, 0x4a, 0x2f, 0x40, 0x1d, 0xbf, 0x5e, 0x3b, 0x87, 0x74, 0x1c, 0x1b, 0x1b,
+]);
+const UNIVERSAL_RENDER_ENGINE: Uuid = Uuid::from_canonical([
+    0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
+]);
 const LIGHT: Uuid = Uuid::from_canonical([
     0x85, 0xa0, 0x85, 0x13, 0xf3, 0x83, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -989,6 +1001,130 @@ fn parse_physically_based_material(
         emission,
         alpha,
     })
+}
+
+fn parse_uuid_text(value: &str) -> Option<Uuid> {
+    let mut bytes = [0_u8; 16];
+    let mut nibble = None;
+    let mut index = 0;
+    for byte in value.bytes() {
+        if byte == b'-' {
+            continue;
+        }
+        let value = match byte {
+            b'0'..=b'9' => byte - b'0',
+            b'a'..=b'f' => byte - b'a' + 10,
+            b'A'..=b'F' => byte - b'A' + 10,
+            _ => return None,
+        };
+        if let Some(high) = nibble.take() {
+            if index == bytes.len() {
+                return None;
+            }
+            bytes[index] = (high << 4) | value;
+            index += 1;
+        } else {
+            nibble = Some(value);
+        }
+    }
+    (index == bytes.len() && nibble.is_none()).then_some(Uuid::from_canonical(bytes))
+}
+
+fn parse_legacy_rdk_material_instance_id(
+    data: &[u8],
+    payload_range: Range<usize>,
+) -> Result<Option<Uuid>, FramingError> {
+    let mut reader = BoundedReader::new(data, payload_range.start, payload_range.end)?;
+    if reader.i32()? != 2 {
+        return Err(FramingError::structural(
+            payload_range.start,
+            "legacy RDK material userdata version is unsupported",
+        ));
+    }
+    let length = reader.i32()?;
+    if !(0..=1024).contains(&length) {
+        return Err(FramingError::InvalidLength {
+            offset: reader.position() - 4,
+            value: length.into(),
+        });
+    }
+    if length == 0 {
+        reader.skip_remaining()?;
+        return Ok(None);
+    }
+    let xml = reader.take(length as usize)?.to_vec();
+    reader.skip_remaining()?;
+
+    // The legacy writer omits the UTF-8 terminator that ON_XMLUserData::Write
+    // includes. This distinguishes the compatibility carrier from callback-
+    // owned RDK XML, which remains opaque in CADIR.
+    if xml.last() == Some(&0) {
+        return Ok(None);
+    }
+    let xml = std::str::from_utf8(&xml).map_err(|_| {
+        FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
+    })?;
+    let document = roxmltree::Document::parse(xml).map_err(|error| {
+        FramingError::structural(
+            payload_range.start,
+            format!("legacy RDK XML is malformed: {error}"),
+        )
+    })?;
+    let root = document.root_element();
+    if root.tag_name().name() != "xml" {
+        return Err(FramingError::structural(
+            payload_range.start,
+            "legacy RDK XML root is not xml",
+        ));
+    }
+    let render_data = root
+        .children()
+        .find(|node| node.is_element() && node.tag_name().name() == "render-content-manager-data")
+        .ok_or_else(|| {
+            FramingError::structural(
+                payload_range.start,
+                "legacy RDK XML has no render-content-manager-data element",
+            )
+        })?;
+    let material = render_data
+        .children()
+        .find(|node| node.is_element() && node.tag_name().name() == "material")
+        .ok_or_else(|| {
+            FramingError::structural(
+                payload_range.start,
+                "legacy RDK XML has no material element",
+            )
+        })?;
+    let instance_id = material.attribute("instance-id").ok_or_else(|| {
+        FramingError::structural(
+            payload_range.start,
+            "legacy RDK material has no instance-id attribute",
+        )
+    })?;
+    let instance_id = parse_uuid_text(instance_id).ok_or_else(|| {
+        FramingError::structural(
+            payload_range.start,
+            "legacy RDK material instance-id is not a UUID",
+        )
+    })?;
+    Ok((!instance_id.is_nil()).then_some(instance_id))
+}
+
+fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor]) -> Option<Uuid> {
+    userdata
+        .iter()
+        .filter(|value| {
+            value.class_uuid == RDK_CLASS
+                && value.item_uuid == RDK_USERDATA
+                && (value.application_uuid.is_none()
+                    || value.application_uuid == Some(RDK_APPLICATION))
+        })
+        .filter_map(|value| {
+            parse_legacy_rdk_material_instance_id(data, value.payload_range.clone())
+                .ok()
+                .flatten()
+        })
+        .next_back()
 }
 
 fn wide_string(
@@ -3057,6 +3193,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 if let Ok((range, userdata)) =
                     class_data_with_userdata(scan.data, record, scan.archive, MATERIAL)
                 {
+                    let legacy_rdk_instance_id =
+                        legacy_rdk_material_instance_id(scan.data, &userdata);
                     let physically_based = userdata
                         .iter()
                         .find(|value| {
@@ -3083,7 +3221,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                                 }
                             }
                         });
-                    if let Ok(material) = parse_material(
+                    if let Ok(mut material) = parse_material(
                         scan.data,
                         range,
                         scan.archive,
@@ -3091,6 +3229,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                         record.range.start,
                         physically_based,
                     ) {
+                        if let Some(instance_id) = legacy_rdk_instance_id {
+                            material.plugin_uuid = UNIVERSAL_RENDER_ENGINE.to_string();
+                            material.rdk_instance_uuid = Some(instance_id.to_string());
+                        }
                         materials.push(material);
                         parsed = true;
                     }
@@ -4495,6 +4637,65 @@ mod tests {
             .expect("version one physically based material");
         assert_eq!(material.version, 1);
         assert_eq!(material.alpha, 1.0);
+    }
+
+    fn legacy_rdk_payload(xml: &str, terminated: bool, suffix: &[u8]) -> Vec<u8> {
+        let mut xml = xml.as_bytes().to_vec();
+        if terminated {
+            xml.push(0);
+        }
+        let mut bytes = 2_i32.to_le_bytes().to_vec();
+        bytes.extend((xml.len() as i32).to_le_bytes());
+        bytes.extend(xml);
+        bytes.extend(suffix);
+        bytes
+    }
+
+    fn legacy_rdk_descriptor(payload_range: Range<usize>) -> UserdataDescriptor {
+        UserdataDescriptor {
+            range: payload_range.clone(),
+            version: (2, 2),
+            class_uuid: RDK_CLASS,
+            item_uuid: RDK_USERDATA,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: Some(RDK_APPLICATION),
+            last_saved_as_goo: Some(false),
+            archive_version: Some(5),
+            writer_version: Some(0),
+            payload_range,
+            unknown_version: false,
+        }
+    }
+
+    #[test]
+    fn legacy_rdk_material_userdata_transfers_uuid_from_unterminated_xml() {
+        let xml = "<xml><render-content-manager-data><material instance-id=\"AABBCCDD-EEFF-0011-2233-445566778899\" /></render-content-manager-data></xml>";
+        let bytes = legacy_rdk_payload(xml, false, &[0xaa, 0xbb]);
+        let userdata = [legacy_rdk_descriptor(0..bytes.len())];
+        assert_eq!(
+            legacy_rdk_material_instance_id(&bytes, &userdata),
+            Some(Uuid::from_canonical([
+                0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                0x88, 0x99,
+            ]))
+        );
+    }
+
+    #[test]
+    fn legacy_rdk_material_userdata_ignores_terminated_callback_xml() {
+        let xml = "<xml><render-content-manager-data><material instance-id=\"AABBCCDD-EEFF-0011-2233-445566778899\" /></render-content-manager-data></xml>";
+        let bytes = legacy_rdk_payload(xml, true, &[]);
+        let userdata = [legacy_rdk_descriptor(0..bytes.len())];
+        assert_eq!(legacy_rdk_material_instance_id(&bytes, &userdata), None);
+    }
+
+    #[test]
+    fn legacy_rdk_material_userdata_rejects_malformed_xml() {
+        let bytes = legacy_rdk_payload("<xml><render-content-manager-data><material>", false, &[]);
+        let error = parse_legacy_rdk_material_instance_id(&bytes, 0..bytes.len())
+            .expect_err("malformed legacy XML");
+        assert!(matches!(error, FramingError::Structural { .. }));
     }
 
     #[test]

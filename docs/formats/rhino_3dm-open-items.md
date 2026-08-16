@@ -315,6 +315,23 @@ legacy-transfer behavior, and callback-owned XML boundary. The codec makes
 the CADIR decision to retain this XML only through the complete containing
 object record; it does not assign a neutral field grammar to RDK callbacks.
 
+Section 7.2.18 now also settles the V4/V5 material compatibility carrier
+written by `ON_RdkMaterialInstanceIdObsoleteUserData`. The source path
+`ON_Material::Internal_WriteV5`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_material.cpp` gates the carrier to
+archive version 50 and below and gates the inline class-data UUID to minor 5;
+the carrier writer in the same file defines version 2, a 0..1024 byte count,
+and raw unterminated XML. `ON_RdkUserData::DeleteAfterRead` in
+`/home/pcurve/side2/opennurbs/opennurbs_xml.cpp` proves the universal
+render-engine plug-in replacement, `material/@instance-id` transfer, and
+deletion. The witness
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/rdk_material_witness.cpp`
+produces V4/V5 direct XML and V6 inline UUID bytes; `cadmpeg inspect` locates
+both forms, and OpenNURBS readback returns the same UUID with universal
+plug-in identity for V4/V5. The codec now transfers the direct compatibility
+form and leaves NUL-terminated callback XML opaque by CADIR decision. Other
+future userdata class payloads remain open.
+
 The built-in `MappingCRCCache` userdata is also settled as a derived cache on
 custom texture-mapping primitives. Its class and item UUID is
 `5A4971F3-AA73-493C-A385-2F7EB4288989`, its application is `ON_opennurbs_id`,
@@ -577,7 +594,11 @@ and structured objects. The `ON_Light` class is now independently covered by
 V4, V5, and V6 OpenNURBS witnesses. Its class wrapper, light-record child
 boundary, packed 1.2 payload, document-unit scaling, degree-valued spot angle,
 and explicit-hotspot versus exponent-sentinel representations are settled;
-the Rust native record preserves those raw fields.
+the Rust native record preserves those raw fields. The `ON_Material` class is
+also independently covered by V4, V5, and V6 witnesses. Its V4/V5 direct
+legacy RDK material-instance carrier, universal render-engine plug-in
+precedence, and V6 inline UUID field are settled; the Rust material record
+transfers the compatibility UUID and retains the class-data UUID otherwise.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -590,7 +611,13 @@ OpenNURBS writer/reader trace in `opennurbs_light.cpp` and
 `cadmpeg inspect` class-data and raw-field reads, and the owner tests
 `light_table_class_data_stops_before_record_children`,
 `light_scales_spatial_values_but_not_direction_or_angles`, and
-`light_preserves_unset_hotspot_for_exponent_interface`.
+`light_preserves_unset_hotspot_for_exponent_interface`. The material slice is
+closed by `ON_Material::Internal_WriteV5`/`Read` and
+`ON_RdkUserData::DeleteAfterRead`, the authored V4/V5/V6 material witness,
+the `cadmpeg inspect` direct-XML and inline-UUID reads, and the owner tests
+`legacy_rdk_material_userdata_transfers_uuid_from_unterminated_xml`,
+`legacy_rdk_material_userdata_ignores_terminated_callback_xml`, and
+`legacy_rdk_material_userdata_rejects_malformed_xml`.
 
 ### FV-06. Later major payload admission
 
