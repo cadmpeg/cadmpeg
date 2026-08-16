@@ -769,6 +769,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1e_disc1c_disc14_face_root_body(&by_attr, entities));
     }
     if out.is_empty() {
+        out.extend(disc1e_disc1c_disc14_linked_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc1e_disc12_terminal_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -2001,6 +2004,125 @@ fn disc1e_disc1c_disc14_face_root_body(
     }
     let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
     refs.sort_unstable();
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
+}
+
+fn disc1e_disc1c_disc14_linked_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    let matching_chains = keyed_forward_chain_candidates(by_attr)
+        .into_iter()
+        .filter(|chain| {
+            chain.len() == 7
+                && matches!(
+                    chain.as_slice(),
+                    [root, disc_1c, shell, disc_14, disc_12, disc_10, terminal]
+                        if root.disc == 0x001e
+                            && root.flo() == 2
+                            && disc_1c.disc == 0x001c
+                            && disc_1c.flo() == 2
+                            && shell.disc == 0x001a
+                            && shell.flo() == 2
+                            && disc_14.disc == 0x0014
+                            && disc_14.flo() == 1
+                            && disc_12.disc == 0x0012
+                            && disc_12.flo() == 2
+                            && disc_10.disc == 0x0010
+                            && disc_10.flo() == 2
+                            && terminal.disc == 0x0004
+                            && terminal.flo() == 2
+                )
+        })
+        .collect::<Vec<_>>();
+    let [chain] = matching_chains.as_slice() else {
+        return Vec::new();
+    };
+    let canonical_faces = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x000e && record.flo() == 1)
+        .collect::<Vec<_>>();
+    if canonical_faces.is_empty() {
+        return Vec::new();
+    }
+    let direct_face_use = |face: &EntityRecord| {
+        let companion = face
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()?;
+        if companion.disc != 0x0018
+            || companion.flo() != 1
+            || companion.refs.get(2) != Some(&face.attr)
+        {
+            return None;
+        }
+        Some(companion)
+    };
+    let intermediate_face_use = |face: &EntityRecord| {
+        let intermediate = face
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()?;
+        if intermediate.disc != 0x0016
+            || intermediate.flo() != 2
+            || intermediate.refs.get(2) != Some(&face.attr)
+        {
+            return None;
+        }
+        let companion = intermediate
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()?;
+        (companion.disc == 0x0018
+            && companion.flo() == 1
+            && companion.refs.get(2) == Some(&intermediate.attr))
+        .then_some(companion)
+    };
+    let mut companions = HashSet::new();
+    let mut use_nodes = HashSet::new();
+    for face in canonical_faces {
+        let companion = direct_face_use(face).or_else(|| intermediate_face_use(face));
+        let Some(companion) = companion else {
+            return Vec::new();
+        };
+        let Some(use_node) = companion
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|record| {
+                record.disc == 0x0020
+                    && record.flo() == 4
+                    && record.refs.get(2) == Some(&companion.attr)
+            })
+        else {
+            return Vec::new();
+        };
+        if !companions.insert(companion.attr) || !use_nodes.insert(use_node.attr) {
+            return Vec::new();
+        }
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    let root = chain[0];
+    let shell = chain[2];
     vec![BodyRecord {
         attr: root.attr,
         kind: BodyKind::Solid,
@@ -4410,6 +4532,77 @@ mod linked_disc1c_disc16_disc14_tests {
         records[7].refs[2] = 20;
         records[8].refs[2] = 21;
         assert!(disc1c_disc16_disc14_linked_face_root_body(&index(&records)).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod linked_disc1e_disc1c_disc14_tests {
+    use super::{disc1e_disc1c_disc14_linked_face_root_body, EntityRecord};
+    use std::collections::HashMap;
+
+    fn record(attr: u16, disc: u16, flags: u32, refs: [u16; 6]) -> EntityRecord {
+        EntityRecord {
+            attr,
+            flags,
+            seq: u32::from(attr),
+            disc,
+            refs: refs.to_vec(),
+            offset: usize::from(attr),
+            end: usize::from(attr) + 26,
+        }
+    }
+
+    fn index(records: &[EntityRecord]) -> HashMap<u16, &EntityRecord> {
+        records.iter().map(|record| (record.attr, record)).collect()
+    }
+
+    #[test]
+    fn linked_lattice_owns_direct_and_intermediate_faces() {
+        let records = vec![
+            record(10, 0x1e, 2, [3, 1, 11, 1, 1, 1]),
+            record(11, 0x1c, 2, [3, 10, 12, 1, 1, 1]),
+            record(12, 0x1a, 2, [3, 11, 13, 1, 1, 1]),
+            record(13, 0x14, 1, [3, 12, 14, 1, 1, 1]),
+            record(14, 0x12, 2, [3, 13, 15, 1, 1, 1]),
+            record(15, 0x10, 2, [3, 14, 16, 1, 1, 1]),
+            record(16, 0x04, 2, [3, 15, 1, 1, 1, 1]),
+            record(20, 0x0e, 1, [1, 30, 1, 1, 1, 1]),
+            record(30, 0x18, 1, [1, 40, 20, 1, 1, 1]),
+            record(21, 0x0e, 1, [1, 31, 1, 1, 1, 1]),
+            record(31, 0x16, 2, [1, 32, 21, 1, 1, 1]),
+            record(32, 0x18, 1, [1, 41, 31, 1, 1, 1]),
+            record(40, 0x20, 4, [1, 1, 30, 1, 1, 1]),
+            record(41, 0x20, 4, [1, 1, 32, 1, 1, 1]),
+            record(50, 0x20, 4, [1; 6]),
+        ];
+        let bodies = disc1e_disc1c_disc14_linked_face_root_body(&index(&records));
+        let [body] = bodies.as_slice() else {
+            panic!("one linked disc1e-disc1c-disc14 body");
+        };
+        assert_eq!((body.attr, body.regions[0].shells[0].attr), (10, 12));
+        assert!(body.refs.contains(&20) && body.refs.contains(&21));
+        assert!(body.refs.contains(&50));
+    }
+
+    #[test]
+    fn linked_lattice_rejects_nonreciprocal_face_use() {
+        let mut records = vec![
+            record(10, 0x1e, 2, [3, 1, 11, 1, 1, 1]),
+            record(11, 0x1c, 2, [3, 10, 12, 1, 1, 1]),
+            record(12, 0x1a, 2, [3, 11, 13, 1, 1, 1]),
+            record(13, 0x14, 1, [3, 12, 14, 1, 1, 1]),
+            record(14, 0x12, 2, [3, 13, 15, 1, 1, 1]),
+            record(15, 0x10, 2, [3, 14, 16, 1, 1, 1]),
+            record(16, 0x04, 2, [3, 15, 1, 1, 1, 1]),
+            record(20, 0x0e, 1, [1, 30, 1, 1, 1, 1]),
+            record(30, 0x18, 1, [1, 40, 21, 1, 1, 1]),
+            record(40, 0x20, 4, [1, 1, 30, 1, 1, 1]),
+        ];
+        assert!(disc1e_disc1c_disc14_linked_face_root_body(&index(&records)).is_empty());
+
+        records[8].refs[2] = 20;
+        records[9].refs[2] = 21;
+        assert!(disc1e_disc1c_disc14_linked_face_root_body(&index(&records)).is_empty());
     }
 }
 
