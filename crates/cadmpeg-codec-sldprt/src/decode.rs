@@ -2305,40 +2305,40 @@ fn build_geometry_ir(
         &brep.surfaces,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
         &mut sketch_entities,
         &mut sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_point_geometry(
         &mut sketch_entities,
         &sketches,
         &ir.model.features,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut sketch_entities,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         &mut sketch_entities,
         &sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
         &mut sketch_entities,
         &sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         &mut sketch_constraints,
@@ -3280,33 +3280,33 @@ fn build_metadata_ir(
         &ir.model.surfaces,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_point_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut ir.model.sketch_entities,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         &mut ir.model.sketch_constraints,

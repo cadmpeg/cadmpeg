@@ -875,11 +875,18 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     };
     let child_pairs = declared_entity_handle_declared_child_pairs(lane, feature);
     let pairs = declared_entity_handle_pairs(lane, feature);
-    if !child_pairs.is_empty() {
-        let [child_pair] = child_pairs.as_slice() else {
+    if let [child_pair] = child_pairs.as_slice() {
+        // The relation operand identifies the radial child when present. Use
+        // that identity to ignore unrelated linked pairs in the same feature;
+        // without it, require the whole handle to remain unambiguous.
+        let operand_identifies_child = operand
+            .entity_ref
+            .as_deref()
+            .is_some_and(|entity_ref| child_pair[1].id == entity_ref);
+        if operand.entity_ref.is_some() && !operand_identifies_child {
             return None;
-        };
-        if pairs.len() != 1 {
+        }
+        if operand.entity_ref.is_none() && pairs.len() != 1 {
             return None;
         }
         let [center, radial] = *child_pair;
@@ -887,6 +894,9 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
         let [ru, rv] = radial.coordinates_m?;
         let radius = (ru - cu).hypot(rv - cv) * 1000.0;
         return same_dimension_length(radius, expected_radius).then_some((center, radius));
+    }
+    if !child_pairs.is_empty() {
+        return None;
     }
     let mut candidates = pairs.into_iter().filter_map(|[center, radial]| {
         let [cu, cv] = center.coordinates_m?;

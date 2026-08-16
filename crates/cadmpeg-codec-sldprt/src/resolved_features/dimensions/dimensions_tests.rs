@@ -326,7 +326,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
-        entity_ref: None,
+        entity_ref: Some("arc-radial".into()),
     };
     let marker = |id: &str, offset, marker_kind, coordinates_m| SketchInputEntity {
         id: id.into(),
@@ -342,7 +342,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         links: Vec::new(),
         link_selector: None,
     };
-    let lane = FeatureInputLane {
+    let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
         native_payload: Vec::new(),
@@ -394,6 +394,14 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
             marker("other-radial", 40, SketchInputKind::Point, [0.103, 0.004]),
         ],
     };
+    lane.sketch_entities[0].object_index = Some(50);
+    lane.sketch_entities[0].local_id = Some(49);
+    lane.sketch_entities[1].object_index = Some(49);
+    lane.sketch_entities[1].local_id = Some(0);
+    lane.sketch_entities[2].object_index = Some(70);
+    lane.sketch_entities[2].local_id = Some(69);
+    lane.sketch_entities[3].object_index = Some(69);
+    lane.sketch_entities[3].local_id = Some(0);
     let markers_by_id = lane
         .sketch_entities
         .iter()
@@ -415,6 +423,22 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         carrier.curve,
         Some(DimensionedCurveNative::Circle { center: [0.0, 0.0] })
     ));
+
+    let mut unbound_operand = operand.clone();
+    unbound_operand.entity_ref = None;
+    let unbound_markers = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&lane),
+        &unbound_markers,
+        "feature",
+        &unbound_operand,
+        5.0,
+    )
+    .is_none());
 
     let mut multiple_declared = lane.clone();
     multiple_declared.classes.push(FeatureInputClass {
