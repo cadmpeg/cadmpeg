@@ -321,6 +321,13 @@ the lowest unassigned non-construction entity ordinal in `GeometryList` order. T
 retains that persisted ordinal, and profiles are emitted in seed order. This is a projection rule,
 not a producer-defined field.
 
+CADIR decision: an endpoint without an explicit active coincident relation matches another endpoint
+only when their Euclidean distance is at most `64 × f64::EPSILON × max(1, |a.u|, |a.v|, |b.u|,
+|b.v|)`. An explicit coincident relation supplies endpoint identity before coordinate matching.
+When an endpoint has more than one eligible continuation, including multiple explicit coincident
+continuations, all involved entities remain separate profile seeds; no source-order tie-break is
+applied.
+
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
 distance, horizontal/vertical distance, angle, radius, and diameter relations transfer to neutral

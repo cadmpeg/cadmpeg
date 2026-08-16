@@ -186,29 +186,6 @@ remain open.
 
 ## 5. Design projection
 
-### DP-03. Sketch profile junction ambiguity and tolerance
-
-**Question.** What neutral endpoint-equivalence and junction policy applies when the producer
-persists coordinates with optional constraint operands but no junction tolerance or tie-break?
-
-**Known.** FreeCAD writes endpoint coordinates in `GeometryList` and ordered constraint operands in
-`ConstraintList`; it writes no generic endpoint-junction tolerance or junction-selection field.
-The authored `junction_coordinates_only.FCStd` witness has three lines meeting at one coordinate
-with `ConstraintList count="0"`. `junction_two_constraints.FCStd` has the same geometry with two
-coincident constraints naming two continuations.
-
-**Conflict.** design.rs:2474-2499 supplements constraints with coordinate matching.
-endpoints_match_by_roundoff at design.rs:2593-2603 uses 64 machine epsilons scaled by coordinate
-magnitude. The producer witnesses establish coordinates and optional constraints, not this
-neutral numeric boundary or the full admissible profile topology.
-
-**Need.** Settle endpoint equivalence and admissible profile topology for unconstrained and
-multi-constraint junctions. An ambiguous junction must use constraint identity, an explicit
-source-order rule, or an attributable refusal.
-
-**Note.** This pass settled the producer-side absence of a generic junction tolerance and
-tie-break. The neutral junction policy remains open.
-
 ### DP-05. Dependency-cycle ordinal fallback
 
 **Question.** What neutral projection applies when feature dependencies, parents, or expressions
