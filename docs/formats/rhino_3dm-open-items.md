@@ -88,14 +88,20 @@ typed compatibility, and which fields remain admissible?
 **Known.** The audited built-in class readers consume their known major-1
 prefixes, apply their minor field gates, and skip bounded suffixes. Major
 version changes remain family-specific; a class UUID and a preserved record do
-not establish typed compatibility with a new major layout.
+not establish typed compatibility with a new major layout. `ON_NurbsCage` is a
+settled family: its writer emits anonymous version 1.0, its reader accepts
+major 1 with any nonnegative minor after the fixed cage prefix, and its suffix
+ends at the cage chunk boundary. A non-1 cage major is rejected. In morph
+variant 3, that cage boundary remains distinct from the enclosing morph
+control boundary.
 
 **Need.** A producer implementation or independent witness for each later
 object-class major/version that is to enter typed decoding, with its field
 grammar and neutral mapping.
 
 **Note.** Narrowed 2026-08-16. Bounded later-minor handling is settled for the
-audited classes; later object-class versions with changed layout remain open.
+audited classes, including the nested NURBS cage; later object-class versions
+with changed layout remain open.
 
 ### FV-02. Future table-record payloads
 

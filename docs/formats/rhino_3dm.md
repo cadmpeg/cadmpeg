@@ -3820,6 +3820,10 @@ are homogeneous coordinates followed by a finite nonzero weight; Euclidean
 coordinates divide by that weight. Coordinates use document length conversion.
 Knot values and weights are unscaled.
 
+When a cage is nested in a morph-control end chunk, the cage's anonymous
+chunk is its own boundary. A cage suffix ends at that child boundary and does
+not consume the enclosing morph-control fields.
+
 ### 18.5 Morph controls
 
 `ON_MorphControl::Write` emits anonymous version 2.1. Its version-2 reader

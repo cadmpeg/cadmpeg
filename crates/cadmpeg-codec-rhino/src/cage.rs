@@ -326,6 +326,33 @@ mod tests {
     }
 
     #[test]
+    fn accepts_major_one_future_minor_and_skips_bounded_suffix() {
+        let mut body = rational_cage_body();
+        body[4..8].copy_from_slice(&2_i32.to_le_bytes());
+        body.extend(0x1357_9bdf_i32.to_le_bytes());
+        let bytes = crc_chunk(ANONYMOUS, &body);
+        let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+        })
+        .expect("major-one future minor is bounded-compatible");
+        assert_eq!(cage.control_points[7][0], 70.0);
+    }
+
+    #[test]
+    fn rejects_a_non_one_major() {
+        let mut body = rational_cage_body();
+        body[..4].copy_from_slice(&2_i32.to_le_bytes());
+        let bytes = crc_chunk(ANONYMOUS, &body);
+        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+        });
+        assert!(matches!(
+            result,
+            Err(GeometryError::UnsupportedVersion { .. })
+        ));
+    }
+
+    #[test]
     fn truncating_the_control_net_is_rejected_at_the_record_boundary() {
         // Drop the final control-point tuple so the count-framed control loop
         // runs past the record body's proven window.
