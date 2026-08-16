@@ -186,25 +186,6 @@ remain open.
 
 ## 5. Design projection
 
-### DP-02. Sketch profile seed order
-
-**Question.** Which neutral seed rule applies when the producer does not persist a profile-chain
-seed?
-
-**Known.** FreeCAD writes separate ordered `GeometryList` and `ConstraintList` values. The authored
-`disconnected_a.FCStd` and `disconnected_b.FCStd` witnesses contain the same two disconnected
-chains with their geometry-list orders exchanged; neither `Document.xml` contains a profile-chain
-or seed record.
-
-**Conflict.** design.rs:2385-2410 must select a neutral seed from decoder-owned data because the
-producer does not persist one. Geometry-list order establishes source order but does not select a
-neutral seed rule by itself.
-
-**Need.** Settle the neutral seed rule and retain the persisted entity ordinal in the decision.
-
-**Note.** This pass settled that the producer persists geometry and constraint order but no
-profile-chain seed. The neutral seed decision remains open.
-
 ### DP-03. Sketch profile junction ambiguity and tolerance
 
 **Question.** What neutral endpoint-equivalence and junction policy applies when the producer
