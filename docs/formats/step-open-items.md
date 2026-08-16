@@ -231,21 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### TP-05. Partial solid and tolerant point carriers
-
-**Question.** What STEP rule establishes partial solid and tolerant point carriers?
-
-**Known.** CADIR has no tolerant-point or partial-solid carrier. A
-`VERTEX_POINT` without a resolvable `CARTESIAN_POINT`, and every solid root
-with a missing mandatory carrier, is rejected atomically. The reader retains
-the source records as opaque data and emits a `TopologyNotTransferred` error;
-it does not infer coordinates or create a partial body. Salvage applies only
-to independent sheet or wire members that are complete.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### TP-06. Implicit face-plane orientation
 
 **Question.** What STEP rule establishes implicit face-plane orientation?

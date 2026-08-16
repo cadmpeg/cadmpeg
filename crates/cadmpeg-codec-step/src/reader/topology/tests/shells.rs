@@ -661,6 +661,43 @@ fn distinct_roots_with_shared_topology_get_owner_scopes() {
 }
 
 #[test]
+fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
+    let source = include_bytes!("data/tp05_missing_vertex_carrier.p21");
+    let sheet = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode partial sheet witness");
+    assert_eq!(sheet.ir().model.bodies.len(), 1);
+    assert_eq!(sheet.ir().model.faces.len(), 1);
+    assert_eq!(sheet.ir().model.vertices.len(), 3);
+    assert!(sheet
+        .ir()
+        .model
+        .vertices
+        .iter()
+        .all(|vertex| !vertex.id.as_str().contains("#6")));
+    assert!(sheet.report().losses.iter().any(|loss| loss
+        .message
+        .contains("VERTEX_POINT #6 has unresolved point carrier #3")));
+    assert!(cadmpeg_ir::validate_neutral(sheet.ir(), sheet.report().losses.clone()).is_ok());
+
+    let solid_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#100=SHELL_BASED_SURFACE_MODEL('partial sheet salvage',(#30,#97));",
+            "#100=MANIFOLD_SOLID_BREP('partial solid refusal',#30);",
+        );
+    let solid = StepCodec::default()
+        .decode(&mut Cursor::new(solid_source), &DecodeOptions::default())
+        .expect("decode partial solid witness");
+    assert!(solid.ir().model.bodies.is_empty());
+    assert!(solid.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyRootRejected.kind()
+            && loss.severity == cadmpeg_ir::Severity::Error
+    }));
+    assert!(cadmpeg_ir::validate_neutral(solid.ir(), solid.report().losses.clone()).is_ok());
+}
+
+#[test]
 fn rejected_solid_root_reports_an_error_severity_loss() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),

@@ -740,12 +740,18 @@ that bound, does not produce a plane. In a complex face-bound instance, the
 partial with the boundary parameters supplies the inherited `FACE_BOUND`
 attributes; an empty `FACE_OUTER_BOUND` partial supplies only the outer role.
 An `ORIENTED_FACE` keeps the base plane carrier orientation and composes its
-reversal through face sense and boundary traversal. A base `EDGE` emits a
-curve-less CADIR edge when both endpoint vertices have point carriers. A base
-`VERTEX` whose point carrier is absent makes its containing member mandatory and
-unrepresentable. Sheet and wire members containing that vertex are omitted;
-the solid-root transaction rejects it. CADIR has no tolerant-point or
-partial-solid carrier and does not infer coordinates. A geometric set with
+reversal through face sense and boundary traversal. ISO 10303-42:2021 §5.5.3
+defines `VERTEX_POINT.vertex_geometry` as the point that defines the vertex
+position. Section §5.5.5 requires vertex geometry to be consistent with an
+`EDGE_CURVE`; §6.4.2 IP5 requires every topological element of a
+`MANIFOLD_SOLID_BREP` to have defined associated geometry. A base `EDGE`
+emits a curve-less CADIR edge when both endpoint vertices have point carriers.
+
+CADIR decision: a topology member that requires a `VERTEX_POINT` with an
+absent point carrier is mandatory and unrepresentable. Sheet and wire
+representations omit only the failed independent member and retain complete
+members. A solid-root transaction rejects the root. CADIR has no tolerant-point
+or partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Curve-only and point-only sets remain
 standalone geometry.
 
