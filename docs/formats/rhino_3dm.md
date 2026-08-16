@@ -3786,8 +3786,14 @@ V5 annotations use world X as the reference horizontal vector. Its plane-space
 direction is `(dot(world-X, plane-X), dot(world-X, plane-Y))`. V5 angular
 dimensions store the two extension-line origin offsets in
 `ON_AngularDimension2Extra` userdata UUID
-`A68B151F-C778-4A6E-BCB4-23DDD1835677`. The userdata payload is anonymous
-version 1.0 followed by two model-length `f64` values. When the userdata is
+`A68B151F-C778-4A6E-BCB4-23DDD1835677`; its class UUID and item UUID are the
+same. Its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`. OpenNURBS writes its generic
+class-userdata header as version 2.2 with copy count 1 and the identity
+transform, followed by an anonymous payload version 1.0 and two model-length
+`f64` values in order: first extension-line origin offset, second
+extension-line origin offset. The OpenNURBS 5 application UUID is used so a
+V6 save-as-V5 retains this item; V4 does not write it. When the userdata is
 absent, both offsets are `-1.0`. A negative offset disables the override.
 
 The V5 text-style record stores packed version 1.2, the archive index, a

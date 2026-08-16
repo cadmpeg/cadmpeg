@@ -924,10 +924,9 @@ pub(crate) fn apply_userdata(
         ..
     } = &mut dimension.definition
     {
-        if let Some(extra) = userdata
-            .iter()
-            .find(|userdata| userdata.class_uuid == V5_ANGULAR_EXTRA)
-        {
+        if let Some(extra) = userdata.iter().find(|userdata| {
+            userdata.class_uuid == V5_ANGULAR_EXTRA && userdata.item_uuid == V5_ANGULAR_EXTRA
+        }) {
             let (mut reader, next, _minor) = anonymous(
                 data,
                 extra.payload_range.start,
@@ -1793,6 +1792,33 @@ pub(crate) mod tests {
             Definition::Angular {
                 first_extension_offset: 25.0,
                 second_extension_offset: 40.0,
+                ..
+            }
+        ));
+
+        let mut wrong_item_descriptor = angular_descriptor.clone();
+        wrong_item_descriptor.item_uuid = Uuid::nil();
+        let mut wrong_item_angular = decode(
+            &angular_bytes,
+            V5_ANGULAR,
+            0..angular_bytes.len(),
+            10.0,
+            archive,
+        )
+        .expect("fresh angular baseline");
+        apply_userdata(
+            &angular_extension,
+            std::slice::from_ref(&wrong_item_descriptor),
+            archive,
+            10.0,
+            &mut wrong_item_angular,
+        )
+        .expect("wrong item UUID is not a matching extension");
+        assert!(matches!(
+            wrong_item_angular.definition,
+            Definition::Angular {
+                first_extension_offset: -1.0,
+                second_extension_offset: -1.0,
                 ..
             }
         ));

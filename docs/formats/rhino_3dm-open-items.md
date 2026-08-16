@@ -161,14 +161,20 @@ and item UUID is `3E4904E6-E930-4FBC-AA42-EBD407AEFE3B`, its application UUID is
 per-viewport entry grammar, fixed settings mask, compatibility visibility byte,
 root-layer persistent-visibility rule, and source sort order. The decoder
 stores the normalized entries under the owning layer.
+The built-in `ON_AngularDimension2Extra` class userdata is also settled. Its
+class and item UUID is `A68B151F-C778-4A6E-BCB4-23DDD1835677`, its application
+UUID is `C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 20.3 defines its
+anonymous version-1.0 payload with two model-length extension-line offsets.
+The decoder applies the values to V5 angular dimensions after unit scaling and
+uses the source `-1.0` absent sentinel.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
 built-in hatch gradient userdata, the V5 dimension-style extra, and
-`ON_UserStringList` and `ON__LayerExtensions` are settled; other future
-class-specific payload semantics remain open.
+`ON_UserStringList`, `ON__LayerExtensions`, and `ON_AngularDimension2Extra`
+are settled; other future class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 
