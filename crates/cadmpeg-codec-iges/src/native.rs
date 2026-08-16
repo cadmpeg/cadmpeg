@@ -1490,7 +1490,9 @@ pub(crate) fn store(
     {
         let record = by_directory.get(&group.sequence).copied();
         let count = record
-            .and_then(|record| record.count(1))
+            .and_then(|record| {
+                record.count_with_stride_before(1, 1, primary_end(group.sequence, record))
+            })
             .unwrap_or_default();
         for index in 0..count {
             if let Some(sequence) = record
@@ -1765,7 +1767,9 @@ pub(crate) fn store(
                 }
             } else {
                 let count = parameters
-                    .and_then(|record| record.count(1))
+                    .and_then(|record| {
+                        record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                    })
                     .unwrap_or_default();
                 NativeLineFontDefinition::VisibleBlankPattern {
                     id: format!("iges:presentation:line-font#D{}", entry.sequence),
@@ -2047,7 +2051,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(1))
+                .and_then(|record| {
+                    record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             let terms = (0..count)
                 .filter_map(|index| {
@@ -2256,7 +2262,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(3))
+                .and_then(|record| {
+                    record.count_with_stride_before(3, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             NativeSubfigureDefinition {
                 id: format!("iges:product:subfigure-definition#D{}", entry.sequence),
@@ -2539,7 +2547,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(11))
+                .and_then(|record| {
+                    record.count_with_stride_before(11, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             NativeRectangularArray {
                 id: format!("iges:product:rectangular-array#D{}", entry.sequence),
@@ -2582,7 +2592,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(9))
+                .and_then(|record| {
+                    record.count_with_stride_before(9, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             NativeCircularArray {
                 id: format!("iges:product:circular-array#D{}", entry.sequence),
@@ -2660,7 +2672,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(1))
+                .and_then(|record| {
+                    record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             NativeGroup {
                 id: format!("iges:product:group#D{}", entry.sequence),
@@ -2760,7 +2774,13 @@ pub(crate) fn store(
                 Some(match entry.form {
                     5 => {
                         let count = record
-                            .and_then(|record| record.count(1))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    1,
+                                    7,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAssociativity::LabelDisplay {
                             id,
@@ -2813,7 +2833,13 @@ pub(crate) fn store(
                     }
                     6 => {
                         let count = record
-                            .and_then(|record| record.count(1))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    1,
+                                    1,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAssociativity::ViewList {
                             id,
@@ -2838,7 +2864,13 @@ pub(crate) fn store(
                     }
                     9 => {
                         let count = record
-                            .and_then(|record| record.count(2))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    2,
+                                    1,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAssociativity::SingleParent {
                             id,
@@ -2850,7 +2882,13 @@ pub(crate) fn store(
                     }
                     12 => {
                         let count = record
-                            .and_then(|record| record.count(1))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    1,
+                                    2,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAssociativity::ExternalReferenceIndex {
                             id,
@@ -2871,7 +2909,13 @@ pub(crate) fn store(
                     }
                     13 => {
                         let count = record
-                            .and_then(|record| record.count(2))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    2,
+                                    1,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAssociativity::DimensionedGeometry {
                             id,
@@ -2899,7 +2943,13 @@ pub(crate) fn store(
                     }
                     16 => {
                         let count = record
-                            .and_then(|record| record.count(2))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    2,
+                                    1,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAssociativity::Planar {
                             id,
@@ -2922,13 +2972,29 @@ pub(crate) fn store(
                         }
                     }
                     18 | 20 => {
-                        let counts = (2..=7)
+                        let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+                        let first_list_index = if entry.form == 18 { 10 } else { 9 };
+                        let count_options = (2..=7)
                             .map(|index| {
-                                record
-                                    .and_then(|record| record.count(index))
-                                    .unwrap_or_default()
+                                record.and_then(|record| {
+                                    record.count_with_stride_before(index, 1, end)
+                                })
                             })
-                            .collect::<Vec<_>>();
+                            .collect::<Option<Vec<_>>>();
+                        let complete = record.is_some()
+                            && count_options.as_ref().is_some_and(|counts| {
+                                counts
+                                    .iter()
+                                    .try_fold(0_usize, |total, count| total.checked_add(*count))
+                                    .is_some_and(|total| {
+                                        total <= end.saturating_sub(first_list_index)
+                                    })
+                            });
+                        let counts = if complete {
+                            count_options.unwrap_or_default()
+                        } else {
+                            vec![0; 6]
+                        };
                         let flow_links = |start, count| {
                             (0..count)
                                 .map(|offset| {
@@ -2951,7 +3017,7 @@ pub(crate) fn store(
                                 })
                                 .collect::<Vec<_>>()
                         };
-                        let mut cursor = if entry.form == 18 { 10 } else { 9 };
+                        let mut cursor = first_list_index;
                         let associated_flows = flow_links(cursor, counts[0]);
                         cursor += counts[0];
                         let connections = (0..counts[1])
@@ -3089,7 +3155,13 @@ pub(crate) fn store(
                     }
                     21 => {
                         let count = record
-                            .and_then(|record| record.count(2))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    2,
+                                    5,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAssociativity::RecalculableDimension {
                             id,
@@ -3250,8 +3322,15 @@ pub(crate) fn store(
                 crate::graph::resolved_structure_sequence(references, entry.sequence);
             let definition_record =
                 definition_sequence.and_then(|sequence| by_directory.get(&sequence).copied());
-            let attribute_count = definition_record
-                .and_then(|record| record.count(3))
+            let attribute_count = definition_sequence
+                .zip(definition_record)
+                .and_then(|(sequence, record)| {
+                    let stride =
+                        entries
+                            .get(&sequence)
+                            .map_or(1, |entry| if entry.form == 0 { 3 } else { 1 });
+                    record.count_with_stride_before(3, stride, primary_end(sequence, record))
+                })
                 .unwrap_or_default();
             let values_per_row = (0..attribute_count)
                 .try_fold(0_usize, |total, index| {
@@ -3273,12 +3352,21 @@ pub(crate) fn store(
                 usize::from(values_per_row > 0)
             } else {
                 record
-                    .and_then(|record| record.count(1))
+                    .and_then(|record| {
+                        (values_per_row > 0).then(|| {
+                            record.count_with_stride_before(
+                                1,
+                                values_per_row,
+                                primary_end(entry.sequence, record),
+                            )
+                        })
+                    })
+                    .flatten()
                     .unwrap_or_default()
             };
             let value_start = if entry.form == 0 { 1 } else { 2 };
             let row_count = record.map_or(0, |record| {
-                let available = record.tokens.len().saturating_sub(value_start);
+                let available = primary_end(entry.sequence, record).saturating_sub(value_start);
                 if values_per_row == 0 || row_count > available / values_per_row {
                     0
                 } else {
@@ -3687,7 +3775,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(1))
+                .and_then(|record| {
+                    record.count_with_stride_before(1, 3, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             let owners = by_directory
                 .iter()
@@ -3799,13 +3889,19 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let view_count = record
-                .and_then(|record| record.count(1))
-                .unwrap_or_default();
-            let entity_count = record
-                .and_then(|record| record.count(2))
-                .unwrap_or_default();
             let width = if entry.form == 3 { 1 } else { 5 };
+            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+            let view_count = record
+                .and_then(|record| record.count_with_stride_before(1, width, end))
+                .and_then(|view_count| {
+                    let entity_count =
+                        record.and_then(|record| record.count_with_stride_before(2, 1, end))?;
+                    let entity_start = 3_usize.checked_add(view_count.checked_mul(width)?)?;
+                    let finish = entity_start.checked_add(entity_count)?;
+                    (finish <= end).then_some((view_count, entity_count))
+                })
+                .unwrap_or_default();
+            let (view_count, entity_count) = view_count;
             NativeViewVisibility {
                 id: format!("iges:presentation:view-visibility#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -3888,7 +3984,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(1))
+                .and_then(|record| {
+                    record.count_with_stride_before(1, 6, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             let value = |index| {
                 record
@@ -3955,14 +4053,24 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let view_count = record
-                .and_then(|record| record.count(1))
-                .unwrap_or_default();
             let width = if entry.form == 0 { 3 } else { 4 };
-            let annotation_count_index = 2 + view_count * width;
-            let annotation_count = record
-                .and_then(|record| record.count(annotation_count_index))
+            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+            let counts = record
+                .and_then(|record| record.count_with_stride_before(1, width, end))
+                .and_then(|view_count| {
+                    let annotation_count_index =
+                        2_usize.checked_add(view_count.checked_mul(width)?)?;
+                    let annotation_count = record.and_then(|record| {
+                        record.count_with_stride_before(annotation_count_index, 1, end)
+                    })?;
+                    let finish = annotation_count_index
+                        .checked_add(1)?
+                        .checked_add(annotation_count)?;
+                    (finish <= end).then_some((view_count, annotation_count))
+                })
                 .unwrap_or_default();
+            let (view_count, annotation_count) = counts;
+            let annotation_count_index = 2 + view_count * width;
             let trailing = trailing_by_directory
                 .get(&entry.sequence)
                 .and_then(|groups| groups.as_ref());
@@ -4104,7 +4212,13 @@ pub(crate) fn store(
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));
             Some(if entry.entity_type == 212 {
                 let count = record
-                    .and_then(|record| record.count(1))
+                    .and_then(|record| {
+                        record.count_with_stride_before_default_tail(
+                            1,
+                            12,
+                            primary_end(entry.sequence, record),
+                        )
+                    })
                     .unwrap_or_default();
                 NativeAnnotation::GeneralNote {
                     id: format!("iges:presentation:annotation#D{}", entry.sequence),
@@ -4117,7 +4231,13 @@ pub(crate) fn store(
                 }
             } else if entry.entity_type == 213 {
                 let count = record
-                    .and_then(|record| record.count(12))
+                    .and_then(|record| {
+                        record.count_with_stride_before_default_tail(
+                            12,
+                            20,
+                            primary_end(entry.sequence, record),
+                        )
+                    })
                     .unwrap_or_default();
                 NativeAnnotation::NewGeneralNote {
                     id: format!("iges:presentation:annotation#D{}", entry.sequence),
@@ -4204,7 +4324,9 @@ pub(crate) fn store(
                 }
             } else if entry.entity_type == 214 {
                 let count = record
-                    .and_then(|record| record.count(1))
+                    .and_then(|record| {
+                        record.count_with_stride_before(1, 2, primary_end(entry.sequence, record))
+                    })
                     .unwrap_or_default();
                 let z = record.and_then(|record| record.number(4));
                 NativeAnnotation::Leader {
@@ -4367,7 +4489,13 @@ pub(crate) fn store(
                             (1, 2, 3)
                         };
                         let leader_count = record
-                            .and_then(|record| record.count(count_index))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    count_index,
+                                    1,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         let leaders = (0..leader_count)
                             .map(|offset| leader_link(leader_start + offset))
@@ -4460,13 +4588,22 @@ pub(crate) fn store(
                         transformation,
                     },
                     228 => {
-                        let geometry_count = record
-                            .and_then(|record| record.count(2))
+                        let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+                        let counts = record
+                            .and_then(|record| record.count_with_stride_before(2, 1, end))
+                            .and_then(|geometry_count| {
+                                let leader_count_index = 3_usize.checked_add(geometry_count)?;
+                                let leader_count = record.and_then(|record| {
+                                    record.count_with_stride_before(leader_count_index, 1, end)
+                                })?;
+                                let finish = leader_count_index
+                                    .checked_add(1)?
+                                    .checked_add(leader_count)?;
+                                (finish <= end).then_some((geometry_count, leader_count))
+                            })
                             .unwrap_or_default();
+                        let (geometry_count, leader_count) = counts;
                         let leader_count_index = 3 + geometry_count;
-                        let leader_count = record
-                            .and_then(|record| record.count(leader_count_index))
-                            .unwrap_or_default();
                         NativeAnnotation::GeneralSymbol {
                             id,
                             source_entity,
@@ -4499,7 +4636,13 @@ pub(crate) fn store(
                     }
                     230 => {
                         let island_count = record
-                            .and_then(|record| record.count(8))
+                            .and_then(|record| {
+                                record.count_with_stride_before(
+                                    8,
+                                    1,
+                                    primary_end(entry.sequence, record),
+                                )
+                            })
                             .unwrap_or_default();
                         NativeAnnotation::SectionedArea {
                             id,
@@ -4558,7 +4701,9 @@ pub(crate) fn store(
                 malformed_definition_sequences.push(entry.sequence);
                 return None;
             };
-            let Some(count) = record.count(3) else {
+            let Some(count) =
+                record.count_with_stride_before(3, 1, primary_end(entry.sequence, record))
+            else {
                 malformed_definition_sequences.push(entry.sequence);
                 return Some((
                     entry.sequence,

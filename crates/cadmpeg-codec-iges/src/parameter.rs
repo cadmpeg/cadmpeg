@@ -178,6 +178,30 @@ impl ParameterRecord {
         let end = end.min(self.tokens.len());
         (required <= end.saturating_sub(item_start)).then_some(count)
     }
+
+    /// Return a nonnegative declared count before the entity-specific end when
+    /// the final item may omit trailing defaulted fields at the record delimiter.
+    pub(crate) fn count_with_stride_before_default_tail(
+        &self,
+        index: usize,
+        stride: usize,
+        end: usize,
+    ) -> Option<usize> {
+        if stride == 0 {
+            return None;
+        }
+        let end = end.min(self.tokens.len());
+        if end < self.tokens.len() {
+            return self.count_with_stride_before(index, stride, end);
+        }
+        let item_start = index.checked_add(1)?;
+        let count = self
+            .integer(index)
+            .and_then(|value| usize::try_from(value).ok())?;
+        let available = end.saturating_sub(item_start);
+        let max_count = available.checked_add(stride - 1)?.checked_div(stride)?;
+        (count <= max_count).then_some(count)
+    }
 }
 
 pub(crate) fn trailing_pointer_groups(

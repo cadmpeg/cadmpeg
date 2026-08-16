@@ -333,6 +333,178 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
 }
 
 #[test]
+fn decode_label_display_count_stops_before_trailing_property_group() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 5,
+            label: "LABELS".into(),
+            status: "00000200",
+            parameters: "402,2,1,0,0,0,0,0,1,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 7,
+            label: "PROP".into(),
+            status: "00000200",
+            parameters: "406,1,1HX;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = &native.arenas["entities"][0];
+    let associativity = &native.arenas["associativities"][0];
+
+    assert_eq!(
+        entity.fields()["property_links"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(associativity.fields()["declared_count"], 2);
+    assert!(associativity.fields()["placements"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn decode_general_note_count_stops_before_trailing_property_group() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00000200",
+            parameters: "212,2,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 7,
+            label: "PROP".into(),
+            status: "00000200",
+            parameters: "406,1,1HX;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = &native.arenas["entities"][0];
+    let annotation = &native.arenas["annotations"][0];
+
+    assert_eq!(
+        entity.fields()["property_links"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(annotation.fields()["declared_string_count"], 2);
+    assert!(annotation.fields()["strings"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn decode_view_visibility_counts_stop_at_the_next_list_boundary() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 3,
+            label: "VIEWS".into(),
+            status: "00000200",
+            parameters: "402,2,3,1,5,0,1,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000200",
+            parameters: "410,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "POINT".into(),
+            status: "00000200",
+            parameters: "116,1,2,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 7,
+            label: "PROP".into(),
+            status: "00000200",
+            parameters: "406,1,1HX;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = &native.arenas["entities"][0];
+    let visibility = &native.arenas["view_visibility"][0];
+
+    assert_eq!(
+        entity.fields()["property_links"][0],
+        "iges:entity:directory#7"
+    );
+    assert!(visibility.fields()["displays"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(visibility.fields()["entities"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn decode_flow_counts_stop_after_the_complete_class_lists() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 18,
+            label: "FLOW".into(),
+            status: "00000200",
+            parameters: "402,2,2,2,2,2,2,2,0,0,0,0,0,0,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 7,
+            label: "PROP".into(),
+            status: "00000200",
+            parameters: "406,1,1HX;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = &native.arenas["entities"][0];
+    let flow = &native.arenas["associativities"][0];
+
+    assert_eq!(
+        entity.fields()["property_links"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(flow.fields()["declared_associated_flow_count"], 2);
+    assert!(flow.fields()["associated_flows"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(flow.fields()["connections"].as_array().unwrap().is_empty());
+    assert!(flow.fields()["joins"].as_array().unwrap().is_empty());
+    assert!(flow.fields()["names"].as_array().unwrap().is_empty());
+    assert!(flow.fields()["name_displays"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(flow.fields()["continuations"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_native_type_106_does_not_invent_tuples_for_invalid_interpretation() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {

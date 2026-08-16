@@ -59,16 +59,6 @@ from a conformant file.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-17. Native counted fields are not bounded before trailing pointer groups
-
-**Question.** Must every native counted field stop at the selected entity-specific boundary before association and property pointer groups?
-
-**Known.** `native.rs:1475-1484` computes `primary_end` from the selected trailing-group boundary. `ParameterDataRecord::count` instead delegates to `count_with_stride` with `self.tokens.len()` at `parameter.rs:140-150`. Type 406 Form 1 is now bounded by that selected end at `native.rs:1914-1921`, as required by IGES 5.3 §4.98. The sweep still found unbounded count readers at `native.rs:1492-1494`, `1767-1769`, `2047-2049`, `2255-2258`, `2538-2541`, `2581-2584`, `2659-2662`, `2759-2762`, `2812-2815`, `2837-2840`, `2849-2852`, `2870-2873`, `2898-2901`, `3088-3091`, `3250-3275`, `3686-3689`, `3799-3805`, `3887-3890`, `3955-3963`, `4103-4119`, `4203-4206`, `4366-4369`, `4460-4467`, `4498-4501`, and `4557-4560`.
-
-**Need.** Complete the entity-form audit and make each remaining count-driven native list use the entity-specific end. A deliberately oversized count must not consume valid trailing pointer-group tokens as typed list values. Raw tokens and a source-attributed malformed state must remain available.
-
-**Note.** The Type 406 Form 1 portion is settled by the code-built owner test `native/tests.rs::decode_definition_levels_stop_before_trailing_property_group`. Its `406,3,7,0,1,3;` record has a valid property suffix; the selected primary end leaves only one token after `NP`, so the declared three-level list is empty rather than consuming the suffix tokens. The specification records the §4.98 rule and the CADIR recovery. The remaining unbounded readers require separate entity-form probes.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-09. Type 104 endpoints are not independently authoritative

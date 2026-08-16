@@ -255,6 +255,49 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
 }
 
 #[test]
+fn counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix() {
+    let partial_final_item = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: std::iter::once(0)
+            .chain(std::iter::once(1))
+            .chain((0..19).map(|_| 0))
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        comment: Vec::new(),
+    };
+    assert_eq!(
+        partial_final_item.count_with_stride_before_default_tail(1, 20, 21),
+        Some(1)
+    );
+
+    let mut suffixed_tokens = vec![0, 2];
+    suffixed_tokens.extend(std::iter::repeat_n(0, 20));
+    suffixed_tokens.extend([1, 9]);
+    let suffixed = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: suffixed_tokens
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        comment: Vec::new(),
+    };
+    assert_eq!(
+        suffixed.count_with_stride_before_default_tail(1, 20, 22),
+        None
+    );
+}
+
+#[test]
 fn unique_invalid_trailing_pointer_group_remains_visible() {
     let record = ParameterRecord {
         directory_sequence: 1,
