@@ -3776,7 +3776,6 @@ fn valid_vertex_recipe(
 fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut identities = HashSet::new();
     let mut record_indices = HashSet::new();
-    let mut components = HashMap::new();
     for occurrence in &ctx.native.design_component_occurrences {
         let stream = design_stream(&occurrence.id);
         let valid = identities.insert((stream, occurrence.occurrence_guid.to_ascii_lowercase()))
@@ -3794,11 +3793,11 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && design::decode::sketch::valid_sketch_transform(&transform)
                 }
                 _ => false,
-            }
-            && components
-                .entry((stream, occurrence.component_guid.to_ascii_lowercase()))
-                .or_insert(occurrence.component_record_index)
-                == &occurrence.component_record_index;
+            };
+        // The duplicated references must agree within one carrier, which
+        // the decoder checks. The component GUID is the reusable-definition
+        // identity; a different carrier-local component-record reference
+        // does not contradict it.
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

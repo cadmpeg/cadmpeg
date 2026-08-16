@@ -136,6 +136,43 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
 }
 
 #[test]
+fn validation_accepts_carrier_local_component_references() {
+    use crate::records::DesignComponentOccurrence;
+
+    const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
+    let occurrence = |record_index: u32,
+                      byte_offset: u64,
+                      component_record_index: u64,
+                      occurrence_guid: &str| DesignComponentOccurrence {
+        id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
+        class_tag: "256".into(),
+        record_index,
+        byte_offset,
+        component_record_index,
+        component_guid: COMPONENT.into(),
+        component_guid_offset: byte_offset + 48,
+        occurrence_guid: occurrence_guid.into(),
+        occurrence_guid_offset: byte_offset + 124,
+        occurrence_ordinal: 1,
+        transform: None,
+        transform_offset: None,
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_component_occurrences.extend([
+            occurrence(100, 1_000, 700, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
+            occurrence(101, 2_000, 701, "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff"),
+        ]);
+    }
+
+    let findings = crate::validate::validate_native(&ir);
+    assert!(!findings.iter().any(|finding| {
+        finding.message == "Fusion Design component occurrence has an invalid fixed frame"
+    }));
+}
+
+#[test]
 fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
