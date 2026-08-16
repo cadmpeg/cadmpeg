@@ -1256,11 +1256,19 @@ impl MeshQuotient {
                 roots_by_point.entry(point).or_default().push(root);
             }
             let mut changed = false;
+            let mut affected_edges = HashSet::new();
             for roots in roots_by_point.into_values() {
                 let Some((&first, rest)) = roots.split_first() else {
                     continue;
                 };
                 for &root in rest {
+                    affected_edges.extend(
+                        self.members[first]
+                            .iter()
+                            .chain(&self.members[root])
+                            .map(|node| node / 2)
+                            .filter(|edge| !edge_candidates[*edge].is_empty()),
+                    );
                     if self.merge(first, root).is_none() {
                         return false;
                     }
@@ -1270,7 +1278,7 @@ impl MeshQuotient {
             if !changed {
                 return true;
             }
-            if !self.edge_domains_viable(edge_candidates) {
+            if !self.propagate_edge_domains(affected_edges, edge_candidates, None) {
                 return false;
             }
         }
@@ -6026,6 +6034,15 @@ impl MeshSelectionSearch<'_> {
         if root_count < self.vertex_points.len() {
             return None;
         }
+        if root_count == self.vertex_points.len()
+            && !measured.point_assignment_exists(
+                self.vertex_points.len(),
+                self.edge_candidates,
+                Some(propagation_budget),
+            )
+        {
+            return None;
+        }
         self.fixed_remaining_faces_are_orientable()
             .then_some(measured)
     }
@@ -6100,6 +6117,18 @@ impl MeshSelectionSearch<'_> {
             }
             let root_count = measured.root_count();
             if root_count < self.vertex_points.len() {
+                return;
+            }
+            if root_count == self.vertex_points.len()
+                && !measured.point_assignment_exists(
+                    self.vertex_points.len(),
+                    self.edge_candidates,
+                    Some(propagation_budget),
+                )
+            {
+                if propagation_budget.exhausted() {
+                    self.exhausted = true;
+                }
                 return;
             }
             if !self.fixed_remaining_faces_are_orientable() {
@@ -6374,7 +6403,7 @@ impl MeshSelectionSearch<'_> {
                     // The branch preflight has already run. Continue the
                     // forced suffix without another memo entry or preflight.
                     self.search_state(&next_quotient, true, budget, propagation_budget);
-                } else if budget.exhausted() {
+                } else if budget.exhausted() || propagation_budget.exhausted() {
                     self.exhausted = true;
                 }
             }
@@ -6400,7 +6429,7 @@ impl MeshSelectionSearch<'_> {
                     // `prepare_selected_branch` has already applied the recursive
                     // entry preflight to this quotient.
                     self.search_from_state(&next_quotient, true, budget, propagation_budget);
-                } else if budget.exhausted() {
+                } else if budget.exhausted() || propagation_budget.exhausted() {
                     self.exhausted = true;
                 }
             }
