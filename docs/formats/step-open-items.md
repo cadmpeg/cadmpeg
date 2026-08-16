@@ -444,21 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-04. Annotation text completeness
-
-**Question.** What STEP rule establishes annotation text completeness?
-
-**Known.** A direct text carrier or a graph with exactly one reachable text
-carrier supplies the presentation text. A graph with multiple reachable text
-carriers has no ordered composition in this model, so the text remains absent,
-a metadata loss is emitted, and every carrier remains a named opaque record
-with its source links. The reader never selects a carrier by traversal or
-serialization order.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### AP-05. Style precedence for independent styled items
 
 **Question.** What STEP rule establishes style precedence for independent styled items?

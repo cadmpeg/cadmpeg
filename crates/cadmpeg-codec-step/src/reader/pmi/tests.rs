@@ -697,6 +697,61 @@ fn supported_geometric_tolerance_kinds_emit_matching_leaf_entities() {
 }
 
 #[test]
+fn annotation_text_requires_one_reachable_carrier() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let decode = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode annotation text witness")
+    };
+    let single = decode(include_bytes!("tests/data/ap04_single_text.p21"));
+    let PmiDefinition::Presentation { ref text, .. } = single.ir().model.pmi[0].definition else {
+        panic!("single text annotation has the wrong definition")
+    };
+    assert_eq!(text.as_deref(), Some("single text"));
+    assert!(!single
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PresentationAnnotationTextUnordered.kind()));
+    assert!(!single
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown records")
+        .iter()
+        .any(|record| record.id.0.ends_with("#1")));
+
+    let first = decode(include_bytes!("tests/data/ap04_composite_text_first.p21"));
+    let reordered = decode(include_bytes!(
+        "tests/data/ap04_composite_text_reordered.p21"
+    ));
+    for result in [&first, &reordered] {
+        let PmiDefinition::Presentation { ref text, .. } = result.ir().model.pmi[0].definition
+        else {
+            panic!("composite text annotation has the wrong definition")
+        };
+        assert!(text.is_none());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::PresentationAnnotationTextUnordered.kind()
+                && loss.message.contains("2 reachable text carriers")
+        }));
+        let unknowns = result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown records");
+        for id in [1, 2, 3] {
+            assert!(
+                unknowns
+                    .iter()
+                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                "ambiguous text carrier #{id} was not retained"
+            );
+        }
+    }
+}
+
+#[test]
 fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
 

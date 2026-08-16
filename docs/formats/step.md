@@ -1113,12 +1113,22 @@ inherited annotation partials. `INVISIBILITY` targeting a transferred
 presentation annotation sets its `visible=false`; it does not change visibility
 on a shared geometry or tessellation carrier. Annotation placeholder
 occurrences with a leader line transfer through the same presentation PMI
-model. A direct text carrier or a graph with exactly one reachable text
-carrier supplies the presentation text. A graph with multiple reachable text
-carriers has no ordered composition in this model, so the text remains absent,
-a metadata loss is emitted, and the carriers remain named opaque records with
-their source links. Unmodeled tessellated annotation carriers remain named
-opaque records with their source links. `PLUS_MINUS_TOLERANCE` carries
+model. ISO 10303-46 §5.4.13 defines `ANNOTATION_TEXT_OCCURRENCE.item` as a
+SELECT of `TEXT_LITERAL`, `ANNOTATION_TEXT`, `ANNOTATION_TEXT_CHARACTER`,
+`DEFINED_CHARACTER_GLYPH`, and `COMPOSITE_TEXT`. Its recursive text graph uses
+`TEXT_STRING_REPRESENTATION.items : SET[1:?]` (§5.4.46) and
+`COMPOSITE_TEXT.collected_text : SET[2:?]` (§5.4.18); §5.2 describes these
+entities as recursive collections. Aggregate order therefore has no text
+composition meaning. A direct text carrier or a graph with exactly one
+reachable text carrier supplies the presentation text.
+CADIR decision: the reader traverses the complete reachable reference graph
+and counts each text-carrier identity once. A graph with multiple reachable
+text carriers has no ordered composition, so the text remains absent, a
+metadata loss is emitted, and every carrier and unresolved composition record
+remains named opaque data with its source links. Traversal order, aggregate
+serialization order, and entity identity never select a carrier. Unmodeled
+tessellated annotation carriers remain named opaque records with their source
+links. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.
