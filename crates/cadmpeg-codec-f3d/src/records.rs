@@ -3185,6 +3185,33 @@ pub enum DesignBaseFeatureConstruction {
         /// Six-byte source fields parallel to `result_records`.
         result_fields: Vec<[u8; 6]>,
     },
+    /// Direct-modeling body-reference envelope used by the class-377/class-259 form.
+    BodyBasedOnFaces {
+        /// The Design body entity suffix exposed by the envelope.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Body suffixes used by history-to-BREP resolution for this form.
+        body_reference_records: Vec<u32>,
+        /// Byte offsets parallel to `body_reference_records`.
+        body_reference_record_offsets: Vec<u64>,
+        /// PM body-reference record named by the fixed envelope lane.
+        parameter_body_record: u32,
+        /// Byte offset of `parameter_body_record`.
+        parameter_body_record_offset: u64,
+        /// Auxiliary record named by the fixed envelope lane.
+        auxiliary_record: u32,
+        /// Byte offset of `auxiliary_record`.
+        auxiliary_record_offset: u64,
+        /// LP-UTF-16 GUID carried by the envelope.
+        envelope_guid: String,
+        /// Byte offset of the first code unit of `envelope_guid`.
+        envelope_guid_offset: u64,
+        /// Stored body-source property value.
+        tag_body_based_on_faces: bool,
+        /// Byte offset of `tag_body_based_on_faces`.
+        tag_body_based_on_faces_offset: u64,
+    },
     /// Body snapshot form used by the class-314/class-259 scope pair.
     BodySnapshot {
         /// Ordered Design body entity suffixes exposed by the snapshot.
@@ -3219,6 +3246,10 @@ impl DesignBaseFeatureConstruction {
             | Self::BodySnapshot {
                 body_entity_suffixes,
                 ..
+            }
+            | Self::BodyBasedOnFaces {
+                body_entity_suffixes,
+                ..
             } => body_entity_suffixes,
         }
     }
@@ -3227,6 +3258,10 @@ impl DesignBaseFeatureConstruction {
     pub(crate) fn body_reference_records(&self) -> &[u32] {
         match self {
             Self::ResultBodies {
+                body_reference_records,
+                ..
+            }
+            | Self::BodyBasedOnFaces {
                 body_reference_records,
                 ..
             } => body_reference_records,

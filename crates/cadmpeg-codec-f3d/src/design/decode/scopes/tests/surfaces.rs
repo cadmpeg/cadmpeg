@@ -753,3 +753,146 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     mismatched_pair.paired_byte_offset -= 1;
     assert!(exact_base_feature_construction(&zero_body, &mismatched_pair).is_none());
 }
+
+#[test]
+fn base_feature_scope_decodes_class_377_body_based_on_faces_envelope() {
+    use crate::layout::base_feature_class_377_prefix as class_377;
+
+    let mut bytes = vec![0u8; class_377::LEN];
+    bytes[class_377::BODY_REFERENCE_COUNT_MARKER] = class_377::BODY_REFERENCE_COUNT_MARKER_VALUE;
+    bytes[class_377::BODY_REFERENCE_COUNT..class_377::PARAMETER_BODY_REFERENCE_MARKER]
+        .copy_from_slice(&class_377::BODY_REFERENCE_COUNT_VALUE.to_le_bytes());
+    for (offset, record) in [
+        (class_377::PARAMETER_BODY_REFERENCE_MARKER, 198u32),
+        (class_377::BODY_ENTITY_REFERENCE_MARKER, 201),
+    ] {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&record.to_le_bytes());
+    }
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_MARKER] =
+        class_377::TAG_BODY_BASED_ON_FACES_MARKER_VALUE;
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_COUNT..class_377::TAG_BODY_BASED_ON_FACES_KEY_LENGTH]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_COUNT_VALUE.to_le_bytes());
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_KEY_LENGTH..class_377::TAG_BODY_BASED_ON_FACES_KEY]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_KEY_LENGTH_VALUE.to_le_bytes());
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_KEY..class_377::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH]
+        .copy_from_slice(b"TagBodyBasedOnFaces");
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH..class_377::TAG_BODY_BASED_ON_FACES_TYPE]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH_VALUE.to_le_bytes());
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_TYPE..class_377::TAG_BODY_BASED_ON_FACES_VALUE]
+        .copy_from_slice(b"IntrinsicMetaTypebool");
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_VALUE..class_377::PARAMETER_REFERENCE_GROUP_MARKER]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_VALUE_VALUE.to_le_bytes());
+    bytes[class_377::PARAMETER_REFERENCE_GROUP_MARKER] =
+        class_377::PARAMETER_REFERENCE_GROUP_MARKER_VALUE;
+    bytes[class_377::PARAMETER_REFERENCE_GROUP_COUNT..class_377::PARAMETER_REFERENCE_MARKER]
+        .copy_from_slice(&class_377::PARAMETER_REFERENCE_GROUP_COUNT_VALUE.to_le_bytes());
+    bytes[class_377::PARAMETER_REFERENCE_MARKER] = class_377::PARAMETER_REFERENCE_MARKER_VALUE;
+    bytes[class_377::PARAMETER_REFERENCE_RECORD..class_377::PARAMETER_REFERENCE_FIELD]
+        .copy_from_slice(&198u32.to_le_bytes());
+    bytes[class_377::SCOPE_REFERENCE_MEMBER_MARKER] =
+        class_377::SCOPE_REFERENCE_MEMBER_MARKER_VALUE;
+    bytes[class_377::SCOPE_REFERENCE_MEMBER_RECORD..class_377::SCOPE_REFERENCE_MEMBER_FIELD]
+        .copy_from_slice(&196u32.to_le_bytes());
+    bytes[class_377::AUXILIARY_GROUP_MARKER] = class_377::AUXILIARY_GROUP_MARKER_VALUE;
+    bytes[class_377::AUXILIARY_REFERENCE_MARKER] = class_377::AUXILIARY_REFERENCE_MARKER_VALUE;
+    bytes[class_377::AUXILIARY_RECORD..class_377::AUXILIARY_REFERENCE_FIELD]
+        .copy_from_slice(&202u32.to_le_bytes());
+    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f");
+    bytes[class_377::ENVELOPE_GUID_CODE_UNIT_COUNT..class_377::ZERO_RUN_3].copy_from_slice(&guid);
+    bytes[class_377::REFERENCE_COUNT..class_377::GENERIC_SCOPE_REFERENCE_MARKER]
+        .copy_from_slice(&class_377::REFERENCE_COUNT_VALUE.to_le_bytes());
+    bytes[class_377::GENERIC_SCOPE_REFERENCE_MARKER] =
+        class_377::GENERIC_SCOPE_REFERENCE_MARKER_VALUE;
+    bytes[class_377::GENERIC_SCOPE_REFERENCE_RECORD..class_377::GENERIC_SCOPE_REFERENCE_FIELD]
+        .copy_from_slice(&196u32.to_le_bytes());
+    bytes[class_377::HISTORY_STATE_ID..class_377::KIND_LENGTH]
+        .copy_from_slice(&20u32.to_le_bytes());
+    bytes[class_377::KIND_LENGTH..class_377::KIND]
+        .copy_from_slice(&class_377::KIND_LENGTH_VALUE.to_le_bytes());
+    bytes[class_377::KIND..class_377::FEATURE_ORDINAL]
+        .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature")[4..]);
+    bytes[class_377::FEATURE_ORDINAL..class_377::FEATURE_ORDINAL + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    bytes[class_377::PREVIOUS_HISTORY_STATE_ID..class_377::PREVIOUS_HISTORY_STATE_ID + 4]
+        .copy_from_slice(&19u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#193",
+        "Base Feature",
+        193,
+    );
+    scope.byte_offset = 0;
+    scope.class_tag = "377".into();
+    scope.paired_class_tag = "259".into();
+    scope.paired_byte_offset = class_377::LEN as u64;
+    scope.frame_length = class_377::LEN as u64;
+    scope.kind_offset = class_377::KIND as u64;
+    scope.feature_ordinal = 1;
+    scope.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
+    scope.history_state_id = Some(20);
+    scope.history_state_id_offset = class_377::HISTORY_STATE_ID as u64;
+    scope.previous_history_state_id = Some(19);
+    scope.previous_history_state_id_offset = class_377::PREVIOUS_HISTORY_STATE_ID as u64;
+    scope.reference_count_offset = class_377::REFERENCE_COUNT as u64;
+    scope.reference_members = vec![196];
+    scope.reference_member_offsets = vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+
+    let construction = exact_base_feature_construction(&bytes, &scope)
+        .expect("class-377/class-259 Base Feature frame is canonical");
+    let DesignBaseFeatureConstruction::BodyBasedOnFaces {
+        body_entity_suffixes,
+        body_entity_suffix_offsets,
+        body_reference_records,
+        parameter_body_record,
+        parameter_body_record_offset,
+        auxiliary_record,
+        auxiliary_record_offset,
+        envelope_guid,
+        envelope_guid_offset,
+        tag_body_based_on_faces,
+        tag_body_based_on_faces_offset,
+        ..
+    } = &construction
+    else {
+        panic!("class-377/class-259 frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, &[201]);
+    assert_eq!(
+        body_entity_suffix_offsets,
+        &[class_377::BODY_ENTITY_SUFFIX as u64]
+    );
+    assert_eq!(body_reference_records, &[201]);
+    assert_eq!(*parameter_body_record, 198);
+    assert_eq!(
+        *parameter_body_record_offset,
+        class_377::PARAMETER_BODY_RECORD as u64
+    );
+    assert_eq!(*auxiliary_record, 202);
+    assert_eq!(*auxiliary_record_offset, class_377::AUXILIARY_RECORD as u64);
+    assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
+    assert_eq!(*envelope_guid_offset, class_377::ENVELOPE_GUID as u64);
+    assert!(*tag_body_based_on_faces);
+    assert_eq!(
+        *tag_body_based_on_faces_offset,
+        class_377::TAG_BODY_BASED_ON_FACES_VALUE as u64
+    );
+    let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
+    assert_eq!(
+        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+            .expect("deserialize body-reference form"),
+        construction
+    );
+
+    let mut nonzero_field = bytes.clone();
+    nonzero_field[class_377::PARAMETER_REFERENCE_FIELD] = 1;
+    assert!(exact_base_feature_construction(&nonzero_field, &scope).is_none());
+
+    let mut mismatched_previous = scope.clone();
+    mismatched_previous.previous_history_state_id = Some(18);
+    assert!(exact_base_feature_construction(&bytes, &mismatched_previous).is_none());
+
+    let mut mismatched_pair = scope;
+    mismatched_pair.paired_class_tag = "263".into();
+    assert!(exact_base_feature_construction(&bytes, &mismatched_pair).is_none());
+}

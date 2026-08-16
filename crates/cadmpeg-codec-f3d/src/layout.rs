@@ -1408,6 +1408,138 @@ pub(crate) mod sketch_profile_region_member {
     pub(crate) const ZERO_WORDS_2: usize = 32;
 }
 
+/// Byte offsets for the `base_feature_class_377_prefix` record.
+///
+/// Spec §3.1. Record length 363 B.
+///
+/// ```text
+/// Offsets are relative to the class-377 primary indexed header; the generic scope suffix and paired header remain part of the fixed frame.
+/// ```
+pub(crate) mod base_feature_class_377_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 363;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `body_reference_count_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT_MARKER: usize = 19;
+    /// Stated value of `body_reference_count_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT_MARKER_VALUE: u8 = 1;
+    /// Offset of `body_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT: usize = 20;
+    /// Stated value of `body_reference_count` (`u32`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `parameter_body_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_BODY_REFERENCE_MARKER: usize = 24;
+    /// Stated value of `parameter_body_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_BODY_REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `parameter_body_record` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_BODY_RECORD: usize = 25;
+    /// Offset of `parameter_body_reference_field` (`bytes[10]`). Spec §3.1.
+    pub(crate) const PARAMETER_BODY_REFERENCE_FIELD: usize = 29;
+    /// Offset of `body_entity_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_ENTITY_REFERENCE_MARKER: usize = 39;
+    /// Stated value of `body_entity_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_ENTITY_REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `body_entity_suffix` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_ENTITY_SUFFIX: usize = 40;
+    /// Offset of `body_entity_reference_field` (`bytes[10]`). Spec §3.1.
+    pub(crate) const BODY_ENTITY_REFERENCE_FIELD: usize = 44;
+    /// Offset of `tag_body_based_on_faces_marker` (`u8`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_MARKER: usize = 54;
+    /// Stated value of `tag_body_based_on_faces_marker` (`u8`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_MARKER_VALUE: u8 = 1;
+    /// Offset of `tag_body_based_on_faces_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_COUNT: usize = 55;
+    /// Stated value of `tag_body_based_on_faces_count` (`u32`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `tag_body_based_on_faces_key_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_KEY_LENGTH: usize = 59;
+    /// Stated value of `tag_body_based_on_faces_key_length` (`u32`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_KEY_LENGTH_VALUE: u32 = 0x0000_0013;
+    /// Offset of `tag_body_based_on_faces_key` (`bytes[19]`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_KEY: usize = 63;
+    /// Offset of `tag_body_based_on_faces_type_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_TYPE_LENGTH: usize = 82;
+    /// Stated value of `tag_body_based_on_faces_type_length` (`u32`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_TYPE_LENGTH_VALUE: u32 = 0x0000_0015;
+    /// Offset of `tag_body_based_on_faces_type` (`bytes[21]`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_TYPE: usize = 86;
+    /// Offset of `tag_body_based_on_faces_value` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_VALUE: usize = 107;
+    /// Stated value of `tag_body_based_on_faces_value` (`u16`). Spec §3.1.
+    pub(crate) const TAG_BODY_BASED_ON_FACES_VALUE_VALUE: u16 = 0x0001;
+    /// Offset of `parameter_reference_group_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_GROUP_MARKER: usize = 109;
+    /// Stated value of `parameter_reference_group_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_GROUP_MARKER_VALUE: u8 = 1;
+    /// Offset of `parameter_reference_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_GROUP_COUNT: usize = 110;
+    /// Stated value of `parameter_reference_group_count` (`u32`). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `parameter_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_MARKER: usize = 114;
+    /// Stated value of `parameter_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `parameter_reference_record` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_RECORD: usize = 115;
+    /// Offset of `parameter_reference_field` (`bytes[7]`). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE_FIELD: usize = 119;
+    /// Offset of `scope_reference_member_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_MEMBER_MARKER: usize = 126;
+    /// Stated value of `scope_reference_member_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_MEMBER_MARKER_VALUE: u8 = 1;
+    /// Offset of `scope_reference_member_record` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_MEMBER_RECORD: usize = 127;
+    /// Offset of `scope_reference_member_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_MEMBER_FIELD: usize = 131;
+    /// Offset of `auxiliary_group_marker` (`u8`). Spec §3.1.
+    pub(crate) const AUXILIARY_GROUP_MARKER: usize = 137;
+    /// Stated value of `auxiliary_group_marker` (`u8`). Spec §3.1.
+    pub(crate) const AUXILIARY_GROUP_MARKER_VALUE: u8 = 1;
+    /// Offset of `auxiliary_group_zero_run` (`bytes[3]`). Spec §3.1.
+    pub(crate) const AUXILIARY_GROUP_ZERO_RUN: usize = 138;
+    /// Offset of `auxiliary_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const AUXILIARY_REFERENCE_MARKER: usize = 141;
+    /// Stated value of `auxiliary_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const AUXILIARY_REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `auxiliary_record` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const AUXILIARY_RECORD: usize = 142;
+    /// Offset of `auxiliary_reference_field` (`bytes[14]`). Spec §3.1.
+    pub(crate) const AUXILIARY_REFERENCE_FIELD: usize = 146;
+    /// Offset of `envelope_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ENVELOPE_GUID_CODE_UNIT_COUNT: usize = 160;
+    /// Stated value of `envelope_guid_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const ENVELOPE_GUID_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0024;
+    /// Offset of `envelope_guid` (`bytes[72]`). Spec §3.1.
+    pub(crate) const ENVELOPE_GUID: usize = 164;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 236;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 239;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `generic_scope_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const GENERIC_SCOPE_REFERENCE_MARKER: usize = 243;
+    /// Stated value of `generic_scope_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const GENERIC_SCOPE_REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `generic_scope_reference_record` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GENERIC_SCOPE_REFERENCE_RECORD: usize = 244;
+    /// Offset of `generic_scope_reference_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const GENERIC_SCOPE_REFERENCE_FIELD: usize = 248;
+    /// Offset of `history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID: usize = 254;
+    /// Offset of `kind_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_LENGTH: usize = 258;
+    /// Stated value of `kind_length` (`u32`). Spec §3.1.
+    pub(crate) const KIND_LENGTH_VALUE: u32 = 0x0000_000c;
+    /// Offset of `kind` (`bytes[24]`). Spec §3.1.
+    pub(crate) const KIND: usize = 262;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 286;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 317;
+}
+
 /// Byte offsets for the `base_feature_result_body_prefix` record.
 ///
 /// Spec §3.1. Record length 24 B.
