@@ -231,28 +231,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 8. QA-reopened closure items
 
-### PC-04. Chart write-back to the shared pcurve
-
-**Question.** What STEP rule establishes chart write-back to the shared pcurve?
-
-**Known.** The source pcurve carrier is immutable. A chart variant derived
-from one coedge's endpoint fit is a use-scoped pcurve carrier. The coedge owns
-the derived carrier through its `PcurveUse`; another coedge may select a
-different variant without changing the source carrier or the first coedge's
-parameter range.
-
-If selection keeps the source geometry, the coedge references the
-source pcurve. If selection changes the geometry, the reader creates a
-canonical use-scoped pcurve identity and copies the source carrier metadata.
-The source pcurve remains available for other uses and for opaque-record
-ownership. When no typed use retains the source identity, normal carrier
-retention removes the unowned neutral source carrier while preserving its raw
-STEP record as opaque data.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### DR-01. Drawing target identity selection
 
 **Question.** Which neutral identity represents a drawing reference when one

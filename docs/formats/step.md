@@ -863,7 +863,10 @@ two `PCURVE` or surface references. A selected pcurve identifies its basis
 surface and its 2D parameter curve. `SURFACE_CURVE` takes its parameterization
 from `master_representation`; each associated pcurve has the same sense as
 `curve_3d`. The entity graph may reference one `PCURVE` from multiple surface
-curves. CADIR decision: the source pcurve carrier is immutable. A chart
+curves. ISO 10303-21:2016 §11.2 states that entity instances need not be
+ordered and that an instance name may be referenced before its definition.
+CADIR decision: association lookup uses instance identity and references,
+never DATA serialization order. The source pcurve carrier is immutable. A chart
 variant derived from one coedge's endpoint fit is a use-scoped pcurve carrier.
 The coedge owns that variant through its `PcurveUse`; selecting a variant for
 another coedge does not change the source carrier or the first coedge's

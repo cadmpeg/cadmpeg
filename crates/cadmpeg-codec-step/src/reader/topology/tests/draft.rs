@@ -352,6 +352,72 @@ fn shared_step_pcurve_variants_are_use_scoped() {
 }
 
 #[test]
+fn reordered_shared_step_pcurve_variants_keep_source_immutable() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc04_shared_pcurve_reordered.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered shared pcurve witness");
+
+    let source = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
+        .expect("reordered shared source pcurve");
+    assert!(matches!(
+        &source.geometry,
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            same_sense: true,
+            ..
+        } if *parameter_range == [0.0, 1.0]
+    ));
+
+    let variant = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| {
+            pcurve
+                .id
+                .as_str()
+                .contains("pcurve#33-use-step-data-coedge-51-face-56")
+        })
+        .expect("reordered use-scoped pcurve variant");
+    let PcurveGeometry::Transformed { transform, .. } = &variant.geometry else {
+        panic!("expected reordered transformed pcurve variant");
+    };
+    assert_eq!(
+        transform.rows,
+        [[-1.0, 0.0, 5.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]
+    );
+
+    let uses = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .filter_map(|coedge| coedge.pcurves.first())
+        .map(|use_| use_.pcurve.as_str())
+        .filter(|id| id.starts_with("step:data:pcurve#33"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        uses,
+        vec![
+            "step:data:pcurve#33",
+            "step:data:pcurve#33-use-step-data-coedge-51-face-56"
+        ]
+    );
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn periodic_surface_line_seeds_cover_both_parameter_axes() {
     let surface_id = SurfaceId("step:data:surface#periodic-seeds".into());
     let surface_geometry = SurfaceGeometry::Torus {
