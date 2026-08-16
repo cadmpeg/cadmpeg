@@ -1699,6 +1699,41 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
 }
 
 #[test]
+fn legacy_work_plane_class_308_frame_decodes_its_matrix() {
+    const EPS_WORK_PLANE_TEST_VALUE: f64 = 1e-12;
+
+    let transform: [[f64; 4]; 4] = [
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 2.5],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut bytes = vec![0; 325];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"308");
+    bytes[7..11].copy_from_slice(&73u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"257");
+    bytes.extend_from_slice(&73u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    scope.reference_members = vec![73];
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("class-308 WorkPlane frame");
+    for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
+        for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {
+            assert!((actual - expected).abs() < EPS_WORK_PLANE_TEST_VALUE);
+        }
+    }
+    assert_eq!(decoded.transform_offset, 49);
+    assert_eq!(decoded.reference, None);
+}
+
+#[test]
 fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
     let transform: [[f64; 4]; 4] = [
         [0.0, 0.0, 1.0, 0.0],

@@ -60,6 +60,7 @@ use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
 use crate::layout::thread_standard_scope_prefix as thread_standard;
+use crate::layout::work_plane_legacy_class_308_matrix_frame as work_plane_class_308;
 use crate::layout::work_plane_legacy_class_400_matrix_frame as work_plane_legacy;
 use crate::records::{
     ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget,
@@ -4597,19 +4598,19 @@ pub(crate) fn exact_work_plane_frame(
                 {
                     (start + work_plane_legacy::MATRIX, None)
                 }
-                325 if bytes.get(start + 4..start + 7) == Some(b"380")
-                    && bytes.get(paired + 4..paired + 7) == Some(b"262")
-                    && bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) =>
+                work_plane_class_308::LEN
+                    if matches!(
+                        (
+                            bytes.get(start + 4..start + 7),
+                            bytes.get(paired + 4..paired + 7),
+                        ),
+                        (Some(b"380"), Some(b"262")) | (Some(b"308" | b"431"), Some(b"257"))
+                    ) && bytes.get(start + 11..start + work_plane_class_308::MATRIX)
+                        == Some(&[0u8; work_plane_class_308::MATRIX - 11][..]) =>
                 {
-                    (start + 49, None)
+                    (start + work_plane_class_308::MATRIX, None)
                 }
                 321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
-                    (start + 49, None)
-                }
-                325 if bytes.get(start + 4..start + 7) == Some(b"431")
-                    && bytes.get(paired + 4..paired + 7) == Some(b"257")
-                    && bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) =>
-                {
                     (start + 49, None)
                 }
                 321 if bytes.get(start + 4..start + 7) == Some(b"364")

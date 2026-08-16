@@ -1400,6 +1400,22 @@ Unstated regions:
 - `0..213` (213 B): The fixed identity carrier precedes the owner-reference extension.
 - `213..222` (9 B): Its bytes 213 through 221 are zero.
 
+## `work_plane_legacy_class_308_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 325 B
+
+Offsets are relative to the class-308 primary indexed placement header paired with class 257. The prefix and matrix are shared with the class-380 and class-431 forms.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | The 325-byte class-380 form paired with class 262 and the 325-byte class-308 form paired with class 257 store 38 zero bytes after the indexed header |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..49` (38 B): The fixed placement prefix is zero.
+- `177..325` (148 B): The placement carrier tail is retained as a named opaque carrier.
+
 ## `work_plane_legacy_class_400_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 345 B
