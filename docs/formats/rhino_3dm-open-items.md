@@ -226,6 +226,10 @@ viewport records, each with its child grammar and end marker. The Rust V1
 decoder now consumes the unit record, skips the structural top-level end
 marker, and retains the three legacy presentation records as opaque bytes
 with a typed presentation loss, matching its CADIR admission decision.
+The historical `0x2000803e` settings record is a CRC-bearing long record with
+24 obsolete bytes when its declared length is 28; its reader has no field
+grammar, and the current writer does not emit it. The container now admits its
+bounded framing and retains it as an unsupported setting record.
 `ON_3dmSettings::Write_v2/Read_v2` also define the three counted presentation
 lists. Named construction planes use long `TCODE_VIEW_CPLANE` children; named
 views and active views use long `TCODE_VIEW_RECORD` children. Each outer list
@@ -246,8 +250,9 @@ settled; annotation settings, grid defaults, units/tolerances, plugin list,
 settings attributes, render-mesh, analysis-mesh, render-settings, render
 settings userdata, the current-selector records, and the V1 settings
 presentation stream are now source-backed through their known prefixes,
-child types, stream markers, and version gates. The three counted view-list
-wrappers are also source-backed through the same evidence.
+child types, stream markers, and version gates. The historical unused settings
+record and the three counted view-list wrappers are also source-backed through
+the same evidence.
 The residual is the explicit
 writer-band/tagged/direct-reader audit for readers not yet characterized.
 

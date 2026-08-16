@@ -3926,6 +3926,14 @@ settings-record boundary skip later direct suffix bytes. Their CRC covers the
 complete direct body, including any such suffix. The selectors have no
 version prefix; bytes not in the fixed prefixes are bounded suffix data.
 
+The historical settings record `0x2000803e` is a CRC-bearing long chunk. When
+its declared length is 28, its body is 24 obsolete bytes followed by the
+four-byte CRC. The version-2 reader consumes those 24 bytes only for that
+declared length; otherwise it skips the bounded record without assigning a
+payload grammar. The current writer never emits this record. CADIR retains a
+present record in the bounded `setting_records` arena without assigning typed
+fields.
+
 The `TCODE_SETTINGS_PLUGINLIST` record is a CRC-bearing long settings record.
 The writer emits it first in the settings stream only for archive versions 4
 and later, and only when at least one plugin reference is present. Its known

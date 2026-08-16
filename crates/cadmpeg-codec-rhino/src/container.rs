@@ -83,6 +83,7 @@ const TCODE_CURRENT_DIMSTYLE: u32 = 0xa000_0133;
 const TCODE_SETTINGS_ATTRIBUTES: u32 = 0x2000_8134;
 const TCODE_PLUGIN_LIST: u32 = 0x2000_8135;
 const TCODE_RENDER_USERDATA: u32 = 0x2000_8136;
+const TCODE_HISTORICAL_UNUSED_SETTINGS: u32 = 0x2000_803e;
 
 /// A bounded record descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,6 +367,7 @@ fn expected_record(table: u32, record: u32) -> bool {
                 | TCODE_SETTINGS_ATTRIBUTES
                 | TCODE_PLUGIN_LIST
                 | TCODE_RENDER_USERDATA
+                | TCODE_HISTORICAL_UNUSED_SETTINGS
         ),
         TCODE_OBJECTS => record == TCODE_OBJECT_RECORD,
         TCODE_USER => true,

@@ -382,6 +382,28 @@ fn counted_view_list_crc_excludes_nested_children() {
 }
 
 #[test]
+fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
+    let archive = ArchiveVersion::V5;
+    let record = crc_chunk(archive, 0x2000_803e, &[0; 24]);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[record]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+
+    let scan = crate::container::scan_owned(bytes).expect("historical setting framing");
+    assert!(!scan
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("unknown bounded record 0x2000803e")));
+    assert_eq!(scan.metadata.settings.unsupported.len(), 1);
+    assert_eq!(scan.metadata.settings.unsupported[0].typecode, 0x2000_803e);
+}
+
+#[test]
 fn repeated_consecutive_user_tables_are_allowed() {
     let archive = ArchiveVersion::V5;
     let bytes = minimal_document(
