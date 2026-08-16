@@ -422,23 +422,6 @@ fixture covers the inherited-attribute form.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### UM-02. Representation uncertainty selection
-
-**Question.** What STEP rule establishes representation uncertainty selection?
-
-**Known.** The linear tolerance is the `UNCERTAINTY_MEASURE_WITH_UNIT`
-whose unit resolves to a length unit. If several length measures are present,
-the measure named `distance_accuracy_value` takes precedence. Without that
-name, exactly one length measure is required. An angular measure does not
-block a later length measure, and an ambiguous set produces a machine-readable
-geometry loss instead of selecting by source order.
-
-`step.md` §8 defines the length-unit invariant and selection rule.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-01. Angular parameter unit repair
 
 **Question.** What STEP rule establishes angular parameter unit repair?
