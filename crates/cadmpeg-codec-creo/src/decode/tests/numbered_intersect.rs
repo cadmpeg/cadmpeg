@@ -304,6 +304,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
 #[test]
 fn chamfer_requires_every_affected_support_plane_to_be_placed() {
     let mut scan = crate::container::scan_bytes(Vec::new());
+    let empty_ir = CadIr::empty(Units::default());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 10,
         type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
@@ -376,9 +377,9 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
             offset: 0,
         });
 
-    assert_eq!(chamfer_constant_distance(&scan, 914), Some(0.5));
+    assert_eq!(chamfer_constant_distance(&scan, &empty_ir, 914), Some(0.5));
     scan.features.affected_ids[0].ids.extend([98, 99]);
-    assert_eq!(chamfer_constant_distance(&scan, 914), Some(0.5));
+    assert_eq!(chamfer_constant_distance(&scan, &empty_ir, 914), Some(0.5));
 
     scan.features.affected_ids[0].ids.push(32);
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -391,7 +392,7 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         next_surface: 0,
         offset: 32,
     });
-    assert_eq!(chamfer_constant_distance(&scan, 914), None);
+    assert_eq!(chamfer_constant_distance(&scan, &empty_ir, 914), None);
 }
 
 #[test]

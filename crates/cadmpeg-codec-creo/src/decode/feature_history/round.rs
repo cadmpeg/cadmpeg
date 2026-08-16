@@ -2,8 +2,8 @@
 //! Round and chamfer radius reconstruction from support geometry.
 
 use super::super::analytic::{
-    circular_cone, cross, dot, placed_planes, solve_planes, ConeEquation, CylinderEquation,
-    PlaneEquation,
+    agreed_plane, circular_cone, cross, dot, placed_planes, solve_planes, ConeEquation,
+    CylinderEquation, PlaneEquation,
 };
 use super::super::sketch::normalized;
 use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
@@ -669,6 +669,7 @@ pub(in super::super) fn equal_distance_chamfer_setback(
 
 pub(in super::super) fn chamfer_constant_distance(
     scan: &ContainerScan,
+    ir: &CadIr,
     feature_id: u32,
 ) -> Option<f64> {
     let rows = scan
@@ -701,24 +702,56 @@ pub(in super::super) fn chamfer_constant_distance(
         &scan.features.replay_affected_ids,
         feature_id,
     )?;
-    let planes = placed_planes(scan);
-    let unplaced_affected_plane = affected_ids.iter().any(|id| {
-        scan.surfaces
+    let local_planes = placed_planes(scan);
+    let mut support_planes = Vec::new();
+    let mut support_plane_ids = BTreeSet::new();
+    for id in affected_ids {
+        let rows = scan
+            .surfaces
             .rows
             .iter()
-            .any(|row| row.id == *id && row.kind == crate::surface::SurfaceKind::Plane)
-            && !planes.contains_key(id)
-    });
-    (!unplaced_affected_plane).then_some(())?;
-    let support_plane_ids = affected_ids
-        .iter()
-        .copied()
-        .filter(|id| planes.contains_key(id))
-        .collect::<BTreeSet<_>>();
-    let support_planes = support_plane_ids
-        .into_iter()
-        .filter_map(|id| planes.get(&id).copied())
-        .collect::<Vec<_>>();
+            .filter(|row| row.id == *id)
+            .collect::<Vec<_>>();
+        let row = match rows.as_slice() {
+            [] => continue,
+            [row] => *row,
+            _ if rows
+                .iter()
+                .any(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
+            {
+                return None;
+            }
+            _ => continue,
+        };
+        if row.kind != crate::surface::SurfaceKind::Plane || !support_plane_ids.insert(*id) {
+            continue;
+        }
+        let model_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
+        let model_surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == model_id)
+            .collect::<Vec<_>>();
+        let model_plane = match model_surfaces.as_slice() {
+            [] => None,
+            [surface] => match &surface.geometry {
+                SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    normal: [normal.x, normal.y, normal.z],
+                }),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let plane = match (local_planes.get(id).copied(), model_plane) {
+            (Some(local), Some(model)) => agreed_plane(&[local, model])?,
+            (Some(local), None) => local,
+            (None, Some(model)) => model,
+            (None, None) => return None,
+        };
+        support_planes.push(plane);
+    }
     equal_distance_chamfer_setback(&cones, &support_planes)
 }
 

@@ -418,7 +418,7 @@ pub(in super::super) fn schema_feature_definition(
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: feature_edge_selection(scan, ir, feature_id)
                     .unwrap_or(EdgeSelection::Unresolved),
-                spec: chamfer_constant_distance(scan, feature_id).map_or_else(
+                spec: chamfer_constant_distance(scan, ir, feature_id).map_or_else(
                     || ChamferSpec::Unresolved { form: None },
                     |distance| ChamferSpec::Distance {
                         distance: Length(distance),

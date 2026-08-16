@@ -67,5 +67,103 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
             offset: 0,
         });
 
-    assert_eq!(super::chamfer_constant_distance(&scan, 4), None);
+    assert_eq!(
+        super::chamfer_constant_distance(
+            &scan,
+            &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+            4
+        ),
+        None
+    );
+}
+
+#[test]
+fn chamfer_uses_transferred_model_plane_carrier() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 10,
+            type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Cone,
+            feature_id: 914,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 10,
+        },
+        crate::surface::SurfaceRow {
+            id: 31,
+            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 3,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 31,
+        },
+    ]);
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 10,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: Some(crate::surface::PositionalConeFrame {
+                apex: [0.5, 0.0, 0.0],
+                axis: [-1.0, 0.0, 0.0],
+                ref_direction: [0.0, 1.0, 0.0],
+                half_angle: std::f64::consts::FRAC_PI_4,
+            }),
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 10,
+            body_offset: 11,
+        });
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 914,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![31],
+            offset: 0,
+        });
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#31".to_string()),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        },
+        source_object: None,
+    });
+
+    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 31,
+        origin: [0.0, 0.0, 0.0],
+        normal: [1.0, 0.0, 0.0],
+        u_axis: [0.0, 1.0, 0.0],
+        offset: 31,
+    });
+    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+
+    let mut conflicting_ir = ir.clone();
+    match &mut conflicting_ir.model.surfaces[0].geometry {
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } => origin.x = 0.25,
+        _ => panic!("transferred plane geometry"),
+    }
+    assert_eq!(
+        super::chamfer_constant_distance(&scan, &conflicting_ir, 914),
+        None
+    );
 }
