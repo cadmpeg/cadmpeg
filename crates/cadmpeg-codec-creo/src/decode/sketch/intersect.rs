@@ -348,21 +348,6 @@ pub(crate) fn resolved_trim_vertex_coordinates(
                 continue;
             }
             incident.insert(*vertex, entities.clone());
-            let common_points = entities
-                .iter()
-                .filter_map(|external_id| segments.segment(*external_id))
-                .map(|segment| segment.point_ids.into_iter().collect::<BTreeSet<_>>())
-                .reduce(|common, points| common.intersection(&points).copied().collect());
-            let Some(common_points) = common_points else {
-                continue;
-            };
-            let common_points = common_points.into_iter().collect::<Vec<_>>();
-            let [point_id] = common_points.as_slice() else {
-                continue;
-            };
-            if let Some(coordinate) = points.get(point_id) {
-                coordinate_candidates.push((*vertex, *coordinate));
-            }
         }
     }
     let intersection_carriers = incident
@@ -394,6 +379,21 @@ pub(crate) fn resolved_trim_vertex_coordinates(
             .is_some_and(|explicit| explicit.get(&vertex) != Some(&entities))
         {
             continue;
+        }
+        // A unique shared endpoint coordinate is a trim witness even when a
+        // complete carrier cannot be evaluated from the remaining points.
+        let common_points = entities
+            .iter()
+            .filter_map(|external_id| segments.segment(*external_id))
+            .map(|segment| segment.point_ids.into_iter().collect::<BTreeSet<_>>())
+            .reduce(|common, points| common.intersection(&points).copied().collect());
+        if let Some(common_points) = common_points {
+            let common_points = common_points.into_iter().collect::<Vec<_>>();
+            if let [point_id] = common_points.as_slice() {
+                if let Some(coordinate) = points.get(point_id) {
+                    coordinate_candidates.push((vertex, *coordinate));
+                }
+            }
         }
         let carriers = entities
             .iter()
@@ -713,6 +713,27 @@ mod tests {
                 ]),
             ),
             BTreeMap::new()
+        );
+
+        let mut shared_point = definition.clone();
+        shared_point.trim_vertices = None;
+        shared_point.segments.as_mut().expect("segments").rows[1].point_ids = [2, 3];
+        shared_point
+            .trim_entities
+            .as_mut()
+            .expect("trim entities")
+            .rows
+            .push(crate::feature::FeatureTrimEntity {
+                external_id: 43,
+                mode: None,
+                vertices: [2, 3],
+                center_vertex: None,
+                kind: crate::feature::TrimEntityKind::Line,
+                offset: 0,
+            });
+        assert_eq!(
+            resolved_trim_vertex_coordinates(&shared_point, &BTreeMap::from([(2, [0.0, 0.0])]),),
+            BTreeMap::from([(2, [0.0, 0.0])])
         );
     }
 }
