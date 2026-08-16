@@ -31,7 +31,7 @@ use crate::decode::sweep::{
 };
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Angle, Length, RevolutionAxis, RevolveExtent, Termination};
+use cadmpeg_ir::features::{Angle, BooleanOp, Length, RevolutionAxis, RevolveExtent, Termination};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -650,6 +650,29 @@ fn named_revolve_transfers_profile_axis() {
     };
     assert_eq!(axis.origin, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(axis.direction, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn named_extrude_with_evaluated_body_is_new_body() {
+    let scan = crate::container::scan_bytes(Vec::new());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    let Some(cadmpeg_ir::features::FeatureDefinition::Extrude { op, solid, .. }) =
+        named_feature_definition(&scan, &ir, 822, "Extrude")
+    else {
+        panic!("named extrude definition");
+    };
+    assert_eq!(op, BooleanOp::NewBody);
+    assert_eq!(solid, Some(true));
 }
 
 #[test]
