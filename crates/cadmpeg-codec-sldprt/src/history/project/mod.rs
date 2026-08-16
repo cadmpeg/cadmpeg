@@ -230,6 +230,54 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
     let same_scalar = |left: f64, right: f64| {
         (left - right).abs() <= FRAME_TOLERANCE * left.abs().max(right.abs()).max(1.0)
     };
+    let plane_frames_match = |left: (Point3, Vector3, Vector3),
+                              right: (Point3, Vector3, Vector3)| {
+        let left_normal_length = left.1.norm();
+        let right_normal_length = right.1.norm();
+        if !left_normal_length.is_finite()
+            || !right_normal_length.is_finite()
+            || left_normal_length <= f64::EPSILON
+            || right_normal_length <= f64::EPSILON
+        {
+            return false;
+        }
+        let normal_alignment = (left.1.x * right.1.x + left.1.y * right.1.y + left.1.z * right.1.z)
+            / (left_normal_length * right_normal_length);
+        if !same_scalar(normal_alignment.abs(), 1.0) {
+            return false;
+        }
+        let displacement = Vector3::new(
+            right.0.x - left.0.x,
+            right.0.y - left.0.y,
+            right.0.z - left.0.z,
+        );
+        let signed_distance =
+            (displacement.x * left.1.x + displacement.y * left.1.y + displacement.z * left.1.z)
+                / left_normal_length;
+        same_scalar(signed_distance, 0.0)
+    };
+    let plane_normal_matches = |left: (Point3, Vector3, Vector3),
+                                right: (Point3, Vector3, Vector3)| {
+        let left_normal_length = left.1.norm();
+        let right_normal_length = right.1.norm();
+        left_normal_length.is_finite()
+            && right_normal_length.is_finite()
+            && left_normal_length > f64::EPSILON
+            && right_normal_length > f64::EPSILON
+            && same_scalar(
+                ((left.1.x * right.1.x + left.1.y * right.1.y + left.1.z * right.1.z)
+                    / (left_normal_length * right_normal_length))
+                    .abs(),
+                1.0,
+            )
+    };
+    let serialized_reference_frame = |feature: &cadmpeg_ir::features::Feature| {
+        Some((
+            parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
+            parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
+            parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
+        ))
+    };
     let offset_frame_matches = |reference: (Point3, Vector3, Vector3),
                                 result: (Point3, Vector3, Vector3),
                                 distance: Length| {
@@ -268,13 +316,22 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                         FeatureDefinition::DatumPrincipalPlane { plane } => {
                             Some(principal_frame(plane))
                         }
-                        FeatureDefinition::DatumPlane { .. }
-                        | FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
+                        FeatureDefinition::DatumPlane {
+                            origin,
+                            normal,
+                            u_axis,
+                        } => Some((origin, normal, u_axis)),
+                        FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
                         _ => None,
                     },
                     matches!(
                         feature.definition,
                         FeatureDefinition::DatumPrincipalPlane { .. }
+                    ),
+                    matches!(
+                        feature.definition,
+                        FeatureDefinition::DatumPrincipalPlane { .. }
+                            | FeatureDefinition::DatumPlane { .. }
                     ),
                 ),
             )
@@ -284,6 +341,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         let explicit_native_reference = feature.source_properties.contains_key("Reference")
             || feature.source_properties.contains_key("Plane");
         let result_frame = stored_frame(feature);
+        let source_reference_frame = serialized_reference_frame(feature);
         let FeatureDefinition::DatumOffsetPlane {
             reference,
             distance,
@@ -298,7 +356,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         let invalid = reference_id == feature.id
             || match ordinals.get(&reference_id) {
                 None => true,
-                Some((reference_ordinal, reference_frame, is_principal)) => {
+                Some((reference_ordinal, reference_frame, is_principal, is_base_plane)) => {
                     let geometrically_compatible =
                         reference_frame
                             .zip(result_frame)
@@ -315,9 +373,20 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                                     .source_properties
                                     .contains_key("ReferenceFaceNormal")
                                 || feature.source_properties.contains_key("ReferenceFaceUAxis"));
+                    let explicit_frame_identity = explicit_native_reference
+                        && *is_base_plane
+                        && reference_frame.zip(result_frame).is_some_and(
+                            |(reference_frame, result_frame)| {
+                                plane_normal_matches(reference_frame, result_frame)
+                            },
+                        )
+                        && source_reference_frame.zip(*reference_frame).is_none_or(
+                            |(serialized, reference)| plane_frames_match(serialized, reference),
+                        );
                     *reference_ordinal >= feature.ordinal
                         && !(explicit_native_reference && geometrically_compatible == Some(true)
-                            || explicit_principal_identity_without_face_fallback)
+                            || explicit_principal_identity_without_face_fallback
+                            || explicit_frame_identity)
                 }
             };
         if invalid {
@@ -405,12 +474,28 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                     return None;
                 }
                 let history = history_key(feature)?;
+                let serialized_reference_frame = serialized_reference_frame(feature);
                 let mut candidates = features
                     .iter()
-                    .filter(|candidate| candidate.ordinal < feature.ordinal)
+                    .filter(|candidate| {
+                        candidate.ordinal < feature.ordinal
+                            || (serialized_reference_frame.is_some()
+                                && ordinals
+                                    .get(&candidate.id)
+                                    .is_some_and(|(_, _, is_principal, _)| *is_principal))
+                    })
                     .filter(|candidate| history_key(candidate) == Some(history))
                     .filter_map(|candidate| {
-                        let &(candidate_origin, candidate_normal, _) = frames.get(&candidate.id)?;
+                        let &(candidate_origin, candidate_normal, candidate_u_axis) =
+                            frames.get(&candidate.id)?;
+                        if let Some(serialized_reference_frame) = serialized_reference_frame {
+                            if !plane_frames_match(
+                                serialized_reference_frame,
+                                (candidate_origin, candidate_normal, candidate_u_axis),
+                            ) {
+                                return None;
+                            }
+                        }
                         let candidate_normal_length = candidate_normal.norm();
                         let result_normal_length = normal.norm();
                         let normal_dot = (normal.x * candidate_normal.x

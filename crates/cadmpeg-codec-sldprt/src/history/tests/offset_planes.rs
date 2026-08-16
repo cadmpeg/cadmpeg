@@ -93,6 +93,109 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
 }
 
 #[test]
+fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry() {
+    let mut offset = cadmpeg_ir::features::Feature::new(
+        "offset".into(),
+        0,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            }),
+            distance: Length(6.0),
+        },
+    );
+    offset.native_ref = Some("sldprt:history:feature#0:offset".into());
+    offset
+        .source_properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset
+        .source_properties
+        .insert("Normal".into(), "1,0,0".into());
+    offset
+        .source_properties
+        .insert("UAxis".into(), "0,0,-1".into());
+    offset
+        .source_properties
+        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
+    offset
+        .source_properties
+        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
+    offset
+        .source_properties
+        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+    let mut principal = cadmpeg_ir::features::Feature::new(
+        "right".into(),
+        1,
+        FeatureDefinition::DatumPrincipalPlane {
+            plane: cadmpeg_ir::features::PrincipalPlane::Right,
+        },
+    );
+    principal.native_ref = Some("sldprt:history:feature#0:right".into());
+
+    let mut features = vec![offset, principal];
+    bind_offset_plane_references(&mut features);
+
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            distance: Length(6.0),
+        } if reference == &features[1].id
+    ));
+    assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+}
+
+#[test]
+fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
+    let mut offset = cadmpeg_ir::features::Feature::new(
+        "offset".into(),
+        0,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature("reference".into())),
+            distance: Length(6.0),
+        },
+    );
+    offset.native_ref = Some("sldprt:history:feature#0:offset".into());
+    offset
+        .source_properties
+        .insert("Reference".into(), "reference".into());
+    offset
+        .source_properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    offset
+        .source_properties
+        .insert("Normal".into(), "1,0,0".into());
+    offset
+        .source_properties
+        .insert("UAxis".into(), "0,0,-1".into());
+    let mut reference = cadmpeg_ir::features::Feature::new(
+        "reference".into(),
+        1,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, -1.0),
+        },
+    );
+    reference.native_ref = Some("sldprt:history:feature#0:reference".into());
+
+    let mut features = vec![offset, reference];
+    bind_offset_plane_references(&mut features);
+
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            distance: Length(6.0),
+        } if reference == &features[1].id
+    ));
+    assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+}
+
+#[test]
 fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
     reference.input_class = Some("moRefPlane_c".into());
