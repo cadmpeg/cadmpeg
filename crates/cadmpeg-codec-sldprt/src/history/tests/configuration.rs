@@ -37,6 +37,45 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 }
 
 #[test]
+fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        bodies: ConfigurationBodies::Unresolved,
+        ..design_configuration("unresolved", 0, Some(0), None)
+    });
+
+    assert_eq!(configuration_surface_carriers(&ir, 0), ir.model.surfaces,);
+}
+
+#[test]
+fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model
+        .configurations
+        .push(design_configuration("empty", 0, Some(0), None));
+
+    assert!(configuration_surface_carriers(&ir, 0).is_empty());
+}
+
+#[test]
 fn changing_shadowed_ordinal_does_not_steal_stored_id_lane() {
     let native_configurations = vec![
         native_with_configuration_id(native_configuration("explicit-native", 0, Some(7)), 1),

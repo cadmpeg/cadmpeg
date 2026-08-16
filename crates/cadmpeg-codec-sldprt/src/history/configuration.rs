@@ -1048,10 +1048,14 @@ pub(crate) fn configuration_surface_carriers(
     ir: &cadmpeg_ir::CadIr,
     configuration_index: usize,
 ) -> Vec<cadmpeg_ir::geometry::Surface> {
-    let body_ids = ir.model.configurations[configuration_index]
-        .bodies
-        .iter()
-        .collect::<HashSet<_>>();
+    let configuration = &ir.model.configurations[configuration_index];
+    let Some(body_ids) = configuration.bodies.resolved() else {
+        // An unresolved body membership record does not establish an empty
+        // configuration. The neutral model is the only established geometry
+        // carrier available until the source partition is resolved.
+        return ir.model.surfaces.clone();
+    };
+    let body_ids = body_ids.iter().collect::<HashSet<_>>();
     let region_ids = ir
         .model
         .bodies
