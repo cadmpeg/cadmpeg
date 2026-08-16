@@ -170,16 +170,22 @@ readers whose exact producer field gates have not yet been characterized
 individually. `ON_TextStyle::Read` consumes the model-component, description,
 font, UUID, and name prefix for modern anonymous version 1.1 and then closes
 the bounded chunk; the Rust wrapper test proves that a future outer minor does
-not swallow the post-font identity fields.
+not swallow the post-font identity fields. `ON_3dmSettings::Write_v2` places
+render settings in `TCODE_SETTINGS_RENDER`. `ON_3dmRenderSettings` has a
+source-backed direct legacy body with version range 100–199 and gates at 101,
+102, and 103, and a modern anonymous major-1 body with gates at minors 1, 2,
+and 3. `ON_BinaryArchive::BeginRead3dmChunk` requires a nonnegative modern
+minor. The Rust document-settings reader now consumes both complete known
+prefixes and leaves only the respective containing boundary suffix.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
 layout. Remove only rejection not required by that evidence.
 
 **Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
-settled; the dimension-style reader is now source-backed through its minor-9
-prefix and later-minor boundary. The residual is the explicit
-writer-band/tagged/direct-reader audit.
+settled; dimension-style and render-settings readers are now source-backed
+through their known prefixes and version gates. The residual is the explicit
+writer-band/tagged/direct-reader audit for readers not yet characterized.
 
 ### TE-01. Class-specific transfer differential evidence
 

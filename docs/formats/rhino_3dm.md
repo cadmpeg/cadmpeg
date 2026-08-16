@@ -3591,9 +3591,98 @@ bytes before the bounded class-data end as a suffix.
 Global annotation settings store drafting sizes, unit and format enums, font
 face, text and hatch scales, model/layout scaling flags, and optional dimension
 layer identity. Grid defaults store grid/snap spacing, line counts, and grid and
-axis visibility. Render settings store image dimensions, DPI and units,
-ambient and background state, geometry and lighting switches, antialias and
-shadow settings, rendering source and view names, and viewport-aspect lock.
+axis visibility.
+
+The `TCODE_SETTINGS_RENDER` record contains one render-settings body. When
+`ON_3dmRenderSettings::Write` writes archive version 50 or earlier, it uses the
+legacy body. For archive version 60 it uses the legacy body when the recorded
+OpenNURBS writer version is earlier than `6.0.2013.11.05`; later V6 writers and
+all V7 and V8 writers use the modern body.
+
+The legacy body is a direct sequence. Its first field is an `i32` version in
+the inclusive range 100 through 199:
+
+```text
+i32 version
+i32 custom image size flag
+i32 image width in pixels
+i32 image height in pixels
+ON_Color ambient light
+i32 background style
+ON_Color background top color
+UTF-16 background bitmap path
+9 × i32 flags: hidden lights, depth cue, flat shade, backfaces,
+  points, curves, isoparams, mesh edges, annotations
+i32 antialias style
+i32 shadow-map style
+i32 shadow-map width in pixels
+i32 shadow-map height in pixels
+f64 shadow-map offset
+if version >= 101: f64 image DPI, i32 image unit system
+if version >= 102: ON_Color background bottom color
+if version >= 103: bool scale background to fit
+```
+
+The legacy flags are nonzero-true `i32` values. The version-103 fit flag is a
+one-byte `bool`. The legacy writer stores backfaces as `1` for archive versions
+below 3 and otherwise stores the backfaces setting. Background style values are
+0 solid color, 1 wallpaper image, 2 gradient, and 3 environment. Antialias
+style values are 0 none, 1 normal, 2 medium, and 3 best. Shadow-map style values
+are 0 none, 1 normal, and 2 best. The image unit system uses the values in
+section 8.2.
+
+The modern body is an anonymous long chunk with two direct `i32` version
+fields. Its major version is 1 and its minor version is nonnegative. The known
+prefix is:
+
+```text
+i32 major version = 1
+i32 minor version
+bool custom image size
+i32 image width in pixels
+i32 image height in pixels
+f64 image DPI
+i32 image unit system
+ON_Color ambient light
+i32 background style
+ON_Color background top color
+ON_Color background bottom color
+UTF-16 background bitmap path
+11 × bool flags: hidden lights, depth cue, flat shade, backfaces,
+  points, curves, isoparams, mesh edges, annotations,
+  scale background to fit, transparent background
+i32 antialias style
+i32 shadow-map style
+i32 shadow-map width in pixels
+i32 shadow-map height in pixels
+f64 shadow-map offset
+if minor >= 1:
+  i32 focal-blur mode
+  f64 focal-blur distance
+  f64 focal-blur aperture
+  f64 focal-blur jitter
+  i32 focal-blur sample count
+if minor >= 2:
+  i32 rendering source
+  UTF-16 specific viewport name
+  UTF-16 named-view name
+  UTF-16 snapshot name
+if minor >= 3: bool force viewport aspect ratio
+```
+
+Modern booleans are one-byte values. Focal-blur mode values are 0 none, 1
+automatic, and 2 manual; these five minor-1 values are compatibility data and
+are not used by the OpenNURBS render-settings state after reading. Rendering
+source values are 0 active viewport, 1 specific viewport, 2 named view, and 3
+snapshot. If custom image size and force viewport aspect ratio are both true,
+the image height is derived from the selected viewport aspect ratio rather than
+the stored height.
+
+The modern reader requires major version 1 and the archive chunk reader admits
+only nonnegative minor versions. A legacy reader rejects versions outside
+100–199. A reader consumes only the fields admitted by these gates. Remaining
+bytes in a modern body end at the anonymous chunk boundary; remaining bytes in
+a legacy body end at the containing `TCODE_SETTINGS_RENDER` record boundary.
 
 ### 20.5 Byte partition and opaque identity
 

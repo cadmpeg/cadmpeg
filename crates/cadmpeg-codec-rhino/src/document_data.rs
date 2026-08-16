@@ -574,3 +574,6 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         .set_arena("render_settings", &renders)
         .expect("Rhino render settings serialize");
 }
+
+#[cfg(test)]
+pub(crate) mod tests;
