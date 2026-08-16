@@ -6201,8 +6201,8 @@ impl MeshSelectionSearch<'_> {
                     .unwrap_or_default();
                 Some((
                     if can_merge { 1 } else { 2 },
-                    assignments.len(),
                     direction_work,
+                    assignments.len(),
                     usize::MAX - selected_incidence,
                     usize::MAX - constrained,
                     face,
@@ -6360,6 +6360,25 @@ impl MeshSelectionSearch<'_> {
         }
         options.retain_mut(|(_, _, quotient)| quotient.root_count() >= self.vertex_points.len());
         if options.is_empty() {
+            return;
+        }
+        if options.len() == 1 {
+            let (assignment_index, directions, next_quotient) =
+                options.pop().expect("one mesh option");
+            let changed_edges = changed_quotient_edges(&measured, &next_quotient);
+            self.selected[face] = Some((assignment_index, directions));
+            if self.selected_orientable() {
+                if let Some(next_quotient) =
+                    self.prepare_selected_branch(&next_quotient, &changed_edges, propagation_budget)
+                {
+                    // The branch preflight has already run. Continue the
+                    // forced suffix without another memo entry or preflight.
+                    self.search_state(&next_quotient, true, budget, propagation_budget);
+                } else if budget.exhausted() {
+                    self.exhausted = true;
+                }
+            }
+            self.selected[face] = None;
             return;
         }
         options.sort_unstable_by_key(|(assignment, directions, quotient)| {
