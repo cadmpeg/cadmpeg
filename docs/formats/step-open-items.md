@@ -20,26 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-03. Part 28 XML grammar
-
-**Question.** Which Part 28 configuration and generated schema define each supported AP203, AP214, or AP242 XML grammar?
-
-**Known.** Part 28 is an EXPRESS-to-XML mapping. The current codec detects a Part 28 candidate and refuses it before Part 21 parsing. It has no Part 28 schema or decoder.
-
-**Need.** We need the supported AP schema, Part 28 configuration, generated XML schema, and independent conforming exchanges.
-
-**Note.** QA audit: commit `8fd1526d3` closed this item by documenting unsupported-input refusal. Detection and refusal do not decode the grammar.
-
-### CE-04. Part 28 graph mapping
-
-**Question.** How does each supported Part 28 XML construct map to the STEP instance graph and CADIR?
-
-**Known.** The mapping is schema-driven. The codec has no XML entity, value, reference, or identity adapter.
-
-**Need.** We need the exact mapping configuration and conformance witnesses for entity identity, references, aggregates, and omitted values.
-
-**Note.** QA audit: commit `8fd1526d3` closed this item with the same unsupported-input refusal as CE-03. No graph-mapping operand executes.
-
 ### CE-05. Part 26 binary grammar
 
 **Question.** Which Part 26 mapping and HDF5 layout define each supported AP203, AP214, or AP242 binary exchange?

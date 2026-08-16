@@ -23,10 +23,14 @@ ISO 10303-28:2007 defines an XML representation of EXPRESS schemas and data
 using XML Schema. It does not define one fixed AP203, AP214, or AP242 element
 vocabulary. A Part 28 XML grammar is the combination of the Part 28 document
 mapping, a configuration, and the XML Schema generated from the selected AP
-EXPRESS schema and edition. The configuration selects the XML namespace,
-target namespace, serialized unit-of-serialization element, and mapping
-options such as attribute-content and tagless encoding. The generated schema
-selects entity element names, attribute names, types, cardinalities,
+EXPRESS schema and edition. The [ISO 10303-28 standard
+listing](https://www.iso.org/standard/40646.html) identifies the current 2007
+edition. The [public Part 28 configuration and
+example](https://www.steptools.com/docs/roselib/read_write.html) shows the
+configuration and generated AP238 XML together. The configuration selects the
+XML namespace, target namespace, serialized unit-of-serialization element, and
+mapping options such as attribute-content and tagless encoding. The generated
+schema selects entity element names, attribute names, types, cardinalities,
 OPTIONAL values, SELECT values, aggregate representation, and reference
 attributes.
 
