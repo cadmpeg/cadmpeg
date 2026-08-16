@@ -3641,6 +3641,15 @@ mod tests {
         bytes
     }
 
+    fn anonymous_body(body: &[u8]) -> Vec<u8> {
+        let mut payload = body.to_vec();
+        payload.extend(crc32fast::hash(&payload).to_le_bytes());
+        let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
+        bytes.extend((payload.len() as i64).to_le_bytes());
+        bytes.extend(payload);
+        bytes
+    }
+
     fn physically_based_payload(version: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = Vec::new();
         for value in [0.1_f32, 0.2, 0.3, 0.4] {
@@ -4774,5 +4783,55 @@ mod tests {
         assert_eq!(value.lines[0].offset_millimeters, [30.0, 40.0]);
         assert_eq!(value.lines[0].dashes_millimeters, [50.0, -20.0]);
         assert_eq!(value.lines[0].angle_radians, 0.5);
+    }
+
+    #[test]
+    fn modern_hatch_pattern_reads_nested_line_chunks() {
+        let mut line = 0.375_f64.to_le_bytes().to_vec();
+        for value in [1.25_f64, -2.5, 3.5, 4.75] {
+            line.extend(value.to_le_bytes());
+        }
+        line.extend(3_i32.to_le_bytes());
+        for value in [1.25_f64, -0.75, 0.5] {
+            line.extend(value.to_le_bytes());
+        }
+        let mut line_list = 1_i32.to_le_bytes().to_vec();
+        line_list.extend(anonymous(0, &line));
+
+        let mut component = 1_i32.to_le_bytes().to_vec();
+        component.extend(0_i32.to_le_bytes());
+        component.push(0);
+        component.push(1);
+        component.extend([0x22; 16]);
+        component.push(0);
+        component.push(1);
+        component.extend(5_i32.to_le_bytes());
+        component.push(1);
+        component.extend(utf16("modern hatch"));
+        let mut component_payload = component.clone();
+        component_payload.extend(crc32fast::hash(&component_payload).to_le_bytes());
+        let mut component_chunk = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
+        component_chunk.extend((component_payload.len() as i64).to_le_bytes());
+        component_chunk.extend(component_payload);
+
+        let mut body = component_chunk;
+        body.extend(1_i32.to_le_bytes());
+        body.extend(utf16("modern description"));
+        body.extend(anonymous_body(&line_list));
+        let bytes = anonymous(0, &body);
+        let value = parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V8, 10.0, 321)
+            .expect("modern hatch pattern");
+
+        assert_eq!(value.archive_index, Some(5));
+        assert_eq!(
+            value.source_uuid,
+            Some(Uuid::from_canonical([0x22; 16]).to_string())
+        );
+        assert_eq!(value.name, "modern hatch");
+        assert_eq!(value.description, "modern description");
+        assert_eq!(value.lines[0].angle_radians, 0.375);
+        assert_eq!(value.lines[0].base_millimeters, [12.5, -25.0]);
+        assert_eq!(value.lines[0].offset_millimeters, [35.0, 47.5]);
+        assert_eq!(value.lines[0].dashes_millimeters, [12.5, -7.5, 5.0]);
     }
 }

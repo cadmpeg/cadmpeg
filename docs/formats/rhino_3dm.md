@@ -4546,6 +4546,62 @@ Segment lengths and widths with model units are length values. Hatch patterns
 store identity, fill type, description, and hatch lines. Hatch-line base,
 offset, and dash values are lengths; angle is radians.
 
+The hatch-pattern class UUID is
+`064E7C91-35F6-4734-A446-79FF7CD659E1`. A hatch-pattern table record contains
+one class wrapper and no record-specific child after it:
+
+```text
+HATCH_PATTERN_RECORD long
+  OPENNURBS_CLASS long
+    OPENNURBS_CLASS_UUID long: hatch-pattern class UUID and CRC
+    OPENNURBS_CLASS_DATA long: hatch-pattern payload
+    zero or more CLASS_USERDATA chunks
+    OPENNURBS_CLASS_END short, value 0
+```
+
+For archives below version 60, the class-data payload is:
+
+```text
+packed version 1.2
+i32 archive hatch-pattern index
+u32 fill type                                  // 0 solid, 1 lines
+UTF-16 hatch-pattern name
+UTF-16 description
+if fill type == 1:
+  i32 hatch-line count
+  count × hatch-line V5 payload
+UUID hatch-pattern ID
+```
+
+Each V5 hatch-line payload is:
+
+```text
+packed version 1.1
+f64 angle in radians
+2 × f64 base point
+2 × f64 offset vector
+i32 dash count
+count × f64 dash length
+```
+
+For archives version 60 and later, the class-data payload contains one
+anonymous major-1, minor-0 chunk. Its body is model-component attributes
+restricted to ID, archive index, and name, followed by the fill type, UTF-16
+description, and an anonymous line-list chunk. The line-list body is an `i32`
+count followed by complete anonymous hatch-line chunks. Each modern line chunk
+is anonymous major 1, minor 0 and contains the same angle, base, offset, and
+dash fields as the V5 line payload. The modern hatch writer emits this branch;
+the reader also admits the V5 branch for archive version 60 files whose
+OpenNURBS writer version selects the legacy compatibility path. All counts are
+nonnegative and every anonymous child is bounded independently. A line angle
+is in radians. Base coordinates, offsets, and signed dash lengths are lengths;
+positive dashes draw and negative dashes leave gaps.
+
+The writer emits packed version 1.2 below archive 60 and anonymous version 1.0
+at archive 60 and later. A missing or nil pattern UUID is not a source
+identity; CADIR keys that record by its source record offset and leaves
+`source_uuid` unset.
+
 Group and light records use packed major-1 versions. The group class UUID is
 `721D9F97-3645-44C4-8BE6-B2CF697D25CE`. A group table record is:
 

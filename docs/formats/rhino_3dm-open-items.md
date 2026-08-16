@@ -119,6 +119,13 @@ record writer and reader in `ON_BinaryArchive::Write3dmGroup` and
 `Read3dmGroup` contain that wrapper directly in the CRC-bearing group record.
 The Rust decoder consumes that prefix and resolves object-attribute group
 indexes to unique group records.
+`ON_HatchPattern::WriteV5`/`ReadV5` define the below-version-60 packed 1.2
+prefix and packed 1.1 hatch-line elements. The version-60 writer uses an
+anonymous major-1 pattern body with model-component attributes, a nested
+anonymous line-list body, and anonymous major-1 hatch-line elements.
+`ON_BinaryArchive::Write3dmHatchPattern`/`Read3dmHatchPattern` put one class
+wrapper directly in each CRC-bearing hatch-pattern record. The Rust decoder
+consumes both source branches and scales only line lengths.
 The shared model-component child is also source-defined: the legacy anonymous
 version-1.0 form uses the five-bit UUID/parent/index/name/status presence mask,
 ignores other mask bits, and uses a two-`u32` locked/hidden status mask; the
@@ -550,6 +557,15 @@ reader accepts major 1 and leaves later bytes at the class-data boundary. The
 Rust group-table decoder now consumes the same bounded prefix. This group
 writer/reader slice is settled; the RS-01 residue is limited to the
 uncharacterized direct-reader, writer-band, and tagged-stream families.
+`ON_HatchPattern::Write` selects packed version 1.2 below archive 60 and an
+anonymous version-1.0 body at archive 60 and later. The V5 body contains the
+component index, fill type, name, description, optional packed 1.1 hatch-line
+array, and UUID. The modern body contains the filtered model-component
+attributes, fill type, description, and a bounded anonymous line-list whose
+elements are anonymous major-1 line records. The shared hatch reader admits
+the V5 compatibility branch for the old archive-60 writer band. The Rust
+hatch-pattern parser consumes both branches and leaves later bytes at their
+respective boundaries.
 The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
 major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
 `ON_3dmApplication` reads its three strings without a major/minor gate; all
@@ -616,6 +632,11 @@ The `ON_Group` class is independently covered by V4, V5, and V6 witnesses. Its
 class UUID, class-data boundary, packed 1.1 archive-index/name/UUID prefix, and
 object-attribute group-index links are settled; the Rust group record preserves
 the fields and emits both witnessed member links.
+The `ON_HatchPattern` class is independently covered by V4, V5, and V6
+witnesses. Its class wrapper, V4/V5 packed 1.2 identity/description/fill/line
+fields, V6 anonymous component/line-list branch, line units, and nested line
+boundary are settled; the Rust hatch-pattern record preserves the fields in all
+three archive versions.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -639,7 +660,12 @@ closed by `ON_Group::Internal_WriteV5`/`Internal_ReadV5` and
 `ON_BinaryArchive::Write3dmGroup`/`Read3dmGroup`, the authored V4/V5/V6 group
 witness, `cadmpeg inspect` reads of the group table and class-data wrapper, and
 the three-version `cadmpeg query item` result showing the preserved index,
-name, UUID, and two object links.
+name, UUID, and two object links. The hatch-pattern slice is closed by
+`ON_HatchPattern::Write`/`Read`, `WriteV5`/`ReadV5`, `ON_HatchLine::Write`/`Read`,
+and `ON_BinaryArchive::Write3dmHatchPattern`/`Read3dmHatchPattern`, the
+authored V4/V5/V6 hatch witness, `cadmpeg inspect` reads of the legacy and
+anonymous payload branches, the three-version `cadmpeg query item` result,
+and the owner test `modern_hatch_pattern_reads_nested_line_chunks`.
 
 ### FV-06. Later major payload admission
 
