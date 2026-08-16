@@ -18,19 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-04. Resource cache identity
-
-**Question.** Which URI components and resource metadata determine whether two external resource references identify the same cached resource?
-
-**Known.** Each REFERENCE entry contains a URI. Part 21 does not define cache
-keys, freshness, validators, content negotiation, or equivalence of two
-representations returned for one URI.
-
-**Note.** Cache identity is a transport and resource policy recorded as a
-CADIR decision. The codec does not cache or combine retrieved resources.
-
-**Need.** We must know the identity rule to reuse a retrieved resource without combining different resources.
-
 ## 2. AP242 BO-Model sidecars
 
 ### BM-01. Sidecar envelope

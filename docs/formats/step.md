@@ -340,6 +340,16 @@ section selectors identify DATA sections. Implementation level `2;1` forbids
 FILE_POPULATION, SECTION_LANGUAGE, and SECTION_CONTEXT; level `3;1` forbids
 SCHEMA_POPULATION.
 
+In a `SCHEMA_POPULATION` triple, the address is the URI of the external
+exchange structure, the timestamp records when the resource was last visited,
+and the digest validates the referenced file's bytes. If present, the
+timestamp can establish that the referenced file has not changed relative to
+its `FILE_NAME` timestamp. A digest is permitted only when the referenced
+exchange structure has a signature section. These fields provide freshness and
+integrity assertions; Part 21 does not define URI normalization, cache keys,
+content negotiation, validators, or representation equivalence. ISO
+10303-21:2016 §8.2.5 and Annex F.4.3 define these meanings.
+
 The Part 21 schema population is separate from the decoded instance graph. It
 contains every entity in the local DATA sections. If `SCHEMA_POPULATION` is
 present, it also contains the schema population of every listed exchange
@@ -442,6 +452,16 @@ verify the supplied target and its schema, and apply its trust, digest or
 signature, unit, and coordinate-context policies before connecting that target
 to a local occurrence. The codec has no implicit cross-resource composition
 step. A missing, refused, or unverified target remains an external dependency.
+
+CADIR decision: the STEP codec has no external-resource cache and does not
+canonicalize URI spellings. For a caller cache, the retrieved representation
+key is the exact URI before its `#` fragment plus the caller's representation
+and request policy; the fragment selects an anchor after retrieval and is part
+of the composed target identity, not the fetched-byte key. A validated
+message digest may identify reusable bytes across resource bindings. A
+timestamp alone does not establish byte identity. Different validated
+digests for one URI are a conflict, not a merge. No cached bytes or cache
+equivalence result enters the decoded STEP graph implicitly.
 
 ISO 10303-21:2016 §14.1 defines each signature as CMS for external content
 and requires the CMS structure to be encoded as Base64. RFC 5652 §5 places

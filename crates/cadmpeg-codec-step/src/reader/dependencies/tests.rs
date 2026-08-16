@@ -122,6 +122,65 @@ fn resource_schemes_and_uuid_references_require_external_access() {
 }
 
 #[test]
+fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
+    let bytes = include_bytes!("tests/data/er04_cache_identity.p21");
+    let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse cache witness");
+    assert!(diagnostics.is_empty());
+    let population = exchange
+        .header
+        .iter()
+        .find(|record| record.name == "SCHEMA_POPULATION")
+        .expect("schema population header");
+    let crate::parse::Value::List(entries) = &population.parameters[0] else {
+        panic!("schema population entries");
+    };
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        entries[0],
+        crate::parse::Value::List(vec![
+            crate::parse::Value::String(b"https://example.invalid/model.p21".to_vec()),
+            crate::parse::Value::String(b"2026-08-16T00:00:00".to_vec()),
+            crate::parse::Value::Omitted,
+        ])
+    );
+    assert_eq!(
+        entries[1],
+        crate::parse::Value::List(vec![
+            crate::parse::Value::String(b"https://example.invalid/model.p21".to_vec()),
+            crate::parse::Value::String(b"2026-08-17T00:00:00".to_vec()),
+            crate::parse::Value::Omitted,
+        ])
+    );
+
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode cache witness without resource access");
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external reference #10 -> https://example.invalid/model.p21#shape".into()));
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external reference #11 -> https://example.invalid/./model.p21#shape".into()));
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert!(!source.attributes.keys().any(|key| key.contains("cache")));
+
+    let summary = StepCodec::default()
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("inspect cache witness");
+    let references = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "REFERENCE")
+        .expect("reference inventory");
+    assert_eq!(
+        references.attributes["external_uris"],
+        "https://example.invalid/model.p21#shape,https://example.invalid/./model.p21#shape"
+    );
+}
+
+#[test]
 fn complex_document_dependency_records_use_inherited_fields() {
     let result = decode_inline(
         "#1=DOCUMENT_TYPE('digital');
