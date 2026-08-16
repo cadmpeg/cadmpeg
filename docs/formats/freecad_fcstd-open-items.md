@@ -252,27 +252,6 @@ neutral relation. The prior specification text that prescribed source-order assi
 discard was removed because it was decoder policy rather than producer evidence; the projection
 remains open.
 
-### DP-09. Spreadsheet carrier and value-container selection
-
-**Question.** Which property and XML value container supply spreadsheet cells and row or column
-dimensions when more than one candidate matches the spreadsheet selectors?
-
-**Known.** The design registry identifies the spreadsheet runtime types. `design.rs:748-764`
-selects the first property whose type contains `PropertySheet` or whose name is `cells`, then the
-first `Cells` descendant. `design.rs:865-907` selects the first matching column-width or
-row-height property and the first matching dimension container. The specification settles the
-used-cell graph and duplicate-cell validation but not selector cardinality or precedence.
-
-**Need.** Establish the producer property and value-container cardinality and identity for cells,
-column widths, and row heights. Reject ambiguous candidates or select them through an exact
-runtime and container grammar.
-
-**Conflict.** A spreadsheet with two matching properties or two matching value containers is
-accepted and projected from the first match. A vendor-qualified type or a second container can
-therefore change the neutral spreadsheet without an explicit ambiguity result.
-
-**Note.** New item from this QA pass.
-
 ## 6. Product structure
 
 ### PR-03. Product named carrier neutral projection

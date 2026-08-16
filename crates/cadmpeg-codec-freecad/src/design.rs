@@ -745,27 +745,58 @@ fn post_process_controls(properties: &[&PropertyRecord]) -> Option<(bool, FuzzyT
     Some((refine, fuzzy_tolerance))
 }
 
+fn unique_matching_property<'a, F>(
+    properties: &[&'a PropertyRecord],
+    predicate: F,
+    label: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError>
+where
+    F: Fn(&PropertyRecord) -> bool,
+{
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| predicate(property));
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(malformed(format!(
+            "spreadsheet has multiple {label} properties"
+        )));
+    }
+    Ok(Some(property))
+}
+
 fn append_spreadsheet(
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<Spreadsheet, CodecError> {
-    let property = properties
-        .iter()
-        .copied()
-        .find(|property| property.type_name.contains("PropertySheet") || property.name == "cells")
-        .ok_or_else(|| {
-            CodecError::Malformed(format!("spreadsheet {} has no cells property", object.id))
-        })?;
+    let property = unique_matching_property(
+        properties,
+        |property| property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet",
+        "cells",
+    )?
+    .ok_or_else(|| {
+        CodecError::Malformed(format!("spreadsheet {} has no cells property", object.id))
+    })?;
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
         CodecError::Malformed(format!("invalid spreadsheet {}: {error}", property.id))
     })?;
-    let Some(cells) = xml.descendants().find(|node| node.has_tag_name("Cells")) else {
+    let mut cell_values = xml.descendants().filter(|node| node.has_tag_name("Cells"));
+    let Some(cells) = cell_values.next() else {
         return Err(CodecError::Malformed(format!(
             "{} has no Cells value",
             property.id
         )));
     };
+    if cell_values.next().is_some() {
+        return Err(malformed(format!(
+            "{} has multiple Cells values",
+            property.id
+        )));
+    }
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -845,14 +876,16 @@ fn append_spreadsheet(
         cells: cell_ids,
         column_widths: spreadsheet_dimensions(
             properties,
-            "PropertyColumnWidths",
+            "Spreadsheet::PropertyColumnWidths",
+            "columnWidths",
             "ColumnInfo",
             "Column",
             "width",
         )?,
         row_heights: spreadsheet_dimensions(
             properties,
-            "PropertyRowHeights",
+            "Spreadsheet::PropertyRowHeights",
+            "rowHeights",
             "RowInfo",
             "Row",
             "height",
@@ -865,14 +898,16 @@ fn append_spreadsheet(
 fn spreadsheet_dimensions(
     properties: &[&PropertyRecord],
     type_name: &str,
+    property_name: &str,
     container: &str,
     element: &str,
     value_name: &str,
 ) -> Result<Vec<SpreadsheetDimension>, CodecError> {
-    let Some(property) = properties
-        .iter()
-        .copied()
-        .find(|property| property.type_name.contains(type_name))
+    let Some(property) = unique_matching_property(
+        properties,
+        |property| property.name == property_name && property.type_name == type_name,
+        property_name,
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -882,12 +917,18 @@ fn spreadsheet_dimensions(
             property.id
         ))
     })?;
-    let root = xml
+    let mut roots = xml
         .descendants()
-        .find(|node| node.has_tag_name(container))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!("{} has no dimension container", property.id))
-        })?;
+        .filter(|node| node.has_tag_name(container));
+    let root = roots.next().ok_or_else(|| {
+        CodecError::Malformed(format!("{} has no dimension container", property.id))
+    })?;
+    if roots.next().is_some() {
+        return Err(malformed(format!(
+            "{} has multiple {container} values",
+            property.id
+        )));
+    }
     let records = root
         .children()
         .filter(|node| node.has_tag_name(element))
@@ -3826,6 +3867,10 @@ fn property<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a Pro
         .iter()
         .copied()
         .find(|property| property.name == name)
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
 }
 
 fn nonempty_link(link: &crate::native::LinkTarget) -> bool {

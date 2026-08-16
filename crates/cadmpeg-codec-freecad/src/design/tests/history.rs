@@ -600,6 +600,73 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
 }
 
 #[test]
+fn rejects_ambiguous_spreadsheet_selectors() {
+    let decode = |count: usize, properties: &str| {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="{count}">{properties}</Properties></Object></ObjectData>
+</Document>"#
+        );
+        FcstdCodec.decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+    };
+
+    for (index, (count, properties, expected)) in [
+        (
+            2,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>"#,
+            "duplicate property name cells",
+        ),
+        (
+            1,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/><Cells Count="0"/></Property>"#,
+            "multiple Cells values",
+        ),
+        (
+            3,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>"#,
+            "duplicate property name columnWidths",
+        ),
+        (
+            2,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/><ColumnInfo Count="0"/></Property>"#,
+            "multiple ColumnInfo values",
+        ),
+        (
+            3,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/></Property>"#,
+            "duplicate property name rowHeights",
+        ),
+        (
+            2,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/><RowInfo Count="0"/></Property>"#,
+            "multiple RowInfo values",
+        ),
+        (
+            1,
+            r#"<Property name="cells" type="Vendor::PropertySheet"><Cells Count="0"/></Property>"#,
+            "no cells property",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let error = decode(count, properties).expect_err("ambiguous spreadsheet selector");
+        assert!(error.to_string().contains(expected), "case {index}: {error}");
+    }
+}
+
+#[test]
 fn preserves_forward_declared_feature_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">

@@ -357,6 +357,13 @@ Only positive row and column spans define a neutral merged range. Nonpositive sp
 native cell metadata and do not create a neutral range.
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
 cells, and overlapping merged ranges are validated.
+`Spreadsheet::Sheet` owns one `cells` property of runtime type `Spreadsheet::PropertySheet`, one
+`columnWidths` property of runtime type `Spreadsheet::PropertyColumnWidths`, and one `rowHeights`
+property of runtime type `Spreadsheet::PropertyRowHeights`. The cells property has one `Cells`
+value root; the column and row properties have one `ColumnInfo` or `RowInfo` value root. Each
+root's `Count` equals its direct records. Duplicate matching properties or value roots are
+malformed. A vendor-qualified runtime type or another property name does not select a spreadsheet
+carrier.
 
 ## 9. Product structure
 
