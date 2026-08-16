@@ -646,7 +646,7 @@ fn named_revolve_transfers_profile_axis() {
                 solid: Some(true),
                 ..
             },
-        ..
+        op: BooleanOp::NewBody,
     }) = named_feature_definition(&scan, &ir, 822, "Revolve")
     else {
         panic!("named revolve axis");

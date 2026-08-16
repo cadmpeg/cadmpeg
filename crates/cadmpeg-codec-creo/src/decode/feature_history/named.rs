@@ -102,11 +102,15 @@ pub(in super::super) fn named_feature_definition(
         ));
     }
     if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
+        let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+        let op = section_sweep_boolean_operation(
+            feature_recipe_effect(scan, feature_id),
+            kind,
+            output_kind.is_some(),
+            preceding_features_establish_body(ir),
+        );
         return Some(revolve_feature_definition_with_profile(
-            scan,
-            ir,
-            feature_id,
-            BooleanOp::Unresolved,
+            scan, ir, feature_id, op,
         ));
     }
     let schema_class = match kind {
