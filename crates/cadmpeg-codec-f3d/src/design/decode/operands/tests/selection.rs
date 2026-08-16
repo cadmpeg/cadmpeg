@@ -435,7 +435,6 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
-        revolve_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,

@@ -400,7 +400,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
-        revolve_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,

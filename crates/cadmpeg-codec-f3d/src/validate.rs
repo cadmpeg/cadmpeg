@@ -2109,12 +2109,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .sweep_profile
             .as_ref()
             .is_none_or(|profile| is_sweep && valid_sketch_profile(profile));
-        let is_revolve = design::design_feature_family(&scope.kind)
-            == Some(design::DesignFeatureFamily::Revolve);
-        let revolve_profile_link = scope
-            .revolve_profile
-            .as_ref()
-            .is_none_or(|profile| is_revolve && valid_sketch_profile(profile));
         let is_base_flange = scope.kind == "BaseFlange";
         let base_flange_profile_link = scope
             .base_flange_profile
@@ -3506,7 +3500,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && entity_link.unwrap_or(scope.kind != "Sketch")
             && extrude_profile_link
             && sweep_profile_link
-            && revolve_profile_link
             && base_flange_profile_link
             && base_flange_link
             && edge_flange_link
@@ -4196,10 +4189,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 | 0x0000_0041_0000_0000
                         ) && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
-                            && (group.role != 0x0000_0041_0000_0000
-                                || scope.revolve_profile.as_ref().is_none_or(|profile| {
-                                    group.members.as_slice() == [profile.record_index]
-                                }))
                     }
                     Some(design::DesignFeatureFamily::Shell) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0010_0000_0000)
@@ -4522,17 +4511,6 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     role_count(0x0000_0004_0000_0000) + role_count(0x0000_0008_0000_0000);
                 let expected_body_count =
                     usize::from(*operation != records::DesignExtrudeOperation::NewBody);
-                let profile_groups = groups
-                    .iter()
-                    .filter(|group| group.role == 0x0000_0041_0000_0000)
-                    .collect::<Vec<_>>();
-                let profile_matches_operand =
-                    scope.revolve_profile.as_ref().is_none_or(|profile| {
-                        profile_groups.as_slice().first().is_some_and(|group| {
-                            profile_groups.len() == 1
-                                && group.members.as_slice() == [profile.record_index]
-                        })
-                    });
                 let opposite_pair_valid = matches!(
                     (opposite_angle_record_index, opposite_angle_offset),
                     (Some(_), Some(_)) | (None, None)
@@ -4547,7 +4525,6 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && role_count(0x0000_0021_0000_0000) == 1
                     && role_count(0x0000_0041_0000_0000) == 1
                     && body_count == expected_body_count
-                    && profile_matches_operand
             }
             Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => {
                 loft_operand_roles_are_valid(*operation, &group_roles)
@@ -5844,7 +5821,6 @@ fn validate_operand_group_carriers<'a>(
                         .extrude_profile
                         .as_ref()
                         .or(scope.sweep_profile.as_ref())
-                        .or(scope.revolve_profile.as_ref())
                         .or(scope.base_flange_profile.as_ref())
                         .is_some_and(|profile| group.members == [profile.record_index])
                 });

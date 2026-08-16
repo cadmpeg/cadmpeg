@@ -820,7 +820,6 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
-        revolve_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,

@@ -220,7 +220,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             paired_byte_offset: 520,
         }),
         sweep_profile: None,
-        revolve_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,

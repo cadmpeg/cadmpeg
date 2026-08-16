@@ -6423,7 +6423,6 @@ pub(crate) fn parse_parameter_scope(
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
-        revolve_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,

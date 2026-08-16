@@ -203,7 +203,6 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
-        revolve_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,
