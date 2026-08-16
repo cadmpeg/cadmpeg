@@ -37,6 +37,8 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
+/// Caps the optional exact-state memo without turning it into a search refusal.
+pub(crate) const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
 pub(crate) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
 /// Bounds one complete mesh-constraint phase, including exhaustive endpoint
 /// orientation selection. The decode session applies its own global work cap.
@@ -4753,6 +4755,7 @@ pub(crate) struct MeshPartialEndpointConstraint<'a> {
 type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
 pub(crate) type MeshFaceEndpointConfigurations = Vec<MeshFaceEndpointConfiguration>;
 type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
+type MeshSelectionStateSignature = (bool, Vec<MeshFaceSelection>, MeshQuotientSignature);
 type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
 
@@ -4830,6 +4833,7 @@ pub(crate) struct MeshSelectionSearch<'a> {
     pub(crate) edge_rows: &'a [EdgeRow],
     pub(crate) vertex_points: &'a [[f64; 3]],
     pub(crate) selected: Vec<MeshFaceSelection>,
+    pub(crate) visited_states: HashSet<MeshSelectionStateSignature>,
     pub(crate) solution: Option<(StandardTopology, Vec<usize>)>,
     pub(crate) ambiguous: bool,
     pub(crate) exhausted: bool,
@@ -6047,6 +6051,15 @@ impl MeshSelectionSearch<'_> {
         self.search_from_state(quotient, false, &budget, &propagation_budget);
     }
 
+    fn selection_state_signature(
+        &self,
+        quotient: &MeshQuotient,
+        prepared: bool,
+    ) -> MeshSelectionStateSignature {
+        let mut quotient = quotient.clone();
+        (prepared, self.selected.clone(), quotient.signature())
+    }
+
     pub(crate) fn search_from_state(
         &mut self,
         quotient: &MeshQuotient,
@@ -6061,6 +6074,22 @@ impl MeshSelectionSearch<'_> {
             self.exhausted = true;
             return;
         }
+        if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
+            let signature = self.selection_state_signature(quotient, prepared);
+            if !self.visited_states.insert(signature) {
+                return;
+            }
+        }
+        self.search_state(quotient, prepared, budget, propagation_budget);
+    }
+
+    fn search_state(
+        &mut self,
+        quotient: &MeshQuotient,
+        prepared: bool,
+        budget: &WorkBudget<'_>,
+        propagation_budget: &WorkBudget<'_>,
+    ) {
         let mut measured = quotient.clone();
         if !prepared {
             if !self.propagate_forced_face_equations_from(&mut measured, None, propagation_budget) {
@@ -6141,24 +6170,35 @@ impl MeshSelectionSearch<'_> {
                 let can_merge = assignments
                     .iter()
                     .any(|assignment| mesh_assignment_can_merge(assignment, &mut measured));
-                let assignment = &assignments[0];
-                let selected_incidence = assignment
-                    .boundaries
+                let selected_incidence = assignments
                     .iter()
-                    .flatten()
-                    .filter(|use_| selected_edges.contains(&use_.edge))
-                    .count();
-                let constrained = assignment
-                    .boundaries
-                    .iter()
-                    .flatten()
-                    .filter(|use_| {
-                        let left = measured.union.find(use_.edge * 2);
-                        let right = measured.union.find(use_.edge * 2 + 1);
-                        measured.domains[left].len() < self.vertex_points.len()
-                            || measured.domains[right].len() < self.vertex_points.len()
+                    .map(|assignment| {
+                        assignment
+                            .boundaries
+                            .iter()
+                            .flatten()
+                            .filter(|use_| selected_edges.contains(&use_.edge))
+                            .count()
                     })
-                    .count();
+                    .max()
+                    .unwrap_or_default();
+                let constrained = assignments
+                    .iter()
+                    .map(|assignment| {
+                        assignment
+                            .boundaries
+                            .iter()
+                            .flatten()
+                            .filter(|use_| {
+                                let left = measured.union.find(use_.edge * 2);
+                                let right = measured.union.find(use_.edge * 2 + 1);
+                                measured.domains[left].len() < self.vertex_points.len()
+                                    || measured.domains[right].len() < self.vertex_points.len()
+                            })
+                            .count()
+                    })
+                    .max()
+                    .unwrap_or_default();
                 Some((
                     if can_merge { 1 } else { 2 },
                     assignments.len(),
@@ -6951,6 +6991,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         edge_rows,
         vertex_points,
         selected: vec![None; face_count],
+        visited_states: HashSet::new(),
         solution: None,
         ambiguous: false,
         exhausted: false,
