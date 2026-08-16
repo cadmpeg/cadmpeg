@@ -726,7 +726,7 @@ pub(in super::super) fn resolved_feature_extrusion_span(
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<ExtrusionSpan> {
     let feature_id = feature_id_for_section_transform(definition, transform)?;
-    generated_arc_cylinder_extent(scan, definition, transform)
+    generated_arc_cylinder_extent(scan, ir, definition, transform)
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
             feature_plane_equations(scan, ir, feature_id)

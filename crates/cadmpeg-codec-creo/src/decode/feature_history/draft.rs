@@ -136,8 +136,8 @@ pub(in super::super) fn linear_extrusion_extent_and_direction(
         _ => None,
     };
     if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
-        if let Some(extent) =
-            generated_arc_cylinder_extent(scan, definition, transform).or_else(|| {
+        if let Some(extent) = generated_arc_cylinder_extent(scan, ir, definition, transform)
+            .or_else(|| {
                 feature_plane_equations(scan, ir, feature_id).and_then(|planes| {
                     extrusion_extent_and_direction(transform.origin, transform.normal, planes)
                 })

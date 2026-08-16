@@ -12,7 +12,7 @@ use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
 use super::super::sketch::{approximately_equal, normalized};
-use super::super::sweep::unique_available_positional_cylinder_frames;
+use super::super::sweep::unique_available_positional_cylinder_frame_records;
 
 pub fn stepped_hole_form(
     feature_id: u32,
@@ -296,8 +296,13 @@ pub fn simple_drilled_hole_axis_placement(
             )
         })
         .collect::<BTreeSet<_>>();
-    let frames =
-        unique_available_positional_cylinder_frames(&cylinder_ids, &scan.surfaces.parameters)?;
+    let frames = unique_available_positional_cylinder_frame_records(
+        &cylinder_ids,
+        &scan.surfaces.parameters,
+    )?
+    .into_iter()
+    .map(|(_, frame)| frame)
+    .collect::<Vec<_>>();
     simple_drilled_axis_placement_from_frames(&frames, diameter)
 }
 

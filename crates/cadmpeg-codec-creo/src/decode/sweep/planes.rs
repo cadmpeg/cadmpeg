@@ -9,7 +9,11 @@ use super::super::sketch::normalized;
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
+
+const EPS_CYLINDER_CARRIER: f64 = 1e-9;
 
 fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<PlaneEquation>, ()> {
     if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none() {
@@ -148,6 +152,7 @@ pub(in super::super) fn feature_outline_planes(
 
 pub(in super::super) fn generated_arc_cylinder_extent(
     scan: &ContainerScan,
+    ir: &CadIr,
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
@@ -182,10 +187,85 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         };
         surface_ids.insert(row.id).then_some(())?;
     }
-    let frames =
-        unique_available_positional_cylinder_frames(&surface_ids, &scan.surfaces.parameters)?;
-    (!frames.is_empty()).then_some(())?;
+    let frame_records = unique_available_positional_cylinder_frame_records(
+        &surface_ids,
+        &scan.surfaces.parameters,
+    )?;
+    (!frame_records.is_empty()).then_some(())?;
+    frame_records
+        .iter()
+        .all(|(surface_id, frame)| cylinder_frame_agrees_with_model(ir, *surface_id, frame))
+        .then_some(())?;
+    let frames = frame_records
+        .into_iter()
+        .map(|(_, frame)| frame)
+        .collect::<Vec<_>>();
     agreed_generated_cylinder_extent(transform, &frames)
+}
+
+fn cylinder_frame_agrees_with_model(
+    ir: &CadIr,
+    surface_id: u32,
+    frame: &crate::surface::PositionalCylinderFrame,
+) -> bool {
+    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+    let model_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id == model_id)
+        .collect::<Vec<_>>();
+    let surface = match model_surfaces.as_slice() {
+        [] => return true,
+        [surface] => surface,
+        _ => return false,
+    };
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+    } = &surface.geometry
+    else {
+        return matches!(surface.geometry, SurfaceGeometry::Unknown { .. });
+    };
+    let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
+        normalized(frame.axis),
+        normalized([axis.x, axis.y, axis.z]),
+        normalized(frame.ref_direction),
+        normalized([ref_direction.x, ref_direction.y, ref_direction.z]),
+    ) else {
+        return false;
+    };
+    if !radius.is_finite() || *radius <= 0.0 {
+        return false;
+    }
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= EPS_CYLINDER_CARRIER * left.abs().max(right.abs()).max(1.0)
+    };
+    if !frame_axis
+        .into_iter()
+        .zip(model_axis)
+        .all(|(left, right)| close(left, right))
+        || !frame_ref
+            .into_iter()
+            .zip(model_ref)
+            .all(|(left, right)| close(left, right))
+        || !close(frame.radius, *radius)
+    {
+        return false;
+    }
+    let model_origin = [origin.x, origin.y, origin.z];
+    let relative = std::array::from_fn(|index| model_origin[index] - frame.origin[index]);
+    let axial = dot(relative, frame_axis);
+    let radial = std::array::from_fn(|index| relative[index] - axial * frame_axis[index]);
+    let scale = frame
+        .origin
+        .into_iter()
+        .chain(model_origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    dot(radial, radial).sqrt() <= EPS_CYLINDER_CARRIER * scale
 }
 
 pub(in super::super) fn ordered_parallel_cap_extent(
@@ -266,10 +346,10 @@ pub(in super::super) fn generated_cap_plane_extent(
     ordered_parallel_cap_extent(plane(start_id?)?, plane(end_id?)?)
 }
 
-pub(in super::super) fn unique_available_positional_cylinder_frames(
+pub(in super::super) fn unique_available_positional_cylinder_frame_records(
     surface_ids: &BTreeSet<u32>,
     parameters: &[crate::surface::SurfaceParameterRecord],
-) -> Option<Vec<crate::surface::PositionalCylinderFrame>> {
+) -> Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>> {
     let mut frames = Vec::new();
     for surface_id in surface_ids {
         let mut matching = parameters
@@ -280,7 +360,7 @@ pub(in super::super) fn unique_available_positional_cylinder_frames(
             return None;
         }
         if let Some(frame) = first.and_then(|record| record.positional_cylinder_frame) {
-            frames.push(frame);
+            frames.push((*surface_id, frame));
         }
     }
     Some(frames)

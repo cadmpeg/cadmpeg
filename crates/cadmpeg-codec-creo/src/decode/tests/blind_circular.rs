@@ -22,7 +22,7 @@ use crate::decode::sweep::{
     agreed_generated_cylinder_extent, blind_extrusion_from_carriers, bounded_cylinder_span,
     directed_blind_extrusion_span, generated_bounded_cylinder_extent, generated_cap_plane_extent,
     generated_rectilinear_plane_extent, ordered_parallel_cap_extent,
-    resolved_feature_extrusion_span, unique_available_positional_cylinder_frames,
+    resolved_feature_extrusion_span, unique_available_positional_cylinder_frame_records,
     ExtrusionCarrierSpan,
 };
 use cadmpeg_ir::document::CadIr;
@@ -1400,12 +1400,14 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
     let surface_ids = BTreeSet::from([1, 2, 3]);
     let parameters = [parameter(1, Some(frame)), parameter(2, None)];
     assert_eq!(
-        unique_available_positional_cylinder_frames(&surface_ids, &parameters),
-        Some(vec![frame])
+        unique_available_positional_cylinder_frame_records(&surface_ids, &parameters),
+        Some(vec![(1, frame)])
     );
 
     let duplicates = [parameter(1, Some(frame)), parameter(1, Some(frame))];
-    assert!(unique_available_positional_cylinder_frames(&surface_ids, &duplicates).is_none());
+    assert!(
+        unique_available_positional_cylinder_frame_records(&surface_ids, &duplicates).is_none()
+    );
 }
 
 #[test]
