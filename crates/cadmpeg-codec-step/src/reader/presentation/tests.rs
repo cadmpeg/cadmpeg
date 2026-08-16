@@ -549,6 +549,55 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+fn decode_context_bound_styles(style_list: &str) -> cadmpeg_ir::codec::DecodeResult {
+    decode_inline(&format!(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));
+#4=CARTESIAN_POINT('',(0.,0.,0.));
+#5=CARTESIAN_POINT('',(1.,0.,0.));
+#6=POLYLINE('context styled curve',(#4,#5));
+#10=COLOUR_RGB('red',1.,0.,0.);
+#11=CURVE_STYLE('',#10,$,$);
+#12=PRESENTATION_STYLE_ASSIGNMENT((#11));
+#13=PRESENTATION_STYLE_BY_CONTEXT((#12),#41);
+#14=COLOUR_RGB('blue',0.,0.,1.);
+#15=CURVE_STYLE('',#14,$,$);
+#16=PRESENTATION_STYLE_ASSIGNMENT((#15));
+#17=PRESENTATION_STYLE_BY_CONTEXT((#16),#42);
+#30=STYLED_ITEM('',{style_list},#6);
+#41=SHAPE_REPRESENTATION('red context',(#6,#30),#3);
+#42=SHAPE_REPRESENTATION('blue context',(#6,#30),#3);"
+    ))
+}
+
+#[test]
+fn context_bound_styles_are_not_flattened_without_a_neutral_context() {
+    let forward = decode_context_bound_styles("(#13,#17)");
+    let reverse = decode_context_bound_styles("(#17,#13)");
+
+    for result in [&forward, &reverse] {
+        assert!(result.ir().model.appearance_bindings.is_empty());
+        assert!(result.ir().model.appearances.is_empty());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::PresentationStyleContextUnresolved.kind()
+                && loss.message.contains("STYLED_ITEM #30")
+        }));
+        let unknowns = result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena");
+        for id in [10, 11, 12, 13, 14, 15, 16, 17, 30] {
+            assert!(
+                unknowns
+                    .iter()
+                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                "context-bound record #{id} was flattened or not retained"
+            );
+        }
+    }
+}
+
 #[test]
 fn complex_colour_rgb_inherits_name_and_components() {
     let result = decode_inline(

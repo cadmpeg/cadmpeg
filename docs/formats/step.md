@@ -631,6 +631,18 @@ geometry arena retains its carrier identity as the style target. Semantic PMI
 retains its shape-aspect target, including a shape-aspect partial in a complex
 datum feature. A complex datum reads identification from its `DATUM` partial
 and name, targets, and product shape from its inherited `SHAPE_ASPECT` partial.
+A `PRESENTATION_STYLE_BY_CONTEXT` applies only in its `style_context`, which
+is one of `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`, `GROUP`,
+`PRESENTATION_LAYER_ASSIGNMENT`, `PRESENTATION_SET`, `REPRESENTATION`,
+`REPRESENTATION_ITEM`, `REPRESENTATION_RELATIONSHIP`, or
+`SHAPE_REPRESENTATION_RELATIONSHIP`. A
+`STYLED_ITEM` may carry multiple style assignments only when each assignment
+is context-qualified. CADIR appearance bindings have no presentation-context
+identity. When a context-qualified style has no selected neutral context,
+CADIR retains the styled item and its style/context records as native opaque
+records, reports `presentation.style-context-unresolved`, and creates no
+neutral appearance binding or scalar color. Context-independent styles use
+the style and surface-side precedence above.
 A complex dimension uses its dimensional partial for its kind and all inherited
 partials for its name, targets, and characteristic value.
 Its characteristic representation collects every measure representation item.

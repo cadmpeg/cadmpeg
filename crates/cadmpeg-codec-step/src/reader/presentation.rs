@@ -218,6 +218,12 @@ pub(super) fn decode(
             typed.insert(style_id);
             continue;
         }
+        if contains_context_bound_style(parts.styles, exchange) {
+            losses.push(StepLossCode::PresentationStyleContextUnresolved.note(format!(
+                "STYLED_ITEM #{style_id} has context-dependent presentation styles; no neutral presentation context selected"
+            )));
+            continue;
+        }
         let domain = style_domain(target_step, exchange);
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
@@ -801,6 +807,20 @@ fn styled_item_parts(record: &RawRecord) -> Option<StyledItemParts<'_>> {
 
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
     styled_item_parts(record).and_then(|parts| parts.target.reference())
+}
+
+fn contains_context_bound_style(styles: &Value, exchange: &Exchange) -> bool {
+    styles
+        .list()
+        .into_iter()
+        .flatten()
+        .flat_map(references)
+        .any(|id| {
+            exchange
+                .records
+                .get(&id)
+                .is_some_and(|record| has_partial(record, "PRESENTATION_STYLE_BY_CONTEXT"))
+        })
 }
 
 fn style_depth(

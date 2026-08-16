@@ -263,32 +263,6 @@ reordered, near-tied, and crossing candidates.
 
 ## 7. Annotation, presentation, and tessellation
 
-### AP-08. Context-dependent style selection
-
-**Question.** How does a `STYLED_ITEM` select among valid
-`PRESENTATION_STYLE_BY_CONTEXT` assignments, and what neutral appearance is
-retained when the requested presentation context is unavailable?
-
-**Known.** ISO 10303-46 permits a `STYLED_ITEM` to carry multiple styles when
-the styles are presentation-style-by-context assignments. The decoder
-flattens the style references in
-`crates/cadmpeg-codec-step/src/reader/presentation.rs:191-240` and
-`find_color` recursively keeps the first candidate at the highest surface-side
-rank (`presentation.rs:819-987`). It does not evaluate a presentation
-context. Thus two valid context-dependent colors are reduced by reference
-order, even when both are otherwise valid.
-
-**Note.** A `STYLED_ITEM` with one context style for a shaded representation
-and another for a wireframe representation can transfer the first color to
-both consumers. AP-05 and AP-06 settle independent styled-item conflicts and
-surface-side precedence; they do not settle context-dependent styles. This
-item records the missing context identity and neutral-IR policy.
-
-**Need.** We need the context matching and precedence rule, a policy for
-preserving separate context bindings or reporting ambiguity, and a witness
-file with two valid context styles consumed by different presentation
-contexts.
-
 ### DR-01. Drawing target identity selection
 
 **Question.** Which neutral identity represents a drawing reference when one
