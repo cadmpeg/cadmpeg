@@ -392,7 +392,11 @@ properties with one `XLink` target. `LinkCopyOnChangeGroup` is an `App::Property
 with one `Float` value, and `ScaleVector` is an `App::PropertyVector` with one `PropertyVector`
 value carrying `valueX`, `valueY`, and `valueZ`; `ScaleVector` is authoritative when both scale
 carriers are present. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
-a `value` bit string. `PlacementList` and
+a `value` bit string. Its characters are ordered most-significant bit first: for a string of length
+`n`, character `n - 1 - i` is `1` when `ElementList` element `i` is visible and `0` when it is
+hidden. The typed native property record retains the complete bit string. CADIR decision:
+`VisibilityList` remains a native product carrier and does not populate `Occurrence.visible`; that
+neutral field remains unset for product occurrences. `PlacementList` and
 `ScaleList` are respectively `App::PropertyPlacementList` and `App::PropertyVectorList`, each
 with one `PlacementList` or `VectorList` root and at most one named side entry. `LinkPlacement`,
 `Placement`, and the inherited component placement are `App::PropertyPlacement` properties with

@@ -254,27 +254,6 @@ remains open.
 
 ## 6. Product structure
 
-### PR-03. Product named carrier neutral projection
-
-**Question.** Should a valid `VisibilityList` bit string populate neutral
-`Occurrence.visible`, or remain only in the retained typed property until the
-frozen product goldens can change?
-
-**Known.** The current producer declares every named product carrier with the
-runtime types, roots, and cardinalities written in the specification. The
-decoder validates those carriers and retains the typed property XML and bit
-string in the native application record.
-
-**Need.** Settle the neutral visibility projection without regenerating the
-frozen product goldens.
-
-**Conflict.** The producer writes a valid `BoolList` bit string, but projecting
-it into `Occurrence.visible` changes the existing product golden output.
-
-**Note.** This pass settled the original runtime-type and value-cardinality
-subset with producer source and an authored witness. The neutral visibility
-projection remains a smaller implementation question.
-
 ## 7. Assembly joints
 
 ## 8. Attachment and assembly
