@@ -13,24 +13,6 @@ Each item has an identifier and these fields:
 
 ## 1. Application-specific side entries
 
-### AR-02. Application-specific side-entry values
-
-**Question.** What does each field in an application-specific side-entry payload mean after its
-concrete persistence writer has been identified?
-
-**Known.** The exact persistence object writes the complete payload selected by `SaveDocFile`; core
-serializers define typed payloads for several file-backed properties, including raw file bytes,
-vector and placement lists, float/color/material lists, string tables, and element maps. The native
-record retains the owning object, property, declared application type, XML bytes, side-entry bytes,
-byte spans, lengths, and digests.
-
-**Need.** Read the remaining concrete serializers and establish their field semantics before
-transferring an unregistered side entry to a typed native or neutral record.
-
-**Note.** The producer source now supplies a concrete writer lineage for this subset. Remaining
-unregistered family fields still need their own writer evidence; native retention is not meaning
-evidence.
-
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars

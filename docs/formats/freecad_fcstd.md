@@ -696,6 +696,32 @@ The current writer emits no side member for `App::PropertyPythonObject` or
 overrides do not add a second payload when their underlying kernel or toolpath has already issued
 the request.
 
+The fields in the producer-defined members have these meanings. In a
+`Part::PropertyFilletEdges` record, `edgeid` identifies the source `EdgeN` subelement and
+`radius1` and `radius2` are the two radii supplied to the fillet or chamfer operation. A
+`Points::PropertyGreyValueList` value is the ordered point's grayscale intensity. A
+`Points::PropertyNormalList` or `Mesh::PropertyNormalList` value is the normal for the
+corresponding point or mesh vertex. A curvature record contains the maximum and minimum principal
+curvatures followed by their corresponding principal directions. The derived curvature modes are
+mean `(max + min) / 2`, Gaussian `max * min`, maximum, minimum, and the value with the greatest
+absolute magnitude. An `Inspection::PropertyDistanceList` value is the signed nearest nominal-
+geometry distance for the same-index actual point. When no nominal point lies within the search
+radius, the producer stores the positive or negative maximum finite `f32` sentinel according to
+the signed result. For `Mesh::PropertyMaterial`, binding values `0`, `1`, and `2` mean overall,
+per-vertex, and per-face. The four packed-color arrays are ambient, diffuse, specular, and
+emissive channels. The two float arrays are shininess and transparency. Each array has its own
+ordered count and values.
+
+UNV, VTK XML, and G-code members are complete delegated external-format payloads. Their XML
+carrier selects the external reader or supplies separate transform or center state; no FCStd field
+is inserted into the member. File-included and VRML members likewise have no FCStd-defined fields
+and consist of source or resource bytes. These producer grammars are documented format semantics
+but are not typed CADIR transfer grammars. CADIR therefore retains each member as the complete
+named native application payload linked to its owning property. It does not create a neutral mesh,
+result, point, material, inspection, or toolpath value from these bytes. The exact runtime
+property, XML value, and complete member remain authoritative, and the logical member span remains
+`named_opaque`.
+
 `Mesh::PropertyMeshKernel` contains exactly one direct `Mesh` value root. A duplicate or missing
 root is malformed. That root has zero or one non-empty `file` attribute; a non-empty attribute
 identifies the property's only binary side entry. A `Mesh` value without a side entry contains
