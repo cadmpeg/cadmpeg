@@ -2275,3 +2275,23 @@ pub(crate) mod hem_teardrop_fixed_operation_section {
     /// Offset of `inside_bend_radius` (`f64`, little-endian). Spec §3.1.
     pub(crate) const INSIDE_BEND_RADIUS: usize = 81;
 }
+
+/// Byte offsets for the `move_transform_frame_253` record.
+///
+/// Spec §3.1. Record length 253 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the same-index paired header follows at offset 253.
+/// ```
+pub(crate) mod move_transform_frame_253 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 253;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `form` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FORM: usize = 43;
+    /// Offset of `reserved_zero` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 47;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 48;
+}

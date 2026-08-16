@@ -1697,3 +1697,48 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
     assert_eq!(decoded.transform_offset, 49);
     assert_eq!(decoded.reference, None);
 }
+
+#[test]
+fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
+    let mut bytes = Vec::new();
+    let classes: [(&str, u32); 4] = [("393", 5), ("293", 1), ("451", 5), ("442", 5)];
+
+    for (ordinal, (class_tag, form)) in classes.into_iter().enumerate() {
+        let record_index = 900 + u32::try_from(ordinal).expect("small test ordinal");
+        let frame_at = bytes.len();
+        let mut frame = vec![0; 253];
+        frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+        frame[4..7].copy_from_slice(class_tag.as_bytes());
+        frame[7..11].copy_from_slice(&record_index.to_le_bytes());
+        frame[43..47].copy_from_slice(&form.to_le_bytes());
+        let mut transform = identity_matrix();
+        transform[0][3] = f64::from(ordinal as u32);
+        for (cell, value) in transform.into_iter().flatten().enumerate() {
+            let at = 48 + cell * 8;
+            frame[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&frame);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"262");
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+
+        let mut scope = DesignParameterScope::empty(
+            &format!("f3d:test:legacy-move#{record_index}"),
+            "Move",
+            1_000 + u32::try_from(ordinal).expect("small test ordinal"),
+        );
+        scope.reference_members = vec![record_index];
+        let decoded = crate::design::decode::scopes::exact_move_operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+        )
+        .expect("legacy Move transform frame");
+
+        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform_record_index, record_index);
+        assert_eq!(decoded.form, form);
+        assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
+        assert_eq!(decoded.transform_offset, (frame_at + 48) as u64);
+    }
+}

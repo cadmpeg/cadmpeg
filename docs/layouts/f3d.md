@@ -1740,6 +1740,24 @@ Unstated regions:
 - `0..42` (42 B): The fixed section begins with the retained fields and common envelope before the gap-owner reference.
 - `75..81` (6 B): The fixed section has six bytes between the radius-owner reference and the rule-derived radius.
 
+## `move_transform_frame_253`
+
+Spec §3.1 · layout: byte offsets · size: 253 B
+
+Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the same-index paired header follows at offset 253.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | transform records are 253 bytes to their same-index paired headers |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..253` (77 B): The transform record's native tail precedes the same-index paired header at offset 253.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

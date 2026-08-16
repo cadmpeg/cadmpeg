@@ -3937,18 +3937,19 @@ pub(crate) fn exact_move_operation(
             {
                 continue;
             }
-            if !matches!(
-                (class_tag.as_str(), frame_length),
-                ("296" | "362" | "433", 253) | ("349", 254 | 274) | ("368", 254)
-            ) || bytes.get(start + 47) != Some(&0)
-            {
+            let Some((form_offset, transform_offset)) =
+                move_transform_layout(&class_tag, frame_length)
+            else {
+                continue;
+            };
+            if bytes.get(start + 47) != Some(&0) {
                 continue;
             }
-            let form = View::u32_le_at(bytes, start + 43)?;
+            let form = View::u32_le_at(bytes, start + form_offset)?;
             if !matches!(form, 1 | 5) {
                 continue;
             }
-            let transform: [[f64; 4]; 4] = f64s_at(bytes, start + 48, 16)?
+            let transform: [[f64; 4]; 4] = f64s_at(bytes, start + transform_offset, 16)?
                 .chunks_exact(4)
                 .map(|row| row.try_into().expect("four-value matrix row"))
                 .collect::<Vec<[f64; 4]>>()
@@ -3959,10 +3960,10 @@ pub(crate) fn exact_move_operation(
             }
             candidates.push(DesignMoveOperation {
                 transform,
-                transform_offset: (start + 48) as u64,
+                transform_offset: (start + transform_offset) as u64,
                 transform_record_index: *record_index,
                 form,
-                form_offset: (start + 43) as u64,
+                form_offset: (start + form_offset) as u64,
             });
         }
     }
@@ -3970,6 +3971,22 @@ pub(crate) fn exact_move_operation(
         return None;
     };
     Some(candidate.clone())
+}
+
+/// Return the fixed envelope offsets admitted for one Move transform class.
+///
+/// The legacy classes carry the same matrix envelope as the current classes;
+/// their class tags are the generation discriminator. Keeping the admission
+/// keyed by class avoids treating an arbitrary 253-byte record as a transform.
+fn move_transform_layout(class_tag: &str, frame_length: usize) -> Option<(usize, usize)> {
+    let admitted = match class_tag {
+        "296" | "362" | "433" if frame_length == 253 => true,
+        "349" if matches!(frame_length, 254 | 274) => true,
+        "368" if frame_length == 254 => true,
+        "293" | "393" | "442" | "451" if frame_length == 253 => true,
+        _ => false,
+    };
+    admitted.then_some((43, 48))
 }
 
 pub(crate) fn exact_scale_operation(

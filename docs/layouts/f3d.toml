@@ -5324,3 +5324,49 @@ offset = 81
 type = "f64"
 source = "spec"
 anchor = "its rule-derived inside bend radius starts"
+
+[[record]]
+name = "move_transform_frame_253"
+kind = "byte"
+section = "3.1"
+anchor = "Class `296`, `362`, `433`, `293`, `393`, `442`, and `451` transform records are 253 bytes"
+size = 253
+note = "Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the same-index paired header follows at offset 253."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "transform records are 253 bytes to their same-index paired headers"
+
+[[record.gap]]
+offset = 11
+size = 32
+note = "Offsets 11 through 42 are zero."
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "offset 43 stores u32 form `1` or `5`"
+
+[[record.field]]
+name = "reserved_zero"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "offset 47 is zero"
+
+[[record.field]]
+name = "transform"
+offset = 48
+type = "f64[16]"
+source = "spec"
+anchor = "sixteen row-major f64 values begin at offset 48"
+
+[[record.gap]]
+offset = 176
+size = 77
+note = "The transform record's native tail precedes the same-index paired header at offset 253."
