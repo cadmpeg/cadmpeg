@@ -18,16 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-02. Resource access
-
-**Question.** Which retrieval and authentication procedure applies to an external resource URI?
-
-**Known.** Part 21 defines resource-resolution results and a UUID registry case. It does not select a transport, authentication, redirect, certificate, authorization, or freshness policy. The codec retains external references and performs no implicit access.
-
-**Need.** We need a caller resource-provider contract before the codec can retrieve an external resource.
-
-**Note.** QA audit: commit `7180ff02e` closed this item by recording that the codec does not access resources. This is a conservative boundary, not an implemented retrieval rule.
-
 ### ER-03. Resource composition
 
 **Question.** How does an external resource occurrence combine with the local instance graph?

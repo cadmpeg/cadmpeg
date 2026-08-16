@@ -527,7 +527,14 @@ its `FILE_NAME` timestamp. A digest is permitted only when the referenced
 exchange structure has a signature section. These fields provide freshness and
 integrity assertions; Part 21 does not define URI normalization, cache keys,
 content negotiation, validators, or representation equivalence. ISO
-10303-21:2016 §8.2.5 and Annex F.4.3 define these meanings.
+10303-21:2016 §8.2.5 and Annex F.4.3 define these meanings. The [Part 21
+edition-3 text](https://www.steptools.com/stds/step/IS_final_p21e3.html)
+§§6.5.1-6.5.2 define a resource as an IETF URI and §10.2 defines the required
+anchor result. For a UUID-only URI, §10.2.2 assigns the processing system the
+task of finding a service that identifies the exchange structure. These rules
+define the resource token and resolution result; they do not define a
+transport, authentication, redirect, certificate, authorization, or freshness
+procedure.
 
 The Part 21 schema population is separate from the decoded instance graph. It
 contains every entity in the local DATA sections. If `SCHEMA_POPULATION` is
