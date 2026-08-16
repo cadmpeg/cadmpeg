@@ -248,8 +248,19 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
         .collect::<BTreeMap<_, _>>();
     for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-        let Some(surface) = ir.model.surfaces.iter().find(|surface| surface.id == id) else {
-            continue;
+        let model_surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let surface = match model_surfaces.as_slice() {
+            [] => continue,
+            [surface] => surface,
+            _ => {
+                carriers.remove(&row.id);
+                continue;
+            }
         };
         if let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry {
             let plane = PlaneEquation {
