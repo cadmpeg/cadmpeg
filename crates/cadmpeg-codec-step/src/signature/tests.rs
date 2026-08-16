@@ -72,6 +72,16 @@ fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
     assert!(source[exchange.signatures[1].clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));
+    assert_eq!(exchange.signature_sections.len(), 2);
+    let first = &exchange.signature_sections[0];
+    let second = &exchange.signature_sections[1];
+    assert_eq!(first.signed.end, first.span.start);
+    assert_eq!(second.signed.end, second.span.start);
+    let first_section = &source[first.span.clone()];
+    let second_signed = &source[second.signed.clone()];
+    assert!(second_signed
+        .windows(first_section.len())
+        .any(|window| window == first_section));
 }
 
 #[test]

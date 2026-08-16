@@ -598,15 +598,47 @@ Annex A.4 Note 2 names transport protocols such as `http`, `ftp`, and `file` as
 ways to deliver a resource, but selects no transport or authentication
 procedure.
 Each SIGNATURE section follows the exchange terminator. Its content is a
-detached CMS `SignedData` object as defined by RFC 5652, encoded as RFC 4648
-Base64. Digest and signature algorithm identifiers are inside that object, not
-in a Part 21 field. The Base64 content begins after `SIGNATURE;` and ends at
-its next `ENDSEC;`. The signature
-authenticates the Part 21 alphabet bytes from `ISO-10303-21;` through the byte
-before that section's `SIGNATURE;` token. A later section therefore also
-authenticates every earlier signature section. The reader retains both the
-complete source span and the decoded CMS payload. Signature verification still
-requires a CMS verifier and caller-supplied trust policy.
+detached CMS `SignedData` object as defined by [Part 21 edition 3
+§14.1](https://www.steptools.com/stds/step/IS_final_p21e3.html), encoded as RFC
+4648 Base64. Digest and signature algorithm identifiers are inside that
+object, not in a Part 21 field. The Base64 content begins after `SIGNATURE;`
+and ends at its next `ENDSEC;`.
+
+The signature input is the Part 21 alphabet projection of the bytes from
+`ISO-10303-21;` through the byte before that section's `SIGNATURE;` token. The
+projection removes ASCII control bytes and retains the other basic-alphabet
+bytes. A later section therefore includes the projected bytes of every earlier
+signature section. RFC 5652 uses the projected content octets as the digest
+input when `SignerInfo.signedAttrs` is absent. When `signedAttrs` is present,
+the signature input is its DER `SET OF` encoding; its `message-digest` value
+must equal the digest of the projected content and its `content-type` value
+must equal `encapContentInfo.eContentType`. The detached content is not an
+embedded `eContent` value. The [RFC 5652 verification
+rules](https://www.rfc-editor.org/rfc/rfc5652.html) leave public-key selection
+and certification-path validation to external context.
+
+For each SIGNATURE section, a caller-supplied verifier reports `valid` only
+when the CMS structure is valid, the projected-content digest and signed
+attributes are valid, the signature verifies with the resolved public key, and
+the caller's signer, certificate, key-usage, validity-time, revocation, and
+trust-anchor policy passes. [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html)
+treats the trust anchor and validation time as path-validation inputs. A
+deterministic structure, projection, digest, signature, certificate, or policy
+failure is `invalid`. Missing content, an unavailable or unsupported algorithm,
+an unresolved key or certification path, unavailable revocation evidence, or
+an unavailable policy or validation time is `indeterminate`. A section with
+multiple `SignerInfo` values is valid only when the caller's signer policy is
+satisfied; Part 21 does not choose an any-signer, all-signers, or threshold
+rule.
+
+CADIR decision: the STEP codec performs only the bounded Base64, DER, CMS
+`SignedData`, and detached-content checks needed to admit a signature section.
+It treats a failure in those checks as a syntax error. It retains an admitted
+signature's complete source span and decoded CMS payload as an opaque record;
+it does not claim `valid`, `invalid`, or `indeterminate`, and it has no default
+trust store, clock, revocation service, or signer policy. A caller must pass
+the retained section, its projected bytes, a CMS verifier, and an explicit
+policy to obtain a verification result.
 
 DATA sections are optional in edition 3. One unnamed DATA section requires one
 FILE_SCHEMA identifier. If a DATA section has parameters, they contain a

@@ -24,26 +24,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 4. Signatures
 
-### SG-04. Signature verification result
-
-**Question.** Which validation conditions make each signature valid, invalid, or indeterminate?
-
-**Known.** Part 21 requires a detached CMS `SignedData` object and defines
-the exact external content and alphabet projection. RFC 5652 supplies the
-message-digest, signed-attribute, signature, certificate, and algorithm
-processing rules. A valid result also needs a certificate-chain, key-usage,
-revocation, time, and trust-anchor policy. An invalid result covers malformed
-CMS, a digest mismatch, a signature mismatch, or a failed required policy;
-indeterminate covers unavailable content, keys, certificates, or policy
-evidence.
-
-**Note.** Part 21 does not prescribe a trust store, revocation protocol,
-clock policy, or caller authorization policy. Verification therefore needs a
-caller-supplied CMS and trust-policy contract; structural CMS parsing alone
-cannot produce a valid/invalid result.
-
-**Need.** We must know the conditions to report a signature verification result.
-
 ## 5. Topology and pcurve decisions
 
 ## 6. Units and measures
