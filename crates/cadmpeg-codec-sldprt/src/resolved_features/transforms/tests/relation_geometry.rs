@@ -358,15 +358,22 @@ fn locus_relations_require_matching_evaluated_geometry() {
     second.geometry = SketchGeometry::Point {
         position: Point2::new(1.0, 0.0),
     };
+    let definition = typed_marker_relation_definition_in_sketch(
+        &coincident,
+        &sketch,
+        &[first.clone(), second.clone(), line.clone(), arc.clone()],
+        &markers,
+        &loci,
+    )
+    .expect("typed coincident relation");
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
-            &coincident,
-            &sketch,
-            &[first.clone(), second.clone(), line.clone(), arc.clone()],
-            &markers,
-            &loci,
-        ),
-        Some(SketchConstraintDefinition::Native { .. })
+        definition,
+        SketchConstraintDefinition::CoincidentLoci { .. }
+    ));
+    assert!(marker_relation_is_inactive(
+        &coincident,
+        &definition,
+        &[first.clone(), second.clone(), line.clone(), arc.clone()],
     ));
     first.clone_from(&entity(
         "first",

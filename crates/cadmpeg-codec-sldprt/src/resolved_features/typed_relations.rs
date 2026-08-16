@@ -618,20 +618,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if loci.len() < 2 {
                 return Some(native());
             }
-            if !sketch_entities.is_empty() {
-                let Some(points) = loci
+            if !sketch_entities.is_empty()
+                && loci
                     .iter()
-                    .map(|locus| profile_locus_point(locus, sketch_entities))
-                    .collect::<Option<Vec<_>>>()
-                else {
-                    return Some(native());
-                };
-                if points.iter().skip(1).any(|point| {
-                    !same_dimension_length(point.u, points[0].u)
-                        || !same_dimension_length(point.v, points[0].v)
-                }) {
-                    return Some(native());
-                }
+                    .any(|locus| profile_locus_point(locus, sketch_entities).is_none())
+            {
+                return Some(native());
             }
             SketchConstraintDefinition::CoincidentLoci { loci }
         }
@@ -1484,6 +1476,19 @@ pub(super) fn marker_relation_is_inactive(
     };
     if let Some(inactive) = typed_axis_relation_is_inactive(definition, sketch_entities) {
         return inactive;
+    }
+    if let SketchConstraintDefinition::CoincidentLoci { loci } = definition {
+        let Some(points) = loci
+            .iter()
+            .map(|locus| profile_locus_point(locus, sketch_entities))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+        return points.iter().skip(1).any(|point| {
+            !same_dimension_length(point.u, points[0].u)
+                || !same_dimension_length(point.v, points[0].v)
+        });
     }
     let SketchConstraintDefinition::Native {
         entities, operands, ..
