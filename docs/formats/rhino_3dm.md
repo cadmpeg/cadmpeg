@@ -2638,6 +2638,10 @@ cache classes and have no valid persistent class-data payload. A
 `ON_PolyEdgeSegment` is the archive-bearing proxy-derived exception and uses
 the payload below.
 
+`ON_PointGrid::Write` and `ON_PointGrid::Read` return false. An in-memory point
+grid therefore has no `rhino_3dm` object-class payload and is not a persistent
+format construct.
+
 ## 12. Curves and points
 
 ### 12.1 Point

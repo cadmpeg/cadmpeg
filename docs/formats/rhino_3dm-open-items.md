@@ -787,6 +787,13 @@ unknown and source-fidelity boundary. A source-readable differential with
 nonmatching optional counts confirms the CADIR repair rule: each nonzero
 mismatch is consumed and dropped with `container.redundant-field-repaired`,
 while the point sequence remains transferred.
+`ON_PointGrid` is settled as nonpersistent rather than as a missing geometry
+reader. The class UUID is registered by OpenNURBS, but its `Write` and `Read`
+implementations return false. A source witness with a valid materialized 2×3
+grid confirms that direct class serialization returns false and that
+`ONX_Model::Write` fails at the model-geometry component; no class-data bytes
+exist for CADIR to admit. The Rust class registry therefore correctly leaves
+the UUID unsupported and retains no fabricated point-grid interpretation.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
