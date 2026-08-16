@@ -51,7 +51,10 @@ impl CodecBackend for StepCodec {
     fn detect(&self, prefix: &[u8]) -> Confidence {
         if starts_with_step_magic(prefix) {
             Confidence::High
-        } else if archive::has_root_marker(prefix) || is_part28_xml(prefix) {
+        } else if archive::has_root_marker(prefix)
+            || is_part28_xml(prefix)
+            || is_ap242_bo_model_xml(prefix)
+        {
             Confidence::Medium
         } else {
             Confidence::No
@@ -350,17 +353,7 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
             "STEP Part 28 XML encoding".into(),
         ));
     }
-    let lower = bytes
-        .iter()
-        .take(4096)
-        .map(u8::to_ascii_lowercase)
-        .collect::<Vec<_>>();
-    if lower.starts_with(b"<?xml")
-        && (lower
-            .windows(21)
-            .any(|window| window == b"business_object_model")
-            || lower.windows(14).any(|window| window == b"ap242_bo_model"))
-    {
+    if is_ap242_bo_model_xml(bytes) {
         return Err(CodecError::NotImplemented(
             "AP242 BO-Model XML sidecar".into(),
         ));
@@ -379,4 +372,157 @@ fn is_part28_xml(bytes: &[u8]) -> bool {
             || lower
                 .windows(21)
                 .any(|window| window == b"iso:std:iso:10303:-28"))
+}
+
+const AP242_BO_MODEL_NAMESPACES: [&[u8]; 2] = [
+    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model",
+    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model",
+];
+
+// BM-01: the root namespace is the schema identity; local names and schema
+// locations alone do not establish an AP242 BO-Model document.
+fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
+    let bytes = &bytes[..bytes.len().min(4096)];
+    let Some((name, attributes)) = xml_root_start_tag(bytes) else {
+        return false;
+    };
+    let Some(separator) = name.iter().position(|byte| *byte == b':') else {
+        return name == b"Uos"
+            && namespace_for_prefix(attributes, &[])
+                .is_some_and(|namespace| AP242_BO_MODEL_NAMESPACES.contains(&namespace));
+    };
+    if &name[separator + 1..] != b"Uos" {
+        return false;
+    }
+    let prefix = &name[..separator];
+    namespace_for_prefix(attributes, prefix)
+        .is_some_and(|namespace| AP242_BO_MODEL_NAMESPACES.contains(&namespace))
+}
+
+fn xml_root_start_tag(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let mut cursor = if bytes.starts_with(b"\xef\xbb\xbf") {
+        3
+    } else {
+        0
+    };
+    loop {
+        while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        if bytes.get(cursor) != Some(&b'<') {
+            return None;
+        }
+        if bytes.get(cursor + 1) == Some(&b'?') {
+            let end = bytes
+                .get(cursor + 2..)?
+                .windows(2)
+                .position(|window| window == b"?>")?
+                + cursor
+                + 2;
+            cursor = end + 2;
+            continue;
+        }
+        if bytes.get(cursor + 1..cursor + 4) == Some(b"!--") {
+            let end = bytes
+                .get(cursor + 4..)?
+                .windows(3)
+                .position(|window| window == b"-->")?
+                + cursor
+                + 4;
+            cursor = end + 3;
+            continue;
+        }
+        if bytes.get(cursor + 1) == Some(&b'!') {
+            let end = bytes
+                .get(cursor + 2..)?
+                .iter()
+                .position(|byte| *byte == b'>')?
+                + cursor
+                + 2;
+            cursor = end + 1;
+            continue;
+        }
+        break;
+    }
+
+    let tag_end = find_xml_tag_end(bytes, cursor + 1)?;
+    let mut name_end = cursor + 1;
+    while bytes
+        .get(name_end)
+        .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'/' && *byte != b'>')
+    {
+        name_end += 1;
+    }
+    if name_end == cursor + 1 {
+        return None;
+    }
+    Some((&bytes[cursor + 1..name_end], &bytes[name_end..tag_end]))
+}
+
+fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
+    let mut quote = None;
+    while let Some(byte) = bytes.get(cursor).copied() {
+        match quote {
+            Some(delimiter) if byte == delimiter => quote = None,
+            Some(_) => {}
+            None if byte == b'\'' || byte == b'"' => quote = Some(byte),
+            None if byte == b'>' => return Some(cursor),
+            None => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn namespace_for_prefix<'a>(attributes: &'a [u8], prefix: &[u8]) -> Option<&'a [u8]> {
+    let mut cursor = 0;
+    while cursor < attributes.len() {
+        while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        if attributes.get(cursor).is_none_or(|byte| *byte == b'/') {
+            break;
+        }
+        let name_start = cursor;
+        while attributes
+            .get(cursor)
+            .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'=' && *byte != b'/')
+        {
+            cursor += 1;
+        }
+        let name = &attributes[name_start..cursor];
+        while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        if attributes.get(cursor) != Some(&b'=') {
+            return None;
+        }
+        cursor += 1;
+        while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        let delimiter = *attributes.get(cursor)?;
+        if delimiter != b'\'' && delimiter != b'"' {
+            return None;
+        }
+        cursor += 1;
+        let value_start = cursor;
+        while attributes
+            .get(cursor)
+            .is_some_and(|byte| *byte != delimiter)
+        {
+            cursor += 1;
+        }
+        let value = &attributes[value_start..cursor];
+        cursor += 1;
+        let matches_prefix = if prefix.is_empty() {
+            name == b"xmlns"
+        } else {
+            name.strip_prefix(b"xmlns:") == Some(prefix)
+        };
+        if matches_prefix {
+            return Some(value);
+        }
+    }
+    None
 }

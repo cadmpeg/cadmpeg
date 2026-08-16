@@ -15,6 +15,48 @@ identity and placement.
 
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
+
+An AP242 BO-Model XML document uses the XML Schema for its BO-Model edition.
+The edition-1 schema has target namespace
+`http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model`
+and schema version `2014-05-05`. The edition-2 schema has target namespace
+`http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model`
+and schema version `2016-03-30`. The public [edition-1 BO-Model schema](https://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model/bom.xsd)
+and [edition-2 BO-Model schema](https://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model/bom.xsd)
+each declare `Uos` in that edition's BO-Model namespace. The corresponding
+[edition-1 common schema](https://standards.iso.org/iso/ts/10303/-3000/-ed-1/tech/xml-schema/common/common.xsd)
+and [edition-2 common schema](https://standards.iso.org/iso/ts/10303/-3000/-ed-2/tech/xml-schema/common/common.xsd)
+define `Uos` as one `Header` followed by one or more `DataContainer` elements.
+The BO-Model schema supplies `AP242DataContainer` as the concrete
+`DataContainer` type. The edition-1 common schema supplies the same envelope
+with its edition-1 namespace.
+
+The namespace URI and the local name `Uos` identify this envelope. The XML
+prefix is arbitrary; a default namespace is also valid. `xsi:schemaLocation`
+names a schema location but does not replace the namespace identity. The
+CAx-IF recommended profile populates the `Header` with `Name`, `TimeStamp`,
+`Organization.Name`, `PreprocessorVersion`, `OriginatingSystem`, and
+`Documentation`. It recommends `.stpx` for an uncompressed BO-Model XML file
+and `.stpxZ` for a compressed file. These suffixes and the recommended header
+population are profile conventions, not Part 21 syntax.
+
+The [CAx-IF AP242 BO-Model XML recommended practice](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ap242xml_assy_struct_v2.1.pdf)
+models external files with `DigitalFile` and `ExternalItem`. An
+`ExternalItem.Id` names the target file and `ExternalItem.Source` supplies a
+relative path or other agreed location. The profile permits a Part 21 file or
+a nested AP242 BO-Model XML file as a target. This is a BO-Model file
+relationship. Part 21 does not define a BO-Model filename, a same-stem
+pairing, or an association from `FILE_NAME` to an XML document.
+
+CADIR decision: the STEP codec recognizes only `Uos` with one of the two
+published BO-Model namespaces above and refuses it as an alternate encoding.
+It does not recognize a local name, filename suffix, XML prefix, or
+`xsi:schemaLocation` alone. It does not validate the complete AP242 XSD or
+discover a same-stem XML file. A caller must explicitly bind the XML resource,
+declare its BO-Model schema and edition, and apply a separate XML-to-Part-21
+composition policy. Identity, value precedence, and conflict handling remain
+the BM-02 decision.
+
 A Part 21 ZIP container uses PKZIP 2.04g stored or Deflate entries. Its root
 member is named exactly `ISO-10303.p21` and is at the archive root. Every
 other member is a subsidiary, including directories, nested archives, and

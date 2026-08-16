@@ -451,10 +451,6 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             b"<?xml version='1.0'?><iso_10303_28/>",
             "STEP Part 28 XML encoding",
         ),
-        (
-            b"<?xml version='1.0'?><business_object_model/>",
-            "AP242 BO-Model XML sidecar",
-        ),
     ];
     for &(bytes, reason) in cases {
         let error = codec
@@ -467,5 +463,31 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     assert_eq!(
         codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
         Confidence::Medium
+    );
+
+    for bytes in [
+        include_bytes!("data/bm01_ap242_bo_model_ed1.stpx").as_slice(),
+        include_bytes!("data/bm01_ap242_bo_model_ed2.stpx").as_slice(),
+    ] {
+        assert_eq!(codec.detect(bytes), Confidence::Medium);
+        assert!(matches!(
+            codec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
+            Err(cadmpeg_core::CodecError::NotImplemented(message))
+                if message == "AP242 BO-Model XML sidecar"
+        ));
+    }
+
+    let default_namespace = br#"<Uos xmlns="http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model"><Header/><DataContainer/></Uos>"#;
+    assert_eq!(codec.detect(default_namespace), Confidence::Medium);
+
+    let lookalike = include_bytes!("data/bm01_ap242_bo_model_wrong_namespace.stpx");
+    assert_eq!(codec.detect(lookalike), Confidence::No);
+    assert!(matches!(
+        codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
+        Err(cadmpeg_core::CodecError::WrongFormat(_))
+    ));
+    assert_eq!(
+        codec.detect(b"<?xml version='1.0'?><business_object_model/>"),
+        Confidence::No
     );
 }
