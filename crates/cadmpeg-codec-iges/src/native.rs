@@ -1461,6 +1461,12 @@ pub(crate) fn store(
         .iter()
         .map(|(sequence, record)| (*sequence, trailing_pointer_groups(record, &entries)))
         .collect::<BTreeMap<_, _>>();
+    let primary_end = |sequence: u32, record: &ParameterRecord| {
+        trailing_by_directory
+            .get(&sequence)
+            .and_then(|groups| groups.as_ref())
+            .map_or(record.tokens.len(), |groups| groups.token_start)
+    };
     let parameter_resolver = ParameterResolver::new(directory);
     let mut required_back_pointer_members = std::collections::BTreeSet::new();
     for group in directory
@@ -1645,13 +1651,13 @@ pub(crate) fn store(
                 Some(3) => (3, 6),
                 _ => (3, 1),
             };
-            let count = declared_tuple_count
-                .and_then(|value| usize::try_from(value).ok())
-                .unwrap_or_default();
             let tuples = parameters
                 .map(|record| {
-                    let available = record.tokens.len().saturating_sub(start) / width;
-                    (0..count.min(available))
+                    let end = primary_end(entry.sequence, record);
+                    let count = record
+                        .count_with_stride_at(2, start, width, end)
+                        .unwrap_or_default();
+                    (0..count)
                         .map(|tuple| {
                             (0..width)
                                 .map(|component| {
@@ -1809,21 +1815,41 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(5))
+                .and_then(|record| {
+                    record.count_with_stride_before(5, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             let supersedes_code = record.and_then(|record| record.integer(3));
             let mut cursor = 6_usize;
             let mut characters = Vec::with_capacity(count);
+            let mut malformed = false;
             for _ in 0..count {
-                let Some(record) = record else { break };
+                let Some(record) = record else {
+                    malformed = true;
+                    break;
+                };
                 let Some(count_index) = cursor.checked_add(3) else {
+                    malformed = true;
                     break;
                 };
                 let declared_motion_count = record.integer(count_index);
-                let motion_count = record.count_with_stride(count_index, 3);
-                let motions = motion_count
-                    .into_iter()
-                    .flat_map(|count| 0..count)
+                let motion_count = record.count_with_stride_before(
+                    count_index,
+                    3,
+                    primary_end(entry.sequence, record),
+                );
+                let Some(motion_count) = motion_count else {
+                    malformed = true;
+                    break;
+                };
+                let Some(next) = motion_count
+                    .checked_mul(3)
+                    .and_then(|width| cursor.checked_add(4 + width))
+                else {
+                    malformed = true;
+                    break;
+                };
+                let motions = (0..motion_count)
                     .map(|offset| {
                         let start = cursor + 4 + offset * 3;
                         NativeGlyphMotion {
@@ -1838,16 +1864,10 @@ pub(crate) fn store(
                     declared_motion_count,
                     motions,
                 });
-                let Some(motion_count) = motion_count else {
-                    break;
-                };
-                let Some(next) = motion_count
-                    .checked_mul(3)
-                    .and_then(|width| cursor.checked_add(4 + width))
-                else {
-                    break;
-                };
                 cursor = next;
+            }
+            if malformed {
+                characters.clear();
             }
             NativeTextFontDefinition {
                 id: format!("iges:presentation:text-font#D{}", entry.sequence),
@@ -2105,7 +2125,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.count(1))
+                .and_then(|record| {
+                    record.count_with_stride_before(1, 2, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             NativeSolidAssembly {
                 id: format!("iges:product:solid-assembly#D{}", entry.sequence),
@@ -2273,13 +2295,23 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let member_count = record
-                .and_then(|record| record.count(3))
-                .unwrap_or_default();
-            let connect_count_index = 7 + member_count;
-            let connect_count = record
-                .and_then(|record| record.count(connect_count_index))
-                .unwrap_or_default();
+            let member_count = record.and_then(|record| {
+                let end = primary_end(entry.sequence, record);
+                let count = record.count_with_stride_before(3, 1, end)?;
+                let type_flag = 4 + count;
+                let primary_reference_designator = type_flag + 1;
+                let display_template = type_flag + 2;
+                let connect_count = type_flag + 3;
+                (record.integer(type_flag).is_some()
+                    && record.string(primary_reference_designator).is_some()
+                    && record.integer(display_template).is_some()
+                    && record.integer(connect_count).is_some())
+                .then_some(count)
+            });
+            let connect_count_index = member_count.map(|count| 7 + count);
+            let connect_count = record.zip(connect_count_index).and_then(|(record, index)| {
+                record.count_with_stride_before(index, 1, primary_end(entry.sequence, record))
+            });
             NativeNetworkDefinition {
                 id: format!("iges:product:network-definition#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -2288,52 +2320,70 @@ pub(crate) fn store(
                     .and_then(|record| record.string(2))
                     .map(<[u8]>::to_vec),
                 declared_member_count: record.and_then(|record| record.integer(3)),
-                members: (0..member_count)
-                    .map(|index| {
-                        record
-                            .and_then(|record| record.integer(4 + index))
-                            .and_then(|sequence| {
-                                parameter_resolver.resolve_any(entry.sequence, 4 + index, sequence)
-                            })
-                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                members: member_count.map_or_else(Vec::new, |member_count| {
+                    (0..member_count)
+                        .map(|index| {
+                            record
+                                .and_then(|record| record.integer(4 + index))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_any(
+                                        entry.sequence,
+                                        4 + index,
+                                        sequence,
+                                    )
+                                })
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                        })
+                        .collect()
+                }),
+                type_flag: member_count.and_then(|member_count| {
+                    record.and_then(|record| record.integer(4 + member_count))
+                }),
+                primary_reference_designator: member_count
+                    .and_then(|member_count| {
+                        record.and_then(|record| record.string(5 + member_count))
                     })
-                    .collect(),
-                type_flag: record.and_then(|record| record.integer(4 + member_count)),
-                primary_reference_designator: record
-                    .and_then(|record| record.string(5 + member_count))
                     .map(<[u8]>::to_vec),
-                display_template: record
-                    .and_then(|record| record.integer(6 + member_count))
-                    .filter(|sequence| *sequence != 0)
-                    .and_then(|sequence| {
-                        parameter_resolver.resolve_type(
-                            entry.sequence,
-                            6 + member_count,
-                            sequence,
-                            312,
-                            &[0, 1],
-                        )
+                display_template: member_count
+                    .and_then(|member_count| {
+                        let sequence =
+                            record.and_then(|record| record.integer(6 + member_count))?;
+                        (sequence != 0).then_some(sequence).and_then(|sequence| {
+                            parameter_resolver.resolve_type(
+                                entry.sequence,
+                                6 + member_count,
+                                sequence,
+                                312,
+                                &[0, 1],
+                            )
+                        })
                     })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                declared_connect_point_count: record
-                    .and_then(|record| record.integer(connect_count_index)),
-                connect_points: (0..connect_count)
-                    .map(|index| {
-                        record
-                            .and_then(|record| record.integer(8 + member_count + index))
-                            .filter(|sequence| *sequence != 0)
-                            .and_then(|sequence| {
-                                parameter_resolver.resolve_type(
-                                    entry.sequence,
-                                    8 + member_count + index,
-                                    sequence,
-                                    132,
-                                    &[0],
-                                )
+                declared_connect_point_count: member_count.and_then(|member_count| {
+                    record.and_then(|record| record.integer(7 + member_count))
+                }),
+                connect_points: member_count.zip(connect_count).map_or_else(
+                    Vec::new,
+                    |(member_count, connect_count)| {
+                        (0..connect_count)
+                            .map(|index| {
+                                record
+                                    .and_then(|record| record.integer(8 + member_count + index))
+                                    .filter(|sequence| *sequence != 0)
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve_type(
+                                            entry.sequence,
+                                            8 + member_count + index,
+                                            sequence,
+                                            132,
+                                            &[0],
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
                             })
-                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                    })
-                    .collect(),
+                            .collect()
+                    },
+                ),
             }
         })
         .collect::<Vec<_>>();
@@ -2343,7 +2393,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let connect_count = record
-                .and_then(|record| record.count(11))
+                .and_then(|record| {
+                    record.count_with_stride_before(11, 1, primary_end(entry.sequence, record))
+                })
                 .unwrap_or_default();
             NativeNetworkInstance {
                 id: format!("iges:product:network-instance#D{}", entry.sequence),
@@ -2620,33 +2672,48 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 302)
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let class_count = record
-                .and_then(|record| record.count(1))
-                .unwrap_or_default();
+            let class_count = record.and_then(|record| {
+                record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+            });
+            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
             let mut cursor = 2_usize;
-            let mut classes = Vec::with_capacity(class_count);
-            for _ in 0..class_count {
-                let Some(record) = record else { break };
-                let Some(count_index) = cursor.checked_add(2) else {
-                    break;
-                };
-                let item_count = record.count(count_index);
-                classes.push(NativeAssociativityClassDefinition {
-                    back_pointers_required: record.integer(cursor).map(|value| value == 1),
-                    ordered: record.integer(cursor + 1).map(|value| value == 1),
-                    declared_item_count: record.integer(cursor + 2),
-                    item_types: item_count
-                        .into_iter()
-                        .flat_map(|count| 0..count)
-                        .map(|offset| record.integer(cursor + 3 + offset))
-                        .collect(),
-                });
-                let Some(item_count) = item_count else { break };
-                let Some(next) = cursor.checked_add(3 + item_count) else {
-                    break;
-                };
-                cursor = next;
-            }
+            let classes = class_count.map_or_else(Vec::new, |class_count| {
+                let mut classes = Vec::with_capacity(class_count);
+                let mut complete = true;
+                for _ in 0..class_count {
+                    let Some(record) = record else {
+                        complete = false;
+                        break;
+                    };
+                    let Some(count_index) = cursor.checked_add(2) else {
+                        complete = false;
+                        break;
+                    };
+                    let Some(item_count) = record.count_with_stride_before(count_index, 1, end)
+                    else {
+                        complete = false;
+                        break;
+                    };
+                    let Some(next) = cursor.checked_add(3 + item_count) else {
+                        complete = false;
+                        break;
+                    };
+                    classes.push(NativeAssociativityClassDefinition {
+                        back_pointers_required: record.integer(cursor).map(|value| value == 1),
+                        ordered: record.integer(cursor + 1).map(|value| value == 1),
+                        declared_item_count: record.integer(cursor + 2),
+                        item_types: (0..item_count)
+                            .map(|offset| record.integer(cursor + 3 + offset))
+                            .collect(),
+                    });
+                    cursor = next;
+                }
+                if complete {
+                    classes
+                } else {
+                    Vec::new()
+                }
+            });
             NativeAssociativity::Definition {
                 id: format!("iges:structure:associativity#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -3059,78 +3126,93 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let count = record
-                .and_then(|record| record.count(3))
-                .unwrap_or_default();
+            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+            let count = record.and_then(|record| {
+                let stride = if entry.form == 0 { 3 } else { 1 };
+                record.count_with_stride_before(3, stride, end)
+            });
             let mut cursor = 4;
-            let mut attributes = Vec::with_capacity(count);
-            for _ in 0..count {
-                let Some(record) = record else { break };
-                let attribute_type = record.integer(cursor);
-                let value_data_type = record.integer(cursor + 1);
-                let declared_value_count = record.integer(cursor + 2);
-                let stride = if entry.form == 2 { 2 } else { 1 };
-                let value_count = if entry.form == 0 {
-                    Some(0)
-                } else {
-                    match record.tokens.get(cursor + 2).map(|token| &token.value) {
-                        Some(TokenValue::Omitted) => {
-                            (stride <= record.tokens.len().saturating_sub(cursor + 3)).then_some(1)
+            let mut attributes = Vec::with_capacity(count.unwrap_or_default());
+            let mut complete = true;
+            if let Some(count) = count {
+                for _ in 0..count {
+                    let Some(record) = record else {
+                        complete = false;
+                        break;
+                    };
+                    let attribute_type = record.integer(cursor);
+                    let value_data_type = record.integer(cursor + 1);
+                    let declared_value_count = record.integer(cursor + 2);
+                    let stride = if entry.form == 2 { 2 } else { 1 };
+                    let value_count = if entry.form == 0 {
+                        Some(0)
+                    } else {
+                        match record.tokens.get(cursor + 2).map(|token| &token.value) {
+                            Some(TokenValue::Omitted) => {
+                                (stride <= end.saturating_sub(cursor + 3)).then_some(1)
+                            }
+                            Some(TokenValue::Integer(_)) => {
+                                record.count_with_stride_before(cursor + 2, stride, end)
+                            }
+                            None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                         }
-                        Some(TokenValue::Integer(_)) => {
-                            record.count_with_stride(cursor + 2, stride)
+                    };
+                    let Some(value_start) = cursor.checked_add(3) else {
+                        complete = false;
+                        break;
+                    };
+                    let Some(value_count) = value_count else {
+                        complete = false;
+                        break;
+                    };
+                    let Some(next) = value_count
+                        .checked_mul(stride)
+                        .and_then(|width| value_start.checked_add(width))
+                        .filter(|next| *next <= end)
+                    else {
+                        complete = false;
+                        break;
+                    };
+                    let mut values = Vec::with_capacity(value_count);
+                    if entry.form != 0 {
+                        for offset in 0..value_count {
+                            let value_index = value_start + offset * stride;
+                            let value = record
+                                .tokens
+                                .get(value_index)
+                                .map(token)
+                                .map_or(NativeTokenValue::Omitted, |token| token.value);
+                            let display_template = (entry.form == 2)
+                                .then(|| record.integer(value_index + 1))
+                                .flatten()
+                                .filter(|sequence| *sequence != 0)
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        value_index + 1,
+                                        sequence,
+                                        312,
+                                        &[0, 1],
+                                    )
+                                })
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"));
+                            values.push(NativeAttributeValue {
+                                value,
+                                display_template,
+                            });
                         }
-                        None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                     }
-                };
-                let Some(value_start) = cursor.checked_add(3) else {
-                    break;
-                };
-                let mut values = Vec::with_capacity(value_count.unwrap_or_default());
-                if entry.form != 0 {
-                    for offset in 0..value_count.unwrap_or_default() {
-                        let value_index = value_start + offset * stride;
-                        let value = record
-                            .tokens
-                            .get(value_index)
-                            .map(token)
-                            .map_or(NativeTokenValue::Omitted, |token| token.value);
-                        let display_template = (entry.form == 2)
-                            .then(|| record.integer(value_index + 1))
-                            .flatten()
-                            .filter(|sequence| *sequence != 0)
-                            .and_then(|sequence| {
-                                parameter_resolver.resolve_type(
-                                    entry.sequence,
-                                    value_index + 1,
-                                    sequence,
-                                    312,
-                                    &[0, 1],
-                                )
-                            })
-                            .map(|sequence| format!("iges:entity:directory#{sequence}"));
-                        values.push(NativeAttributeValue {
-                            value,
-                            display_template,
-                        });
-                    }
+                    attributes.push(NativeAttributeDefinition {
+                        attribute_type,
+                        value_data_type,
+                        declared_value_count,
+                        values,
+                    });
+                    cursor = next;
                 }
-                attributes.push(NativeAttributeDefinition {
-                    attribute_type,
-                    value_data_type,
-                    declared_value_count,
-                    values,
-                });
-                let Some(value_count) = value_count else {
-                    break;
-                };
-                let Some(next) = value_count
-                    .checked_mul(stride)
-                    .and_then(|width| value_start.checked_add(width))
-                else {
-                    break;
-                };
-                cursor = next;
+            }
+            if !complete {
+                attributes.clear();
             }
             NativeAttributeTableDefinition {
                 id: format!("iges:product:attribute-definition#D{}", entry.sequence),
@@ -3254,14 +3336,10 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
-            let bounded_count = |index| {
-                record
-                    .integer(index)
-                    .and_then(|value| usize::try_from(value).ok())
-                    .filter(|count| *count <= record.tokens.len())
-                    .unwrap_or_default()
-            };
-            let count = bounded_count(1);
+            let end = primary_end(entry.sequence, record);
+            let count_before = |index, stride| record.count_with_stride_before(index, stride, end);
+            let bounded_count = |index, stride| count_before(index, stride).unwrap_or_default();
+            let count = bounded_count(1, 1);
             let strings = |start: usize, count: usize| {
                 (0..count)
                     .map(|offset| record.string(start + offset).map(<[u8]>::to_vec))
@@ -3312,45 +3390,84 @@ pub(crate) fn store(
                     color: record.integer(7),
                 },
                 11 => {
-                    let dependent_count = bounded_count(3);
-                    let independent_count = bounded_count(4);
-                    let counts = (0..independent_count)
-                        .map(|offset| bounded_count(5 + independent_count + offset))
-                        .collect::<Vec<_>>();
-                    let mut cursor = 5 + independent_count * 2;
-                    let independent_variables = counts
-                        .iter()
-                        .enumerate()
-                        .map(|(offset, count)| {
-                            let values = (0..*count)
-                                .map(|index| record.number(cursor + index))
-                                .collect();
-                            cursor += count;
-                            NativeIndependentVariable {
-                                variable_type: record.integer(5 + offset),
-                                declared_value_count: record
-                                    .integer(5 + independent_count + offset),
-                                values,
+                    let dependent_count = record
+                        .integer(3)
+                        .and_then(|value| usize::try_from(value).ok());
+                    let independent_count = record
+                        .integer(4)
+                        .and_then(|value| usize::try_from(value).ok());
+                    let (independent_variables, dependent_values) =
+                        match (dependent_count, independent_count) {
+                            (Some(dependent_count), Some(independent_count)) => {
+                                let header_end = independent_count
+                                    .checked_mul(2)
+                                    .and_then(|width| 5_usize.checked_add(width))
+                                    .filter(|header_end| *header_end <= end);
+                                match header_end {
+                                    Some(header_end) => {
+                                        let count_start = 5 + independent_count;
+                                        let mut cursor = header_end;
+                                        let mut point_count = 1_usize;
+                                        let mut independent_variables =
+                                            Vec::with_capacity(independent_count);
+                                        let mut valid = true;
+                                        for offset in 0..independent_count {
+                                            let declared_value_count =
+                                                record.integer(count_start + offset);
+                                            let Some(value_count) = declared_value_count
+                                                .and_then(|value| usize::try_from(value).ok())
+                                            else {
+                                                valid = false;
+                                                break;
+                                            };
+                                            let Some(next) = cursor
+                                                .checked_add(value_count)
+                                                .filter(|next| *next <= end)
+                                            else {
+                                                valid = false;
+                                                break;
+                                            };
+                                            point_count = match point_count.checked_mul(value_count)
+                                            {
+                                                Some(point_count) => point_count,
+                                                None => {
+                                                    valid = false;
+                                                    break;
+                                                }
+                                            };
+                                            independent_variables.push(NativeIndependentVariable {
+                                                variable_type: record.integer(5 + offset),
+                                                declared_value_count,
+                                                values: (0..value_count)
+                                                    .map(|index| record.number(cursor + index))
+                                                    .collect(),
+                                            });
+                                            cursor = next;
+                                        }
+                                        let dependent_value_count = valid
+                                            .then(|| dependent_count.checked_mul(point_count))
+                                            .flatten()
+                                            .filter(|count| *count <= end.saturating_sub(cursor));
+                                        match dependent_value_count {
+                                            Some(count) => (
+                                                independent_variables,
+                                                (0..count)
+                                                    .map(|offset| record.number(cursor + offset))
+                                                    .collect(),
+                                            ),
+                                            None => (Vec::new(), Vec::new()),
+                                        }
+                                    }
+                                    None => (Vec::new(), Vec::new()),
+                                }
                             }
-                        })
-                        .collect();
-                    let point_count = counts
-                        .iter()
-                        .try_fold(1_usize, |product, count| product.checked_mul(*count))
-                        .filter(|count| *count <= record.tokens.len())
-                        .unwrap_or_default()
-                        .max(1);
-                    let dependent_value_count = dependent_count
-                        .checked_mul(point_count)
-                        .filter(|count| *count <= record.tokens.len())
-                        .unwrap_or_default();
+                            _ => (Vec::new(), Vec::new()),
+                        };
                     NativePropertyValue::TabularData {
                         property_type: record.integer(2),
                         declared_dependent_count: record.integer(3),
                         independent_variables,
-                        dependent_values: (0..dependent_value_count)
-                            .map(|offset| record.number(cursor + offset))
-                            .collect(),
+                        dependent_values,
                     }
                 }
                 12 => NativePropertyValue::ExternalReferenceFileList {
@@ -3392,7 +3509,7 @@ pub(crate) fn store(
                     name: record.string(3).map(<[u8]>::to_vec),
                 },
                 24 => {
-                    let definition_count = bounded_count(2);
+                    let definition_count = bounded_count(2, 4);
                     NativePropertyValue::LevelToLepLayerMap {
                         definitions: (0..definition_count)
                             .map(|offset| {
@@ -3410,7 +3527,7 @@ pub(crate) fn store(
                     }
                 }
                 25 => {
-                    let level_count = bounded_count(3);
+                    let level_count = bounded_count(3, 1);
                     NativePropertyValue::LepArtworkStackup {
                         identification: record.string(2).map(<[u8]>::to_vec),
                         levels: (0..level_count)
@@ -3424,7 +3541,7 @@ pub(crate) fn store(
                     function_code: record.integer(4),
                 },
                 27 => {
-                    let value_count = bounded_count(3);
+                    let value_count = bounded_count(3, 2);
                     NativePropertyValue::GenericData {
                         name: record.string(2).map(<[u8]>::to_vec),
                         values: (0..value_count)
@@ -3461,7 +3578,7 @@ pub(crate) fn store(
                     precision: record.integer(9),
                 },
                 30 => {
-                    let note_count = bounded_count(13);
+                    let note_count = bounded_count(13, 3);
                     NativePropertyValue::DimensionDisplayData {
                         dimension_type: record.integer(2),
                         label_position: record.integer(3),
@@ -3507,7 +3624,7 @@ pub(crate) fn store(
                     revision: record.string(3).map(<[u8]>::to_vec),
                 },
                 34 | 35 => {
-                    let range_count = bounded_count(2);
+                    let range_count = bounded_count(2, 3);
                     let ranges = (0..range_count)
                         .map(|offset| {
                             let start = 3 + offset * 3;

@@ -158,17 +158,21 @@ fn decode_stops_cursor_records_after_an_overlong_nested_count() {
         .as_array()
         .unwrap()
         .clone();
-    assert_eq!(characters.len(), 1);
-    assert_eq!(characters[0]["declared_motion_count"], 99);
-    assert!(characters[0]["motions"].as_array().unwrap().is_empty());
+    assert_eq!(characters.len(), 0);
+    assert_eq!(
+        native.arenas["text_fonts"][0].fields()["declared_character_count"],
+        2
+    );
 
     let classes = native.arenas["associativities"][0].fields()["classes"]
         .as_array()
         .unwrap()
         .clone();
-    assert_eq!(classes.len(), 1);
-    assert_eq!(classes[0]["declared_item_count"], 99);
-    assert!(classes[0]["item_types"].as_array().unwrap().is_empty());
+    assert_eq!(classes.len(), 0);
+    assert_eq!(
+        native.arenas["associativities"][0].fields()["declared_class_count"],
+        2
+    );
 
     let definitions = &native.arenas["attribute_table_definitions"];
     for definition in definitions {
@@ -176,17 +180,95 @@ fn decode_stops_cursor_records_after_an_overlong_nested_count() {
             .as_array()
             .unwrap()
             .clone();
-        assert_eq!(attributes.len(), 1);
-        assert!(attributes[0]["values"].as_array().unwrap().is_empty());
+        assert!(attributes.is_empty());
     }
-    assert_eq!(
-        definitions[0].fields()["attributes"][0]["declared_value_count"],
-        99
-    );
-    assert_eq!(
-        definitions[1].fields()["attributes"][0]["declared_value_count"],
-        2
-    );
+    assert_eq!(definitions[0].fields()["declared_attribute_count"], 2);
+    assert_eq!(definitions[1].fields()["declared_attribute_count"], 1);
+}
+
+#[test]
+fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 184,
+            form: 0,
+            label: "ASSEMBLY".into(),
+            status: "00000200",
+            parameters: "184,2,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETWORK".into(),
+            status: "00000200",
+            parameters: "320,0,3HNET,99,1,2HR1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 1,
+            label: "COPIOUS".into(),
+            status: "00000000",
+            parameters: "106,1,2,0.5,1,2,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 11,
+            label: "TABULAR".into(),
+            status: "00000200",
+            parameters: "406,7,5,1,1,3,10,20;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 24,
+            label: "LAYERS".into(),
+            status: "00000200",
+            parameters: "406,6,2,1,1HA,1,1HB;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    let assembly = &native.arenas["solid_assemblies"][0];
+    assert_eq!(assembly.fields()["declared_count"], 2);
+    assert!(assembly.fields()["items"].as_array().unwrap().is_empty());
+
+    let network = &native.arenas["network_definitions"][0];
+    assert_eq!(network.fields()["declared_member_count"], 99);
+    assert!(network.fields()["members"].as_array().unwrap().is_empty());
+    assert!(network.fields()["type_flag"].is_null());
+    assert!(network.fields()["primary_reference_designator"].is_null());
+    assert!(network.fields()["display_template"].is_null());
+    assert!(network.fields()["declared_connect_point_count"].is_null());
+    assert!(network.fields()["connect_points"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    let copious = &native.arenas["copious_data"][0];
+    assert_eq!(copious.fields()["declared_tuple_count"], 2);
+    assert!(copious.fields()["common_z"].is_number());
+    assert!(copious.fields()["tuples"].as_array().unwrap().is_empty());
+
+    let property = |form| {
+        native.arenas["properties"]
+            .iter()
+            .find(|property| property.fields()["form"] == form)
+            .unwrap()
+    };
+    assert!(property(11).fields()["independent_variables"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(property(11).fields()["dependent_values"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(property(24).fields()["definitions"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

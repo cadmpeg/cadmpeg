@@ -49,16 +49,6 @@ from a conformant file.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-16. Native counted records retain partial prefixes after a malformed nested count
-
-**Question.** What native list state is exposed after a nested counted sequence stops before its declared width?
-
-**Known.** `parameter.rs:148-156` returns `None` when a fixed-width count does not fit the remaining tokens. In contrast, `native.rs:1811-1850` pushes a Type 310 glyph before breaking on an invalid motion count; `native.rs:2106-2162` uses one Type 184 count to locate both member items and later transforms; `native.rs:2275-2336` uses a Type 320 member count to locate later type, designator, template, and connection fields; `native.rs:2623-2648` pushes a Type 302 class before breaking; `native.rs:3062-3133` pushes a Type 322 descriptor before breaking; and `native.rs:3257-3346` clamps Type 406 list counts and can retain partial independent-variable lists. `native.rs:1648-1668` also computes Type 106 tuple availability from all remaining tokens rather than an entity-specific parameter end. `entities/structure.rs:1265-1308` and its Type 322 validation report some parent losses, but the native records have no per-list malformed state.
-
-**Need.** An incomplete nested list must be empty or carry an explicit malformed state. A valid first item followed by an oversized declared count must not look like a complete shorter list to native consumers.
-
-**Note.** New finding from the 2026-08-16 hostile count sweep. The current specification requires an incomplete counted list to be empty and forbids sibling reinterpretation, but native projection exposes partial prefixes or clamped empty lists.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-07. The curve parameter-domain convention

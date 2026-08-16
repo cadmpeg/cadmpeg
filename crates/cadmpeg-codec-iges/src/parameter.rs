@@ -147,12 +147,36 @@ impl ParameterRecord {
 
     /// Return a nonnegative declared count only when all fixed-width items fit.
     pub(crate) fn count_with_stride(&self, index: usize, stride: usize) -> Option<usize> {
+        self.count_with_stride_before(index, stride, self.tokens.len())
+    }
+
+    /// Return a nonnegative declared count only when all fixed-width items fit
+    /// before the entity-specific end of the parameter sequence.
+    pub(crate) fn count_with_stride_before(
+        &self,
+        index: usize,
+        stride: usize,
+        end: usize,
+    ) -> Option<usize> {
+        let item_start = index.checked_add(1)?;
+        self.count_with_stride_at(index, item_start, stride, end)
+    }
+
+    /// Return a nonnegative declared count only when all fixed-width items fit
+    /// from an explicit item start before the entity-specific end.
+    pub(crate) fn count_with_stride_at(
+        &self,
+        index: usize,
+        item_start: usize,
+        stride: usize,
+        end: usize,
+    ) -> Option<usize> {
         let count = self
             .integer(index)
             .and_then(|value| usize::try_from(value).ok())?;
         let required = count.checked_mul(stride)?;
-        let item_start = index.checked_add(1)?;
-        (required <= self.tokens.len().saturating_sub(item_start)).then_some(count)
+        let end = end.min(self.tokens.len());
+        (required <= end.saturating_sub(item_start)).then_some(count)
     }
 }
 
