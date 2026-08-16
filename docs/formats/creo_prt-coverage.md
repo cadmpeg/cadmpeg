@@ -432,11 +432,12 @@ fixtures, scores above L1 remain blocked.
 - A type-37 incidence transfers as a projected-copy relation when its two
   sense-zero operands are consecutive reference/result identities and the
   result has a unique row in the trimmed profile.
-- A sense-four incidence item establishes a solver-only entity's circular
-  family independently of solver activity. A disabled type-three incidence can
-  therefore transfer its selected center onto a sense-zero curve. A disabled
-  type-three incidence between two emitted sense-zero point entities transfers
-  as coincident loci.
+- A sense-two or sense-three incidence item establishes a solver-only entity's
+  endpoint-bearing curve family independently of solver activity. A sense-four
+  incidence item establishes its circular family independently of solver
+  activity. A disabled type-three incidence can therefore transfer its selected
+  center onto a sense-zero curve. A disabled type-three incidence between two
+  emitted sense-zero point entities transfers as coincident loci.
 - Unary type-ten and type-eleven incidences on a uniquely established arc
   transfer as neutral 90-degree and 180-degree fixed arc-angle constraints.
   Solver activity controls constraint activity, not the stored arc role or

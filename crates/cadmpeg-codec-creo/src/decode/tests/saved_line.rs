@@ -508,7 +508,7 @@ fn saved_line_joins_through_order_table() {
     }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
-        None
+        Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     solver_families
         .relations

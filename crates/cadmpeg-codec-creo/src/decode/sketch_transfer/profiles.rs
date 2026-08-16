@@ -417,15 +417,18 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
         .flat_map(|relations| &relations.skamps)
-        .filter(|skamp| section_skamp_active(skamp.status))
     {
         for item in &skamp.items {
             if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
                 evidence.insert(SectionEntityIncidenceFamily::BoundedCurve);
             }
-            if item.entity_id == entity_id && item.sense == 4 {
+            if section_skamp_active(skamp.status) && item.entity_id == entity_id && item.sense == 4
+            {
                 evidence.insert(SectionEntityIncidenceFamily::Circular);
             }
+        }
+        if !section_skamp_active(skamp.status) {
+            continue;
         }
         match (skamp.kind, skamp.items.as_slice()) {
             (5 | 7 | 8, [first, second])
