@@ -183,16 +183,30 @@ known prefixes and leaves only the respective containing boundary suffix.
 `ON_3dmUnitsAndTolerances::Read` accepts direct versions 100–199, gates display
 fields at 101 and custom-unit fields at 102, and relies on the outer settings
 chunk for future suffix bytes; the Rust units reader now matches that band.
+`ON_3dmSettings::Write_v2` emits `TCODE_SETTINGS_ATTRIBUTES` packed version
+1.7. Its reader gates the page-units wrapper, active-view UUID, model basepoint
+and earth anchor, texture-save flag, IO settings, custom render mesh, and six
+current-component UUIDs at minors 1 through 7. The nested earth-anchor, IO,
+SubD-display, and custom-mesh readers have source-defined major-1 field
+prefixes; the custom-mesh body is direct and has no boundary before the
+version-1.7 UUIDs. The Rust settings reader now decodes this complete
+source-defined prefix and skips only the outer settings-attributes suffix.
+`ON_3dmSettings::Write_v2/Read_v2` also place the direct packed-1.5
+`ON_MeshParameters` body in `TCODE_SETTINGS_RENDERMESH` and
+`TCODE_SETTINGS_ANALYSISMESH`. Those enclosing records provide the suffix
+boundary, so the Rust reader admits later packed minors after the known
+minor-5 SubD child and skips their remaining bytes at the top-level record.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
 layout. Remove only rejection not required by that evidence.
 
 **Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
-settled; annotation settings, grid defaults, units/tolerances, dimension-style,
-and render-settings readers are now source-backed through their known prefixes
-and version gates. The residual is the explicit writer-band/tagged/direct-reader
-audit for readers not yet characterized.
+settled; annotation settings, grid defaults, units/tolerances, settings
+attributes, render-mesh, analysis-mesh, dimension-style, and render-settings
+readers are now source-backed through their known prefixes and version gates.
+The residual is the explicit
+writer-band/tagged/direct-reader audit for readers not yet characterized.
 
 ### TE-01. Class-specific transfer differential evidence
 

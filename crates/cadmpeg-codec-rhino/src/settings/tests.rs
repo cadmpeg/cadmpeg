@@ -112,6 +112,174 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
 }
 
 #[test]
+fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
+    let archive = ArchiveVersion::V8;
+    let mut body = vec![0x1f];
+    body.extend(2.5_f64.to_le_bytes());
+    body.extend([10, 20, 30, 40]);
+    body.extend(1_i32.to_le_bytes());
+    body.extend((-1_i32).to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+
+    let mut page = Vec::new();
+    page.extend(102_i32.to_le_bytes());
+    page.extend(8_i32.to_le_bytes());
+    page.extend(0.5_f64.to_le_bytes());
+    page.extend(0.01_f64.to_le_bytes());
+    page.extend(0.001_f64.to_le_bytes());
+    page.extend(0_i32.to_le_bytes());
+    page.extend(6_i32.to_le_bytes());
+    page.extend(0.0254_f64.to_le_bytes());
+    page.extend(utf16_bytes(""));
+    body.extend(anonymous_chunk(archive, 0, &page));
+
+    body.extend(uuid_bytes());
+    for value in [1.0_f64, 2.0, 3.0] {
+        body.extend(value.to_le_bytes());
+    }
+
+    let mut earth = Vec::new();
+    for value in [
+        10.0_f64, 20.0, 30.0, 4.0, 5.0, 6.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
+    ] {
+        earth.extend(value.to_le_bytes());
+    }
+    earth.extend(1_i32.to_le_bytes());
+    earth.extend(uuid_bytes());
+    earth.extend(utf16_bytes("Earth"));
+    earth.extend(utf16_bytes("Description"));
+    earth.extend(utf16_bytes("https://example.test"));
+    earth.extend(utf16_bytes("tag"));
+    earth.extend(2_i32.to_le_bytes());
+    body.extend(anonymous_chunk(archive, 2, &earth));
+
+    body.push(1);
+    body.extend(anonymous_chunk(archive, 0, &[1, 0, 0, 0, 0]));
+
+    body.push(0x15);
+    body.extend(1_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    for value in [0.5_f64, 0.1, 10.0, 6.0] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend(2_i32.to_le_bytes());
+    body.extend(8_i32.to_le_bytes());
+    for value in [0.3_f64, 1.2, 0.4, 0.5] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend(2_i32.to_le_bytes());
+    body.extend(2_i32.to_le_bytes());
+    body.push(1);
+    body.extend(0.25_f64.to_le_bytes());
+    body.push(1);
+    body.push(1);
+    body.extend(anonymous_chunk(archive, 3, &[4, 0, 0, 0, 2, 0, 0, 0, 1, 0]));
+
+    for value in 0..6 {
+        body.extend((value as u8 + 1..=value as u8 + 16).collect::<Vec<_>>());
+    }
+    body.extend([0xde, 0xad]);
+
+    let (data, record) = metadata_record(0x2000_8134, body);
+    let attributes =
+        settings::parse_settings_attributes(&data, &record, archive).expect("attributes");
+    assert_eq!(attributes.version, (1, 15));
+    assert_eq!(attributes.linetype_display_scale, 2.5);
+    assert_eq!(attributes.current_plot_color, [10, 20, 30, 40]);
+    assert_eq!(attributes.current_line_pattern_index, -1);
+    assert_eq!(
+        attributes
+            .page_units
+            .as_ref()
+            .and_then(|value| value.distance_display_precision),
+        Some(6)
+    );
+    assert_eq!(
+        attributes.model_basepoint,
+        Some(settings::Point3([1.0, 2.0, 3.0]))
+    );
+    let earth = attributes.earth_anchor.expect("earth anchor");
+    assert_eq!(earth.version, (1, 2));
+    assert_eq!(earth.name.as_deref(), Some("Earth"));
+    assert_eq!(earth.coordinate_system, Some(2));
+    assert_eq!(
+        attributes
+            .io_settings
+            .as_ref()
+            .map(|value| value.idef_link_update),
+        Some(1)
+    );
+    let mesh = attributes.custom_render_mesh.expect("custom mesh");
+    assert_eq!(mesh.version, (1, 5));
+    assert_eq!(mesh.face_type, 2);
+    assert_eq!(mesh.subd.as_ref().map(|value| value.version), Some(3));
+    assert_eq!(
+        attributes.current_hatch_pattern_id,
+        Some(Uuid::from_wire(
+            (6_u8..=21).collect::<Vec<_>>().try_into().expect("UUID"),
+        ))
+    );
+}
+
+#[test]
+fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
+    let archive = ArchiveVersion::V8;
+    let mut body = vec![0x1f];
+    body.extend(1_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    for value in [0.5_f64, 0.1, 10.0, 6.0] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend(2_i32.to_le_bytes());
+    body.extend(8_i32.to_le_bytes());
+    for value in [0.3_f64, 1.2, 0.4, 0.5] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend(2_i32.to_le_bytes());
+    body.extend(2_i32.to_le_bytes());
+    body.push(1);
+    body.extend(0.25_f64.to_le_bytes());
+    body.push(1);
+    body.push(1);
+    body.extend(anonymous_chunk(archive, 3, &[4, 0, 0, 0, 2, 0, 0, 0, 1, 0]));
+    body.extend([0xde, 0xad]);
+
+    let (data, render_record) = metadata_record(0x2000_8032, body.clone());
+    let (analysis_data, analysis_record) = metadata_record(0x2000_8033, body);
+    let mut settings_value = settings::DocumentSettings::default();
+    settings::parse_setting(&data, &render_record, &mut settings_value, archive)
+        .expect("render mesh settings");
+    settings::parse_setting(
+        &analysis_data,
+        &analysis_record,
+        &mut settings_value,
+        archive,
+    )
+    .expect("analysis mesh settings");
+    assert_eq!(
+        settings_value
+            .render_mesh_settings
+            .as_ref()
+            .map(|value| value.version),
+        Some((1, 15))
+    );
+    assert_eq!(
+        settings_value
+            .analysis_mesh_settings
+            .as_ref()
+            .and_then(|value| value.subd.as_ref())
+            .map(|value| value.version),
+        Some(3)
+    );
+}
+
+#[test]
 fn rejects_invalid_unit_tolerances_and_trailing_bytes() {
     let mut body = Vec::new();
     body.extend(102_i32.to_le_bytes());
@@ -461,8 +629,13 @@ fn parses_selector_widths_from_their_serialized_forms() {
         short: false,
         value: 8,
     };
-    settings::parse_setting(&material_data, &material_record, &mut settings_value)
-        .expect("required invariant");
+    settings::parse_setting(
+        &material_data,
+        &material_record,
+        &mut settings_value,
+        ArchiveVersion::V8,
+    )
+    .expect("required invariant");
     assert_eq!(settings_value.current_material, Some(42));
     assert_eq!(settings_value.current_material_source, Some(3));
 
@@ -475,8 +648,13 @@ fn parses_selector_widths_from_their_serialized_forms() {
         short: false,
         value: 8,
     };
-    settings::parse_setting(&color_data, &color_record, &mut settings_value)
-        .expect("required invariant");
+    settings::parse_setting(
+        &color_data,
+        &color_record,
+        &mut settings_value,
+        ArchiveVersion::V8,
+    )
+    .expect("required invariant");
     assert_eq!(settings_value.current_color, Some([1, 2, 3, 4]));
     assert_eq!(settings_value.current_color_source, Some(2));
 
@@ -493,7 +671,8 @@ fn parses_selector_widths_from_their_serialized_forms() {
             short: true,
             value,
         };
-        settings::parse_setting(&[], &record, &mut settings_value).expect("required invariant");
+        settings::parse_setting(&[], &record, &mut settings_value, ArchiveVersion::V8)
+            .expect("required invariant");
     }
     assert_eq!(settings_value.current_layer, Some(3));
     assert_eq!(settings_value.current_wire_density, Some(5));

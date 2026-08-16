@@ -3591,6 +3591,16 @@ after the buffer. Minor 1 and later append the component UUID and UTF-16 name.
 The reader accepts major 1, applies those minor gates, and leaves any remaining
 bytes before the bounded class-data end as a suffix.
 
+The `TCODE_SETTINGS_RENDERMESH` and `TCODE_SETTINGS_ANALYSISMESH` records
+each contain one direct custom render-mesh body with the grammar defined below
+for `TCODE_SETTINGS_ATTRIBUTES`. Their writers emit packed version `1.5`.
+The enclosing CRC-bearing settings record is the boundary, so a major-1 reader
+applies all known minor gates, including the anonymous version-1.3 SubD child,
+and skips later bytes at that outer boundary. The render-mesh body controls
+automatic render tessellation; the analysis-mesh body controls automatic
+analysis tessellation. They are separate records even though their wire
+grammars are identical.
+
 Global annotation settings are the direct body of
 `TCODE_SETTINGS_ANNOTATION`. The body starts with a packed one-byte version
 `1.minor` (major in the high nibble, minor in the low nibble):
@@ -3736,6 +3746,133 @@ only nonnegative minor versions. A legacy reader rejects versions outside
 100–199. A reader consumes only the fields admitted by these gates. Remaining
 bytes in a modern body end at the anonymous chunk boundary; remaining bytes in
 a legacy body end at the containing `TCODE_SETTINGS_RENDER` record boundary.
+
+The `TCODE_SETTINGS_ATTRIBUTES` record is a CRC-bearing long settings record.
+Its writer emits packed version `1.7`. The known direct body is:
+
+```text
+u8 packed version = 1.minor
+f64 linetype display scale
+ON_Color current plot color
+i32 current plot-color source
+i32 V5 current line-pattern index, or -1
+i32 current linetype source
+if minor >= 1:
+  TCODE_ANONYMOUS_CHUNK version 1.0
+    direct page-space units-and-tolerances body from §8.2
+if minor >= 2: ON_UUID active view
+if minor >= 3:
+  ON_Point model basepoint
+  TCODE_ANONYMOUS_CHUNK version 1.2 earth-anchor body
+if minor >= 4: bool save texture bitmaps in file
+if minor >= 5: TCODE_ANONYMOUS_CHUNK version 1.0 IO-settings body
+if minor >= 6: direct custom render-mesh body
+if minor >= 7:
+  ON_UUID current layer
+  ON_UUID current render material
+  ON_UUID current line pattern
+  ON_UUID current text style
+  ON_UUID current dimension style
+  ON_UUID current hatch pattern
+```
+
+Plot-color source values are 0 layer, 1 object, 2 display color, and 3
+parent. Linetype source values are 0 layer, 1 object, and 3 parent. The
+parent values fall back to the layer when no parent exists.
+
+The page-units anonymous child is a boundary wrapper; its body starts with the
+ordinary `i32` units structure version from §8.2. The earth-anchor body is:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor
+f64 latitude in degrees
+f64 longitude in degrees
+f64 elevation in meters
+ON_Point model point
+ON_Vector model north
+ON_Vector model east
+if minor >= 1:
+  i32 legacy elevation-reference enum
+  ON_UUID anchor identity
+  UTF-16 name
+  UTF-16 description
+  UTF-16 URL
+  UTF-16 URL tag
+if minor >= 2: i32 earth-coordinate-system enum
+```
+
+The earth-anchor writer emits version `1.2`. The legacy elevation-reference
+values are 0 ground level, 1 mean sea level, and 2 center of earth. The current
+earth-coordinate-system values are 0 unset, 1 ground level, 2 mean sea level,
+3 center of earth, 5 WGS1984, and 6 EGM2008. Unknown values retain their
+numeric value.
+
+The IO-settings child is:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor
+bool save texture bitmaps in file
+i32 linked-instance-definition update policy
+```
+
+The writer emits version `1.0`. Policy values are 1 prompt, 2 always update,
+and 3 never update. In archive versions at least 5, a read value of 0 is
+normalized to 1.
+
+The direct custom render-mesh body uses packed version `1.minor`; the writer
+emits `1.5`:
+
+```text
+u8 packed version
+i32 compute-curvature flag
+i32 simple-planes flag
+i32 refine flag
+i32 jagged-seams flag
+i32 obsolete weld field
+f64 tolerance
+f64 minimum edge length
+f64 maximum edge length
+f64 grid aspect ratio
+i32 minimum grid count
+i32 maximum grid count
+f64 grid angle in radians
+f64 grid amplification
+f64 refine angle in radians
+f64 obsolete combine angle
+i32 face type
+if minor >= 1: i32 texture range
+if minor >= 2: bool custom settings, f64 relative tolerance
+if minor >= 3: u8 mesher selector
+if minor >= 4: bool custom settings enabled
+if minor >= 5: TCODE_ANONYMOUS_CHUNK version 1.3 SubD-display body
+```
+
+The face-type values are 0 mixed triangles and quads, 1 all triangles, and 2
+all quads. Texture range 1 is unpacked normalized space and 2 is packed
+scaled normalized space. Mesher 0 is slow and 1 is fast. The SubD-display
+body stores:
+
+```text
+i32 anonymous major = 1
+i32 anonymous minor
+i32 adaptive display density
+i32 SubD component location
+if minor >= 2: bool display density is absolute
+if minor >= 3: bool compute curvature
+```
+
+SubD component locations are 0 unset, 1 control net, and 2 limit surface.
+The custom render-mesh record is direct, so it has no boundary separate from
+the containing settings-attributes body. Typed admission therefore ends at
+writer version `1.5`; a later custom-mesh minor cannot be skipped before the
+version-1.7 current-component UUIDs without assigning a field boundary.
+
+The settings-attributes reader requires major version 1, applies the gates
+above, and consumes any remaining bytes at the outer
+`TCODE_SETTINGS_ATTRIBUTES` boundary. The outer record is admitted in the
+settings table for archive versions 4 and later.
 
 ### 20.5 Byte partition and opaque identity
 

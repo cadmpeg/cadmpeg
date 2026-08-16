@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::View;
 
-use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record, Table};
 use crate::objects::{parse_class_wrapper, read_uuid_list};
 use crate::wire::Uuid;
@@ -25,6 +25,8 @@ const APPLICATION: u32 = 0x2000_8024;
 const WRITER_VERSION: u32 = 0xa000_0026;
 const AS_FILE_NAME: u32 = 0x2000_8027;
 const UNITS: u32 = 0x2000_8031;
+const RENDER_MESH: u32 = 0x2000_8032;
+const ANALYSIS_MESH: u32 = 0x2000_8033;
 const CURRENT_LAYER: u32 = 0xa000_0038;
 const CURRENT_MATERIAL: u32 = 0x2000_8039;
 const CURRENT_COLOR: u32 = 0x2000_803a;
@@ -32,6 +34,7 @@ const CURRENT_WIRE_DENSITY: u32 = 0xa000_003c;
 const MODEL_URL: u32 = 0x2000_8131;
 const CURRENT_FONT: u32 = 0xa000_0132;
 const CURRENT_DIMSTYLE: u32 = 0xa000_0133;
+const ATTRIBUTES: u32 = 0x2000_8134;
 const ON_LAYER_UUID: Uuid = Uuid::from_canonical([
     0x95, 0x80, 0x98, 0x13, 0xe9, 0x85, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -223,6 +226,163 @@ pub(crate) struct UnitsAndTolerances {
     pub(crate) source: SourceRange,
 }
 
+/// Earth-location anchor nested in the settings-attributes record.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EarthAnchorPoint {
+    /// Anonymous chunk version.
+    pub(crate) version: (i32, i32),
+    /// Earth latitude in degrees.
+    pub(crate) earth_latitude: f64,
+    /// Earth longitude in degrees.
+    pub(crate) earth_longitude: f64,
+    /// Earth elevation in meters.
+    pub(crate) earth_elevation_meters: f64,
+    /// Model point corresponding to the earth location.
+    pub(crate) model_point: Point3,
+    /// Model north vector.
+    pub(crate) model_north: Vector3,
+    /// Model east vector.
+    pub(crate) model_east: Vector3,
+    /// Legacy elevation-reference enum stored by versions 1.1 and later.
+    pub(crate) legacy_coordinate_system: Option<i32>,
+    /// Earth-anchor UUID.
+    pub(crate) id: Option<Uuid>,
+    /// Earth-anchor name.
+    pub(crate) name: Option<String>,
+    /// Earth-anchor description.
+    pub(crate) description: Option<String>,
+    /// Earth-anchor URL.
+    pub(crate) url: Option<String>,
+    /// Earth-anchor URL tag.
+    pub(crate) url_tag: Option<String>,
+    /// Current earth-coordinate-system enum stored by version 1.2 and later.
+    pub(crate) coordinate_system: Option<u32>,
+}
+
+/// The nested settings record controlling linked definitions and textures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IoSettings {
+    /// Anonymous chunk version.
+    pub(crate) version: (i32, i32),
+    /// Whether texture bitmaps are saved in the file.
+    pub(crate) save_texture_bitmaps_in_file: bool,
+    /// Linked-instance-definition update policy.
+    pub(crate) idef_link_update: i32,
+}
+
+/// `SubD` display fields nested in mesh parameters version 1.5.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubDDisplayParameters {
+    /// Anonymous chunk minor version.
+    pub(crate) version: i32,
+    /// Adaptive display density.
+    pub(crate) display_density: u32,
+    /// Component location enum.
+    pub(crate) mesh_location: u32,
+    /// Whether the display density is absolute, introduced at version 2.
+    pub(crate) display_density_is_absolute: Option<bool>,
+    /// Whether curvature is computed, introduced at version 3.
+    pub(crate) compute_curvature: Option<bool>,
+}
+
+/// Serialized mesh parameters used by settings records.
+#[derive(Debug, Clone, PartialEq)]
+// These independent flags are separate fields in the source wire grammar.
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct MeshParameters {
+    /// Packed version.
+    pub(crate) version: (u8, u8),
+    /// Legacy boolean fields, decoded from nonzero integers.
+    pub(crate) compute_curvature: bool,
+    /// Whether simple planes are used.
+    pub(crate) simple_planes: bool,
+    /// Whether refinement is enabled.
+    pub(crate) refine: bool,
+    /// Whether jagged seams are allowed.
+    pub(crate) jagged_seams: bool,
+    /// Obsolete weld field retained in the wire layout.
+    pub(crate) obsolete_weld: i32,
+    /// Meshing tolerance.
+    pub(crate) tolerance: f64,
+    /// Minimum edge length.
+    pub(crate) min_edge_length: f64,
+    /// Maximum edge length.
+    pub(crate) max_edge_length: f64,
+    /// Grid aspect ratio.
+    pub(crate) grid_aspect_ratio: f64,
+    /// Minimum grid count.
+    pub(crate) grid_min_count: i32,
+    /// Maximum grid count.
+    pub(crate) grid_max_count: i32,
+    /// Grid angle in radians.
+    pub(crate) grid_angle_radians: f64,
+    /// Grid amplification factor.
+    pub(crate) grid_amplification: f64,
+    /// Refinement angle in radians.
+    pub(crate) refine_angle_radians: f64,
+    /// Obsolete combine angle retained in the wire layout.
+    pub(crate) obsolete_combine_angle: f64,
+    /// Face-type enum: 0 mixed, 1 triangles, 2 quads.
+    pub(crate) face_type: i32,
+    /// Texture-range mode, introduced at minor 1.
+    pub(crate) texture_range: Option<u32>,
+    /// Custom-settings flag, introduced at minor 2.
+    pub(crate) custom_settings: Option<bool>,
+    /// Relative tolerance, introduced at minor 2.
+    pub(crate) relative_tolerance: Option<f64>,
+    /// Mesher selector, introduced at minor 3.
+    pub(crate) mesher: Option<u8>,
+    /// Custom-settings-enabled flag, introduced at minor 4.
+    pub(crate) custom_settings_enabled: Option<bool>,
+    /// `SubD` display parameters, introduced at minor 5.
+    pub(crate) subd: Option<SubDDisplayParameters>,
+}
+
+/// Typed settings-attributes record.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SettingsAttributes {
+    /// Complete source range.
+    pub(crate) source: SourceRange,
+    /// Packed record version.
+    pub(crate) version: (u8, u8),
+    /// World scale applied to non-solid linetypes for model display.
+    pub(crate) linetype_display_scale: f64,
+    /// Current plot color bytes.
+    pub(crate) current_plot_color: [u8; 4],
+    /// Current plot-color source enum.
+    pub(crate) current_plot_color_source: i32,
+    /// V5 current line-pattern index, or -1 when unset.
+    pub(crate) current_line_pattern_index: i32,
+    /// Current linetype source enum.
+    pub(crate) current_linetype_source: i32,
+    /// Page-space units and tolerances, introduced at minor 1.
+    pub(crate) page_units: Option<UnitsAndTolerances>,
+    /// Active view UUID, introduced at minor 2.
+    pub(crate) active_view_id: Option<Uuid>,
+    /// Model basepoint, introduced at minor 3.
+    pub(crate) model_basepoint: Option<Point3>,
+    /// Earth anchor, introduced at minor 3.
+    pub(crate) earth_anchor: Option<EarthAnchorPoint>,
+    /// Texture-save flag, introduced at minor 4.
+    pub(crate) save_texture_bitmaps_in_file: Option<bool>,
+    /// IO settings, introduced at minor 5.
+    pub(crate) io_settings: Option<IoSettings>,
+    /// Custom render mesh settings, introduced at minor 6.
+    pub(crate) custom_render_mesh: Option<MeshParameters>,
+    /// Current layer UUID, introduced at minor 7.
+    pub(crate) current_layer_id: Option<Uuid>,
+    /// Current render-material UUID, introduced at minor 7.
+    pub(crate) current_render_material_id: Option<Uuid>,
+    /// Current line-pattern UUID, introduced at minor 7.
+    pub(crate) current_line_pattern_id: Option<Uuid>,
+    /// Current text-style UUID, introduced at minor 7.
+    pub(crate) current_text_style_id: Option<Uuid>,
+    /// Current dimension-style UUID, introduced at minor 7.
+    pub(crate) current_dimension_style_id: Option<Uuid>,
+    /// Current hatch-pattern UUID, introduced at minor 7.
+    pub(crate) current_hatch_pattern_id: Option<Uuid>,
+}
+
 /// A bounded unsupported setting payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -235,7 +395,7 @@ pub(crate) struct SettingDescriptor {
     pub(crate) payload_bytes: usize,
 }
 
-/// Current document selectors and bounded unsupported settings.
+/// Current document selectors, typed settings, and bounded unsupported settings.
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
 pub(crate) struct DocumentSettings {
@@ -259,6 +419,12 @@ pub(crate) struct DocumentSettings {
     pub(crate) model_url: Option<String>,
     /// Units and tolerances.
     pub(crate) units: Option<UnitsAndTolerances>,
+    /// Settings attributes.
+    pub(crate) attributes: Option<SettingsAttributes>,
+    /// Render-mesh settings.
+    pub(crate) render_mesh_settings: Option<MeshParameters>,
+    /// Analysis-mesh settings.
+    pub(crate) analysis_mesh_settings: Option<MeshParameters>,
     /// Unsupported known settings.
     pub(crate) unsupported: Vec<SettingDescriptor>,
 }
@@ -340,6 +506,11 @@ fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, Fr
     value.is_finite().then_some(value).ok_or_else(|| {
         FramingError::structural(reader.position(), format!("{label} is not finite"))
     })
+}
+
+fn finite_f64(reader: &mut BoundedReader<'_>, label: &str) -> Result<f64, FramingError> {
+    let value = reader.f64()?;
+    finite(reader, value, label)
 }
 
 fn finite_array<const N: usize>(
@@ -615,6 +786,18 @@ pub(crate) fn parse_units(
     record: &Record,
 ) -> Result<UnitsAndTolerances, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    parse_units_reader(
+        &mut reader,
+        SourceRange {
+            range: record.range.clone(),
+        },
+    )
+}
+
+fn parse_units_reader(
+    reader: &mut BoundedReader<'_>,
+    source: SourceRange,
+) -> Result<UnitsAndTolerances, FramingError> {
     let version = reader.i32()?;
     let legacy = version == 1;
     if !legacy && !(100..200).contains(&version) {
@@ -625,7 +808,7 @@ pub(crate) fn parse_units(
     }
     let unit_value = reader.i32()?;
     let absolute_raw = reader.f64()?;
-    let absolute = finite(&reader, absolute_raw, "absolute tolerance")?;
+    let absolute = finite(reader, absolute_raw, "absolute tolerance")?;
     let (relative, angular) = if legacy {
         let relative = reader.f64()?;
         let angular = reader.f64()?;
@@ -635,8 +818,8 @@ pub(crate) fn parse_units(
         let relative = reader.f64()?;
         (relative, angular)
     };
-    let angular = finite(&reader, angular, "angular tolerance")?;
-    let relative = finite(&reader, relative, "relative tolerance")?;
+    let angular = finite(reader, angular, "angular tolerance")?;
+    let relative = finite(reader, relative, "relative tolerance")?;
     if absolute <= 0.0 {
         return Err(FramingError::structural(
             reader.position(),
@@ -665,7 +848,7 @@ pub(crate) fn parse_units(
         .then(|| reader.f64())
         .transpose()?;
     let custom_name = if !legacy && version >= 102 {
-        Some(utf16(&mut reader)?)
+        Some(utf16(reader)?)
     } else {
         None
     };
@@ -723,7 +906,7 @@ pub(crate) fn parse_units(
             "scaled absolute tolerance is invalid",
         ));
     }
-    finish(&mut reader, "units")?;
+    finish(reader, "units")?;
     Ok(UnitsAndTolerances {
         version,
         unit_value,
@@ -735,10 +918,342 @@ pub(crate) fn parse_units(
         relative_tolerance: relative,
         distance_display_mode: mode,
         distance_display_precision: precision,
+        source,
+    })
+}
+
+fn anonymous_payload<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+    label: &str,
+) -> Result<(BoundedReader<'a>, Range<usize>), FramingError> {
+    let start = reader.position();
+    let chunk = chunk_at(data, start, reader.end(), archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(FramingError::structural(
+            start,
+            format!("{label} must be a long anonymous chunk"),
+        ));
+    }
+    let payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    reader.skip(chunk.next_offset - start)?;
+    Ok((payload, chunk.range()))
+}
+
+fn anonymous_version(
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<(i32, i32), FramingError> {
+    let version = (reader.i32()?, reader.i32()?);
+    if version.0 != 1 || version.1 < 0 {
+        return Err(FramingError::structural(
+            reader.position(),
+            format!("{label} version is unsupported"),
+        ));
+    }
+    Ok(version)
+}
+
+fn parse_earth_anchor<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<EarthAnchorPoint, FramingError> {
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "earth anchor")?;
+    let version = anonymous_version(&mut payload, "earth anchor")?;
+    let earth_latitude = payload.f64()?;
+    let earth_longitude = payload.f64()?;
+    let earth_elevation_meters = payload.f64()?;
+    let model_point = point(&mut payload)?;
+    let model_north = vector(&mut payload)?;
+    let model_east = vector(&mut payload)?;
+    let (legacy_coordinate_system, id, name, description, url, url_tag, coordinate_system) =
+        if version.1 >= 1 {
+            let legacy = payload.i32()?;
+            let id = uuid(&mut payload)?;
+            let name = utf16(&mut payload)?;
+            let description = utf16(&mut payload)?;
+            let url = utf16(&mut payload)?;
+            let url_tag = utf16(&mut payload)?;
+            let coordinate_system = if version.1 >= 2 {
+                Some(payload.i32()? as u32)
+            } else {
+                None
+            };
+            (
+                Some(legacy),
+                Some(id),
+                Some(name),
+                Some(description),
+                Some(url),
+                Some(url_tag),
+                coordinate_system,
+            )
+        } else {
+            (None, None, None, None, None, None, None)
+        };
+    finish(&mut payload, "earth anchor")?;
+    Ok(EarthAnchorPoint {
+        version,
+        earth_latitude,
+        earth_longitude,
+        earth_elevation_meters,
+        model_point,
+        model_north,
+        model_east,
+        legacy_coordinate_system,
+        id,
+        name,
+        description,
+        url,
+        url_tag,
+        coordinate_system,
+    })
+}
+
+fn parse_io_settings<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<IoSettings, FramingError> {
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "IO settings")?;
+    let version = anonymous_version(&mut payload, "IO settings")?;
+    let save_texture_bitmaps_in_file = payload.bool()?;
+    let mut idef_link_update = payload.i32()?;
+    if idef_link_update == 0 && archive.value() >= 5 {
+        idef_link_update = 1;
+    }
+    finish(&mut payload, "IO settings")?;
+    Ok(IoSettings {
+        version,
+        save_texture_bitmaps_in_file,
+        idef_link_update,
+    })
+}
+
+fn parse_subd_display_parameters<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<SubDDisplayParameters, FramingError> {
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "SubD display parameters")?;
+    let version = anonymous_version(&mut payload, "SubD display parameters")?.1;
+    let display_density = payload.i32()? as u32;
+    let mesh_location = payload.i32()? as u32;
+    let display_density_is_absolute = if version >= 2 {
+        Some(payload.bool()?)
+    } else {
+        None
+    };
+    let compute_curvature = if version >= 3 {
+        Some(payload.bool()?)
+    } else {
+        None
+    };
+    finish(&mut payload, "SubD display parameters")?;
+    Ok(SubDDisplayParameters {
+        version,
+        display_density,
+        mesh_location,
+        display_density_is_absolute,
+        compute_curvature,
+    })
+}
+
+fn parse_mesh_parameters<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+    allow_future_minor: bool,
+) -> Result<MeshParameters, FramingError> {
+    let version = packed(reader)?;
+    if version.0 != 1 || (!allow_future_minor && version.1 > 5) {
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported mesh-parameters version",
+        ));
+    }
+    let compute_curvature = reader.i32()? != 0;
+    let simple_planes = reader.i32()? != 0;
+    let refine = reader.i32()? != 0;
+    let jagged_seams = reader.i32()? != 0;
+    let obsolete_weld = reader.i32()?;
+    let tolerance = finite_f64(reader, "mesh tolerance")?;
+    let min_edge_length = finite_f64(reader, "minimum mesh edge length")?;
+    let max_edge_length = finite_f64(reader, "maximum mesh edge length")?;
+    let grid_aspect_ratio = finite_f64(reader, "mesh grid aspect ratio")?;
+    let grid_min_count = reader.i32()?;
+    let grid_max_count = reader.i32()?;
+    let grid_angle_radians = finite_f64(reader, "mesh grid angle")?;
+    let grid_amplification = finite_f64(reader, "mesh grid amplification")?;
+    let refine_angle_radians = finite_f64(reader, "mesh refine angle")?;
+    let obsolete_combine_angle = finite_f64(reader, "mesh combine angle")?;
+    let face_type = reader.i32()?;
+    let texture_range = if version.1 >= 1 {
+        Some(reader.i32()? as u32)
+    } else {
+        None
+    };
+    let (custom_settings, relative_tolerance) = if version.1 >= 2 {
+        (
+            Some(reader.bool()?),
+            Some(finite_f64(reader, "mesh relative tolerance")?),
+        )
+    } else {
+        (None, None)
+    };
+    let mesher = if version.1 >= 3 {
+        Some(reader.u8()?)
+    } else {
+        None
+    };
+    let custom_settings_enabled = if version.1 >= 4 {
+        Some(reader.bool()?)
+    } else {
+        None
+    };
+    let subd = if version.1 >= 5 {
+        Some(parse_subd_display_parameters(data, reader, archive)?)
+    } else {
+        None
+    };
+    Ok(MeshParameters {
+        version,
+        compute_curvature,
+        simple_planes,
+        refine,
+        jagged_seams,
+        obsolete_weld,
+        tolerance,
+        min_edge_length,
+        max_edge_length,
+        grid_aspect_ratio,
+        grid_min_count,
+        grid_max_count,
+        grid_angle_radians,
+        grid_amplification,
+        refine_angle_radians,
+        obsolete_combine_angle,
+        face_type,
+        texture_range,
+        custom_settings,
+        relative_tolerance,
+        mesher,
+        custom_settings_enabled,
+        subd,
+    })
+}
+
+pub(crate) fn parse_settings_attributes(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<SettingsAttributes, FramingError> {
+    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let version = packed(&mut reader)?;
+    if version.0 != 1 {
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported settings-attributes version",
+        ));
+    }
+    let linetype_display_scale = finite_f64(&mut reader, "linetype display scale")?;
+    let current_plot_color = color(&mut reader)?;
+    let current_plot_color_source = reader.i32()?;
+    let current_line_pattern_index = reader.i32()?;
+    let current_linetype_source = reader.i32()?;
+    let page_units = if version.1 >= 1 {
+        let (mut payload, page_range) =
+            anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
+        anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
+        let value = parse_units_reader(&mut payload, SourceRange { range: page_range })?;
+        Some(value)
+    } else {
+        None
+    };
+    let active_view_id = if version.1 >= 2 {
+        Some(uuid(&mut reader)?)
+    } else {
+        None
+    };
+    let (model_basepoint, earth_anchor) = if version.1 >= 3 {
+        let model_basepoint = point(&mut reader)?;
+        let earth_anchor = parse_earth_anchor(data, &mut reader, archive)?;
+        (Some(model_basepoint), Some(earth_anchor))
+    } else {
+        (None, None)
+    };
+    let save_texture_bitmaps_in_file = if version.1 >= 4 {
+        Some(reader.bool()?)
+    } else {
+        None
+    };
+    let io_settings = if version.1 >= 5 {
+        Some(parse_io_settings(data, &mut reader, archive)?)
+    } else {
+        None
+    };
+    let custom_render_mesh = if version.1 >= 6 {
+        Some(parse_mesh_parameters(data, &mut reader, archive, false)?)
+    } else {
+        None
+    };
+    let (
+        current_layer_id,
+        current_render_material_id,
+        current_line_pattern_id,
+        current_text_style_id,
+        current_dimension_style_id,
+        current_hatch_pattern_id,
+    ) = if version.1 >= 7 {
+        (
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+        )
+    } else {
+        (None, None, None, None, None, None)
+    };
+    finish(&mut reader, "settings attributes")?;
+    Ok(SettingsAttributes {
         source: SourceRange {
             range: record.range.clone(),
         },
+        version,
+        linetype_display_scale,
+        current_plot_color,
+        current_plot_color_source,
+        current_line_pattern_index,
+        current_linetype_source,
+        page_units,
+        active_view_id,
+        model_basepoint,
+        earth_anchor,
+        save_texture_bitmaps_in_file,
+        io_settings,
+        custom_render_mesh,
+        current_layer_id,
+        current_render_material_id,
+        current_line_pattern_id,
+        current_text_style_id,
+        current_dimension_style_id,
+        current_hatch_pattern_id,
     })
+}
+
+fn parse_mesh_record(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<MeshParameters, FramingError> {
+    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let value = parse_mesh_parameters(data, &mut reader, archive, true)?;
+    finish(&mut reader, "mesh settings")?;
+    Ok(value)
 }
 
 #[derive(Clone, Copy)]
@@ -1401,6 +1916,9 @@ pub(crate) fn parse_metadata(
                 SETTINGS => matches!(
                     record.typecode,
                     UNITS
+                        | RENDER_MESH
+                        | ANALYSIS_MESH
+                        | ATTRIBUTES
                         | CURRENT_LAYER
                         | CURRENT_MATERIAL
                         | CURRENT_COLOR
@@ -1444,7 +1962,7 @@ pub(crate) fn parse_metadata(
                     _ => Ok(()),
                 }
             } else if table_type == SETTINGS {
-                parse_setting(data, record, &mut metadata.settings)
+                parse_setting(data, record, &mut metadata.settings, archive)
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(data, record, archive, writer_version, warnings) {
@@ -1568,9 +2086,16 @@ pub(crate) fn parse_setting(
     data: &[u8],
     record: &Record,
     settings: &mut DocumentSettings,
+    archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
     match record.typecode {
         UNITS => parse_units(data, record).map(|value| settings.units = Some(value)),
+        RENDER_MESH => parse_mesh_record(data, record, archive)
+            .map(|value| settings.render_mesh_settings = Some(value)),
+        ANALYSIS_MESH => parse_mesh_record(data, record, archive)
+            .map(|value| settings.analysis_mesh_settings = Some(value)),
+        ATTRIBUTES => parse_settings_attributes(data, record, archive)
+            .map(|value| settings.attributes = Some(value)),
         CURRENT_LAYER => {
             settings.current_layer = Some(short_index(record, "current layer")?);
             Ok(())
