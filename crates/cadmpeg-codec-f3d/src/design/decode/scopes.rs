@@ -27,6 +27,7 @@ use crate::layout::base_feature_body_snapshot_prefix as snapshot;
 use crate::layout::base_feature_body_snapshot_scope_prefix as snapshot_scope;
 use crate::layout::base_feature_compact_repeated_body_entry as compact_entry;
 use crate::layout::base_feature_compact_result_body_count as compact_count;
+use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
@@ -3176,6 +3177,7 @@ pub(crate) fn exact_base_feature_construction(
         });
     }
     let legacy_409_262 = scope.class_tag == "409" && scope.paired_class_tag == "262";
+    let legacy_444_263 = scope.class_tag == "444" && scope.paired_class_tag == "263";
     if legacy_409_262 && scope.frame_length == 258 {
         if scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset) {
             return None;
@@ -3231,6 +3233,91 @@ pub(crate) fn exact_base_feature_construction(
             result_fields: Vec::new(),
         });
     }
+    if legacy_444_263 && scope.frame_length == 258 {
+        if scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset)
+            || scope.reference_members.len() != 1
+            || scope.reference_count_offset
+                != scope.byte_offset + u64::try_from(legacy_444_zero_body::REFERENCE_COUNT).ok()?
+            || scope.reference_member_offsets.as_slice()
+                != [scope.byte_offset
+                    + u64::try_from(legacy_444_zero_body::SCOPE_REFERENCE_RECORD).ok()?]
+            || scope.kind_offset
+                != scope.byte_offset + u64::try_from(legacy_444_zero_body::KIND_LENGTH + 4).ok()?
+        {
+            return None;
+        }
+        let metadata_record = u32::try_from(View::u64_le_at(
+            bytes,
+            start + legacy_444_zero_body::SHARED_METADATA_RECORD,
+        )?)
+        .ok()?;
+        let guid_code_units =
+            usize::try_from(legacy_444_zero_body::GUID_CODE_UNIT_COUNT_VALUE).ok()?;
+        let (guid, guid_end) = lp_utf16_bounded(
+            bytes,
+            start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
+            guid_code_units..=guid_code_units,
+        )?;
+        if bytes.get(
+            start + legacy_444_zero_body::ZERO_RUN_9
+                ..start + legacy_444_zero_body::ZERO_BODY_MARKER,
+        )? != [0; 9]
+            || bytes.get(start + legacy_444_zero_body::ZERO_BODY_MARKER)
+                != Some(&legacy_444_zero_body::ZERO_BODY_MARKER_VALUE)
+            || bytes.get(
+                start + legacy_444_zero_body::ZERO_RUN_11
+                    ..start + legacy_444_zero_body::SHARED_METADATA_MARKER,
+            )? != [0; 11]
+            || bytes.get(start + legacy_444_zero_body::SHARED_METADATA_MARKER)
+                != Some(&legacy_444_zero_body::SHARED_METADATA_MARKER_VALUE)
+            || scope.reference_members.as_slice() != [metadata_record]
+            || bytes.get(
+                start + legacy_444_zero_body::SHARED_METADATA_ZERO_TAIL
+                    ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
+            )? != [0; 14]
+            || !is_guid_relaxed(&guid)
+            || guid_end != start + legacy_444_zero_body::ZERO_RUN_3
+            || bytes.get(
+                start + legacy_444_zero_body::ZERO_RUN_3
+                    ..start + legacy_444_zero_body::REFERENCE_COUNT,
+            )? != [0; 3]
+            || View::u32_le_at(bytes, start + legacy_444_zero_body::REFERENCE_COUNT)?
+                != legacy_444_zero_body::REFERENCE_COUNT_VALUE
+            || bytes.get(start + legacy_444_zero_body::SCOPE_REFERENCE_MARKER)
+                != Some(&legacy_444_zero_body::SCOPE_REFERENCE_MARKER_VALUE)
+            || View::u32_le_at(bytes, start + legacy_444_zero_body::SCOPE_REFERENCE_RECORD)?
+                != metadata_record
+            || bytes.get(
+                start + legacy_444_zero_body::SCOPE_REFERENCE_FIELD
+                    ..start + legacy_444_zero_body::HISTORY_STATE_ID,
+            )? != [0; 6]
+            || View::u32_le_at(bytes, start + legacy_444_zero_body::KIND_LENGTH)?
+                != legacy_444_zero_body::KIND_LENGTH_VALUE
+        {
+            return None;
+        }
+        return Some(DesignBaseFeatureConstruction::ResultBodies {
+            body_entity_suffixes: Vec::new(),
+            body_entity_suffix_offsets: Vec::new(),
+            body_entity_fields: Vec::new(),
+            body_reference_records: Vec::new(),
+            body_reference_record_offsets: Vec::new(),
+            body_reference_fields: Vec::new(),
+            repeated_reference_fields: Vec::new(),
+            metadata_record,
+            metadata_record_offset: scope.byte_offset
+                + u64::try_from(legacy_444_zero_body::SHARED_METADATA_RECORD).ok()?,
+            metadata_field: bytes
+                .get(
+                    start + legacy_444_zero_body::SHARED_METADATA_ZERO_TAIL
+                        ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
+                )?
+                .to_vec(),
+            result_records: Vec::new(),
+            result_record_offsets: Vec::new(),
+            result_fields: Vec::new(),
+        });
+    }
     if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
         || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
     {
@@ -3253,7 +3340,11 @@ pub(crate) fn exact_base_feature_construction(
         (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
         ("420", "258") | ("452", "266")
     );
-    let base_length = if expanded || compact { 262 } else { 271 };
+    let base_length = if expanded || compact || legacy_444_263 {
+        262
+    } else {
+        271
+    };
     if scope.frame_length != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
         return None;
     }
@@ -3301,6 +3392,17 @@ pub(crate) fn exact_base_feature_construction(
             return None;
         }
         cursor += 11;
+    } else if legacy_444_263 {
+        if bytes.get(cursor + compact_count::COUNT_MARKER) != Some(&1)
+            || bytes.get(cursor + compact_count::ZERO_RUN_5..cursor + compact_count::REPEAT_MARKER)
+                != Some(&[0; 5])
+            || bytes.get(cursor + compact_count::REPEAT_MARKER) != Some(&0)
+            || usize::try_from(View::u32_le_at(bytes, cursor + compact_count::BODY_COUNT)?).ok()?
+                != body_count
+        {
+            return None;
+        }
+        cursor += compact_count::LEN;
     } else if compact {
         if bytes.get(cursor + compact_count::COUNT_MARKER) != Some(&1)
             || bytes.get(cursor + compact_count::ZERO_RUN_5..cursor + compact_count::REPEAT_MARKER)
@@ -3351,7 +3453,11 @@ pub(crate) fn exact_base_feature_construction(
     }
     let metadata_record = u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?;
     let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
-    let metadata_field_width = if expanded || compact { 2 } else { 6 };
+    let metadata_field_width = if expanded || compact || legacy_444_263 {
+        2
+    } else {
+        6
+    };
     let metadata_field = bytes
         .get(cursor + 9..cursor + 9 + metadata_field_width)?
         .to_vec();

@@ -1060,6 +1060,34 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes the class-409 zero-body payload.
 
+## `base_feature_legacy_444_zero_body`
+
+Spec §3.1 · layout: byte offsets · size: 157 B
+
+Offsets are relative to the class-444 primary indexed header. The fixed prefix ends at the 12-code-unit kind length; the generic scope tail and paired header follow it.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | `u8 1` at offset 20 · value `1` |
+| 21 | 11 | `zero_run_11` | `bytes[11]` | little | spec | eleven zero bytes at offsets 21 through 31 |
+| 32 | 1 | `shared_metadata_marker` | `u8` | little | spec | `u8 1` at offset 32 · value `1` |
+| 33 | 8 | `shared_metadata_record` | `u64` | little | spec | shared metadata u64 is at offset 33 |
+| 41 | 14 | `shared_metadata_zero_tail` | `bytes[14]` | little | spec | bytes 41 through 54 are zero |
+| 55 | 4 | `guid_code_unit_count` | `u32` | little | spec | A u32 36 at offset 55 · value `36` |
+| 59 | 72 | `guid` | `bytes[72]` | little | spec | 36-code-unit GUID at offset 59 |
+| 131 | 3 | `zero_run_3` | `bytes[3]` | little | spec | bytes 131 through 133 are zero |
+| 134 | 4 | `reference_count` | `u32` | little | spec | u32 1 at offset 134 · value `1` |
+| 138 | 1 | `scope_reference_marker` | `u8` | little | spec | `u8 1` at offset 138 · value `1` |
+| 139 | 4 | `scope_reference_record` | `u32` | little | spec | repeated metadata u32 at offset 139 |
+| 143 | 6 | `scope_reference_field` | `bytes[6]` | little | spec | six zero bytes at offsets 143 through 148 |
+| 149 | 4 | `history_state_id` | `u32` | little | spec | current history-state u32 at offset 149 |
+| 153 | 4 | `kind_length` | `u32` | little | spec | u32 12 at offset 153 · value `12` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the class-444 zero-body payload.
+
 ## `base_feature_result_body_entry`
 
 Spec §3.1 · layout: byte offsets · size: 15 B
@@ -1076,7 +1104,7 @@ This layout repeats for each body entity suffix and each passive body-reference 
 
 Spec §3.1 · layout: byte offsets · size: 11 B
 
-Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use this field.
+Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use repeat marker 1; the class-444 form uses repeat marker 0.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

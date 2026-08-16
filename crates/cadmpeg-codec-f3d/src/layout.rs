@@ -1454,6 +1454,60 @@ pub(crate) mod base_feature_legacy_zero_body {
     pub(crate) const ZERO_PADDING_8: usize = 47;
 }
 
+/// Byte offsets for the `base_feature_legacy_444_zero_body` record.
+///
+/// Spec §3.1. Record length 157 B.
+///
+/// ```text
+/// Offsets are relative to the class-444 primary indexed header. The fixed prefix ends at the 12-code-unit kind length; the generic scope tail and paired header follow it.
+/// ```
+pub(crate) mod base_feature_legacy_444_zero_body {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 157;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `zero_body_marker` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BODY_MARKER: usize = 20;
+    /// Stated value of `zero_body_marker` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BODY_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 21;
+    /// Offset of `shared_metadata_marker` (`u8`). Spec §3.1.
+    pub(crate) const SHARED_METADATA_MARKER: usize = 32;
+    /// Stated value of `shared_metadata_marker` (`u8`). Spec §3.1.
+    pub(crate) const SHARED_METADATA_MARKER_VALUE: u8 = 1;
+    /// Offset of `shared_metadata_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SHARED_METADATA_RECORD: usize = 33;
+    /// Offset of `shared_metadata_zero_tail` (`bytes[14]`). Spec §3.1.
+    pub(crate) const SHARED_METADATA_ZERO_TAIL: usize = 41;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 55;
+    /// Stated value of `guid_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0024;
+    /// Offset of `guid` (`bytes[72]`). Spec §3.1.
+    pub(crate) const GUID: usize = 59;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 131;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 134;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `scope_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_MARKER: usize = 138;
+    /// Stated value of `scope_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `scope_reference_record` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_RECORD: usize = 139;
+    /// Offset of `scope_reference_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE_FIELD: usize = 143;
+    /// Offset of `history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID: usize = 149;
+    /// Offset of `kind_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_LENGTH: usize = 153;
+    /// Stated value of `kind_length` (`u32`). Spec §3.1.
+    pub(crate) const KIND_LENGTH_VALUE: u32 = 0x0000_000c;
+}
+
 /// Byte offsets for the `base_feature_result_body_entry` record.
 ///
 /// Spec §3.1. Record length 15 B.
@@ -1477,7 +1531,7 @@ pub(crate) mod base_feature_result_body_entry {
 /// Spec §3.1. Record length 11 B.
 ///
 /// ```text
-/// Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use this field.
+/// Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use repeat marker 1; the class-444 form uses repeat marker 0.
 /// ```
 pub(crate) mod base_feature_compact_result_body_count {
     /// Record length in bytes. Spec §3.1.

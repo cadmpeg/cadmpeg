@@ -3447,6 +3447,130 @@ source = "spec"
 anchor = "offsets 47 through 54 zero"
 
 [[record]]
+name = "base_feature_legacy_444_zero_body"
+kind = "byte"
+section = "3.1"
+anchor = "The class-444 primary paired with class-263 has a 258-byte zero-body frame."
+size = 157
+note = "Offsets are relative to the class-444 primary indexed header. The fixed prefix ends at the 12-code-unit kind length; the generic scope tail and paired header follow it."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes the class-444 zero-body payload."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "zero_body_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "zero_run_11"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven zero bytes at offsets 21 through 31"
+
+[[record.field]]
+name = "shared_metadata_marker"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 32"
+value = 1
+
+[[record.field]]
+name = "shared_metadata_record"
+offset = 33
+type = "u64"
+source = "spec"
+anchor = "shared metadata u64 is at offset 33"
+
+[[record.field]]
+name = "shared_metadata_zero_tail"
+offset = 41
+type = "bytes[14]"
+source = "spec"
+anchor = "bytes 41 through 54 are zero"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 55
+type = "u32"
+source = "spec"
+anchor = "A u32 36 at offset 55"
+value = 36
+
+[[record.field]]
+name = "guid"
+offset = 59
+type = "bytes[72]"
+source = "spec"
+anchor = "36-code-unit GUID at offset 59"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 131
+type = "bytes[3]"
+source = "spec"
+anchor = "bytes 131 through 133 are zero"
+
+[[record.field]]
+name = "reference_count"
+offset = 134
+type = "u32"
+source = "spec"
+anchor = "u32 1 at offset 134"
+value = 1
+
+[[record.field]]
+name = "scope_reference_marker"
+offset = 138
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 138"
+value = 1
+
+[[record.field]]
+name = "scope_reference_record"
+offset = 139
+type = "u32"
+source = "spec"
+anchor = "repeated metadata u32 at offset 139"
+
+[[record.field]]
+name = "scope_reference_field"
+offset = 143
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 143 through 148"
+
+[[record.field]]
+name = "history_state_id"
+offset = 149
+type = "u32"
+source = "spec"
+anchor = "current history-state u32 at offset 149"
+
+[[record.field]]
+name = "kind_length"
+offset = 153
+type = "u32"
+source = "spec"
+anchor = "u32 12 at offset 153"
+value = 12
+
+[[record]]
 name = "base_feature_result_body_entry"
 kind = "byte"
 section = "3.1"
@@ -3481,7 +3605,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The class-452 form paired with class 266 uses the same compact count field"
 size = 11
-note = "Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use this field."
+note = "Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use repeat marker 1; the class-444 form uses repeat marker 0."
 
 [[record.field]]
 name = "count_marker"
