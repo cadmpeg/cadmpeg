@@ -2247,6 +2247,38 @@ pub(crate) mod draft_extended_direction_frame {
     pub(crate) const PULL_DIRECTION: usize = 129;
 }
 
+/// Byte offsets for the `compact_current_spatial_marker_point` record.
+///
+/// Spec §2. Record length 82 B.
+///
+/// ```text
+/// The fixed point prefix ends after the third coordinate; any marker-specific trailer follows outside this prefix.
+/// ```
+pub(crate) mod compact_current_spatial_marker_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 82;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `profile_role` (`u16`, little-endian). Spec §2.
+    pub(crate) const PROFILE_ROLE: usize = 27;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinates` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const COORDINATES: usize = 58;
+}
+
 /// Byte offsets for the `wide_spatial_marker_coordinate_prefix` record.
 ///
 /// Spec §2. Record length 90 B.

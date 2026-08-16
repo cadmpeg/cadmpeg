@@ -7,11 +7,36 @@ use super::super::super::{
 };
 use super::super::*;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchRelationKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
+    FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
 };
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::sketches::SpatialSketchGeometry;
+use std::collections::BTreeMap;
+
+fn current_compact_spatial_point_marker(
+    native_kind: u32,
+    locus: [u8; 4],
+    coordinates: [f64; 3],
+) -> Vec<u8> {
+    let mut marker = vec![0; 82];
+    marker[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    marker[5..13].fill(0xff);
+    marker[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    marker[17..21].copy_from_slice(&native_kind.to_le_bytes());
+    marker[23..27].copy_from_slice(&locus);
+    marker[27..29].copy_from_slice(&1u16.to_le_bytes());
+    marker[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    marker[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    marker[56..58].copy_from_slice(&[0x0e, 0x00]);
+    for (index, value) in coordinates.into_iter().enumerate() {
+        let start = 58 + index * 8;
+        marker[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    marker
+}
 
 #[test]
 fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
@@ -200,6 +225,152 @@ fn current_spatial_point_variants_decode_model_coordinates() {
             Some(Point3::new(125.0, -250.0, 375.0))
         );
     }
+}
+
+#[test]
+fn current_compact_spatial_points_decode_without_object_indices() {
+    for (native_kind, locus, coordinates) in [
+        (1, [0x04, 0x00, 0x02, 0x00], [0.125, -0.25, 0.375]),
+        (0, [0x05, 0x00, 0x01, 0x00], [-0.08, 0.075, 0.0055]),
+    ] {
+        let payload = current_compact_spatial_point_marker(native_kind, locus, coordinates);
+        assert_eq!(
+            marker_spatial_coordinates(&payload, 0),
+            Some(Point3::new(
+                coordinates[0] * 1000.0,
+                coordinates[1] * 1000.0,
+                coordinates[2] * 1000.0,
+            ))
+        );
+        let entities = sketch_input_entities(&payload, "lane");
+        let [entity] = entities.as_slice() else {
+            panic!("expected one compact spatial point marker");
+        };
+        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.object_index, None);
+    }
+
+    let mut planar =
+        current_compact_spatial_point_marker(1, [0x04, 0x00, 0x02, 0x00], [0.125, -0.25, 0.375]);
+    planar[56..58].copy_from_slice(&[0x1e, 0x00]);
+    assert_eq!(marker_spatial_coordinates(&planar, 0), None);
+}
+
+#[test]
+fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
+    let native_ref = "sldprt:history:feature#spatial";
+    let lane_id = "sldprt:feature-input:resolved-features#spatial";
+    let mut payload = 1u32.to_le_bytes().to_vec();
+    payload.extend(current_compact_spatial_point_marker(
+        1,
+        [0x04, 0x00, 0x02, 0x00],
+        [0.0, 0.015, 0.005],
+    ));
+    payload.extend([0xff; 4]);
+    payload.extend(current_compact_spatial_point_marker(
+        0,
+        [0x05, 0x00, 0x01, 0x00],
+        [0.0, 0.0, 0.0],
+    ));
+    payload.extend(3u32.to_le_bytes());
+    payload.extend(current_compact_spatial_point_marker(
+        1,
+        [0x04, 0x00, 0x02, 0x00],
+        [0.0, -0.015, 0.005],
+    ));
+    payload.extend([0xff; 4]);
+    payload.extend(current_compact_spatial_point_marker(
+        0,
+        [0x05, 0x00, 0x01, 0x00],
+        [0.0, 0.0, 0.0],
+    ));
+    let mut sketch_entities = sketch_input_entities(&payload, lane_id);
+    assert_eq!(sketch_entities.len(), 4);
+    assert_eq!(sketch_entities[0].object_index, Some(1));
+    assert_eq!(sketch_entities[1].object_index, None);
+    assert_eq!(sketch_entities[2].object_index, Some(3));
+    assert_eq!(sketch_entities[3].object_index, None);
+    for entity in &mut sketch_entities {
+        entity.feature_ref = Some(native_ref.into());
+        assert_eq!(entity.kind, SketchInputKind::Point);
+    }
+
+    let lane = FeatureInputLane {
+        id: lane_id.into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities,
+    };
+    let history = FeatureHistory {
+        id: "sldprt:history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![NativeFeature {
+            id: native_ref.into(),
+            parent: "sldprt:history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("spatial".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "3D Sketch".into(),
+            kind: "3D Sketch".into(),
+            input_class: Some("mo3DProfileFeature_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    };
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId("sldprt:model:feature#spatial".into()),
+        ordinal: 0,
+        name: Some("3D Sketch".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch { sketch: None },
+        native_ref: Some(native_ref.into()),
+    }];
+
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(entities.len(), 2);
+    assert!(matches!(
+        &entities[0].geometry,
+        SpatialSketchGeometry::Point { position }
+            if *position == Point3::new(0.0, 15.0, 5.0)
+    ));
+    assert!(matches!(
+        &entities[1].geometry,
+        SpatialSketchGeometry::Point { position }
+            if *position == Point3::new(0.0, -15.0, 5.0)
+    ));
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
+            if sketch.0 == "sldprt:model:spatial-sketch#spatial"
+    ));
 }
 
 #[test]

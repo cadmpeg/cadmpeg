@@ -35,6 +35,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{BTreeMap, HashMap};
 
+use crate::layout::compact_current_spatial_marker_point as compact_spatial;
 use crate::layout::compact_legacy_142_profile_curve as legacy_142;
 use crate::layout::compact_legacy_code_two_profile_point as code_two;
 use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
@@ -295,6 +296,24 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                     && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
             {
                 (offset.checked_add(58)?, true)
+            }
+            prefix
+                if prefix == SKETCH_MARKER
+                    && marker_native_code(payload, offset) == Some(1)
+                    && locus == [0x04, 0x00, 0x02, 0x00]
+                    && payload.get(
+                        offset + compact_spatial::SELECTOR..offset + compact_spatial::SELECTOR + 8,
+                    ) == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+                    && payload.get(
+                        offset + compact_spatial::STATE_VALUE
+                            ..offset + compact_spatial::STATE_VALUE + 8,
+                    ) == Some(&1.0f64.to_le_bytes())
+                    && payload.get(
+                        offset + compact_spatial::COORDINATE_TAG
+                            ..offset + compact_spatial::COORDINATE_TAG + 2,
+                    ) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(compact_spatial::COORDINATES)?, true)
             }
             prefix
                 if prefix == SKETCH_MARKER

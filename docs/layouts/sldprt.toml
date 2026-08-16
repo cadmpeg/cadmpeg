@@ -6343,6 +6343,100 @@ source = "spec"
 anchor = "an unaligned xyz unit vector occupies +129, +137, and +145"
 
 [[record]]
+name = "compact_current_spatial_marker_point"
+kind = "byte"
+section = "2"
+anchor = "A current-prefix compact profile-locus spatial point has native kind u32 `1`"
+size = 82
+endianness = "little"
+note = "The fixed point prefix ends after the third coordinate; any marker-specific trailer follows outside this prefix."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A current-prefix compact profile-locus spatial point"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "little-endian f32 `-1.0`"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native kind u32 `1`"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "Reserved bytes before the profile locus."
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "profile_role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "profile role u16 `1`"
+
+[[record.gap]]
+offset = 29
+size = 2
+note = "The state prefix is reserved in this compact point form."
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 56
+type = "bytes[2]"
+source = "spec"
+anchor = "coordinate tag `0e 00` at marker +56"
+
+[[record.field]]
+name = "coordinates"
+offset = 58
+type = "f64[3]"
+source = "spec"
+anchor = "xyz coordinates at marker +58"
+
+[[record]]
 name = "wide_spatial_marker_coordinate_prefix"
 kind = "byte"
 section = "2"

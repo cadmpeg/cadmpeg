@@ -1719,6 +1719,31 @@ Unstated regions:
 - `24..120` (96 B): Twelve finite f64 LE values; the final three do not form a unit vector in this form.
 - `120..129` (9 B): Zero-byte extended-form discriminator.
 
+## `compact_current_spatial_marker_point`
+
+Spec §2 · layout: byte offsets · size: 82 B
+
+The fixed point prefix ends after the third coordinate; any marker-specific trailer follows outside this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A current-prefix compact profile-locus spatial point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes |
+| 13 | 4 | `sentinel` | `f32` | little | spec | little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `profile_role` | `u16` | little | spec | profile role u16 `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `0e 00` at marker +56 |
+| 58 | 24 | `coordinates` | `f64[3]` | little | spec | xyz coordinates at marker +58 |
+
+Unstated regions:
+
+- `21..23` (2 B): Reserved bytes before the profile locus.
+- `29..31` (2 B): The state prefix is reserved in this compact point form.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `wide_spatial_marker_coordinate_prefix`
 
 Spec §2 · layout: byte offsets · size: 90 B
