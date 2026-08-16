@@ -427,9 +427,8 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
                 evidence.insert(SectionEntityIncidenceFamily::Circular);
             }
         }
-        if !section_skamp_active(skamp.status) {
-            continue;
-        }
+        // Line-family roles are structural; type-six circular evidence is
+        // activity-dependent, like its radius-equality constraint.
         match (skamp.kind, skamp.items.as_slice()) {
             (5 | 7 | 8, [first, second])
                 if first.sense == 0
@@ -438,14 +437,15 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
             {
                 evidence.insert(SectionEntityIncidenceFamily::Line);
             }
-            (6, [first, second])
+            _ => {}
+        }
+        if section_skamp_active(skamp.status)
+            && matches!((skamp.kind, skamp.items.as_slice()), (6, [first, second])
                 if first.sense == 0
                     && second.sense == 0
-                    && (first.entity_id == entity_id || second.entity_id == entity_id) =>
-            {
-                evidence.insert(SectionEntityIncidenceFamily::Circular);
-            }
-            _ => {}
+                    && (first.entity_id == entity_id || second.entity_id == entity_id))
+        {
+            evidence.insert(SectionEntityIncidenceFamily::Circular);
         }
     }
     normalize_section_incidence_curve_family_evidence(&mut evidence);

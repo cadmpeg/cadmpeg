@@ -723,6 +723,29 @@ fn saved_line_joins_through_order_table() {
         solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::Circular)
     );
+    let mut disabled_line_family = solver_families.clone();
+    let disabled_line_relations = disabled_line_family.relations.as_mut().expect("relations");
+    disabled_line_relations.skamps[0] = crate::feature::FeatureSkamp {
+        id: 7,
+        kind: 5,
+        flags: 0,
+        status: 0,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 0,
+            },
+        ],
+        offset: 34,
+    };
+    assert_eq!(
+        solver_only_section_entity_family(&disabled_line_family, 99),
+        Some(SectionEntityIncidenceFamily::Line)
+    );
     let family_relations = solver_families.relations.as_mut().expect("relations");
     family_relations.skamps.push(crate::feature::FeatureSkamp {
         id: 7,

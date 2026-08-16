@@ -427,8 +427,10 @@ fixtures, scores above L1 remain blocked.
   activity and does not require evaluated tangent vectors.
 - A two-item type-five incidence transfers as entity-level perpendicularity
   when both sense-zero operands have uniquely established curve families.
-  Line-only coordinate-orientation propagation remains restricted to two
-  uniquely established lines.
+  A unique two-line type-five, type-seven, or type-eight incidence retains the
+  native line family even when disabled. Line-only coordinate-orientation
+  propagation remains restricted to two uniquely established lines and active
+  incidences.
 - A type-37 incidence transfers as a projected-copy relation when its two
   sense-zero operands are consecutive reference/result identities and the
   result has a unique row in the trimmed profile.
