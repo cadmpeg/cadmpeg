@@ -1821,3 +1821,44 @@ fn wrong_target_flags_refuse_before_reading_input() {
             "--rhino-target requires Rhino output",
         ));
 }
+
+#[cfg(unix)]
+#[test]
+fn closed_stdout_pipe_exits_on_sigpipe_without_panic() {
+    use std::io::Read;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{Command as ProcessCommand, Stdio};
+
+    // Hex of 64 KiB exceeds the typical pipe buffer, so the writer is still
+    // printing when the reader closes.
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("zeros.bin");
+    fs::write(&input, vec![0u8; 64 * 1024]).unwrap();
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin("cadmpeg"))
+        .args(["inspect", "hex", input.to_str().unwrap(), "--len", "65536"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stdout = child.stdout.take().unwrap();
+    let mut first = [0u8; 1];
+    stdout.read_exact(&mut first).unwrap();
+    drop(stdout);
+
+    let mut stderr = child.stderr.take().unwrap();
+    let status = child.wait().unwrap();
+    let mut err = String::new();
+    stderr.read_to_string(&mut err).unwrap();
+
+    assert!(
+        !err.contains("panicked"),
+        "closed stdout pipe panicked:\n{err}"
+    );
+    assert_eq!(
+        status.signal(),
+        Some(13),
+        "expected SIGPIPE, got {status:?}; stderr={err}"
+    );
+}

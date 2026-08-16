@@ -643,7 +643,26 @@ fn misdirected_json(command: &str) -> anyhow::Error {
     )
 }
 
+/// Restore `SIG_DFL` so a closed stdout pipe delivers SIGPIPE instead of a
+/// `print!` panic (`failed printing to stdout: Broken pipe`).
+#[cfg(unix)]
+fn reset_sigpipe() {
+    const SIGPIPE: i32 = 13;
+    const SIG_DFL: usize = 0;
+    unsafe extern "C" {
+        fn signal(signum: i32, handler: usize) -> usize;
+    }
+    // SAFETY: one call on the main thread, before any I/O or spawned threads.
+    // POSIX `SIG_DFL` is a null handler; `signal` is in the C library already
+    // linked into a Unix Rust binary.
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
+    }
+}
+
 fn main() -> ExitCode {
+    #[cfg(unix)]
+    reset_sigpipe();
     let command = Cli::parse().command;
     let catalogs = AppCatalogs {
         inputs: InputCatalog::with_builtins(),
