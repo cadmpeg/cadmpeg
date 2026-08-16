@@ -911,6 +911,12 @@ and pattern-seed links also precede
 their consumers. Body child lists are structural membership, not body inputs. If the native graph
 contains a dependency, parent, or expression cycle, the native graph retains it.
 The dependency envelope has no neutral cycle ordinal or edge-discard field.
+CADIR decision: when acyclic admission cannot progress, the remaining cycle-affected objects receive
+ordinals in persisted object order for stable identity. Their native dependencies remain exact, but
+a neutral feature dependency is retained only when its target ordinal precedes the consumer, giving
+a deterministic acyclic subset. Their typed definitions are replaced by native definitions and
+each reports blocking loss `feature.cyclic-history`; the source cycle is not assigned a producer
+recompute order.
 
 Design dispatch uses exact runtime names. `PartDesign::Pad`, `PartDesign::Pocket`, and
 `Part::Extrusion` are extrusions; `PartDesign::Revolution`, `PartDesign::Groove`, and

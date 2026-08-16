@@ -186,30 +186,6 @@ remain open.
 
 ## 5. Design projection
 
-### DP-05. Dependency-cycle ordinal fallback
-
-**Question.** What neutral projection applies when feature dependencies, parents, or expressions
-form a cycle?
-
-**Known.** The native graph retains cycles. FreeCAD can persist `First -> Second` and
-`Second -> First` as two `ObjectDeps` records and matching `PropertyLink` values. The neutral graph
-must use a stable maximal subset whose targets precede their consumers, or carry an explicit
-blocking loss.
-
-**Conflict.** design.rs:679-688 marks all remaining objects cycle-affected, assigns ordinals by
-source order, and design.rs:450-456 removes edges whose targets are not earlier. The FreeCAD
-recompute and dependency-ordering source has not been traced, so source order and edge discard are
-not established as the correct neutral result.
-
-**Need.** Define a cycle projection that is stable and preserves the maximal admissible subset, or
-refuse with an explicit loss. Do not source-order a cycle and silently discard its edges.
-
-**Note.** This pass settled that the producer persists directed dependency cycles. Native retention
-and the blocking `feature.cyclic-history` loss are safety policies, but they do not establish the
-neutral relation. The prior specification text that prescribed source-order assignment and edge
-discard was removed because it was decoder policy rather than producer evidence; the projection
-remains open.
-
 ## 6. Product structure
 
 ## 7. Assembly joints
