@@ -478,6 +478,42 @@ fn settings_attributes_crc_excludes_all_nested_children() {
 }
 
 #[test]
+fn user_table_uuid_crc_excludes_record_header() {
+    let archive = ArchiveVersion::V5;
+    let mut body = vec![0; 16];
+    let header = crc_chunk(archive, 0x2000_8082, &[1, 5, 0, 0, 0, 202, 47, 31, 120]);
+    let header_range = body.len()..body.len() + header.len();
+    body.extend(header);
+    body.extend([0xde, 0xad]);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8080,
+        &body,
+        std::slice::from_ref(&header_range),
+    );
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+            .expect("user-table UUID checksum framing"),
+        None
+    );
+}
+
+#[test]
+fn user_table_uuid_crc_covers_uuid_without_record_header() {
+    let archive = ArchiveVersion::V5;
+    let mut body = vec![0; 16];
+    body.extend([0xbe, 0xef]);
+    let record = crc_chunk(archive, 0x2000_8080, &body);
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+            .expect("user-table UUID checksum framing"),
+        None
+    );
+}
+
+#[test]
 fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
     let archive = ArchiveVersion::V5;
     let record = crc_chunk(archive, 0x2000_803e, &[0; 24]);

@@ -373,6 +373,9 @@ document termination.
 | history header             | `0x02008075` |
 | history data               | `0x02008076` |
 | object record end          | `0x8200007f` |
+| user-table UUID             | `0x20008080` |
+| user-table record header    | `0x20008082` |
+| user record                 | `0x20000081` |
 
 ### 6.3 Properties, settings, and user chunks
 
@@ -4199,7 +4202,10 @@ The `TCODE_USER_RECORD` body is one bounded record. The UUID and optional
 header identify the producer context; they do not define an inner plug-in
 grammar. A direct record in the user table is opaque when no built-in record
 type owns its payload. Its table typecode, record typecode, archive offset, byte
-length, and SHA-256 identify the record.
+length, and SHA-256 identify the record. `TCODE_USER_TABLE_UUID` is
+CRC-bearing: its CRC covers the 16-byte plug-in UUID and any direct bytes, but
+excludes the complete optional record-header child. The record-header child
+has its own CRC. `TCODE_USER_RECORD` is a long non-CRC chunk.
 
 V5+ object attributes use a major-2 tagged stream. After the UUID and layer
 reference, each item is a one-byte ID followed directly by the value grammar

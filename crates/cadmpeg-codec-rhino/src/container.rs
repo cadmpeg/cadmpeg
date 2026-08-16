@@ -44,6 +44,8 @@ const TCODE_HISTORY: u32 = 0x1000_0026;
 const TCODE_USER: u32 = 0x1000_0017;
 
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
+const TCODE_USER_TABLE_UUID: u32 = 0x2000_8080;
+const TCODE_USER_TABLE_RECORD_HEADER: u32 = 0x2000_8082;
 const TCODE_BITMAP_RECORD: u32 = 0x2000_8090;
 const TCODE_MATERIAL_RECORD: u32 = 0x2000_8040;
 const TCODE_LAYER_RECORD: u32 = 0x2000_8050;
@@ -222,6 +224,12 @@ fn checksum_warning(
         };
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_USER_TABLE_UUID {
+        let Ok(children) = user_table_uuid_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
     }
@@ -389,6 +397,27 @@ fn take_anonymous_checksum_child(
     }
     reader.skip(child.next_offset - start)?;
     Ok(child.range())
+}
+
+/// Returns the optional record-header child inside a user-table UUID record.
+fn user_table_uuid_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    reader.skip(16)?;
+    if reader.position() == reader.end() {
+        return Ok(Vec::new());
+    }
+
+    let start = reader.position();
+    let child = chunk_at(data, start, reader.end(), archive, false)?;
+    if child.typecode != TCODE_USER_TABLE_RECORD_HEADER || child.short {
+        return Ok(Vec::new());
+    }
+    reader.skip(child.next_offset - start)?;
+    Ok(vec![child.range()])
 }
 
 /// Returns the complete nested chunks after a counted view-list prefix.

@@ -69,8 +69,10 @@ user-table record use?
 **Known.** Section 20.6 defines the outer framing: a plug-in UUID chunk, an
 optional major-1 record-header chunk containing the goo flag and producer
 archive/runtime versions, one bounded `TCODE_USER_RECORD`, and the table end
-marker. The record body is arbitrary plug-in-owned bytes; the common framing
-does not define its fields.
+marker. The UUID chunk is CRC-bearing; its CRC covers the direct UUID bytes and
+excludes the complete record-header child. The record-header child has its own
+CRC, while `TCODE_USER_RECORD` is long and non-CRC. The record body is
+arbitrary plug-in-owned bytes; the common framing does not define its fields.
 
 **Need.** The plug-in writer and reader, or an independent witness, for each
 direct record type that is admitted as typed data.
