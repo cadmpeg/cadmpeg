@@ -63,10 +63,13 @@ Part 28 configuration, generated AP XML Schema, EXPRESS schema edition, and a
 separate graph-binding policy.
 
 ISO/TS 10303-26:2011 defines a binary representation of EXPRESS-driven data
-using HDF5 version 5. The mapping is schema-driven. A conforming population
-uses a schema encoding group directly below the HDF5 root, named from the
-schema with the `_encoding` suffix and carrying `iso_10303_26_schema`. Each
-population group carries `iso_10303-26_data` with the schema identifier and
+using HDF5 version 5. The [ISO/TS 10303-26 standard
+listing](https://www.iso.org/standard/50029.html) identifies the edition. The
+[public Part 26 clause-equivalent text](https://normadocs.ru/gost_r_iso%21ts_10303-26-2015)
+defines the schema-driven mapping. A conforming population uses a schema
+encoding group directly below the HDF5 root, named from the schema with the
+`_encoding` suffix and carrying `iso_10303_26_schema`. Each population group
+carries `iso_10303-26_data` with the schema identifier and
 `iso_10303_26_data_set_names` with the population's entity dataset names.
 Optional population metadata does not change the graph mapping. One HDF5 file
 may contain several populations of the same schema.
