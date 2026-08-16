@@ -680,6 +680,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1c_disc16_disc14_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1c_disc14_disc12_face_root_body(&by_attr, entities));
+    }
+    if out.is_empty() {
         out.extend(disc1c_disc12_terminal_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -3721,6 +3724,135 @@ fn disc1c_disc16_disc14_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
     }]
 }
 
+fn disc1c_disc14_disc12_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    entities: &[EntityRecord],
+) -> Vec<BodyRecord> {
+    let roots = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x001c && record.flo() == 2)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Vec::new();
+    };
+    if root.refs.get(1).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+    let follows = |record: &EntityRecord, disc: u16, flo: u8| {
+        record
+            .refs
+            .get(2)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|next| next.disc == disc && next.flo() == flo)
+    };
+    let Some(disc_1a) = follows(root, 0x001a, 2) else {
+        return Vec::new();
+    };
+    let Some(shell) = follows(disc_1a, 0x0018, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_14) = follows(shell, 0x0014, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_12) = follows(disc_14, 0x0012, 1) else {
+        return Vec::new();
+    };
+    let Some(disc_10) = follows(disc_12, 0x0010, 2) else {
+        return Vec::new();
+    };
+    let Some(terminal) = follows(disc_10, 0x0004, 2) else {
+        return Vec::new();
+    };
+    if terminal.refs.get(2).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+    let count = |disc: u16, flo: u8| {
+        entities
+            .iter()
+            .filter(|record| record.disc == disc && record.flo() == flo)
+            .count()
+    };
+    let disc_0e_faces = count(0x000e, 1);
+    let disc_0c_faces = count(0x000c, 1);
+    let (face_disc, faces) = match (disc_0e_faces, disc_0c_faces) {
+        (faces, 0) if faces > 0 => (0x000e, faces),
+        (0, faces) if faces > 0 => (0x000c, faces),
+        _ => return Vec::new(),
+    };
+    if faces != count(0x0016, 1) || count(0x001e, 4) < faces {
+        return Vec::new();
+    }
+    let face_use_attrs = entities
+        .iter()
+        .filter(|record| record.disc == 0x0016 && record.flo() == 1)
+        .map(|record| record.attr)
+        .collect::<HashSet<_>>();
+    let use_node_attrs = entities
+        .iter()
+        .filter(|record| record.disc == 0x001e && record.flo() == 4)
+        .map(|record| record.attr)
+        .collect::<HashSet<_>>();
+    let face_use_attr = |face: &EntityRecord| {
+        let linked = face
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()?;
+        match (linked.disc, linked.flo()) {
+            (0x0016, 1) => Some(linked.attr),
+            (0x0014 | 0x000e, 2) => {
+                if linked.refs.get(2) != Some(&face.attr) {
+                    return None;
+                }
+                let face_use_attr = linked.refs.get(1).copied()?;
+                by_attr
+                    .get(&face_use_attr)
+                    .copied()
+                    .filter(|record| record.disc == 0x0016 && record.flo() == 1)
+                    .map(|_| face_use_attr)
+            }
+            _ => None,
+        }
+    };
+    let resolved_face_uses = entities
+        .iter()
+        .filter(|record| record.disc == face_disc && record.flo() == 1)
+        .filter_map(face_use_attr)
+        .collect::<HashSet<_>>();
+    if resolved_face_uses != face_use_attrs
+        || entities
+            .iter()
+            .filter(|record| record.disc == 0x0016 && record.flo() == 1)
+            .any(|face_use| {
+                face_use
+                    .refs
+                    .get(1)
+                    .is_none_or(|attr| !use_node_attrs.contains(attr))
+            })
+    {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
+}
+
 fn disc1c_disc12_terminal_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let roots = by_attr
         .values()
@@ -4999,6 +5131,40 @@ mod tests {
         assert_eq!(body.attr, 10);
         assert_eq!(body.regions[0].shells[0].attr, 12);
         assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    }
+
+    #[test]
+    fn disc1c_disc14_disc12_face_root_lattice_owns_both_face_families() {
+        let mut records = vec![
+            flo2(10, 0x1c, [3, 1, 11, 1, 1, 1]),
+            flo2(11, 0x1a, [3, 10, 12, 1, 1, 1]),
+            flo2(12, 0x18, [3, 11, 13, 1, 1, 1]),
+            flo2(13, 0x14, [3, 12, 14, 1, 1, 1]),
+            record(14, 0x12, [3, 13, 15, 1, 1, 1]),
+            flo2(15, 0x10, [3, 14, 16, 1, 1, 1]),
+            flo2(16, 0x04, [3, 15, 1, 1, 1, 1]),
+            record(20, 0x0e, [1, 60, 1, 1, 1, 1]),
+            record(30, 0x16, [1, 40, 1, 1, 1, 1]),
+            flo2(60, 0x14, [1, 30, 20, 1, 1, 1]),
+            flo4(40, 0x1e, [1; 6]),
+            flo4(42, 0x1e, [1; 6]),
+        ];
+        let by_attr = index_records(&records);
+
+        let bodies = disc1c_disc14_disc12_face_root_body(&by_attr, &records);
+        let body = bodies.first().expect("body");
+        assert_eq!((body.attr, body.regions[0].shells[0].attr), (10, 12));
+        assert!(body.refs.contains(&20) && body.refs.contains(&42));
+
+        records[7].disc = 0x000c;
+        records[9].disc = 0x000e;
+        let alternate = index_records(&records);
+        assert!(!disc1c_disc14_disc12_face_root_body(&alternate, &records).is_empty());
+
+        let mut invalid_records = records.clone();
+        invalid_records[9].refs[2] = 1;
+        let invalid = index_records(&invalid_records);
+        assert!(disc1c_disc14_disc12_face_root_body(&invalid, &invalid_records).is_empty());
     }
 
     #[test]
@@ -6319,6 +6485,10 @@ mod tests {
         assert_eq!(body.attr, 10);
         assert_eq!(body.regions[0].shells[0].attr, 12);
         assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    }
+
+    fn index_records(records: &[EntityRecord]) -> HashMap<u16, &EntityRecord> {
+        records.iter().map(|record| (record.attr, record)).collect()
     }
 
     fn flo2(attr: u16, disc: u16, refs: [u16; 6]) -> EntityRecord {
