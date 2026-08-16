@@ -13,6 +13,28 @@ Each item has an identifier and these fields:
 
 ## 1. Application-specific side entries
 
+### BR-02. Exact-shape side-entry admission
+
+**Question.** Which exact XML value owns each B-rep side entry for a
+`Part::PropertyPartShape` property?
+
+**Known.** FreeCAD `PropertyTopoShape::Save` emits a direct `Part file="..."` carrier.
+Persistence collects every descendant `file` or `File` attribute into `PropertyRecord.side_entries`.
+`container.rs:147-160` classifies every `.brp` or `.brep` archive member as `brep`, and
+`brep.rs:525-551` parses every side entry with that role or with a matching descendant `Part`
+file attribute.
+
+**Need.** Bind each exact-shape payload to the registered direct `Part` carrier and its owning
+property, and derive payload admission from the property/value grammar rather than the archive
+extension.
+
+**Conflict.** A shape property containing `<Part file="shape.brp"/><Extra file="other.brp"/>`
+causes both entries to enter exact-shape parsing. The second entry can add a payload or fail on
+arbitrary bytes even though no direct `Part` carrier names it. The specification states that a
+file extension or payload signature does not select an application grammar.
+
+**Note.** New hostile-sweep finding.
+
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars
@@ -129,6 +151,27 @@ not same-kind nesting.
 **Note.** Reopened. The counter-scope correction did not establish or implement the full producer
 traversal.
 
+### PT-05. StringHasher owner and root framing
+
+**Question.** Which direct shape-owner `StringHasher` marker and `StringHasher2` successor belong
+to one persistent string table?
+
+**Known.** FreeCAD `StringHasher::Save` emits `StringHasher` directly after the shape `Part` and
+then emits its immediate `StringHasher2` successor. `element_map.rs:35-83` scans every descendant
+`StringHasher`; `owning_property` at `element_map.rs:194-212` checks only the enclosing property
+byte range. New-layout markers require an immediate `StringHasher2`, while legacy markers use the
+marker itself as the data carrier.
+
+**Need.** Enforce the producer's direct-root ownership and one-table association for both layouts.
+Reject nested or duplicate markers instead of assigning a table by descendant traversal order.
+
+**Conflict.** A nested `StringHasher` under an unrelated value in a shape property is accepted and
+increments the table index. A legacy marker in that position is parsed as a valid table even
+though the producer writes the marker as a direct shape sibling. The resulting names can bind to
+the wrong topology map without a malformed-record refusal.
+
+**Note.** New hostile-sweep finding.
+
 ## 4. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection
@@ -151,6 +194,27 @@ extra orientation is producer-invalid. A legal edge form outside the two-orienta
 therefore refused without a source-backed loss or compatibility rule.
 
 **Note.** Reopened. The valid case is narrower than the original cardinality question.
+
+### XT-04. P-curve composed-location equality
+
+**Question.** What equality rule selects a p-curve representation when its surface matches but
+its composed carrier location differs from the face location?
+
+**Known.** The specification requires the first p-curve whose surface and composed location equal
+the face surface. `topology_transfer.rs:1217-1240` selects the first matching representation, and
+`transforms_equal` at `topology_transfer.rs:1644-1650` treats matrix components within `1.0e-12`
+as equal.
+
+**Need.** Establish the producer or kernel equality rule and apply it to duplicate p-curve
+representations. A tolerance must be source-backed and specified; otherwise the comparison must
+be exact.
+
+**Conflict.** Two p-curve representations whose composed locations differ by less than
+`1.0e-12` are treated as equal, so serialized order selects the neutral p-curve even though the
+specification's equality rule is exact. Swapping those representations changes the neutral result
+without a refusal or loss.
+
+**Note.** New hostile-sweep finding.
 
 ## 5. Design projection
 
@@ -232,6 +296,27 @@ can therefore change a neutral design value without a loss.
 
 **Note.** New hostile-sweep finding.
 
+### DP-11. Post-processing control fallback
+
+**Question.** What admission rule applies when a design operation carries a malformed `Refine` or
+`FuzzyTolerance` control?
+
+**Known.** `design.rs:699-745` returns the underlying operation when
+`post_process_controls` cannot resolve both controls. The helper uses generic descendant scalar
+and boolean extraction, and returns `None` for malformed or non-finite fuzzy tolerance values.
+The specification says post-processing controls are retained compositionally around the neutral
+operation.
+
+**Need.** Distinguish an absent control from a malformed present control. Enforce each control's
+runtime type, direct value root, cardinality, and finite value before wrapping the operation, or
+retain an attributable native operation with a loss.
+
+**Conflict.** A malformed or non-finite `FuzzyTolerance`, or a wrong-carrier `Refine`, silently
+drops the post-processing wrapper while the underlying operation remains neutral. Changing the
+nested control or its spelling therefore changes neutral state without a refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
 ## 6. Semantic annotations
 
 ### SA-03. Annotation value-root framing and attribute selection
@@ -280,6 +365,45 @@ attribute changes the result from `1` to `2` instead of making the contradictory
 **Note.** New hostile-sweep finding.
 
 ## 8. Product structure
+
+### PR-04. Product placement zero-axis fallback
+
+**Question.** How does product placement admission handle an axis-angle value with a zero-length
+axis?
+
+**Known.** `product.rs:979-1079` accepts one `App::PropertyPlacement` value and converts an
+axis-angle carrier to a quaternion. When the axis norm is zero, `placement_matrix` substitutes the
+Z axis. The specification marks an invalid axis-angle rotation as malformed.
+
+**Need.** Reject a zero-length axis, including a zero axis with a nonzero angle, or establish a
+source-defined identity rule and apply it consistently to product, attachment, and joint frames.
+
+**Conflict.** `A=1, Ox=0, Oy=0, Oz=0` becomes a valid rotation about Z instead of a malformed
+placement. The product occurrence transform changes without a refusal or loss; a zero-axis,
+zero-angle value is also accepted despite the invalid-axis rule.
+
+**Note.** New hostile-sweep finding.
+
+### PR-05. Product metadata value-root framing
+
+**Question.** Which direct value root and property carrier supply product labels, descriptions,
+part numbers, and BOM metadata?
+
+**Known.** Product identity transfer at `product.rs:356-366` reads named scalar properties through
+`property_scalar` at `product.rs:802-812`, which selects the first retained descendant carrying a
+`value` attribute. FreeCAD standard string properties write one direct `String` value. The
+application property registry requires an exact runtime type, direct root, canonical attribute,
+and cardinality.
+
+**Need.** Establish the runtime type, direct root, attribute, and duplicate-property rule for
+each product metadata carrier before projecting it into a definition or BOM field.
+
+**Conflict.** A nested parseable value or a duplicate named property can win by retained-property
+or value order and change a neutral label, description, part number, or BOM field. A wrong or
+malformed carrier is instead omitted silently, so product identity changes without native
+retention or a loss.
+
+**Note.** New hostile-sweep finding.
 
 ## 9. Assembly joints
 
