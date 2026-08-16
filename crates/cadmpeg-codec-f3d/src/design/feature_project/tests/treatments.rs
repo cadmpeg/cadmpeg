@@ -569,6 +569,192 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
 }
 
 #[test]
+fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
+    use crate::records::{
+        AsmHistoricalEntityKind, DesignConstructionOperandGroup,
+        DesignConstructionOperandGroupFrame, DesignDraftOperation,
+        DesignEntitySelectionFaceCandidate, DesignEntitySelectionOperand, DesignParameterScope,
+    };
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+
+    let stream = "f3d:test/Design/BulkStream.dat";
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#100"),
+        "Draft",
+        100,
+    );
+    scope.feature_ordinal = 1;
+    scope.previous_history_state_id = Some(7);
+    scope.reference_members = vec![101, 111, 102, 112];
+    scope.draft_operation = Some(DesignDraftOperation {
+        angle: -0.25,
+        angle_record_index: 90,
+        angle_offset: 0,
+        opposite_angle_record_index: 91,
+        opposite_angle_offset: 0,
+    });
+    let group = |record_index, member, role| DesignConstructionOperandGroup {
+        id: format!("{stream}:design-construction-operand-group#{record_index}"),
+        scope_record_index: 100,
+        scope_reference_ordinal: 0,
+        record_index,
+        byte_offset: 0,
+        class_tag: "000".into(),
+        members: vec![member],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![0],
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: Vec::new(),
+            trailing_record_offsets: Vec::new(),
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 0,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
+        role,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 0,
+        paired_class_tag: "000".into(),
+        paired_byte_offset: 0,
+    };
+    let groups = [
+        group(101, 111, 0x0000_0010_0000_0000),
+        group(102, 112, 0x0000_0021_0000_0000),
+    ];
+    let mut selection = DesignEntitySelectionOperand {
+        id: format!("{stream}:design-entity-selection-operand#112"),
+        scope_record_index: 100,
+        group_record_index: 102,
+        group_member_ordinal: 0,
+        record_index: 112,
+        byte_offset: 0,
+        class_tag: "000".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 0,
+        context_id: "context".into(),
+        context_id_offset: 0,
+        identity_record_index: 113,
+        identity_record_offset: 0,
+        primary_identity: 225,
+        primary_identity_offset: 0,
+        secondary_identity: None,
+        secondary_identity_offset: None,
+        curve_secondary_identity: None,
+        curve_secondary_identity_offset: None,
+        historical_edge_candidates: Vec::new(),
+        historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
+            historical_entity_ref: 225,
+            historical_state_ids: vec![7, 6],
+            face_slot: 158,
+        }],
+        resolved_edge_slot: None,
+        next_record_index: 114,
+        next_byte_offset: 0,
+    };
+    let timeline = crate::records::DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 1,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![100],
+        item_record_index_offsets: vec![0],
+    };
+    let project = |selection: &DesignEntitySelectionOperand| {
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            &crate::design::feature_project::ProjectInputs {
+                native: &[],
+                owners: &[],
+                scopes: std::slice::from_ref(&scope),
+                timelines: std::slice::from_ref(&timeline),
+                construction_groups: &groups,
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                entity_selection_operands: std::slice::from_ref(selection),
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                placements: &[],
+                body_bindings: &[],
+                histories: &[],
+            },
+        )
+        .expect("authored Draft timeline")
+    };
+
+    let (features, _) = project(&selection);
+    let FeatureDefinition::Draft {
+        neutral_plane,
+        angle,
+        outward,
+        pull_direction,
+        pull_plane,
+        ..
+    } = &features[0].definition
+    else {
+        panic!("expected a typed Draft definition");
+    };
+    assert_eq!(angle.as_ref().map(|angle| angle.0), Some(-0.25));
+    assert_eq!(*outward, Some(true));
+    assert!(pull_direction.is_none());
+    assert!(pull_plane.is_none());
+    let FaceSelection::Historical {
+        state,
+        faces,
+        native,
+    } = neutral_plane
+    else {
+        panic!("expected a historical neutral face selection");
+    };
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let feature_key = feature
+        .0
+        .split_once('#')
+        .map_or(feature.0.as_str(), |(_, key)| key);
+    let prefix = crate::ids::history_input_prefix(feature_key, 7);
+    assert_eq!(
+        state,
+        &crate::design::edge_resolve::feature_input_topology_id(&feature, 7)
+    );
+    assert_eq!(
+        faces.as_slice(),
+        &[crate::ids::history_input_face_id(&prefix, 158)]
+    );
+    assert_eq!(native, &groups[1].id);
+
+    selection
+        .historical_face_candidates
+        .push(DesignEntitySelectionFaceCandidate {
+            history_id: "other-history".into(),
+            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
+            historical_entity_ref: 225,
+            historical_state_ids: vec![7],
+            face_slot: 159,
+        });
+    let (features, _) = project(&selection);
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Native { kind, .. } if kind == "Draft"
+    ));
+}
+
+#[test]
 fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     use cadmpeg_ir::features::Length;
 

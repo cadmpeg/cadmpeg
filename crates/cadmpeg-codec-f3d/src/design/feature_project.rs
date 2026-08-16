@@ -2635,38 +2635,33 @@ fn project_draft(
             if member_of_scope(neutral_plane)
                 && group_has_entity_selection(scope, neutral_plane, entity_selection_operands) =>
         {
-            let neutral_plane =
-                selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)?;
-            let transform = neutral_plane.work_plane_transform?;
-            let pull_direction =
-                Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
-            Some(FeatureDefinition::Draft {
-                faces: project_draft_face_selection(scope, faces, face_operands, histories),
-                neutral_plane: cadmpeg_ir::features::FaceSelection::Native(
-                    neutral_feature_id(neutral_plane).0,
-                ),
-                parting_tool: None,
-                pull_direction: Some(pull_direction),
-                pull_plane: Some(neutral_feature_id(neutral_plane)),
-                angle: Some(Angle(construction.angle)),
-                outward: Some(construction.angle < 0.0),
-            })
-        }
-        [neutral_plane] if member_of_scope(neutral_plane) => {
-            // A neutral-plane group is a face-recipe group. An entity-selection
-            // member belongs to the parting-line form and must not be silently
-            // projected as a face selection.
-            if group_has_entity_selection(scope, neutral_plane, entity_selection_operands) {
-                return None;
+            if let Some(neutral_plane) =
+                selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)
+            {
+                let transform = neutral_plane.work_plane_transform?;
+                let pull_direction =
+                    Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
+                return Some(FeatureDefinition::Draft {
+                    faces: project_draft_face_selection(scope, faces, face_operands, histories),
+                    neutral_plane: cadmpeg_ir::features::FaceSelection::Native(
+                        neutral_feature_id(neutral_plane).0,
+                    ),
+                    parting_tool: None,
+                    pull_direction: Some(pull_direction),
+                    pull_plane: Some(neutral_feature_id(neutral_plane)),
+                    angle: Some(Angle(construction.angle)),
+                    outward: Some(construction.angle < 0.0),
+                });
             }
+            let neutral_plane = selected_historical_face_selection(
+                scope,
+                neutral_plane,
+                entity_selection_operands,
+                histories,
+            )?;
             Some(FeatureDefinition::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories),
-                neutral_plane: project_draft_face_selection(
-                    scope,
-                    neutral_plane,
-                    face_operands,
-                    histories,
-                ),
+                neutral_plane,
                 parting_tool: None,
                 pull_direction: None,
                 pull_plane: None,
@@ -2674,6 +2669,20 @@ fn project_draft(
                 outward: Some(construction.angle < 0.0),
             })
         }
+        [neutral_plane] if member_of_scope(neutral_plane) => Some(FeatureDefinition::Draft {
+            faces: project_draft_face_selection(scope, faces, face_operands, histories),
+            neutral_plane: project_draft_face_selection(
+                scope,
+                neutral_plane,
+                face_operands,
+                histories,
+            ),
+            parting_tool: None,
+            pull_direction: None,
+            pull_plane: None,
+            angle: Some(Angle(construction.angle)),
+            outward: Some(construction.angle < 0.0),
+        }),
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
             let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
             let second_plane =
@@ -2711,6 +2720,56 @@ fn project_draft(
         }
         _ => None,
     }
+}
+
+fn selected_historical_face_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    histories: &[crate::history_records::AsmHistory],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let previous_state_id =
+        crate::history::effective_scope_previous_history_state_id(scope, histories)?;
+    let stream = native_stream(&scope.id)?;
+    let [member] = group.members.as_slice() else {
+        return None;
+    };
+    let selections = entity_selection_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index == *member
+        })
+        .collect::<Vec<_>>();
+    let [selection] = selections.as_slice() else {
+        return None;
+    };
+    if selection.secondary_identity.is_some() || selection.curve_secondary_identity.is_some() {
+        return None;
+    }
+    let mut face_slots = selection
+        .historical_face_candidates
+        .iter()
+        .filter(|candidate| candidate.historical_state_ids.contains(&previous_state_id))
+        .map(|candidate| candidate.face_slot);
+    let face_slot = face_slots.next()?;
+    if face_slots.any(|candidate| candidate != face_slot) {
+        return None;
+    }
+    let feature = neutral_feature_id(scope);
+    let feature_key = feature
+        .0
+        .split_once('#')
+        .map_or(feature.0.as_str(), |(_, key)| key);
+    let prefix = ids::history_input_prefix(feature_key, previous_state_id);
+    Some(cadmpeg_ir::features::FaceSelection::Historical {
+        state: feature_input_topology_id(&feature, previous_state_id),
+        faces: vec![ids::history_input_face_id(&prefix, face_slot)],
+        native: group.id.clone(),
+    })
 }
 
 fn project_face_selection(
