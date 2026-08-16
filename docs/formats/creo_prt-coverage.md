@@ -62,6 +62,10 @@ fixtures, scores above L1 remain blocked.
   or vertical-distance constraints when their unique dimension parameter
   agrees with the solved one-axis coordinate difference and both point keys
   resolve to emitted loci.
+- Function-two type-3/type-0 radius equations transfer as typed radius
+  constraints when the radius key binds to unique emitted arc or circle
+  entities and the complete type-3 dimension agrees with the equation scalar;
+  solver activity is retained.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots

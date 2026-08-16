@@ -4,7 +4,7 @@
 use crate::decode::sketch_transfer::{
     section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
     section_equation_native_constraints, section_equation_point_on_line_constraints,
-    section_equation_unsigned_distance_constraints,
+    section_equation_radius_dimension_constraints, section_equation_unsigned_distance_constraints,
 };
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
@@ -113,6 +113,140 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
         panic!("equation fallback must be native");
     };
     assert_eq!(*native_state, Some(0));
+}
+
+#[test]
+fn equation_function_two_emits_radius_dimension_constraint() {
+    let variable =
+        |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: dimension_driven,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven,
+            offset: 0,
+        };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x02\xf8\x02\x00\x01\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![
+                variable(3, 42, None, true),
+                variable(0, 0, Some(5.0), false),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: Vec::new(),
+            circle_rows: vec![crate::feature::FeatureCircleSegment {
+                center_id: 11,
+                radius_ref: 42,
+                external_id: 13,
+                offset: 13,
+            }],
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: Some(crate::feature::FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureDimension {
+                dimension_type: 3,
+                value: Some(5.0),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit: crate::feature::DimensionUnit::Millimeters,
+                direction_byte: 0,
+                auxiliary_value: None,
+                auxiliary_body: Vec::new(),
+                external_id: 100,
+                references: None,
+                offset: 0,
+            }],
+            offset: 0,
+        }),
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let constraints = section_equation_radius_dimension_constraints(&definition, &sketch);
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].1, 28);
+    assert_eq!(
+        constraints[0].0.id.0,
+        "creo:featdefs:sketch_constraint#40:equation:1:radius:13"
+    );
+    assert_eq!(constraints[0].0.active, Some(true));
+    assert_eq!(
+        constraints[0].0.definition,
+        SketchConstraintDefinition::Radius {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#40:13".into()),
+            parameter: ParameterId("creo:featdefs:parameter#40:100".into()),
+        }
+    );
+
+    let mut disabled = definition;
+    disabled.relations = Some(crate::feature::FeatureRelationTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: Vec::new(),
+        skamps: vec![crate::feature::FeatureSkamp {
+            id: 900,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: Vec::new(),
+            offset: 900,
+        }],
+        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 901,
+            offset: 900,
+        }),
+        triples: vec![crate::feature::FeatureRelationTriple {
+            relation_id: None,
+            equation_id: Some(1),
+            skamp_id: Some(900),
+            offset: 902,
+        }],
+        triples_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 903,
+            offset: 902,
+        }),
+        offset: 899,
+    });
+    let disabled_constraints = section_equation_radius_dimension_constraints(&disabled, &sketch);
+    assert_eq!(disabled_constraints.len(), 1);
+    assert_eq!(disabled_constraints[0].0.active, Some(false));
 }
 
 #[test]

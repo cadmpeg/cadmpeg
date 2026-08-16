@@ -726,7 +726,10 @@ pub(crate) fn resolved_section_scalar_values(
     {
         merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
     }
-    for constraint in section_equation_radius_dimensions(definition) {
+    for constraint in section_equation_radius_dimensions(definition)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+    {
         merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
     }
     for constraint in

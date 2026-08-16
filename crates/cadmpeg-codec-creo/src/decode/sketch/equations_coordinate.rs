@@ -111,6 +111,9 @@ pub(crate) struct SectionRadiusDimension {
     pub(crate) radius: u32,
     pub(crate) scalar: SectionScalarVariable,
     pub(crate) value: f64,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 pub(crate) fn section_equation_dimension_scalar_value(
@@ -246,7 +249,6 @@ pub(crate) fn section_equation_radius_dimensions(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
         .filter_map(|equation| {
             let [Some(first), Some(second)] = equation.arguments.as_slice() else {
@@ -277,6 +279,9 @@ pub(crate) fn section_equation_radius_dimensions(
                 radius: radius.key,
                 scalar: (scalar.variable_type, scalar.key),
                 value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
         .collect()

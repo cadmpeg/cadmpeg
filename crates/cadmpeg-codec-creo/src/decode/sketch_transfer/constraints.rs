@@ -8,7 +8,7 @@ use super::super::feature_history::{
 use super::super::sketch::{
     approximately_equal, resolved_section_coordinates,
     section_equation_function_forty_three_axis_distance_rows,
-    section_equation_point_on_line_constraint_rows,
+    section_equation_point_on_line_constraint_rows, section_equation_radius_dimensions,
     section_equation_unsigned_coordinate_distance_rows, section_line_fixed_coordinate,
     section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
     unique_section_skamp_segment,
@@ -582,6 +582,106 @@ pub(in super::super) fn section_segment_radius_constraints(
                 )
             },
         )
+        .collect()
+}
+
+pub(in super::super) fn section_equation_radius_dimension_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let Some(segments) = definition
+        .segments
+        .as_ref()
+        .filter(|segments| segments.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(dimensions) = definition.dimensions.as_ref() else {
+        return Vec::new();
+    };
+    let unique_segment_ids = unique_section_segment_external_ids(definition);
+    let mut entities_by_radius = BTreeMap::<u32, Vec<u32>>::new();
+    for segment in segments.rows.iter().filter(|segment| {
+        segment.kind == crate::feature::FeatureSegmentKind::Arc
+            && unique_segment_ids.contains(&segment.external_id)
+    }) {
+        if let Some(radius) = segment.radius_ref {
+            entities_by_radius
+                .entry(radius)
+                .or_default()
+                .push(segment.external_id);
+        }
+    }
+    for segment in segments
+        .circle_rows
+        .iter()
+        .filter(|segment| unique_segment_ids.contains(&segment.external_id))
+    {
+        entities_by_radius
+            .entry(segment.radius_ref)
+            .or_default()
+            .push(segment.external_id);
+    }
+
+    section_equation_radius_dimensions(definition)
+        .into_iter()
+        .flat_map(|equation| {
+            let Some((dimension, parameter)) =
+                usize::try_from(equation.scalar.1).ok().and_then(|ordinal| {
+                    resolved_feature_dimension_parameter(sketch, dimensions, ordinal)
+                })
+            else {
+                return Vec::new();
+            };
+            let Some(dimension_value) = dimension
+                .value
+                .filter(|value| value.is_finite() && *value > 0.0)
+            else {
+                return Vec::new();
+            };
+            if dimension.dimension_type != 3
+                || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
+                || !approximately_equal(dimension_value, equation.value)
+            {
+                return Vec::new();
+            }
+            entities_by_radius
+                .get(&equation.radius)
+                .into_iter()
+                .flatten()
+                .copied()
+                .map(|external_id| {
+                    let entity = sketch_entity_id(sketch, external_id);
+                    (
+                        SketchConstraint {
+                            id: sketch_constraint_id(
+                                sketch,
+                                format_args!(
+                                    "equation:{}:radius:{}",
+                                    equation.equation_id, external_id
+                                ),
+                            ),
+                            sketch: sketch.clone(),
+                            definition: SketchConstraintDefinition::Radius {
+                                entity,
+                                parameter: parameter.clone(),
+                            },
+                            name: None,
+                            driving: None,
+                            active: Some(equation.active),
+                            virtual_space: None,
+                            visible: None,
+                            orientation: None,
+                            label_distance: None,
+                            label_position: None,
+                            metadata: None,
+                            native_ref: Some(sketch_native_ref(sketch)),
+                        },
+                        equation.offset,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
         .collect()
 }
 

@@ -88,7 +88,10 @@ pub(crate) fn resolved_section_radii(
             candidates.entry(variable.1).or_default().push(value);
         }
     }
-    for constraint in section_equation_radius_dimensions(definition) {
+    for constraint in section_equation_radius_dimensions(definition)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+    {
         candidates
             .entry(constraint.radius)
             .or_default()
