@@ -826,10 +826,24 @@ meaning to the STEP `SET` order. Repeated child definitions disable that
 inference even when their mapped targets differ. Without an occurrence-owned
 mapped representation or a context-dependent placement, each repeated use
 keeps the identity transform and reports `AssemblyPlacementsNotTransferred`.
-An inferred occurrence placement uses only a mapped item directly listed by a
-representation of the parent definition. A mapped item listed by an unrelated
-representation does not place the occurrence and produces an assembly-placement
-loss. CADIR decision: for standalone mapped items that resolve to one body, an
+ISO/TS 10303-1345 defines the mapped-item assembly link through an additional
+separate `SHAPE_REPRESENTATION` with only the `MAPPED_ITEM`; a
+`SHAPE_DEFINITION_REPRESENTATION` and a `PRODUCT_DEFINITION_SHAPE` link that
+representation to the specific occurrence. ISO 10303-43 requires the mapping
+origin to be in the mapped representation context and the mapping target to be
+in the context of the representation that directly contains the mapped item. A
+`REPRESENTATION_RELATIONSHIP` alone does not make one representation part of
+the other. CADIR decision: an occurrence-owned placement candidate is valid
+only when its `MAPPED_ITEM` is directly listed by a representation linked to
+the occurrence's `PRODUCT_DEFINITION_SHAPE`, whose definition is the
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE`. A mapped item listed by an unrelated
+representation does not place the occurrence and produces an
+assembly-placement loss.
+For the implicit parent-representation salvage path, CADIR considers only a
+mapped item directly listed by a representation linked to the parent
+definition and only when the complete mapped-child sequence agrees with the
+parent usage sequence. This salvage rule is not a STEP occurrence association.
+CADIR decision: for standalone mapped items that resolve to one body, an
 identical transform is assigned once to that body's `transform`. Distinct
 transforms cannot be represented by one body transform, so CADIR leaves the
 body transform unset and reports `AssemblyPlacementsNotTransferred`.

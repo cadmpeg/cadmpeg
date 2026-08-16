@@ -719,35 +719,14 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
 
 #[test]
 fn unrelated_representation_mapping_does_not_place_an_occurrence() {
-    let result = decode_inline(
-        "#1=APPLICATION_CONTEXT('mechanical design');
-#2=PRODUCT_CONTEXT('',#1,'mechanical');
-#3=PRODUCT('ROOT','Root assembly','',(#2));
-#4=PRODUCT_DEFINITION_FORMATION('','',#3);
-#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
-#6=PRODUCT_DEFINITION('root definition','',#4,#5);
-#7=PRODUCT_DEFINITION_SHAPE('','',#6);
-#8=PRODUCT('CHILD','Child','',(#2));
-#9=PRODUCT_DEFINITION_FORMATION('','',#8);
-#10=PRODUCT_DEFINITION('child definition','',#9,#5);
-#11=PRODUCT_DEFINITION_SHAPE('','',#10);
-#16=NEXT_ASSEMBLY_USAGE_OCCURRENCE('one','First child','',#6,#10,$);
-#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
-#21=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20)) REPRESENTATION_CONTEXT('model','3D'));
-#22=SHAPE_REPRESENTATION('root',(),#21);
-#23=SHAPE_REPRESENTATION('child',(),#21);
-#25=SHAPE_DEFINITION_REPRESENTATION(#7,#22);
-#26=SHAPE_DEFINITION_REPRESENTATION(#11,#23);
-#30=CARTESIAN_POINT('',(0.,0.,0.));
-#31=CARTESIAN_POINT('',(25.,0.,0.));
-#33=DIRECTION('',(0.,0.,1.));
-#34=DIRECTION('',(1.,0.,0.));
-#35=AXIS2_PLACEMENT_3D('',#30,#33,#34);
-#36=AXIS2_PLACEMENT_3D('',#31,#33,#34);
-#38=REPRESENTATION_MAP(#35,#23);
-#39=MAPPED_ITEM('unrelated',#38,#36);
-#50=SHAPE_REPRESENTATION('unrelated',(#39),#21);",
-    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ps05_unrelated_mapped_representation.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode PS-05 fixture");
 
     let occurrence = result
         .ir()

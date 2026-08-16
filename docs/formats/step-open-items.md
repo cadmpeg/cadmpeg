@@ -444,23 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PS-05. Mapped-item scope for occurrence placement
-
-**Question.** Must a `MAPPED_ITEM` that supplies an occurrence placement
-belong to the parent's own representation?
-
-**Known.** An inferred occurrence placement must be a mapped item directly
-listed by a representation of the occurrence's parent definition. The reader
-ignores mapped items listed by unrelated representations. If no scoped mapping
-remains, the occurrence keeps identity placement and reports
-`AssemblyPlacementsNotTransferred`. Occurrence-owned shape representations and
-the complete parent-representation sequence inference are evaluated before
-this fallback.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PS-06. Validation representation item count
 
 **Question.** How many measure items may one geometric-validation
