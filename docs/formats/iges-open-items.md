@@ -47,16 +47,6 @@ from a conformant file.
 
 ## 2. Global metadata
 
-### GL-03. A missing or zero Global minimum resolution
-
-**Question.** What does an absent, zero, or negative Global minimum resolution mean?
-
-**Known.** `global.rs:441-445` requires a finite nonnegative value; `global.rs:532-537` converts it to model units. The Global section of `iges.md` assigns zero the exact-coincidence meaning, while geometry and topology consumers use the value for their own checks.
-
-**Need.** We need the meaning of zero or omission and one behavior across the codec. Loss messages must identify an invalid resolution, not report a geometry disagreement caused by a missing field.
-
-**Note.** Reopened by the 2026-08-16 audit. The closure validates one project interpretation and documents it, but did not cite the IGES specification for positivity, zero semantics, or the cross-consumer policy.
-
 ### GL-04. Byte encoding of Global Hollerith values
 
 **Question.** What character encoding do Global Hollerith values use?
