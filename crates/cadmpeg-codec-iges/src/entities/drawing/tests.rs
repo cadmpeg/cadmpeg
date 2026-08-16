@@ -87,16 +87,61 @@ fn decode_rejects_file_duplicate_drawing_sheet_ids() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
-            .count(),
-        2,
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 2, "{:#?}", result.report().losses);
+    let tags = losses
+        .iter()
+        .map(|loss| {
+            loss.provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(tags, ["directory_entry:D3", "directory_entry:D9"]);
+}
+
+#[test]
+fn decode_accepts_distinct_drawing_sheet_id_pairs() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(distinct_drawing_sheet_ids_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
+    );
+}
+
+#[test]
+fn decode_rejects_drawing_sheet_id_referenced_by_two_drawings() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(shared_drawing_sheet_id_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1, "{:#?}", result.report().losses);
+    assert_eq!(
+        losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D3")
     );
 }
 

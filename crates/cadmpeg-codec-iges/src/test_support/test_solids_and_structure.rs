@@ -1367,7 +1367,20 @@ pub(crate) fn drawing_metadata_property_forms_file() -> Vec<u8> {
 }
 
 pub(crate) fn duplicate_drawing_sheet_ids_file() -> Vec<u8> {
-    owned_test_file(&[
+    drawing_sheet_ids_file("C", false)
+}
+
+pub(crate) fn distinct_drawing_sheet_ids_file() -> Vec<u8> {
+    drawing_sheet_ids_file("D", false)
+}
+
+pub(crate) fn shared_drawing_sheet_id_file() -> Vec<u8> {
+    drawing_sheet_ids_file("C", true)
+}
+
+fn drawing_sheet_ids_file(second_sid: &str, share_first_property: bool) -> Vec<u8> {
+    let second_drawing_property = if share_first_property { 3 } else { 9 };
+    let mut entities = vec![
         OwnedTestEntity {
             entity_type: 410,
             form: 0,
@@ -1396,21 +1409,24 @@ pub(crate) fn duplicate_drawing_sheet_ids_file() -> Vec<u8> {
             status: "00020000",
             parameters: "410,2,1,0,0,0,0,0,0;".into(),
         },
-        OwnedTestEntity {
+    ];
+    if !share_first_property {
+        entities.push(OwnedTestEntity {
             entity_type: 406,
             form: 33,
             label: "SHEET2".into(),
             status: "00000000",
-            parameters: "406,2,2,1HC;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 404,
-            form: 1,
-            label: "DRAWING2".into(),
-            status: "00000000",
-            parameters: "404,1,7,0,0,0,0,0,1,9;".into(),
-        },
-    ])
+            parameters: format!("406,2,2,1H{second_sid};"),
+        });
+    }
+    entities.push(OwnedTestEntity {
+        entity_type: 404,
+        form: 1,
+        label: "DRAWING2".into(),
+        status: "00000000",
+        parameters: format!("404,1,7,0,0,0,0,0,1,{second_drawing_property};"),
+    });
+    owned_test_file(&entities)
 }
 
 pub(crate) fn text_score_property_forms_file() -> Vec<u8> {

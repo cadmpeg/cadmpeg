@@ -55,16 +55,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-07. Type 406 Form 33 requires a file-global unique identity
-
-**Question.** Must a Type 406 Form 33 sheet identifier be unique across the file?
-
-**Known.** `entities/structure.rs:1021-1056` requires the `(number, name)` pair to occur once in the file, requires one Type 404 owner, and requires one sheet property on that owner. `entities/drawing/tests.rs:83-89` rejects duplicate drawing sheet IDs. The Appearance section of `iges.md` states the same identity scope.
-
-**Need.** We need the identity scope and duplicate behavior from the IGES specification or exporter-authored witness files.
-
-**Note.** Reopened by the 2026-08-16 audit. The file-global rule and duplicate test are project decisions; the closure did not establish that scope from the IGES specification or from a witness file.
-
 ### PS-08. Type 406 Form 6 requires an ordered layer pair
 
 **Question.** Must the Type 406 Form 6 layer numbers be in ascending order?
