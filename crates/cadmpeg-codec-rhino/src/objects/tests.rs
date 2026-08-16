@@ -552,6 +552,113 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
 }
 
 #[test]
+fn obsolete_custom_mesh_userdata_transfers_to_object_attributes() {
+    for (version, archive) in [("40", ArchiveVersion::V4), ("50", ArchiveVersion::V5)] {
+        let mut userdata_body = 37_i32.to_le_bytes().to_vec();
+        userdata_body.push(1);
+        userdata_body.extend(mesh_parameters(archive));
+        userdata_body.extend([0xde, 0xad]);
+        let userdata = if archive == ArchiveVersion::V4 {
+            class_userdata_v1_with_direct_payload(
+                archive,
+                crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
+                &userdata_body,
+            )
+        } else {
+            class_userdata_v2_with_direct_payload(
+                archive,
+                crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
+                [0; 16],
+                50,
+                2_348_836_140_u32,
+                &userdata_body,
+            )
+        };
+        let attributes = if archive == ArchiveVersion::V4 {
+            fixed_attributes(8, 0, Some(true))
+        } else {
+            tagged_attributes(&[], 0)
+        };
+        let object =
+            object_record_with_attribute_userdata(archive, 1, POINT_CLASS, &attributes, &userdata);
+        let bytes = minimal_document(
+            version,
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[object]),
+            ],
+        );
+        let scan = crate::container::scan_owned(bytes).expect("custom mesh object record");
+        let object = &scan.objects[0];
+        assert_eq!(object.attributes_userdata.len(), 1);
+        assert_eq!(
+            object.attributes_userdata[0].class_uuid,
+            Some(crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA)
+        );
+        let mesh = object
+            .attributes
+            .as_ref()
+            .and_then(|attributes| attributes.custom_render_mesh.as_ref())
+            .expect("converted custom mesh settings");
+        assert_eq!(mesh.version, (1, 5));
+        assert!(!mesh.compute_curvature);
+        assert!(mesh.simple_planes);
+        assert_eq!(mesh.obsolete_weld, -17);
+        assert_eq!(mesh.tolerance, 0.125);
+        assert_eq!(mesh.custom_settings, Some(true));
+        assert_eq!(mesh.custom_settings_enabled, Some(true));
+        assert_eq!(
+            mesh.subd.as_ref().map(|value| value.display_density),
+            Some(5)
+        );
+        assert_eq!(mesh.subd.as_ref().map(|value| value.mesh_location), Some(2));
+        assert!(object.checksum_warnings.iter().all(|warning| {
+            !warning.contains("obsolete custom mesh userdata") || !warning.contains("dropped")
+        }));
+    }
+}
+
+#[test]
+fn malformed_obsolete_custom_mesh_userdata_keeps_object_attributes() {
+    let archive = ArchiveVersion::V5;
+    let userdata_body = [7_i32.to_le_bytes().as_slice(), [2].as_slice()].concat();
+    let userdata = class_userdata_v2_with_direct_payload(
+        archive,
+        crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
+        [0; 16],
+        50,
+        2_348_836_140_u32,
+        &userdata_body,
+    );
+    let attributes = tagged_attributes(&[], 0);
+    let object =
+        object_record_with_attribute_userdata(archive, 1, POINT_CLASS, &attributes, &userdata);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("malformed custom mesh record");
+    let object = &scan.objects[0];
+    assert!(object.attributes.is_some());
+    assert!(object
+        .attributes
+        .as_ref()
+        .expect("object attributes")
+        .custom_render_mesh
+        .is_none());
+    assert!(object
+        .checksum_warnings
+        .iter()
+        .any(|warning| warning.contains("obsolete custom mesh userdata")
+            && warning.contains("dropped")));
+}
+
+#[test]
 fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
     let archive = ArchiveVersion::V5;
     let mut first = utf16_bytes("CaseKey");

@@ -15,7 +15,7 @@ use crate::objects::{
     parse_class_wrapper, parse_class_wrapper_with_userdata, parse_user_string_list,
     AttributeUserdataDescriptor, UserdataDescriptor, USER_STRING_LIST,
 };
-use crate::settings::utf16;
+use crate::settings::{self, utf16};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -467,6 +467,8 @@ struct ObjectPresentationRecord {
     user_strings: Vec<UserStringRecord>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     attribute_user_strings: Vec<UserStringRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom_render_mesh: Option<settings::MeshParameters>,
     links: Vec<String>,
 }
 
@@ -2963,6 +2965,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 rendering_materials,
                 user_strings,
                 attribute_user_strings,
+                custom_render_mesh: attributes.custom_render_mesh.clone(),
                 links: vec![format!("rhino:object:record#{source_order:06}")],
             });
         }
@@ -3829,6 +3832,7 @@ mod tests {
             known: true,
             class_uuid: Some(USER_STRING_LIST),
             item_uuid: Some(USER_STRING_LIST),
+            writer_version: None,
             payload_range: Some(attributes_start..data.len()),
         };
         let mut losses = Vec::new();

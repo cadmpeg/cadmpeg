@@ -467,6 +467,45 @@ pub(crate) fn object_record_with_payload(
     )
 }
 
+pub(crate) fn object_record_with_attribute_userdata(
+    archive: ArchiveVersion,
+    object_type: i64,
+    class_uuid: [u8; 16],
+    attributes: &[u8],
+    userdata: &[u8],
+) -> Vec<u8> {
+    let object_type = short_chunk(archive, 0x8200_0071, object_type);
+    let mut uuid_body = class_uuid.to_vec();
+    uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
+    let uuid = long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crc_chunk(archive, 0x0002_fffc, &[]);
+    let class_end = short_chunk(archive, 0x8002_7fff, 0);
+    let class = long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[uuid, class_data, class_end].concat(),
+    );
+    let attributes = crc_chunk(archive, 0x0200_8072, attributes);
+    let attribute_userdata = long_chunk(
+        archive,
+        0x0200_0073,
+        &[userdata, &short_chunk(archive, 0x8002_7fff, 0)].concat(),
+    );
+    let object_end = short_chunk(archive, 0x8200_007f, 0);
+    nested_crc_chunk(
+        archive,
+        0x2000_8070 | TCODE_CRC,
+        &[
+            object_type,
+            class,
+            attributes,
+            attribute_userdata,
+            object_end,
+        ]
+        .concat(),
+    )
+}
+
 pub(crate) fn class_wrapper(
     archive: ArchiveVersion,
     class_uuid: [u8; 16],
@@ -536,6 +575,113 @@ pub(crate) fn class_userdata_with_payload(
             payload_range_start..payload_range_end,
         ],
     )
+}
+
+pub(crate) fn class_userdata_v1_with_direct_payload(
+    archive: ArchiveVersion,
+    class_uuid: [u8; 16],
+    userdata_body: &[u8],
+) -> Vec<u8> {
+    let mut transform = Vec::with_capacity(16 * 8);
+    for index in 0..16 {
+        let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
+        transform.extend(value.to_le_bytes());
+    }
+    let mut body = vec![0x10];
+    body.extend(class_uuid);
+    body.extend(class_uuid);
+    body.extend(0_i32.to_le_bytes());
+    body.extend(transform);
+    let payload_start = body.len();
+    body.extend(crc_chunk(archive, 0x4000_8000, userdata_body));
+    let payload_end = body.len();
+    let payload_range = payload_start..payload_end;
+    crc_chunk_excluding(
+        archive,
+        0x0002_7ffd,
+        &body,
+        std::slice::from_ref(&payload_range),
+    )
+}
+
+pub(crate) fn class_userdata_v2_with_direct_payload(
+    archive: ArchiveVersion,
+    class_uuid: [u8; 16],
+    application_uuid: [u8; 16],
+    archive_version: i32,
+    writer_version: u32,
+    userdata_body: &[u8],
+) -> Vec<u8> {
+    let mut transform = Vec::with_capacity(16 * 8);
+    for index in 0..16 {
+        let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
+        transform.extend(value.to_le_bytes());
+    }
+    let header_body = [
+        class_uuid.to_vec(),
+        class_uuid.to_vec(),
+        0_i32.to_le_bytes().to_vec(),
+        transform,
+        application_uuid.to_vec(),
+        vec![0],
+        archive_version.to_le_bytes().to_vec(),
+        writer_version.to_le_bytes().to_vec(),
+    ]
+    .concat();
+    let header = crc_chunk(archive, 0x0002_fff9, &header_body);
+    let mut body = vec![0x22];
+    let header_range_start = body.len();
+    body.extend(header);
+    let header_range_end = body.len();
+    let payload_range_start = body.len();
+    body.extend(crc_chunk(archive, 0x4000_8000, userdata_body));
+    let payload_range_end = body.len();
+    crc_chunk_excluding(
+        archive,
+        0x0002_7ffd,
+        &body,
+        &[
+            header_range_start..header_range_end,
+            payload_range_start..payload_range_end,
+        ],
+    )
+}
+
+pub(crate) fn mesh_parameters(archive: ArchiveVersion) -> Vec<u8> {
+    let mut body = vec![0x15];
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend((-17_i32).to_le_bytes());
+    body.extend(0.125_f64.to_le_bytes());
+    body.extend(0.25_f64.to_le_bytes());
+    body.extend(8.5_f64.to_le_bytes());
+    body.extend(3.5_f64.to_le_bytes());
+    body.extend(2_i32.to_le_bytes());
+    body.extend(12_i32.to_le_bytes());
+    body.extend(0.25_f64.to_le_bytes());
+    body.extend(1.75_f64.to_le_bytes());
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(0.75_f64.to_le_bytes());
+    body.extend(2_i32.to_le_bytes());
+    body.extend(2_i32.to_le_bytes());
+    body.push(0);
+    body.extend(0.03125_f64.to_le_bytes());
+    body.push(1);
+    body.push(0);
+    body.extend(anonymous_chunk(
+        archive,
+        3,
+        &[
+            5_i32.to_le_bytes().as_slice(),
+            2_i32.to_le_bytes().as_slice(),
+            [1].as_slice(),
+            [0].as_slice(),
+        ]
+        .concat(),
+    ));
+    body
 }
 
 pub(crate) fn object_record_without_end(

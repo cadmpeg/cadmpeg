@@ -222,6 +222,12 @@ defines its anonymous path-and-relative-flag payload, trim rule, linked-type
 gate, and empty-slot precedence. The decoder stores both legacy full and
 relative paths and applies the carrier to the existing external-reference
 record without creating another identity.
+The built-in `ON_OBSOLETE_CCustomMeshUserData` class is also settled. Its
+class and item UUID is `69F27695-3011-4FBA-82C1-E529F25B5FD9`; its direct
+outer-anonymous payload contains the legacy integer, in-use Boolean, and
+`ON_MeshParameters` body. The object-attributes reader applies the source
+custom-render-mesh setter side effects and the decoder retains the converted
+settings under the owning native object presentation.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -236,7 +242,9 @@ settled, including the Brep, extrusion, history, top-level SubD proxy, and
 linked-definition carriers where applicable. The obsolete
 `ON_OBSOLETE_IDefLayerSettingsUserData` and `ON_OBSOLETE_LayerSettingsUserData`
 classes are also settled as no-op V5 compatibility records under section
-7.2.8; other future class-specific payload semantics remain open.
+7.2.8. `ON_OBSOLETE_CCustomMeshUserData` is settled as the typed
+object-attributes compatibility carrier under section 7.2.9; other future
+class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
+use serde::Serialize;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record, Table};
@@ -335,7 +336,7 @@ pub(crate) struct IoSettings {
 }
 
 /// `SubD` display fields nested in mesh parameters version 1.5.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct SubDDisplayParameters {
     /// Anonymous chunk minor version.
     pub(crate) version: i32,
@@ -350,7 +351,7 @@ pub(crate) struct SubDDisplayParameters {
 }
 
 /// Serialized mesh parameters used by settings records.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 // These independent flags are separate fields in the source wire grammar.
 #[allow(clippy::struct_excessive_bools)]
 pub(crate) struct MeshParameters {
@@ -1443,7 +1444,7 @@ fn parse_subd_display_parameters<'a>(
     })
 }
 
-fn parse_mesh_parameters<'a>(
+pub(crate) fn parse_mesh_parameters<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,

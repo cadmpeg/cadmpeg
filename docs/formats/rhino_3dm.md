@@ -1061,6 +1061,47 @@ class-userdata item is consumed and discarded; the owning layer or instance
 definition remains admitted and its typed state is unchanged. The decoder does
 not interpret the obsolete child bytes.
 
+#### 7.2.9 `ON_OBSOLETE_CCustomMeshUserData`
+
+`ON_OBSOLETE_CCustomMeshUserData` uses class and item UUID
+`69F27695-3011-4FBA-82C1-E529F25B5FD9`. Its constructor leaves the application
+UUID nil. It inherits `ON_UserData::Archive() == false` and has no `Write`
+override, so the current producer does not emit this class. It also inherits
+the default `DeleteAfterRead() == false`; the object-attribute reader performs
+the compatibility conversion and deletes the temporary userdata explicitly.
+
+The class-userdata header and outer anonymous child use the framing in section
+7.2. The outer anonymous child is the class payload boundary. Unlike userdata
+classes whose readers open another child, this class reads its fields directly
+from that outer anonymous body:
+
+```text
+i32 legacy value                         ignored
+bool custom mesh settings are in use
+direct custom render-mesh body
+```
+
+The direct custom render-mesh body is the `ON_MeshParameters` grammar defined
+for the settings-attributes record. Its packed major version is `1`; the
+reader consumes the fields gated by its minor version, including the version-
+1.5 `ON_SubDDisplayParameters` child, and leaves later bytes to the outer
+anonymous boundary. The Boolean uses the userdata header's writer-version
+strictness rule from section 4.2.
+
+`ReadObjectUserDataAnonymousChunk` consumes the outer anonymous header before
+calling this class's `Read`. After a successful read of the attributes
+userdata stream, the object reader calls `SetCustomSettingsEnabled` with the
+legacy in-use Boolean and then `SetCustomRenderMeshParameters`. That setter
+copies the mesh parameters, forces custom settings true, and forces compute
+curvature false. The first matching class/item UUID owns the conversion.
+
+CADIR stores the converted wire fields in the owning native object
+presentation's optional `custom_render_mesh` record. It does not create a
+second geometry or userdata identity. A malformed recognized carrier is
+discarded at its bounded payload, the object attributes remain admitted, and
+the decoder records the bounded diagnostic; a later duplicate does not replace
+the first matching item.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -1892,6 +1933,10 @@ ordered native arrays. It selects the first serialized `ON_UserStringList`
 item with matching class and item UUID in each owner. It applies the
 `$temp_object$` removal only to the attributes array; it does not merge the
 two arrays or remove that key from geometry userdata.
+
+The `ON_OBSOLETE_CCustomMeshUserData` item is the other typed attributes
+carrier. Its direct outer-anonymous body is converted as specified in section
+7.2.9; it is not parsed as a nested anonymous payload.
 
 ## 10. Compressed buffers
 

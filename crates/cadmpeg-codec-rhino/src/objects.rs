@@ -28,6 +28,9 @@ const ANONYMOUS: u32 = 0x4000_8000;
 pub(crate) const USER_STRING_LIST: Uuid = Uuid::from_canonical([
     0xce, 0x28, 0xde, 0x29, 0xf4, 0xc5, 0x4f, 0xaa, 0xa5, 0x0a, 0xc3, 0xa6, 0x84, 0x9b, 0x63, 0x29,
 ]);
+pub(crate) const OBSOLETE_CUSTOM_MESH_USERDATA: Uuid = Uuid::from_canonical([
+    0x69, 0xf2, 0x76, 0x95, 0x30, 0x11, 0x4f, 0xba, 0x82, 0xc1, 0xe5, 0x29, 0xf2, 0x5b, 0x5f, 0xd9,
+]);
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
 const HIDDEN_OBJECT_MODE: u8 = 1;
@@ -73,6 +76,8 @@ pub(crate) struct AttributeUserdataDescriptor {
     pub(crate) class_uuid: Option<Uuid>,
     /// Userdata item UUID when the framing supplied one.
     pub(crate) item_uuid: Option<Uuid>,
+    /// Userdata writer version from a major-2 header.
+    pub(crate) writer_version: Option<i64>,
     /// Bounded anonymous payload range.
     pub(crate) payload_range: Option<Range<usize>>,
 }
@@ -181,6 +186,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) embedded_linetype: Option<settings::EmbeddedDescriptor>,
     /// Direct embedded section style.
     pub(crate) embedded_section_style: Option<settings::EmbeddedDescriptor>,
+    /// Converted obsolete per-object custom render-mesh settings.
+    pub(crate) custom_render_mesh: Option<settings::MeshParameters>,
 }
 
 /// Resolved source identity and display state for one object.
@@ -820,6 +827,7 @@ pub(crate) fn parse_attributes(
             selective_clipping_list: false,
             embedded_linetype: None,
             embedded_section_style: None,
+            custom_render_mesh: None,
         });
     }
     if version.0 != 2 || archive.value() < 50 {
@@ -883,6 +891,7 @@ pub(crate) fn parse_attributes(
         selective_clipping_list: false,
         embedded_linetype: None,
         embedded_section_style: None,
+        custom_render_mesh: None,
     };
     while reader.remaining() > 0 {
         let item = reader.u8()?;
@@ -1119,6 +1128,7 @@ pub(crate) fn parse_attribute_userdata(
                 known: false,
                 class_uuid: None,
                 item_uuid: None,
+                writer_version: None,
                 payload_range: None,
             });
         } else {
@@ -1128,6 +1138,13 @@ pub(crate) fn parse_attribute_userdata(
                     known: !value.unknown_version,
                     class_uuid: (!value.unknown_version).then_some(value.class_uuid),
                     item_uuid: (!value.unknown_version).then_some(value.item_uuid),
+                    writer_version: (!value.unknown_version)
+                        .then_some(
+                            value
+                                .writer_version
+                                .map(|version| i64::from(version as u32)),
+                        )
+                        .flatten(),
                     payload_range: (!value.unknown_version).then_some(value.payload_range),
                 }),
                 Err(error) => warnings.push(format!(
@@ -1139,6 +1156,49 @@ pub(crate) fn parse_attribute_userdata(
         offset = item.next_offset;
     }
     result
+}
+
+fn parse_obsolete_custom_mesh_userdata(
+    bytes: &[u8],
+    descriptors: &[AttributeUserdataDescriptor],
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Option<settings::MeshParameters> {
+    let descriptor = descriptors.iter().find(|descriptor| {
+        descriptor.class_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
+            && descriptor.item_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
+    })?;
+    let Some(payload_range) = descriptor.payload_range.clone() else {
+        warnings.push(format!(
+            "obsolete custom mesh userdata at {} has no bounded payload",
+            descriptor.range.start
+        ));
+        return None;
+    };
+    let parsed = (|| {
+        let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
+        let _legacy_value = reader.i32()?;
+        let in_use = reader.bool_with_writer_version(descriptor.writer_version)?;
+        let mut mesh = settings::parse_mesh_parameters(bytes, &mut reader, archive, true)?;
+        reader.skip_remaining()?;
+
+        // Read3dmObject converts this carrier into the modern per-object
+        // userdata, whose setter forces these two logical fields.
+        mesh.custom_settings_enabled = Some(in_use);
+        mesh.custom_settings = Some(true);
+        mesh.compute_curvature = false;
+        Ok::<_, FramingError>(mesh)
+    })();
+    match parsed {
+        Ok(mesh) => Some(mesh),
+        Err(error) => {
+            warnings.push(format!(
+                "obsolete custom mesh userdata at {} dropped: {error}",
+                descriptor.range.start
+            ));
+            None
+        }
+    }
 }
 
 fn resolve_identity(
@@ -1365,32 +1425,41 @@ pub(crate) fn parse_object_record(
         ));
     }
     let mut attributes_degraded = false;
-    let attributes = attributes_body_range.as_ref().and_then(|body_range| {
-        match parse_attributes(
-            bytes,
-            body_range.clone(),
-            attributes_range
-                .clone()
-                .unwrap_or_else(|| body_range.clone()),
-            archive,
-            writer_version,
-            &mut warnings,
-        ) {
-            Ok(value) => Some(value),
-            Err(error) => {
-                attributes_degraded = true;
-                warnings.push(format!(
-                    "object attributes at {} degraded: {error}",
-                    body_range.start
-                ));
-                None
+    let mut attributes =
+        attributes_body_range.as_ref().and_then(|body_range| {
+            match parse_attributes(
+                bytes,
+                body_range.clone(),
+                attributes_range
+                    .clone()
+                    .unwrap_or_else(|| body_range.clone()),
+                archive,
+                writer_version,
+                &mut warnings,
+            ) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    attributes_degraded = true;
+                    warnings.push(format!(
+                        "object attributes at {} degraded: {error}",
+                        body_range.start
+                    ));
+                    None
+                }
             }
-        }
-    });
+        });
     let attributes_userdata = attributes_userdata_body_range
         .as_ref()
         .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
+    if let Some(attributes) = attributes.as_mut() {
+        attributes.custom_render_mesh = parse_obsolete_custom_mesh_userdata(
+            bytes,
+            &attributes_userdata,
+            archive,
+            &mut warnings,
+        );
+    }
     Ok(ObjectDescriptor {
         range: record.range.clone(),
         object_type,
