@@ -2,7 +2,9 @@
 //! Text annotation entities.
 
 use super::geometry::{entity_loss, resolve_transform, Projection};
-use super::presentation::{general_note_font_valid, new_general_note_font_valid};
+use super::presentation::{
+    general_note_font_valid, new_general_note_charset_valid, new_general_note_font_valid,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord};
@@ -109,6 +111,8 @@ fn new_general_note_valid(
             // PS-01: Type 213 FONT has no explicit default; the generic
             // integer default is zero.
             let font_style = record.integer_or(start + 5, 0);
+            // PS-04: CHRSET has an entity-specific default of standard ASCII.
+            let character_set = record.integer_or(start + 11, 1);
             let metrics_valid = character_width
                 .zip(character_height)
                 .zip(spacing)
@@ -142,6 +146,7 @@ fn new_general_note_valid(
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
                 && font_style.is_some_and(new_general_note_font_valid)
+                && character_set.is_some_and(|value| new_general_note_charset_valid(value, entries))
                 && record
                     .number_or(start + 12, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)

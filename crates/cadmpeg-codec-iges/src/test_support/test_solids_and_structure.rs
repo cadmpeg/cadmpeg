@@ -1780,6 +1780,67 @@ pub(crate) fn omitted_character_count_new_general_note_file() -> Vec<u8> {
     new_general_note_file_with_fields("0", "1", "1", "", "")
 }
 
+pub(crate) fn new_general_note_character_set_file(character_set: &str) -> Vec<u8> {
+    new_general_note_file_with_font_and_character_set("0", "1", "1", "0", "0", "1", character_set)
+}
+
+pub(crate) fn new_general_note_type_310_character_set_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "FONT".into(),
+            status: "00000200",
+            parameters: "310,101,4HBASE,,10,1,65,8,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "CUSTOM".into(),
+            status: "00000100",
+            parameters: new_general_note_parameters("0", "1", "1", "0", "0", "1", "-1") + ";",
+        },
+    ])
+}
+
+pub(crate) fn new_general_note_even_character_set_pointer_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "FONT".into(),
+            status: "00000200",
+            parameters: "310,101,4HBASE,,10,1,65,8,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "EVEN".into(),
+            status: "00000100",
+            parameters: new_general_note_parameters("0", "1", "1", "0", "0", "1", "-2") + ";",
+        },
+    ])
+}
+
+pub(crate) fn new_general_note_wrong_type_character_set_pointer_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 314,
+            form: 0,
+            label: "COLOR".into(),
+            status: "00000200",
+            parameters: "314,20,40,60,6HCUSTOM;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "WRONG".into(),
+            status: "00000100",
+            parameters: new_general_note_parameters("0", "1", "1", "0", "0", "1", "-1") + ";",
+        },
+    ])
+}
+
 pub(crate) fn malformed_general_note_parameter_types_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -1860,6 +1921,52 @@ fn new_general_note_file_with_font(
     character_count: &str,
     font_style: &str,
 ) -> Vec<u8> {
+    new_general_note_file_with_font_and_character_set(
+        fixed_or_variable,
+        character_width,
+        character_height,
+        character_spacing,
+        character_count,
+        font_style,
+        "",
+    )
+}
+
+fn new_general_note_file_with_font_and_character_set(
+    fixed_or_variable: &str,
+    character_width: &str,
+    character_height: &str,
+    character_spacing: &str,
+    character_count: &str,
+    font_style: &str,
+    character_set: &str,
+) -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 213,
+        form: 0,
+        label: "DEFAULTS".into(),
+        status: "00000100",
+        parameters: new_general_note_parameters(
+            fixed_or_variable,
+            character_width,
+            character_height,
+            character_spacing,
+            character_count,
+            font_style,
+            character_set,
+        ) + ";",
+    }])
+}
+
+fn new_general_note_parameters(
+    fixed_or_variable: &str,
+    character_width: &str,
+    character_height: &str,
+    character_spacing: &str,
+    character_count: &str,
+    font_style: &str,
+    character_set: &str,
+) -> String {
     let mut fields = vec![String::from("213")];
     fields.extend((0..11).map(|_| String::new()));
     fields.push(String::from("1"));
@@ -1876,7 +1983,7 @@ fn new_general_note_file_with_font(
             character_count,
             "", // WT
             "", // HT
-            "", // CHRSET
+            character_set,
             "", // SL
             "", // A
             "", // M
@@ -1889,13 +1996,7 @@ fn new_general_note_file_with_font(
         .into_iter()
         .map(str::to_owned),
     );
-    owned_test_file(&[OwnedTestEntity {
-        entity_type: 213,
-        form: 0,
-        label: "DEFAULTS".into(),
-        status: "00000100",
-        parameters: fields.join(",") + ";",
-    }])
+    fields.join(",")
 }
 
 pub(crate) fn out_of_table_annotation_font_values_file() -> Vec<u8> {

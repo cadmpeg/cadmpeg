@@ -55,16 +55,4 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-04. Type 213 `CHRSET` is not admitted
-
-**Question.** Which Type 213 `CHRSET` values and Type 310 pointer targets are valid, and does semantic projection enforce them?
-
-**Known.** [IGES 5.3 §4.61](https://paulbourke.net/dataformats/iges/IGES.pdf) defines the Type 213 character-set table: `1`, `1001`, `1002`, `1003`, `2001`, and `3001`, with a Type 310 pointer form. `entities/annotation.rs:128-145` validates the Type 213 `FONT` field at `start + 5` but never reads `CHRSET` at `start + 11`. `native.rs:4266-4310` retains that field and resolves negative Type 310 pointers, but no semantic admission check uses it. The Type 213 paragraph in `iges.md` states the table and says invalid presentation values suppress semantic projection.
-
-**Need.** Validate explicit `CHRSET` values against the IGES table and validate Type 310 pointer targets. Apply the documented default only when the field is omitted. An invalid supplied value must retain the native record and suppress semantic projection with an attributed loss.
-
-**Conflict.** The Type 213 paragraph in `iges.md` states that the complete presentation table is enforced and that invalid values suppress semantic projection, but `new_general_note_valid` does not inspect `CHRSET`.
-
-**Note.** Reopened by the QA audit on 2026-08-17. A Type 213 record with every other field valid and `CHRSET = 0` or `4`, or a negative pointer to a wrong target, passes `new_general_note_valid`, projects a semantic annotation, and emits no presentation loss. The existing tests cover Type 213 `FONT`, metrics, counts, and defaults, but do not exercise `CHRSET`.
-
 ## 7. Write path

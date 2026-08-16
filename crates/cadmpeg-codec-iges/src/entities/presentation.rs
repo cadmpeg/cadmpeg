@@ -50,14 +50,11 @@ fn standard_color(number: i64) -> Option<Color> {
     Some(Color { r, g, b, a: 1.0 })
 }
 
-pub(super) fn general_note_font_valid(
+fn text_font_definition_pointer_valid(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    matches!(
-        value,
-        0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001 | 1002 | 1003 | 2001 | 3001
-    ) || value
+    value
         .checked_neg()
         .and_then(|value| u32::try_from(value).ok())
         .is_some_and(|sequence| {
@@ -68,8 +65,26 @@ pub(super) fn general_note_font_valid(
         })
 }
 
+pub(super) fn general_note_font_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    matches!(
+        value,
+        0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001 | 1002 | 1003 | 2001 | 3001
+    ) || text_font_definition_pointer_valid(value, entries)
+}
+
 pub(super) fn new_general_note_font_valid(value: i64) -> bool {
     matches!(value, 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19)
+}
+
+pub(super) fn new_general_note_charset_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001)
+        || text_font_definition_pointer_valid(value, entries)
 }
 
 fn mirror_flag_valid(value: i64) -> bool {
