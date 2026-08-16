@@ -1198,6 +1198,47 @@ fn surface_style_usage_prefers_positive_side_over_set_order() {
 }
 
 #[test]
+fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
+    for input in [
+        include_bytes!("tests/data/ap06_surface_sides_positive_negative_first.p21").as_slice(),
+        include_bytes!("tests/data/ap06_surface_sides_positive_negative_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode surface side permutation");
+        assert_eq!(result.ir().model.appearances.len(), 1);
+        assert_eq!(
+            result.ir().model.appearances[0].base_color,
+            Some(cadmpeg_ir::topology::Color {
+                r: 0.0,
+                g: 1.0,
+                b: 0.0,
+                a: 1.0,
+            })
+        );
+        let face = result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == "step:data:face#29")
+            .expect("styled face");
+        assert_eq!(
+            face.color,
+            Some(cadmpeg_ir::topology::Color {
+                r: 0.0,
+                g: 1.0,
+                b: 0.0,
+                a: 1.0,
+            })
+        );
+        assert!(result.report().losses.is_empty());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn curve_targets_use_curve_style_domain() {
     let result = decode_inline(
         "#1=COLOUR_RGB('surface',1.,0.,0.);

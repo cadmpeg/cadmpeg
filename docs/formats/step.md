@@ -955,12 +955,9 @@ transform is selected, source coordinates remain, and
 `tessellation.placement-ambiguous` is recorded.
 
 Styles resolve from a styled item through presentation assignments to color.
-For `SURFACE_STYLE_USAGE`, `.BOTH.` takes precedence over `.POSITIVE.`, and
-`.POSITIVE.` takes precedence over `.NEGATIVE.` when one neutral color must be
-selected from a style set. An overriding style takes precedence for its
-occurrence. A style on a `GEOMETRIC_SET` or `GEOMETRIC_CURVE_SET` applies to
-each member, and its style domain derives from those members; a point-only set
-uses point-style semantics. Empty and NULL style assignments leave appearance
+A style on a `GEOMETRIC_SET` or `GEOMETRIC_CURVE_SET` applies to each member,
+and its style domain derives from those members; a point-only set uses
+point-style semantics. Empty and NULL style assignments leave appearance
 unchanged. Independent effective styles on one face or body retain every
 appearance binding. `SURFACE_STYLE_TRANSPARENT` in a
 `SURFACE_STYLE_RENDERING_WITH_PROPERTIES` sets the neutral alpha to
@@ -985,6 +982,22 @@ same-side surface renderings or two transparency values to rank. Distinct
 surface sides are handled by the CADIR side projection above. The format does
 not define a color or transparency precedence for other applicable style
 characteristics.
+
+ISO 10303-46 §6.3.35 defines `surface_side` as `.POSITIVE.`, `.NEGATIVE.`,
+and `.BOTH.`. `.POSITIVE.` is the side in the surface-normal direction,
+`.NEGATIVE.` is the opposite side, and `.BOTH.` is both sides. Section 6.4.66
+defines `SURFACE_STYLE_USAGE` as applying its `surface_side_style` to the
+positive side, negative side, or both sides. Section 6.4.46 defines the
+assignment's `styles` as a SET; WR2 permits at most two
+`SURFACE_STYLE_USAGE` instances and WR3 requires two instances to specify
+opposite sides. These rules define side applicability. They do not provide an
+aggregate-order or neutral-IR colour precedence.
+
+CADIR decision: one neutral surface color cannot represent separate positive
+and negative appearances. The scalar projection therefore ranks
+`SURFACE_STYLE_USAGE` as `.BOTH.` before `.POSITIVE.` before `.NEGATIVE.`.
+It applies this projection independently of SET serialization order. The
+ranking is a CADIR projection, not a STEP precedence rule.
 
 ISO 10303-46 §6.2 states that it does not define the effect of a style
 conflict, including the case where one `representation_item` is used by
