@@ -5113,10 +5113,37 @@ terminators remain part of those grammars.
 
 Modern text and leader objects contain the common annotation structure and an
 ordered leader point array. V5 text and leader classes contain outer anonymous
-version 1.0 and the common V5 annotation chunk described in section 18. Text
-dots store packed version, model point, point height, primary and secondary
-text, font face, and independent always-on-top, transparency, bold, and italic
-bits.
+version 1.0 and the common V5 annotation chunk described in section 18.
+
+The text-dot class UUID is
+`74198302-CDF4-4F95-9609-6D684F22AB37`. Its class-data payload is direct
+class data, not an anonymous child:
+
+```text
+packed version 1.minor
+ON_3dPoint center point
+i32 height in points
+UTF-16 primary text
+UTF-16 font face
+i32 display bits
+if minor >= 1: UTF-16 secondary text
+```
+
+The packed version is one byte: the high nibble is the major and the low
+nibble is the minor. The writer emits version `1.0` for archive versions below
+60 and version `1.1` for archive version 60 and later. The reader requires
+major 1. Display bit `0x01` means always on top, `0x02` means transparent,
+`0x04` means bold, and `0x08` means italic. Other display bits have no defined
+meaning and are ignored. A major-1 reader consumes the known prefix selected
+by the minor and skips remaining bytes at the bounded class-data end. Therefore
+V4 and V5.0 text dots have no serialized secondary-text field and read with an
+empty secondary string; V6 and later text dots serialize that field.
+
+CADIR maps the class data to one `native.rhino.text_dots` record. Center
+coordinates are model-space lengths and are converted to millimeters using the
+document unit scale. Height in points, both UTF-16 strings, font face, and the
+four display flags are not scaled. The record links to its object record and
+does not create a neutral model point or other geometry carrier.
 
 In archive versions 2 through 4, the V5 text and leader class-data payload has
 no outer anonymous chunk. It begins with packed version 1.0 and stores the

@@ -500,6 +500,26 @@ mod tests {
     }
 
     #[test]
+    fn text_dot_v10_omits_secondary_text_and_skips_suffix() {
+        let mut bytes = vec![0x10];
+        for value in [12.5_f64, -3.25, 7.75] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(23_i32.to_le_bytes());
+        bytes.extend(utf16("primary"));
+        bytes.extend(utf16("Courier New"));
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend([0xde, 0xad]);
+        let dot = decode_dot(&bytes, 0..bytes.len(), 1.0).expect("valid V1.0 text dot");
+        assert_eq!(dot.center, [12.5, -3.25, 7.75]);
+        assert_eq!(dot.height_points, 23);
+        assert_eq!(dot.primary_text, "primary");
+        assert_eq!(dot.secondary_text, "");
+        assert_eq!(dot.font_face, "Courier New");
+        assert!(!dot.always_on_top && !dot.transparent && !dot.bold && !dot.italic);
+    }
+
+    #[test]
     fn legacy_leader_reuses_dimension_annotation_grammar() {
         let mut common = 7_i32.to_le_bytes().to_vec();
         common.extend(2_i32.to_le_bytes());

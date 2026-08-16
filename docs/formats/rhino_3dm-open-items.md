@@ -709,6 +709,12 @@ rendering-attributes and object-attributes CRCs likewise exclude complete
 nested children. The Rust presentation record transfers material references,
 mapping references and channels, and the three non-default object flags using
 the CADIR fields defined in section 8.4.
+The `ON_TextDot` class is independently covered by V4, V50, V6, and inch-unit
+V6 witnesses. Its class UUID, direct packed 1.0/1.1 payload, archive-60
+secondary-text gate, display bits, and document-unit center conversion are
+settled; the Rust annotation decoder transfers the complete known prefix to
+`native.rhino.text_dots` and keeps the record linked to its object without
+creating neutral geometry.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -801,6 +807,19 @@ flags, and true advanced-preview flag, and the owner tests
 `object_rendering_attributes_consume_mapping_reference_and_channel`,
 `rendering_attributes_parse_object_mapping_and_future_suffix`, and
 `rendering_attributes_transfer_mapping_channels_and_flags`.
+
+The text-dot transfer slice is independently covered by the authored V4, V50,
+V6, and inch-unit V6 witnesses. `ON_TextDot::Write/Read` defines the packed
+1.0/1.1 class-data prefix, the center, height, strings, display-bit meanings,
+and the archive-60 secondary-text gate. The Rust annotation decoder transfers
+the complete known prefix to `native.rhino.text_dots`; center coordinates use
+the document length scale, while height, strings, font face, and display flags
+remain unchanged. The V4/V50/V6 `cadmpeg inspect`, `example_read`, and
+`cadmpeg query item` results establish the minor transition and all four bits;
+the inch differential establishes the length conversion. The owner tests
+`text_dot_preserves_text_style_flags_and_scaled_location` and
+`text_dot_v10_omits_secondary_text_and_skips_suffix` gate the known prefix and
+bounded suffix behavior.
 
 ### FV-06. Later major payload admission
 
