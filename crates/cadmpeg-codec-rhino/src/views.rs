@@ -1086,8 +1086,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 #[cfg(test)]
 mod tests {
     use super::{
-        legacy_clipping_depth, parse_attributes, parse_list, parse_viewport, parse_window_position,
-        Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
+        legacy_clipping_depth, parse_attributes, parse_list, parse_trace_image, parse_viewport,
+        parse_wallpaper, parse_window_position, Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
@@ -1099,6 +1099,18 @@ mod tests {
         for coordinate in value {
             bytes.extend(coordinate.to_le_bytes());
         }
+    }
+
+    fn serialized_plane(bytes: &mut Vec<u8>) {
+        point(bytes, [0.0, 0.0, 0.0]);
+        point(bytes, [1.0, 0.0, 0.0]);
+        point(bytes, [0.0, 1.0, 0.0]);
+        point(bytes, [0.0, 0.0, 1.0]);
+        bytes.extend(
+            [0.0_f64, 0.0, 1.0, 0.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
     }
 
     fn viewport() -> Vec<u8> {
@@ -1188,6 +1200,34 @@ mod tests {
             [0.0, 1.0, 0.0, 1.0]
         );
         assert_eq!(value.floating_viewport, 0);
+    }
+
+    #[test]
+    fn view_images_decode_minor_gated_fields_and_suffix() {
+        let archive = ArchiveVersion::V5;
+        let mut trace = vec![0x13];
+        trace.extend(utf16_bytes("trace-witness.png"));
+        trace.extend(42.0_f64.to_le_bytes());
+        trace.extend(24.0_f64.to_le_bytes());
+        serialized_plane(&mut trace);
+        trace.extend([0, 1, 1]);
+        trace.extend([0xde, 0xad, 0xbe, 0xef]);
+        let trace = parse_trace_image(&trace, 0..trace.len(), archive, 1.0).expect("trace image");
+        assert_eq!(trace.legacy_file_path, "trace-witness.png");
+        assert_eq!([trace.width_mm, trace.height_mm], [42.0, 24.0]);
+        assert!(!trace.grayscale);
+        assert!(trace.hidden && trace.filtered);
+        assert!(trace.file_reference.is_none());
+
+        let mut wallpaper = vec![0x11];
+        wallpaper.extend(utf16_bytes("wallpaper-witness.png"));
+        wallpaper.extend([0, 1]);
+        wallpaper.extend([0xca, 0xfe]);
+        let wallpaper =
+            parse_wallpaper(&wallpaper, 0..wallpaper.len(), archive).expect("wallpaper");
+        assert_eq!(wallpaper.legacy_file_path, "wallpaper-witness.png");
+        assert!(!wallpaper.grayscale && wallpaper.hidden);
+        assert!(wallpaper.file_reference.is_none());
     }
 
     #[test]

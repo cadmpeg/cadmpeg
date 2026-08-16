@@ -5033,9 +5033,43 @@ before that child boundary. Unknown child chunks before the end marker are
 skipped as complete bounded chunks. `TCODE_ENDOFTABLE` terminates the typed
 view-child stream; later bytes remain bounded suffix data.
 
-Trace images store path, width, height, plane, grayscale, hidden, filtered, and
-file-reference state. Wallpaper stores path, grayscale, hidden, and file
-reference.
+`TCODE_VIEW_TRACEIMAGE` contains packed version `1.3` below archive version 60
+and `1.4` at archive version 60 and later:
+
+```text
+packed version 1.minor
+UTF-16 legacy image path
+f64 image width
+f64 image height
+ON_Plane image plane
+if minor >= 1: bool grayscale
+if minor >= 2: bool hidden
+if minor >= 3: bool filtered
+if minor >= 4: anonymous file-reference child
+```
+
+The image width and height, plane origin, and plane-equation offset use document
+length units; plane axes are dimensionless. The file reference is the section
+20.1 anonymous major-1 child. A major other than 1 is rejected. Remaining bytes
+are skipped at the trace-image child boundary.
+
+`TCODE_VIEW_WALLPAPER` is the legacy long child containing only a UTF-16 path.
+`TCODE_VIEW_WALLPAPER_V3` contains packed version `1.1` below archive version
+60 and `1.2` at archive version 60 and later:
+
+```text
+packed version 1.minor
+UTF-16 legacy wallpaper path
+bool grayscale
+if minor >= 1: bool hidden
+if minor >= 2: anonymous file-reference child
+```
+
+The V3 wallpaper child overrides the legacy wallpaper path and its display
+flags. Its reader requires major version 1 and skips remaining bytes at the V3
+child boundary. The legacy child supplies path data only; its default flags are
+grayscale true and hidden false until the V3 child is read. Trace images and
+wallpaper retain their file-reference state in the native view record.
 
 `ON_WindowsBitmap` class data has no version prefix. `ON_WindowsBitmapEx` starts
 with packed version `1.minor` and a UTF-16 file path. Its writer emits `1.0`;

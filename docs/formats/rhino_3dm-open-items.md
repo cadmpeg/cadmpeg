@@ -505,6 +505,12 @@ with the outer fields. `ON_3dmViewPosition::Write/Read` uses the direct packed
 archive-5 floating-viewport byte. Its reader repairs the bounds, leaves source
 defaults for unknown majors, and lets the enclosing long child skip later bytes.
 The Rust view parser now decodes this value into the native view record.
+`ON_3dmViewTraceImage::Write/Read` emits packed 1.3 below archive 60 and 1.4
+at archive 60, adding the section 20.1 file-reference child at minor 4.
+`ON_3dmWallpaperImage::Write/Read` emits packed 1.1 below archive 60 and 1.2
+at archive 60, adding the same child at minor 2; the separate legacy wallpaper
+child carries only the UTF-16 path. The Rust image readers now mirror these
+writer bands and minor gates.
 The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
 major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
 `ON_3dmApplication` reads its three strings without a major/minor gate; all
