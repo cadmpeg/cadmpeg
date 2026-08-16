@@ -1423,8 +1423,8 @@ indices to transfer each strip as a separate polyline carrier. The reader does
 not join strips or invent source parameters or a chordal bound.
 
 `TESSELLATED_ANNOTATION_OCCURRENCE` carries a tessellated geometric set;
-supported triangulated descendants transfer as detached tessellations. A
-ISO 10303-42 §6.4.54 defines `REPOSITIONED_TESSELLATED_ITEM.location` as a
+supported triangulated descendants transfer as detached tessellations. ISO
+10303-42 §6.4.54 defines `REPOSITIONED_TESSELLATED_ITEM.location` as a
 required `AXIS2_PLACEMENT_3D` and defines that placement as the origin and axis
 system for the referenced point coordinates. A valid repositioned item applies
 that placement, including nested repositioning, to a detached leaf. Detached
@@ -1434,13 +1434,15 @@ descendants remain native records. If one detached leaf is reached through
 multiple distinct placement transforms, no transform is selected, source
 coordinates remain, and `tessellation.placement-ambiguous` is recorded.
 
-CADIR decision: a missing, wrong-typed, or otherwise unresolved repositioning
-placement leaves the leaf in its inherited or source coordinate frame, retains
-the repositioned wrapper as native data, and records
-`tessellation.placement-unresolved`. It never substitutes an identity
-placement or selects a placement by source order. A Part 21 reference to an
-absent local instance is a structural reference error and does not reach this
-decoder decision.
+CADIR placement admission requires the location reference to resolve to an
+`AXIS2_PLACEMENT_3D` whose location is a valid three-dimensional point. A
+missing slot, wrong entity type, or invalid placement location is unresolved.
+In that case, the leaf remains in its inherited or source coordinate frame, the
+repositioned wrapper remains native data, and
+`tessellation.placement-unresolved` is recorded. The decoder never substitutes
+an identity placement or selects a placement by source order. A Part 21
+reference to an absent local instance is a structural reference error and does
+not reach this decoder decision.
 
 Styles resolve from a styled item through presentation assignments to color.
 A style on a `GEOMETRIC_SET` or `GEOMETRIC_CURVE_SET` applies to each member,

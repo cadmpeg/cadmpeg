@@ -333,36 +333,89 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
 }
 
 #[test]
-fn repositioned_annotation_mesh_with_missing_placement_keeps_source_coordinates() {
+fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_coordinates() {
+    for (source, unresolved_placement) in [
+        (
+            include_bytes!("tests/data/ts01_repositioned_missing_placement.p21").as_slice(),
+            false,
+        ),
+        (
+            include_bytes!("tests/data/ts01_repositioned_missing_placement_slot.p21").as_slice(),
+            false,
+        ),
+        (
+            include_bytes!("tests/data/ts01_repositioned_unresolved_placement.p21").as_slice(),
+            true,
+        ),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode invalid repositioned placement tessellation");
+        let mesh = decoded
+            .ir()
+            .model
+            .tessellations
+            .iter()
+            .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+            .expect("invalid-placement tessellation");
+        assert_point3_close(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
+                && loss.message.contains("repositioned tessellated item #5")
+                && loss.message.contains("unresolved placement is not applied")
+        }));
+        assert!(decoded
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP native namespace")
+            .iter()
+            .any(|record| record.id.0.ends_with("#5")));
+        if unresolved_placement {
+            assert!(decoded
+                .ir()
+                .native_unknowns("step")
+                .expect("STEP native namespace")
+                .iter()
+                .any(|record| record.id.0 == "step:data:axis2_placement_3d#99"));
+        }
+        let validation =
+            cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn unresolved_outer_repositioning_preserves_inner_valid_placement() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=CARTESIAN_POINT('',(100.,200.,300.));\n#81=DIRECTION('',(0.,0.,1.));\n#82=DIRECTION('',(1.,0.,0.));\n#83=AXIS2_PLACEMENT_3D('inner placement',#80,#81,#82);\n#84=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#83) REPRESENTATION_ITEM('inner mesh') TESSELLATED_GEOMETRIC_SET((#7)) TESSELLATED_ITEM());\n#85=TESSELLATED_ANNOTATION_OCCURRENCE('inner mesh',(),#84);\n#88=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#85) REPRESENTATION_ITEM('unresolved outer placement') TESSELLATED_GEOMETRIC_SET((#84)) TESSELLATED_ITEM());\n#89=TESSELLATED_ANNOTATION_OCCURRENCE('unresolved outer placement',(),#88);\nENDSEC;\nEND-ISO-10303-21;",
+    );
     let decoded = StepCodec::default()
-        .decode(
-            &mut Cursor::new(include_bytes!(
-                "tests/data/ts01_repositioned_missing_placement.p21"
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode missing repositioned placement tessellation");
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested unresolved repositioning");
     let mesh = decoded
         .ir()
         .model
         .tessellations
         .iter()
-        .find(|mesh| mesh.id == "step:tessellation:mesh#4")
-        .expect("missing-placement tessellation");
-    assert_point3_close(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("nested repositioned annotation mesh");
+    assert_point3_close(mesh.vertices[0], Point3::new(110.0, 210.0, 300.0));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
-            && loss.message.contains("repositioned tessellated item #5")
-            && loss.message.contains("source coordinates")
+            && loss.message.contains("repositioned tessellated item #88")
+            && loss.message.contains("unresolved placement is not applied")
     }));
     assert!(decoded
         .ir()
         .native_unknowns("step")
         .expect("STEP native namespace")
         .iter()
-        .any(|record| record.id.0.ends_with("#5")));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
+        .any(|record| record.id.0.ends_with("#88")));
 }
 
 #[test]

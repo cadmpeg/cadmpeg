@@ -168,7 +168,7 @@ pub(super) fn decode(
     }
     for id in unresolved_placements {
         let message = format!(
-            "repositioned tessellated item #{id} has no valid AXIS2_PLACEMENT_3D; mesh retained in source coordinates"
+            "repositioned tessellated item #{id} has no valid AXIS2_PLACEMENT_3D; unresolved placement is not applied"
         );
         warnings.push(message.clone());
         losses.push(StepLossCode::TessellationPlacementUnresolved.note(message));

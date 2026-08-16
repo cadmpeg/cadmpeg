@@ -168,16 +168,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** If two bindings target one face or body, reversing their model order changes the exported STEP color while the binding set is unchanged.
 
-### TS-01. Invalid repositioned tessellation placement
-
-**Question.** How must CADIR preserve a `REPOSITIONED_TESSELLATED_ITEM` whose placement reference is missing or invalid?
-
-**Known.** The reader now retains the wrapper as native data, records a loss, and does not emit its tessellation in the inherited or identity frame.
-
-**Need.** We need a source-native representation contract and independent malformed wrappers for missing, invalid, and unknown placement references.
-
-**Note.** QA audit: commit `be45fbdf0` replaced silent coordinate substitution with conservative retention. That fix is sound, but refusal does not settle the malformed-input disposition.
-
 ### PS-07. Duplicate occurrence placement
 
 **Question.** What is the disposition when multiple `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` records resolve to one usage occurrence?
