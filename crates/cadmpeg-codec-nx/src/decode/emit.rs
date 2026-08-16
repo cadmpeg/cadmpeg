@@ -44,6 +44,7 @@ pub(super) fn emit_topology(
     trim_ranges: &BTreeMap<u32, [f64; 2]>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
+    procedural_start: usize,
     exact_transfer_budget: &TransferBudget<'_>,
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
@@ -685,6 +686,7 @@ pub(super) fn emit_topology(
     );
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ir,
+        procedural_start,
         completion_transfer_budget,
         adaptive_geometry_budget,
     );

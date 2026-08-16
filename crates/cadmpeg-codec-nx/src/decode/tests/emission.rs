@@ -724,6 +724,40 @@ fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
     assert!(context.sides[1].pcurve.is_none());
 }
 
+#[test]
+fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
+    let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
+    let mut later = ir.model.procedural_curves[0].clone();
+    later.id = cadmpeg_ir::ids::ProceduralCurveId("synthetic:later-intersection".into());
+    ir.model.procedural_curves.push(later);
+
+    let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
+        crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
+    );
+    let geometry_budget = cadmpeg_core::decode::WorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &mut ir,
+        1,
+        &transfer_budget,
+        &geometry_budget,
+    );
+
+    let ProceduralCurveDefinition::Intersection { context: first, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    assert!(first.sides[1].pcurve.is_none());
+    let ProceduralCurveDefinition::Intersection { context: later, .. } =
+        &ir.model.procedural_curves[1].definition
+    else {
+        unreachable!()
+    };
+    assert!(later.sides[1].pcurve.is_some());
+}
+
 fn cylinder_plane_transfer_fixture(
     source_pcurve_angle: f64,
     edge_tolerance: f64,

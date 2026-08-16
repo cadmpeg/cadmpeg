@@ -218,6 +218,9 @@ pub(crate) fn try_decode_geometry(
         let mut pending_ext11_support_uv = Vec::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
+        // The model is accumulated across streams. Completion must not retry
+        // unresolved curves that an earlier stream already admitted.
+        let procedural_start = ir.model.procedural_curves.len();
         for (pi, (position_offset, position, node)) in ordered_point_candidates(semantic, graph)
             .into_iter()
             .enumerate()
@@ -796,6 +799,7 @@ pub(crate) fn try_decode_geometry(
             &trim_ranges,
             source_stream,
             &mut annotations,
+            procedural_start,
             &exact_transfer_budget,
             &transfer_budget,
             &adaptive_geometry_budget,

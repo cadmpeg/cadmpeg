@@ -821,6 +821,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ir,
+        0,
         &transfer_budget,
         &geometry_budget,
     );
@@ -828,6 +829,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
 
 pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     ir: &mut CadIr,
+    // Lower bound of the procedural curves emitted by the current stream.
+    procedural_start: usize,
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
@@ -854,11 +857,13 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         );
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let mut blend_contacts = BTreeMap::new();
-    let replacements = ir
+    let mut candidates = ir
         .model
         .procedural_curves
         .iter()
-        .filter_map(|procedural| {
+        .enumerate()
+        .skip(procedural_start)
+        .filter_map(|(procedural_index, procedural)| {
             let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
             else {
                 return None;
@@ -870,6 +875,41 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             if transfer_budget_exhausted(transfer_budget) {
                 return None;
             }
+            let target = match missing {
+                [true, false] => 0,
+                [false, true] => 1,
+                _ => return None,
+            };
+            let source = 1 - target;
+            let source_surface = context.sides[source].surface.as_ref()?;
+            let target_surface = context.sides[target].surface.as_ref()?;
+            let priority =
+                opposite_chart_transfer_priority(&model_index, ir, source_surface, target_surface);
+            Some((priority, procedural.id.0.clone(), procedural_index))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|first, second| {
+        first
+            .0
+            .cmp(&second.0)
+            .then_with(|| first.1.cmp(&second.1))
+            .then_with(|| first.2.cmp(&second.2))
+    });
+    let replacements = candidates
+        .into_iter()
+        .filter_map(|(_, _, procedural_index)| {
+            let procedural = ir.model.procedural_curves.get(procedural_index)?;
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            else {
+                return None;
+            };
+            if transfer_budget_exhausted(transfer_budget) {
+                return None;
+            }
+            let missing = context
+                .sides
+                .each_ref()
+                .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
             let target = match missing {
                 [true, false] => 0,
                 [false, true] => 1,
@@ -909,7 +949,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 geometry_budget,
             )?;
             Some((
-                procedural.id.clone(),
+                procedural_index,
                 target,
                 pcurve,
                 tolerance,
@@ -917,13 +957,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             ))
         })
         .collect::<Vec<_>>();
-    for (procedural_id, side, pcurve, tolerance, cache_backed) in replacements {
-        let Some(procedural) = ir
-            .model
-            .procedural_curves
-            .iter_mut()
-            .find(|procedural| procedural.id == procedural_id)
-        else {
+    for (procedural_index, side, pcurve, tolerance, cache_backed) in replacements {
+        let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
@@ -937,6 +972,34 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
             }
         }
+    }
+}
+
+fn opposite_chart_transfer_priority(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    ir: &CadIr,
+    source_surface: &SurfaceId,
+    target_surface: &SurfaceId,
+) -> u8 {
+    let Some(surface) = index.surfaces(target_surface.0.as_str()) else {
+        return 3;
+    };
+    match &surface.geometry {
+        SurfaceGeometry::Plane { .. }
+        | SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Torus { .. }
+        | SurfaceGeometry::Nurbs(_) => 0,
+        SurfaceGeometry::Transformed { .. } => 1,
+        SurfaceGeometry::Procedural { .. }
+            if blend_surface_definition_with_index(index, target_surface).is_some()
+                && blend_transfer_contact(index, ir, source_surface, target_surface).is_some() =>
+        {
+            1
+        }
+        SurfaceGeometry::Procedural { .. } => 2,
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => 3,
     }
 }
 
