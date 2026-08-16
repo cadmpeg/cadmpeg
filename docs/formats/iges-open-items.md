@@ -44,7 +44,7 @@ terminal success or a bounded, classified error within the agreed limit.
 
 ## P0 — Decode success must imply valid `CadIr`
 
-The decoder can return success for documents that `cadmpeg validate` rejects.
+The decoder can return success for documents that `cadmpeg check` rejects.
 Observed failures include edge parameter ranges outside their canonical curve
 domains and edge curve endpoints that do not meet their vertex positions.
 
@@ -55,7 +55,7 @@ Required closure:
   returning decode success;
 - commit no partial topology after a failed validation; and
 - add synthesized fixtures for each failure class and run decode followed by
-  `cadmpeg validate` in the regression gate.
+  `cadmpeg check` in the regression gate.
 
 The item is closed only when a successful semantic decode is a valid `CadIr`,
 not merely a parseable command result.
@@ -72,7 +72,7 @@ Required closure:
 - assign every unsupported or omitted semantic construct a stable loss code,
   severity, source identity, and retained native record;
 - distinguish deliberate native preservation from geometric projection loss;
-- make `--strict` reject all losses that can change model, topology, product,
+- make `--no-salvage` reject all losses that can change model, topology, product,
   or document meaning; and
 - update the read profile only after loss coverage and validation pass.
 

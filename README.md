@@ -1,10 +1,6 @@
 # cadmpeg
 
-A CLI to read, inspect, convert, and write native CAD files. Built on top of libraries that allow other applications to add support for these formats.
-
-Decoders map vendor files into one documented IR: preview meshes, B-rep geometry, design intent, and parametric history where the format carries them. Validators, exporters, and downstream tools share that IR. Progress per format follows an [L0–L9 support ladder](docs/format-support.md#support-ladder).
-
-[Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
+Inspect and convert native CAD files from the command line. Add native CAD import to an application.
 
 ## Purpose
 
@@ -47,14 +43,14 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/re
 cadmpeg convert part.f3d -f step
 ```
 
-Conversion reports validation results and loss:
+Conversion reports check results and loss:
 
 ```text
 decode report (f3d): geometry_transferred=true
 losses:
   [info/geometry] 22 spline surface record(s) were decoded into NURBS carriers.
   ...
-validation: OK (0 error(s), 0 warning(s))
+check: OK (0 error(s), 0 warning(s))
 wrote part.step (2125 entities)
 ```
 

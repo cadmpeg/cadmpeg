@@ -1,7 +1,7 @@
 # cadmpeg
 
-`cadmpeg` inspects native CAD containers, decodes supported model data into
-CADIR, validates and compares CADIR models, and exports CADIR, STEP Part 21
+`cadmpeg` inspects native CAD containers, dumps supported model data into
+CADIR, checks and compares CADIR models, and exports CADIR, STEP Part 21
 (AP203, AP214, or AP242), and bounded IGES 5.1, 5.2, or 5.3 Fixed ASCII. It also writes
 supported `.FCStd`, `.f3d`, `.sldprt`, and `.3dm` models.
 
@@ -32,7 +32,7 @@ cargo install cadmpeg
 
 ## Convert a model
 
-`convert` decodes the input, validates the resulting CADIR, then exports it:
+`convert` decodes the input, checks the resulting CADIR, then exports it:
 
 ```sh
 cadmpeg convert bracket.f3d -o bracket.step
@@ -62,12 +62,12 @@ output, because that spelling is nearly always `--input-format` (alias
 `--from`) written as `--format`; pass `-o FILE` or, for a deliberate binary
 pipe, `--binary-stdout`.
 
-Conversion stops before export if validation finds errors. It also refuses
-geometry output when decoding transfers no geometry. `--allow-invalid` and
+Conversion stops before export if the check finds errors. It also refuses
+geometry output when decoding transfers no geometry. `--allow-errors` and
 `--allow-empty` write the current result anyway. They leave model data
 unchanged.
 
-## Inspect, decode, and validate
+## Inspect, dump, and check
 
 Inspect a native container without decoding its model:
 
@@ -76,21 +76,21 @@ cadmpeg inspect bracket.f3d
 cadmpeg inspect bracket.f3d --json
 ```
 
-Decode a native file to canonical CADIR JSON:
+Dump a native file to canonical CADIR JSON:
 
 ```sh
-cadmpeg decode bracket.f3d -o bracket.cadir.json
+cadmpeg dump bracket.f3d -o bracket.cadir.json
 ```
 
 Without `--output`, artifact-producing commands write only the artifact to
 standard output. Diagnostics and loss summaries go to standard error, so
 redirection remains safe.
 
-Validate either CADIR or a supported native file:
+Check either CADIR or a supported native file:
 
 ```sh
-cadmpeg validate bracket.cadir.json
-cadmpeg validate bracket.f3d --json
+cadmpeg check bracket.cadir.json
+cadmpeg check bracket.f3d --json
 ```
 
 `--container-only` stops native decoding before geometry. It is useful for
@@ -112,9 +112,9 @@ cadmpeg inspect find part.prt --utf16le Extrude
 cadmpeg inspect strings part.prt --min 6 --encoding both
 cadmpeg inspect struct part.prt --offset 0x100 --count 4 \
   --layout 'u32le:id,pad4,f64le:x,f64le:y,f64le:z'
-cadmpeg inspect container part.f3d                      # ZIP entries with byte offsets
+cadmpeg inspect container part.f3d                      # ZIP or CFB members
 cadmpeg inspect extract part.f3d 'Design/Streams.dat' -o streams.dat
-cadmpeg inspect diff probe-a.prt probe-b.prt            # positional byte diff
+cadmpeg inspect cmp probe-a.prt probe-b.prt             # positional byte compare
 ```
 
 `--le` and `--be` select the byte order for `read`; little-endian is the
@@ -145,20 +145,23 @@ Every field except `padN` accepts an optional `:name`; unnamed fields are called
 `f<index>`. `struct --count N` decodes `N` consecutive records and reports an
 error rather than a partial record when the run passes end of file.
 
-`inspect container` lists ZIP entries with their local-header and payload
-offsets, so a hex dump of an entry follows directly; `--json` prints the same
-listing as versioned JSON with raw names. Names in the table are single-quoted
-because Fusion `.f3d` entry names hold `[` and `]`, which a shell reads as a
-glob. `inspect extract FILE MEMBER` writes one entry's decompressed,
-CRC-checked bytes to `-o FILE` or standard output; the member name matches
-byte-exactly, brackets included, where `unzip` reads it as a glob and fails.
-Other container families are listed by `cadmpeg inspect FILE` through their
-codec.
+`inspect container` lists ZIP or CFB members. ZIP columns are
+header/data/packed/unpacked/method/crc32/name, so a hex dump of an entry
+follows directly. CFB columns are id/kind/size/alloc/path; size and alloc
+are empty for storages. `--json` prints the same listing as versioned JSON
+with raw names and `container_kind` `zip` or `cfb`. Names in the table are
+single-quoted because Fusion `.f3d` entry names hold `[` and `]`, which a
+shell reads as a glob. `inspect extract FILE MEMBER` writes one ZIP
+entry's decompressed, CRC-checked bytes, or one CFB stream, to `-o FILE`
+or standard output; the member name matches byte-exactly, brackets
+included, where `unzip` reads it as a glob and fails. Other container
+families are listed by `cadmpeg inspect FILE` through their codec.
 
-`inspect diff` compares byte `n` of one file with byte `n` of the other. It
+`inspect cmp` compares byte `n` of one file with byte `n` of the other. It
 reports the first differing offset, the differing byte count, and the differing
 spans. `--gap` merges two spans separated by that many equal bytes or fewer.
-`cadmpeg diff` compares decoded models.
+It exits 1 if the files are not identical, including length-only (Unix cmp
+contract). `cadmpeg diff` compares decoded models.
 
 A file whose name is also a subcommand name, such as `hex`, is read as the
 subcommand. Write `./hex` for such a file.
@@ -183,7 +186,7 @@ streams, and the NX and Creo `.prt` layouts by content. Commands that load
 models also accept CADIR JSON. Use `--input-format` (alias `--from`) to bypass
 detection for an ambiguous or extensionless input. Every command that takes
 one input file also accepts `--input FILE` as a spelling of the positional;
-the two-file commands (`diff`, `inspect diff`, `inspect extract`) take their
+the two-file commands (`diff`, `inspect cmp`, `inspect extract`) take their
 inputs positionally only.
 
 Output formats are:
@@ -205,7 +208,7 @@ over a conflicting output extension and emits a warning.
 
 Native decoding prints whether geometry transferred and lists known losses.
 STEP export reports omitted, reduced, or normalized content. To save a
-versioned JSON record of a `decode` or `convert` operation, pass
+versioned JSON record of a `dump` or `convert` operation, pass
 `--report`:
 
 ```sh
@@ -213,15 +216,15 @@ cadmpeg convert bracket.f3d -o bracket.step \
   --report bracket.conversion.json
 ```
 
-The command report contains decode, validation, and export sections when those
-stages ran. `inspect --json`, `inspect container --json`, `validate --json`,
+The command report contains decode, check, and export sections when those
+stages ran. `inspect --json`, `inspect container --json`, `check --json`,
 and `diff --json` write versioned JSON directly to standard output.
 
-`inspect`, `validate`, and `diff` produce no artifact beside the report, so they
+`inspect`, `check`, and `diff` produce no artifact beside the report, so they
 also accept `-o` and `--output` for the report path. Every command refuses to
-replace an existing report or artifact unless `--force` is present. Validation
-findings live under `.validation_report.findings`; the printed error count and
-exit status 1 count the same `error` and `blocking` findings.
+replace an existing report or artifact unless `--force` is present. Check
+findings live under `.check_report.findings`; `cadmpeg check` prints the
+error count and exits 1 on the same `error` and `blocking` findings.
 
 ## Query reports
 
@@ -232,32 +235,34 @@ print tab-separated rows with a header; `item` prints pretty-printed JSON
 records.
 
 ```sh
-cadmpeg validate bracket.f3d -o report.json
+cadmpeg check bracket.f3d -o report.json
 cadmpeg query findings report.json     # severity  check  entity  message
 cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
 cadmpeg query summary report.json      # artifact kind and section counts
-cadmpeg query schema model.features    # the arena's record type (no FILE)
+cadmpeg query schema model.features    # the arena's IR record type (no FILE)
+cadmpeg query schema part.cadir.json native.nx.class_definitions  # inferred native fields
 cadmpeg query fidelity part.cadir.fidelity.json  # retained source records
 cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 ```
 
 `counts` on a CADIR document lists arena lengths for `model` and every
-`native.<codec>` namespace; on a validate report it lists `entity_counts`.
+`native.<codec>` namespace; on a check report it lists `entity_counts`.
 `item` uses the same dotted arena names as `query counts --json`
 (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
 `model.<arena>`). It matches the JSON-string `id` field exactly or as a unique
 suffix, accepts several IDs in one call, and with no ID prints the first
 record (`--head N` for the first N). Follow `links` and run `item` again to
 join. `--fields a,b.c` projects those paths as TSV (projection only — no
-`--where`). `schema` is the one view that takes no file: it prints the IR's
-compile-time record type for a model arena — every field, whether it is
-required, and every variant of a tagged union — or, bare, every model arena
-and its element type (`sidecar` prints the decode-sidecar shape). Which
-arenas a document actually has still comes from `counts`; native arena
-records are codec-owned, so `schema` refuses them and names `item` instead.
+`--where`). `schema` with no file prints the IR's compile-time record type
+for a model arena — every field, whether it is required, and every variant of
+a tagged union — or, bare, every model arena and its element type (`sidecar`
+prints the decode-sidecar shape). `schema FILE ARENA` infers native (and
+other) arena fields from the records: each dotted path's presence, JSON type,
+and an example. An unknown arena name lists every addressable arena and its
+entry count. Which arenas a document actually has also comes from `counts`.
 `fidelity` lists a decode sidecar's retained source records (the extraction
 address space) and, with `--stream NAME`, reassembles that stream's retained
 bytes byte-exactly into `-o FILE` — refusing gapped extents and extent-only
@@ -270,12 +275,19 @@ and `-` reads standard input.
 
 ## Exit status
 
-- `0`: the requested operation completed; validation passed and diffs were empty
-  when those checks ran.
-- `1`: semantic result, such as validation errors, a non-empty diff, or refusal
-  to export invalid or empty geometry.
+Verdict commands exit 1 on a negative verdict. Other commands do not use 1.
+Exit 2 is operational on every command.
+
+- `0`: the requested operation completed; a verdict command had a positive
+  verdict when it ran.
+- `1`: negative verdict. Verdict commands are `convert` (refused write),
+  `check` (failed check), `diff` (models differ), and `inspect cmp` (files
+  differ). `inspect cmp` exits 1 if the files are not identical, including
+  length-only (Unix cmp contract).
 - `2`: operational error, including invalid arguments, unrecognized input,
   decode or encode failure, and file-system errors.
+
+Non-verdict commands are `dump`, `query`, and `inspect` (except `inspect cmp`).
 
 Run `cadmpeg help <command>` for the complete options of a command.
 
