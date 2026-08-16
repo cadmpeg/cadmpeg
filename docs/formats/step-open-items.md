@@ -114,16 +114,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Topology and pcurve decisions
 
-### PC-02. Synthesized pcurve chart policy
-
-**Question.** Which source rule authorizes an endpoint-derived pcurve chart transform on a procedural support surface?
-
-**Known.** `reader/topology.rs:3080-3162` generates endpoint-derived parameterization variants for procedural surfaces. It samples a bounded domain and rejects some collapsed-axis results. The source pcurve does not declare this transform.
-
-**Need.** We need producer files with declared and observed procedural-surface charts, plus an exact rule that distinguishes a real chart transform from endpoint coincidence.
-
-**Note.** QA audit: commit `6b5b13114` closed this item by naming the synthesis a CADIR decision. The decision still fabricates an undeclared chart candidate and is not format evidence.
-
 ### TP-09. Bounded pcurve admission
 
 **Question.** What proves endpoint fit and model-space locus equivalence for competing pcurve candidates?

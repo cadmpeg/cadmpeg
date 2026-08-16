@@ -11,20 +11,19 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
     Vertex, VertexUse,
 };
-use cadmpeg_ir::transform::Transform2;
 use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
 use crate::ids::StepIdentity;
@@ -1887,7 +1886,6 @@ fn build_one(
     let mut loops = Vec::new();
     let mut faces = Vec::new();
     let mut surfaces = Vec::new();
-    let mut pcurve_variants = Vec::new();
     let mut shells = Vec::new();
     let mut region = Region {
         id: rid.clone(),
@@ -2338,12 +2336,7 @@ fn build_one(
                                     )
                                 });
                                 if let Some(selected) = selected {
-                                    let (pcurve, variant) =
-                                        materialize_pcurve_variant(ir, &selected, &cid);
-                                    if let Some(variant) = variant {
-                                        pcurve_variants.push(variant);
-                                    }
-                                    vec![(pcurve, selected.parameter_range)]
+                                    vec![(selected.id, selected.parameter_range)]
                                 } else {
                                     let n = candidates.len();
                                     let note = match (edge.curve, surface_step, n) {
@@ -2646,9 +2639,6 @@ fn build_one(
         id,
         "topology draft",
     )?;
-    for pcurve in pcurve_variants {
-        built.draft.insert(pcurve).ok()?;
-    }
     for &shell_reference in shell_steps {
         let shell_step = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             shell_reference
@@ -3076,11 +3066,9 @@ fn associated_pcurves(
 /// to one deterministic identity.
 struct SelectedPcurve {
     id: PcurveId,
-    geometry: PcurveGeometry,
     parameter_range: Option<[f64; 2]>,
 }
 
-const PCURVE_VARIANT_MARKER: &str = "-use-";
 const PCURVE_ENDPOINT_GRID_DIVISIONS: usize = 64;
 const PCURVE_LOCI_INITIAL_DIVISIONS: usize = 32;
 const PCURVE_LOCI_MIN_DEPTH: usize = 2;
@@ -3091,299 +3079,6 @@ const PCURVE_LOCI_FLATNESS_FRACTION: f64 = 0.25;
 struct PcurveCandidateFit {
     geometry: PcurveGeometry,
     endpoint: PcurveEndpointFit,
-}
-
-fn pcurve_parameterization_variants(
-    index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    geometry: &PcurveGeometry,
-    start: Point3,
-    end: Point3,
-) -> Vec<PcurveGeometry> {
-    let calibrated = procedural_pcurve_calibration(index, surface_id, geometry, start, end);
-    let variants = std::iter::once(geometry.clone())
-        .chain(calibrated)
-        .collect::<Vec<_>>();
-    if variants.is_empty() {
-        vec![geometry.clone()]
-    } else {
-        variants
-    }
-}
-
-fn procedural_pcurve_calibration(
-    index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    geometry: &PcurveGeometry,
-    start: Point3,
-    end: Point3,
-) -> Vec<PcurveGeometry> {
-    // Some STEP producers parameterize a bounded edge locally even though
-    // the pcurve is attached to a surface with a different native chart.
-    // Keep the native and surface-chart candidates, then add endpoint-derived
-    // affine charts only when the native chart misses a model-space vertex.
-    let Some(procedural) = index
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.surface == *surface_id)
-    else {
-        return Vec::new();
-    };
-    let preserved_axes = match procedural.definition {
-        ProceduralSurfaceDefinition::AxisRevolution { .. } => [true, false],
-        ProceduralSurfaceDefinition::Extrusion { .. }
-        | ProceduralSurfaceDefinition::LinearSweep { .. } => [false, false],
-        _ => return Vec::new(),
-    };
-    let Some([lower, upper]) = pcurve_selection_parameter_domain(geometry) else {
-        return Vec::new();
-    };
-    let Some(first) = pcurve_uv(geometry, lower) else {
-        return Vec::new();
-    };
-    let Some(last) = pcurve_uv(geometry, upper) else {
-        return Vec::new();
-    };
-    let tolerance = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear);
-    let endpoint_needs_calibration = |uv: Point2, target: Point3| {
-        let Some(point) = surface_selection_point(index, surface_id, uv.u, uv.v) else {
-            return true;
-        };
-        point.distance(target) > tolerance
-    };
-    if !endpoint_needs_calibration(first, start) && !endpoint_needs_calibration(last, end) {
-        return Vec::new();
-    }
-    let first_seed = surface_selection_parameters(index, surface_id, first.u, first.v);
-    let last_seed = surface_selection_parameters(index, surface_id, last.u, last.v);
-    let Some(first_target) = surface_point_closest(index, surface_id, start, first_seed) else {
-        return Vec::new();
-    };
-    let Some(last_target) = surface_point_closest(index, surface_id, end, last_seed) else {
-        return Vec::new();
-    };
-    if first_target.distance > tolerance || last_target.distance > tolerance {
-        return Vec::new();
-    }
-    [
-        [first_target.parameters, last_target.parameters],
-        [last_target.parameters, first_target.parameters],
-    ]
-    .into_iter()
-    .filter_map(|targets| {
-        let transform =
-            endpoint_parameter_transform(geometry, [first, last], targets, preserved_axes)?;
-        Some(PcurveGeometry::Transformed {
-            basis: Box::new(geometry.clone()),
-            transform,
-        })
-    })
-    .collect()
-}
-
-fn endpoint_parameter_transform(
-    geometry: &PcurveGeometry,
-    source: [Point2; 2],
-    destination: [[f64; 2]; 2],
-    preserved_axes: [bool; 2],
-) -> Option<Transform2> {
-    let source_bounds = pcurve_coordinate_bounds(geometry);
-    let mut rows = [[0.0, 0.0, 0.0]; 3];
-    for axis in 0..2 {
-        let source_start = [source[0].u, source[0].v][axis];
-        let source_end = [source[1].u, source[1].v][axis];
-        let destination_start = destination[0][axis];
-        let destination_end = destination[1][axis];
-        let source_span = source_end - source_start;
-        let destination_span = destination_end - destination_start;
-        let source_endpoint_tolerance = 1.0e-12 * (1.0 + source_start.abs().max(source_end.abs()));
-        let destination_tolerance =
-            1.0e-9 * (1.0 + destination_start.abs().max(destination_end.abs()));
-        let destination_collapses = destination_span.abs() <= destination_tolerance;
-        let source_is_constant = source_bounds.is_some_and(|bounds| {
-            let [lower, upper] = bounds[axis];
-            (upper - lower).abs() <= 1.0e-9 * (1.0 + lower.abs().max(upper.abs()))
-        });
-        let scale = if source_span.abs() > source_endpoint_tolerance {
-            if destination_collapses {
-                // A zero destination scale erases a varying source axis. The
-                // endpoint score cannot detect that loss because both ends
-                // still coincide.
-                return None;
-            }
-            destination_span / source_span
-        } else if destination_collapses && source_is_constant {
-            0.0
-        } else {
-            // A constant source endpoint pair cannot be stretched to two
-            // distinct destination values. A varying interior also makes a
-            // zero-scale map invalid, even when both endpoint pairs agree.
-            return None;
-        };
-        let offset = destination_start - scale * source_start;
-        if !scale.is_finite() || !offset.is_finite() {
-            return None;
-        }
-        if preserved_axes[axis]
-            && ((scale - 1.0).abs() > 1.0e-12
-                || offset.abs() > 1.0e-9 * (1.0 + source_start.abs().max(destination_start.abs())))
-        {
-            return None;
-        }
-        rows[axis][axis] = scale;
-        rows[axis][2] = offset;
-    }
-    rows[2] = [0.0, 0.0, 1.0];
-    Some(Transform2 { rows })
-}
-
-#[derive(Clone, Copy)]
-struct SurfacePointClosest {
-    parameters: [f64; 2],
-    distance: f64,
-}
-
-fn surface_point_closest(
-    index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    target: Point3,
-    seed: [f64; 2],
-) -> Option<SurfacePointClosest> {
-    // Invert the evaluated surface independently of the pcurve. This gives a
-    // stable target chart when the pcurve's declared endpoint is only an
-    // edge-local approximation of the surface endpoint.
-    let surface = index.surfaces(&surface_id.0)?;
-    let domains = surface_selection_parameter_domains(index, surface_id, &surface.geometry);
-    let u_seeds = surface_parameter_seeds(seed[0], domains[0]);
-    let v_seeds = surface_parameter_seeds(seed[1], domains[1]);
-    u_seeds
-        .into_iter()
-        .flat_map(|u| v_seeds.iter().copied().map(move |v| [u, v]))
-        .filter_map(|seed| {
-            surface_point_closest_from_seed(index, surface_id, target, domains, seed)
-        })
-        .min_by(|left, right| left.distance.total_cmp(&right.distance))
-}
-
-fn surface_parameter_seeds(seed: f64, domain: Option<[f64; 2]>) -> Vec<f64> {
-    let mut values = vec![seed];
-    if let Some([lower, upper]) = domain {
-        values.extend([lower, 0.5 * (lower + upper), upper]);
-    } else {
-        values.extend([0.0, -1.0, 1.0]);
-    }
-    values.retain(|value| value.is_finite());
-    values.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-12);
-    values
-}
-
-fn surface_point_closest_from_seed(
-    index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    target: Point3,
-    domains: [Option<[f64; 2]>; 2],
-    seed: [f64; 2],
-) -> Option<SurfacePointClosest> {
-    // Solve the two-parameter least-squares step from the surface partials;
-    // line search and domain clamping keep singular or trimmed surfaces
-    // bounded without treating an extrapolated point as a valid hit.
-    let mut parameters = [
-        clamp_surface_parameter(seed[0], domains[0])?,
-        clamp_surface_parameter(seed[1], domains[1])?,
-    ];
-    let mut best = f64::INFINITY;
-    let mut best_parameters = parameters;
-    for _ in 0..32 {
-        let point = model_surface_point_by_id(index, surface_id, parameters[0], parameters[1])?;
-        let error = point.distance(target);
-        if !error.is_finite() {
-            return None;
-        }
-        if error < best {
-            best = error;
-            best_parameters = parameters;
-        }
-        let partials =
-            model_surface_partials_by_id(index, surface_id, parameters[0], parameters[1])?;
-        let du = partials.du;
-        let dv = partials.dv;
-        let residual = point.vector_from(target);
-        let uu = du.dot(du);
-        let uv = du.dot(dv);
-        let vv = dv.dot(dv);
-        let determinant = uu * vv - uv * uv;
-        if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
-            break;
-        }
-        let rhs_u = du.dot(residual);
-        let rhs_v = dv.dot(residual);
-        let step_u = (vv * rhs_u - uv * rhs_v) / determinant;
-        let step_v = (uu * rhs_v - uv * rhs_u) / determinant;
-        if !step_u.is_finite() || !step_v.is_finite() {
-            break;
-        }
-        let mut accepted = None;
-        let mut factor = 1.0;
-        for _ in 0..12 {
-            let candidate = [
-                clamp_surface_parameter(parameters[0] - factor * step_u, domains[0])?,
-                clamp_surface_parameter(parameters[1] - factor * step_v, domains[1])?,
-            ];
-            let candidate_point =
-                model_surface_point_by_id(index, surface_id, candidate[0], candidate[1])?;
-            let candidate_error = candidate_point.distance(target);
-            if candidate_error.is_finite() && candidate_error < error {
-                accepted = Some(candidate);
-                break;
-            }
-            factor *= 0.5;
-        }
-        let Some(candidate) = accepted else {
-            break;
-        };
-        if candidate == parameters {
-            break;
-        }
-        parameters = candidate;
-    }
-    best.is_finite().then_some(SurfacePointClosest {
-        parameters: best_parameters,
-        distance: best,
-    })
-}
-
-fn clamp_surface_parameter(value: f64, domain: Option<[f64; 2]>) -> Option<f64> {
-    if !value.is_finite() {
-        return None;
-    }
-    Some(domain.map_or(value, |[lower, upper]| value.clamp(lower, upper)))
-}
-
-fn pcurve_coordinate_bounds(geometry: &PcurveGeometry) -> Option<[[f64; 2]; 2]> {
-    const SAMPLE_COUNT: usize = 33;
-    let [lower, upper] = pcurve_selection_parameter_domain(geometry)?;
-    if !lower.is_finite() || !upper.is_finite() || lower >= upper {
-        return None;
-    }
-    let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
-    for sample in 0..SAMPLE_COUNT {
-        let fraction = sample as f64 / (SAMPLE_COUNT - 1) as f64;
-        let parameter = lower + (upper - lower) * fraction;
-        let point = pcurve_uv(geometry, parameter)?;
-        for (axis, value) in [point.u, point.v].into_iter().enumerate() {
-            if !value.is_finite() {
-                return None;
-            }
-            bounds[axis][0] = bounds[axis][0].min(value);
-            bounds[axis][1] = bounds[axis][1].max(value);
-        }
-    }
-    (bounds
-        .iter()
-        .all(|[lower, upper]| lower.is_finite() && upper.is_finite()))
-    .then_some(bounds)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3421,17 +3116,10 @@ fn select_associated_pcurve(
                 .iter()
                 .find(|pcurve| pcurve.id == *candidate)?;
 
-            let variants =
-                pcurve_parameterization_variants(&index, &surface_id, &pcurve.geometry, start, end);
-            variants
-                .into_iter()
-                .filter_map(|geometry| {
-                    let endpoint =
-                        pcurve_endpoint_fit(&index, &surface_id, &geometry, &surface, start, end);
-                    let endpoint = endpoint?;
-                    Some(PcurveCandidateFit { geometry, endpoint })
-                })
-                .min_by(|left, right| left.endpoint.score.total_cmp(&right.endpoint.score))
+            let geometry = pcurve.geometry.clone();
+            let endpoint =
+                pcurve_endpoint_fit(&index, &surface_id, &geometry, &surface, start, end)?;
+            Some(PcurveCandidateFit { geometry, endpoint })
         })
         .collect::<Option<Vec<_>>>();
     let fits = fits?;
@@ -3463,7 +3151,6 @@ fn select_associated_pcurve(
         });
         Some(SelectedPcurve {
             id: candidates[candidate_index].clone(),
-            geometry: fit.geometry.clone(),
             parameter_range,
         })
     };
@@ -3514,37 +3201,6 @@ fn select_associated_pcurve(
     let selected = selected(selected_index)?;
     drop(index);
     Some(selected)
-}
-
-fn materialize_pcurve_variant(
-    ir: &CadIr,
-    selected: &SelectedPcurve,
-    coedge_id: &CoedgeId,
-) -> (PcurveId, Option<Pcurve>) {
-    let Some(source) = ir
-        .model
-        .pcurves
-        .iter()
-        .find(|pcurve| pcurve.id == selected.id)
-        .cloned()
-    else {
-        return (selected.id.clone(), None);
-    };
-    if source.geometry == selected.geometry {
-        return (selected.id.clone(), None);
-    }
-
-    let use_key = coedge_id.0.replace([':', '#'], "-");
-    let id = PcurveId(format!("{}{PCURVE_VARIANT_MARKER}{use_key}", source.id.0));
-    let variant = Pcurve {
-        id: id.clone(),
-        geometry: selected.geometry.clone(),
-        wrapper_reversed: source.wrapper_reversed,
-        native_tail_flags: source.native_tail_flags,
-        parameter_range: source.parameter_range,
-        fit_tolerance: source.fit_tolerance,
-    };
-    (id, Some(variant))
 }
 
 #[derive(Clone, Copy)]

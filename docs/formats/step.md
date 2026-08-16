@@ -926,17 +926,11 @@ parameterization. Its population supplies curve values in the established
 chart; it does not establish a surface-wide scale or direction. A non-linear
 directrix keeps its native parameterization.
 
-Endpoint-derived calibration of a bounded or domain-valued procedural pcurve
-is a CADIR decision. The decoder keeps the native carrier and may add a
-use-scoped axis-aligned affine variant only for extrusion, linear-sweep, or
-revolution surfaces. For a source axis with a nonzero endpoint span, a zero
-destination span is rejected. A zero destination scale is allowed only when
-the source axis is constant over the 33 evenly spaced samples of its complete
-declared interval, including both endpoints. Equal source endpoints with
-interior variation are rejected, and distinct source and destination endpoint
-values use the affine map. Revolution U is preserved without scale or offset.
-A variant that fails these checks remains opaque; the native pcurve is not
-rewritten.
+Endpoint-derived calibration is not a STEP operation. The decoder evaluates a
+pcurve in the chart supplied by its `basis_surface` and never adds an affine
+chart variant from edge endpoints. If the native pcurve does not provide the
+required endpoint or locus fit, the optional coedge pcurve relation is omitted
+and the source pcurve remains immutable.
 
 ISO 10303-42:2021 §4.5.57 defines every surface parameter as an independent
 dimensionless value. The neutral chart conversion preserves the
@@ -1193,11 +1187,10 @@ from `master_representation`; each associated pcurve has the same sense as
 curves. ISO 10303-21:2016 §11.2 states that entity instances need not be
 ordered and that an instance name may be referenced before its definition.
 CADIR decision: association lookup uses instance identity and references,
-never DATA serialization order. The source pcurve carrier is immutable. A chart
-variant derived from one coedge's endpoint fit is a use-scoped pcurve carrier.
-The coedge owns that variant through its `PcurveUse`; selecting a variant for
-another coedge does not change the source carrier or the first coedge's
-parameter range.
+never DATA serialization order. The source pcurve carrier is immutable. The
+reader does not create a use-scoped chart variant from one coedge's endpoint
+fit; a coedge that cannot use the native chart remains without an optional
+pcurve relation and reports the endpoint or association loss.
 
 A topology-referenced curve or surface whose geometry fails transfer retains
 its STEP identity as an unknown carrier linked to its opaque record. The body

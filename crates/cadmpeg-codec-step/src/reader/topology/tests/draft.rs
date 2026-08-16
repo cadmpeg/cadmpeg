@@ -3,14 +3,16 @@ use super::super::*;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{BodyId, CoedgeId, PcurveId, RegionId, SurfaceId};
+use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
 use cadmpeg_ir::units::Units;
 use std::collections::HashSet;
 use std::io::Cursor;
+
+use crate::loss::StepLossCode;
 
 const EPS_PCURVE_LOCI_DISTANCE: f64 = 1.0e-6;
 
@@ -228,95 +230,7 @@ fn bounded_pcurve_locus_witness_refuses_when_refinement_is_unresolved() {
 }
 
 #[test]
-fn synthesized_pcurve_chart_rejects_a_collapsed_bowed_axis() {
-    let bowed = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 1.0),
-            Point2::new(0.0, 2.0),
-        ],
-        weights: None,
-        periodic: false,
-    };
-
-    assert!(endpoint_parameter_transform(
-        &bowed,
-        [Point2::new(0.0, 0.0), Point2::new(0.0, 2.0)],
-        [[1.0, 0.0], [1.0, 2.0]],
-        [false, false],
-    )
-    .is_none());
-
-    let isoparametric = PcurveGeometry::Trimmed {
-        basis: Box::new(PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(0.0, 1.0),
-        }),
-        parameter_range: [0.0, 1.0],
-        same_sense: true,
-    };
-    let transform = endpoint_parameter_transform(
-        &isoparametric,
-        [Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
-        [[3.0, 4.0], [3.0, 5.0]],
-        [false, false],
-    )
-    .expect("constant source axis may collapse to a constant destination");
-    assert_eq!(
-        transform.rows,
-        [[0.0, 0.0, 3.0], [0.0, 1.0, 4.0], [0.0, 0.0, 1.0]]
-    );
-}
-
-#[test]
-fn selected_pcurve_variants_are_use_scoped() {
-    let source_id = PcurveId("step:data:pcurve#shared".into());
-    let source_geometry = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
-    let selected_geometry = PcurveGeometry::Line {
-        origin: Point2::new(4.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.pcurves.push(Pcurve {
-        id: source_id.clone(),
-        geometry: source_geometry.clone(),
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: None,
-        fit_tolerance: None,
-    });
-    let selected = SelectedPcurve {
-        id: source_id.clone(),
-        geometry: selected_geometry.clone(),
-        parameter_range: Some([0.0, 1.0]),
-    };
-
-    let (first, first_variant) =
-        materialize_pcurve_variant(&ir, &selected, &CoedgeId("step:data:coedge#first".into()));
-    let (second, second_variant) =
-        materialize_pcurve_variant(&ir, &selected, &CoedgeId("step:data:coedge#second".into()));
-
-    assert_ne!(first, source_id);
-    assert_ne!(second, source_id);
-    assert_ne!(first, second);
-    assert_eq!(ir.model.pcurves[0].geometry, source_geometry);
-    assert_eq!(
-        first_variant.expect("first pcurve variant").geometry,
-        selected_geometry
-    );
-    assert_eq!(
-        second_variant.expect("second pcurve variant").geometry,
-        selected_geometry
-    );
-}
-
-#[test]
-fn shared_step_pcurve_variants_are_use_scoped() {
+fn shared_step_pcurve_mismatch_omits_optional_use() {
     let decoded = crate::StepCodec::default()
         .decode(
             &mut Cursor::new(include_bytes!("data/pc04_shared_pcurve.p21")),
@@ -340,25 +254,12 @@ fn shared_step_pcurve_variants_are_use_scoped() {
         } if *parameter_range == [0.0, 1.0]
     ));
 
-    let variant = decoded
+    assert!(decoded
         .ir()
         .model
         .pcurves
         .iter()
-        .find(|pcurve| {
-            pcurve
-                .id
-                .as_str()
-                .contains("pcurve#33-use-step-data-coedge-51-face-56")
-        })
-        .expect("use-scoped pcurve variant");
-    let PcurveGeometry::Transformed { transform, .. } = &variant.geometry else {
-        panic!("expected transformed pcurve variant");
-    };
-    assert_eq!(
-        transform.rows,
-        [[-1.0, 0.0, 5.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]
-    );
+        .all(|pcurve| !pcurve.id.as_str().contains("-use-")));
 
     let first_use = decoded
         .ir()
@@ -366,29 +267,29 @@ fn shared_step_pcurve_variants_are_use_scoped() {
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#42")
-        .and_then(|coedge| coedge.pcurves.first())
-        .expect("first shared pcurve use");
+        .expect("first shared pcurve coedge");
+    assert_eq!(first_use.pcurves.len(), 1);
+    assert_eq!(first_use.pcurves[0].pcurve.as_str(), "step:data:pcurve#33");
     let second_use = decoded
         .ir()
         .model
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#45")
-        .and_then(|coedge| coedge.pcurves.first())
-        .expect("second shared pcurve use");
-    assert_eq!(first_use.pcurve.as_str(), "step:data:pcurve#33");
-    assert_eq!(
-        second_use.pcurve.as_str(),
-        "step:data:pcurve#33-use-step-data-coedge-51-face-56"
-    );
-    assert_ne!(first_use.pcurve, second_use.pcurve);
+        .expect("second shared pcurve coedge");
+    assert!(second_use.pcurves.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
+            && loss.message.contains("curve #35")
+            && loss.message.contains("surface #26")
+    }));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
-fn reordered_shared_step_pcurve_variants_keep_source_immutable() {
+fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
     let decoded = crate::StepCodec::default()
         .decode(
             &mut Cursor::new(include_bytes!("data/pc04_shared_pcurve_reordered.p21")),
@@ -412,42 +313,37 @@ fn reordered_shared_step_pcurve_variants_keep_source_immutable() {
         } if *parameter_range == [0.0, 1.0]
     ));
 
-    let variant = decoded
+    assert!(decoded
         .ir()
         .model
         .pcurves
         .iter()
-        .find(|pcurve| {
-            pcurve
-                .id
-                .as_str()
-                .contains("pcurve#33-use-step-data-coedge-51-face-56")
-        })
-        .expect("reordered use-scoped pcurve variant");
-    let PcurveGeometry::Transformed { transform, .. } = &variant.geometry else {
-        panic!("expected reordered transformed pcurve variant");
-    };
-    assert_eq!(
-        transform.rows,
-        [[-1.0, 0.0, 5.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]
-    );
+        .all(|pcurve| !pcurve.id.as_str().contains("-use-")));
 
     let uses = decoded
         .ir()
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurves.first())
-        .map(|use_| use_.pcurve.as_str())
-        .filter(|id| id.starts_with("step:data:pcurve#33"))
+        .filter(|coedge| coedge.edge.as_str() == "step:data:edge#42")
+        .map(|coedge| coedge.pcurves.as_slice())
         .collect::<Vec<_>>();
-    assert_eq!(
-        uses,
-        vec![
-            "step:data:pcurve#33",
-            "step:data:pcurve#33-use-step-data-coedge-51-face-56"
-        ]
-    );
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].len(), 1);
+    assert_eq!(uses[0][0].pcurve.as_str(), "step:data:pcurve#33");
+    let second_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#45")
+        .expect("reordered second shared pcurve coedge");
+    assert!(second_use.pcurves.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
+            && loss.message.contains("curve #35")
+            && loss.message.contains("surface #26")
+    }));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
