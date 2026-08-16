@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Topology emission, unresolved carriers, and source metadata.
 
+use super::geometry_work::GeometryWorkBudget;
 use super::offset::point_distance;
 use super::pcurves::{
-    attach_tolerant_edge_intersections, complete_exact_boundary_intersection_pcurves_with_budget,
+    attach_tolerant_edge_intersections_with_budget,
+    complete_exact_boundary_intersection_pcurves_with_budget,
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_pcurves_from_opposite_charts_with_budget,
     complete_intersection_supports_from_edge_incidence,
@@ -44,6 +46,7 @@ pub(super) fn emit_topology(
     annotations: &mut AnnotationBuilder,
     exact_transfer_budget: &TransferBudget<'_>,
     completion_transfer_budget: &TransferBudget<'_>,
+    adaptive_geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let prefix = format!("nx:s{stream_index}");
     let body_shape_shells = graph.body_shape_shells();
@@ -658,7 +661,15 @@ pub(super) fn emit_topology(
             parent.coedges.push(id);
         }
     }
-    attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
+    attach_tolerant_edge_intersections_with_budget(
+        ir,
+        graph,
+        &edges,
+        &prefix,
+        source_stream,
+        annotations,
+        adaptive_geometry_budget,
+    );
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
     complete_tolerant_intersection_pcurves_from_serialized_branches(
@@ -670,8 +681,13 @@ pub(super) fn emit_topology(
         ir,
         annotations,
         exact_transfer_budget,
+        adaptive_geometry_budget,
     );
-    complete_intersection_pcurves_from_opposite_charts_with_budget(ir, completion_transfer_budget);
+    complete_intersection_pcurves_from_opposite_charts_with_budget(
+        ir,
+        completion_transfer_budget,
+        adaptive_geometry_budget,
+    );
 
     let owned_edges: BTreeSet<_> = ir
         .model

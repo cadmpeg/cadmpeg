@@ -4,15 +4,18 @@
 use super::blend::{
     blend_boundary_parameter_from_contact_pcurve_with_geometry,
     blend_boundary_parameter_from_support_pcurve, blend_surface_definition,
-    blend_surface_definition_with_index, blend_surface_parameters_for_fit_with_grid,
-    blend_surface_point_inner_with_index, closest_spine_parameter_with_index,
+    blend_surface_definition_with_index, blend_surface_parameters_for_fit_with_grid_and_budget,
+    blend_surface_point_inner_with_index_and_budget, closest_spine_parameter_with_index_and_budget,
     decoded_surface_point_inner, decoded_surface_point_with_geometry, model_curve_point_with_index,
     model_curve_tangent_with_index, spine_contact_pcurve, BlendParameterGrid,
     BoundaryInverseTarget,
 };
+use super::geometry_work::GeometryWorkBudget;
+#[cfg(test)]
+use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::{
-    lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index, point_distance,
-    surface_parameter_domain, surface_parameter_periods,
+    lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index_and_budget,
+    point_distance, surface_parameter_domain, surface_parameter_periods,
 };
 use super::support_uv::{
     blend_spine_cache_fit_tolerance_with_index, linear_knots, parameterization_equivalent_surfaces,
@@ -815,12 +818,18 @@ pub(crate) fn reverse_pcurve_over_range(
 #[cfg(test)]
 pub(super) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr) {
     let transfer_budget = new_transfer_budget();
-    complete_intersection_pcurves_from_opposite_charts_with_budget(ir, &transfer_budget);
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    complete_intersection_pcurves_from_opposite_charts_with_budget(
+        ir,
+        &transfer_budget,
+        &geometry_budget,
+    );
 }
 
 pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     ir: &mut CadIr,
     transfer_budget: &TransferBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let edge_tolerances = ir
         .model
@@ -897,6 +906,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 tolerance,
                 blend_contact,
                 transfer_budget,
+                geometry_budget,
             )?;
             Some((
                 procedural.id.clone(),
@@ -936,13 +946,20 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
     annotations: &mut AnnotationBuilder,
 ) {
     let transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
-    complete_exact_boundary_intersection_pcurves_with_budget(ir, annotations, &transfer_budget);
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    complete_exact_boundary_intersection_pcurves_with_budget(
+        ir,
+        annotations,
+        &transfer_budget,
+        &geometry_budget,
+    );
 }
 
 pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     transfer_budget: &TransferBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let vertex_points = ir
@@ -1043,6 +1060,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         [&first, &second],
                         range,
                         tolerance,
+                        geometry_budget,
                     ) {
                         [first, second]
                     } else {
@@ -1057,6 +1075,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                                 range,
                                 tolerance,
                                 transfer_budget,
+                                geometry_budget,
                             )
                             .map(|transferred| [first.clone(), transferred]),
                             transfer_intersection_pcurve(
@@ -1069,6 +1088,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                                 range,
                                 tolerance,
                                 transfer_budget,
+                                geometry_budget,
                             )
                             .map(|transferred| [transferred, second.clone()]),
                         ];
@@ -1090,6 +1110,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         range,
                         tolerance,
                         transfer_budget,
+                        geometry_budget,
                     )?,
                 ],
                 [None, Some(second)] => [
@@ -1103,6 +1124,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         range,
                         tolerance,
                         transfer_budget,
+                        geometry_budget,
                     )?,
                     second,
                 ],
@@ -1549,7 +1571,16 @@ pub(crate) fn coincident_pcurve_pair(
     tolerance: f64,
 ) -> bool {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    coincident_pcurve_pair_with_index(&index, ir, surfaces, pcurves, range, tolerance)
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    coincident_pcurve_pair_with_index(
+        &index,
+        ir,
+        surfaces,
+        pcurves,
+        range,
+        tolerance,
+        &geometry_budget,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1560,9 +1591,8 @@ fn coincident_pcurve_pair_with_index(
     pcurves: [&PcurveGeometry; 2],
     range: [f64; 2],
     tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> bool {
-    const MAX_INTERVALS: usize = 100_000;
-
     if !range[0].is_finite()
         || !range[1].is_finite()
         || range[0] >= range[1]
@@ -1607,10 +1637,8 @@ fn coincident_pcurve_pair_with_index(
         return false;
     }
     let mut intervals = vec![range];
-    let mut examined = 0usize;
     while let Some([start, end]) = intervals.pop() {
-        examined += 1;
-        if examined > MAX_INTERVALS {
+        if !geometry_budget.charge() {
             return false;
         }
         let middle = start + (end - start) * 0.5;
@@ -1842,6 +1870,7 @@ fn transfer_intersection_pcurve(
     parameter_range: [f64; 2],
     tolerance: f64,
     budget: &TransferBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
     let blend_contact = blend_transfer_contact(index, ir, source_surface, target_surface);
     transfer_intersection_pcurve_with_contact_and_budget(
@@ -1855,6 +1884,7 @@ fn transfer_intersection_pcurve(
         tolerance,
         blend_contact,
         budget,
+        geometry_budget,
     )
 }
 
@@ -1870,6 +1900,7 @@ fn transfer_intersection_pcurve_with_contact_and_budget(
     tolerance: f64,
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
     let source_geometry = index
         .surfaces(source_surface.0.as_str())
@@ -1890,6 +1921,7 @@ fn transfer_intersection_pcurve_with_contact_and_budget(
         tolerance,
         blend_contact,
         budget,
+        geometry_budget,
     )
 }
 
@@ -1907,6 +1939,7 @@ fn transfer_intersection_pcurve_with_budget(
     tolerance: f64,
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
     const CONTINUATION_STEPS: usize = 16;
 
@@ -1930,6 +1963,7 @@ fn transfer_intersection_pcurve_with_budget(
         tolerance,
         blend_contact,
         budget,
+        geometry_budget,
     )?;
     let mut coarse = Vec::with_capacity(CONTINUATION_STEPS + 1);
     coarse.push(first);
@@ -1951,6 +1985,7 @@ fn transfer_intersection_pcurve_with_budget(
             tolerance,
             blend_contact,
             budget,
+            geometry_budget,
         )?;
         coarse.push(sample);
     }
@@ -1972,6 +2007,7 @@ fn transfer_intersection_pcurve_with_budget(
             &mut samples,
             blend_contact,
             budget,
+            geometry_budget,
         )?;
     }
     Some(PcurveGeometry::Nurbs {
@@ -2000,6 +2036,7 @@ fn transferred_pcurve_sample_with_budget(
     tolerance: f64,
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<TransferredPcurveSample> {
     if !budget.charge() {
         return None;
@@ -2048,17 +2085,25 @@ fn transferred_pcurve_sample_with_budget(
             )
         })
         .or_else(|| {
-            blend_boundary_parameter_from_support_spine_with_index(
+            blend_boundary_parameter_from_support_spine_with_index_and_budget(
                 index,
                 target_surface,
                 source_surface,
                 point,
                 seed,
                 tolerance,
+                geometry_budget,
             )
         })
         .or_else(|| {
-            surface_parameters_for_fit_with_index(index, target_surface, point, seed, tolerance)
+            surface_parameters_for_fit_with_index_and_budget(
+                index,
+                target_surface,
+                point,
+                seed,
+                tolerance,
+                geometry_budget,
+            )
         })?;
     let accepted = blend_contact.is_some_and(|contact| {
         target_uv.v.to_bits() == (contact.boundary as f64).to_bits()
@@ -2118,6 +2163,7 @@ pub(crate) fn blend_boundary_parameter_from_support_spine(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn blend_boundary_parameter_from_support_spine_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
@@ -2125,6 +2171,27 @@ pub(crate) fn blend_boundary_parameter_from_support_spine_with_index(
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
+) -> Option<Point2> {
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    blend_boundary_parameter_from_support_spine_with_index_and_budget(
+        index,
+        blend,
+        support,
+        point,
+        seed,
+        tolerance,
+        &geometry_budget,
+    )
+}
+
+pub(crate) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    blend: &SurfaceId,
+    support: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     let ir = index.ir();
     let (supports, spine, _, _) = blend_surface_definition(ir, blend)?;
@@ -2137,11 +2204,23 @@ pub(crate) fn blend_boundary_parameter_from_support_spine_with_index(
     let [boundary] = matches.as_slice() else {
         return None;
     };
-    let parameter =
-        closest_spine_parameter_with_index(index, &spine, point, seed.map(|seed| seed.u))?;
+    let parameter = closest_spine_parameter_with_index_and_budget(
+        index,
+        &spine,
+        point,
+        seed.map(|seed| seed.u),
+        geometry_budget,
+    )?;
     let parameters = Point2::new(parameter, *boundary as f64);
-    (blend_surface_point_inner_with_index(index, blend, parameters.u, parameters.v, 0)
-        .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
+    (blend_surface_point_inner_with_index_and_budget(
+        index,
+        blend,
+        parameters.u,
+        parameters.v,
+        0,
+        geometry_budget,
+    )
+    .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
         || blend_boundary_spine_geometry_matches_with_index(
             index, blend, parameters, point, tolerance,
         ))
@@ -2197,6 +2276,7 @@ fn append_transferred_pcurve_segment_with_budget(
     samples: &mut Vec<TransferredPcurveSample>,
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<()> {
     let midpoint_parameter = f64::midpoint(first.0, last.0);
     let midpoint_seed = Point2::new(
@@ -2217,6 +2297,7 @@ fn append_transferred_pcurve_segment_with_budget(
         tolerance,
         blend_contact,
         budget,
+        geometry_budget,
     )?;
     let fits = [0.25, 0.5, 0.75].into_iter().all(|fraction| {
         let parameter = first.0 + fraction * (last.0 - first.0);
@@ -2285,6 +2366,7 @@ fn append_transferred_pcurve_segment_with_budget(
         samples,
         blend_contact,
         budget,
+        geometry_budget,
     )?;
     append_transferred_pcurve_segment_with_budget(
         index,
@@ -2302,15 +2384,17 @@ fn append_transferred_pcurve_segment_with_budget(
         samples,
         blend_contact,
         budget,
+        geometry_budget,
     )
 }
 
-pub(crate) fn surface_parameters_for_fit_with_index(
+pub(crate) fn surface_parameters_for_fit_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     let ir = index.ir();
     let carrier = ir
@@ -2322,27 +2406,32 @@ pub(crate) fn surface_parameters_for_fit_with_index(
         SurfaceGeometry::Nurbs(nurbs) => {
             nurbs_surface_parameter_within_tolerance(nurbs, point, seed, tolerance)
         }
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance_with_index(
-            index,
-            surface,
-            point,
-            seed,
-            Some(tolerance),
-        )
-        .or_else(|| {
-            blend_surface_parameters_for_fit_with_grid(
+        SurfaceGeometry::Procedural { .. } => {
+            offset_surface_parameters_with_tolerance_with_index_and_budget(
                 index,
                 surface,
                 point,
                 seed,
-                tolerance,
-                BlendParameterGrid::Build,
+                Some(tolerance),
+                geometry_budget,
             )
-        }),
+            .or_else(|| {
+                blend_surface_parameters_for_fit_with_grid_and_budget(
+                    index,
+                    surface,
+                    point,
+                    seed,
+                    tolerance,
+                    BlendParameterGrid::Build,
+                    geometry_budget,
+                )
+            })
+        }
         geometry => analytic_surface_parameters(geometry, point),
     }
 }
 
+#[cfg(test)]
 pub(crate) fn attach_tolerant_edge_intersections(
     ir: &mut CadIr,
     graph: &Graph,
@@ -2350,6 +2439,27 @@ pub(crate) fn attach_tolerant_edge_intersections(
     prefix: &str,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
+) {
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    attach_tolerant_edge_intersections_with_budget(
+        ir,
+        graph,
+        edges,
+        prefix,
+        source_stream,
+        annotations,
+        &geometry_budget,
+    );
+}
+
+pub(crate) fn attach_tolerant_edge_intersections_with_budget(
+    ir: &mut CadIr,
+    graph: &Graph,
+    edges: &BTreeMap<u32, EdgeId>,
+    prefix: &str,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let candidates = {
         let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
@@ -2434,12 +2544,13 @@ pub(crate) fn attach_tolerant_edge_intersections(
             let supports = [first_support, second_support];
             let endpoints_bound_supports = supports.iter().all(|surface| {
                 endpoints.iter().all(|point| {
-                    surface_parameters_for_fit_with_index(
+                    surface_parameters_for_fit_with_index_and_budget(
                         &model_index,
                         surface,
                         *point,
                         None,
                         tolerance,
+                        geometry_budget,
                     )
                     .and_then(|uv| {
                         decoded_surface_point_inner(&model_index, surface, uv.u, uv.v, 0)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
@@ -515,6 +516,35 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
         0.000_4
     )
     .is_none());
+}
+
+#[test]
+fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
+    let support = quadratic_paraboloid_surface();
+    let SurfaceGeometry::Nurbs(support) = &support else {
+        unreachable!();
+    };
+    let budget = WorkBudget::new(0);
+
+    assert!(
+        crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
+            support, support, 0.01, 0.02, true, &budget,
+        )
+        .is_none()
+    );
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
+    let budget = WorkBudget::new(0);
+    let span = crate::decode::blend::ScalarBezierSpan {
+        domain: [0.0, 1.0],
+        controls: vec![-1.0, 1.0],
+    };
+
+    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget).is_none());
+    assert!(budget.exhausted());
 }
 
 #[test]

@@ -3,14 +3,16 @@
 
 use super::blend::{
     blend_boundary_parameter_from_contact_pcurve_with_geometry,
-    blend_surface_definition_with_index, blend_surface_parameter_grid_with_index,
-    blend_surface_parameters_for_fit_with_grid, blend_surface_parameters_from_grid_for_fit,
-    decoded_surface_point_with_geometry, spine_contact_pcurve, BlendParameterGrid,
-    BoundaryInverseTarget,
+    blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
+    blend_surface_parameters_for_fit_with_grid_and_budget,
+    blend_surface_parameters_from_grid_for_fit_and_budget, decoded_surface_point_with_geometry,
+    spine_contact_pcurve, BlendParameterGrid, BoundaryInverseTarget,
 };
+use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
-    continue_surface_intersection_parameters_with_seeds,
-    offset_surface_parameters_with_tolerance_with_index, point_distance, surface_parameters,
+    continue_surface_intersection_parameters_with_seeds_and_budget,
+    offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
+    surface_parameters,
 };
 use super::pcurves::pcurve_matches_edge_range_with_index;
 use super::MISSING_TOLERANCE;
@@ -338,20 +340,22 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
 #[cfg(test)]
 pub(super) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let support_budget = new_support_uv_budget();
-    complete_support_uv_with_budget(ir, pending, &support_budget);
+    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    complete_support_uv_with_budget(ir, pending, &support_budget, &geometry_budget);
 }
 
 pub(super) fn complete_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     loop {
         let before = pending_support_lanes_requiring_completion(ir, pending);
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
-        complete_support_uv_wave(ir, pending, support_budget);
+        complete_support_uv_wave(ir, pending, support_budget, geometry_budget);
         let after = pending_support_lanes_requiring_completion(ir, pending);
         if after >= before || support_uv_budget_exhausted(support_budget) {
             break;
@@ -452,6 +456,7 @@ fn complete_support_uv_wave(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
@@ -570,40 +575,44 @@ fn complete_support_uv_wave(
                             },
                         )
                         .or_else(|| {
-                            offset_surface_parameters_with_tolerance_with_index(
+                            offset_surface_parameters_with_tolerance_with_index_and_budget(
                                 &model_index,
                                 surface_id,
                                 *point,
                                 seed,
                                 Some(effective_fit_tolerance),
+                                geometry_budget,
                             )
                         })
                         .or_else(|| {
-                            blend_surface_parameters_for_fit_with_grid(
+                            blend_surface_parameters_for_fit_with_grid_and_budget(
                                 &model_index,
                                 surface_id,
                                 *point,
                                 seed,
                                 effective_fit_tolerance,
                                 BlendParameterGrid::Disabled,
+                                geometry_budget,
                             )
                         })
                         .or_else(|| {
                             let blend_grid = blend_parameter_grids
                                 .entry(surface_id.clone())
                                 .or_insert_with(|| {
-                                    blend_surface_parameter_grid_with_index(
+                                    blend_surface_parameter_grid_with_index_and_budget(
                                         &model_index,
                                         surface_id,
                                         0,
+                                        geometry_budget,
                                     )
                                 });
-                            blend_surface_parameters_from_grid_for_fit(
+                            blend_surface_parameters_from_grid_for_fit_and_budget(
                                 &model_index,
                                 surface_id,
                                 *point,
                                 effective_fit_tolerance,
                                 blend_grid.as_deref()?,
+                                geometry_budget,
                             )
                         }),
                     geometry => analytic_surface_parameters(geometry, *point),
@@ -689,7 +698,7 @@ fn complete_support_uv_wave(
         }
     }
     if !support_uv_budget_exhausted(support_budget) {
-        complete_coupled_support_uv(ir, pending, support_budget);
+        complete_coupled_support_uv(ir, pending, support_budget, geometry_budget);
     }
 }
 
@@ -725,6 +734,7 @@ fn complete_coupled_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
@@ -768,12 +778,13 @@ fn complete_coupled_support_uv(
             .sides
             .each_ref()
             .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
-        let Some(lanes) = continue_surface_intersection_parameters_with_seeds(
+        let Some(lanes) = continue_surface_intersection_parameters_with_seeds_and_budget(
             ir,
             surfaces,
             points,
             *fit_tolerance,
             seeds,
+            geometry_budget,
         ) else {
             continue;
         };

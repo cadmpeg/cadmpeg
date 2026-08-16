@@ -21,6 +21,7 @@ use super::feature_completeness::{
     thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
     trim_surface_definition_is_incomplete, valid_feature_direction,
 };
+use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::pcurves::{MAX_COMPLETION_TRANSFER_SAMPLES, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES};
 use super::support_uv::{pcurve_requires_completion, MAX_SUPPORT_UV_SAMPLES};
 use super::{summary_notes, Counts, Scan};
@@ -51,6 +52,7 @@ pub(crate) fn build_geometry_report(
     tessellation_count: usize,
     model: &crate::native::NativeModel,
     completion_budget: CompletionBudgetStatus,
+    adaptive_geometry_exhausted: bool,
 ) -> DecodeReport {
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
@@ -147,6 +149,13 @@ pub(crate) fn build_geometry_report(
             MAX_COMPLETION_TRANSFER_SAMPLES,
             MAX_SUPPORT_UV_SAMPLES,
             unresolved_intersection_lanes,
+        )));
+    }
+
+    if adaptive_geometry_exhausted {
+        losses.push(NxLossCode::GeometryAdaptiveWorkBounded.note(format!(
+            "Model-wide adaptive geometry certification stopped at its {MAX_ADAPTIVE_GEOMETRY_WORK}-unit work bound; \
+             unresolved adaptive geometry certification results were left untyped.",
         )));
     }
 

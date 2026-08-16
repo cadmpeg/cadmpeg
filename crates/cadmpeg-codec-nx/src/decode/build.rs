@@ -5,6 +5,7 @@ use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
     retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream,
 };
+use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
 use super::pcurves::{
     transfer_budget_exhausted, MAX_COMPLETION_TRANSFER_SAMPLES, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
@@ -182,6 +183,7 @@ pub(crate) fn try_decode_geometry(
     let exact_transfer_budget = ctx.work_budget(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES as u64);
     let transfer_budget = ctx.work_budget(MAX_COMPLETION_TRANSFER_SAMPLES as u64);
     let support_budget = ctx.work_budget(MAX_SUPPORT_UV_SAMPLES as u64);
+    let adaptive_geometry_budget = ctx.work_budget(MAX_ADAPTIVE_GEOMETRY_WORK as u64);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -307,6 +309,7 @@ pub(crate) fn try_decode_geometry(
             &view.offset_surfaces,
             &surfaces_by_xmt,
             ir.tolerances.linear,
+            &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
             let Some(support) = surfaces_by_xmt.get(&offset.support).cloned() else {
@@ -795,11 +798,17 @@ pub(crate) fn try_decode_geometry(
             &mut annotations,
             &exact_transfer_budget,
             &transfer_budget,
+            &adaptive_geometry_budget,
         );
         invalidate_inconsistent_support_uv(&mut ir, &pending_ext11_support_uv);
         complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
         complete_parameterization_equivalent_support_uv(&mut ir);
-        complete_support_uv_with_budget(&mut ir, &pending_ext11_support_uv, &support_budget);
+        complete_support_uv_with_budget(
+            &mut ir,
+            &pending_ext11_support_uv,
+            &support_budget,
+            &adaptive_geometry_budget,
+        );
         attach_completed_intersection_pcurves(
             &mut ir,
             graph,
@@ -893,6 +902,7 @@ pub(crate) fn try_decode_geometry(
         ir.model.tessellations.len(),
         &model,
         completion_budget,
+        adaptive_geometry_budget.exhausted(),
     );
     report_untransferred_streams(scan, &mut report, true);
     Ok(Some((ir, report, annotations, unknowns)))

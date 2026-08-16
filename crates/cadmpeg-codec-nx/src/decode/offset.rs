@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Certified offset-cache fit and offset-surface parameter inversion.
 
-use super::blend::{blend_surface_parameters_for_fit_with_grid, BlendParameterGrid};
+use super::blend::{blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGrid};
+use super::geometry_work::GeometryWorkBudget;
+#[cfg(test)]
+use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::topology::{Graph, Node};
+#[cfg(test)]
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, model_surface_partials_by_id, model_surface_point_by_id,
@@ -25,6 +30,7 @@ pub(crate) fn saved_offset_carriers(
     offsets: &[crate::topology::OffsetSurface],
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> BTreeMap<u32, (SurfaceId, f64)> {
     if !tolerance.is_finite() || tolerance < 0.0 {
         return BTreeMap::new();
@@ -70,9 +76,13 @@ pub(crate) fn saved_offset_carriers(
             if *candidate_id == support_id {
                 continue;
             }
-            if let Some(fit) =
-                certified_offset_cache_fit(support, candidate, offset.distance, tolerance)
-            {
+            if let Some(fit) = certified_offset_cache_fit_with_budget(
+                support,
+                candidate,
+                offset.distance,
+                tolerance,
+                geometry_budget,
+            ) {
                 matches
                     .entry(offset.xmt)
                     .or_default()
@@ -97,11 +107,29 @@ pub(crate) fn saved_offset_carriers(
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn certified_offset_cache_fit(
     support: &SurfaceGeometry,
     candidate: &SurfaceGeometry,
     distance: f64,
     tolerance: f64,
+) -> Option<f64> {
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    certified_offset_cache_fit_with_budget(
+        support,
+        candidate,
+        distance,
+        tolerance,
+        &geometry_budget,
+    )
+}
+
+pub(crate) fn certified_offset_cache_fit_with_budget(
+    support: &SurfaceGeometry,
+    candidate: &SurfaceGeometry,
+    distance: f64,
+    tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
     let (SurfaceGeometry::Nurbs(support), SurfaceGeometry::Nurbs(candidate)) = (support, candidate)
     else {
@@ -166,7 +194,14 @@ pub(crate) fn certified_offset_cache_fit(
             return (maximum_error <= tolerance).then_some(maximum_error);
         }
     }
-    certified_curved_offset_cache_fit(support, candidate, distance, tolerance, same_basis)
+    certified_curved_offset_cache_fit_with_budget(
+        support,
+        candidate,
+        distance,
+        tolerance,
+        same_basis,
+        geometry_budget,
+    )
 }
 
 pub(crate) fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
@@ -417,12 +452,13 @@ pub(crate) fn active_spline_controls(
     (span >= degree && span < count).then_some(span - degree..=span)
 }
 
-pub(crate) fn certified_curved_offset_cache_fit(
+pub(crate) fn certified_curved_offset_cache_fit_with_budget(
     support: &NurbsSurface,
     candidate: &NurbsSurface,
     distance: f64,
     tolerance: f64,
     same_basis: bool,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
     let support_net = HomogeneousSurfaceNet::from_homogeneous_surface(support)?;
     let candidate_net = HomogeneousSurfaceNet::from_homogeneous_surface(candidate)?;
@@ -463,6 +499,9 @@ pub(crate) fn certified_curved_offset_cache_fit(
     }
     let mut certified_bound = 0.0_f64;
     while let Some([u0, u1, v0, v1]) = rectangles.pop() {
+        if !geometry_budget.charge() {
+            return None;
+        }
         let u = u0 + (u1 - u0) * 0.5;
         let v = v0 + (v1 - v0) * 0.5;
         let support_bounds =
@@ -749,6 +788,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
     offset_surface_parameters_with_tolerance_with_index(&index, surface, point, seed, fit_tolerance)
 }
 
+#[cfg(test)]
 pub(crate) fn offset_surface_parameters_with_tolerance_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -756,6 +796,26 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    offset_surface_parameters_with_tolerance_with_index_and_budget(
+        index,
+        surface,
+        point,
+        seed,
+        fit_tolerance,
+        &geometry_budget,
+    )
+}
+
+pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    (!geometry_budget.exhausted()).then_some(())?;
     let ir = index.ir();
     let carrier = ir
         .model
@@ -1019,12 +1079,32 @@ pub(crate) fn continue_surface_intersection_parameters(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn continue_surface_intersection_parameters_with_seeds(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
+) -> Option<[Vec<Point2>; 2]> {
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    continue_surface_intersection_parameters_with_seeds_and_budget(
+        ir,
+        surfaces,
+        chart,
+        fit_tolerance,
+        seeds,
+        &geometry_budget,
+    )
+}
+
+pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    chart: &[Point3],
+    fit_tolerance: f64,
+    seeds: [Option<Point2>; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[Vec<Point2>; 2]> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     if chart.len() < 2
@@ -1046,21 +1126,23 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds(
                 nurbs_surface_parameter_within_tolerance(nurbs, point, seed, fit_tolerance)
             }
             SurfaceGeometry::Procedural { .. } => {
-                offset_surface_parameters_with_tolerance_with_index(
+                offset_surface_parameters_with_tolerance_with_index_and_budget(
                     &index,
                     surface,
                     point,
                     seed,
                     Some(fit_tolerance),
+                    geometry_budget,
                 )
                 .or_else(|| {
-                    blend_surface_parameters_for_fit_with_grid(
+                    blend_surface_parameters_for_fit_with_grid_and_budget(
                         &index,
                         surface,
                         point,
                         seed,
                         fit_tolerance,
                         BlendParameterGrid::Build,
+                        geometry_budget,
                     )
                 })
             }

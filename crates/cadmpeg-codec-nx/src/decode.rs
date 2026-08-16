@@ -61,48 +61,50 @@ pub(crate) use feature_completeness::{
     unit_feature_direction, valid_draft_angle, valid_feature_direction, valid_increasing_locations,
 };
 
+mod geometry_work;
+
 mod pcurves;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use pcurves::blend_boundary_parameter_from_support_spine;
+#[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use pcurves::{
     attach_tolerant_edge_intersections, blend_boundary_parameter_from_support_spine_with_index,
-    boundary_curve_affine_breaks, complete_intersection_pcurves_from_coedge_incidence,
+    coincident_pcurve_pair, exact_boundary_pcurve, orient_tolerant_intersection_pcurve,
+    pcurve_matches_edge, pcurve_matches_edge_range,
+};
+#[allow(unused_imports)]
+pub(crate) use pcurves::{
+    attach_tolerant_edge_intersections_with_budget, boundary_curve_affine_breaks,
+    complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_supports_from_edge_incidence,
     complete_tolerant_intersection_pcurves_from_serialized_branches, curve_is_cache_backed,
     exact_analytic_isocurve_pcurve, exact_boundary_curve_breaks, ordered_parameter_range,
     pcurve_matches_edge_range_with_index, pcurve_parameter_range, reverse_pcurve_over_range,
-    surface_parameters_for_fit_with_index,
-};
-#[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use pcurves::{
-    coincident_pcurve_pair, exact_boundary_pcurve, orient_tolerant_intersection_pcurve,
-    pcurve_matches_edge, pcurve_matches_edge_range,
 };
 
 mod offset;
 #[allow(unused_imports)]
 pub(crate) use offset::{
-    active_spline_controls, certified_curved_offset_cache_fit, certified_offset_cache_fit,
-    clamp_intersection_parameters, clamp_surface_parameters, clamp_surface_parameters_with_periods,
-    coarse_model_surface_parameters, continue_surface_intersection_parameters_with_seeds,
+    active_spline_controls, clamp_intersection_parameters, clamp_surface_parameters,
+    clamp_surface_parameters_with_periods, coarse_model_surface_parameters,
     correct_intersection_parameters, determinant_3x3, initial_surface_parameters,
     intersection_parameter_jacobian, intersection_parameter_tangent, intersection_side,
     least_squares_step, lift_periodic_parameter, model_surface_derivative,
-    normalize_pcurve_parameters, null_vector_3x4, nurbs_active_domain,
-    offset_surface_parameters_with_tolerance_with_index, parameter_derivative_step, point_distance,
-    positive_weights, saved_offset_carriers, solve_4x4, solve_damped_least_squares_4x4,
-    subdivide_offset_rectangle, surface_parameter_domain, surface_parameter_periods,
-    surface_parameter_periods_inner, surface_parameters, translation_net_normal,
-    HomogeneousControlBounds, HomogeneousSurfaceNet, IntersectionParameterSpace,
+    normalize_pcurve_parameters, null_vector_3x4, nurbs_active_domain, parameter_derivative_step,
+    point_distance, positive_weights, saved_offset_carriers, solve_4x4,
+    solve_damped_least_squares_4x4, subdivide_offset_rectangle, surface_parameter_domain,
+    surface_parameter_periods, surface_parameter_periods_inner, surface_parameters,
+    translation_net_normal, HomogeneousControlBounds, HomogeneousSurfaceNet,
+    IntersectionParameterSpace,
 };
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use offset::{
-    continue_surface_intersection_parameters, offset_surface_parameters,
-    offset_surface_parameters_with_tolerance,
+    certified_offset_cache_fit, continue_surface_intersection_parameters,
+    continue_surface_intersection_parameters_with_seeds, offset_surface_parameters,
+    offset_surface_parameters_with_tolerance, offset_surface_parameters_with_tolerance_with_index,
 };
 
 mod build;
@@ -138,32 +140,29 @@ pub(crate) use blend::closest_spine_parameter;
 pub(crate) use blend::{
     add_bernstein_polynomials, analytic_surface_offset, bernstein_product, bezier_spans,
     binomial_coefficient, blend_boundary_parameter_from_support_pcurve,
-    blend_boundary_point_with_index, blend_contact_offset_matches, blend_surface_contact_direction,
-    blend_surface_definition, blend_surface_frame_with_index, blend_surface_offset,
-    blend_surface_parameter_grid_with_index, blend_surface_parameters_for_fit_with_grid,
-    blend_surface_parameters_from_grid_for_fit, blend_surface_parameters_inner,
-    blend_surface_point_from_frame, blend_surface_point_inner_with_index,
-    blend_surface_u_derivative_with_index, canonical_periodic_parameter,
-    closest_blend_surface_grid_parameters, closest_nurbs_curve_parameter,
+    blend_boundary_point_with_index, blend_contact_offset_matches, blend_surface_definition,
+    blend_surface_offset, blend_surface_parameters_inner, blend_surface_point_from_frame,
+    blend_surface_point_inner_with_index, blend_surface_u_derivative_with_index,
+    canonical_periodic_parameter, closest_blend_surface_grid_parameters,
     closest_parameter_candidates, closest_periodic_analytic_curve_parameter,
-    coarse_blend_surface_parameters_with_index, constant_surface_offset_between,
-    decoded_surface_point_inner, homogeneous_residual_distance, insert_homogeneous_curve_knot,
-    lift_periodic_parameters, polynomial_roots_in_unit_interval, polynomial_value,
-    rational_squared_distance_derivative, real_polynomial_roots,
-    refine_blend_surface_parameters_with_index, rodrigues_rotate, scalar_bernstein_sign_variations,
-    scalar_bezier_roots, scalar_bezier_value, signed_angle, spine_contact_direction_with_index,
-    spine_contact_pcurve, spine_contact_point_with_index, stationary_rational_distance_candidates,
-    subdivide_scalar_bezier_span, subtract_bernstein_polynomials, sum_bernstein_polynomials,
-    surface_contact_direction_with_index, surface_offset_lineage, BezierSpan,
+    constant_surface_offset_between, decoded_surface_point_inner, homogeneous_residual_distance,
+    insert_homogeneous_curve_knot, lift_periodic_parameters, polynomial_roots_in_unit_interval,
+    polynomial_value, rational_squared_distance_derivative, real_polynomial_roots,
+    rodrigues_rotate, scalar_bernstein_sign_variations, scalar_bezier_value, signed_angle,
+    spine_contact_direction_with_index, spine_contact_pcurve, spine_contact_point_with_index,
+    stationary_rational_distance_candidates, subdivide_scalar_bezier_span,
+    subtract_bernstein_polynomials, sum_bernstein_polynomials, surface_offset_lineage, BezierSpan,
     BlendContactDerivativeContext, BlendParameterGrid, BlendSurfaceFrame, BoundaryInverseTarget,
     HomogeneousCurveSpans, ScalarBezierRoots, ScalarBezierSpan,
 };
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use blend::{
-    blend_surface_parameters, blend_surface_parameters_for_fit, blend_surface_point,
-    blend_surface_point_inner, blend_surface_u_derivative, coarse_blend_surface_parameters,
+    blend_surface_parameters, blend_surface_parameters_for_fit,
+    blend_surface_parameters_for_fit_with_grid, blend_surface_point, blend_surface_point_inner,
+    blend_surface_u_derivative, closest_nurbs_curve_parameter, coarse_blend_surface_parameters,
     refine_blend_surface_parameters, surface_contact_direction,
+    surface_contact_direction_with_index,
 };
 
 mod emit;
