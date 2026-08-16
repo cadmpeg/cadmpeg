@@ -367,9 +367,17 @@ form an acyclic chain that ends in a dimensional base unit. Representation
 uncertainty is a linear tolerance measured in the representation's length
 unit. Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the
 length and plane-angle scales for that representation and its reachable
-representation-item closure. A carrier shared by representations must have
-one equal scale in every such context; conflicting contexts leave the carrier
-on the document fallback scale and produce a geometry loss. ISO 10303-41
+representation-item closure. ISO 10303-43 associates a representation context
+with each direct item root and every indirectly referenced `representation_item`
+or `founded_item` in its graph. A generic `REPRESENTATION_RELATIONSHIP`
+relates representations but does not make one representation part of the
+other. `REPRESENTATION_MAP` and `MAPPED_ITEM` make the mapped representation
+part of the containing representation: source items retain the mapped
+representation's context, while the mapped item and its mapping target graph
+use the containing representation's context. A
+`PARAMETRIC_REPRESENTATION_CONTEXT` makes length units dimensionless; pcurve
+definition values use that parametric context, and surface-chart conversion
+uses the support surface's parameterization. ISO 10303-41
 defines `GLOBAL_UNIT_ASSIGNED_CONTEXT` as a `representation_context`; its
 `units` apply in that context, and each unit in its SET is a different kind.
 ISO 10303-42 requires every `geometric_representation_item` to be founded in
@@ -380,15 +388,19 @@ globally within that context. ISO 10303-43 requires a
 must receive the same unit. The format defines no document-wide unit
 occurrence or precedence between independent contexts.
 
-CADIR decision: a value without a usable representation unit context receives
-a fallback only when every global unit context containing that dimension
-resolves to one equal scale, with all dimension-unit occurrences in each such
-context agreeing. If no context supplies the dimension, every unit record for
-that dimension must resolve to the same scale. This fallback is salvage for an
-unscoped value, not STEP unit ownership. It does not identify or select a unit
-occurrence, and entity-id or source order never selects the scale. Conflicting
-contexts, unresolved units, or a non-unique set leave unscoped values in source
-numeric units and produce a document-unit unresolved error.
+CADIR decision: a carrier used by several representation contexts receives a
+per-carrier scale only when all length or plane-angle scales for that carrier
+agree. A conflict does not select a context or source occurrence; the carrier
+uses the document fallback scale and produces a geometry loss. A value without
+a usable representation unit context receives a fallback only when every
+global unit context containing that dimension resolves to one equal scale,
+with all dimension-unit occurrences in each such context agreeing. If no
+context supplies the dimension, every unit record for that dimension must
+resolve to the same scale. This fallback is salvage for an unscoped value,
+not STEP unit ownership. It does not identify or select a unit occurrence,
+and entity-id or source order never selects the scale. Conflicting contexts,
+unresolved units, or a non-unique set leave unscoped values in source numeric
+units and produce a document-unit unresolved error.
 `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure whose
 unit resolves to a length unit. When several length measures are present, the
 one named `distance_accuracy_value` is selected; otherwise a unique length

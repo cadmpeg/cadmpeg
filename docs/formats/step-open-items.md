@@ -422,22 +422,6 @@ fixture covers the inherited-attribute form.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### UM-01. Unit context selection
-
-**Question.** What STEP rule establishes unit context selection?
-
-**Known.** Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies
-the length and plane-angle scales for that representation and its reachable
-representation-item closure. A carrier shared by representations must have
-one equal scale in every context. A conflicting carrier has no per-carrier
-override, uses the document fallback scale, and produces a geometry loss.
-Unscoped values use the document fallback scale. The resolved scales reach
-geometry, PMI, tessellation, topology, and validation consumers.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### UM-02. Representation uncertainty selection
 
 **Question.** What STEP rule establishes representation uncertainty selection?

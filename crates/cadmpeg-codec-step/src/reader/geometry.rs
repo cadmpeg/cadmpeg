@@ -3058,6 +3058,18 @@ fn collect_unit_scope_members(
     if record.partial("PCURVE").is_some() {
         return;
     }
+    if record.partial("MAPPED_ITEM").is_some() {
+        // The mapping source keeps the units of its mapped representation.
+        // Only the mapping target is an item in this representation's context.
+        if let Some(target) = record
+            .partial("MAPPED_ITEM")
+            .and_then(|partial| partial.parameters.last())
+            .and_then(Value::reference)
+        {
+            collect_unit_scope_members(target, exchange, members, active);
+        }
+        return;
+    }
     let mut references = Vec::new();
     for parameter in record
         .partials
@@ -3065,22 +3077,6 @@ fn collect_unit_scope_members(
         .flat_map(|partial| &partial.parameters)
     {
         collect_references(parameter, &mut references);
-    }
-    if record.partial("MAPPED_ITEM").is_some() {
-        for reference in references {
-            if exchange.records.get(&reference).is_some_and(|record| {
-                record.partials.iter().any(|partial| {
-                    matches!(
-                        partial.name.as_str(),
-                        "CARTESIAN_TRANSFORMATION_OPERATOR_2D"
-                            | "CARTESIAN_TRANSFORMATION_OPERATOR_3D"
-                    )
-                })
-            }) {
-                collect_unit_scope_members(reference, exchange, members, active);
-            }
-        }
-        return;
     }
     for reference in references {
         let Some(referenced) = exchange.records.get(&reference) else {
