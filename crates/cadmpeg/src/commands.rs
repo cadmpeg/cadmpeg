@@ -191,7 +191,7 @@ pub fn inspect(
     Ok(())
 }
 
-/// Decode a native CAD file and write canonical CADIR JSON.
+/// Decode a native CAD file and write CADIR JSON.
 pub fn decode(
     catalogs: &AppCatalogs,
     path: &Path,
@@ -302,7 +302,7 @@ pub fn validate_cmd(
     Ok(())
 }
 
-/// Decode if needed and export without validating CADIR.
+/// Convert a CAD file without validating.
 pub fn export(
     catalogs: &AppCatalogs,
     path: &Path,
@@ -314,7 +314,7 @@ pub fn export(
     execute_conversion(catalogs, path, format, out, plan, args, "export")
 }
 
-/// Decode if needed, validate CADIR, and export.
+/// Convert a CAD file to another format.
 pub fn convert(
     catalogs: &AppCatalogs,
     path: &Path,
@@ -431,7 +431,7 @@ fn execute_conversion(
     )
 }
 
-/// Structurally compare two decoded models.
+/// Compare two CAD files.
 pub fn diff(
     catalogs: &AppCatalogs,
     a: DiffInput<'_>,

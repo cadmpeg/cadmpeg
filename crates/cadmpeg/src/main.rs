@@ -2,11 +2,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! The `cadmpeg` command-line interface.
 //!
-//! The CLI detects supported native CAD containers, decodes model data through
-//! CADIR, validates and compares CADIR models, projects report and CADIR JSON
-//! through `query`, and writes CADIR, STEP AP214, IGES 5.1/5.2/5.3, `.FCStd`, `.f3d`, or
-//! `.sldprt` output. See the package README for workflows, format limits, loss
-//! reporting, and exit-status semantics.
+//! Convert native CAD files between formats, inspect their contents, and
+//! compare two files. See the package README for workflows, format limits,
+//! loss reporting, and exit-status semantics.
 
 mod application;
 mod commands;
@@ -82,7 +80,7 @@ struct StepOutputArgs {
     /// STEP application protocol and edition; valid only for STEP output.
     #[arg(long, value_enum)]
     step_target: Option<StepTarget>,
-    /// Reject STEP output before writing when any STEP loss note would be reported.
+    /// Do not write STEP if the export would report any loss.
     #[arg(long)]
     reject_step_losses: bool,
 }
@@ -111,8 +109,14 @@ impl StepOutputArgs {
 #[command(
     name = "cadmpeg",
     version,
-    about = "Inspect, decode, validate, compare, and convert CAD models",
-    after_help = "Exit codes: 0 success, 1 semantic failure, 2 operational error."
+    about = "Convert and inspect native CAD files.",
+    long_about = "Convert and inspect native CAD files.\n\n\
+                  Reads vendor CAD files and writes them in another format.",
+    after_help = "Examples:\n  \
+                  cadmpeg convert part.sldprt -o part.step\n  \
+                  cadmpeg inspect part.sldprt\n  \
+                  cadmpeg diff a.sldprt b.step\n\n\
+                  Exit codes: 0 success, 1 semantic failure, 2 operational error."
 )]
 struct Cli {
     /// Operation to perform.
@@ -122,7 +126,7 @@ struct Cli {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Format {
-    /// Canonical CADIR JSON.
+    /// CADIR JSON.
     #[value(alias = "json")]
     Cadir,
     /// ISO 10303-21 STEP AP214.
@@ -295,7 +299,7 @@ enum InputFormat {
     #[cfg(feature = "sat")]
     #[value(alias = "smt", alias = "smb", alias = "sab")]
     Sat,
-    /// Canonical CADIR JSON.
+    /// CADIR JSON.
     Cadir,
 }
 
@@ -331,7 +335,7 @@ impl InputFormat {
 
 #[derive(Debug, Clone, Args)]
 struct InputArgs {
-    /// Bypass content detection and read the input as this format.
+    /// Treat the input as this format.
     #[arg(long, visible_alias = "from", value_enum)]
     input_format: Option<InputFormat>,
 }
@@ -344,10 +348,10 @@ impl InputArgs {
 
 #[derive(Debug, Clone, Args)]
 struct DecodeArgs {
-    /// Stop after the native container layer without transferring geometry.
+    /// Read the container only; do not decode geometry.
     #[arg(long)]
     container_only: bool,
-    /// Reject a decode that reports a mandatory transfer loss.
+    /// Fail if required content cannot be decoded.
     #[arg(long)]
     strict: bool,
     /// Resource-limit profile: `desktop` (generous, the default) or `service`
@@ -391,13 +395,22 @@ impl LimitProfile {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// List a native container's entries, or run a byte-level subcommand.
+    /// Show what is inside a CAD file.
     ///
-    /// With a file argument this prints the codec-aware container summary. With
-    /// a subcommand it runs a format-agnostic byte tool over any file.
-    #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
+    /// Prints the format, container layout, and stored streams.
+    ///
+    /// Byte tools (hex, find, extract, ...) dump raw bytes. They work on any file.
+    ///
+    /// `query` prints tables from JSON that `convert` and `decode` write. `inspect` reads the CAD file.
+    #[command(
+        display_order = 2,
+        args_conflicts_with_subcommands = true,
+        subcommand_negates_reqs = true,
+        subcommand_help_heading = "Byte tools",
+        after_help = "Examples:\n  cadmpeg inspect part.sldprt"
+    )]
     Inspect {
-        /// Native CAD file to inspect. Omit it when using a byte subcommand.
+        /// CAD file to inspect.
         #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
         /// Tolerated spelling of the positional input.
@@ -408,10 +421,10 @@ enum Command {
             conflicts_with = "input"
         )]
         input_flag: Option<PathBuf>,
-        /// Write a versioned JSON summary to standard output.
+        /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a versioned JSON command report to this file.
+        /// Write a JSON report to this file.
         #[arg(short = 'o', long, visible_alias = "output")]
         report: Option<PathBuf>,
         /// Replace an existing report file.
@@ -422,16 +435,21 @@ enum Command {
         limits: LimitProfile,
         #[command(flatten)]
         input_args: InputArgs,
-        /// Byte-level tool to run instead of the container summary.
+        /// Byte tool to run instead of showing the container.
         #[command(subcommand)]
         bytes: Option<inspect::ByteCommand>,
     },
-    /// Decode a native CAD file to canonical CADIR JSON.
+    /// Write a CAD file as CADIR JSON.
     ///
-    /// Does not validate. A successful decode is not a valid IR; run
-    /// `cadmpeg validate` (or convert, which validates unless overridden).
+    /// CADIR is cadmpeg's JSON form of a model. decode does not validate.
+    ///
+    /// `convert` validates and writes another CAD format. Use decode when you want the JSON.
+    #[command(
+        display_order = 5,
+        after_help = "Examples:\n  cadmpeg decode part.sldprt -o part.cadir.json"
+    )]
     Decode {
-        /// Native CAD file to decode.
+        /// CAD file to decode.
         #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
         /// Tolerated spelling of the positional input.
@@ -451,7 +469,7 @@ enum Command {
         /// Replace an existing output file.
         #[arg(long)]
         force: bool,
-        /// Write a versioned JSON command report to this file.
+        /// Write a JSON report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
         #[command(flatten)]
@@ -459,20 +477,28 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Project one named view from a cadmpeg JSON artifact.
+    /// Print a table from a report or CADIR JSON.
     ///
-    /// Accepts a decoded CADIR document, a command report written by
-    /// `--report`/`-o`, or a `<stem>.fidelity.json` decode sidecar, and detects which one
-    /// it was given. Output is tab-separated with a header row.
+    /// Reads JSON from `--report`, from decode, or from a decode sidecar.
+    #[command(
+        display_order = 7,
+        subcommand_help_heading = "Views",
+        after_help = "Examples:\n  cadmpeg query losses part.convert.json\n  cadmpeg query counts part.cadir.json"
+    )]
     Query {
-        /// View to project.
+        /// Table to print.
         #[command(subcommand)]
         view: query::QueryView,
     },
-    /// Validate a CADIR document or a decoded native CAD file.
-    #[command(after_help = "Project fields from the written report with `cadmpeg query`.")]
+    /// Check a CAD file for errors.
+    ///
+    /// Accepts a native CAD file or CADIR JSON.
+    #[command(
+        display_order = 4,
+        after_help = "Examples:\n  cadmpeg validate part.sldprt"
+    )]
     Validate {
-        /// CADIR or supported native CAD file to validate.
+        /// CAD file to check.
         #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
         /// Tolerated spelling of the positional input.
@@ -483,10 +509,10 @@ enum Command {
             conflicts_with = "input"
         )]
         input_flag: Option<PathBuf>,
-        /// Write a versioned JSON result to standard output.
+        /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a versioned JSON command report to this file.
+        /// Write a JSON report to this file.
         #[arg(short = 'o', long, visible_alias = "output")]
         report: Option<PathBuf>,
         /// Replace an existing report file.
@@ -497,9 +523,15 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Decode if needed, then export without CADIR validation.
+    /// Convert without validating.
+    ///
+    /// Same conversion as convert, without the validation step.
+    #[command(
+        display_order = 6,
+        after_help = "Examples:\n  cadmpeg export part.sldprt -o part.step"
+    )]
     Export {
-        /// CADIR or supported native CAD file to export.
+        /// CAD file to convert.
         #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
         /// Tolerated spelling of the positional input.
@@ -520,19 +552,19 @@ enum Command {
         /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, visible_alias = "to", value_enum)]
         format: Option<Format>,
-        /// Output file; omit to write the artifact to standard output.
+        /// Output file; omit to write to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Replace an existing output file.
         #[arg(long)]
         force: bool,
-        /// Write a versioned JSON command report to this file.
+        /// Write a JSON report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
-        /// Write geometry output even when decoding transferred no geometry.
+        /// Write output even if no geometry was decoded.
         #[arg(long)]
         allow_empty: bool,
-        /// Refuse to write output when decoding reported any loss (exit 1).
+        /// Do not write if decoding reported any loss.
         #[arg(long)]
         reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
@@ -551,22 +583,31 @@ enum Command {
         #[command(flatten)]
         step: StepOutputArgs,
     },
-    /// Structurally compare two CADIR or supported native CAD models.
+    /// Compare two CAD files.
+    ///
+    /// Compares decoded geometry and topology of two files.
+    /// Accepts native CAD files or CADIR JSON.
+    #[command(
+        display_order = 3,
+        after_help = "Examples:\n  cadmpeg diff a.sldprt b.step\n  cadmpeg diff before.f3d after.f3d\n\n\
+                      Exit status 1 means the models differ.\n\
+                      `inspect diff` compares raw bytes, not decoded models."
+    )]
     Diff {
-        /// First model.
+        /// First CAD file.
         a: PathBuf,
-        /// Second model.
+        /// Second CAD file.
         b: PathBuf,
-        /// Bypass content detection and read the first model as this format.
+        /// Treat the first file as this format.
         #[arg(long, value_enum)]
         input_format_a: Option<InputFormat>,
-        /// Bypass content detection and read the second model as this format.
+        /// Treat the second file as this format.
         #[arg(long, value_enum)]
         input_format_b: Option<InputFormat>,
-        /// Write a versioned JSON result to standard output.
+        /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a versioned JSON command report to this file.
+        /// Write a JSON report to this file.
         #[arg(short = 'o', long, visible_alias = "output")]
         report: Option<PathBuf>,
         /// Replace an existing report file.
@@ -575,9 +616,18 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-    /// Decode if needed, validate CADIR, then export.
+    /// Convert a CAD file to another format.
+    ///
+    /// Reads a CAD file, validates it, and writes another format.
+    /// The output path's extension selects the format. Pass `-f` when writing to stdout.
+    ///
+    /// `export` writes the same conversion without validating.
+    #[command(
+        display_order = 1,
+        after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.f3d -f step"
+    )]
     Convert {
-        /// CADIR or supported native CAD file to convert.
+        /// CAD file to convert.
         #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
         /// Tolerated spelling of the positional input.
@@ -598,22 +648,22 @@ enum Command {
         /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, visible_alias = "to", value_enum)]
         format: Option<Format>,
-        /// Output file; omit to write the artifact to standard output.
+        /// Output file; omit to write to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Replace an existing output file.
         #[arg(long)]
         force: bool,
-        /// Write a versioned JSON command report to this file.
+        /// Write a JSON report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
-        /// Export even when CADIR validation finds errors.
+        /// Write output even if validation finds errors.
         #[arg(long)]
         allow_invalid: bool,
-        /// Write geometry output even when decoding transferred no geometry.
+        /// Write output even if no geometry was decoded.
         #[arg(long)]
         allow_empty: bool,
-        /// Refuse to write output when decoding reported any loss (exit 1).
+        /// Do not write if decoding reported any loss.
         #[arg(long)]
         reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
