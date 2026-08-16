@@ -395,6 +395,8 @@ struct MeshModifiersRecord {
     edge_softening: Option<EdgeSofteningRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thickening: Option<ThickeningRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    curve_piping: Option<CurvePipingRecord>,
 }
 
 #[derive(Debug, Serialize)]
@@ -454,11 +456,24 @@ struct ThickeningRecord {
     distance: f64,
 }
 
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct CurvePipingRecord {
+    xml_version: i32,
+    on: bool,
+    radius: f64,
+    segments: i32,
+    faceted: bool,
+    accuracy: i32,
+    cap_type: String,
+}
+
 fn mesh_modifiers_record(modifiers: &crate::mesh_modifiers::MeshModifiers) -> MeshModifiersRecord {
     MeshModifiersRecord {
         displacement: modifiers.displacement.as_ref().map(displacement_record),
         edge_softening: modifiers.edge_softening.as_ref().map(edge_softening_record),
         thickening: modifiers.thickening.as_ref().map(thickening_record),
+        curve_piping: modifiers.curve_piping.as_ref().map(curve_piping_record),
     }
 }
 
@@ -520,6 +535,20 @@ fn thickening_record(thickening: &crate::mesh_modifiers::ThickeningModifier) -> 
         both_sides: thickening.both_sides,
         offset_only: thickening.offset_only,
         distance: thickening.distance,
+    }
+}
+
+fn curve_piping_record(
+    curve_piping: &crate::mesh_modifiers::CurvePipingModifier,
+) -> CurvePipingRecord {
+    CurvePipingRecord {
+        xml_version: curve_piping.xml_version,
+        on: curve_piping.on,
+        radius: curve_piping.radius,
+        segments: curve_piping.segments,
+        faceted: curve_piping.faceted,
+        accuracy: curve_piping.accuracy,
+        cap_type: curve_piping.cap_type.clone(),
     }
 }
 

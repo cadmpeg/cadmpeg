@@ -1299,6 +1299,43 @@ triple owns the typed value. A malformed recognized payload leaves the object
 attributes and geometry admitted, omits this native value, and retains the
 bounded userdata record for opaque fidelity handling.
 
+#### 7.2.15 `ON_CurvePipingUserData`
+
+`ON_CurvePipingUserData` uses class UUID
+`2D5AFEA9-F458-4079-992F-C2D405D9383B`, item UUID
+`2B1A758E-7CB1-45AB-A5BF-DFCD6D3D136D`, and application UUID
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. It is attached to the
+`ON_3dmObjectAttributes` mesh-modifier owner and uses the same XML userdata
+payload framing as section 7.2.12. The writer emits XML userdata version 2;
+the reader accepts versions 1 and 2 and skips remaining bytes at the bounded
+userdata payload boundary.
+
+The XML document has root `xml` and a direct child named
+`curve-piping-object-data`. Parameter and property names are matched
+case-insensitively. A parameter with no `type` property is absent to the
+parameter reader. Unknown child elements are ignored. Missing parameters use
+the source getter defaults below:
+
+| XML child | Type | Meaning | Missing value |
+| --- | --- | --- | ---: |
+| `on` | bool | Enables curve piping | `false` |
+| `radius` | double | Pipe radius | `1.0` |
+| `segments` | int | Number of pipe segments | `16` |
+| `weld` | bool | Welds the pipe; native `faceted` is its inverse | `true` |
+| `accuracy` | int | Pipe accuracy setting | `50` |
+| `cap-type` | string | Cap mode: `none`, `flat`, `box`, or `dome` | `none` |
+
+The source default writer emits `cap-type` as `dome`. The public getter maps
+an absent or unrecognized cap string to `none`; the typed reader applies the
+same mapping. CADIR stores the recognized item under the owning object
+presentation's `mesh_modifiers.curve_piping` native value, with `faceted` as
+the inverse of XML `weld` and `cap_type` as the canonical lower-case cap name.
+It does not create geometry or a second object identity. The first serialized
+matching class/item/application triple owns the typed value. A malformed
+recognized payload leaves the object attributes and geometry admitted, omits
+this native value, and retains the bounded userdata record for opaque fidelity
+handling.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2152,6 +2189,11 @@ changing the transferred object geometry.
 
 The `ON_ThickeningUserData` item is a typed attributes carrier. Its XML
 payload and thickening fields are specified in section 7.2.14; the resulting
+modifier is retained under the same object presentation without changing the
+transferred object geometry.
+
+The `ON_CurvePipingUserData` item is a typed attributes carrier. Its XML
+payload and curve-piping fields are specified in section 7.2.15; the resulting
 modifier is retained under the same object presentation without changing the
 transferred object geometry.
 

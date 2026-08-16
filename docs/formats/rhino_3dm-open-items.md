@@ -268,6 +268,14 @@ The built-in `ON_ThickeningUserData` class is also settled. Its class UUID is
 XML roots, and the source getter defaults for the five thickening parameters.
 Section 7.2.14 and the decoder retain the typed distance and Boolean values.
 
+The built-in `ON_CurvePipingUserData` class is also settled. Its class UUID is
+`2D5AFEA9-F458-4079-992F-C2D405D9383B`, item UUID is
+`2B1A758E-7CB1-45AB-A5BF-DFCD6D3D136D`, and application UUID is
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. Its object-attributes payload uses
+`ON_XMLUserData` version 1 or 2 framing, the `xml`/`curve-piping-object-data`
+XML roots, and the source getter defaults. Section 7.2.15 and the decoder
+retain the inverse `weld`/`faceted` value and canonical cap type.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 

@@ -11,6 +11,7 @@ const DISPLACEMENT_ROOT: &str = "new-displacement-object-data";
 const DISPLACEMENT_SUB: &str = "sub";
 const EDGE_SOFTENING_ROOT: &str = "edge-softening-object-data";
 const THICKENING_ROOT: &str = "thickening-object-data";
+const CURVE_PIPING_ROOT: &str = "curve-piping-object-data";
 
 /// The class UUID registered by `ON_DisplacementUserData`.
 pub(crate) const DISPLACEMENT_CLASS: Uuid = Uuid::from_canonical([
@@ -42,6 +43,16 @@ pub(crate) const THICKENING_ITEM: Uuid = Uuid::from_canonical([
     0x6a, 0xa7, 0xcc, 0xc3, 0x27, 0x21, 0x41, 0x0f, 0xaa, 0x56, 0xe8, 0xab, 0x4f, 0x3e, 0xce, 0x67,
 ]);
 
+/// The class UUID registered by `ON_CurvePipingUserData`.
+pub(crate) const CURVE_PIPING_CLASS: Uuid = Uuid::from_canonical([
+    0x2d, 0x5a, 0xfe, 0xa9, 0xf4, 0x58, 0x40, 0x79, 0x99, 0x2f, 0xc2, 0xd4, 0x05, 0xd9, 0x38, 0x3b,
+]);
+
+/// The item UUID returned by `ON_CurvePipingUserData::Uuid`.
+pub(crate) const CURVE_PIPING_ITEM: Uuid = Uuid::from_canonical([
+    0x2b, 0x1a, 0x75, 0x8e, 0x7c, 0xb1, 0x45, 0xab, 0xa5, 0xbf, 0xdf, 0xcd, 0x6d, 0x3d, 0x13, 0x6d,
+]);
+
 /// The application UUID registered by `ON_MeshModifier::PlugInId`.
 pub(crate) const MESH_MODIFIER_PLUGIN: Uuid = Uuid::from_canonical([
     0xf2, 0x93, 0xde, 0x5c, 0xd1, 0xff, 0x46, 0x7a, 0x9b, 0xd1, 0xca, 0xc8, 0xec, 0x4b, 0x2e, 0x6b,
@@ -56,6 +67,8 @@ pub(crate) struct MeshModifiers {
     pub(crate) edge_softening: Option<EdgeSofteningModifier>,
     /// The thickening modifier, when the object carries one.
     pub(crate) thickening: Option<ThickeningModifier>,
+    /// The curve-piping modifier, when the object carries one.
+    pub(crate) curve_piping: Option<CurvePipingModifier>,
 }
 
 /// The XML parameters written by `ON_DisplacementUserData`.
@@ -156,6 +169,26 @@ pub(crate) struct ThickeningModifier {
     pub(crate) distance: f64,
 }
 
+/// The XML parameters written by `ON_CurvePipingUserData`.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct CurvePipingModifier {
+    /// `ON_XMLUserData` payload version.
+    pub(crate) xml_version: i32,
+    /// Whether curve piping is enabled.
+    pub(crate) on: bool,
+    /// Pipe radius.
+    pub(crate) radius: f64,
+    /// Number of pipe segments.
+    pub(crate) segments: i32,
+    /// Whether the pipe is faceted; serialized as the inverse `weld` value.
+    pub(crate) faceted: bool,
+    /// Pipe accuracy from 0 through 100.
+    pub(crate) accuracy: i32,
+    /// Cap type: `none`, `flat`, `box`, or `dome`.
+    pub(crate) cap_type: String,
+}
+
 /// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
 pub(crate) fn parse_attribute_userdata(
     bytes: &[u8],
@@ -169,9 +202,12 @@ pub(crate) fn parse_attribute_userdata(
         first_matching_descriptor(descriptors, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM);
     let thickening_descriptor =
         first_matching_descriptor(descriptors, THICKENING_CLASS, THICKENING_ITEM);
+    let curve_piping_descriptor =
+        first_matching_descriptor(descriptors, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM);
     if displacement_descriptor.is_none()
         && edge_softening_descriptor.is_none()
         && thickening_descriptor.is_none()
+        && curve_piping_descriptor.is_none()
     {
         return None;
     }
@@ -233,13 +269,35 @@ pub(crate) fn parse_attribute_userdata(
             }
         }
     });
-    (displacement.is_some() || edge_softening.is_some() || thickening.is_some()).then_some(
-        MeshModifiers {
-            displacement,
-            edge_softening,
-            thickening,
-        },
-    )
+    let curve_piping = curve_piping_descriptor.and_then(|descriptor| {
+        let Some(payload_range) = descriptor.payload_range.clone() else {
+            warnings.push(format!(
+                "curve-piping userdata at {} has no bounded payload",
+                descriptor.range.start
+            ));
+            return None;
+        };
+        match parse_curve_piping(bytes, payload_range) {
+            Ok(curve_piping) => Some(curve_piping),
+            Err(error) => {
+                warnings.push(format!(
+                    "curve-piping userdata at {} dropped: {error}",
+                    descriptor.range.start
+                ));
+                None
+            }
+        }
+    });
+    (displacement.is_some()
+        || edge_softening.is_some()
+        || thickening.is_some()
+        || curve_piping.is_some())
+    .then_some(MeshModifiers {
+        displacement,
+        edge_softening,
+        thickening,
+        curve_piping,
+    })
 }
 
 fn first_matching_descriptor(
@@ -277,6 +335,14 @@ fn parse_thickening(
 ) -> Result<ThickeningModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
     parse_thickening_xml(&xml, xml_version)
+}
+
+fn parse_curve_piping(
+    bytes: &[u8],
+    payload_range: std::ops::Range<usize>,
+) -> Result<CurvePipingModifier, FramingError> {
+    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    parse_curve_piping_xml(&xml, xml_version)
 }
 
 fn parse_xml_userdata(
@@ -434,6 +500,40 @@ fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifie
     })
 }
 
+fn parse_curve_piping_xml(
+    xml: &str,
+    xml_version: i32,
+) -> Result<CurvePipingModifier, FramingError> {
+    let document = roxmltree::Document::parse(xml).map_err(|error| {
+        FramingError::structural(0, format!("invalid curve-piping XML: {error}"))
+    })?;
+    let root = document.root_element();
+    if !same_name(root, "xml") {
+        return Err(FramingError::structural(
+            0,
+            format!(
+                "curve-piping XML root is `{}`, expected `xml`",
+                root.tag_name().name()
+            ),
+        ));
+    }
+    let curve_piping = direct_child(root, CURVE_PIPING_ROOT).ok_or_else(|| {
+        FramingError::structural(
+            0,
+            format!("curve-piping XML has no `{CURVE_PIPING_ROOT}` child"),
+        )
+    })?;
+    Ok(CurvePipingModifier {
+        xml_version,
+        on: field_bool(curve_piping, "on", false),
+        radius: field_f64(curve_piping, "radius", 1.0),
+        segments: field_i32(curve_piping, "segments", 16),
+        faceted: !field_bool(curve_piping, "weld", true),
+        accuracy: field_i32(curve_piping, "accuracy", 50),
+        cap_type: field_cap_type(curve_piping, "cap-type"),
+    })
+}
+
 fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> DisplacementSubItem {
     DisplacementSubItem {
         face_index: field_i32(node, "sub-index", -1),
@@ -560,6 +660,22 @@ fn field_uuid(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
     parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil())
 }
 
+fn field_cap_type(parent: roxmltree::Node<'_, '_>, name: &str) -> String {
+    let Some(node) = typed_child(parent, name) else {
+        return "none".into();
+    };
+    let kind = attribute(node, "type").unwrap_or_default();
+    if !kind.eq_ignore_ascii_case("string") {
+        return "none".into();
+    }
+    match node.text().unwrap_or_default().trim() {
+        "flat" => "flat".into(),
+        "box" => "box".into(),
+        "dome" => "dome".into(),
+        _ => "none".into(),
+    }
+}
+
 fn parse_uuid(value: &str) -> Option<Uuid> {
     let value = value.trim_matches(|character| character == '{' || character == '}');
     let mut bytes = [0_u8; 16];
@@ -611,6 +727,18 @@ mod tests {
             0..payload.len(),
             THICKENING_CLASS,
             THICKENING_ITEM,
+            application_uuid,
+        )
+    }
+
+    fn curve_piping_descriptor(
+        payload: &[u8],
+        application_uuid: Option<Uuid>,
+    ) -> AttributeUserdataDescriptor {
+        descriptor_with_ids(
+            0..payload.len(),
+            CURVE_PIPING_CLASS,
+            CURVE_PIPING_ITEM,
             application_uuid,
         )
     }
@@ -688,6 +816,15 @@ mod tests {
 <offset-only type=\"bool\">true</offset-only>\
 <distance type=\"double\">0.25</distance>\
 </thickening-object-data></xml>";
+
+    const CURVE_PIPING_XML: &str = "<xml><curve-piping-object-data>\
+<on type=\"bool\">true</on>\
+<radius type=\"double\">2.25</radius>\
+<segments type=\"int\">12</segments>\
+<weld type=\"bool\">true</weld>\
+<accuracy type=\"int\">73</accuracy>\
+<cap-type type=\"string\">flat</cap-type>\
+</curve-piping-object-data></xml>";
 
     #[test]
     fn parses_v2_displacement_fields_and_sub_item() {
@@ -828,15 +965,75 @@ mod tests {
     }
 
     #[test]
+    fn parses_v2_curve_piping_fields() {
+        let payload = v2_payload(CURVE_PIPING_XML);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[curve_piping_descriptor(
+                &payload,
+                Some(MESH_MODIFIER_PLUGIN),
+            )],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("curve-piping userdata");
+        let curve_piping = modifiers.curve_piping.expect("curve piping");
+        assert_eq!(curve_piping.xml_version, 2);
+        assert!(curve_piping.on);
+        assert_eq!(curve_piping.radius, 2.25);
+        assert_eq!(curve_piping.segments, 12);
+        assert!(!curve_piping.faceted);
+        assert_eq!(curve_piping.accuracy, 73);
+        assert_eq!(curve_piping.cap_type, "flat");
+        assert!(modifiers.displacement.is_none());
+        assert!(modifiers.edge_softening.is_none());
+        assert!(modifiers.thickening.is_none());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn curve_piping_defaults_and_cap_names_are_stable() {
+        let xml = "<XML><CURVE-PIPING-OBJECT-DATA>\
+<ON TYPE=\"BOOL\">true</ON>\
+<WELD TYPE=\"BOOL\">false</WELD>\
+<CAP-TYPE TYPE=\"STRING\">FLAT</CAP-TYPE>\
+</CURVE-PIPING-OBJECT-DATA></XML>";
+        let payload = v2_payload(xml);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[curve_piping_descriptor(
+                &payload,
+                Some(MESH_MODIFIER_PLUGIN),
+            )],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("curve-piping userdata");
+        let curve_piping = modifiers.curve_piping.expect("curve piping");
+        assert!(curve_piping.on);
+        assert_eq!(curve_piping.radius, 1.0);
+        assert_eq!(curve_piping.segments, 16);
+        assert!(curve_piping.faceted);
+        assert_eq!(curve_piping.accuracy, 50);
+        assert_eq!(curve_piping.cap_type, "none");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
     fn parses_all_mesh_modifiers_from_one_attributes_stream() {
         let displacement_payload = v2_payload("<xml><new-displacement-object-data/></xml>");
         let edge_start = displacement_payload.len();
         let edge_payload = v2_payload(EDGE_SOFTENING_XML);
         let thickening_start = edge_start + edge_payload.len();
         let thickening_payload = v2_payload(THICKENING_XML);
+        let curve_piping_start = thickening_start + thickening_payload.len();
+        let curve_piping_payload = v2_payload(CURVE_PIPING_XML);
         let mut bytes = displacement_payload;
         bytes.extend(&edge_payload);
         bytes.extend(&thickening_payload);
+        bytes.extend(&curve_piping_payload);
         let descriptors = [
             descriptor(&bytes[..edge_start], Some(MESH_MODIFIER_PLUGIN)),
             descriptor_with_ids(
@@ -846,9 +1043,15 @@ mod tests {
                 Some(MESH_MODIFIER_PLUGIN),
             ),
             descriptor_with_ids(
-                thickening_start..bytes.len(),
+                thickening_start..curve_piping_start,
                 THICKENING_CLASS,
                 THICKENING_ITEM,
+                Some(MESH_MODIFIER_PLUGIN),
+            ),
+            descriptor_with_ids(
+                curve_piping_start..bytes.len(),
+                CURVE_PIPING_CLASS,
+                CURVE_PIPING_ITEM,
                 Some(MESH_MODIFIER_PLUGIN),
             ),
         ];
@@ -859,6 +1062,7 @@ mod tests {
         assert!(modifiers.displacement.is_some());
         assert!(modifiers.edge_softening.is_some());
         assert!(modifiers.thickening.is_some());
+        assert!(modifiers.curve_piping.is_some());
         assert!(warnings.is_empty());
     }
 
@@ -956,6 +1160,22 @@ mod tests {
         .is_none());
         assert!(thickening_warnings.iter().any(|warning| {
             warning.contains("thickening userdata") && warning.contains("dropped")
+        }));
+
+        let malformed_curve_piping = v2_payload("<xml><curve-piping-object-data>");
+        let mut curve_piping_warnings = Vec::new();
+        assert!(parse_attribute_userdata(
+            &malformed_curve_piping,
+            &[curve_piping_descriptor(
+                &malformed_curve_piping,
+                Some(MESH_MODIFIER_PLUGIN),
+            )],
+            ArchiveVersion::V6,
+            &mut curve_piping_warnings,
+        )
+        .is_none());
+        assert!(curve_piping_warnings.iter().any(|warning| {
+            warning.contains("curve-piping userdata") && warning.contains("dropped")
         }));
     }
 }
