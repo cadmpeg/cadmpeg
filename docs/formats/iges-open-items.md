@@ -53,16 +53,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-06. Type 180 Form 1 requires a direct Type 186 operand
-
-**Question.** Does a Type 180 Form 1 Boolean tree accept a Type 186 solid directly, or through a complete operand subtree?
-
-**Known.** `entities/csg.rs:70-123` recursively validates Type 180 operands and requires `has_direct_brep` to match Form 1; a Form 1 accepts a direct Type 186 term in addition to the admitted primitive and Type 430 terms. `entities/csg.rs:360-441` validates postfix structure, recursion, and cycles. The Primitive solids section of `iges.md` records the direct-operand rule.
-
-**Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the IGES specification or exporter-authored witness files.
-
-**Note.** Reopened by the 2026-08-16 audit. The recursive interpretation is internally consistent, but the closure did not verify the rule against the IGES specification or an exporter-authored witness file.
-
 ## 6. Product structure, annotation, and presentation
 
 ### PS-06. Type 402 Form 5 requires a non-null leader pointer

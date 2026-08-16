@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(unused_imports)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
@@ -362,18 +362,27 @@ fn decode_requires_direct_brep_operand_for_boolean_form_one() {
         .unwrap();
     let trees = &result.ir().native.namespace("iges").unwrap().arenas["boolean_trees"];
     assert_eq!(trees.len(), 6);
+    let invalid_entities = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .map(|loss| {
+            loss.provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss
-                .message
-                .contains("Boolean operands, form, or reference acyclicity is invalid"))
-            .count(),
-        3,
-        "{:#?}",
-        result.report().losses
+        invalid_entities,
+        BTreeSet::from([
+            "directory_entry:D1".to_owned(),
+            "directory_entry:D9".to_owned(),
+            "directory_entry:D15".to_owned(),
+            "directory_entry:D17".to_owned(),
+        ])
     );
 }
 
