@@ -1532,6 +1532,71 @@ the nested `MappingCRCCache` userdata and does not add `mapping_crc` to the
 native mapping record. CADIR treats this value as recomputable source cache
 state, not an independently authored mapping property.
 
+#### 7.2.20 `CTtMappingMeshInfoUserData` and `CTtRenderMeshInfoUserData`
+
+The derived mesh-correspondence carriers use these class and item UUIDs:
+
+| userdata class | class UUID | item UUID | application UUID |
+| --- | --- | --- | --- |
+| `CTtMappingMeshInfoUserData` | `1706ADC5-52BF-4BE2-8402-4501EB2AE675` | `1706ADC5-52BF-4BE2-8402-4501EB2AE675` | `ON_opennurbs_id` (`50EDE5C9-1487-4B4C-B3AA-6840B460E3CF`) |
+| `CTtRenderMeshInfoUserData` | `4960A046-8201-4F0F-8F22-FCB6F91C765D` | `4960A046-8201-4F0F-8F22-FCB6F91C765D` | `ON_opennurbs_id` (`50EDE5C9-1487-4B4C-B3AA-6840B460E3CF`) |
+
+Each carrier is userdata on an `ON_Mesh`. Its class-owned payload is the
+bounded anonymous child of the generic class-userdata wrapper. Both writers
+emit version 1; both readers require version 1 and leave any remaining bytes
+inside the anonymous child for its bounded end.
+
+Both payloads start with the same geometry fingerprint:
+
+```text
+i32 topology CRC
+5 × ON_3dPoint point weighted-average hash
+5 × ON_3dPoint edge weighted-average hash
+```
+
+Each `ON_3dPoint` is three f64 values, so the fingerprint occupies 244 bytes.
+The fingerprint matches only when the topology CRC is equal and all five
+point-hash and all five edge-hash points, after the other mesh's transform,
+are within the supplied distance tolerance. A transform updates the point and
+edge hashes and does not change the topology CRC.
+
+`CTtMappingMeshInfoUserData` appends this payload:
+
+```text
+i32 version = 1
+geometry fingerprint
+i32 face-source ID count
+count × i32 source face ID
+```
+
+Entry `f` associates mapping-mesh face `f` with its source face ID. The reader
+builds a reverse index only for nonnegative source IDs. Negative IDs remain in
+the ordered face-source array and are not addressable through that index.
+The mapping closest-point path queries this index with the source face ID
+stored by the render-mesh carrier.
+
+`CTtRenderMeshInfoUserData` appends this payload:
+
+```text
+i32 version = 1
+geometry fingerprint
+i32 source face ID
+```
+
+The default source face ID is `ON_UNSET_INT_INDEX` (`-2147483647`). With the
+default zero fingerprint and an empty mapping face-source array, the mapping
+class payload is 252 bytes before its anonymous-child checksum; its child
+chunk declares 256 bytes. The render class payload has the same 252-byte
+length and child-chunk size.
+
+The closest-point mapper compares the mapping and render fingerprints with a
+distance tolerance of `0.001`, then uses the render source face ID to select
+the mapping-mesh faces. These carriers therefore describe recomputable mesh
+correspondence state, not authored geometry, material, or texture-mapping
+properties. The Rhino codec consumes their bounded class-userdata wrappers,
+retains the containing source record, and does not create native cache fields
+for either carrier.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -4399,7 +4464,8 @@ nonnegative-minor chunk; its count and complete class-wrapped elements are the
 known prefix, followed by a bounded suffix. Texture mappings store mapping and
 projection enums, primitive and UVW transforms, a primitive class object,
 texture-space enum, and capped flag. Class userdata belongs to the nested
-primitive object; the `MappingCRCCache` payload is defined in section 7.2.19.
+primitive object; the `MappingCRCCache` and mesh-correspondence cache payloads
+are defined in sections 7.2.19 and 7.2.20.
 Material channels bind a UUID to an integer channel.
 
 ### 20.3 Drafting resources and annotations

@@ -318,6 +318,17 @@ wrapper. The codec now reports the primitive class UUID, skips this cache, and
 does not invent a neutral `mapping_crc` field; this is the CADIR decision for
 recomputable source state.
 
+The built-in `CTtMappingMeshInfoUserData` and
+`CTtRenderMeshInfoUserData` carriers are also settled as derived mesh
+correspondence caches. Their class and item UUIDs are
+`1706ADC5-52BF-4BE2-8402-4501EB2AE675` and
+`4960A046-8201-4F0F-8F22-FCB6F91C765D`; both use `ON_opennurbs_id` and section
+7.2.20 defines their version-1 geometry-fingerprint payloads, source-face
+fields, defaults, and closest-point-mapping use. The codec consumes their
+bounded wrappers, retains the containing source record, and does not invent
+native mapping-mesh or render-mesh cache fields. This is the CADIR decision for
+recomputable mesh correspondence state.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
@@ -337,7 +348,8 @@ object-attributes compatibility carrier under section 7.2.9, and
 carrier under section 7.2.10. `ON_AnnotationTextFormula` is settled as a
 runtime-only helper with no serialized userdata under section 7.2.11; other
 future class-specific payload semantics, beyond the settled mesh-modifier,
-physically based material, RDK, and mapping-CRC carriers, remain open.
+physically based material, RDK, mapping-CRC, and texture-mesh correspondence
+carriers, remain open.
 
 ### RS-01. Later-minor bounded suffixes
 
