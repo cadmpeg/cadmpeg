@@ -27,6 +27,26 @@ use super::vertices::solved_topological_vertices;
 const EPS_AGREE: f64 = 1e-9;
 const EPS_NEAR_ZERO: f64 = 1e-12;
 
+fn existing_plane_agrees_with_topology(
+    geometry: &SurfaceGeometry,
+    topology: PlaneEquation,
+) -> Option<bool> {
+    match geometry {
+        SurfaceGeometry::Plane { origin, normal, .. } => Some(
+            agreed_plane(&[
+                PlaneEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    normal: [normal.x, normal.y, normal.z],
+                },
+                topology,
+            ])
+            .is_some(),
+        ),
+        SurfaceGeometry::Unknown { .. } => None,
+        _ => Some(false),
+    }
+}
+
 pub fn transfer_topology_bound_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -49,9 +69,6 @@ pub fn transfer_topology_bound_planes(
         .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
     {
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
-            continue;
-        }
         let points = solved_vertices
             .iter()
             .filter_map(|(vertex_id, point)| {
@@ -85,6 +102,49 @@ pub fn transfer_topology_bound_planes(
         let Some(plane) = agreed_topology_bound_plane(points, curve_planes, lines) else {
             continue;
         };
+        let existing_count = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .count();
+        if existing_count != 0 {
+            let conflict = existing_count != 1
+                || ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == id)
+                    .is_some_and(|surface| {
+                        existing_plane_agrees_with_topology(&surface.geometry, plane) == Some(false)
+                    });
+            if !conflict {
+                continue;
+            }
+            for surface in ir
+                .model
+                .surfaces
+                .iter_mut()
+                .filter(|surface| surface.id == id)
+            {
+                surface.geometry = SurfaceGeometry::Unknown {
+                    record: geometry_section_record(scan, row.offset),
+                };
+            }
+            annotate(
+                annotations,
+                &id,
+                "VisibGeom",
+                row.offset as u64,
+                if existing_count == 1 {
+                    "conflicting_topology_plane_carrier"
+                } else {
+                    "duplicate_topology_plane_carrier"
+                },
+                Exactness::Unknown,
+            );
+            continue;
+        }
         let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
         annotate(
             annotations,
@@ -292,6 +352,9 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
         })
         .map(|section| UnknownId(format!("creo:{}:section#{}", section.name, section.offset)))
 }
+
+#[cfg(test)]
+mod tests;
 
 pub fn projected_loop_polygon(
     lp: &crate::topology::Loop,
