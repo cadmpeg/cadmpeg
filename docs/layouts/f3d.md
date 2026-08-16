@@ -1400,15 +1400,32 @@ Unstated regions:
 - `0..213` (213 B): The fixed identity carrier precedes the owner-reference extension.
 - `213..222` (9 B): Its bytes 213 through 221 are zero.
 
-## `work_plane_legacy_class_308_matrix_frame`
+## `work_plane_legacy_class_290_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 325 B
 
-Offsets are relative to the class-308 primary indexed placement header paired with class 257. The prefix and matrix are shared with the class-380 and class-431 forms.
+Offsets are relative to the class-290 primary indexed placement header paired with class 262. The four-byte marker distinguishes this prefix from the zero-prefix 325-byte placement forms.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 49 | 128 | `matrix` | `f64[16]` | little | spec | The 325-byte class-380 form paired with class 262 and the 325-byte class-308 form paired with class 257 store 38 zero bytes after the indexed header |
+| 45 | 4 | `prefix_marker` | `bytes[4]` | little | spec | bytes `0x01, 0x01, 0x00, 0x00` at offsets 45 through 48 |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | a row-major 4×4 f64 local-to-model matrix at offset 49 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..45` (34 B): The fixed class-290 placement prefix is zero.
+- `177..325` (148 B): The placement carrier tail is retained as a named opaque carrier.
+
+## `work_plane_legacy_325_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 325 B
+
+Offsets are relative to any of the class-308, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 262, and 257 respectively.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | The class-308/257, class-380/262, and class-431/257 placement frames use a second 325-byte layout |
 
 Unstated regions:
 

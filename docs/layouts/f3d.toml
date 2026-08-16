@@ -4404,12 +4404,49 @@ source = "spec"
 anchor = "bytes 227 through 232 are zero"
 
 [[record]]
-name = "work_plane_legacy_class_308_matrix_frame"
+name = "work_plane_legacy_class_290_matrix_frame"
 kind = "byte"
 section = "3.1"
-anchor = "A class-308 WorkPlane placement frame has the same fixed byte layout"
+anchor = "The class-290/262 placement frame is 325 bytes"
 size = 325
-note = "Offsets are relative to the class-308 primary indexed placement header paired with class 257. The prefix and matrix are shared with the class-380 and class-431 forms."
+note = "Offsets are relative to the class-290 primary indexed placement header paired with class 262. The four-byte marker distinguishes this prefix from the zero-prefix 325-byte placement forms."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 34
+note = "The fixed class-290 placement prefix is zero."
+
+[[record.field]]
+name = "prefix_marker"
+offset = 45
+type = "bytes[4]"
+source = "spec"
+anchor = "bytes `0x01, 0x01, 0x00, 0x00` at offsets 45 through 48"
+
+[[record.field]]
+name = "matrix"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major 4×4 f64 local-to-model matrix at offset 49"
+
+[[record.gap]]
+offset = 177
+size = 148
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
+name = "work_plane_legacy_325_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The class-308/257, class-380/262, and class-431/257 placement frames use a second 325-byte layout"
+size = 325
+note = "Offsets are relative to any of the class-308, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 262, and 257 respectively."
 
 [[record.gap]]
 offset = 0
@@ -4426,7 +4463,7 @@ name = "matrix"
 offset = 49
 type = "f64[16]"
 source = "spec"
-anchor = "The 325-byte class-380 form paired with class 262 and the 325-byte class-308 form paired with class 257 store 38 zero bytes after the indexed header"
+anchor = "The class-308/257, class-380/262, and class-431/257 placement frames use a second 325-byte layout"
 
 [[record.gap]]
 offset = 177
