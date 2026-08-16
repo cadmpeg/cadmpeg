@@ -23,15 +23,6 @@ pub(super) fn items(record: &RawRecord) -> Option<Vec<u64>> {
     })
 }
 
-pub(super) fn context(record: &RawRecord) -> Option<u64> {
-    record.partials.iter().find_map(|partial| {
-        if !is_representation_name(&partial.name) {
-            return None;
-        }
-        partial.parameters.get(2).and_then(value_reference)
-    })
-}
-
 pub(super) fn is_representation_name(name: &str) -> bool {
     name == "REPRESENTATION"
         || name.ends_with("_REPRESENTATION")
@@ -85,6 +76,5 @@ mod tests {
             )
         );
         assert_eq!(items(&record), Some(vec![2, 3]));
-        assert_eq!(context(&record), Some(4));
     }
 }

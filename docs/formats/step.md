@@ -763,13 +763,24 @@ styled items.
 Visibility remains binding-level and does not change visibility on a shared
 geometry carrier. The writer emits binding-specific `INVISIBILITY` records for
 emitted hidden styled items on schemas that support visibility; unsupported
-schemas report `presentation.hidden-appearance-visibility-unsupported`. A
-`PRESENTATION_STYLE_BY_CONTEXT`
-branch transfers when its context representation or representation context
-directly contains the styled item. A branch without that exact membership
-remains named opaque source data and produces a
-`presentation.context-dependent-style-unresolved` loss. An unscoped sibling
-style may transfer independently. An `ANNOTATION_PLANE` owns each
+schemas report `presentation.hidden-appearance-visibility-unsupported`. ISO
+10303-46 assigns a `PRESENTATION_STYLE_BY_CONTEXT` to a representation item
+and applies it only in its `style_context`. `style_context` can be a `group`,
+`CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`, `PRESENTATION_LAYER_ASSIGNMENT`,
+`PRESENTATION_SET`, `REPRESENTATION`, `REPRESENTATION_ITEM`, or
+`REPRESENTATION_RELATIONSHIP`. A `STYLED_ITEM` with more than one style uses
+only context-qualified styles. ISO 10303-43 relates an item to a
+representation context when the item is directly in a representation for that
+context or is reached through any number of intervening representation or
+founded items. Distinct contexts have no format-defined precedence.
+
+CADIR decision: the STEP decoder has no requested presentation context. It
+retains context-qualified style branches and their owning styled items as
+named opaque source data and produces a
+`presentation.context-dependent-style-unresolved` loss. It emits no neutral
+appearance for an unavailable or unselected context and does not infer a
+selection from direct membership. An unscoped sibling style may transfer
+independently. An `ANNOTATION_PLANE` owns each
 referenced surface carrier. A native presentation carrier without a neutral
 geometry arena retains its carrier identity as the style target. Semantic PMI
 retains every supported STEP `SHAPE_ASPECT` subtype as a shape-aspect target,

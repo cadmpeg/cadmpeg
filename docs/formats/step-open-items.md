@@ -858,35 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### AP-08. Context-dependent style selection
-
-**Question.** How does a `STYLED_ITEM` select among valid
-`PRESENTATION_STYLE_BY_CONTEXT` assignments, and what neutral appearance is
-retained when the requested presentation context is unavailable?
-
-**Known.** A `STYLED_ITEM` may carry multiple
-`PRESENTATION_STYLE_BY_CONTEXT` assignments. The reader transfers a branch
-only when its context directly contains the styled item
-(`crates/cadmpeg-codec-step/src/reader/presentation.rs:271-318`); an unresolved
-branch remains source-native and records
-`presentation.context-dependent-style-unresolved`
-(`presentation.rs:319-335`). `find_color` excludes context-style records
-(`presentation.rs:1045-1047`). The neutral model still has no
-representation-context identity for choosing among multiple matching branches.
-
-**Note.** The direct membership test refuses a branch whose context does not
-contain the styled item. Multiple matching branches are flattened into the
-same neutral style path, but the model has no context identity to keep those
-bindings separate. AP-05 and AP-06 settle independent styled-item conflicts
-and surface-side precedence; they do not settle this projection.
-
-**Need.** We need the context matching and precedence rule, a policy for
-preserving separate context bindings or reporting ambiguity, and a witness
-file with two valid context styles consumed by different presentation
-contexts.
-
-QA audit: reopened after reviewing closing commit f3f7437dc. The closing commit records a conservative no-context transfer policy and a synthetic regression. It does not identify the source presentation context or establish a neutral representation-context projection.
-
 ### AP-09. Multiple same-domain style assignments
 
 **Question.** How does one STYLED_ITEM select among multiple valid same-domain style assignments?

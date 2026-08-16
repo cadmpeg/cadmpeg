@@ -586,42 +586,60 @@ fn context_dependent_styles_are_not_flattened_without_context() {
 }
 
 #[test]
-fn context_dependent_styles_transfer_for_matching_contexts() {
+fn context_dependent_styles_remain_native_for_distinct_contexts() {
     let result = decode_inline(
         "#1=COLOUR_RGB('red',1.,0.,0.);
 #2=PRESENTATION_STYLE_ASSIGNMENT((#1));
-#3=REPRESENTATION_CONTEXT('model','3D');
-#4=CARTESIAN_POINT('styled point',(0.,0.,0.));
-#5=(CHARACTERIZED_REPRESENTATION() REPRESENTATION('context',(#4),#3) SHAPE_REPRESENTATION());
-#6=PRESENTATION_STYLE_BY_CONTEXT((#2),#5);
-#7=STYLED_ITEM('',(#6),#4);
 #8=COLOUR_RGB('blue',0.,0.,1.);
 #9=PRESENTATION_STYLE_ASSIGNMENT((#8));
-#10=PRESENTATION_STYLE_BY_CONTEXT((#9),#3);
-#11=STYLED_ITEM('',(#10),#4);",
+#3=CARTESIAN_POINT('styled point',(0.,0.,0.));
+#4=REPRESENTATION_CONTEXT('shaded','3D');
+#5=REPRESENTATION('shaded',(#3),#4);
+#6=REPRESENTATION_CONTEXT('wire','3D');
+#7=REPRESENTATION('wire',(#3),#6);
+#10=PRESENTATION_STYLE_BY_CONTEXT((#2),#5);
+#11=PRESENTATION_STYLE_BY_CONTEXT((#9),#7);
+#12=STYLED_ITEM('',(#10,#11),#3);
+#13=CARTESIAN_POINT('unscoped point',(1.,0.,0.));
+#14=PRESENTATION_STYLE_ASSIGNMENT((#1));
+#15=STYLED_ITEM('',(#14),#13);",
     );
 
-    assert_eq!(result.ir().model.appearances.len(), 2);
-    assert_eq!(result.ir().model.appearance_bindings.len(), 2);
+    assert_eq!(result.ir().model.appearances.len(), 1);
+    assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     assert!(matches!(
         &result.ir().model.appearance_bindings[0].target,
         cadmpeg_ir::appearance::AppearanceTarget::Point(point)
-            if point.0 == "step:data:point#4"
+            if point.0 == "step:data:point#13"
     ));
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == StepLossCode::ContextDependentStyleUnresolved.kind() }));
-    assert!(!result
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+            && loss.message.contains("#10 in #5")
+            && loss.message.contains("#11 in #7")
+    }));
+    let unknowns = result
         .ir()
         .native_unknowns("step")
-        .expect("STEP unknown arena")
+        .expect("STEP unknown arena");
+    for id in [
+        "step:data:styled_item#12",
+        "step:data:presentation_style_by_context#10",
+        "step:data:presentation_style_by_context#11",
+    ] {
+        assert!(
+            unknowns.iter().any(|record| record.id.0 == id),
+            "missing {id}"
+        );
+    }
+    assert!(!unknowns
         .iter()
-        .any(|record| {
-            record.id.0 == "step:data:presentation_style_by_context#6"
-                || record.id.0 == "step:data:presentation_style_by_context#10"
-        }));
+        .any(|record| record.id.0 == "step:data:styled_item#15"));
+    assert!(result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#3"));
 }
 
 #[test]
