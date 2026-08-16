@@ -3022,10 +3022,13 @@ body and new-body semantics when its evaluated topology forms an independent
 body.
 
 A blind class-917 circular section sweep instead has four entries with classes
-`204, 203, 200, 200`: a rowless cap use, one materialized cap plane, the
-source-profile entity, and one cylinder use. The source-profile entry carries
-its section entity identifier; the cylinder entry does not. The materialized
-cap plane's complete square outline fixes the cylinder axis, radial center, and
+`204, 203, 200, 200`. The first two entries are the cap uses. Exactly one cap
+use is rowless and exactly one is materialized; the materialized cap is a plane
+and the rowless cap is its non-surface counterpart. The class order does not
+select which cap is materialized. The third entry is the source-profile entity
+and the fourth is one cylinder use. The source-profile entry carries its
+section entity identifier; the cylinder entry does not. The materialized cap
+plane's complete square outline fixes the cylinder axis, radial center, and
 radius. A type-20127 zero-offset placement instruction fixes the section at the
 parallel standard datum; the materialized cap then fixes the blind trimming
 extent. The resolved section profile, section normal, and cap offset define the

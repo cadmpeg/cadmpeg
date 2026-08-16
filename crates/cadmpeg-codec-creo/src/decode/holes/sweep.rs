@@ -296,23 +296,33 @@ pub fn single_cap_circular_sweep_geometry(
     let [table] = tables.as_slice() else {
         return None;
     };
-    let [rowless_cap, cap_id, profile_id, cylinder_id] = table.entries.as_slice() else {
+    let [first_cap, second_cap, profile_id, cylinder_id] = table.entries.as_slice() else {
         return None;
     };
-    ([
-        rowless_cap.class_id,
-        cap_id.class_id,
+    let (rowless_cap, cap_id) = match (
+        table.surface_ids.contains(&first_cap.entity_id),
+        table.surface_ids.contains(&second_cap.entity_id),
+    ) {
+        (true, false) => (second_cap, first_cap),
+        (false, true) => (first_cap, second_cap),
+        _ => return None,
+    };
+    if [
+        first_cap.class_id,
+        second_cap.class_id,
         profile_id.class_id,
         cylinder_id.class_id,
-    ] == [204, 203, 200, 200]
-        && profile_id.source_entity_id.is_some()
-        && cylinder_id.source_entity_id.is_none()
-        && has_exact_materialized_surface_roster(table, [cap_id.entity_id, cylinder_id.entity_id])
-        && table
+    ] != [204, 203, 200, 200]
+        || profile_id.source_entity_id.is_none()
+        || cylinder_id.source_entity_id.is_some()
+        || !has_exact_materialized_surface_roster(table, [cap_id.entity_id, cylinder_id.entity_id])
+        || !table
             .non_surface_entity_ids
             .contains(&rowless_cap.entity_id)
-        && table.non_surface_entity_ids.contains(&profile_id.entity_id))
-    .then_some(())?;
+        || !table.non_surface_entity_ids.contains(&profile_id.entity_id)
+    {
+        return None;
+    }
     crate::surface::unique_surface_row(&scan.surfaces.rows, cap_id.entity_id)
         .is_some_and(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane

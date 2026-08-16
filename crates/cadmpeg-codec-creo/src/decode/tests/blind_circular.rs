@@ -63,11 +63,11 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         non_surface_entity_ids: vec![43, 49],
         offset: 0,
     };
-    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+    let row = |feature_id, id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         type_byte: kind.canonical_type_byte(),
         kind,
-        feature_id: 40,
+        feature_id,
         reversed: false,
         boundary_type: 0,
         next_surface: 0,
@@ -76,8 +76,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(table);
     scan.surfaces.rows.extend([
-        row(46, crate::surface::SurfaceKind::Plane),
-        row(51, crate::surface::SurfaceKind::Cylinder),
+        row(40, 46, crate::surface::SurfaceKind::Plane),
+        row(40, 51, crate::surface::SurfaceKind::Cylinder),
     ]);
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 46,
@@ -116,6 +116,68 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         });
 
     assert!(single_cap_circular_sweep_geometry(&scan, 40).is_some());
+
+    let reversed_entries = vec![
+        entry(143, 204, None),
+        entry(146, 203, None),
+        entry(149, 200, Some(4)),
+        entry(151, 200, None),
+    ];
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(41),
+            table_class_id: 29,
+            entry_ids: reversed_entries
+                .iter()
+                .map(|entry| entry.entity_id)
+                .collect(),
+            entries: reversed_entries,
+            surface_ids: vec![143, 151],
+            non_surface_entity_ids: vec![146, 149],
+            offset: 0,
+        });
+    scan.surfaces.rows.extend([
+        row(41, 143, crate::surface::SurfaceKind::Plane),
+        row(41, 151, crate::surface::SurfaceKind::Cylinder),
+    ]);
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 143,
+        origin: [0.0, 16.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: 143,
+    });
+    scan.planes
+        .envelopes
+        .push(crate::surface::PlaneEnvelopeRecord {
+            surface_id: 143,
+            body: Vec::new(),
+            envelope: crate::surface::PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [
+                    [Some(-4.45), Some(16.0), Some(-4.45)],
+                    [Some(4.45), Some(16.0), Some(4.45)],
+                ],
+            },
+            corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+            scalar_tokens: Vec::new(),
+            row_offset: 0,
+            offset: 0,
+        });
+    scan.features
+        .section_transforms
+        .push(crate::placement::FeatureSectionTransform {
+            definition_id: 41,
+            feature_id: Some(41),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0],
+            offset: 0,
+        });
+    assert!(single_cap_circular_sweep_geometry(&scan, 41).is_some());
+
     assert!(section_entity_is_generated_profile(
         true,
         Some(40),
