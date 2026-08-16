@@ -509,13 +509,3 @@ surface wrapper, derived from the ISO 10303-42 equations and checked against
 exporter-authored witness files, before this rule is settled.
 
 QA audit: reopened after reviewing closing commit cbbbe401b. The closing commit adds a parameter-scale table and synthetic scale tests, but directrix parameterization and unsupported curve families still rely on implementation assumptions.
-
-### PS-07. Duplicate context-dependent occurrence placement
-
-**Question.** What is the disposition when more than one CONTEXT_DEPENDENT_SHAPE_REPRESENTATION resolves to one NEXT_ASSEMBLY_USAGE_OCCURRENCE?
-
-**Known.** crates/cadmpeg-codec-step/src/reader/product.rs:797-809 iterates every context-dependent relation and stores its transform with result.insert(usage, transform). A later relation replaces an earlier one. The iteration follows exchange.entities record order. No ambiguity loss records the replacement.
-
-**Need.** We need the uniqueness rule for occurrence placement relations, and a witness file with two valid relations for one usage, including a record-order permutation.
-
-**Note.** Reordering the same two relations can change the occurrence transform without changing the represented usage. The current code silently selects one candidate.

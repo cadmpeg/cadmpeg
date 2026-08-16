@@ -333,7 +333,24 @@ pub(super) fn decode(
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
         pending_occurrences.push_back((definition, id));
     }
-    let placements = occurrence_placements(exchange, geometry, &usages, &mut warnings);
+    let mut ambiguous_placements = BTreeMap::new();
+    let placements = occurrence_placements(
+        exchange,
+        geometry,
+        &usages,
+        &mut warnings,
+        &mut ambiguous_placements,
+    );
+    for (&usage_id, source_ids) in &ambiguous_placements {
+        let records = source_ids
+            .iter()
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
+            "NAUO #{usage_id} has multiple resolved CONTEXT_DEPENDENT_SHAPE_REPRESENTATION placements ({records}); identity placement was used"
+        )));
+    }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
     let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
@@ -392,7 +409,9 @@ pub(super) fn decode(
                 break 'expansion;
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
-            let transform = if let Some(transform) = placements.get(&usage_id).copied() {
+            let transform = if ambiguous_placements.contains_key(&usage_id) {
+                Transform::identity()
+            } else if let Some(transform) = placements.get(&usage_id).copied() {
                 transform
             } else {
                 if missing_placement_reports.insert(usage_id) {
@@ -797,6 +816,7 @@ fn occurrence_placements(
     geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
     warnings: &mut Vec<String>,
+    ambiguous: &mut BTreeMap<u64, Vec<u64>>,
 ) -> BTreeMap<u64, Transform> {
     let pds = exchange
         .records
@@ -812,7 +832,8 @@ fn occurrence_placements(
     let definition_representations = definition_representations(exchange, &pds);
     let representation_links = representation_links(exchange);
     let mut result = BTreeMap::new();
-    for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
+    let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
+    for (record_id, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
         if let Some((usage, transform)) = occurrence_placement(
             record,
             exchange,
@@ -823,8 +844,16 @@ fn occurrence_placements(
             &representation_links,
         ) {
             if usages.contains_key(&usage) {
+                context_candidates.entry(usage).or_default().push(record_id);
                 result.insert(usage, transform);
             }
+        }
+    }
+    for (usage, mut source_ids) in context_candidates {
+        if source_ids.len() > 1 {
+            source_ids.sort_unstable();
+            source_ids.dedup();
+            ambiguous.insert(usage, source_ids);
         }
     }
     let occurrence_representations = exchange

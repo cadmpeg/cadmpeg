@@ -830,6 +830,22 @@ context-dependent pattern binds the occurrence through
 representation as `rep_1`, the parent representation as `rep_2`, and an
 `ITEM_DEFINED_TRANSFORMATION` whose `transform_item_1` is in the child context
 and whose `transform_item_2` is in the parent context.
+ISO 10303-41 §23.4.4 defines `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` as the
+association of a shape-representation relationship with a product-definition
+relationship. Its generic entity declaration has no uniqueness proposition for
+`represented_product_relation`. The AP214 `coordinated_assembly_and_shape`
+rule requires a qualifying context-dependent relationship for each
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE`, but does not define precedence between
+multiple qualifying relationships. ISO 10303-44 §4.4.8 defines each
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one individual constituent occurrence;
+distinct uses receive distinct occurrence instances.
+CADIR decision: a neutral occurrence admits exactly one resolved
+`CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` placement. If more than one resolved
+relationship targets the same usage, the placement is ambiguous even when the
+transforms are equal. The decoder selects no candidate, uses the identity
+transform, and reports `product.nauo-placement-ambiguous`. This decision is
+independent of Part 21 record order and numeric entity identifiers. A missing
+or otherwise unresolved sole relationship remains an unresolved placement.
 CADIR decision: a parent representation's mapped items do not bind repeated
 uses of one child definition to individual occurrences. When each child
 definition occurs once in a parent usage set and the complete mapped-child

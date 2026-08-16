@@ -70,6 +70,8 @@ pub enum StepLossCode {
     ShellDisconnectedFaces,
     /// A NAUO has no resolved occurrence transform.
     NauoPlacementUnresolved,
+    /// A NAUO has more than one resolved context-dependent placement.
+    NauoPlacementAmbiguous,
     /// A body has conflicting standalone `MAPPED_ITEM` placements.
     BodyConflictingMappedPlacements,
     /// A presentation annotation has several text carriers and no order.
@@ -308,6 +310,7 @@ impl StepLossCode {
         Self::FaceMultipleOuterBounds,
         Self::ShellDisconnectedFaces,
         Self::NauoPlacementUnresolved,
+        Self::NauoPlacementAmbiguous,
         Self::BodyConflictingMappedPlacements,
         Self::PresentationAnnotationTextUnordered,
         Self::DimensionalNominalAmbiguous,
@@ -444,6 +447,7 @@ impl StepLossCode {
             Self::FaceMultipleOuterBounds => "topology.face-multiple-outer-bounds",
             Self::ShellDisconnectedFaces => "topology.shell-disconnected-faces",
             Self::NauoPlacementUnresolved => "product.nauo-placement-unresolved",
+            Self::NauoPlacementAmbiguous => "product.nauo-placement-ambiguous",
             Self::BodyConflictingMappedPlacements => "product.body-conflicting-mapped-placements",
             Self::PresentationAnnotationTextUnordered => {
                 "pmi.presentation-annotation-text-unordered"
@@ -577,6 +581,7 @@ impl StepLossCode {
             | Self::TopologyRootIncomplete
             | Self::PcurveEndpointsDiscontinuous
             | Self::NauoPlacementUnresolved
+            | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
             | Self::PmiLengthUnitUnresolved
             | Self::PmiAngleUnitUnresolved
@@ -723,6 +728,7 @@ impl StepLossCode {
                 LossTaxonomy::SourceTopologyInvalid
             }
             Self::NauoPlacementUnresolved
+            | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
             | Self::AssemblyOccurrenceOmittedNoParentProduct
             | Self::AssemblyJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
@@ -820,6 +826,7 @@ mod tests {
                 "topology.face-multiple-outer-bounds",
                 "topology.shell-disconnected-faces",
                 "product.nauo-placement-unresolved",
+                "product.nauo-placement-ambiguous",
                 "product.body-conflicting-mapped-placements",
                 "pmi.presentation-annotation-text-unordered",
                 "pmi.dimensional-nominal-ambiguous",

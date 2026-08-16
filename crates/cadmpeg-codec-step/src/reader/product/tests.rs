@@ -353,6 +353,41 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
 }
 
 #[test]
+fn ps07_duplicate_context_placements_use_identity_in_any_order() {
+    for input in [
+        include_bytes!("tests/data/ps07_duplicate_context_placement_first.p21").as_slice(),
+        include_bytes!("tests/data/ps07_duplicate_context_placement_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode PS-07 fixture");
+        let occurrence = result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.0.contains("#12"))
+            .expect("duplicate-placement occurrence");
+        assert_eq!(occurrence.transform, Transform::identity());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("NAUO #12")
+                && loss.message.contains("#38")
+                && loss.message.contains("#43")
+                && loss.message.contains("identity placement was used")
+        }));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 pub(crate) fn decode_builds_occurrence_placement_from_mapped_item() {
     let bytes = include_bytes!("../../../tests/fixtures/ap242_mapped_assembly.p21");
     let result = StepCodec::default()
