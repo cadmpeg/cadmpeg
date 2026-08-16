@@ -113,6 +113,83 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
 }
 
 #[test]
+fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
+    let point = SketchInputEntity {
+        id: "point".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 1,
+        offset: 1,
+        object_index: Some(2),
+        local_id: Some(2),
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: Some([0.0, 1.0]),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let relation = SketchInputEntity {
+        id: "relation".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 2,
+        offset: 2,
+        object_index: Some(3),
+        local_id: Some(3),
+        kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
+        state_value: None,
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = SketchInputEntity {
+        id: "curve".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: Some(1),
+        local_id: Some(1),
+        kind: SketchInputKind::LineOrCircle,
+        state_value: Some(1.0),
+        coordinates_m: Some([1.0, 0.0]),
+        links: vec![
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: relation.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: point.id.clone(),
+            },
+        ],
+        link_selector: None,
+    };
+    let markers = [&curve, &point, &relation];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), *marker))
+        .collect::<HashMap<_, _>>();
+
+    for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
+        let mut payload = vec![0; 100];
+        payload[..prefix.len()].copy_from_slice(prefix);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+
+        assert_eq!(
+            marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+                .into_iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["curve", "point"]
+        );
+    }
+}
+
+#[test]
 fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
     let mut payload = vec![0; 68 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);

@@ -1754,7 +1754,58 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = legacy_terminal_profile_indexed_endpoints(payload, curve, markers) {
         return endpoints.to_vec();
     }
-    consecutive_legacy_profile_line_endpoints(payload, curve, markers)
+    let endpoints = consecutive_legacy_profile_line_endpoints(payload, curve, markers);
+    if endpoints.len() == 2 {
+        return endpoints;
+    }
+    coordinate_profile_line_endpoints(payload, curve, markers_by_id)
+        .map(|endpoints| endpoints.to_vec())
+        .unwrap_or(endpoints)
+}
+
+fn coordinate_profile_line_endpoints<'a>(
+    payload: &[u8],
+    curve: &'a SketchInputEntity,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if curve.kind != SketchInputKind::LineOrCircle
+        || curve.coordinates_m.is_none()
+        || !matches!(
+            payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()),
+            Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        )
+        || marker_native_code(payload, offset) != Some(1)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 64..offset + 66) != Some(&[0x1e, 0x00])
+    {
+        return None;
+    }
+    let mut point = None;
+    for link in curve
+        .links
+        .iter()
+        .filter(|link| link.entity_ref != curve.id)
+    {
+        let linked = markers_by_id.get(link.entity_ref.as_str()).copied()?;
+        if linked.feature_ref != curve.feature_ref {
+            return None;
+        }
+        match linked.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                if linked.coordinates_m.is_none() || point.replace(linked).is_some() {
+                    return None;
+                }
+            }
+            SketchInputKind::Relation(_) => {}
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::Native(_) => {
+                return None
+            }
+        }
+    }
+    let point = point?;
+    (curve.coordinates_m? != point.coordinates_m?).then_some([curve, point])
 }
 
 pub(super) fn extended_direct_object_line_endpoints<'a>(
