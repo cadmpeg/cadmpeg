@@ -126,7 +126,7 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Question.** What grammar and semantics does each V2 geometry payload use?
 
-**Known.** The current specification states that V2 class payloads use the same point, curve, surface, mesh, Brep, and annotation grammar as later archives. The class wrapper and CRC framing are defined, but no independent evidence establishes that payload claim for every V2 class and version.
+**Known.** The current specification states that V2 class payloads use the same point, curve, surface, mesh, Brep, and annotation grammar as later archives. The class wrapper and CRC framing are defined, but the payload claim is not verified against openNURBS source or corpus files for every V2 class and version.
 
 **Note.** Reopened. This is promotion to spec. The broad V2 statement is an assertion derived from the current decoder shape, not evidence for every V2 payload. Agreement with the branch's fixtures is consistency with the guess.
 
@@ -242,7 +242,7 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Note.** Duplicate indexes may be malformed, but the scanner already accepts and reports them; the resolver has no source-backed owner rule.
 
-**Need.** We need the openNURBS duplicate-index behavior or an independent corpus case, then a deterministic owner rule with an ambiguity loss when the source does not identify one. If two layer records share an index and the later record carries the authoritative name or appearance, objects that reference the index resolve to the first record. Reordering the two records changes object identity without changing the reference. No ambiguity loss is emitted.
+**Need.** Establish the duplicate-index behavior from the openNURBS reader source or from a corpus case, then define a deterministic owner rule with an ambiguity loss when the source does not identify one. If two layer records share an index and the later record carries the authoritative name or appearance, objects that reference the index resolve to the first record. Reordering the two records changes object identity without changing the reference. No ambiguity loss is emitted.
 
 ### SW-02. Duplicate singleton metadata selection
 
@@ -252,7 +252,7 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Note.** The normal table model treats these fields as singletons, but the decoder has no source-backed response to a duplicate and no diagnostic that identifies which value won.
 
-**Need.** We need independent reader behavior for duplicate singleton records, or a settled reject/first/last policy with a typed ambiguity diagnostic. If two unit records disagree, the later record silently changes coordinate scaling. If two writer-version records disagree, the later record changes version gates. Reordering the records changes the decoded document without a stated ownership rule.
+**Need.** Establish the openNURBS reader behavior for duplicate singleton records, or settle a reject/first/last policy with a typed ambiguity diagnostic. If two unit records disagree, the later record silently changes coordinate scaling. If two writer-version records disagree, the later record changes version gates. Reordering the records changes the decoded document without a stated ownership rule.
 
 ### SW-03. Instance transform ownership inferred from topology
 
@@ -260,9 +260,9 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Known.** `crates/cadmpeg-codec-rhino/src/decode.rs:1940-1973` decodes one definition member and then calls `transform_new_entities`. At `decode.rs:1982-2107`, points referenced by new vertices, curves referenced by new edges, and surfaces referenced by new faces are classified as body-owned; other points, curves, and surfaces are transformed directly. Meshes and SubD entities are always transformed, and procedural curves and surfaces are omitted.
 
-**Note.** The heuristic prevents double transformation for ordinary Brep topology, but no source field or independent witness establishes that topology attachment is the format's ownership rule for every member class.
+**Note.** The heuristic prevents double transformation for ordinary Brep topology, but the openNURBS membership rule has not been traced to establish that topology attachment is the ownership rule for every member class.
 
-**Need.** We need an instance fixture with mixed body and free member entities, plus an independent reader result or source membership rule that identifies which entities move and which stay local. If one member emits a body plus an auxiliary curve or surface whose source ownership is not represented by topology, the topology heuristic decides whether it moves. A shared or cache-like entity can therefore be transformed as free geometry, left in body-local coordinates, or omitted based on the emitted IR shape rather than the source member identity. No ownership ambiguity loss is emitted.
+**Need.** Establish the membership rule from the openNURBS instance-definition source, with an instance fixture with mixed body and free member entities that identifies which entities move and which stay local. If one member emits a body plus an auxiliary curve or surface whose source ownership is not represented by topology, the topology heuristic decides whether it moves. A shared or cache-like entity can therefore be transformed as free geometry, left in body-local coordinates, or omitted based on the emitted IR shape rather than the source member identity. No ownership ambiguity loss is emitted.
 
 ### SW-04. V1 vertex deduplication by first nearby point
 
@@ -282,7 +282,7 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Note.** Seam and mate records may be required to carry equivalent curves, but the current code does not verify that rule and the V1 ledger did not record the first-wins selection.
 
-**Need.** We need the V1 seam/mate ownership rule and an independent pair of records with different curve copies to establish whether one is authoritative or disagreement is malformed. If two trims in one union group contain different model-space curve copies, source order selects the edge geometry and endpoints. A stale or transformed second copy is silently discarded, with no consistency check or loss.
+**Need.** Establish the V1 seam/mate ownership rule from the openNURBS source, with an authored pair of records with different curve copies to establish whether one is authoritative or disagreement is malformed. If two trims in one union group contain different model-space curve copies, source order selects the edge geometry and endpoints. A stale or transformed second copy is silently discarded, with no consistency check or loss.
 
 ### SW-06. First-match selection of built-in userdata extensions
 
