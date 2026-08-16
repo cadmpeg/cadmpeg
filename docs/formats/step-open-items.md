@@ -124,16 +124,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** QA audit: commit `6b5b13114` closed this item by naming the synthesis a CADIR decision. The decision still fabricates an undeclared chart candidate and is not format evidence.
 
-### TP-06. Implicit face-plane carrier selection
-
-**Question.** Which boundary supplies an implicit face plane, and when may an `EDGE_LOOP` supply that plane?
-
-**Known.** Part 42 defines an implicit plane for coplanar `POLY_LOOP` points and defines boundary orientation. `reader/topology.rs:2867-2929` selects the first `FACE_OUTER_BOUND`, or the first boundary that yields points when no outer role exists. It also extends plane inference to `EDGE_LOOP`. The bounds aggregate is not an identity discriminator.
-
-**Need.** We need the source rule for boundary selection and `EDGE_LOOP` inference, with reordered multi-boundary witnesses that contain different valid coplanar carriers.
-
-**Note.** QA audit: commit `db29d0715` soundly documented poly-loop orientation but promoted first-valid boundary order and the edge-loop extension to CADIR policy. If two unmarked valid bounds lie in different planes, aggregate order selects different geometry.
-
 ### TP-09. Bounded pcurve admission
 
 **Question.** What proves endpoint fit and model-space locus equivalence for competing pcurve candidates?

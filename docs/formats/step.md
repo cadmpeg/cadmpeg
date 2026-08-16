@@ -1061,27 +1061,35 @@ a `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
 vertex-only boundary. ISO 10303-42:2021 §5.5.16 defines `POLY_LOOP` as an
 ordered coplanar collection of points with implicit straight segments. Section
 §5.5.19 states that a face may have an implicit surface when its faces are
-defined by `POLY_LOOP`; that surface is the plane containing the poly-loop
-points. The same section defines the topological normal by the cross-product
-rule toward the face interior and requires all poly-loop orientations of one
-face to produce the same normal. Section §5.5.17 gives
+defined by `POLY_LOOP`; that surface is the plane containing the points of all
+the poly-loops. The same section defines the topological normal by the
+cross-product rule toward the face interior and requires all poly-loop
+orientations of one face to produce the same normal. Section §5.5.17 gives
 `FACE_BOUND.orientation` the meaning of retaining or reversing the loop sense.
+The `FACE_OUTER_BOUND` subtype identifies the outer topological role; it does
+not select an implicit plane carrier. A `FACE` with an implicit surface must
+not mix loop types: if any bound is a `POLY_LOOP`, every bound is a
+`POLY_LOOP`.
 
-CADIR decision: for a base `FACE` without an explicit `FACE_SURFACE`, the
-decoder selects the first `FACE_OUTER_BOUND` in source order, or the first
-valid boundary when no outer bound is declared. It applies
-`FACE_BOUND.orientation` to the selected loop. For a `POLY_LOOP`, the selected
-points define the inferred plane. CADIR also applies this inference to an
-`EDGE_LOOP` by using its resolved directed edge endpoints; this is a CADIR
-extension beyond the Part 42 implicit-poly-loop rule. The plane origin is the
-arithmetic centroid of the selected ring. Its u-axis is the projection of the
-first global coordinate axis whose projection has the greatest length; ties
-keep x, then y, then z. Every point must be within
+CADIR decision: for a face without an explicit `FACE_SURFACE` geometry, the
+decoder applies `FACE_BOUND.orientation` to every bound and derives one plane
+from the complete set of `POLY_LOOP` points. No bound order, outer-bound
+marker, or single-loop choice selects the plane. The arithmetic centroid of
+all points is the plane origin. Every oriented loop must have a non-degenerate
+area and its unit area normal must agree with the selected normal to within
+`1e-10` in dot product. Every point must be within
 `max(0.01, 1e-12 * ring_scale)` of that plane, where `ring_scale` is the
-largest displacement from the centroid. A ring whose signed area is at most
-`1e-12 * ring_scale^2`, or whose point residual exceeds that bound, does not
-produce a plane. An `ORIENTED_FACE` keeps the base plane carrier orientation
-and composes its reversal through face sense and boundary traversal.
+largest displacement from the all-point centroid. The u-axis is the projection
+of the first global coordinate axis whose projection has the greatest length;
+ties keep x, then y, then z. A loop whose signed area is at most
+`1e-12 * ring_scale^2`, a mixed loop type, an `EDGE_LOOP`, a missing point, or a
+point residual outside that bound does not produce an implicit plane. The
+containing topology root is rejected and the source face, bounds, loops, and
+enclosing records remain on the opaque retention path. `EDGE_LOOP` supplies an
+implicit plane never; it is admitted only when an explicit `FACE_SURFACE`
+provides the surface carrier. An `ORIENTED_FACE` keeps the base plane carrier
+orientation and composes its reversal through face sense and boundary
+traversal.
 
 CADIR decision: a topology member that requires a `VERTEX_POINT` with an
 absent point carrier is mandatory and unrepresentable. Sheet and wire

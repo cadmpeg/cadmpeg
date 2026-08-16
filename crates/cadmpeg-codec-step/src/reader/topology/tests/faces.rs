@@ -196,39 +196,24 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
 }
 
 #[test]
-fn implicit_face_plane_is_invariant_under_edge_ring_rotation() {
-    let source =
-        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
-            .expect("fixture is UTF-8")
-            .replace(
-                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
-                "#29=FACE('',(#26));",
-            );
-    let rotated = source.replace(
-        "#25=EDGE_LOOP('',(#22,#23,#24));",
-        "#25=EDGE_LOOP('',(#23,#24,#22));",
-    );
-    let first = StepCodec::default()
+fn edge_loop_without_explicit_surface_rejects_implicit_plane() {
+    let source = String::from_utf8(include_bytes!("data/tp06_edge_loop_base_face.p21").to_vec())
+        .expect("fixture is UTF-8");
+    let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode base face");
-    let second = StepCodec::default()
-        .decode(&mut Cursor::new(rotated), &DecodeOptions::default())
-        .expect("decode rotated base face");
-    let first_surface = first
+        .expect("decode edge-loop base-face witness");
+
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded
         .ir()
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
-        .expect("first implicit face plane");
-    let second_surface = second
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
-        .expect("rotated implicit face plane");
-    assert_eq!(first_surface.geometry, second_surface.geometry);
+        .all(|surface| surface.id.as_str() != "step:data:surface#implicit-face-26"));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyRootRejected.kind()
+            && loss.message.contains("implicit face plane")
+    }));
 }
 
 #[test]
@@ -273,10 +258,6 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
             .replace(
                 "#26=FACE_OUTER_BOUND('',#25,.T.);",
                 "#26=(FACE_BOUND('',#25,.T.) FACE_OUTER_BOUND());",
-            )
-            .replace(
-                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
-                "#29=FACE('',(#26));",
             );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -289,15 +270,15 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
-        .expect("implicit face plane");
+        .find(|surface| surface.id.as_str() == "step:data:surface#28")
+        .expect("explicit face plane");
     assert!(matches!(surface.geometry, SurfaceGeometry::Plane { .. }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
-fn implicit_face_plane_uses_the_outer_loop_only() {
+fn implicit_face_plane_uses_all_coplanar_poly_loops() {
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
@@ -319,12 +300,91 @@ fn implicit_face_plane_uses_the_outer_loop_only() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+    let SurfaceGeometry::Plane { normal, origin, .. } = surface.geometry else {
         panic!("implicit face did not produce a plane");
     };
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(origin, Point3::new(17.0 / 6.0, 17.0 / 6.0, 0.0));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn implicit_face_plane_is_independent_of_coplanar_bound_set_order() {
+    let first = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp06_coplanar_bounds_first.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode coplanar first-order witness");
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp06_coplanar_bounds_reordered.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode coplanar reordered witness");
+
+    let first_surface = first
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-14")
+        .expect("first implicit face plane");
+    let reordered_surface = reordered
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-14")
+        .expect("reordered implicit face plane");
+    assert_eq!(first_surface.geometry, reordered_surface.geometry);
+    assert_eq!(first.ir().model.bodies.len(), 1);
+    assert_eq!(reordered.ir().model.bodies.len(), 1);
+    assert!(cadmpeg_ir::validate_neutral(first.ir(), first.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone()).is_ok()
+    );
+}
+
+#[test]
+fn implicit_face_plane_rejects_non_coplanar_poly_loop_bounds_in_any_order() {
+    use std::collections::BTreeSet;
+
+    for input in [
+        include_bytes!("data/tp06_non_coplanar_bounds_first.p21").as_slice(),
+        include_bytes!("data/tp06_non_coplanar_bounds_reordered.p21").as_slice(),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode non-coplanar witness");
+        assert!(decoded.ir().model.bodies.is_empty());
+        assert!(decoded.ir().model.faces.is_empty());
+        assert!(decoded.ir().model.surfaces.is_empty());
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::TopologyRootRejected.kind()
+                && loss.message.contains("implicit face plane")
+        }));
+        let unknown_ids = decoded
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP native namespace")
+            .iter()
+            .map(|record| record.id.0.clone())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            unknown_ids,
+            BTreeSet::from([
+                "step:data:face#14".to_string(),
+                "step:data:face_bound#8".to_string(),
+                "step:data:face_bound#13".to_string(),
+                "step:data:open_shell#15".to_string(),
+                "step:data:poly_loop#7".to_string(),
+                "step:data:poly_loop#12".to_string(),
+                "step:data:shell_based_surface_model#16".to_string(),
+            ])
+        );
+    }
 }
 
 #[test]

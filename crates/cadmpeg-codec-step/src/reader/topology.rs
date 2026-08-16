@@ -2044,8 +2044,6 @@ fn build_one(
                                 &face_info.bounds,
                                 exchange,
                                 vdefs,
-                                edefs,
-                                odefs,
                                 point_positions,
                             ),
                             failure,
@@ -2868,50 +2866,29 @@ fn implicit_face_points(
     bounds: &[u64],
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
-    odefs: &BTreeMap<u64, OrientedDef>,
     point_positions: &CarrierIndex,
-) -> Option<Vec<Point3>> {
-    let outer = bounds.iter().copied().find(|bound_step| {
-        exchange
-            .records
-            .get(bound_step)
-            .is_some_and(|bound| has_type(bound, "FACE_OUTER_BOUND"))
-    });
-    let candidates = outer.map_or_else(|| bounds.to_vec(), |bound| vec![bound]);
-
-    candidates.into_iter().find_map(|bound_step| {
+) -> Option<Vec<Vec<Point3>>> {
+    let mut loops = Vec::with_capacity(bounds.len());
+    for &bound_step in bounds {
         let bound = exchange.records.get(&bound_step)?;
         let bound_type = face_bound_attribute_type(bound)?;
         let loop_step = named_reference(bound, bound_type, 1, 0)?;
         let loop_record = exchange.records.get(&loop_step)?;
-        let bound_forward = named_logical(bound, bound_type, 2, 0)?;
-        let mut point_steps = if has_type(loop_record, "POLY_LOOP") {
-            named_refs(loop_record, "POLY_LOOP", 1)?
-        } else if has_type(loop_record, "EDGE_LOOP") {
-            let oriented_steps = named_refs(loop_record, "EDGE_LOOP", 1)?;
-            let mut directed_edges = Vec::with_capacity(oriented_steps.len());
-            for oriented_step in oriented_steps {
-                let oriented = odefs.get(&oriented_step)?;
-                let edge = edefs.get(&oriented.edge)?;
-                let directed = if oriented.forward {
-                    (edge.start, edge.end)
-                } else {
-                    (edge.end, edge.start)
-                };
-                directed_edges.push(directed);
-            }
-            if !bound_forward {
-                directed_edges.reverse();
-                for (start, end) in &mut directed_edges {
-                    std::mem::swap(start, end);
-                }
-            }
-            directed_edges.into_iter().map(|(start, _)| start).collect()
-        } else {
+        if !has_type(loop_record, "POLY_LOOP") {
             return None;
-        };
-        if !bound_forward && has_type(loop_record, "POLY_LOOP") {
+        }
+        let bound_forward = named_logical(bound, bound_type, 2, 0)?;
+        let mut point_steps = named_refs(loop_record, "POLY_LOOP", 1)?;
+        if point_steps.first() == point_steps.last() {
+            point_steps.pop();
+        }
+        point_steps.dedup();
+        if point_steps.len() < 3
+            || point_steps.iter().collect::<BTreeSet<_>>().len() != point_steps.len()
+        {
+            return None;
+        }
+        if !bound_forward {
             point_steps.reverse();
         }
         let mut points = Vec::with_capacity(point_steps.len());
@@ -2927,22 +2904,32 @@ fn implicit_face_points(
         if points.len() > 1 && points.first() == points.last() {
             points.pop();
         }
-        (points.len() >= 3).then_some(points)
-    })
+        if points.len() < 3 {
+            return None;
+        }
+        loops.push(points);
+    }
+    (!loops.is_empty()).then_some(loops)
 }
 
 const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = 1.0e-12;
+const IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE: f64 = 1.0e-10;
 const IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn implicit_face_plane(
     bounds: &[u64],
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
-    odefs: &BTreeMap<u64, OrientedDef>,
     point_positions: &CarrierIndex,
 ) -> Option<SurfaceGeometry> {
-    let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions)?;
+    let loops = implicit_face_points(bounds, exchange, vdefs, point_positions)?;
+    let mut points = loops.iter().flatten().copied().collect::<Vec<_>>();
+    points.sort_by(|left, right| {
+        left.x
+            .total_cmp(&right.x)
+            .then_with(|| left.y.total_cmp(&right.y))
+            .then_with(|| left.z.total_cmp(&right.z))
+    });
     let point_count = points.len() as f64;
     let origin = Point3::new(
         points.iter().map(|point| point.x).sum::<f64>() / point_count,
@@ -2960,19 +2947,48 @@ fn implicit_face_plane(
     if !scale.is_finite() || scale <= f64::EPSILON {
         return None;
     }
-    let mut area_normal = Vector3::new(0.0, 0.0, 0.0);
-    for (current, next) in relative_points
-        .iter()
-        .zip(relative_points.iter().cycle().skip(1))
-        .take(relative_points.len())
-    {
-        area_normal = area_normal + current.cross(*next);
+    let mut loop_normals = Vec::with_capacity(loops.len());
+    for loop_points in &loops {
+        let loop_count = loop_points.len() as f64;
+        let loop_origin = Point3::new(
+            loop_points.iter().map(|point| point.x).sum::<f64>() / loop_count,
+            loop_points.iter().map(|point| point.y).sum::<f64>() / loop_count,
+            loop_points.iter().map(|point| point.z).sum::<f64>() / loop_count,
+        );
+        let relative_loop = loop_points
+            .iter()
+            .map(|point| point.vector_from(loop_origin))
+            .collect::<Vec<_>>();
+        let mut area_normal = Vector3::new(0.0, 0.0, 0.0);
+        for (current, next) in relative_loop
+            .iter()
+            .zip(relative_loop.iter().cycle().skip(1))
+            .take(relative_loop.len())
+        {
+            area_normal = area_normal + current.cross(*next);
+        }
+        let area = area_normal.norm();
+        if !area.is_finite() || area <= IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE * scale * scale {
+            return None;
+        }
+        loop_normals.push((area_normal.unit()?, area));
     }
-    let area = area_normal.norm();
-    if !area.is_finite() || area <= IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE * scale * scale {
-        return None;
+    let mut normal = loop_normals.first().map(|(normal, _)| *normal)?;
+    let mut largest_area = loop_normals.first().map(|(_, area)| *area)?;
+    for (candidate, area) in loop_normals.iter().skip(1).copied() {
+        if area > largest_area
+            || (area == largest_area
+                && (candidate.x, candidate.y, candidate.z) > (normal.x, normal.y, normal.z))
+        {
+            normal = candidate;
+            largest_area = area;
+        }
     }
-    let normal = area_normal.unit()?;
+    for (candidate, _) in &loop_normals {
+        if candidate.dot(normal) < 1.0 - IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE {
+            return None;
+        }
+    }
     let planarity_tolerance =
         COINCIDENCE_TOLERANCE.max(IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE * scale);
     if relative_points
