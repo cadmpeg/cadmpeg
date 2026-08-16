@@ -1509,7 +1509,7 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
         if !valid_schema_identifier(&identifier) {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
-        if !normalized_identifiers.insert(identifier.to_ascii_uppercase()) {
+        if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
     }
@@ -1930,7 +1930,7 @@ fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<
 }
 
 fn valid_schema_identifier(identifier: &str) -> bool {
-    let identifier = identifier.trim().to_ascii_uppercase();
+    let identifier = identifier.trim();
     if identifier.is_empty() || identifier.chars().count() > 1024 {
         return false;
     }
@@ -1941,28 +1941,126 @@ fn valid_schema_identifier(identifier: &str) -> bool {
             };
             (name.trim_end(), Some(object_identifier))
         }
-        None => (identifier.as_str(), None),
+        None => (identifier, None),
     };
-    if name.is_empty()
-        || name.trim() != name
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
-    {
+    if !valid_schema_name(name) {
         return false;
     }
-    object_identifier.is_none_or(|value| {
-        let mut components = value.split_whitespace();
-        components.next().is_some() && value.split_whitespace().all(valid_schema_oid_component)
-    })
+    object_identifier.is_none_or(valid_schema_object_identifier)
 }
 
 fn valid_schema_oid_component(component: &str) -> bool {
-    let digits = component
-        .strip_prefix('-')
-        .or_else(|| component.strip_prefix('+'))
-        .unwrap_or(component);
-    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+    if valid_schema_oid_number(component) || valid_schema_oid_name(component) {
+        return true;
+    }
+    let Some((name, number)) = component.split_once('(') else {
+        return false;
+    };
+    let Some(number) = number.strip_suffix(')') else {
+        return false;
+    };
+    valid_schema_oid_name(name)
+        && (valid_schema_oid_number(number) || valid_schema_oid_name(number))
+}
+
+fn valid_schema_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn valid_schema_object_identifier(value: &str) -> bool {
+    let mut components = value.split_whitespace();
+    let Some(first) = components.next() else {
+        return false;
+    };
+    let Some(second) = components.next() else {
+        return false;
+    };
+    if !valid_schema_oid_component(first)
+        || !valid_schema_oid_component(second)
+        || !components.all(valid_schema_oid_component)
+    {
+        return false;
+    }
+    valid_schema_oid_root(first, second)
+}
+
+fn valid_schema_oid_number(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && (value == "0" || !value.starts_with('0'))
+}
+
+fn valid_schema_oid_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    let mut previous_hyphen = false;
+    for byte in bytes {
+        if byte.is_ascii_alphabetic() || byte.is_ascii_digit() {
+            previous_hyphen = false;
+        } else if byte == b'-' && !previous_hyphen {
+            previous_hyphen = true;
+        } else {
+            return false;
+        }
+    }
+    !value.ends_with('-')
+}
+
+fn valid_schema_oid_root(first: &str, second: &str) -> bool {
+    let first = match schema_oid_explicit_root(first) {
+        Some(Ok(value)) => value,
+        Some(Err(())) => return false,
+        None => {
+            let Some(value) = schema_oid_named_root_value(first) else {
+                return true;
+            };
+            value
+        }
+    };
+    if first > 2 {
+        return false;
+    }
+    if first < 2 {
+        if let Some(second) = schema_oid_component_number_text(second) {
+            return second.len() < 2 || (second.len() == 2 && second.as_bytes()[0] <= b'3');
+        }
+    }
+    true
+}
+
+fn schema_oid_named_root_value(component: &str) -> Option<u8> {
+    match component {
+        "itu-t" | "ccitt" => Some(0),
+        "iso" => Some(1),
+        "joint-iso-itu-t" | "joint-iso-ccitt" => Some(2),
+        _ => None,
+    }
+}
+
+fn schema_oid_explicit_root(component: &str) -> Option<Result<u8, ()>> {
+    let value = schema_oid_component_number_text(component)?;
+    Some(match value {
+        "0" => Ok(0),
+        "1" => Ok(1),
+        "2" => Ok(2),
+        _ => Err(()),
+    })
+}
+
+fn schema_oid_component_number_text(component: &str) -> Option<&str> {
+    if valid_schema_oid_number(component) {
+        return Some(component);
+    }
+    let (name, number) = component.split_once('(')?;
+    let number = number.strip_suffix(')')?;
+    (valid_schema_oid_name(name) && valid_schema_oid_number(number)).then_some(number)
 }
 
 fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {

@@ -150,7 +150,7 @@ impl StepSchema {
     }
 }
 
-fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<Vec<i64>>)> {
+fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<Vec<u64>>)> {
     let identifier = identifier.trim();
     let Some(open) = identifier.rfind('{') else {
         return Some((identifier, None));
@@ -160,8 +160,8 @@ fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<Vec<i64>>)>
     }
     let oid = identifier[open + 1..identifier.len() - 1]
         .split_whitespace()
-        .map(str::parse::<i64>)
-        .collect::<Result<Vec<i64>, _>>()
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<u64>, _>>()
         .ok()?;
-    (!oid.is_empty()).then(|| (identifier[..open].trim_end(), Some(oid)))
+    (oid.len() >= 2).then(|| (identifier[..open].trim_end(), Some(oid)))
 }

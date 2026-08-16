@@ -85,13 +85,19 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
     );
     crate::parse::parse(valid.as_bytes()).expect("valid header metadata");
 
-    let signed_schema_oid = source(
+    let schema_oid = source(
         "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
-        "' AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 } '",
+        "' AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 1 1 5 4 } '",
         "",
     );
-    crate::parse::parse(signed_schema_oid.as_bytes())
-        .expect("schema object identifiers permit signed components");
+    crate::parse::parse(schema_oid.as_bytes()).expect("schema object identifier");
+
+    let named_schema_oid = source(
+        "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+        "' AUTOMOTIVE_DESIGN_CC2 { iso standard 10303 part(214) version(1) } '",
+        "",
+    );
+    crate::parse::parse(named_schema_oid.as_bytes()).expect("named schema object identifier");
 
     let invalid = [
         source(
@@ -101,12 +107,37 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
         ),
         source(
             "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
-            "'AP242 { 1 invalid }'",
+            "'AP242 { 1 invalid_ }'",
             "",
         ),
         source(
             "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
             "'AP242 { }'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242 { 1 }'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242 { 3 0 }'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242 { 0 40 }'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242 { 01 0 }'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP-242'",
             "",
         ),
         source(
@@ -135,6 +166,39 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
 
     let malformed_data_schema = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('main',('AP242 { 1 invalid }'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
     assert!(crate::parse::parse(malformed_data_schema.as_bytes()).is_err());
+}
+
+#[test]
+fn parser_rejects_noncanonical_or_invalid_schema_identifiers() {
+    let cases = [
+        ("' AP242 ','AP242'", "'AP242'", "trimmed duplicate"),
+        ("'9AP242'", "'9AP242'", "leading digit"),
+        ("'_AP242'", "'_AP242'", "leading underscore"),
+        (
+            "'AP242 { 1 0 10303 442 -1 1 4 }'",
+            "'AP242'",
+            "negative OID component",
+        ),
+    ];
+    let mut admitted = Vec::new();
+    for (schema, data_schema, description) in cases {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({schema}));ENDSEC;DATA('main',({data_schema}));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        match crate::parse::parse(source.as_bytes()) {
+            Ok(_) => admitted.push(description),
+            Err(error) => assert!(
+                error
+                    .to_string()
+                    .contains("FILE_SCHEMA has invalid or duplicate schema identifiers"),
+                "{description}: unexpected error: {error}"
+            ),
+        }
+    }
+    assert!(
+        admitted.is_empty(),
+        "admitted invalid identifiers: {admitted:?}"
+    );
 }
 
 #[test]
@@ -355,6 +419,10 @@ fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
         ),
         (
             "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 14 1 4 }'",
+            "edition unspecified",
+        ),
+        (
+            "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { iso standard 10303 part(442) version(3) }'",
             "edition unspecified",
         ),
         (

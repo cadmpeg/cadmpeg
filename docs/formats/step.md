@@ -8,10 +8,13 @@ semantic decode path; the concluded disposition is
 
 ## 1. Envelope
 
-A Part 21 exchange structure uses `FILE_SCHEMA` to identify AP203, AP214, or
-AP242 and its edition. AP203, AP214, and AP242 documents carry exchanged
-product shape and product structure. Product occurrence relationships carry
-identity and placement.
+A Part 21 exchange structure uses `FILE_SCHEMA` to identify the EXPRESS
+schemas that specify its DATA entity instances. AP203, AP214, and AP242 are
+supported CADIR application-protocol targets. CADIR decision: the inspect
+report derives a known AP242 edition only from the first identifier; later
+identifiers remain metadata and do not override that report. AP203, AP214, and
+AP242 documents carry exchanged product shape and product structure. Product
+occurrence relationships carry identity and placement.
 
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
@@ -132,10 +135,10 @@ be used by the other prefix in the same exchange. Named occurrences begin with
 an ASCII letter or underscore, use only ASCII letters, digits, and underscore,
 and are canonicalized to uppercase. A numeric `#` occurrence is a DATA entity
 reference. A numeric `@` occurrence is a value reference declared by a
-`REFERENCE` entry. Named occurrences are EXPRESS entity or value constants. An
-anchor name is a nonempty URI fragment identifier with at least one non-digit
-character. A reference left-hand side is a numeric entity or value occurrence
-name.
+`REFERENCE` entry. Named occurrences are EXPRESS entity or value constants
+from the first schema in `FILE_SCHEMA`. An anchor name is a nonempty URI
+fragment identifier with at least one non-digit character. A reference
+left-hand side is a numeric entity or value occurrence name.
 
 `1.`, `0.E+000`, exponent-form values without a decimal point, exponent-form
 values with a trailing decimal point such as `6E-16.`, and Fortran `D`
@@ -217,25 +220,31 @@ level. The major value in `implementation_level` selects the direct string
 repertoire: `4` selects UTF-8 and earlier levels select ISO-8859-1.
 `FILE_NAME` supplies name, timestamp, authors, organizations,
 preprocessor version, originating system, and authorization. `FILE_SCHEMA`
-supplies one or more unique string identifiers. The first identifier governs
-the application protocol and edition; later identifiers do not override it.
+supplies one or more unique schema identifier strings. The first schema is the
+governing schema for schema-population conformance, EXPRESS constant entity
+names, and EXPRESS constant value names. Each parameterized DATA section can
+name any schema in the list.
 `FILE_DESCRIPTION` strings and every `FILE_NAME` string attribute have an
 effective length of at most 256 characters. A non-empty `FILE_NAME` timestamp
 uses the complete extended calendar-date and time-of-day form
 `YYYY-MM-DDTHH:MM:SS`, with an optional fractional second and an optional `Z`
 or signed `HH:MM` time-zone offset. Each `FILE_SCHEMA` identifier has an
-effective length of at most 1024 characters. Its schema name is a non-empty
-ASCII identifier containing uppercase letters, digits, and underscores after
-case normalization. Its optional object identifier is a non-empty sequence of
-signed decimal components enclosed in braces. A component may have an optional
-leading sign and contains at least one decimal digit. Leading and trailing
-whitespace around the identifier is ignored.
-Each parameterized DATA section names one schema from this list. The schema
-name compares with the identifier's schema-name portion when the identifier
-has an object identifier.
-An identifier is a schema name with an optional brace-delimited object
-identifier containing space-separated signed decimal components. The supported
-identifiers are:
+effective length of at most 1024 characters. Its schema name is an EXPRESS
+`simple_id`: an ASCII letter followed by ASCII letters, digits, or underscores.
+ASCII lowercase schema-name letters are converted to uppercase for schema
+identity. Its optional object identifier is an ISO/IEC 8824-1 object identifier
+enclosed in braces with at least two space-delimited components. A component is
+a non-negative decimal number, an ASN.1 identifier, or an identifier followed
+by parentheses containing a non-negative decimal number or identifier. A
+numeric component has no leading zero. An ASN.1 identifier starts with a
+lowercase ASCII letter, uses ASCII letters, digits, and hyphens, and has no
+trailing or consecutive hyphens. Numeric root components are `0`, `1`, or `2`;
+when the first numeric root is `0` or `1`, a numeric second component is in
+`0..=39`. CADIR decision: leading and trailing whitespace around an identifier
+is ignored for validation, matching, and uniqueness.
+The schema name in a parameterized DATA section compares with the
+identifier's schema-name portion when the identifier has an object identifier.
+The writer's supported schema identifiers are:
 
 | Identifier                                                                                                   | Protocol and edition |
 | ------------------------------------------------------------------------------------------------------------ | -------------------- |
@@ -246,8 +255,12 @@ identifiers are:
 | `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }`                                    | AP242 edition 2      |
 | `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }`                                    | AP242 edition 3      |
 
-An AP242 identifier with another object identifier has an unspecified edition.
-ASCII case differences compare equal.
+For the CADIR AP242 edition report, the first identifier must have the exact
+long-form name and one of the exact numeric object identifiers in the table.
+An AP242 identifier with no object identifier, an ASN.1 named object
+identifier, or another numeric object identifier reports an unspecified
+edition. ASCII case differences compare equal. Later identifiers do not
+override the first identifier's report.
 
 After `FILE_SCHEMA`, the header may contain at most one `SCHEMA_POPULATION`,
 zero or more `FILE_POPULATION` entities, and `SECTION_LANGUAGE` and

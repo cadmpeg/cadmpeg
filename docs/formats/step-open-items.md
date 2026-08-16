@@ -858,24 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### EL-05. Schema identifier interpretation
-
-**Question.** What STEP rule establishes schema identifier interpretation?
-
-**Known.** `FILE_SCHEMA` contains one or more unique string identifiers.
-The first identifier governs the application protocol and edition. An
-identifier is a schema name with an optional brace-delimited object identifier
-whose components are space-separated signed decimal integers. The decoder selects
-AP242 edition 1, 2, or 3 only for the exact long-form name and exact object
-identifiers `1 0 10303 442 1 1 4`, `1 0 10303 442 3 1 4`, and
-`1 0 10303 442 4 1 4`. Other AP242 object identifiers report an unspecified
-edition. Leading and trailing whitespace around an identifier is ignored.
-Later identifiers remain metadata and do not change the selection.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### EL-06. Omitted entity name repair and anchor order
 
 **Question.** What STEP rule establishes omitted entity name repair and anchor order?
