@@ -300,6 +300,15 @@ handling. The decoder stores the typed
 fields under the owning material record and retains the material when a
 recognized PBR payload is malformed.
 
+The built-in `ON_RdkUserData` carrier is also partly settled as a generic XML
+userdata carrier. Its class UUID is `AFA82772-1525-43DD-A63C-C84AC5806911`,
+item UUID is `B63ED079-CF67-416C-800D-22023AE1BE21`, and application UUID is
+`16592D58-4A2F-401D-BF5E-3B87741C1B1B`. Section 7.2.18 defines its version-2
+UTF-8 payload, legacy version-1 UTF-16 branch, archive predicate, material
+legacy-transfer behavior, and callback-owned XML boundary. The codec makes
+the CADIR decision to retain this XML only through the complete containing
+object record; it does not assign a neutral field grammar to RDK callbacks.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
@@ -318,8 +327,8 @@ object-attributes compatibility carrier under section 7.2.9, and
 `ON_PerObjectMeshParameters` is settled as the typed modern object-attributes
 carrier under section 7.2.10. `ON_AnnotationTextFormula` is settled as a
 runtime-only helper with no serialized userdata under section 7.2.11; other
-future class-specific payload semantics, beyond the settled mesh-modifier and
-physically based material classes, remain open.
+future class-specific payload semantics, beyond the settled mesh-modifier,
+physically based material, and RDK carriers, remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

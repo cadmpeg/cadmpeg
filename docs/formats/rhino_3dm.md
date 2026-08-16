@@ -1451,6 +1451,47 @@ version as `version`. A malformed recognized payload leaves the material
 record admitted, omits `physically_based`, and retains the bounded userdata
 record for opaque fidelity handling.
 
+#### 7.2.18 `ON_RdkUserData`
+
+`ON_RdkUserData` uses class UUID and item UUID
+`AFA82772-1525-43DD-A63C-C84AC5806911` and
+`B63ED079-CF67-416C-800D-22023AE1BE21`, with application UUID
+`16592D58-4A2F-401D-BF5E-3B87741C1B1B`. It can be attached to any
+`ON_Object`. Its `Read` and `Write` methods delegate to
+`ON_XMLUserData` and add no bytes to the class-owned payload.
+
+Inside the generic class-userdata anonymous child, the class-owned payload is:
+
+```text
+i32 XML userdata version
+if version == 1:
+  archive UTF-16 XML string
+else if version <= 2:
+  i32 UTF-8 byte count including the terminator
+  byte count raw UTF-8 bytes, including a terminating 0x00
+```
+
+The writer emits XML userdata version `2`. The reader rejects a version above
+`2`; version `1` selects the legacy archive UTF-16 string, and every other
+admitted version selects the UTF-8 branch. The UTF-8 length is the number of
+bytes written by the conversion, including the terminating NUL. The XML root
+serialized by `ON_XMLRootNode` is `<xml>`. The RDK convention names its direct
+data child `render-content-manager-data`; the child elements and properties
+below it are callback-owned XML and have no common field grammar in this
+carrier.
+
+The writer archives the userdata only when the XML root has at least one child.
+On a non-material parent, the source reader keeps the userdata attached. On an
+`ON_Material` parent, the source reader treats pre-V6 RDK material userdata as
+obsolete: it sets the material plug-in ID to the universal render engine,
+reads `render-content-manager-data/material/@instance-id`, transfers that UUID
+to the material RDK instance-ID member, and deletes the userdata.
+
+CADIR does not promote callback-owned RDK XML to typed native fields. The Rhino
+codec retains the complete containing object record for opaque source fidelity.
+For materials, the typed `rdk_instance_uuid` field comes from the material
+class-data record; the codec does not infer it from callback-owned RDK XML.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
