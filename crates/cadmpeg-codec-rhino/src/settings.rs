@@ -1221,10 +1221,11 @@ fn parse_layer(
                 34 => 14,
                 35..=36 => 15,
                 _ => {
-                    return Err(FramingError::structural(
-                        reader.position(),
-                        format!("unknown future layer extension item {item}"),
-                    ))
+                    // Extension items have no length prefix. The source reader
+                    // consumes only this ID and lets the class-data boundary
+                    // discard the value bytes it cannot type.
+                    finish(&mut reader, "future layer extension")?;
+                    return Ok(layer);
                 }
             };
             if version.1 < minimum_minor {

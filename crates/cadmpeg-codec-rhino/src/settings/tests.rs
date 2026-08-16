@@ -285,7 +285,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
 
     let mut future_payload = payload.clone();
     future_payload.pop();
-    future_payload.extend([0xfe, 0]);
+    future_payload.extend([0xfe, 0xaa, 0xbb, 0, 0xde]);
     let future_class = long_chunk(
         archive,
         0x0002_7ffa,
@@ -308,9 +308,9 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let mut future_warnings = Vec::new();
     let future =
         settings::parse_metadata(&future_data, archive, &[future_table], &mut future_warnings);
-    assert!(future.layers.is_empty());
-    assert_eq!(future.opaque_records.len(), 1);
-    assert_eq!(future.opaque_records[0].record.range, future_record.range);
+    assert_eq!(future.layers.len(), 1, "{future_warnings:?}");
+    assert_eq!(future.layers[0].extension_items, vec![33, 34, 35, 36]);
+    assert!(future.opaque_records.is_empty());
 }
 
 #[test]

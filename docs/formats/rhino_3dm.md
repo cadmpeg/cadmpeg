@@ -1233,7 +1233,11 @@ minor >= 15: item 35 embedded section style, item 36 obsolete clipping type
 ```
 
 The extension stream is item byte, payload, next item byte, terminated by item
-zero. Layer visibility and lock state are independent.
+zero. If a nonzero extension ID is outside the defined set, only that ID byte
+is known; typed parsing stops and the remaining bytes through the layer
+class-data boundary remain untyped. Bytes after item zero are bounded suffix
+bytes, not another extension item. Layer visibility and lock state are
+independent.
 
 The archive layer index is the object-reference key. If two layer records use
 one archive index, component registration keeps the original index on the
