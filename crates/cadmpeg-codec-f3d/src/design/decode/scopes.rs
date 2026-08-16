@@ -53,6 +53,8 @@ use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
+use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
+use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
 use crate::layout::shifted_extrude_prologue as shifted_extrude;
@@ -3513,30 +3515,47 @@ pub(crate) fn exact_solid_primitive(
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let (operation, operation_offset) = match scope.kind.as_str() {
-        "SpherePrimitive" | "TorusPrimitive" => {
-            let operation_offset = start.checked_add(25)?;
-            (
-                primitive_operation(bytes, operation_offset)?,
-                operation_offset,
-            )
-        }
-        "BoxPrimitive" | "CylinderPrimitive" => {
-            if bytes.get(start + solid_prologue::ZERO_RUN_9..start + solid_prologue::OPERATION)?
-                != [0; 9]
-                || bytes.get(start + solid_prologue::ZERO_FLAG) != Some(&0)
-                || bytes.get(start + solid_prologue::FORM_MARKER) != Some(&1)
-            {
-                return None;
+    let (operation, operation_offset, cylinder_transform, cylinder_transform_offset) =
+        match scope.kind.as_str() {
+            "SpherePrimitive" | "TorusPrimitive" => {
+                let operation_offset = start.checked_add(25)?;
+                (
+                    primitive_operation(bytes, operation_offset)?,
+                    operation_offset,
+                    None,
+                    None,
+                )
             }
-            let operation_offset = start.checked_add(solid_prologue::OPERATION)?;
-            (
-                primitive_operation(bytes, operation_offset)?,
-                operation_offset,
-            )
-        }
-        _ => return None,
-    };
+            "BoxPrimitive" => {
+                let operation_offset = exact_named_solid_primitive_operation(bytes, start)?;
+                (
+                    primitive_operation(bytes, operation_offset)?,
+                    operation_offset,
+                    None,
+                    None,
+                )
+            }
+            "CylinderPrimitive" => {
+                if let Some(operation_offset) = exact_named_solid_primitive_operation(bytes, start)
+                {
+                    (
+                        primitive_operation(bytes, operation_offset)?,
+                        operation_offset,
+                        None,
+                        None,
+                    )
+                } else {
+                    let prologue = exact_shifted_cylinder_primitive_prologue(bytes, scope, start)?;
+                    (
+                        prologue.operation,
+                        prologue.operation_offset,
+                        prologue.transform,
+                        prologue.transform_offset,
+                    )
+                }
+            }
+            _ => return None,
+        };
     let matrix = |relative_offset: usize| {
         let matrix_at = start.checked_add(relative_offset)?;
         let values = f64s_at(bytes, matrix_at, 16)?;
@@ -3646,6 +3665,8 @@ pub(crate) fn exact_solid_primitive(
                     diameter: diameter.evaluated_value,
                     diameter_record_index: diameter.record_index,
                     diameter_offset: diameter.evaluated_value_offset,
+                    transform: cylinder_transform,
+                    transform_offset: cylinder_transform_offset,
                     operation,
                     operation_offset: operation_offset as u64,
                 },
@@ -3653,6 +3674,247 @@ pub(crate) fn exact_solid_primitive(
         }
         _ => None,
     }
+}
+
+#[derive(Clone, Copy)]
+struct ExactShiftedCylinderPrimitivePrologue {
+    operation: DesignExtrudeOperation,
+    operation_offset: usize,
+    transform: Option<[[f64; 4]; 4]>,
+    transform_offset: Option<u64>,
+}
+
+fn exact_named_solid_primitive_operation(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start + solid_prologue::ZERO_RUN_9..start + solid_prologue::OPERATION)? != [0; 9]
+        || bytes.get(start + solid_prologue::ZERO_FLAG) != Some(&0)
+        || bytes.get(start + solid_prologue::FORM_MARKER) != Some(&1)
+    {
+        return None;
+    }
+    start.checked_add(solid_prologue::OPERATION)
+}
+
+fn exact_shifted_cylinder_primitive_prologue(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<ExactShiftedCylinderPrimitivePrologue> {
+    let compact = match (
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+        scope.frame_length,
+    ) {
+        ("297" | "375", "258", 352) => true,
+        ("297" | "375", "258", 502) | ("414", "272", 502) => false,
+        _ => return None,
+    };
+    let (
+        frame_length,
+        zero_run_10,
+        form_marker,
+        operation,
+        first_reference,
+        second_reference,
+        third_reference,
+        fourth_reference,
+        reference_gap,
+    ) = if compact {
+        (
+            shifted_cylinder_352::LEN,
+            shifted_cylinder_352::ZERO_RUN_10,
+            shifted_cylinder_352::FORM_MARKER,
+            shifted_cylinder_352::OPERATION,
+            shifted_cylinder_352::FIRST_REFERENCE,
+            shifted_cylinder_352::SECOND_REFERENCE,
+            shifted_cylinder_352::THIRD_REFERENCE,
+            shifted_cylinder_352::FOURTH_REFERENCE,
+            shifted_cylinder_352::REFERENCE_GAP,
+        )
+    } else {
+        (
+            shifted_cylinder_502::LEN,
+            shifted_cylinder_502::ZERO_RUN_10,
+            shifted_cylinder_502::FORM_MARKER,
+            shifted_cylinder_502::OPERATION,
+            shifted_cylinder_502::FIRST_REFERENCE,
+            shifted_cylinder_502::SECOND_REFERENCE,
+            shifted_cylinder_502::THIRD_REFERENCE,
+            shifted_cylinder_502::FOURTH_REFERENCE,
+            shifted_cylinder_502::REFERENCE_GAP,
+        )
+    };
+    let reference_count = if compact { 5 } else { 7 };
+    if scope.reference_members.len() != reference_count
+        || scope.paired_byte_offset != u64::try_from(start.checked_add(frame_length)?).ok()?
+        || bytes.get(start + zero_run_10..start + form_marker)? != [0; 10]
+        || bytes.get(start + form_marker) != Some(&1)
+        || bytes.get(start + reference_gap) != Some(&0)
+        || bytes.get(start + operation + 1..start + first_reference)? != [0; 3]
+    {
+        return None;
+    }
+    let operation_offset = start.checked_add(operation)?;
+    let operation = primitive_operation(bytes, operation_offset)?;
+    if bytes.get(start + first_reference) != Some(&1)
+        || bytes.get(start + first_reference + 1) != Some(&1)
+        || View::u32_le_at(bytes, start + first_reference + 2)?
+            != scope.reference_members[reference_count - 1]
+        || bytes.get(start + first_reference + 6..start + first_reference + 11)? != [0; 5]
+    {
+        return None;
+    }
+    for (relative_offset, expected_record_index) in [
+        (
+            second_reference,
+            scope.reference_members[reference_count - 2],
+        ),
+        (
+            third_reference,
+            scope.reference_members[reference_count - 3],
+        ),
+        (
+            fourth_reference,
+            scope.reference_members[reference_count - 4],
+        ),
+    ] {
+        if marked_record_reference(bytes, start.checked_add(relative_offset)?)
+            != Some(expected_record_index)
+        {
+            return None;
+        }
+    }
+    let absolute = |relative_offset: usize| u64::try_from(start.checked_add(relative_offset)?).ok();
+    let (
+        reference_count_offset,
+        history_state_id_offset,
+        kind_offset,
+        feature_ordinal_offset,
+        previous_history_state_id_offset,
+    ) = match scope.frame_length {
+        352 => (
+            shifted_cylinder_352::REFERENCE_COUNT,
+            shifted_cylinder_352::HISTORY_STATE_ID,
+            shifted_cylinder_352::KIND,
+            shifted_cylinder_352::FEATURE_ORDINAL,
+            shifted_cylinder_352::PREVIOUS_HISTORY_STATE_ID,
+        ),
+        502 => (
+            shifted_cylinder_502::REFERENCE_COUNT,
+            shifted_cylinder_502::HISTORY_STATE_ID,
+            shifted_cylinder_502::KIND,
+            shifted_cylinder_502::FEATURE_ORDINAL,
+            shifted_cylinder_502::PREVIOUS_HISTORY_STATE_ID,
+        ),
+        _ => return None,
+    };
+    if scope.reference_count_offset != absolute(reference_count_offset)?
+        || scope.history_state_id_offset != absolute(history_state_id_offset)?
+        || scope.kind_offset != absolute(kind_offset)?
+        || scope.feature_ordinal_offset != absolute(feature_ordinal_offset)?
+        || scope.previous_history_state_id_offset != absolute(previous_history_state_id_offset)?
+    {
+        return None;
+    }
+    let (transform, transform_offset) = match scope.frame_length {
+        352 => {
+            if bytes.get(start + shifted_cylinder_352::COMPACT_TAIL_MARKER) != Some(&1)
+                || View::u32_le_at(bytes, start + shifted_cylinder_352::COMPACT_TAIL_COUNT)? != 1
+                || marked_record_reference(
+                    bytes,
+                    start + shifted_cylinder_352::COMPACT_TAIL_REFERENCE,
+                )
+                .is_none_or(|record_index| record_index == 0)
+                || bytes.get(
+                    start + shifted_cylinder_352::COMPACT_TAIL_ZERO_RUN_8
+                        ..start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT,
+                )? != [0; 8]
+                || View::u32_le_at(bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT)? != 36
+            {
+                return None;
+            }
+            let (guid, guid_end) = lp_utf16_bounded(
+                bytes,
+                start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT,
+                36..=36,
+            )?;
+            if guid_end != start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
+                || !is_guid_relaxed(&guid)
+                || bytes.get(
+                    start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
+                        ..start + shifted_cylinder_352::REFERENCE_COUNT,
+                )? != [0; 3]
+            {
+                return None;
+            }
+            (None, None)
+        }
+        502 => {
+            if bytes.get(start + shifted_cylinder_502::ZERO_BEFORE_MATRIX) != Some(&0)
+                || bytes.get(
+                    start + shifted_cylinder_502::ZERO_RUN_8_AFTER_MATRIX
+                        ..start + shifted_cylinder_502::CONSTRUCTION_REFERENCE,
+                )? != [0; 8]
+                || bytes.get(start + shifted_cylinder_502::CONSTRUCTION_REFERENCE) != Some(&1)
+                || View::u32_le_at(
+                    bytes,
+                    start + shifted_cylinder_502::CONSTRUCTION_REFERENCE + 1,
+                )? != 0x0100_0000
+                || View::u32_le_at(
+                    bytes,
+                    start + shifted_cylinder_502::CONSTRUCTION_REFERENCE + 5,
+                )? != scope.reference_members[0]
+                || bytes.get(
+                    start + shifted_cylinder_502::CONSTRUCTION_REFERENCE + 9
+                        ..start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT,
+                )? != [0; 6]
+                || View::u32_le_at(bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT)? != 36
+                || bytes.get(
+                    start + shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
+                        ..start + shifted_cylinder_502::REFERENCE_COUNT,
+                )? != [0; 3]
+            {
+                return None;
+            }
+            let values = f64s_at(bytes, start + shifted_cylinder_502::MATRIX, 16)?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.into_iter().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            let (guid, guid_end) = lp_utf16_bounded(
+                bytes,
+                start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT,
+                36..=36,
+            )?;
+            if guid_end != start + shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
+                || !is_guid_relaxed(&guid)
+                || !valid_sketch_transform(&transform)
+                || !cylinder_transform_preserves_projected_geometry(&transform)
+            {
+                return None;
+            }
+            (
+                Some(transform),
+                Some(u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?),
+            )
+        }
+        _ => return None,
+    };
+    Some(ExactShiftedCylinderPrimitivePrologue {
+        operation,
+        operation_offset,
+        transform,
+        transform_offset,
+    })
+}
+
+fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) -> bool {
+    const EPS_CYLINDER_FRAME: f64 = 1.0e-10;
+    transform[0][3].abs() <= EPS_CYLINDER_FRAME
+        && transform[1][3].abs() <= EPS_CYLINDER_FRAME
+        && transform[2][3].abs() <= EPS_CYLINDER_FRAME
+        && transform[0][2].abs() <= EPS_CYLINDER_FRAME
+        && transform[1][2].abs() <= EPS_CYLINDER_FRAME
+        && (transform[2][2] - 1.0).abs() <= EPS_CYLINDER_FRAME
 }
 
 fn primitive_operation(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {

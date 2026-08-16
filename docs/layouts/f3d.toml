@@ -2785,7 +2785,7 @@ anchor = "and eight zero bytes"
 name = "named_solid_primitive_prologue"
 kind = "byte"
 section = "3.1"
-anchor = "`BoxPrimitive` and `CylinderPrimitive` scopes use the named parameter-scope prologue."
+anchor = "`BoxPrimitive` and the named `CylinderPrimitive` form use the named parameter-scope prologue."
 size = 26
 note = "Offsets are relative to the primary indexed scope header. The ordered parameter-owner references and the paired header follow this fixed prologue."
 
@@ -2823,6 +2823,373 @@ offset = 25
 type = "u8"
 source = "spec"
 anchor = "byte 25 is `0x01`"
+
+[[record]]
+name = "shifted_cylinder_primitive_352_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The shifted `CylinderPrimitive` form is keyed by its primary and paired class tags and its frame length"
+size = 352
+note = "Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 174; the paired header follows the complete scope frame."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "byte 21 is `0x01`"
+value = 1
+
+[[record.field]]
+name = "operation"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 is at offset 22"
+
+[[record.field]]
+name = "first_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "The first reference at offset 26 is `0x01`, `0x01`, a u32 target, and five zero bytes"
+note = "This first reference has a nested marker byte; the remaining three references are ordinary eleven-byte marked references."
+
+[[record.field]]
+name = "reference_gap"
+offset = 37
+type = "bytes[1]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "second_reference"
+offset = 38
+type = "bytes[11]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "third_reference"
+offset = 49
+type = "bytes[11]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "fourth_reference"
+offset = 60
+type = "bytes[11]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "compact_tail_marker"
+offset = 71
+type = "u8"
+source = "spec"
+anchor = "The 352-byte form stores byte `0x01` at offset 71"
+
+[[record.field]]
+name = "compact_tail_count"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "The 352-byte form stores byte `0x01` at offset 71, u32 `1` at offset 72"
+value = 1
+
+[[record.field]]
+name = "compact_tail_reference"
+offset = 76
+type = "bytes[11]"
+source = "spec"
+anchor = "one marked reference at offset 76"
+
+[[record.field]]
+name = "compact_tail_zero_run_8"
+offset = 87
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets 87 through 94"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 95
+type = "u32"
+source = "spec"
+anchor = "a 36-code-unit LP-UTF16 GUID at offset 95"
+value = 36
+
+[[record.field]]
+name = "guid"
+offset = 99
+type = "bytes[72]"
+source = "spec"
+anchor = "a 36-code-unit LP-UTF16 GUID at offset 95"
+
+[[record.field]]
+name = "zero_run_3_after_guid"
+offset = 171
+type = "bytes[3]"
+source = "spec"
+anchor = "Its generic scope reference table begins at offset 174"
+
+[[record.field]]
+name = "reference_count"
+offset = 174
+type = "u32"
+source = "spec"
+anchor = "At offsets 174 and 302 respectively, the generic suffix stores the reference count"
+
+[[record.field]]
+name = "references"
+offset = 178
+type = "bytes[55]"
+source = "spec"
+anchor = "the ordered eleven-byte reference run"
+
+[[record.field]]
+name = "history_state_id"
+offset = 233
+type = "u32"
+source = "spec"
+anchor = "the current history state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 237
+type = "u32"
+source = "spec"
+anchor = "the 17-code-unit `CylinderPrimitive` kind"
+value = 17
+
+[[record.field]]
+name = "kind"
+offset = 241
+type = "bytes[34]"
+source = "spec"
+anchor = "the 17-code-unit `CylinderPrimitive` kind"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 275
+type = "u32"
+source = "spec"
+anchor = "the feature ordinal"
+
+[[record.gap]]
+offset = 279
+size = 27
+note = "Scope-tail bytes between the feature ordinal and previous history state."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 306
+type = "u32"
+source = "spec"
+anchor = "the previous history state at offsets 306 and 456 respectively"
+
+[[record.gap]]
+offset = 310
+size = 42
+note = "Scope-tail bytes before the paired indexed header."
+
+[[record]]
+name = "shifted_cylinder_primitive_502_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The shifted `CylinderPrimitive` form is keyed by its primary and paired class tags and its frame length"
+size = 502
+note = "Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 302; the paired header follows the complete scope frame."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "byte 21 is `0x01`"
+value = 1
+
+[[record.field]]
+name = "operation"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 is at offset 22"
+
+[[record.field]]
+name = "first_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "The first reference at offset 26 is `0x01`, `0x01`, a u32 target, and five zero bytes"
+note = "This first reference has a nested marker byte; the remaining three references are ordinary eleven-byte marked references."
+
+[[record.field]]
+name = "reference_gap"
+offset = 37
+type = "bytes[1]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "second_reference"
+offset = 38
+type = "bytes[11]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "third_reference"
+offset = 49
+type = "bytes[11]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "fourth_reference"
+offset = 60
+type = "bytes[11]"
+source = "spec"
+anchor = "Ordinary eleven-byte marked references begin at offsets 38, 49, and 60"
+
+[[record.field]]
+name = "zero_before_matrix"
+offset = 71
+type = "bytes[1]"
+source = "spec"
+anchor = "The 502-byte form stores a row-major rigid 4x4 f64 frame at offset 72"
+
+[[record.field]]
+name = "matrix"
+offset = 72
+type = "f64[16]"
+source = "spec"
+anchor = "The 502-byte form stores a row-major rigid 4x4 f64 frame at offset 72"
+
+[[record.field]]
+name = "zero_run_8_after_matrix"
+offset = 200
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets 200 through 207"
+
+[[record.field]]
+name = "construction_reference"
+offset = 208
+type = "bytes[15]"
+source = "spec"
+anchor = "a 15-byte construction-reference block at offset 208"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 223
+type = "u32"
+source = "spec"
+anchor = "a 36-code-unit LP-UTF16 GUID at offset 223"
+value = 36
+
+[[record.field]]
+name = "guid"
+offset = 227
+type = "bytes[72]"
+source = "spec"
+anchor = "a 36-code-unit LP-UTF16 GUID at offset 223"
+
+[[record.field]]
+name = "zero_run_3_after_guid"
+offset = 299
+type = "bytes[3]"
+source = "spec"
+anchor = "bytes 299 through 301 are zero"
+
+[[record.field]]
+name = "reference_count"
+offset = 302
+type = "u32"
+source = "spec"
+anchor = "At offsets 174 and 302 respectively, the generic suffix stores the reference count"
+
+[[record.field]]
+name = "references"
+offset = 306
+type = "bytes[77]"
+source = "spec"
+anchor = "the ordered eleven-byte reference run"
+
+[[record.field]]
+name = "history_state_id"
+offset = 383
+type = "u32"
+source = "spec"
+anchor = "the current history state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 387
+type = "u32"
+source = "spec"
+anchor = "the 17-code-unit `CylinderPrimitive` kind"
+value = 17
+
+[[record.field]]
+name = "kind"
+offset = 391
+type = "bytes[34]"
+source = "spec"
+anchor = "the 17-code-unit `CylinderPrimitive` kind"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 425
+type = "u32"
+source = "spec"
+anchor = "the feature ordinal"
+
+[[record.gap]]
+offset = 429
+size = 27
+note = "Scope-tail bytes between the feature ordinal and previous history state."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 456
+type = "u32"
+source = "spec"
+anchor = "the previous history state at offsets 306 and 456 respectively"
+
+[[record.gap]]
+offset = 460
+size = 42
+note = "Scope-tail bytes before the paired indexed header."
 
 [[record]]
 name = "compact_loft_operation_prefix"

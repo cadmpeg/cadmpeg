@@ -907,6 +907,80 @@ Offsets are relative to the primary indexed scope header. The ordered parameter-
 | 24 | 1 | `zero_flag` | `u8` | little | spec | byte 24 is zero |
 | 25 | 1 | `form_marker` | `u8` | little | spec | byte 25 is `0x01` |
 
+## `shifted_cylinder_primitive_352_frame`
+
+Spec §3.1 · layout: byte offsets · size: 352 B
+
+Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 174; the paired header follows the complete scope frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its bytes 11 through 20 are zero |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its bytes 11 through 20 are zero |
+| 21 | 1 | `form_marker` | `u8` | little | spec | byte 21 is `0x01` · value `1` |
+| 22 | 4 | `operation` | `u32` | little | spec | the result-operation u32 is at offset 22 |
+| 26 | 11 | `first_reference` | `bytes[11]` | little | spec | This first reference has a nested marker byte; the remaining three references are ordinary eleven-byte marked references. |
+| 37 | 1 | `reference_gap` | `bytes[1]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 38 | 11 | `second_reference` | `bytes[11]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 49 | 11 | `third_reference` | `bytes[11]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 60 | 11 | `fourth_reference` | `bytes[11]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 71 | 1 | `compact_tail_marker` | `u8` | little | spec | The 352-byte form stores byte `0x01` at offset 71 |
+| 72 | 4 | `compact_tail_count` | `u32` | little | spec | The 352-byte form stores byte `0x01` at offset 71, u32 `1` at offset 72 · value `1` |
+| 76 | 11 | `compact_tail_reference` | `bytes[11]` | little | spec | one marked reference at offset 76 |
+| 87 | 8 | `compact_tail_zero_run_8` | `bytes[8]` | little | spec | eight zero bytes at offsets 87 through 94 |
+| 95 | 4 | `guid_code_unit_count` | `u32` | little | spec | a 36-code-unit LP-UTF16 GUID at offset 95 · value `36` |
+| 99 | 72 | `guid` | `bytes[72]` | little | spec | a 36-code-unit LP-UTF16 GUID at offset 95 |
+| 171 | 3 | `zero_run_3_after_guid` | `bytes[3]` | little | spec | Its generic scope reference table begins at offset 174 |
+| 174 | 4 | `reference_count` | `u32` | little | spec | At offsets 174 and 302 respectively, the generic suffix stores the reference count |
+| 178 | 55 | `references` | `bytes[55]` | little | spec | the ordered eleven-byte reference run |
+| 233 | 4 | `history_state_id` | `u32` | little | spec | the current history state |
+| 237 | 4 | `kind_code_unit_count` | `u32` | little | spec | the 17-code-unit `CylinderPrimitive` kind · value `17` |
+| 241 | 34 | `kind` | `bytes[34]` | little | spec | the 17-code-unit `CylinderPrimitive` kind |
+| 275 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal |
+| 306 | 4 | `previous_history_state_id` | `u32` | little | spec | the previous history state at offsets 306 and 456 respectively |
+
+Unstated regions:
+
+- `279..306` (27 B): Scope-tail bytes between the feature ordinal and previous history state.
+- `310..352` (42 B): Scope-tail bytes before the paired indexed header.
+
+## `shifted_cylinder_primitive_502_frame`
+
+Spec §3.1 · layout: byte offsets · size: 502 B
+
+Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 302; the paired header follows the complete scope frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its bytes 11 through 20 are zero |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its bytes 11 through 20 are zero |
+| 21 | 1 | `form_marker` | `u8` | little | spec | byte 21 is `0x01` · value `1` |
+| 22 | 4 | `operation` | `u32` | little | spec | the result-operation u32 is at offset 22 |
+| 26 | 11 | `first_reference` | `bytes[11]` | little | spec | This first reference has a nested marker byte; the remaining three references are ordinary eleven-byte marked references. |
+| 37 | 1 | `reference_gap` | `bytes[1]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 38 | 11 | `second_reference` | `bytes[11]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 49 | 11 | `third_reference` | `bytes[11]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 60 | 11 | `fourth_reference` | `bytes[11]` | little | spec | Ordinary eleven-byte marked references begin at offsets 38, 49, and 60 |
+| 71 | 1 | `zero_before_matrix` | `bytes[1]` | little | spec | The 502-byte form stores a row-major rigid 4x4 f64 frame at offset 72 |
+| 72 | 128 | `matrix` | `f64[16]` | little | spec | The 502-byte form stores a row-major rigid 4x4 f64 frame at offset 72 |
+| 200 | 8 | `zero_run_8_after_matrix` | `bytes[8]` | little | spec | eight zero bytes at offsets 200 through 207 |
+| 208 | 15 | `construction_reference` | `bytes[15]` | little | spec | a 15-byte construction-reference block at offset 208 |
+| 223 | 4 | `guid_code_unit_count` | `u32` | little | spec | a 36-code-unit LP-UTF16 GUID at offset 223 · value `36` |
+| 227 | 72 | `guid` | `bytes[72]` | little | spec | a 36-code-unit LP-UTF16 GUID at offset 223 |
+| 299 | 3 | `zero_run_3_after_guid` | `bytes[3]` | little | spec | bytes 299 through 301 are zero |
+| 302 | 4 | `reference_count` | `u32` | little | spec | At offsets 174 and 302 respectively, the generic suffix stores the reference count |
+| 306 | 77 | `references` | `bytes[77]` | little | spec | the ordered eleven-byte reference run |
+| 383 | 4 | `history_state_id` | `u32` | little | spec | the current history state |
+| 387 | 4 | `kind_code_unit_count` | `u32` | little | spec | the 17-code-unit `CylinderPrimitive` kind · value `17` |
+| 391 | 34 | `kind` | `bytes[34]` | little | spec | the 17-code-unit `CylinderPrimitive` kind |
+| 425 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal |
+| 456 | 4 | `previous_history_state_id` | `u32` | little | spec | the previous history state at offsets 306 and 456 respectively |
+
+Unstated regions:
+
+- `429..456` (27 B): Scope-tail bytes between the feature ordinal and previous history state.
+- `460..502` (42 B): Scope-tail bytes before the paired indexed header.
+
 ## `compact_loft_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 45 B

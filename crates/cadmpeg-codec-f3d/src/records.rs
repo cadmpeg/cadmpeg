@@ -994,6 +994,12 @@ pub enum DesignSolidPrimitive {
         diameter_record_index: u32,
         /// Byte offset of the evaluated diameter.
         diameter_offset: u64,
+        /// Source frame carried by the shifted cylinder form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transform: Option<[[f64; 4]; 4]>,
+        /// Byte offset of the shifted-form source frame.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transform_offset: Option<u64>,
         /// Result Boolean operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of the operation enum.
