@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion span resolution from carriers, cylinders, NURBS translation, and rectilinear planes.
 
-use super::super::analytic::{canonical_plane, dot, PlaneEquation};
+use super::super::analytic::{
+    canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
+};
 use super::super::holes::{extrusion_span, ExtrusionSpan};
 use super::super::sketch::normalized;
 use super::planes::{
@@ -186,6 +188,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         }))
     .then_some(())?;
 
+    let local_planes = placed_planes(scan);
     let mut frames = Vec::new();
     let mut planes = Vec::new();
     for row in rows {
@@ -200,18 +203,26 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             .collect::<Vec<_>>();
         match row.kind {
             crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
-                [] => {}
+                [] => {
+                    if let Some(plane) = local_planes.get(&row.id) {
+                        planes.push((plane.origin, plane.normal));
+                    }
+                }
                 [Surface {
-                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
+                    geometry: SurfaceGeometry::Plane { .. },
                     ..
-                }] => planes.push((
-                    [origin.x, origin.y, origin.z],
-                    [normal.x, normal.y, normal.z],
-                )),
+                }] => {
+                    let plane = reconciled_model_plane(&local_planes, ir, row.id)?;
+                    planes.push((plane.origin, plane.normal));
+                }
                 [Surface {
                     geometry: SurfaceGeometry::Unknown { .. },
                     ..
-                }] => {}
+                }] => {
+                    if let Some(plane) = local_planes.get(&row.id) {
+                        planes.push((plane.origin, plane.normal));
+                    }
+                }
                 _ => return None,
             },
             crate::surface::SurfaceKind::Cylinder => match surfaces.as_slice() {

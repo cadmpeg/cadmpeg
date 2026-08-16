@@ -1492,6 +1492,21 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         expected
     );
 
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 31,
+        origin: [0.0, 5.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: 31,
+    });
+    let conflicting_extent = generated_bounded_cylinder_extent(&scan, &ir, 7, None);
+    assert!(conflicting_extent.is_none());
+    scan.planes.outlines[0].origin[1] = 4.0;
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        expected
+    );
+
     scan.surfaces
         .rows
         .push(row(34, crate::surface::SurfaceKind::Plane));
