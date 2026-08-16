@@ -386,6 +386,7 @@ pub(crate) fn section_equation_point_on_line_constraint_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
@@ -431,12 +432,21 @@ pub(crate) fn section_equation_point_on_line_constraint_rows(
                 || line_parameter.variable_type != 4
                 || first_zero.variable_type != 5
                 || second_zero.variable_type != 5
-                || first_zero.value != Some(0.0)
-                || second_zero.value != Some(0.0)
                 || ambiguous_point_ids.contains(&target_u.key)
                 || ambiguous_point_ids.contains(&first_u.key)
                 || ambiguous_point_ids.contains(&second_u.key)
             {
+                return None;
+            }
+            let zero_value = |row: &crate::feature::FeatureVariableRow| {
+                let equality_value = scalar_equality_values
+                    .get(&(row.variable_type, row.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                reconcile_equation_value(row.value, equality_value).ok()?
+            };
+            if zero_value(first_zero) != Some(0.0) || zero_value(second_zero) != Some(0.0) {
                 return None;
             }
             Some(SectionPointOnLineConstraint {
@@ -492,6 +502,7 @@ pub(crate) fn section_equation_equal_length_constraint_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
@@ -515,7 +526,6 @@ pub(crate) fn section_equation_equal_length_constraint_rows(
                 || fourth_u.variable_type != 1
                 || fourth_v.variable_type != 2
                 || auxiliary.variable_type != 7
-                || auxiliary.value != Some(0.0)
                 || first_u.key != first_v.key
                 || second_u.key != second_v.key
                 || third_u.key != third_v.key
@@ -526,6 +536,15 @@ pub(crate) fn section_equation_equal_length_constraint_rows(
                     .into_iter()
                     .any(|point_id| ambiguous_point_ids.contains(&point_id))
             {
+                return None;
+            }
+            let equality_value = scalar_equality_values
+                .get(&(auxiliary.variable_type, auxiliary.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let auxiliary_value = reconcile_equation_value(auxiliary.value, equality_value).ok()?;
+            if auxiliary_value != Some(0.0) {
                 return None;
             }
             Some(SectionEqualLengthConstraint {

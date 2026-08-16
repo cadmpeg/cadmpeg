@@ -78,8 +78,9 @@ fixtures, scores above L1 remain blocked.
   constraints when both type-6 scalar values and the point locus reconcile.
   Function-forty-two equations transfer as typed same-axis coordinate-mean
   constraints when the scalar value and both point loci reconcile. Inactive
-  rows retain their source activity; conflicting or incomplete rows remain
-  native.
+  rows retain their source activity. Zero-valued auxiliary rows in functions
+  thirteen, thirty-three, and thirty-five also reconcile through active scalar
+  equality components; conflicting or incomplete rows remain native.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots

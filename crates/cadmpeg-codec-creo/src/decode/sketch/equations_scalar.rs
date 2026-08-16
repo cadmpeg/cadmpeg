@@ -62,6 +62,7 @@ pub(crate) fn section_equation_coordinate_equality_rows(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
@@ -87,7 +88,14 @@ pub(crate) fn section_equation_coordinate_equality_rows(
             let second = variables.rows.get(usize::try_from(second).ok()?)?;
             if let Some(auxiliary) = auxiliary {
                 let auxiliary = variables.rows.get(usize::try_from(auxiliary).ok()?)?;
-                if auxiliary.variable_type != 7 || auxiliary.value != Some(0.0) {
+                let equality_value = scalar_equality_values
+                    .get(&(auxiliary.variable_type, auxiliary.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                if auxiliary.variable_type != 7
+                    || reconcile_equation_value(auxiliary.value, equality_value).ok()? != Some(0.0)
+                {
                     return None;
                 }
             }

@@ -1654,23 +1654,23 @@ equation native.
 Function `35` has nine argument slots. The first two rows are the type-1 and
 type-2 coordinates of a target point. The next four rows are the type-1 and
 type-2 coordinates of two distinct reference points. The seventh row has type
-`4`; the final two rows have type `5` and scalar value zero. The target point
-lies on the infinite line through the two reference points. A complete line
+`4`; the final two rows have type `5` and resolved scalar value zero. The target
+point lies on the infinite line through the two reference points. A complete line
 equation is required before a missing target coordinate is solved.
 Function `13` has three argument slots. The first two rows have the same
 coordinate type `2` and identify distinct point keys. The final row has type
-`7` and scalar value zero. The equation asserts equality of the selected
-ordinates. An incomplete auxiliary row, a nonzero auxiliary value, a mixed
+`7` and resolved scalar value zero. The equation asserts equality of the selected
+ordinates. An incomplete auxiliary row, a nonzero resolved auxiliary value, a mixed
 coordinate type, or an ambiguous point key leaves the equation native.
 Function `5` has a direct scalar-equality form with two type-6 rows followed by
-a type-5 selector row whose value is zero. The first two scalar values are
-equal. A finite value on either type-6 row supplies a missing value on the
+a type-5 selector row whose resolved scalar value is zero. The first two scalar
+values are equal. A finite value on either type-6 row supplies a missing value on the
 other row. Conflicting finite values, a missing or nonzero selector, another
 type sequence, or an inactive solver incidence leaves this form native.
 Function `33` has nine argument slots. The first eight slots are four type-1 and
 type-2 coordinate pairs. The first two pairs identify one endpoint pair and the
-next two pairs identify the other. The final row has type `7` and scalar value
-zero. The equation asserts equality of the squared Euclidean lengths of
+next two pairs identify the other. The final row has type `7` and resolved scalar
+value zero. The equation asserts equality of the squared Euclidean lengths of
 the two endpoint pairs. A missing coordinate is solved only when the resulting
 quadratic has one finite root that satisfies the complete equation system; two
 roots, no root, an incomplete auxiliary row, or an ambiguous point key leaves
@@ -1696,13 +1696,13 @@ The type-0 row is a non-negative axis distance between the two points. Its
 value equals the absolute difference of exactly one selected coordinate. A
 missing type-0 scalar is derived only when exactly one coordinate difference is
 non-zero. A stored scalar must agree with exactly one coordinate difference.
-Non-zero type-5 auxiliary values, ambiguous coordinate matches, and incomplete
-point pairs leave the equation native.
+Non-zero resolved type-5 auxiliary values, ambiguous coordinate matches, and
+incomplete point pairs leave the equation native.
 Function `16` has a direct four-slot form with two type-4 angle rows, a type-0
-result row, and a type-5 selector row. When the selector value is zero and the
-first angle is not less than the second, the type-0 result is the non-negative
-first-minus-second angle difference in radians, bounded by π. A missing result
-is derived from the two finite angles; a stored result must be finite,
+result row, and a type-5 selector row. When the selector's resolved scalar value
+is zero and the first angle is not less than the second, the type-0 result is the
+non-negative first-minus-second angle difference in radians, bounded by π. A
+missing result is derived from the two finite angles; a stored result must be finite,
 non-negative, and equal to that difference. A missing selector, a reversed or
 over-π difference, or a conflicting result leaves the equation native.
 
