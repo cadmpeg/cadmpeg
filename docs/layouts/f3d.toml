@@ -5914,6 +5914,148 @@ source = "spec"
 anchor = "the positive f64 inside bend radius in centimetres starts 15 bytes after that u32"
 
 [[record]]
+name = "edge_flange_legacy_single_edge_fixed_operation"
+kind = "byte"
+section = "3.1"
+anchor = "A class-`325` or class-`334` single-edge distance-form `EdgeFlange` scope uses a separate fixed layout."
+size = 218
+note = "Offsets are relative to the primary scope header. The class-325/class-258 and class-334/class-257 forms have a 494-byte primary frame; the fixed operation fields close at the marked role-0x08 group reference."
+
+[[record.gap]]
+offset = 0
+size = 76
+note = "The indexed header and the variable scope envelope precede the fixed operation section."
+
+[[record.field]]
+name = "bend_position"
+offset = 76
+type = "u32"
+source = "spec"
+anchor = "the fixed fields are bend position at offset"
+
+[[record.field]]
+name = "edge_count"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "edge count `1` at"
+
+[[record.field]]
+name = "edge_wrapper_reference"
+offset = 84
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked wrapper reference at"
+
+[[record.field]]
+name = "settings_reference"
+offset = 95
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked settings reference at"
+
+[[record.field]]
+name = "height_datum"
+offset = 106
+type = "u32"
+source = "spec"
+anchor = "height datum at"
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 110
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked angle owner at"
+
+[[record.field]]
+name = "height_owner_reference"
+offset = 121
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked height owner at"
+
+[[record.field]]
+name = "reference_side"
+offset = 132
+type = "u32"
+source = "spec"
+anchor = "reference-side discriminator at"
+
+[[record.gap]]
+offset = 136
+size = 2
+note = "Two bytes separate the side discriminator from the radius."
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 138
+type = "f64"
+source = "spec"
+anchor = "the positive finite f64 inside bend radius in centimetres at"
+
+[[record.field]]
+name = "result_count"
+offset = 146
+type = "u32"
+source = "spec"
+anchor = "The result count at"
+
+[[record.field]]
+name = "result_one_reference"
+offset = 150
+type = "bytes[11]"
+source = "spec"
+anchor = "the two 15-byte result records start at"
+
+[[record.field]]
+name = "result_one_trailer"
+offset = 161
+type = "u32"
+source = "spec"
+anchor = "have u32 trailers `1` at"
+
+[[record.field]]
+name = "result_two_reference"
+offset = 165
+type = "bytes[11]"
+source = "spec"
+anchor = "and `165`, carry marked references"
+
+[[record.field]]
+name = "result_two_trailer"
+offset = 176
+type = "u32"
+source = "spec"
+anchor = "and `0` at"
+
+[[record.field]]
+name = "result_separator"
+offset = 180
+type = "u32"
+source = "spec"
+anchor = "A u32 value `1` at"
+
+[[record.field]]
+name = "aggregate_group_reference"
+offset = 184
+type = "bytes[11]"
+source = "spec"
+anchor = "precedes the marked aggregate-group reference at"
+
+[[record.gap]]
+offset = 195
+size = 12
+note = "Twelve zero bytes separate the aggregate-group reference from the edge-group reference."
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 207
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked role-`0x08` group reference starts at"
+
+[[record]]
 name = "edge_flange_to_object_fixed_operation_section"
 kind = "byte"
 section = "3.1"

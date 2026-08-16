@@ -47,6 +47,7 @@ use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::edge_flange_fixed_operation_section as edge_flange;
+use crate::layout::edge_flange_legacy_single_edge_fixed_operation as edge_flange_legacy;
 use crate::layout::edge_flange_to_object_fixed_operation_section as flange_to_object;
 use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
@@ -6276,7 +6277,14 @@ pub(crate) fn parse_parameter_scope(
         None
     };
     let edge_flange_operation = if kind == "EdgeFlange" {
-        exact_edge_flange_operation(bytes, start, paired_at, reference_members)
+        exact_edge_flange_operation(
+            bytes,
+            start,
+            paired_at,
+            &header.class_tag,
+            &paired_class_tag,
+            reference_members,
+        )
     } else {
         None
     };
@@ -7834,26 +7842,187 @@ pub(crate) fn exact_edge_flange_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
+    class_tag: &str,
+    paired_class_tag: &str,
     references: &[u32],
 ) -> Option<DesignEdgeFlangeOperation> {
-    // The header shift is recovered by agreement, so both candidates are
-    // evaluated and a frame that reads under either one is refused as ambiguous.
+    // The legacy form is keyed by both class tags. The current form recovers
+    // its optional header shift by agreement, so a frame that reads under more
+    // than one candidate is refused as ambiguous.
     let mut resolved = None;
-    for header_shift in SHEET_METAL_HEADER_SHIFTS {
-        for candidate in [
-            edge_flange_operation_at(bytes, start, paired_at, references, header_shift),
-            edge_flange_to_object_operation_at(bytes, start, paired_at, references, header_shift),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if resolved.is_some() {
-                return None;
-            }
-            resolved = Some(candidate);
+    let legacy_candidate = match (class_tag, paired_class_tag) {
+        ("325", "258") | ("334", "257") => {
+            legacy_edge_flange_single_edge_operation(bytes, start, paired_at, references)
         }
+        _ => None,
+    };
+    for candidate in
+        legacy_candidate
+            .into_iter()
+            .chain(
+                SHEET_METAL_HEADER_SHIFTS
+                    .into_iter()
+                    .flat_map(|header_shift| {
+                        [
+                            edge_flange_operation_at(
+                                bytes,
+                                start,
+                                paired_at,
+                                references,
+                                header_shift,
+                            ),
+                            edge_flange_to_object_operation_at(
+                                bytes,
+                                start,
+                                paired_at,
+                                references,
+                                header_shift,
+                            ),
+                        ]
+                        .into_iter()
+                        .flatten()
+                    }),
+            )
+    {
+        if resolved.is_some() {
+            return None;
+        }
+        resolved = Some(candidate);
     }
     resolved
+}
+
+/// Read the class-325/class-334 single-edge `EdgeFlange` form.
+fn legacy_edge_flange_single_edge_operation(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+) -> Option<DesignEdgeFlangeOperation> {
+    if references.len() != 8
+        || paired_at.checked_sub(start)? != 494
+        || View::u32_le_at(bytes, start.checked_add(edge_flange_legacy::EDGE_COUNT)?)? != 1
+    {
+        return None;
+    }
+    let mut unclaimed = references.to_vec();
+    let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
+        let at = pool.iter().position(|entry| *entry == index)?;
+        pool.remove(at);
+        Some(index)
+    };
+    let edge_wrapper_record_indices = vec![claim(
+        marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::EDGE_WRAPPER_REFERENCE)?,
+        )?,
+        &mut unclaimed,
+    )?];
+    let settings_record_index = claim(
+        marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::SETTINGS_REFERENCE)?,
+        )?,
+        &mut unclaimed,
+    )?;
+    let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(
+        bytes,
+        start.checked_add(edge_flange_legacy::HEIGHT_DATUM)?,
+    )?);
+    let angle_owner_record_index = claim(
+        marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::ANGLE_OWNER_REFERENCE)?,
+        )?,
+        &mut unclaimed,
+    )?;
+    let height_owner_record_index = claim(
+        marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::HEIGHT_OWNER_REFERENCE)?,
+        )?,
+        &mut unclaimed,
+    )?;
+    let reference_side_code = View::u32_le_at(
+        bytes,
+        start.checked_add(edge_flange_legacy::REFERENCE_SIDE)?,
+    )?;
+    let bend_radius_offset = start.checked_add(edge_flange_legacy::INSIDE_BEND_RADIUS)?;
+    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
+    if !bend_radius.is_finite() || bend_radius <= 0.0 {
+        return None;
+    }
+    if View::u32_le_at(bytes, start.checked_add(edge_flange_legacy::RESULT_COUNT)?)? != 2
+        || marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::RESULT_ONE_REFERENCE)?,
+        )
+        .is_none()
+        || marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::RESULT_TWO_REFERENCE)?,
+        )
+        .is_none()
+        || View::u32_le_at(
+            bytes,
+            start.checked_add(edge_flange_legacy::RESULT_ONE_TRAILER)?,
+        )? != 1
+        || View::u32_le_at(
+            bytes,
+            start.checked_add(edge_flange_legacy::RESULT_TWO_TRAILER)?,
+        )? != 0
+        || View::u32_le_at(
+            bytes,
+            start.checked_add(edge_flange_legacy::RESULT_SEPARATOR)?,
+        )? != 1
+    {
+        return None;
+    }
+    let aggregate_group_record_index = claim(
+        marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::AGGREGATE_GROUP_REFERENCE)?,
+        )?,
+        &mut unclaimed,
+    )?;
+    let edge_group_record_index = claim(
+        marked_record_reference(
+            bytes,
+            start.checked_add(edge_flange_legacy::EDGE_GROUP_REFERENCE)?,
+        )?,
+        &mut unclaimed,
+    )?;
+    let aggregate_operand_record_indices = vec![claim(
+        aggregate_group_record_index.checked_add(3)?,
+        &mut unclaimed,
+    )?];
+    let edge_operand_record_indices = vec![claim(
+        edge_group_record_index.checked_add(3)?,
+        &mut unclaimed,
+    )?];
+    if !unclaimed.is_empty() {
+        return None;
+    }
+    Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices,
+        edge_group_record_indices: vec![edge_group_record_index],
+        edge_operand_record_indices,
+        aggregate_group_record_index,
+        aggregate_operand_record_indices,
+        height_owner_record_index,
+        height_extent: DesignEdgeFlangeHeightExtent::Distance,
+        angle_owner_record_index,
+        width_distance_owner_record_indices: Vec::new(),
+        settings_record_index,
+        bend_radius,
+        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        reference_side_code,
+        height_datum,
+        bend_position: DesignBendPosition::from_code(View::u32_le_at(
+            bytes,
+            start.checked_add(edge_flange_legacy::BEND_POSITION)?,
+        )?),
+    })
 }
 
 /// Read the `EdgeFlange` fixed operation section for one candidate header shift

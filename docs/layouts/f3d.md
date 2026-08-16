@@ -1902,6 +1902,38 @@ Unstated regions:
 
 - `60..71` (11 B): The spec places the radius 15 bytes after the unsettled u32, so eleven bytes between them are unaccounted for.
 
+## `edge_flange_legacy_single_edge_fixed_operation`
+
+Spec §3.1 · layout: byte offsets · size: 218 B
+
+Offsets are relative to the primary scope header. The class-325/class-258 and class-334/class-257 forms have a 494-byte primary frame; the fixed operation fields close at the marked role-0x08 group reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 76 | 4 | `bend_position` | `u32` | little | spec | the fixed fields are bend position at offset |
+| 80 | 4 | `edge_count` | `u32` | little | spec | edge count `1` at |
+| 84 | 11 | `edge_wrapper_reference` | `bytes[11]` | little | spec | the marked wrapper reference at |
+| 95 | 11 | `settings_reference` | `bytes[11]` | little | spec | the marked settings reference at |
+| 106 | 4 | `height_datum` | `u32` | little | spec | height datum at |
+| 110 | 11 | `angle_owner_reference` | `bytes[11]` | little | spec | the marked angle owner at |
+| 121 | 11 | `height_owner_reference` | `bytes[11]` | little | spec | the marked height owner at |
+| 132 | 4 | `reference_side` | `u32` | little | spec | reference-side discriminator at |
+| 138 | 8 | `inside_bend_radius` | `f64` | little | spec | the positive finite f64 inside bend radius in centimetres at |
+| 146 | 4 | `result_count` | `u32` | little | spec | The result count at |
+| 150 | 11 | `result_one_reference` | `bytes[11]` | little | spec | the two 15-byte result records start at |
+| 161 | 4 | `result_one_trailer` | `u32` | little | spec | have u32 trailers `1` at |
+| 165 | 11 | `result_two_reference` | `bytes[11]` | little | spec | and `165`, carry marked references |
+| 176 | 4 | `result_two_trailer` | `u32` | little | spec | and `0` at |
+| 180 | 4 | `result_separator` | `u32` | little | spec | A u32 value `1` at |
+| 184 | 11 | `aggregate_group_reference` | `bytes[11]` | little | spec | precedes the marked aggregate-group reference at |
+| 207 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | the marked role-`0x08` group reference starts at |
+
+Unstated regions:
+
+- `0..76` (76 B): The indexed header and the variable scope envelope precede the fixed operation section.
+- `136..138` (2 B): Two bytes separate the side discriminator from the radius.
+- `195..207` (12 B): Twelve zero bytes separate the aggregate-group reference from the edge-group reference.
+
 ## `edge_flange_to_object_fixed_operation_section`
 
 Spec §3.1 · layout: byte offsets · size: 181 B
