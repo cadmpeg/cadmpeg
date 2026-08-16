@@ -2,7 +2,6 @@
 //! `DisplayLists` descriptor tables.
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -16,6 +15,7 @@ use crate::layout::display_lists_scene_source_binding as scene_src;
 
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
+const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Summary {
@@ -32,12 +32,57 @@ pub struct Mesh {
     pub channels: Vec<TessellationChannel>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ByteRange {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+}
+
+/// One decoded `uoTempFaceTessData_c` descriptor table.
+#[derive(Debug, Clone)]
+pub(crate) struct DisplayFace {
+    pub(crate) mesh: Mesh,
+    pub(crate) table_index: usize,
+    pub(crate) table: ByteRange,
+    pub(crate) metadata: ByteRange,
+    pub(crate) surface_references: Vec<PersistentSurfaceReference>,
+}
+
+/// One framed persistent-surface reference in a display-face metadata slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PersistentSurfaceReference {
+    pub(crate) feature_source_id: u32,
+    pub(crate) local_surface_id: u32,
+}
+
+impl DisplayFace {
+    /// Return the source ID only when all duplicated references agree.
+    pub(crate) fn feature_source_id(&self) -> Option<u32> {
+        let mut sources = self
+            .surface_references
+            .iter()
+            .map(|reference| reference.feature_source_id);
+        let source = sources.next()?;
+        sources
+            .all(|candidate| candidate == source)
+            .then_some(source)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ClassInterval {
+    pub(crate) name: String,
+    pub(crate) class_offset: usize,
+    pub(crate) content: ByteRange,
+    source_ids: Vec<u32>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SceneFeatureClasses {
     pub(crate) by_source: HashMap<String, String>,
 }
 
-fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
+pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let declarations = payload
         .windows(CLASS_MARKER.len())
         .enumerate()
@@ -61,34 +106,50 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
     declarations
         .iter()
         .enumerate()
-        .flat_map(|(index, (offset, class))| {
-            let role = crate::classification::native_object_class(class).tree_node;
-            if !matches!(
-                role,
-                Some(
-                    cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
-                )
-            ) {
-                return Vec::new();
-            }
+        .map(|(index, (offset, class))| {
             let start = offset + 6 + class.len();
             let end = declarations
                 .get(index + 1)
                 .map_or(payload.len(), |(offset, _)| *offset);
             let records = &payload[start..end];
-            records
+            let source_ids = records
                 .windows(scene_src::LEN)
                 .filter_map(|window| {
                     (window.starts_with(SCENE_SOURCE_MARKER))
                         .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
                         .flatten()
                         .filter(|source| *source != 0)
-                        .map(|source| (source, class.clone()))
                 })
-                .collect::<Vec<_>>()
+                .collect();
+            ClassInterval {
+                name: class.clone(),
+                class_offset: *offset,
+                content: ByteRange { start, end },
+                source_ids,
+            }
+        })
+        .collect()
+}
+
+fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
+    class_intervals(payload)
+        .into_iter()
+        .filter(|class| {
+            matches!(
+                crate::classification::native_object_class(&class.name).tree_node,
+                Some(
+                    cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
+                        | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
+                        | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
+                        | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
+                )
+            )
+        })
+        .flat_map(|class| {
+            class
+                .source_ids
+                .into_iter()
+                .map(move |source| (source, class.name.clone()))
         })
         .collect()
 }
@@ -262,28 +323,77 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     ))
 }
 
-pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
-    const MARKER: &[u8] = b"uoTempFaceTessData_c";
+pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
     let payload = section.payload();
-    let Some(marker) = find(payload, MARKER) else {
-        return Vec::new();
-    };
-    let end = marker + MARKER.len();
-    let (Some(triangle_count), Some(strip_count)) = (
-        View::u32_le_at(payload, end + compact_face::TRIANGLE_COUNT),
-        View::u32_le_at(payload, end + compact_face::STRIP_COUNT),
-    ) else {
-        return Vec::new();
-    };
-    let meshes = parse_table_sequence(payload, end + descriptor_table_offset(payload, end));
-    meshes
-        .filter(|meshes| {
-            meshes.first().is_some_and(|mesh| {
-                usize::try_from(triangle_count).ok() == Some(mesh.triangles.len())
-                    && usize::try_from(strip_count).ok() == Some(mesh.strip_lengths.len())
-            })
-        })
-        .unwrap_or_default()
+    let classes = class_intervals(payload);
+    let markers = payload
+        .windows(FACE_TESSELLATION_CLASS.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == FACE_TESSELLATION_CLASS).then_some(offset))
+        .collect::<Vec<_>>();
+    let mut faces = Vec::new();
+    for (marker_index, marker) in markers.iter().copied().enumerate() {
+        let header = marker + FACE_TESSELLATION_CLASS.len();
+        let (Some(triangle_count), Some(strip_count)) = (
+            View::u32_le_at(payload, header + compact_face::TRIANGLE_COUNT),
+            View::u32_le_at(payload, header + compact_face::STRIP_COUNT),
+        ) else {
+            continue;
+        };
+        let limit = classes
+            .iter()
+            .find(|class| class.name == "uoTempFaceTessData_c" && class.class_offset + 6 == marker)
+            .map_or_else(
+                || {
+                    markers
+                        .get(marker_index + 1)
+                        .copied()
+                        .unwrap_or(payload.len())
+                },
+                |class| class.content.end,
+            );
+        let start = header + descriptor_table_offset(payload, header);
+        let Some(tables) = parse_table_sequence(payload, start, limit) else {
+            continue;
+        };
+        if !tables.first().is_some_and(|(_, _, mesh)| {
+            usize::try_from(triangle_count).ok() == Some(mesh.triangles.len())
+                && usize::try_from(strip_count).ok() == Some(mesh.strip_lengths.len())
+        }) {
+            continue;
+        }
+        for (start, end, mesh) in tables {
+            faces.push(DisplayFace {
+                mesh,
+                table_index: 0,
+                table: ByteRange { start, end },
+                metadata: ByteRange {
+                    start: end,
+                    end: limit,
+                },
+                surface_references: Vec::new(),
+            });
+        }
+    }
+    faces.sort_by_key(|face| face.table.start);
+    for index in 0..faces.len() {
+        let metadata_end = faces
+            .get(index + 1)
+            .map_or(faces[index].metadata.end, |next| next.table.start)
+            .min(faces[index].metadata.end);
+        faces[index].table_index = index;
+        faces[index].metadata.end = metadata_end;
+        faces[index].surface_references =
+            persistent_surface_references(payload, faces[index].metadata);
+    }
+    faces
+}
+
+pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
+    section_display_faces(section)
+        .into_iter()
+        .map(|face| face.mesh)
+        .collect()
 }
 
 /// Offset of the first descriptor after a face-tessellation class name.
@@ -306,30 +416,105 @@ fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
     }
 }
 
-fn parse_table_sequence(payload: &[u8], at: usize) -> Option<Vec<Mesh>> {
+fn parse_table_sequence(
+    payload: &[u8],
+    at: usize,
+    limit: usize,
+) -> Option<Vec<(usize, usize, Mesh)>> {
+    let first_start = at;
     let (mesh, mut at) = parse_table(payload, at)?;
+    if at > limit {
+        return None;
+    }
     if mesh.vertices.is_empty() {
         return None;
     }
-    let mut meshes = vec![mesh];
-    while at + 16 <= payload.len() {
-        let Some(relative) = payload[at..]
+    let mut meshes = vec![(first_start, at, mesh)];
+    while at + 16 <= limit {
+        let Some(relative) = payload[at..limit]
             .windows(4)
             .position(|window| window == [4, 0, 0, 0])
         else {
             break;
         };
         at += relative;
+        let start = at;
         if let Some((next, end)) = parse_table(payload, at) {
-            if !next.vertices.is_empty() {
-                meshes.push(next);
+            if end <= limit && !next.vertices.is_empty() {
+                meshes.push((start, end, next));
+                at = end;
+            } else {
+                at += 4;
             }
-            at = end;
         } else {
             at += 4;
         }
     }
     Some(meshes)
+}
+
+fn persistent_surface_references(
+    payload: &[u8],
+    range: ByteRange,
+) -> Vec<PersistentSurfaceReference> {
+    const MARKER: &[u8] = &[0xff, 0xfe, 0xff];
+    let mut references = Vec::new();
+    let mut at = range.start;
+    while at + 4 <= range.end && at + 4 <= payload.len() {
+        if payload.get(at..at + MARKER.len()) != Some(MARKER) {
+            at += 1;
+            continue;
+        }
+        let count = usize::from(payload[at + 3]);
+        let start = at + 4;
+        let Some(end) = count
+            .checked_mul(2)
+            .and_then(|length| start.checked_add(length))
+            .filter(|end| *end <= range.end)
+        else {
+            at += 1;
+            continue;
+        };
+        let Some(raw) = payload.get(start..end) else {
+            at += 1;
+            continue;
+        };
+        let units = raw
+            .chunks_exact(2)
+            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+            .collect::<Vec<_>>();
+        let Ok(text) = String::from_utf16(&units) else {
+            at = end;
+            continue;
+        };
+        let mut fields = text.trim().split(',');
+        let Some(_class_name) = fields
+            .next()
+            .filter(|name| name.starts_with("mo") && name.ends_with("SurfIdRep_c"))
+        else {
+            at = end;
+            continue;
+        };
+        let Some(feature_source_id) = fields
+            .next()
+            .and_then(|field| field.parse::<u32>().ok())
+            .filter(|source| *source != 0 && *source != u32::MAX)
+        else {
+            at = end;
+            continue;
+        };
+        let Some(local_surface_id) = fields.next().and_then(|field| field.parse::<u32>().ok())
+        else {
+            at = end;
+            continue;
+        };
+        references.push(PersistentSurfaceReference {
+            feature_source_id,
+            local_surface_id,
+        });
+        at = end;
+    }
+    references
 }
 
 pub fn section_summary(section: Section<'_>) -> Option<Summary> {

@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "bd717f777ecd746b57c3e4ed10ed0587eb234ffb"
+measured_at = "553272f21abf042611e7382fe07a6fcbf1fe06a5"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -27,7 +27,7 @@ test_line_debt = 0
 production_line_debt = 0
 
 [ceilings]
-from_endian_bytes = 113
+from_endian_bytes = 111
 codec_error_malformed_format = 1265
 loss_note_struct_literals = 2
 bare_tolerance_literals = 708
@@ -38,7 +38,6 @@ test_line_debt = 1817
 production_line_debt = 0
 
 [reasons]
-from_endian_bytes = "widened glob from cadmpeg-codec-*/src to crates/**/src so the counter matches the unscoped from_le_bytes/from_be_bytes rule; honest end state is not zero (View/le/be and documented exceptions)"
+codec_error_malformed_format = "IGES Type 186 writer validation adds one explicit malformed refusal for duplicate shell roles"
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
 test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit; IGES Type 186 shell-role coverage adds one focused assertion line to writer tests; PS-04 adds code-built Type 213 CHRSET and Type 310 pointer witnesses to the existing IGES shared test-support file"
-codec_error_malformed_format = "IGES Type 186 writer validation adds one explicit malformed refusal for duplicate shell roles"

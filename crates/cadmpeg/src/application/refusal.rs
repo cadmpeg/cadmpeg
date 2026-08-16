@@ -15,8 +15,8 @@ use serde_json::{json, Value};
 pub enum RefusalCode {
     /// Native input decoding failed with a classified codec error.
     DecodeFailed,
-    /// Neutral or native validation failed.
-    ValidationFailed,
+    /// The check found errors and `--allow-errors` was not set.
+    CheckFailed,
     /// Decode reported losses under `--reject-lossy`.
     DecodeLossRejected,
     /// Export planning reported losses under `--reject-lossy`.
@@ -35,7 +35,7 @@ impl RefusalCode {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::DecodeFailed => "decode_failed",
-            Self::ValidationFailed => "validation_failed",
+            Self::CheckFailed => "check_failed",
             Self::DecodeLossRejected => "decode_loss_rejected",
             Self::ExportLossRejected => "export_loss_rejected",
             Self::EmptyGeometry => "empty_geometry",
@@ -58,8 +58,8 @@ pub enum RefusalStage {
     Plan,
     /// Decode completed with losses that the policy rejects.
     Decode,
-    /// Neutral or native validation failed.
-    Validate,
+    /// The check found errors and `--allow-errors` was not set.
+    Check,
     /// Export planning refused (loss policy or empty geometry).
     Export,
 }
@@ -71,7 +71,7 @@ impl RefusalStage {
         match self {
             Self::Plan => "plan",
             Self::Decode => "decode",
-            Self::Validate => "validate",
+            Self::Check => "check",
             Self::Export => "export",
         }
     }
@@ -94,8 +94,8 @@ pub enum ConversionRefusal {
         /// Human-readable message.
         message: String,
     },
-    /// Validation found errors and `--allow-invalid` was not set.
-    ValidationFailed {
+    /// The check found errors and `--allow-errors` was not set.
+    CheckFailed {
         /// Human-readable message.
         message: String,
         /// Decode report available for an optional `--report`.
@@ -146,7 +146,7 @@ impl ConversionRefusal {
     pub const fn code(&self) -> RefusalCode {
         match self {
             Self::DecodeFailed { .. } => RefusalCode::DecodeFailed,
-            Self::ValidationFailed { .. } => RefusalCode::ValidationFailed,
+            Self::CheckFailed { .. } => RefusalCode::CheckFailed,
             Self::DecodeLossRejected { .. } => RefusalCode::DecodeLossRejected,
             Self::ExportLossRejected { .. } => RefusalCode::ExportLossRejected,
             Self::EmptyGeometry { .. } => RefusalCode::EmptyGeometry,
@@ -164,7 +164,7 @@ impl ConversionRefusal {
                 RefusalStage::Plan
             }
             Self::DecodeLossRejected { .. } => RefusalStage::Decode,
-            Self::ValidationFailed { .. } => RefusalStage::Validate,
+            Self::CheckFailed { .. } => RefusalStage::Check,
             Self::ExportLossRejected { .. } | Self::EmptyGeometry { .. } => RefusalStage::Export,
         }
     }
@@ -174,7 +174,7 @@ impl ConversionRefusal {
     pub fn message(&self) -> &str {
         match self {
             Self::DecodeFailed { message }
-            | Self::ValidationFailed { message, .. }
+            | Self::CheckFailed { message, .. }
             | Self::DecodeLossRejected { message, .. }
             | Self::ExportLossRejected { message, .. }
             | Self::EmptyGeometry { message, .. }
@@ -205,7 +205,7 @@ impl ConversionRefusal {
     pub const fn may_write_report(&self) -> bool {
         match self {
             Self::DecodeFailed { .. }
-            | Self::ValidationFailed { .. }
+            | Self::CheckFailed { .. }
             | Self::DecodeLossRejected { .. }
             | Self::ExportLossRejected { .. }
             | Self::EmptyGeometry { .. } => true,
@@ -218,7 +218,7 @@ impl ConversionRefusal {
     pub fn decode_report(&self) -> Option<&DecodeReport> {
         match self {
             Self::DecodeFailed { .. } => None,
-            Self::ValidationFailed { decode_report, .. } => decode_report.as_ref(),
+            Self::CheckFailed { decode_report, .. } => decode_report.as_ref(),
             Self::DecodeLossRejected { decode_report, .. } => Some(decode_report),
             Self::ExportLossRejected { decode_report, .. }
             | Self::EmptyGeometry { decode_report, .. } => decode_report.as_ref(),
@@ -226,12 +226,12 @@ impl ConversionRefusal {
         }
     }
 
-    /// Validation report to include in an optional command report.
+    /// Check report to include in an optional command report.
     #[must_use]
-    pub fn validation_report(&self) -> Option<&ValidationReport> {
+    pub fn check_report(&self) -> Option<&ValidationReport> {
         match self {
             Self::DecodeFailed { .. } => None,
-            Self::ValidationFailed { validation, .. } => Some(validation),
+            Self::CheckFailed { validation, .. } => Some(validation),
             Self::ExportLossRejected { validation, .. }
             | Self::EmptyGeometry { validation, .. } => validation.as_ref(),
             Self::DecodeLossRejected { .. }
@@ -304,16 +304,16 @@ mod tests {
         assert_eq!(refusal.exit_code(), 1);
         assert!(refusal.may_write_report());
         assert!(refusal.decode_report().is_none());
-        assert!(refusal.validation_report().is_none());
+        assert!(refusal.check_report().is_none());
         let fields = refusal.report_fields();
         assert_eq!(fields["refusal"]["code"], "decode_failed");
         assert_eq!(fields["refusal"]["stage"], "decode");
     }
 
     #[test]
-    fn validation_refusal_maps_to_validate_stage() {
-        let refusal = ConversionRefusal::ValidationFailed {
-            message: "validation found 1 error(s)".into(),
+    fn check_refusal_maps_to_check_stage() {
+        let refusal = ConversionRefusal::CheckFailed {
+            message: "check found 1 error(s)".into(),
             decode_report: None,
             validation: ValidationReport {
                 entity_counts: BTreeMap::new(),
@@ -321,7 +321,7 @@ mod tests {
                 losses: Vec::new(),
             },
         };
-        assert_eq!(refusal.stage(), RefusalStage::Validate);
-        assert_eq!(refusal.code().as_str(), "validation_failed");
+        assert_eq!(refusal.stage(), RefusalStage::Check);
+        assert_eq!(refusal.code().as_str(), "check_failed");
     }
 }

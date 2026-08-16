@@ -6,10 +6,9 @@ Protein, external-reference, presentation, and design-record layers. Supported
 part kernel carriers transfer through [`cadmpeg-asm`][asm]. The codec is
 read-only: it has no Inventor writer, replay path, or patch path.
 
-Overall support is **L1** for the primary CFB v3, RSe schema 31, Meta
-Stream 8 envelope. ACIS 217/218 part carriers have a separate **L3**
-geometry profile. The finite support claims and extras are maintained in the
-[format-support profile][support].
+Support level: **L1** (CFB v3, RSe schema 31, Meta Stream 8). ACIS 217/218
+part carriers show as extras. The finite support claims and extras are
+maintained in the [format-support profile][support].
 
 ## Install
 

@@ -3,9 +3,9 @@
 `cadmpeg-codec-rhino` decodes Rhino `.3dm` archives into `CadIr` and encodes
 supported `CadIr` documents back to `.3dm`.
 
-Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-for archive versions 50, 60, 70, and 80. Bounded source-less native writing is
-an extra above L8.
+Support level: [L0](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+Archive 2/3/4/50/60/70/80 and V2–V4 open at L1 and show as extras. Bounded
+source-less native writing is an extra above that L1 subset.
 
 ## Install
 
@@ -67,9 +67,9 @@ declare millimetre units. The CLI accepts the same archive-version choice:
 
 ```sh
 cadmpeg inspect model.3dm
-cadmpeg decode model.3dm -o model.cadir.json
+cadmpeg dump model.3dm -o model.cadir.json
 cadmpeg convert model.cadir.json -o model.3dm
-cadmpeg convert model.cadir.json -o model-v6.3dm --rhino-version 60
+cadmpeg convert model.cadir.json -o model-v6.3dm --rhino-target 60
 ```
 
 ## Data model
