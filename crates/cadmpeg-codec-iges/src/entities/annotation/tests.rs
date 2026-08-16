@@ -104,6 +104,46 @@ fn decode_rejects_zero_new_general_note_character_metrics() {
 }
 
 #[test]
+fn decode_rejects_omitted_new_general_note_character_metrics() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(omitted_character_metrics_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_rejects_negative_text_box_dimensions_at_cadir_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(negative_text_box_dimensions_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    assert_eq!(annotations.len(), 2);
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count()
+            >= 2
+    );
+}
+
+#[test]
 fn drawing_and_presentation_enumerations_match_the_iges_tables() {
     for value in 0..=3 {
         assert!(justification_valid(value));

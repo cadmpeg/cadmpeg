@@ -127,18 +127,6 @@ from a conformant file.
 
 **Note.** Reopened by QA audit 2026-08-16. The current code and tests cannot establish source optionality.
 
-### PS-02. The same text-box metric has two different bounds
-
-**Question.** What bounds apply to the Type 212 and Type 213 text-box metrics?
-
-**Known.** IGES 5.3 §4.60 defines Type 212 `WT` and `HT` as real box dimensions. IGES 5.3 §4.61 defines Type 213 `TXTCW`, `TXTCH`, `WT`, and `HT` as real widths and heights, but does not state a sign bound for those fields. The same section requires `CHRWID` and `CHRHGT` to be positive non-zero values. It permits fixed-width `CSPACE` to be negative down to the negative character width and gives variable-width `CSPACE` a minimum of zero. `entities/annotation.rs:114-128` now enforces the positive character metrics and those spacing bounds. The decoder still admits the box dimensions as finite nonnegative values as a CADIR admission rule.
-
-**Need.** Establish whether the source's width and height descriptions impose a nonnegative or positive bound on Type 212 `WT`/`HT` and Type 213 `TXTCW`/`TXTCH`/`WT`/`HT`. Establish whether an omitted positive Type 213 character metric is a defaulted zero that fails the entity constraint, or is not a valid omitted field. A projection must not broaden or narrow a source field without an explicit policy and loss or refusal.
-
-**Conflict.** The prior specification treated all text-box metrics as nonnegative format rules. The published Type 212 and Type 213 field tables state the positive character-metric rule but do not state sign bounds for the box-width and box-height fields. The current specification now labels the nonnegative box admission as CADIR policy and leaves the source question open.
-
-**Note.** Partly settled 2026-08-16 from the published IGES 5.3 §4.60 and §4.61 field tables. The implementation witness and boundary test cover positive versus zero `CHRWID`/`CHRHGT`; they do not establish the remaining box-metric sign rule.
-
 ### PS-04. Enumerated value tables exist only in the source
 
 **Question.** What are the complete enumerated tables for the supported view, annotation, leader, and presentation fields?

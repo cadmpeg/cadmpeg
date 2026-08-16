@@ -1735,6 +1735,29 @@ pub(crate) fn zero_character_metrics_new_general_note_file() -> Vec<u8> {
     new_general_note_file_with_character_metrics("0", "0")
 }
 
+pub(crate) fn omitted_character_metrics_new_general_note_file() -> Vec<u8> {
+    new_general_note_file_with_character_metrics("", "")
+}
+
+pub(crate) fn negative_text_box_dimensions_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NEG212".into(),
+            status: "00000100",
+            parameters: "212,1,1,-1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "NEG213".into(),
+            status: "00000100",
+            parameters: "213,-10,10,0,0,0,0,0,0,0,0,0,1,0,1,1,0,0,1,0,0,1,-2,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+    ])
+}
+
 fn new_general_note_file_with_character_metrics(
     character_width: &str,
     character_height: &str,
