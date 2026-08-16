@@ -344,10 +344,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
             let mut derived = incident.get(vertex).cloned().unwrap_or_default();
             derived.sort_unstable();
             derived.dedup();
-            if derived
-                .iter()
-                .any(|external_id| !entities.contains(external_id))
-            {
+            if derived != *entities {
                 continue;
             }
             incident.insert(*vertex, entities.clone());
@@ -625,4 +622,97 @@ pub(crate) fn section_xyz_in_model(
             + point[1] * transform.v_axis[axis]
             + point[2] * transform.normal[axis]
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolved_trim_vertex_coordinates;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn trim_vertex_requires_exact_trim_entity_incidence() {
+        let segment = |external_id, point_ids| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids,
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: 0,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 1,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 2,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![segment(42, [1, 2]), segment(43, [3, 4])],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+                declared_count: None,
+                entity_ref: None,
+                entry_ref: None,
+                buckets: Vec::new(),
+                rows: vec![crate::feature::FeatureTrimEntity {
+                    external_id: 42,
+                    mode: None,
+                    vertices: [1, 2],
+                    center_vertex: None,
+                    kind: crate::feature::TrimEntityKind::Line,
+                    offset: 0,
+                }],
+                solved_external_ids: vec![42],
+                offset: 0,
+            }),
+            trim_vertices: Some(crate::feature::FeatureTrimVertexTable {
+                declared_count: None,
+                entity_ref: None,
+                entry_ref: None,
+                buckets: Vec::new(),
+                rows: vec![crate::feature::FeatureTrimVertex {
+                    vertex_id: 3,
+                    entities: vec![42, 43],
+                    section_coordinates: None,
+                    offset: 0,
+                }],
+                offset: 0,
+            }),
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+        assert_eq!(
+            resolved_trim_vertex_coordinates(
+                &definition,
+                &BTreeMap::from([
+                    (1, [-1.0, 0.0]),
+                    (2, [1.0, 0.0]),
+                    (3, [0.0, -1.0]),
+                    (4, [0.0, 1.0]),
+                ]),
+            ),
+            BTreeMap::new()
+        );
+    }
 }
