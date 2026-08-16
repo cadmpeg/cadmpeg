@@ -721,6 +721,13 @@ pattern fields, V5 basepoint userdata carrier, V6 inline basepoint, and
 document-unit scaling are settled. The Rust decoder emits the hatch feature
 and linked loop curves, retains the native pattern index and source object,
 and reports the specified non-neutral-fill boundary.
+The `ON_DetailView` class is independently covered by V4, V50, V6, and
+inch-unit V6 witnesses. Its anonymous 1.1 outer payload, bounded view-state
+and raw two-dimensional boundary children, page-layout millimeter boundary
+coordinates, dimensionless page-per-model ratio, and archive-independent
+boundary transfer are settled. The Rust decoder emits the detail feature and
+linked boundary curve, retains the bounded view payload as length and SHA-256
+properties, and reports the specified view-state retention boundary.
 
 **Need.** For each remaining affected class, an independent witness file and a
 byte-level differential report that names the field, accepted or rejected
@@ -844,6 +851,30 @@ three-version `cadmpeg query item` results show the hatch feature and outer /
 inner loop links; the report records the specified native-fill retention.
 The owner test `decodes_version_two_loop_geometry_and_pattern_state` now
 asserts the scaled inline basepoint.
+
+The detail-view slice is closed by `ON_DetailView::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_detail.cpp:62-162`, the source field
+comment in `/home/pcurve/side2/opennurbs/opennurbs_detail.h:68-75`, and
+`ON_3dmView::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_3dm_settings.cpp:3507-3955`, the
+authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/detail_view_witness.cpp`, and
+its V4/V50/V6 plus inch-unit V6 outputs. `cadmpeg inspect` finds the detail
+class UUID at V4 `0x8da`, V50 `0x9d8`, V6 `0xa13`, and inch V6 `0xa21`; the V4
+class-data bytes show the outer anonymous body at `0x8f6`, version `1.1` at
+`0x8fe`, view child at `0x906`, boundary child at `0xd7b`, raw NURBS version
+`0x10` at `0xd8b`, dimension `2` at `0xd8c`, and ratio `0.125` at `0xe58`.
+The initial decoder run rejected the producer's 2D boundary as an invalid
+3D NURBS header, falsifying the old dimension assumption; the inch
+differential also rules out model-unit scaling because the source readback
+and final CADIR boundary points remain `[10,20]`, `[110,20]`, `[110,70]`,
+`[10,70]`, `[10,20]` in both unit systems. The source readback reports ratio
+`0.125`, nested view type, viewport UUID, camera, target, and five boundary
+CVs for all witnesses. Final `cadmpeg query item` results transfer the same
+ratio and boundary link; V60 and inch V6 retain equal view payload length
+`1558` and equal SHA-256. The owner test
+`decodes_boundary_and_bounds_native_view_state` now uses a dimension-2 raw
+curve and asserts unscaled page coordinates.
 
 ### FV-06. Later major payload admission
 

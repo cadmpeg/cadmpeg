@@ -51,7 +51,6 @@ fn anonymous<'a>(
 pub(crate) fn decode(
     data: &[u8],
     range: Range<usize>,
-    scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Detail, GeometryError> {
     let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive, "detail")?;
@@ -75,7 +74,7 @@ pub(crate) fn decode(
         archive,
         "detail boundary",
     )?;
-    let geometry = crate::surfaces::read_nurbs_curve(&mut boundary, scale)?;
+    let geometry = crate::surfaces::read_nurbs_curve_2d(&mut boundary)?;
     boundary.skip_remaining()?;
     outer.skip(boundary_next - outer.position())?;
     let page_per_model_ratio = if minor >= 1 { outer.f64()? } else { 0.0 };
@@ -112,7 +111,7 @@ mod tests {
 
     fn boundary() -> Vec<u8> {
         let mut bytes = vec![0x11];
-        for value in [3_i32, 0, 2, 2, 0, 0] {
+        for value in [2_i32, 0, 2, 2, 0, 0] {
             bytes.extend(value.to_le_bytes());
         }
         bytes.extend([0; 48]);
@@ -120,7 +119,7 @@ mod tests {
         bytes.extend(0.0_f64.to_le_bytes());
         bytes.extend(1.0_f64.to_le_bytes());
         bytes.extend(2_i32.to_le_bytes());
-        for value in [0.0_f64, 0.0, 0.0, 2.0, 0.0, 0.0] {
+        for value in [0.0_f64, 0.0, 2.0, 0.0] {
             bytes.extend(value.to_le_bytes());
         }
         bytes.push(0);
@@ -140,12 +139,12 @@ mod tests {
         let bytes = anonymous(4, &content);
 
         let detail =
-            decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).expect("required invariant");
+            decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
         assert_eq!(detail.page_per_model_ratio, 0.5);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
         let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
             panic!("detail boundary must be NURBS");
         };
-        assert_eq!(boundary.control_points[1].x, 20.0);
+        assert_eq!(boundary.control_points[1].x, 2.0);
     }
 }

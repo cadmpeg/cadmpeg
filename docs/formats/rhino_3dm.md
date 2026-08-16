@@ -3885,9 +3885,18 @@ anonymous detail version 1.minor
 The child declarations independently bound extensible view state and boundary
 geometry. Each child reader consumes its known prefix and skips remaining bytes
 before that child's bounded end. The boundary NURBS curve uses the ordinary
-NURBS curve layout without a class wrapper. Its control points use document
-length conversion. The page-per-model ratio is finite and nonnegative; detail
-minor 0 defaults it to zero.
+two-dimensional NURBS curve layout without a class wrapper. Its control points
+are page-layout coordinates in millimeters and are not multiplied by the model
+document scale. The page-per-model ratio is finite, nonnegative, and
+dimensionless; detail minor 0 defaults it to zero.
+
+CADIR creates one native `detail_view` feature and one linked neutral curve for
+each accepted detail object. The feature retains the page-per-model ratio and
+the boundary link. It retains the bounded `ON_3dmView` payload as `view_bytes`
+and `view_sha256` native properties; the view state is not decoded into the
+neutral `views` arena. This is a CADIR transfer boundary and emits
+`detail.view-not-transferred`; the source detail object remains retained for
+native fidelity.
 
 ### 18.4 NURBS cages
 

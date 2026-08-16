@@ -1370,13 +1370,6 @@ impl<'a> DecodeContext<'a> {
     fn decode_detail(&mut self, source_order: usize, object: &ObjectDescriptor) {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "detail retained because document units are unavailable",
-            );
-            return;
-        };
         let Some(identity) = object.identity.as_ref() else {
             self.scan_warning(
                 source_order,
@@ -1387,7 +1380,6 @@ impl<'a> DecodeContext<'a> {
         let detail = match crate::detail::decode(
             self.scan.data,
             object.class_data_range.clone(),
-            scale,
             self.archive(),
         ) {
             Ok(detail) => detail,

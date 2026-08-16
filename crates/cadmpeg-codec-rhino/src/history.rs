@@ -1089,8 +1089,7 @@ fn extended_geometry_json(
         }
         semantic
     } else if value.class_id == crate::detail::CLASS {
-        let detail =
-            crate::detail::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+        let detail = crate::detail::decode(data, value.class_data_range.clone(), archive).ok()?;
         serde_json::json!({
             "kind": "detail_view",
             "boundary": detail.boundary.geometry,
