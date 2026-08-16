@@ -33,6 +33,12 @@ const TEXTURE_MAPPING_TABLE: u32 = 0x1000_0025;
 const MATERIAL: Uuid = Uuid::from_canonical([
     0x60, 0xb5, 0xdb, 0xbc, 0xe6, 0x60, 0x11, 0xd3, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
+const PHYSICALLY_BASED_MATERIAL_USERDATA: Uuid = Uuid::from_canonical([
+    0x56, 0x94, 0xe1, 0xac, 0x40, 0xe6, 0x44, 0xf4, 0x9c, 0xa9, 0x3b, 0x6d, 0x0e, 0x8c, 0x44, 0x40,
+]);
+const OPENNURBS6_APPLICATION: Uuid = Uuid::from_canonical([
+    0x7b, 0x0b, 0x58, 0x5d, 0x7a, 0x31, 0x45, 0xd0, 0x92, 0x5e, 0xbd, 0xd7, 0xdd, 0xf3, 0xe4, 0xe3,
+]);
 const LIGHT: Uuid = Uuid::from_canonical([
     0x85, 0xa0, 0x85, 0x13, 0xf3, 0x83, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -124,6 +130,33 @@ struct MaterialRecord {
     fresnel_index_of_refraction: Option<f64>,
     rdk_instance_uuid: Option<String>,
     diffuse_texture_alpha_transparency: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    physically_based: Option<PhysicallyBasedMaterialRecord>,
+}
+
+#[derive(Debug, Serialize)]
+struct PhysicallyBasedMaterialRecord {
+    version: i32,
+    base_color: [f32; 4],
+    brdf: i32,
+    subsurface: f64,
+    subsurface_scattering_color: [f32; 4],
+    subsurface_scattering_radius: f64,
+    metallic: f64,
+    specular: f64,
+    specular_tint: f64,
+    roughness: f64,
+    anisotropic: f64,
+    anisotropic_rotation: f64,
+    sheen: f64,
+    sheen_tint: f64,
+    clearcoat: f64,
+    clearcoat_roughness: f64,
+    opacity_ior: f64,
+    opacity: f64,
+    opacity_roughness: f64,
+    emission: [f32; 4],
+    alpha: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -779,6 +812,18 @@ fn read_finite(reader: &mut BoundedReader<'_>, label: &str) -> Result<f64, Frami
     finite(reader, value, label)
 }
 
+fn read_color_f32(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f32; 4], FramingError> {
+    let offset = reader.position();
+    let color = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
+    color
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(color)
+        .ok_or_else(|| {
+            FramingError::structural(offset, format!("{label} contains a non-finite component"))
+        })
+}
+
 fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f64; 3], FramingError> {
     let value = [reader.f64()?, reader.f64()?, reader.f64()?];
     value
@@ -882,6 +927,68 @@ fn component(
     value.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(Component { index, id, name })
+}
+
+fn parse_physically_based_material(
+    data: &[u8],
+    payload_range: Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<PhysicallyBasedMaterialRecord, FramingError> {
+    let (mut reader, (major, version)) = anonymous(data, payload_range, archive)?;
+    if major != 1 || !matches!(version, 1 | 2) {
+        return Err(FramingError::structural(
+            reader.position(),
+            "physically based material payload version is unsupported",
+        ));
+    }
+    let base_color = read_color_f32(&mut reader, "base color")?;
+    let brdf = reader.i32()?;
+    let subsurface = read_finite(&mut reader, "subsurface")?;
+    let subsurface_scattering_color = read_color_f32(&mut reader, "subsurface scattering color")?;
+    let subsurface_scattering_radius = read_finite(&mut reader, "subsurface scattering radius")?;
+    let metallic = read_finite(&mut reader, "metallic")?;
+    let specular = read_finite(&mut reader, "specular")?;
+    let specular_tint = read_finite(&mut reader, "specular tint")?;
+    let roughness = read_finite(&mut reader, "roughness")?;
+    let anisotropic = read_finite(&mut reader, "anisotropic")?;
+    let anisotropic_rotation = read_finite(&mut reader, "anisotropic rotation")?;
+    let sheen = read_finite(&mut reader, "sheen")?;
+    let sheen_tint = read_finite(&mut reader, "sheen tint")?;
+    let clearcoat = read_finite(&mut reader, "clearcoat")?;
+    let clearcoat_roughness = read_finite(&mut reader, "clearcoat roughness")?;
+    let opacity_ior = read_finite(&mut reader, "opacity IOR")?;
+    let opacity = read_finite(&mut reader, "opacity")?;
+    let opacity_roughness = read_finite(&mut reader, "opacity roughness")?;
+    let emission = read_color_f32(&mut reader, "emission")?;
+    let alpha = if version >= 2 {
+        read_finite(&mut reader, "alpha")?
+    } else {
+        1.0
+    };
+    reader.skip_remaining()?;
+    Ok(PhysicallyBasedMaterialRecord {
+        version,
+        base_color,
+        brdf,
+        subsurface,
+        subsurface_scattering_color,
+        subsurface_scattering_radius,
+        metallic,
+        specular,
+        specular_tint,
+        roughness,
+        anisotropic,
+        anisotropic_rotation,
+        sheen,
+        sheen_tint,
+        clearcoat,
+        clearcoat_roughness,
+        opacity_ior,
+        opacity,
+        opacity_roughness,
+        emission,
+        alpha,
+    })
 }
 
 fn wide_string(
@@ -1104,6 +1211,7 @@ fn parse_material(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     source_offset: usize,
+    physically_based: Option<PhysicallyBasedMaterialRecord>,
 ) -> Result<MaterialRecord, FramingError> {
     let framed = data.get(range.start).copied() == Some(0);
     let (mut reader, component, minor, modern) = if framed {
@@ -1254,6 +1362,7 @@ fn parse_material(
         fresnel_index_of_refraction,
         rdk_instance_uuid: rdk.filter(|id| !id.is_nil()).map(|id| id.to_string()),
         diffuse_texture_alpha_transparency: alpha,
+        physically_based,
     })
 }
 
@@ -2923,13 +3032,42 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, MATERIAL) {
+                if let Ok((range, userdata)) =
+                    class_data_with_userdata(scan.data, record, scan.archive, MATERIAL)
+                {
+                    let physically_based = userdata
+                        .iter()
+                        .find(|value| {
+                            value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && (value.application_uuid.is_none()
+                                    || value.application_uuid == Some(OPENNURBS6_APPLICATION))
+                        })
+                        .and_then(|value| {
+                            match parse_physically_based_material(
+                                scan.data,
+                                value.payload_range.clone(),
+                                scan.archive,
+                            ) {
+                                Ok(material) => Some(material),
+                                Err(error) => {
+                                    losses.push(RhinoLossCode::PresentationRecordDropped.note(
+                                        format!(
+                                            "physically based material userdata at offset {} could not be transferred: {error}",
+                                            record.range.start
+                                        ),
+                                    ));
+                                    None
+                                }
+                            }
+                        });
                     if let Ok(material) = parse_material(
                         scan.data,
                         range,
                         scan.archive,
                         scan.metadata.properties.writer_version,
                         record.range.start,
+                        physically_based,
                     ) {
                         materials.push(material);
                         parsed = true;
@@ -3333,6 +3471,35 @@ mod tests {
         payload.extend(minor.to_le_bytes());
         payload.extend(body);
         payload.extend(crc32fast::hash(&payload).to_le_bytes());
+        let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
+        bytes.extend((payload.len() as i64).to_le_bytes());
+        bytes.extend(payload);
+        bytes
+    }
+
+    fn physically_based_payload(version: i32, suffix: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        for value in [0.1_f32, 0.2, 0.3, 0.4] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend(1_i32.to_le_bytes());
+        body.extend(0.5_f64.to_le_bytes());
+        for value in [0.6_f32, 0.7, 0.8, 0.9] {
+            body.extend(value.to_le_bytes());
+        }
+        for value in 1..=14 {
+            body.extend((value as f64).to_le_bytes());
+        }
+        for value in [0.11_f32, 0.22, 0.33, 0.44] {
+            body.extend(value.to_le_bytes());
+        }
+        if version >= 2 {
+            body.extend(0.77_f64.to_le_bytes());
+        }
+        body.extend(suffix);
+        let inner = anonymous(version, &body);
+        let mut payload = inner.clone();
+        payload.extend(crc32fast::hash(&inner).to_le_bytes());
         let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
         bytes.extend((payload.len() as i64).to_le_bytes());
         bytes.extend(payload);
@@ -4212,6 +4379,7 @@ mod tests {
             ArchiveVersion::V5,
             Some(200_912_009),
             0,
+            None,
         )
         .expect("required invariant");
         assert_eq!(material.name, "steel");
@@ -4220,6 +4388,47 @@ mod tests {
         assert_eq!(material.index_of_refraction, 1.5);
         assert!(material.shareable);
         assert!(!material.disable_lighting);
+    }
+
+    #[test]
+    fn physically_based_material_reads_versioned_prefix_and_suffix() {
+        let bytes = physically_based_payload(2, &[0xaa, 0xbb]);
+        let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
+            .expect("outer userdata payload");
+        let material = parse_physically_based_material(&bytes, payload.body, ArchiveVersion::V8)
+            .expect("physically based material");
+        assert_eq!(material.version, 2);
+        assert_eq!(material.base_color, [0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(material.brdf, 1);
+        assert_eq!(material.subsurface, 0.5);
+        assert_eq!(material.subsurface_scattering_color, [0.6, 0.7, 0.8, 0.9]);
+        assert_eq!(material.subsurface_scattering_radius, 1.0);
+        assert_eq!(material.metallic, 2.0);
+        assert_eq!(material.specular, 3.0);
+        assert_eq!(material.specular_tint, 4.0);
+        assert_eq!(material.roughness, 5.0);
+        assert_eq!(material.anisotropic, 6.0);
+        assert_eq!(material.anisotropic_rotation, 7.0);
+        assert_eq!(material.sheen, 8.0);
+        assert_eq!(material.sheen_tint, 9.0);
+        assert_eq!(material.clearcoat, 10.0);
+        assert_eq!(material.clearcoat_roughness, 11.0);
+        assert_eq!(material.opacity_ior, 12.0);
+        assert_eq!(material.opacity, 13.0);
+        assert_eq!(material.opacity_roughness, 14.0);
+        assert_eq!(material.emission, [0.11, 0.22, 0.33, 0.44]);
+        assert_eq!(material.alpha, 0.77);
+    }
+
+    #[test]
+    fn physically_based_material_version_one_defaults_alpha() {
+        let bytes = physically_based_payload(1, &[0xcc, 0xdd]);
+        let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
+            .expect("outer userdata payload");
+        let material = parse_physically_based_material(&bytes, payload.body, ArchiveVersion::V8)
+            .expect("version one physically based material");
+        assert_eq!(material.version, 1);
+        assert_eq!(material.alpha, 1.0);
     }
 
     #[test]

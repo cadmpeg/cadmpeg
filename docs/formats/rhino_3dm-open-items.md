@@ -290,6 +290,15 @@ copies of all managed curves; the decoder retains all direct curve entries in
 order.
 Section 7.2.16 and the decoder retain the scalar fields and ordered curve
 records.
+The built-in `ON_PhysicallyBasedMaterialUserData` class is also settled. Its
+class and item UUID is `5694E1AC-40E6-44F4-9CA9-3B6D0E8C4440`, its
+application UUID is `7B0B585D-7A31-45D0-925E-BDD7DDF3E4E3`, and section
+7.2.17 defines its nested anonymous version-1.1/version-1.2 payload, three
+float RGBA colors, BRDF integer, fifteen scalar doubles, version-2 alpha,
+default values including the unset base-color encoding, and bounded suffix
+handling. The decoder stores the typed
+fields under the owning material record and retains the material when a
+recognized PBR payload is malformed.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -309,8 +318,8 @@ object-attributes compatibility carrier under section 7.2.9, and
 `ON_PerObjectMeshParameters` is settled as the typed modern object-attributes
 carrier under section 7.2.10. `ON_AnnotationTextFormula` is settled as a
 runtime-only helper with no serialized userdata under section 7.2.11; other
-future class-specific payload semantics, beyond the settled mesh-modifier
-classes, remain open.
+future class-specific payload semantics, beyond the settled mesh-modifier and
+physically based material classes, remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

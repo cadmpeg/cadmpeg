@@ -1392,6 +1392,65 @@ class/item/application triple owns the typed value. A malformed recognized
 payload leaves the object attributes and geometry admitted, omits this native
 value, and retains the bounded userdata record for opaque fidelity handling.
 
+#### 7.2.17 `ON_PhysicallyBasedMaterialUserData`
+
+`ON_PhysicallyBasedMaterialUserData` uses class UUID and item UUID
+`5694E1AC-40E6-44F4-9CA9-3B6D0E8C4440` and application UUID
+`7B0B585D-7A31-45D0-925E-BDD7DDF3E4E3`. It is attached to an `ON_Material`
+class wrapper. The generic userdata payload is an outer anonymous child whose
+body contains the class-owned inner anonymous chunk.
+
+The inner chunk has major version `1` and minor version `1` or `2`. Its body
+has this bounded prefix:
+
+```text
+f32 base_color[4]                         // ON_4fColor RGBA
+i32 brdf                                  // 0 GGX, 1 Ward
+f64 subsurface
+f32 subsurface_scattering_color[4]        // ON_4fColor RGBA
+f64 subsurface_scattering_radius
+f64 metallic
+f64 specular
+f64 specular_tint
+f64 roughness
+f64 anisotropic
+f64 anisotropic_rotation
+f64 sheen
+f64 sheen_tint
+f64 clearcoat
+f64 clearcoat_roughness
+f64 opacity_ior
+f64 opacity
+f64 opacity_roughness
+f32 emission[4]                           // ON_4fColor RGBA
+if minor >= 2:
+  f64 alpha
+```
+
+`ON_4fColor` components are little-endian binary32 values in red, green,
+blue, alpha order. Its alpha is opacity: `1.0` is opaque. The version-1
+reader leaves `alpha` at its source default `1.0`; the version-2 reader
+reads the final double. Both readers skip bytes remaining before the inner
+chunk boundary.
+
+The default parameters are base color unset, GGX, subsurface `0`, white
+subsurface-scattering color, subsurface-scattering radius `0`, metallic
+`0`, specular `0.5`, specular tint `0`, roughness `1`, anisotropic `0`,
+anisotropic rotation `0`, sheen `0`, sheen tint `0`, clearcoat `0`,
+clearcoat roughness `0`, opacity IOR `1.52`, opacity `1`, opacity roughness
+`0`, black emission, and alpha `1`.
+An unset base color is four `-1.234321e+38` binary32 components; the decoder
+preserves these color components as written.
+
+The first serialized userdata item with the class and item UUID above whose
+application UUID is absent or is the OpenNURBS 6 application UUID owns the
+typed value. A different present application UUID is not recognized. CADIR
+stores the decoded fields under
+`native.rhino.materials[].physically_based`, including the inner minor
+version as `version`. A malformed recognized payload leaves the material
+record admitted, omits `physically_based`, and retains the bounded userdata
+record for opaque fidelity handling.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
