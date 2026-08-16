@@ -20,6 +20,8 @@ The Terminate data area contains four eight-byte fields: `S` plus the seven-digi
 
 ## Global section
 
+The Global field categories and empty-field defaulting rule follow [IGES 5.3 §2.2.1](https://paulbourke.net/dataformats/iges/IGES.pdf). The Global data-type rules follow [§2.2.2](https://paulbourke.net/dataformats/iges/IGES.pdf). The field definitions and default values are in [§§2.2.4.3.12–2.2.4.3.26](https://paulbourke.net/dataformats/iges/IGES.pdf).
+
 The Global data stream is the concatenation of bytes 1 through 72 from its cards. Its first value defines the parameter delimiter and its second value defines the record delimiter. Each is a one-character Hollerith string. Omitted first and second values select comma and semicolon respectively.
 
 A Hollerith value is an unsigned decimal byte count, the byte `H` or `h`, and exactly that many following bytes. Delimiters inside the counted payload are data. The count and payload may cross card boundaries. Integer values are signed decimal integers. Real values accept a decimal point and an exponent introduced by `E`, `e`, `D`, or `d`. An empty or blank-only field between delimiters is omitted. The record delimiter terminates the Global record.

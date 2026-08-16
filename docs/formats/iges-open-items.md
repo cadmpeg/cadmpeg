@@ -47,16 +47,6 @@ from a conformant file.
 
 ## 2. Global metadata
 
-### GL-01. Global defaults, and defaults applied to unparseable fields
-
-**Question.** Which Global fields have defaults, what are they, and what does an unparseable Global field mean?
-
-**Known.** `global.rs:302-329` applies defaults only to omitted values, while malformed supplied values fail conversion. `global.rs:373-455` defines required fields, defaults, and numeric validation. The Global section of `iges.md` records the complete default table and the malformed-value rule.
-
-**Need.** We need the Global-field default table from the IGES specification and a rule that separates an omitted field from a malformed field. A wrong units or scale default changes every model coordinate and tolerance.
-
-**Note.** Reopened by the 2026-08-16 audit. The current table is internally consistent, but the closure promoted project defaults and generated fixtures without citing the IGES specification for the complete table and malformed-field behavior.
-
 ### GL-02. The units-name comparison rule
 
 **Question.** How is the Global units name compared with the standard unit codes?
