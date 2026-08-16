@@ -1699,6 +1699,35 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
 }
 
 #[test]
+fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
+    let transform: [[f64; 4]; 4] = [
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0, -2.25],
+        [-1.0, 0.0, 0.0, 0.75],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut bytes = vec![0; 345];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"400");
+    bytes[7..11].copy_from_slice(&72u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&72u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    scope.reference_members = vec![72];
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("class-400 WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, 49);
+    assert_eq!(decoded.reference, None);
+}
+
+#[test]
 fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
     let mut bytes = Vec::new();
     let classes: [(&str, u32); 4] = [("393", 5), ("293", 1), ("451", 5), ("442", 5)];

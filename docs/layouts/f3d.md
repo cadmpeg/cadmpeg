@@ -1400,6 +1400,22 @@ Unstated regions:
 - `0..213` (213 B): The fixed identity carrier precedes the owner-reference extension.
 - `213..222` (9 B): Its bytes 213 through 221 are zero.
 
+## `work_plane_legacy_class_400_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 345 B
+
+Offsets are relative to the first ordered placement member's class-400 indexed header. The class-400 tail retains the construction references after the solved matrix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | the placement frame stores 38 zero bytes after its indexed header and the row-major 4×4 f64 local-to-model matrix at offset 49 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..49` (38 B): The class-400 placement prefix is zero.
+- `177..345` (168 B): The class-400 construction-reference tail is retained as a named opaque carrier.
+
 ## `coil_compact_placement_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 341 B

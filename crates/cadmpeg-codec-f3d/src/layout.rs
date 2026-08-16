@@ -1874,6 +1874,20 @@ pub(crate) mod coil_compact_placement_owner_identity_frame {
     pub(crate) const OWNER_REFERENCE_TAIL: usize = 227;
 }
 
+/// Byte offsets for the `work_plane_legacy_class_400_matrix_frame` record.
+///
+/// Spec §3.1. Record length 345 B.
+///
+/// ```text
+/// Offsets are relative to the first ordered placement member's class-400 indexed header. The class-400 tail retains the construction references after the solved matrix.
+/// ```
+pub(crate) mod work_plane_legacy_class_400_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 345;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 49;
+}
+
 /// Byte offsets for the `coil_compact_placement_matrix_frame` record.
 ///
 /// Spec §3.1. Record length 341 B.
