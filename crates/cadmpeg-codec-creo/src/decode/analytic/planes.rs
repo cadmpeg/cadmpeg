@@ -3,7 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
 
 use crate::container::ContainerScan;
 
@@ -328,6 +330,37 @@ pub fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
                 && (first_distance - distance).abs() <= EPS_AGREE * scale
         })
         .then_some(first)
+}
+
+pub fn reconciled_model_plane(
+    local_planes: &BTreeMap<u32, PlaneEquation>,
+    ir: &CadIr,
+    surface_id: u32,
+) -> Option<PlaneEquation> {
+    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+    let model_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id == model_id)
+        .collect::<Vec<_>>();
+    let model_plane = match model_surfaces.as_slice() {
+        [] => None,
+        [surface] => match &surface.geometry {
+            SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
+                origin: [origin.x, origin.y, origin.z],
+                normal: [normal.x, normal.y, normal.z],
+            }),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    match (local_planes.get(&surface_id).copied(), model_plane) {
+        (Some(local), Some(model)) => agreed_plane(&[local, model]),
+        (Some(local), None) => Some(local),
+        (None, Some(model)) => Some(model),
+        (None, None) => None,
+    }
 }
 
 #[derive(Clone, Copy)]

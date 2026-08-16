@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema, thicken, datum, and sweep-admission feature definitions.
 
-use super::super::analytic::{cross, dot, placed_plane_surfaces, placed_planes};
+use super::super::analytic::{
+    cross, dot, placed_plane_surfaces, placed_planes, reconciled_model_plane,
+};
 use super::super::holes::{
     circular_sweep_feature_definition, circular_sweep_geometry, compact_simple_hole_cylinder_id,
     compact_simple_hole_geometry, counterbore_axis_placement, counterbore_dimensions,
@@ -580,38 +582,33 @@ pub(in super::super) fn schema_feature_definition(
             if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
                 return IrFeatureDefinition::DatumPlaneUnresolved;
             }
-            if let Some(plane) = placed_planes(scan).get(surface_id) {
+            let local_planes = placed_planes(scan);
+            if let Some(plane) = reconciled_model_plane(&local_planes, ir, *surface_id) {
                 let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
-                let u_axis = placed_plane_surfaces(scan).get(surface_id).map_or_else(
-                    || cadmpeg_ir::geometry::derive_reference_direction(normal),
-                    |(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-                );
+                let u_axis = placed_plane_surfaces(scan)
+                    .get(surface_id)
+                    .map(|(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]))
+                    .or_else(|| {
+                        let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+                        let surfaces = ir
+                            .model
+                            .surfaces
+                            .iter()
+                            .filter(|surface| surface.id == model_id)
+                            .collect::<Vec<_>>();
+                        match surfaces.as_slice() {
+                            [surface] => match &surface.geometry {
+                                SurfaceGeometry::Plane { u_axis, .. } => Some(*u_axis),
+                                _ => None,
+                            },
+                            _ => None,
+                        }
+                    })
+                    .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
                 return IrFeatureDefinition::DatumPlane {
                     origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                     normal,
                     u_axis,
-                };
-            }
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-            let planes = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| surface.id == surface_id)
-                .filter_map(|surface| match surface.geometry {
-                    SurfaceGeometry::Plane {
-                        origin,
-                        normal,
-                        u_axis,
-                    } => Some((origin, normal, u_axis)),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            if let [(origin, normal, u_axis)] = planes.as_slice() {
-                return IrFeatureDefinition::DatumPlane {
-                    origin: *origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
                 };
             }
             return IrFeatureDefinition::DatumPlaneUnresolved;
@@ -919,3 +916,6 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
                     && entry.class_id == surface.id
         )
 }
+
+#[cfg(test)]
+mod tests;

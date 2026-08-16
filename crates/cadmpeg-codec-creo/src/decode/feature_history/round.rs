@@ -2,7 +2,7 @@
 //! Round and chamfer radius reconstruction from support geometry.
 
 use super::super::analytic::{
-    agreed_plane, circular_cone, cross, dot, placed_planes, solve_planes, ConeEquation,
+    circular_cone, cross, dot, placed_planes, reconciled_model_plane, solve_planes, ConeEquation,
     CylinderEquation, PlaneEquation,
 };
 use super::super::sketch::normalized;
@@ -14,7 +14,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const EPS_CYLINDER_FIT: f64 = 1e-8;
 
@@ -512,44 +512,13 @@ pub(in super::super) fn round_support_radius(
     let local_planes = placed_planes(scan);
     let support_planes = support_ids
         .iter()
-        .map(|id| agreed_model_plane(&local_planes, ir, *id))
+        .map(|id| reconciled_model_plane(&local_planes, ir, *id))
         .collect::<Option<Vec<_>>>()?;
     parallel_support_radius(
         support_planes
             .into_iter()
             .map(|plane| (plane.origin, plane.normal)),
     )
-}
-
-fn agreed_model_plane(
-    local_planes: &BTreeMap<u32, PlaneEquation>,
-    ir: &CadIr,
-    surface_id: u32,
-) -> Option<PlaneEquation> {
-    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-    let model_surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| surface.id == model_id)
-        .collect::<Vec<_>>();
-    let model_plane = match model_surfaces.as_slice() {
-        [] => None,
-        [surface] => match &surface.geometry {
-            SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
-                origin: [origin.x, origin.y, origin.z],
-                normal: [normal.x, normal.y, normal.z],
-            }),
-            _ => return None,
-        },
-        _ => return None,
-    };
-    match (local_planes.get(&surface_id).copied(), model_plane) {
-        (Some(local), Some(model)) => agreed_plane(&[local, model]),
-        (Some(local), None) => Some(local),
-        (None, Some(model)) => Some(model),
-        (None, None) => None,
-    }
 }
 
 pub(in super::super) fn round_placed_cylinder_radii(
@@ -748,7 +717,7 @@ pub(in super::super) fn chamfer_constant_distance(
         if row.kind != crate::surface::SurfaceKind::Plane || !support_plane_ids.insert(*id) {
             continue;
         }
-        let plane = agreed_model_plane(&local_planes, ir, *id)?;
+        let plane = reconciled_model_plane(&local_planes, ir, *id)?;
         support_planes.push(plane);
     }
     equal_distance_chamfer_setback(&cones, &support_planes)

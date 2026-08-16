@@ -3071,6 +3071,10 @@ A class-923 feature with exactly one owned plane row defines that datum plane
 when the row's neutral carrier has a resolved model-space origin, normal, and
 in-plane reference direction. Multiple owned plane rows leave the datum
 unresolved even when only one carrier is currently transferable.
+When both the placed neutral carrier and the unique transferred model-space
+plane carrier exist for that row, their plane equations must agree. A duplicate
+transferred carrier, a transferred non-plane carrier, or a disagreement leaves
+the datum unresolved.
 A class-923 feature with no owned plane row instead uses its uniquely owned
 definition's unique complete `local_sys` when the stored local x and z axes are
 nonzero and perpendicular. The local z axis is the datum normal, the local x
