@@ -231,6 +231,25 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 52,
         })
     );
+    let two_sided_to_faces = scope(
+        "Extrude",
+        1,
+        (2, 1),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((2, 0), false)),
+        None,
+        None,
+    );
+    assert_eq!(
+        two_sided_to_faces
+            .extrude_prologue
+            .and_then(DesignExtrudePrologue::extent),
+        Some(DesignExtrudeExtent::TwoSidedToFaces)
+    );
     let compact_reference = scope(
         "Extrude",
         2,

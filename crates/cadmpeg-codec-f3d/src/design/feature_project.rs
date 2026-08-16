@@ -6326,9 +6326,16 @@ pub(crate) fn project_extrude(
     let side_two_offset = match unique("Side2Offset")? {
         Some(parameter) => Some(design_length(parameter)?),
         None => None,
-    }
-    .filter(|offset| offset.0 != 0.0);
-    if side_two_offset.is_some() {
+    };
+    let effective_side_two_offset = side_two_offset.filter(|offset| offset.0 != 0.0);
+    if effective_side_two_offset.is_some()
+        && !matches!(
+            scope
+                .extrude_prologue
+                .and_then(DesignExtrudePrologue::extent),
+            Some(DesignExtrudeExtent::TwoSidedToFaces)
+        )
+    {
         return None;
     }
     let side_two_draft = match unique("Side2TaperAngle")? {
@@ -6432,6 +6439,34 @@ pub(crate) fn project_extrude(
                     },
                 },
                 along.0 < 0.0,
+            )
+        }
+        (DesignExtrudeExtent::TwoSidedToFaces, None, None)
+            if !prologue.direction_reversed()
+                && termination_groups.len() == 2
+                && target_shape_groups.is_empty()
+                && side_one_offset.is_some()
+                && side_two_offset.is_some() =>
+        {
+            let [first, second] = termination_groups.as_slice() else {
+                return None;
+            };
+            (
+                ExtentShape::TwoSided {
+                    first: Termination::ToFace {
+                        face: resolved_historical_face_group(scope, first, face_operands)
+                            .or_else(|| resolved_face_group(first, face_operands))
+                            .unwrap_or_else(|| FaceSelection::Native(first.id.clone())),
+                        offset: side_one_offset.filter(|offset| offset.0 != 0.0),
+                    },
+                    second: Termination::ToFace {
+                        face: resolved_historical_face_group(scope, second, face_operands)
+                            .or_else(|| resolved_face_group(second, face_operands))
+                            .unwrap_or_else(|| FaceSelection::Native(second.id.clone())),
+                        offset: side_two_offset.filter(|offset| offset.0 != 0.0),
+                    },
+                },
+                prologue.direction_reversed(),
             )
         }
         (

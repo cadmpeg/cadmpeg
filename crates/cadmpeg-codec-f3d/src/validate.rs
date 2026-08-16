@@ -3232,6 +3232,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 | (1, [2, 0], records::DesignExtrudeExtent::OneSidedToFace)
                                 | (1, [3, 0], records::DesignExtrudeExtent::OneSidedThroughNext)
                                 | (1, [4, 0], records::DesignExtrudeExtent::OneSidedThroughAll)
+                                | (2, [2, 0], records::DesignExtrudeExtent::TwoSidedToFaces)
                                 | (2, [1, 1], records::DesignExtrudeExtent::TwoSidedDistance)
                                 | (3, [1, 0], records::DesignExtrudeExtent::SymmetricDistance)
                                 | (3, [4, 4], records::DesignExtrudeExtent::SymmetricThroughAll)
@@ -4758,6 +4759,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let side_one_offsets = parameter_kind_values("Side1Offset");
             let side_one_offset_is_absent = side_one_offsets.is_empty()
                 || matches!(side_one_offsets.as_slice(), [offset] if *offset == 0.0);
+            let side_two_offset_count = parameter_kind_count("Side2Offset");
             let has_fixed_extrude_parameters = scope.fixed_extrude_parameters.is_some();
             let has_fixed_along = scope
                 .fixed_extrude_parameters
@@ -4790,6 +4792,14 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         } else {
                             side_one_offset_count == 1
                         }
+                }
+                records::DesignExtrudeExtent::TwoSidedToFaces => {
+                    along_count == 0
+                        && !has_fixed_extrude_parameters
+                        && against_count == 0
+                        && side_one_offset_count == 1
+                        && side_two_offset_count == 1
+                        && !prologue.direction_reversed()
                 }
                 records::DesignExtrudeExtent::TwoSidedDistance => {
                     along_count == 1
@@ -4828,7 +4838,10 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let expected_face_group_count = usize::from(
                 matches!(extrude_extent, records::DesignExtrudeExtent::OneSidedToFace)
                     && target_shape_group_count == 0,
-            ) + usize::from(matches!(
+            ) + 2 * usize::from(matches!(
+                extrude_extent,
+                records::DesignExtrudeExtent::TwoSidedToFaces
+            )) + usize::from(matches!(
                 extrude_start,
                 records::DesignExtrudeStart::FromFace
             ));
@@ -4858,6 +4871,10 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 {
                     vec![records::DesignExtrudeFaceRole::Termination]
                 }
+                (_, records::DesignExtrudeExtent::TwoSidedToFaces) => vec![
+                    records::DesignExtrudeFaceRole::Termination,
+                    records::DesignExtrudeFaceRole::Termination,
+                ],
                 _ => Vec::new(),
             };
             if !extent_matches_operands

@@ -589,6 +589,8 @@ pub enum DesignExtrudeExtent {
     OneSidedDistance,
     /// Travel on the first side until reaching a selected face or shape.
     OneSidedToFace,
+    /// Travel on both sides until each side reaches its selected face.
+    TwoSidedToFaces,
     /// Travel independent fixed distances on both sides of the profile.
     TwoSidedDistance,
     /// Travel one fixed total distance symmetrically around the profile plane.

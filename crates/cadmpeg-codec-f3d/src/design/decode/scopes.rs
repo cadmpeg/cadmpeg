@@ -7050,6 +7050,7 @@ fn exact_extrude_extent(
         (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
         (1, [3, 0]) => Some(DesignExtrudeExtent::OneSidedThroughNext),
         (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
+        (2, [2, 0]) => Some(DesignExtrudeExtent::TwoSidedToFaces),
         (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
         (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
         (3, [4, 4]) => Some(DesignExtrudeExtent::SymmetricThroughAll),
