@@ -2528,6 +2528,12 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_surfaces,
                 &self.ir.model.spatial_sketch_entities,
             );
+        let scope_histories = crate::history::bind_scope_histories(
+            &self.native.design_parameter_scopes,
+            &self.native.design_body_bindings,
+            &self.native.design_body_recipe_operands,
+            &self.native.asm_histories,
+        );
         crate::design::profile_select::bind_extrude_profile_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -2550,6 +2556,7 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_entities: &self.ir.model.spatial_sketch_entities,
                 histories: &self.native.asm_histories,
+                scope_histories: &scope_histories,
                 linear_tolerance: self.ir.tolerances.linear,
                 angular_tolerance: self.ir.tolerances.angular,
                 arrangement_budget: &arrangement_budget,

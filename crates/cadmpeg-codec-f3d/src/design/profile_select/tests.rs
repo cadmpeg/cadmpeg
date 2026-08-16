@@ -264,15 +264,18 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         next_byte_offset: 0,
     };
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    let scope_histories = HashMap::new();
     let resolution = ExtrudeProfileResolution {
         entities: &[],
         spatial_sketches: &[],
         spatial_entities: &[],
         histories: &[],
+        scope_histories: &scope_histories,
         linear_tolerance: 1.0e-6,
         angular_tolerance: 1.0e-9,
         arrangement_budget: &arrangement_budget,
     };
+    let scoped_resolution = resolution.scoped(&[]);
 
     assert_eq!(
         resolved_spatial_extrude_profile_selection(
@@ -280,7 +283,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             std::slice::from_ref(&member),
             &sketch,
             &[],
-            resolution,
+            scoped_resolution,
             None,
             None,
         ),
@@ -306,7 +309,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             &[member.clone(), conflicting_member],
             &sketch,
             &[],
-            resolution,
+            scoped_resolution,
             None,
             None,
         ),
@@ -320,7 +323,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             std::slice::from_ref(&member),
             &sketch,
             &[],
-            resolution,
+            scoped_resolution,
             None,
             None,
         ),
@@ -336,7 +339,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             &[member],
             &single_profile,
             &[],
-            resolution,
+            scoped_resolution,
             None,
             None,
         ),
@@ -958,6 +961,117 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         spatial_sketch_entities: &[],
     };
     assert!(resolve_entity_selection_profile(&group, &ambiguous_resolution).is_none());
+}
+
+#[test]
+fn planar_profile_regions_resolve_by_persistent_curve_members() {
+    let placement = placement();
+    let sketch = neutral_sketch_id(&placement);
+    let curves = [curve(30, 100, 101), curve(31, 200, 201)];
+    let first_entity = neutral_sketch_curve_id(&sketch, 100, 101);
+    let second_entity = neutral_sketch_curve_id(&sketch, 200, 201);
+    let sketch_entities = [
+        SketchEntity::new(
+            first_entity.clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        ),
+        SketchEntity::new(
+            second_entity.clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 1.0),
+                end: Point2::new(1.0, 1.0),
+            },
+        ),
+    ];
+    let mut source = Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved,
+        profiles: vec![
+            vec![SketchEntityUse {
+                entity: first_entity.clone(),
+                reversed: false,
+            }],
+            vec![SketchEntityUse {
+                entity: second_entity.clone(),
+                reversed: false,
+            }],
+        ],
+        native_ref: None,
+    };
+    let operand = DesignSketchProfileOperand {
+        scope_reference_ordinal: 0,
+        record_index: 10,
+        byte_offset: 0,
+        class_tag: "300".into(),
+        asset_id: placement.entity_id.clone(),
+        asset_id_offset: 0,
+        entity_id: placement.entity_id,
+        entity_suffix: 42,
+        entity_reference_offset: 0,
+        region_selection: Some(DesignSketchProfileRegionSelection {
+            record_index: 11,
+            byte_offset: 0,
+            class_tag: "301".into(),
+            region_count_offset: 0,
+            regions: vec![
+                DesignSketchProfileRegion {
+                    member_count_offset: 0,
+                    members: vec![profile_region_member(200)],
+                },
+                DesignSketchProfileRegion {
+                    member_count_offset: 0,
+                    members: vec![profile_region_member(100)],
+                },
+            ],
+            companion_class_tag: "302".into(),
+            companion_byte_offset: 0,
+        }),
+        paired_class_tag: "303".into(),
+        paired_byte_offset: 0,
+    };
+
+    assert_eq!(
+        resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities,),
+        Some(vec![1, 0])
+    );
+
+    let mut mixed_region = operand.clone();
+    mixed_region
+        .region_selection
+        .as_mut()
+        .expect("region selection")
+        .regions[0]
+        .members
+        .push(profile_region_member(100));
+    assert!(resolved_sketch_profile_regions(
+        "stream",
+        &mixed_region,
+        &source,
+        &curves,
+        &sketch_entities,
+    )
+    .is_none());
+
+    source.profiles[1].push(SketchEntityUse {
+        entity: first_entity,
+        reversed: false,
+    });
+    assert!(resolved_sketch_profile_regions(
+        "stream",
+        &operand,
+        &source,
+        &curves,
+        &sketch_entities,
+    )
+    .is_none());
 }
 
 #[test]

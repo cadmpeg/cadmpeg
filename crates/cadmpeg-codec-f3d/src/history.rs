@@ -2839,7 +2839,8 @@ fn history_state_pair(
     Some((history, state, previous))
 }
 
-fn bound_scope_history<'a>(
+/// Return the one ASM history bound to a Design scope.
+pub(crate) fn bound_scope_history<'a>(
     scope_id: &str,
     scope_histories: &HashMap<String, String>,
     histories: &'a [AsmHistory],

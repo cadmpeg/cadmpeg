@@ -452,6 +452,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             spatial_sketches: &[],
             spatial_entities: &[],
             histories: &[],
+            scope_histories: &std::collections::HashMap::new(),
             linear_tolerance: 1.0e-6,
             angular_tolerance: 1.0e-9,
             arrangement_budget: &arrangement_budget,

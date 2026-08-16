@@ -156,6 +156,12 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     let scopes = [scope.clone(), next_scope];
     let bindings = bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories);
     assert_eq!(bindings[&scope.id], histories[1].id);
+    assert_eq!(
+        bound_scope_history(&scope.id, &bindings, &histories)
+            .expect("scope binding resolves one history")
+            .id,
+        histories[1].id
+    );
 
     let operand = DesignBodyRecipeOperand {
         id: format!("{stream}:design-body-recipe-operand#120"),
