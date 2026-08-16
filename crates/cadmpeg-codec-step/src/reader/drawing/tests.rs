@@ -5,9 +5,13 @@
 #![allow(clippy::default_trait_access)]
 #![allow(unused_imports)]
 
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepError, StepUnsupportedPolicy, StepWriteOptions};
+use crate::{write_step, StepCodec, StepError, StepUnsupportedPolicy, StepWriteOptions};
 
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
@@ -255,34 +259,52 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
 }
 
 #[test]
-fn drawing_relationship_with_multiple_product_views_is_not_retargeted() {
-    let result = decode_inline(
-        "#1=APPLICATION_CONTEXT('mechanical design');
-#2=PRODUCT_CONTEXT('',#1,'mechanical');
-#3=PRODUCT('P','Part','',(#2));
-#4=PRODUCT_DEFINITION_FORMATION('v1','',#3);
-#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
-#6=PRODUCT_DEFINITION('design view','',#4,#5);
-#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
-#8=PRODUCT_DEFINITION('manufacturing view','',#7,#5);
-#9=REPRESENTATION_CONTEXT('','');
-#10=PRESENTATION_VIEW('Front',(#3),#9);",
-    );
+fn drawing_association_uses_product_definition_shape_view_scope() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode DR-01 fixture")
+    };
+    let target_for = |result: &cadmpeg_ir::codec::DecodeResult, name: &str| {
+        result
+            .ir()
+            .model
+            .drawings
+            .iter()
+            .find(|drawing| {
+                drawing
+                    .parameters
+                    .get("name")
+                    .is_some_and(|value| value == name)
+            })
+            .and_then(|drawing| drawing.relationships.get("semantic_definition"))
+            .and_then(|targets| targets.first())
+            .and_then(|target| target.target.as_deref())
+            .map(str::to_owned)
+    };
 
-    let view = result
-        .ir()
-        .model
-        .drawings
-        .iter()
-        .find(|drawing| drawing.runtime_type == "PRESENTATION_VIEW")
-        .expect("presentation view");
-    assert_eq!(view.parameters["items"], "(#3)");
-    assert!(!view.relationships.contains_key("items"));
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::DrawingRelationshipTargetAmbiguous.kind()
-            && loss.message.contains("multiple neutral identities")
-            && loss.message.contains("no target was selected")
-    }));
+    let source_order = decode_fixture(include_bytes!(
+        "tests/data/dr01_product_view_scope_source_order.p21"
+    ));
+    let reordered = decode_fixture(include_bytes!(
+        "tests/data/dr01_product_view_scope_reordered.p21"
+    ));
+
+    for result in [&source_order, &reordered] {
+        assert_eq!(
+            target_for(result, "Design model"),
+            Some("step:product:product#3-definition-6".into())
+        );
+        assert_eq!(
+            target_for(result, "Manufacturing model"),
+            Some("step:product:product#3-definition-8".into())
+        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| { loss.code == StepLossCode::DrawingRelationshipTargetAmbiguous.kind() }));
+    }
 }
 
 #[test]

@@ -1545,23 +1545,35 @@ opaque records because the neutral model has no fields for `symbol_applied`,
 
 Drawing structure is a linked object graph. `DRAWING_DEFINITION` identifies the
 drawing, `DRAWING_REVISION` identifies one revision of it, and
-`DRAWING_SHEET_REVISION` identifies a sheet revision with its ordered drawing
+`DRAWING_SHEET_REVISION` identifies a sheet revision with its set of drawing
 items, presentation context, and revision. `DRAWING_SHEET_REVISION_USAGE`
 links a sheet revision to its drawing revision and carries the sheet sequence.
-`PRESENTATION_VIEW` carries a named view, its ordered items, and presentation
-context. `PRESENTATION_SIZE` links a sheet revision to its presentation size.
-`DRAUGHTING_MODEL` carries a presentation model with its items and context;
+`PRESENTATION_VIEW` carries a named view, its set of representation items, and
+presentation context. `PRESENTATION_SIZE` links a sheet revision to its
+presentation size.
+`DRAUGHTING_MODEL` carries a presentation model with its set of items and context;
 in a complex instance, these attributes come from its inherited
 `REPRESENTATION` partial.
 `DRAUGHTING_MODEL_ITEM_ASSOCIATION` links model items to their semantic
-definition. `DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER` carries the
+definition. Its `definition` SELECT includes `PRODUCT_DEFINITION_SHAPE`. When
+that property's `definition` resolves to a `PRODUCT_DEFINITION`, it identifies
+that one product-definition view.
+`DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER` carries the
 same definition, draughting model, and callout links plus its annotation
 placeholder occurrence. Complex association instances read these attributes
 from their inherited `ITEM_IDENTIFIED_REPRESENTATION_USAGE` partial.
-`DRAUGHTING_CALLOUT` carries an ordered callout-content set. Each drawing
-relationship target transfers when its source record has exactly one neutral,
-named opaque, or source-native identity. A terminal source-typed target with no
-neutral identity owns
+`DRAUGHTING_CALLOUT` carries a set of callout contents. These representation
+aggregates are SETs; their serialization order has no drawing meaning. A
+`PRODUCT` is not a `representation_item`, so a valid drawing representation
+does not select one of several product-definition views from a bare product
+reference. A product-definition shape supplies that view scope through its
+owning product definition when its characterized definition is a
+`PRODUCT_DEFINITION`. The reader transfers this scoped target to the
+corresponding product-definition identity; other typed definition scopes follow
+the generic target rule below.
+Each other drawing relationship target transfers when its source record has
+exactly one neutral, named opaque, or source-native identity. A terminal
+source-typed target with no neutral identity owns
 an identity-only `NativeRecord` in the STEP `drawing_targets` arena; its
 source id and complete source type remain available for the relationship.
 `INVISIBILITY` targeting a transferred drawing entity sets its `visible=false`;
@@ -1571,8 +1583,9 @@ identity-only source-native target in the STEP `drawing_targets` arena. An
 annotation plane transfers through its plane carrier, and a mapped item
 transfers through the items of its mapped representation, when that wrapper has
 no identity of its own and the reachable carrier graph has exactly one neutral
-identity and is acyclic. If a source record has multiple neutral identities, no
-target is selected and the raw source parameter remains stored with
+identity and is acyclic. If a source record has multiple neutral identities and
+the STEP relation has no type-defined scope that selects one, no target is
+selected and the raw source parameter remains stored with
 `drawing.relationship-target-ambiguous`. A typed wrapper whose carrier graph is
 cyclic or yields no neutral identity receives its own source-native identity.
 Target selection does not use identity ordering.

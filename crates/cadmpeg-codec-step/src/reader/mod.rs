@@ -348,7 +348,12 @@ fn decode_exchange_mode(
     session.absorb(&mut validation);
 
     session.charge_stage("step_drawing_decode")?;
-    let mut drawing = drawing::decode(exchange, &mut session.ir, &session.typed_records);
+    let mut drawing = drawing::decode(
+        exchange,
+        &mut session.ir,
+        &session.typed_records,
+        &product.value.product_definition_ids_by_shape,
+    );
     session.absorb(&mut drawing);
     let mut post_decode_warnings = Vec::new();
     session.charge_stage("step_carrier_retention")?;

@@ -115,27 +115,3 @@ reordered, near-tied, and crossing candidates.
 ## 7. Annotation, presentation, and tessellation
 
 ## 8. QA-reopened closure items
-
-### DR-01. Drawing target identity selection
-
-**Question.** Which neutral identity represents a drawing reference when one
-STEP source record maps to more than one neutral model identity?
-
-**Known.** `record_targets` collects every neutral identity derived from a
-source record into a `BTreeSet`. `target_for` transfers a target only when the
-set has exactly one identity; an ambiguous typed target returns no target and
-the caller records `drawing.relationship-target-ambiguous`
-(`crates/cadmpeg-codec-step/src/reader/drawing.rs:459-506,786-840`). The
-refusal preserves the raw source parameter but does not identify the source
-rule for a multi-view drawing reference.
-
-**Note.** The later implementation removes lexicographic selection, but a
-conservative ambiguity loss is not a source identity rule. The presentation
-layer expands all applicable product views, but the drawing target path does
-not. No existing STEP item settles this projection.
-
-**Need.** We need the drawing-reference target entity and product-definition
-scope rule, plus a multi-view witness file that shows whether all views
-are targets, one view is authoritative, or the reference is ambiguous.
-
-QA audit: reopened after reviewing closing commit 4878c68ea. The closing commit preserves an ambiguous target and records a loss. This is safe refusal behavior, not evidence of which source identity a multi-view drawing reference owns.

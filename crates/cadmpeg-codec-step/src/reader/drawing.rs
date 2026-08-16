@@ -7,6 +7,7 @@ use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
+use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::NativeRecord;
 
@@ -67,6 +68,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     known_typed: &HashSet<u64>,
+    product_definition_ids_by_shape: &BTreeMap<u64, ProductDefinitionId>,
 ) -> StageOutcome<()> {
     let mut losses = Vec::new();
     let mut candidates = exchange
@@ -134,6 +136,15 @@ pub(super) fn decode(
             .entry(id)
             .or_default()
             .insert(identity.clone());
+    }
+    // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
+    // that shape's one owning product-definition view, not a product-wide
+    // identity set.
+    for (&shape_id, product_definition_id) in product_definition_ids_by_shape {
+        target_identities
+            .entry(shape_id)
+            .or_default()
+            .insert(product_definition_id.as_str().to_owned());
     }
     let drawing_target_ids = referenced_target_ids(exchange, &candidates);
     add_source_typed_targets(

@@ -42,6 +42,7 @@ const DRAWING_ITEM_OWNER_TYPES: &[&str] = &[
 
 pub(super) struct ProductData {
     pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
+    pub product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
 pub(super) fn decode(
@@ -256,6 +257,14 @@ pub(super) fn decode(
         }
         typed.insert(step_id);
     }
+    let product_definition_ids_by_shape = exchange
+        .entities("PRODUCT_DEFINITION_SHAPE")
+        .filter_map(|(shape_id, record)| {
+            let definition = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                .and_then(ValueExt::reference)?;
+            Some((shape_id, definition_prototypes.get(&definition)?.clone()))
+        })
+        .collect();
     typed.extend(formations.keys().copied());
     typed.extend(definitions.keys().copied());
 
@@ -505,6 +514,7 @@ pub(super) fn decode(
     Ok(StageOutcome {
         value: ProductData {
             product_definition_ids_by_source,
+            product_definition_ids_by_shape,
         },
         claims: typed,
         warnings,
