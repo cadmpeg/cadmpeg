@@ -1388,10 +1388,34 @@ pub struct ProjectedCurvePayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Byte layout selected by a pattern construction-reference field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternPayloadReferenceLayout {
+    /// The `61`/`ff 00 ff 01`/`ff 62` graph framing.
+    CanonicalGraph,
+    /// The `3b`/`ff 00 01`/`ff 3c` graph framing.
+    CompactGraph,
+    /// The one-reference `Geometry Instance` framing.
+    GeometryInstance,
+}
+
 /// Exact non-null construction references in a pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatternPayloadReferenceField {
+    /// Exact byte layout that framed the field.
+    pub layout: PatternPayloadReferenceLayout,
     /// Non-null references in serialized slot order.
+    pub references: Vec<PayloadObjectReference>,
+}
+
+/// Exact counted non-null reference lane in a `Pattern Feature` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatternPayloadCountedReferenceLane {
+    /// Absolute offset of the opening `01, count` field.
+    pub offset: usize,
+    /// Serialized count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered non-null object references after the count.
     pub references: Vec<PayloadObjectReference>,
 }
 
@@ -2137,6 +2161,26 @@ pub struct OperationObjectRelation {
     pub end_offset: usize,
 }
 
+/// One exact direct tagged-reference field in a bounded operation record.
+///
+/// The field's tag is retained as native evidence; it does not assign a
+/// semantic role to the referenced object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationTaggedReference {
+    /// Absolute offset of the opening `01 02` marker.
+    pub offset: usize,
+    /// Byte between the opening marker and the object index.
+    pub tag: u8,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the object-index token.
+    pub object_index_offset: usize,
+    /// Exclusive absolute end offset after the fixed field suffix.
+    pub end_offset: usize,
+}
+
 /// Object-index reference in one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockObjectReference {
@@ -2826,6 +2870,8 @@ pub fn pattern_payload_references(
     const GRAPH_SEPARATOR: [u8; 4] = [0xff, 0x00, 0xff, 0x01];
     const GRAPH_TAIL_PREFIX: [u8; 4] = [0xff, 0x00, 0x00, 0x01];
     const GRAPH_SUFFIX: [u8; 3] = [0xff, 0xff, 0x01];
+    const COMPACT_GRAPH_SEPARATOR: [u8; 3] = [0xff, 0x00, 0x01];
+    const COMPACT_GRAPH_MIDDLE: [u8; 2] = [0xff, 0x3c];
     const INSTANCE_PREFIX: [u8; 3] = [0x00, 0xff, 0xff];
     const INSTANCE_SUFFIX: [u8; 17] = [
         0x01, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
@@ -2872,7 +2918,49 @@ pub fn pattern_payload_references(
             references.push(decode_reference(&mut at)?);
         }
         (record.payload.get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
-        Some(PatternPayloadReferenceField { references })
+        Some(PatternPayloadReferenceField {
+            layout: PatternPayloadReferenceLayout::CanonicalGraph,
+            references,
+        })
+    };
+    let decode_compact_graph = |start: usize| {
+        let mut at = start + 1;
+        let mut references = Vec::with_capacity(10);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + COMPACT_GRAPH_SEPARATOR.len())
+            == Some(&COMPACT_GRAPH_SEPARATOR))
+        .then_some(())?;
+        at += COMPACT_GRAPH_SEPARATOR.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at) == Some(&0x3b)).then_some(())?;
+        at += 1;
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + COMPACT_GRAPH_SEPARATOR.len())
+            == Some(&COMPACT_GRAPH_SEPARATOR))
+        .then_some(())?;
+        at += COMPACT_GRAPH_SEPARATOR.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + COMPACT_GRAPH_MIDDLE.len()) == Some(&COMPACT_GRAPH_MIDDLE))
+            .then_some(())?;
+        at += COMPACT_GRAPH_MIDDLE.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
+            .then_some(())?;
+        at += GRAPH_TAIL_PREFIX.len();
+        references.push(decode_reference(&mut at)?);
+        if record.payload.get(at) == Some(&0xff) {
+            at += 1;
+        } else {
+            references.push(decode_reference(&mut at)?);
+        }
+        (record.payload.get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
+        Some(PatternPayloadReferenceField {
+            layout: PatternPayloadReferenceLayout::CompactGraph,
+            references,
+        })
     };
     let decode_instance = |start: usize| {
         let mut at = start + INSTANCE_PREFIX.len();
@@ -2880,26 +2968,82 @@ pub fn pattern_payload_references(
         (record.payload.get(at..at + INSTANCE_SUFFIX.len()) == Some(&INSTANCE_SUFFIX))
             .then_some(())?;
         Some(PatternPayloadReferenceField {
+            layout: PatternPayloadReferenceLayout::GeometryInstance,
             references: vec![reference],
         })
     };
-    let marker = match record.label.value {
-        "Pattern Feature" | "Pattern Geometry" => &[0x61][..],
-        "Geometry Instance" => &INSTANCE_PREFIX,
+    let matches = match record.label.value {
+        "Pattern Feature" | "Pattern Geometry" => (0..record.payload.len())
+            .filter_map(|start| match record.payload.get(start) {
+                Some(0x61) => decode_graph(start),
+                Some(0x3b) => decode_compact_graph(start),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        "Geometry Instance" => (0..=record.payload.len().saturating_sub(INSTANCE_PREFIX.len()))
+            .filter(|&start| {
+                record.payload.get(start..start + INSTANCE_PREFIX.len()) == Some(&INSTANCE_PREFIX)
+            })
+            .filter_map(decode_instance)
+            .collect::<Vec<_>>(),
         _ => return None,
     };
-    let matches = (0..=record.payload.len().saturating_sub(marker.len()))
-        .filter(|&start| record.payload.get(start..start + marker.len()) == Some(marker))
-        .filter_map(|start| match record.label.value {
-            "Pattern Feature" | "Pattern Geometry" => decode_graph(start),
-            "Geometry Instance" => decode_instance(start),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
     let [field] = matches.as_slice() else {
         return None;
     };
     Some(field.clone())
+}
+
+/// Decode the unique exactly terminated counted reference lane in a bounded
+/// `Pattern Feature` payload without assigning its reference roles.
+pub fn pattern_payload_counted_reference_lane(
+    record: OperationRecord<'_>,
+) -> Option<PatternPayloadCountedReferenceLane> {
+    const TRAILER: [u8; 19] = [
+        0x00, 0x00, 0x00, 0x37, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x38, 0xff, 0x01, 0xff, 0xff,
+        0xff, 0xff, 0x01, 0xff,
+    ];
+    if record.label.value != "Pattern Feature" {
+        return None;
+    }
+    let decode = |start: usize| {
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let reference_count = usize::from(declared_count - 1);
+        let references_start = start.checked_add(2)?;
+        cadmpeg_core::decode::bounded_len(
+            u64::from(declared_count - 1),
+            2,
+            record.payload.len().saturating_sub(references_start),
+        )?;
+        let mut at = references_start;
+        let mut references = Vec::with_capacity(reference_count);
+        for _ in 0..reference_count {
+            let offset = at;
+            let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+            at = at.checked_add(width)?;
+            references.push(PayloadObjectReference {
+                offset: record.payload_offset + offset,
+                object_index,
+                raw_object_index: record.payload[offset..at].to_vec(),
+            });
+        }
+        let trailer_end = at.checked_add(TRAILER.len())?;
+        (record.payload.get(at..trailer_end) == Some(&TRAILER)).then_some(())?;
+        Some(PatternPayloadCountedReferenceLane {
+            offset: record.payload_offset + start,
+            declared_count,
+            references,
+        })
+    };
+    let matches = (0..record.payload.len())
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
 }
 
 /// Decode the unique exactly bounded two-group reference graph in an `FSET`
@@ -5328,6 +5472,47 @@ pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationO
         });
     }
     relations
+}
+
+/// Decode every exact direct `01 02 17 index ff 80 00 00 02` field.
+///
+/// The fixed suffix separates this field from the nested object-relation
+/// frame, which uses the same opening marker and tag but has a different
+/// middle sequence. The parser retains no endpoint or operation role.
+pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<OperationTaggedReference> {
+    const PREFIX: &[u8] = &[0x01, 0x02, 0x17];
+    const SUFFIX: &[u8] = &[0xff, 0x80, 0x00, 0x00, 0x02];
+    let mut references = Vec::new();
+    for marker in record
+        .payload
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
+    {
+        let token = marker + PREFIX.len();
+        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+            continue;
+        };
+        let raw_object_index = &record.payload[token..end];
+        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
+            continue;
+        }
+        let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
+            continue;
+        };
+        if record.payload.get(end..suffix_end) != Some(SUFFIX) {
+            continue;
+        }
+        references.push(OperationTaggedReference {
+            offset: record.payload_offset + marker,
+            tag: 0x17,
+            object_index,
+            raw_object_index: raw_object_index.to_vec(),
+            object_index_offset: record.payload_offset + token,
+            end_offset: record.payload_offset + suffix_end,
+        });
+    }
+    references
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {

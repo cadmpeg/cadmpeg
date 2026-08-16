@@ -1761,6 +1761,10 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     };
     let field = super::pattern_payload_references(record).expect("complete graph");
     assert_eq!(
+        field.layout,
+        super::PatternPayloadReferenceLayout::CanonicalGraph
+    );
+    assert_eq!(
         field
             .references
             .iter()
@@ -1791,6 +1795,26 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
         ..record
     })
     .is_none());
+
+    let compact = b"\x3b\xf1\x1b\x20\xff\x00\x01\xf1\x1b\x21\xf1\x1b\x22\x3b\xf1\x1b\x23\xff\x00\x01\xf1\x1b\x24\xf1\x1b\x25\xff\x3c\xf1\x1b\x26\xf1\x1b\x27\xff\x00\x00\x01\xf1\x1b\x28\xff\xff\xff\x01";
+    let field = super::pattern_payload_references(super::OperationRecord {
+        bytes: compact,
+        payload: compact,
+        ..record
+    })
+    .expect("complete compact graph");
+    assert_eq!(
+        field.layout,
+        super::PatternPayloadReferenceLayout::CompactGraph
+    );
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        (0x1b20..=0x1b28).collect::<Vec<_>>()
+    );
 }
 
 #[test]
