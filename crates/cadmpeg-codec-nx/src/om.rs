@@ -1729,7 +1729,7 @@ pub struct DatumPlaneDescriptorBlock {
     pub label: String,
 }
 
-/// Exact scalar pair following a datum-coordinate-system discriminator.
+/// Exact scalar pair following an object or sketch discriminator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectPayloadScalarPair {
     /// Payload-relative offset of the discriminator.
@@ -4825,6 +4825,58 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
                 discriminator: discriminator.to_vec(),
             });
         }
+    }
+    pairs.sort_by_key(|pair| pair.offset);
+    pairs
+}
+
+/// Decode the repeated-type scalar-pair lane in a reconstructed sketch payload.
+pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
+    const FRAME_SUFFIX: [u8; 14] = [
+        0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    let mut pairs = object_payload_scalar_pairs(bytes);
+    for (offset, window) in bytes.windows(3).enumerate() {
+        let [type_code, repeated_type_code, 0x41] = window else {
+            continue;
+        };
+        if *type_code == 0 || type_code != repeated_type_code {
+            continue;
+        }
+        if offset == 0 || bytes.get(offset - 1) != Some(&0x00) {
+            continue;
+        }
+        let discriminator_len = 3 + FRAME_SUFFIX.len();
+        if bytes.get(offset + 3..offset + discriminator_len) != Some(&FRAME_SUFFIX) {
+            continue;
+        }
+        let first = offset + discriminator_len;
+        let second = first + 8;
+        let Some(raw_values) = bytes
+            .get(first..first + 8)
+            .and_then(|value| <[u8; 8]>::try_from(value).ok())
+            .zip(
+                bytes
+                    .get(second..second + 8)
+                    .and_then(|value| <[u8; 8]>::try_from(value).ok()),
+            )
+            .map(|(first, second)| [first, second])
+        else {
+            continue;
+        };
+        let Some(values) = shifted_ieee_f64(&raw_values[0])
+            .zip(shifted_ieee_f64(&raw_values[1]))
+            .map(|(first, second)| [first, second])
+        else {
+            continue;
+        };
+        pairs.push(ObjectPayloadScalarPair {
+            offset,
+            values,
+            raw_values,
+            value_offsets: [first, second],
+            discriminator: bytes[offset..offset + discriminator_len].to_vec(),
+        });
     }
     pairs.sort_by_key(|pair| pair.offset);
     pairs

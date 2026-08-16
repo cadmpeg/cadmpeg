@@ -384,7 +384,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `SKETCH` construction payload represent?
 
-**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is" and `siemens_nx.md` §7.1 "A sketch fixed pair has one of four exact forms:" define sketch record identity and the framed payload lanes but do not assign a model-space frame, sketch entity, or constraint role from equal scalar values.
+**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is", `siemens_nx.md` §7.1 "A sketch repeated-type scalar pair is", and `siemens_nx.md` §7.1 "A sketch fixed pair has one of four exact forms:" define sketch record identity and the framed payload lanes but do not assign a model-space frame, sketch entity, or constraint role from equal scalar values.
 
 **Need.** We must know the roles to construct neutral sketch geometry and constraints.
 

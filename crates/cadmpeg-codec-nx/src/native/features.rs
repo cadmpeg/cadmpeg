@@ -4944,7 +4944,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
         container,
         payloads,
         |payload| &payload.data_blocks,
-        crate::om::object_payload_scalar_pairs,
+        crate::om::sketch_payload_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadCoordinatePair {
                 id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),

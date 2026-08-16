@@ -8,4 +8,5 @@ pub(crate) use super::*;
 mod index_and_lanes;
 mod instances_and_stores;
 mod pattern_lanes;
+mod sketch_payload;
 mod tagged_references;
