@@ -146,6 +146,7 @@ impl<'a> Lexer<'a> {
         let start = self.at;
         let name_len = b"ENDSEC".len();
         let mut at = start;
+        let mut boundary_allowed = true;
         while at + name_len <= self.input.len() {
             if self.input.get(at..at + 2) == Some(b"/*") {
                 let comment_start = at;
@@ -154,18 +155,29 @@ impl<'a> Lexer<'a> {
                     return Err(Self::error(comment_start, "unterminated comment"));
                 };
                 at += end + 2;
+                boundary_allowed = true;
+                continue;
+            }
+            if let Some(end) = self.print_control_end(at) {
+                at = end;
+                boundary_allowed = true;
+                continue;
+            }
+            if self
+                .input
+                .get(at)
+                .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
+            {
+                at += 1;
+                boundary_allowed = true;
                 continue;
             }
             let candidate = at;
             let Some(mut after_name) = self.match_ignoring_controls(candidate, b"ENDSEC") else {
                 at += 1;
+                boundary_allowed = false;
                 continue;
             };
-            let preceded_by_separator = candidate == start
-                || self.input[..candidate]
-                    .last()
-                    .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
-                || self.input[..candidate].ends_with(b"*/");
             while self
                 .input
                 .get(after_name)
@@ -173,12 +185,13 @@ impl<'a> Lexer<'a> {
             {
                 after_name += 1;
             }
-            if preceded_by_separator && self.input.get(after_name) == Some(&b';') {
+            if boundary_allowed && self.input.get(after_name) == Some(&b';') {
                 self.validate_signature_payload(start, candidate)?;
                 self.at = candidate;
                 return Ok(());
             }
             at += 1;
+            boundary_allowed = false;
         }
         Err(Self::error(start, "unterminated signature section"))
     }
@@ -188,9 +201,48 @@ impl<'a> Lexer<'a> {
         let mut padding = 0;
         let mut finished = false;
         let mut saw_content = false;
-        for (relative, &byte) in self.input[start..end].iter().enumerate() {
-            if byte.is_ascii_control() || byte == b' ' {
+        let mut trailing_separator = false;
+        let mut relative = 0;
+        while relative < end - start {
+            let byte = self.input[start + relative];
+            if byte.is_ascii_control() {
+                relative += 1;
                 continue;
+            }
+            if byte == b' ' {
+                trailing_separator |= saw_content;
+                relative += 1;
+                continue;
+            }
+            if let Some(separator_end) = self.print_control_end(start + relative) {
+                if separator_end > end {
+                    return Err(Self::error(
+                        start + relative,
+                        "invalid SIGNATURE base64 character",
+                    ));
+                }
+                trailing_separator |= saw_content;
+                relative = separator_end - start;
+                continue;
+            }
+            if self.input.get(start + relative..start + relative + 2) == Some(b"/*") {
+                let comment_start = start + relative;
+                let comment_body = comment_start + 2;
+                let Some(comment_end) = self.input[comment_body..end]
+                    .windows(2)
+                    .position(|window| window == b"*/")
+                else {
+                    return Err(Self::error(comment_start, "unterminated comment"));
+                };
+                trailing_separator |= saw_content;
+                relative = comment_body + comment_end + 2 - start;
+                continue;
+            }
+            if trailing_separator {
+                return Err(Self::error(
+                    start + relative,
+                    "invalid SIGNATURE base64 character",
+                ));
             }
             saw_content = true;
             let is_alphabet = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
@@ -222,6 +274,7 @@ impl<'a> Lexer<'a> {
                 quantum_len = 0;
                 padding = 0;
             }
+            relative += 1;
         }
         if !saw_content {
             return Err(Self::error(

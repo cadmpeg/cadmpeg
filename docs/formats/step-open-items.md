@@ -858,23 +858,6 @@ bytes produce a metadata loss.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### EL-04. Signature section boundary
-
-**Question.** What STEP rule establishes signature section boundary?
-
-**Known.** Signature sections follow `END-ISO-10303-21;`. Each section
-starts with `SIGNATURE;` and ends at its own token `ENDSEC;`. The decoder
-retains every complete section range in source order.
-
-`step.md` §2 and §7 define the post-terminator placement and the
-base64 content. The lexer finds the first token-boundary `ENDSEC;` after each
-`SIGNATURE;`; it does not search for the exchange terminator or merge adjacent
-signature sections.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### EL-05. Schema identifier interpretation
 
 **Question.** What STEP rule establishes schema identifier interpretation?

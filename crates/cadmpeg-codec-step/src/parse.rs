@@ -1890,11 +1890,32 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
 }
 
 fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
-    let compact = input[payload.clone()]
-        .iter()
-        .copied()
-        .filter(|byte| !byte.is_ascii_control() && *byte != b' ')
-        .collect::<Vec<_>>();
+    let mut compact = Vec::with_capacity(payload.len());
+    let mut at = payload.start;
+    while at < payload.end {
+        if input[at].is_ascii_control() || input[at] == b' ' {
+            at += 1;
+            continue;
+        }
+        if let Some(end) = crate::lex::print_control_end(input, at) {
+            if end <= payload.end {
+                at = end;
+                continue;
+            }
+        }
+        if input.get(at..at + 2) == Some(b"/*") {
+            let body = at + 2;
+            if let Some(end) = input[body..payload.end]
+                .windows(2)
+                .position(|window| window == b"*/")
+            {
+                at = body + end + 2;
+                continue;
+            }
+        }
+        compact.push(input[at]);
+        at += 1;
+    }
     let cms = STANDARD
         .decode(compact)
         .map_err(|error| ParseError::Syntax {

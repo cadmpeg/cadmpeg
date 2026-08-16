@@ -75,6 +75,50 @@ fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
 }
 
 #[test]
+fn parser_accepts_signature_edge_separators_and_keeps_each_boundary() {
+    let payload = "MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=";
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;/* decoy ENDSEC; */\\N\\{payload}\\F\\/* trailing ENDSEC; */EN\nDSEC;SIGNATURE;\\F\\{payload}\\N\\ENDSEC;"
+    );
+    let (exchange, diagnostics) = crate::parse::parse(source.as_bytes()).expect("edge separators");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.signature_sections.len(), 2);
+    assert_eq!(exchange.signatures.len(), 2);
+    assert!(source.as_bytes()[exchange.signatures[0].clone()].ends_with(b"DSEC;"));
+    assert!(source.as_bytes()[exchange.signatures[0].clone()]
+        .windows(b"EN\nDSEC;".len())
+        .any(|bytes| bytes == b"EN\nDSEC;"));
+    assert!(source.as_bytes()[exchange.signatures[1].clone()].ends_with(b"ENDSEC;"));
+    assert_eq!(
+        exchange.signature_sections[0].signed.end,
+        exchange.signatures[0].start
+    );
+    assert_eq!(
+        exchange.signature_sections[1].signed.end,
+        exchange.signatures[1].start
+    );
+    assert_eq!(exchange.signatures[1].start, exchange.signatures[0].end);
+    assert_eq!(exchange.signature_sections[0].cms.len(), 92);
+    assert_eq!(exchange.signature_sections[1].cms.len(), 92);
+}
+
+#[test]
+fn parser_does_not_treat_unseparated_endsec_text_as_a_signature_boundary() {
+    let payload = "MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=";
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}ENDSEC;AAAA\nENDSEC;"
+    );
+    let error = crate::parse::parse(source.as_bytes()).expect_err("unseparated ENDSEC text");
+
+    assert!(matches!(
+        error,
+        crate::parse::ParseError::Lex(crate::lex::LexError { message, .. })
+            if message == "invalid SIGNATURE base64 padding"
+    ));
+}
+
+#[test]
 fn parser_exposes_the_detached_signature_contract() {
     let source = b" /* leading trivia */ ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signature contract");
@@ -113,6 +157,7 @@ fn parser_rejects_invalid_signature_base64() {
         ("YWJjZA==!", "invalid SIGNATURE base64 padding"),
         ("YWJjZA==AAAA", "invalid SIGNATURE base64 padding"),
         ("YWJjZA=", "SIGNATURE base64 content has incomplete quantum"),
+        ("YWJj ZA==", "invalid SIGNATURE base64 character"),
     ] {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}\nENDSEC;"
