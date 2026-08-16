@@ -410,6 +410,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         extension_items: Vec::new(),
         embedded_linetype: None,
         embedded_section_style: None,
+        per_viewport_settings: Vec::new(),
     };
     let mut duplicate_layer = layer.clone();
     duplicate_layer.name = "Later layer".to_string();

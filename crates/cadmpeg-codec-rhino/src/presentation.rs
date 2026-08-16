@@ -388,6 +388,17 @@ struct RenderingMaterialReference {
 }
 
 #[derive(Debug, Serialize)]
+struct LayerPerViewportPresentationRecord {
+    viewport_uuid: String,
+    settings_mask: u32,
+    color: Option<[u8; 4]>,
+    plot_color: Option<[u8; 4]>,
+    plot_weight_mm: Option<f64>,
+    visible: Option<u8>,
+    persistent_visibility: Option<u8>,
+}
+
+#[derive(Debug, Serialize)]
 struct LayerPresentationRecord {
     id: String,
     source_offset: u64,
@@ -406,6 +417,8 @@ struct LayerPresentationRecord {
     display_material_uuid: Option<String>,
     clipping_planes_enabled: Option<bool>,
     rendering_materials: Vec<RenderingMaterialReference>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    per_viewport_settings: Vec<LayerPerViewportPresentationRecord>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3001,6 +3014,19 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 .map(|id| id.to_string()),
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
             rendering_materials,
+            per_viewport_settings: layer
+                .per_viewport_settings
+                .iter()
+                .map(|settings| LayerPerViewportPresentationRecord {
+                    viewport_uuid: settings.viewport_id.to_string(),
+                    settings_mask: settings.settings_mask,
+                    color: settings.color,
+                    plot_color: settings.plot_color,
+                    plot_weight_mm: settings.plot_weight_mm,
+                    visible: settings.visible,
+                    persistent_visibility: settings.persistent_visibility,
+                })
+                .collect(),
         });
     }
     let mut group_index_counts = BTreeMap::<i32, usize>::new();

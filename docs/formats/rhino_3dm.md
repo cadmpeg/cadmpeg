@@ -1287,6 +1287,53 @@ class-data boundary remain untyped. Bytes after item zero are bounded suffix
 bytes, not another extension item. Layer visibility and lock state are
 independent.
 
+#### 8.3.1 Layer per-viewport userdata
+
+`ON__LayerExtensions` is class-owned userdata on `ON_Layer`. Its class UUID and
+item UUID are `3E4904E6-E930-4FBC-AA42-EBD407AEFE3B`; its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`. Its payload is the outer anonymous
+userdata child from section 7.2:
+
+```text
+anonymous version 1.0
+i32 per-viewport entry count
+count × anonymous per-viewport entry
+```
+
+The source writer emits each entry as anonymous version 1.2:
+
+```text
+u32 settings mask
+if mask & 1:  ON_UUID viewport ID
+if mask & 2:  ON_Color per-viewport layer color
+if mask & 4:  ON_Color per-viewport plot color
+if mask & 8:  f64 per-viewport plot weight in millimeters
+if mask & 16: u8 visible (`1` on, `2` off)
+if entry minor >= 1 and mask & 16: u8 compatibility visible value
+if entry minor >= 2 and mask & 32: u8 persistent visibility (`1` or `2`)
+```
+
+The fixed mask values are viewport ID `1`, layer color `2`, plot color `4`,
+plot weight `8`, visible `16`, and persistent visibility `32`. A source entry
+has an effective mask only when its viewport ID is non-nil and at least one
+override is effective. `ON_UNSET_COLOR` means use the layer color or plot
+color. A plot weight is effective for a finite value `>= 0.0` or `-1.0`;
+`0.0` selects the application default pen and `-1.0` suppresses plotting.
+The first visible byte is the effective visibility. Minor 1 writes that byte
+twice so a minor-0 reader can consume the first value; the minor-1 reader
+consumes the second as its compatibility persistent value. Minor 2 adds the
+explicit persistent-visibility byte. A root layer clears persistent
+visibility after reading an entry. Entries with no effective mask are removed,
+and the reader sorts the remaining entries by viewport ID, effective mask,
+visible value, persistent-visibility value, color, plot color, and plot weight.
+An empty extension is not archived.
+
+CADIR stores the source-normalized entries in the owning layer's
+`per_viewport_settings` array with the viewport UUID, effective mask, RGBA
+colors, plot weight, and raw visibility values. A malformed recognized payload
+is omitted from that typed array while the layer record is retained with a
+decode diagnostic.
+
 The archive layer index is the object-reference key. If two layer records use
 one archive index, component registration keeps the original index on the
 first record and assigns a distinct unused index to each later record.

@@ -626,6 +626,94 @@ fn rendering_attributes_accept_layer_future_minor_suffix() {
 }
 
 #[test]
+fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
+    let archive = ArchiveVersion::V8;
+    let first_viewport = Uuid::from_canonical([
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+        0x1f,
+    ]);
+    let second_viewport = Uuid::from_canonical([
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e,
+        0x2f,
+    ]);
+    let mut full_entry = 63_u32.to_le_bytes().to_vec();
+    full_entry.extend(second_viewport.to_wire());
+    full_entry.extend([10, 20, 30, 40]);
+    full_entry.extend([50, 60, 70, 80]);
+    full_entry.extend(1.25_f64.to_le_bytes());
+    full_entry.extend([2, 2, 2]);
+    full_entry.extend([0xde, 0xad]);
+    let mut color_entry = 3_u32.to_le_bytes().to_vec();
+    color_entry.extend(first_viewport.to_wire());
+    color_entry.extend([90, 100, 110, 120]);
+    let entries = [
+        anonymous_chunk(archive, 2, &full_entry),
+        anonymous_chunk(archive, 2, &color_entry),
+    ]
+    .concat();
+    let mut outer_body = 2_i32.to_le_bytes().to_vec();
+    outer_body.extend(entries);
+    outer_body.extend([0xbe, 0xef]);
+    let payload = anonymous_chunk(archive, 0, &outer_body);
+    let descriptor = crate::objects::UserdataDescriptor {
+        range: 0..payload.len(),
+        version: (2, 2),
+        class_uuid: settings::LAYER_EXTENSIONS,
+        item_uuid: settings::LAYER_EXTENSIONS,
+        copy_count: 1,
+        transform_range: 0..0,
+        application_uuid: None,
+        last_saved_as_goo: None,
+        archive_version: None,
+        writer_version: None,
+        payload_range: 0..payload.len(),
+        unknown_version: false,
+    };
+    let values = settings::parse_layer_extensions(
+        &payload,
+        &descriptor,
+        archive,
+        Some(Uuid::from_canonical([1; 16])),
+    )
+    .expect("layer extensions payload");
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0].viewport_id, first_viewport);
+    assert_eq!(values[0].settings_mask, 3);
+    assert_eq!(values[0].color, Some([90, 100, 110, 120]));
+    assert_eq!(values[1].viewport_id, second_viewport);
+    assert_eq!(values[1].settings_mask, 63);
+    assert_eq!(values[1].plot_weight_mm, Some(1.25));
+    assert_eq!(values[1].visible, Some(2));
+    assert_eq!(values[1].persistent_visibility, Some(2));
+
+    let root_values = settings::parse_layer_extensions(&payload, &descriptor, archive, None)
+        .expect("root layer extensions payload");
+    assert_eq!(root_values[1].settings_mask, 31);
+    assert_eq!(root_values[1].persistent_visibility, None);
+}
+
+#[test]
+fn layer_extensions_reject_negative_count() {
+    let archive = ArchiveVersion::V8;
+    let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
+    let descriptor = crate::objects::UserdataDescriptor {
+        range: 0..payload.len(),
+        version: (2, 2),
+        class_uuid: settings::LAYER_EXTENSIONS,
+        item_uuid: settings::LAYER_EXTENSIONS,
+        copy_count: 1,
+        transform_range: 0..0,
+        application_uuid: None,
+        last_saved_as_goo: None,
+        archive_version: None,
+        writer_version: None,
+        payload_range: 0..payload.len(),
+        unknown_version: false,
+    };
+    assert!(settings::parse_layer_extensions(&payload, &descriptor, archive, None).is_err());
+}
+
+#[test]
 fn rendering_attributes_parse_object_mapping_and_future_suffix() {
     let mut channel_body = 7_i32.to_le_bytes().to_vec();
     channel_body.extend(uuid_bytes());
@@ -863,6 +951,7 @@ fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() 
         extension_items: Vec::new(),
         embedded_linetype: None,
         embedded_section_style: None,
+        per_viewport_settings: Vec::new(),
     };
     let mut layers = vec![layer(7), layer(7), layer(9), layer(9)];
     let mut warnings = Vec::new();

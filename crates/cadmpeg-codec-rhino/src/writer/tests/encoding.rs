@@ -101,3 +101,56 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
     assert!(error.to_string().contains("survival handling"));
     assert_eq!(output, [0xaa]);
 }
+
+#[test]
+fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
+    let mut source = CadIr::empty(Units::default());
+    source.model.points.push(Point {
+        id: PointId("cadir:model:point#layer-settings".into()),
+        position: Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
+    });
+    let mut bytes = Vec::new();
+    RhinoEncoder::new(RhinoArchiveVersion::V8)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("required invariant");
+    let mut decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("required invariant");
+    {
+        let mut ir = decoded.ir_mut();
+        let records = ir
+            .native
+            .namespace_mut("rhino")
+            .arenas
+            .get_mut("layers")
+            .expect("decoded layer presentation");
+        let original = records.first().expect("decoded layer presentation record");
+        let id = original.id().to_string();
+        let mut fields = original.fields();
+        fields.insert(
+            "per_viewport_settings".into(),
+            serde_json::json!([{
+                "viewport_uuid": "01020304-0506-0708-090a-0b0c0d0e0f10",
+                "settings_mask": 3,
+                "color": [10, 20, 30, 40]
+            }]),
+        );
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+    }
+
+    let mut output = vec![0xaa];
+    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: decoded.ir(),
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("layer metadata must not be discarded");
+    assert!(error.to_string().contains("survival handling"));
+    assert_eq!(output, [0xaa]);
+}

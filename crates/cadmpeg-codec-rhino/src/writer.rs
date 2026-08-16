@@ -853,6 +853,7 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_bool(&fields, "visible") == Some(true)
         && json_bool(&fields, "locked") == Some(false)
         && json_array_empty(&fields, "rendering_materials")
+        && json_array_empty_or_missing(&fields, "per_viewport_settings")
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {

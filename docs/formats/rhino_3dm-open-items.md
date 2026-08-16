@@ -155,14 +155,20 @@ item UUID is `CE28DE29-F4C5-4FAA-A50A-C3A6849B6329`, its application UUID is
 list and entry chunks. The decoder keeps geometry and object-attributes
 user-string lists as separate ordered native arrays and applies the source
 `$temp_object$` cleanup only to the attributes list.
+The built-in `ON__LayerExtensions` class userdata is also settled. Its class
+and item UUID is `3E4904E6-E930-4FBC-AA42-EBD407AEFE3B`, its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 8.3.1 defines its bounded
+per-viewport entry grammar, fixed settings mask, compatibility visibility byte,
+root-layer persistent-visibility rule, and source sort order. The decoder
+stores the normalized entries under the owning layer.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
 built-in hatch gradient userdata, the V5 dimension-style extra, and
-`ON_UserStringList` are settled; other future class-specific payload semantics
-remain open.
+`ON_UserStringList` and `ON__LayerExtensions` are settled; other future
+class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 

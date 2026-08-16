@@ -6,9 +6,9 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::View;
 
-use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record, Table};
-use crate::objects::{parse_class_wrapper, read_uuid_list};
+use crate::objects::{parse_class_wrapper_with_userdata, read_uuid_list, UserdataDescriptor};
 use crate::wire::Uuid;
 
 const MAX_STRING_BYTES: usize = 1 << 20;
@@ -41,6 +41,15 @@ const ON_LAYER_UUID: Uuid = Uuid::from_canonical([
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
+pub(crate) const LAYER_EXTENSIONS: Uuid = Uuid::from_canonical([
+    0x3e, 0x49, 0x04, 0xe6, 0xe9, 0x30, 0x4f, 0xbc, 0xaa, 0x42, 0xeb, 0xd4, 0x07, 0xae, 0xfe, 0x3b,
+]);
+const LAYER_PER_VIEWPORT_ID: u32 = 1;
+const LAYER_PER_VIEWPORT_COLOR: u32 = 2;
+const LAYER_PER_VIEWPORT_PLOT_COLOR: u32 = 4;
+const LAYER_PER_VIEWPORT_PLOT_WEIGHT: u32 = 8;
+const LAYER_PER_VIEWPORT_VISIBLE: u32 = 16;
+const LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY: u32 = 32;
 
 /// A source range in the original archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -534,6 +543,27 @@ pub(crate) struct LayerRecord {
     pub(crate) embedded_linetype: Option<EmbeddedDescriptor>,
     /// Direct embedded section-style descriptor.
     pub(crate) embedded_section_style: Option<EmbeddedDescriptor>,
+    /// Per-viewport layer overrides from class-owned userdata.
+    pub(crate) per_viewport_settings: Vec<LayerPerViewportSettings>,
+}
+
+/// A source-normalized per-viewport layer override.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LayerPerViewportSettings {
+    /// Viewport identity selected by the source entry.
+    pub(crate) viewport_id: Uuid,
+    /// Effective source settings mask after source defaults and validation.
+    pub(crate) settings_mask: u32,
+    /// Per-viewport layer color, if effective.
+    pub(crate) color: Option<[u8; 4]>,
+    /// Per-viewport plot color, if effective.
+    pub(crate) plot_color: Option<[u8; 4]>,
+    /// Per-viewport plot weight in millimeters, if effective.
+    pub(crate) plot_weight_mm: Option<f64>,
+    /// Raw source visibility value, 1 for visible and 2 for off.
+    pub(crate) visible: Option<u8>,
+    /// Raw source persistent-visibility value, 1 or 2, for child layers.
+    pub(crate) persistent_visibility: Option<u8>,
 }
 
 /// A bounded direct object payload embedded in a layer extension.
@@ -706,6 +736,188 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 
 fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
     Ok(reader.take(4)?.try_into().expect("length checked"))
+}
+
+fn parse_layer_extensions(
+    data: &[u8],
+    descriptor: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    parent_id: Option<Uuid>,
+) -> Result<Vec<LayerPerViewportSettings>, FramingError> {
+    let outer = chunk_at(
+        data,
+        descriptor.payload_range.start,
+        descriptor.payload_range.end,
+        archive,
+        false,
+    )?;
+    if outer.short || outer.typecode != ANONYMOUS {
+        return Err(FramingError::structural(
+            outer.header_start,
+            "layer extensions payload is not a long anonymous chunk",
+        ));
+    }
+    let mut outer_reader = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let major = outer_reader.i32()?;
+    let minor = outer_reader.i32()?;
+    if major != 1 || minor < 0 {
+        return Err(FramingError::structural(
+            outer.body.start,
+            "layer extensions version is unsupported",
+        ));
+    }
+    let count = outer_reader.i32()?;
+    let count = checked_count_bytes(
+        count,
+        1,
+        outer_reader.remaining(),
+        MAX_ARRAY_ITEMS,
+        outer_reader.position(),
+    )?;
+    let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let entry = chunk_at(
+            data,
+            outer_reader.position(),
+            outer.body.end,
+            archive,
+            false,
+        )?;
+        if entry.short || entry.typecode != ANONYMOUS {
+            return Err(FramingError::structural(
+                entry.header_start,
+                "layer extensions entry is not a long anonymous chunk",
+            ));
+        }
+        let mut entry_reader = BoundedReader::new(data, entry.body.start, entry.body.end)?;
+        let entry_major = entry_reader.i32()?;
+        let entry_minor = entry_reader.i32()?;
+        if entry_major != 1 || entry_minor < 0 {
+            return Err(FramingError::structural(
+                entry.body.start,
+                "layer extensions entry version is unsupported",
+            ));
+        }
+        let bits = entry_reader.u32()?;
+        let viewport_id = if bits & LAYER_PER_VIEWPORT_ID != 0 {
+            uuid(&mut entry_reader)?
+        } else {
+            Uuid::nil()
+        };
+        let color_value = if bits & LAYER_PER_VIEWPORT_COLOR != 0 {
+            Some(color(&mut entry_reader)?)
+        } else {
+            None
+        };
+        let plot_color_value = if bits & LAYER_PER_VIEWPORT_PLOT_COLOR != 0 {
+            Some(color(&mut entry_reader)?)
+        } else {
+            None
+        };
+        let plot_weight_value = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
+            Some(entry_reader.f64()?)
+        } else {
+            None
+        };
+        let (visible_value, compatibility_visible) = if bits & LAYER_PER_VIEWPORT_VISIBLE != 0 {
+            let value = entry_reader.u8()?;
+            let compatibility_value = (entry_minor >= 1).then(|| entry_reader.u8()).transpose()?;
+            (Some(value), compatibility_value)
+        } else {
+            (None, None)
+        };
+        let persistent_value =
+            if entry_minor >= 2 && bits & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0 {
+                Some(entry_reader.u8()?)
+            } else {
+                compatibility_visible
+            };
+        entry_reader.skip_remaining()?;
+
+        let color = color_value.filter(|value| *value != [u8::MAX; 4]);
+        let plot_color = plot_color_value.filter(|value| *value != [u8::MAX; 4]);
+        let plot_weight_mm = plot_weight_value
+            .filter(|value| value.is_finite() && (*value >= 0.0 || *value == -1.0));
+        let visible = visible_value.filter(|value| matches!(value, 1 | 2));
+        let persistent_visibility = if parent_is_nil {
+            None
+        } else {
+            persistent_value.filter(|value| matches!(value, 1 | 2))
+        };
+        let mut settings_mask = 0;
+        if !viewport_id.is_nil() {
+            if color.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_COLOR;
+            }
+            if plot_color.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_PLOT_COLOR;
+            }
+            if plot_weight_mm.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_PLOT_WEIGHT;
+            }
+            if visible.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_VISIBLE;
+            }
+            if persistent_visibility.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY;
+            }
+        }
+        if settings_mask != 0 {
+            values.push(LayerPerViewportSettings {
+                viewport_id,
+                settings_mask: settings_mask | LAYER_PER_VIEWPORT_ID,
+                color,
+                plot_color,
+                plot_weight_mm,
+                visible,
+                persistent_visibility,
+            });
+        }
+        outer_reader.skip(entry.next_offset - outer_reader.position())?;
+    }
+    outer_reader.skip_remaining()?;
+    values.sort_by(|a, b| {
+        let mut ordering = a.viewport_id.cmp(&b.viewport_id);
+        if ordering == std::cmp::Ordering::Equal {
+            ordering = a.settings_mask.cmp(&b.settings_mask);
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_VISIBLE != 0
+        {
+            ordering = a.visible.cmp(&b.visible);
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0
+        {
+            ordering = a.persistent_visibility.cmp(&b.persistent_visibility);
+        }
+        if ordering == std::cmp::Ordering::Equal && a.settings_mask & LAYER_PER_VIEWPORT_COLOR != 0
+        {
+            ordering = a
+                .color
+                .map(u32::from_le_bytes)
+                .cmp(&b.color.map(u32::from_le_bytes));
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_PLOT_COLOR != 0
+        {
+            ordering = a
+                .plot_color
+                .map(u32::from_le_bytes)
+                .cmp(&b.plot_color.map(u32::from_le_bytes));
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0
+        {
+            ordering = a
+                .plot_weight_mm
+                .expect("plot weight mask has a value")
+                .total_cmp(&b.plot_weight_mm.expect("plot weight mask has a value"));
+        }
+        ordering
+    });
+    Ok(values)
 }
 
 fn packed(reader: &mut BoundedReader<'_>) -> Result<(u8, u8), FramingError> {
@@ -1869,7 +2081,8 @@ fn parse_layer(
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
 ) -> Result<LayerRecord, FramingError> {
-    let class = parse_class_wrapper(data, record.body.clone(), archive, warnings)?;
+    let (class, userdata) =
+        parse_class_wrapper_with_userdata(data, record.body.clone(), archive, warnings)?;
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
@@ -1985,7 +2198,19 @@ fn parse_layer(
         extension_items: Vec::new(),
         embedded_linetype: None,
         embedded_section_style: None,
+        per_viewport_settings: Vec::new(),
     };
+    if let Some(descriptor) = userdata.iter().find(|descriptor| {
+        descriptor.class_uuid == LAYER_EXTENSIONS && descriptor.item_uuid == LAYER_EXTENSIONS
+    }) {
+        match parse_layer_extensions(data, descriptor, archive, layer.parent_id) {
+            Ok(settings) => layer.per_viewport_settings = settings,
+            Err(error) => warnings.push(format!(
+                "layer per-viewport userdata at offset {} could not be transferred: {error}",
+                descriptor.range.start
+            )),
+        }
+    }
     if version.1 >= 10 {
         let mut terminated = false;
         while reader.remaining() > 0 {
