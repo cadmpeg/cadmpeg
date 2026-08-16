@@ -811,7 +811,10 @@ f64 meters per unit                       version >= 102
 UTF-16 custom unit name                   version >= 102
 ```
 
-Defined structure versions are 100, 101, and 102. Unit values are:
+The writer emits structure version 102. The reader accepts every structure
+version from 100 through 199; fields introduced at versions 101 and 102 are
+present when their gates are met, and later bytes remain within the containing
+`TCODE_SETTINGS_UNITSANDTOLS` record boundary. Unit values are:
 
 | Value | Unit               |
 | ----: | ------------------ |

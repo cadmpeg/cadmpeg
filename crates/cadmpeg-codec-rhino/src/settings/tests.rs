@@ -91,6 +91,27 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
 }
 
 #[test]
+fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
+    let mut body = Vec::new();
+    body.extend(103_i32.to_le_bytes());
+    body.extend(8_i32.to_le_bytes());
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(0.01_f64.to_le_bytes());
+    body.extend(0.001_f64.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(6_i32.to_le_bytes());
+    body.extend(0.0254_f64.to_le_bytes());
+    body.extend(0_u32.to_le_bytes());
+    body.extend([0xde, 0xad]);
+    let (data, record) = metadata_record(0x2000_8031, body);
+    let units = settings::parse_units(&data, &record).expect("future units version");
+    assert_eq!(units.version, 103);
+    assert_eq!(units.unit, settings::UnitSystem::Standard(8));
+    assert_eq!(units.distance_display_precision, Some(6));
+    assert_eq!(units.millimeters_per_unit, Some(25.4));
+}
+
+#[test]
 fn rejects_invalid_unit_tolerances_and_trailing_bytes() {
     let mut body = Vec::new();
     body.extend(102_i32.to_le_bytes());

@@ -617,7 +617,7 @@ pub(crate) fn parse_units(
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = reader.i32()?;
     let legacy = version == 1;
-    if !legacy && !(100..=102).contains(&version) {
+    if !legacy && !(100..200).contains(&version) {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported units structure version",
