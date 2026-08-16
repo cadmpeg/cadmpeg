@@ -328,6 +328,14 @@ fields, defaults, and closest-point-mapping use. The codec consumes their
 bounded wrappers, retains the containing source record, and does not invent
 native mapping-mesh or render-mesh cache fields. This is the CADIR decision for
 recomputable mesh correspondence state.
+The built-in `ON_OBSOLETE_V5_DimExtra` carrier is settled in section 18.1. Its
+V5 application UUID, class-owned anonymous version-1 payload, V5 conversion
+path, minor-gated distance-scale and detail fields, and CADIR mapping are
+specified for legacy linear, radial, and ordinate dimensions. The built-in
+`ON_OBSOLETE_V5_HatchExtra` carrier is settled in section 18.2. Its V5
+application UUID, class-owned anonymous version-1 payload, archive-50 write
+gate, inline-basepoint split, read-side basepoint application, and consumed
+userdata rule are specified.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -335,7 +343,8 @@ for each version that is to be typed, including its fields and loss mapping.
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
 built-in hatch gradient userdata, the V5 dimension-style extra, and
 `ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`,
-`ON_OBSOLETE_V5_TextExtra`, `ON_V5_MeshDoubleVertices`,
+`ON_OBSOLETE_V5_TextExtra`, `ON_OBSOLETE_V5_DimExtra`,
+`ON_OBSOLETE_V5_HatchExtra`, `ON_V5_MeshDoubleVertices`,
 `ON_V4V5_MeshNgonUserData`, `ON_V5_BrepRegionTopologyUserData`, and
 `ON_SubDMeshProxyUserData`, and `ON_OBSOLETE_IDefAlternativePathUserData` are
 settled, including the Brep, extrusion, history, top-level SubD proxy, and

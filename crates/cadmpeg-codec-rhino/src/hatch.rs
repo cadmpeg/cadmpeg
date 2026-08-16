@@ -279,7 +279,7 @@ pub(crate) fn apply_userdata(
         .iter()
         .filter(|value| value.class_uuid == V5_HATCH_EXTRA)
     {
-        match parse_userdata(data, extra, scale) {
+        match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
             Err(error) => {
                 first_error.get_or_insert(error);
@@ -461,16 +461,28 @@ pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
 fn parse_userdata(
     data: &[u8],
     extra: &UserdataDescriptor,
+    archive: ArchiveVersion,
     scale: f64,
 ) -> Result<[f64; 2], GeometryError> {
-    let mut reader = crate::chunks::BoundedReader::new(
+    let payload = chunk_at(
         data,
         extra.payload_range.start,
         extra.payload_range.end,
+        archive,
+        false,
     )?;
-    if reader.i32()? != 1 || reader.i32()? < 0 {
+    if payload.typecode != ANONYMOUS || payload.short {
         return Err(GeometryError::malformed(
-            reader.position() - 8,
+            payload.header_start,
+            "V5 hatch userdata payload is not an anonymous chunk",
+        ));
+    }
+    let mut reader = crate::chunks::BoundedReader::new(data, payload.body.start, payload.body.end)?;
+    let major = reader.i32()?;
+    let minor = reader.i32()?;
+    if major != 1 || minor < 0 {
+        return Err(GeometryError::malformed(
+            payload.body.start,
             "unsupported V5 hatch-extra version",
         ));
     }
@@ -581,16 +593,17 @@ pub(crate) mod tests {
         crate::decode::with_expand_bytes(&payload, |expand| {
             let mut hatch =
                 decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
-            let mut extra = 1_i32.to_le_bytes().to_vec();
-            extra.extend(0_i32.to_le_bytes());
-            extra.extend([0; 16]);
-            extra.extend(2.0_f64.to_le_bytes());
-            extra.extend(3.0_f64.to_le_bytes());
+            let mut body = Vec::new();
+            body.extend([0; 16]);
+            body.extend(2.0_f64.to_le_bytes());
+            body.extend(3.0_f64.to_le_bytes());
+            let extra =
+                crate::test_support::test_dump::anonymous_chunk(ArchiveVersion::V5, 0, &body);
             let descriptor = UserdataDescriptor {
                 range: 0..extra.len(),
-                version: (2, 3),
+                version: (2, 2),
                 class_uuid: V5_HATCH_EXTRA,
-                item_uuid: Uuid::nil(),
+                item_uuid: V5_HATCH_EXTRA,
                 copy_count: 0,
                 transform_range: 0..0,
                 application_uuid: None,
@@ -604,17 +617,21 @@ pub(crate) mod tests {
                 &extra,
                 std::slice::from_ref(&descriptor),
                 10.0,
-                ArchiveVersion::V8,
+                ArchiveVersion::V5,
                 &mut hatch,
             )
             .expect("hatch extra");
             assert_eq!(hatch.basepoint, [20.0, 30.0]);
 
-            let mut second = 1_i32.to_le_bytes().to_vec();
-            second.extend(0_i32.to_le_bytes());
-            second.extend([0; 16]);
-            second.extend(4.0_f64.to_le_bytes());
-            second.extend(5.0_f64.to_le_bytes());
+            let mut second_body = Vec::new();
+            second_body.extend([0; 16]);
+            second_body.extend(4.0_f64.to_le_bytes());
+            second_body.extend(5.0_f64.to_le_bytes());
+            let second = crate::test_support::test_dump::anonymous_chunk(
+                ArchiveVersion::V5,
+                0,
+                &second_body,
+            );
             let second_start = extra.len();
             let mut combined = extra.clone();
             combined.extend(second);
@@ -625,7 +642,7 @@ pub(crate) mod tests {
                 &combined,
                 &[descriptor, second_descriptor],
                 10.0,
-                ArchiveVersion::V8,
+                ArchiveVersion::V5,
                 &mut hatch,
             )
             .expect("duplicate hatch extensions");

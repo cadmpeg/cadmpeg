@@ -3636,12 +3636,15 @@ leader-displacement inference rule as a modern unset direction. The plane
 origin is the ordinate reference and measurement is the absolute selected
 definition-point coordinate.
 
-Legacy dimensions may carry userdata class
-`8AD5B9FC-0D5C-47FB-ADFD-74C28B6F661E`. Its anonymous version 1.0 through 1.2
-payload is:
+Legacy linear, radial, and ordinate dimensions may carry userdata class and
+item UUID `8AD5B9FC-0D5C-47FB-ADFD-74C28B6F661E`. Its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`. The userdata payload is the body of
+the outer anonymous userdata child from section 7.2. The body contains one
+class-owned anonymous major-1 child. The writer emits minor 2. Its payload is:
 
 ```text
-UUID parent dimension style
+anonymous version 1.2
+UUID dimension using this extension
 i32 forced arrow position (-1 outside, 0 automatic, 1 inside)
 i32 text rectangle count
 if count = 7: 28 × i32 rectangle coordinates
@@ -3649,12 +3652,28 @@ if minor >= 1: f64 distance scale
 if minor >= 2: UUID detail measured
 ```
 
-The rectangle count is zero or seven. Distance scale is finite and positive.
-Dimension plane origins, plane equation offsets, construction points, angular
-radius, kink offsets, and text height use document length conversion. Style
-indices, flags, directions, stored angles, and distance scale remain unscaled.
-When duplicate records for an attached built-in dimension extension occur, the
-first serialized matching record owns the extension state.
+The extension UUID is nil when no dimension identity is assigned. The rectangle
+count is zero or seven; seven selects seven four-integer display rectangles.
+Distance scale is finite and positive. It is the page-space distance divided by
+the measured model-space distance for a detail-view dimension and multiplies
+the model-space measurement for display. Detail measured identifies the detail
+view; nil means that the dimension does not measure detail model space. Minor 0
+omits distance scale and detail measured, whose defaults are `1.0` and nil.
+The model-space base point stored by the V5 extension object is runtime-only and
+has no serialized field.
+
+Saving a V6 annotation to archive versions 3 through 50 converts it to a V5
+linear, radial, or ordinate annotation and serializes this carrier. Saving a
+V6 annotation to archive version 60 and later writes the direct V6 annotation
+and does not create this carrier. Dimension plane origins, plane equation
+offsets, construction points,
+angular radius, kink offsets, and text height use document length conversion.
+Style indices, flags, directions, stored angles, and distance scale remain
+unscaled. CADIR maps forced arrow position, distance scale, and detail measured
+to the dimension. The extension UUID and display rectangles have no neutral
+fields and remain in the retained source record. When duplicate records for an
+attached built-in dimension extension occur, the first serialized matching
+record owns the extension state.
 
 ### 18.2 Hatches
 
@@ -3689,18 +3708,27 @@ pattern rotation and every geometric coordinate are finite. Loop count is
 nonnegative and every loop object derives from the curve family.
 
 In archive 50, a nonzero base point for a hatch below minor 2 is in
-`ON_OBSOLETE_V5_HatchExtra` userdata class
-`3FF7007C-3D04-463F-84E3-132ACEB91062`. Its payload is:
+`ON_OBSOLETE_V5_HatchExtra` userdata class and item UUID
+`3FF7007C-3D04-463F-84E3-132ACEB91062`. Its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4`. The userdata payload is the body of
+the outer anonymous userdata child from section 7.2. The body contains one
+class-owned anonymous major-1, minor-0 child:
 
 ```text
-anonymous version 1.minor
-ON_UUID ignored_id
+anonymous version 1.0
+UUID ignored_id
 ON_2dPoint basepoint
 ```
 
-The obsolete hatch extension is consumed after reading. Each valid matching
-record applies its base point in serialized order, so the last valid record
-owns the hatch base point; no such extension remains attached to the hatch.
+`ON_Hatch::Write` attaches this temporary carrier only for archive version 50
+when the minor-1 hatch has a valid nonzero base point. Archive versions below
+50 do not receive this automatic carrier; archive version 60 and later write
+the base point in the inline minor-2 hatch field instead. The obsolete hatch
+extension is consumed after reading: each valid matching record applies its
+base point in serialized order, so the last valid record owns the hatch base
+point, and no such extension remains attached to the hatch. CADIR maps the
+consumed base point to the hatch basepoint and retains no separate userdata
+field.
 
 Archive version 60 and later may attach `ON_GradientColorData` class userdata
 to an `ON_Hatch`. The userdata class UUID and item UUID are
