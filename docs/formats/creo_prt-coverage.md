@@ -245,7 +245,7 @@ fixtures, scores above L1 remain blocked.
   recipe effects, saved sections, and operation states retain stable native
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
-  preceding feature-generated class-200 producer.
+  other feature-owned class-200 producer.
 - Same-ID operation display states retain their exact stored candidates. The
   neutral operation projection retains only fields on which all candidates
   agree and does not select a current candidate without a stored selector.
