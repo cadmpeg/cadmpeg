@@ -138,30 +138,6 @@ simple nested solids do not establish every OCCT topology class or equality case
 
 ## 4. Exact-topology transfer
 
-### XT-02. Edge representation selection and uniqueness
-
-**Question.** When an edge has repeated 3D or polygon carriers, or more than one matching pcurve
-representation for one face use, which representation supplies its neutral carrier or face pcurve?
-
-**Known.** Exact-shape records retain all geometry carriers, locations, parameter ranges, and
-pcurves. Polygon transfer is a fallback when an exact 3D curve is absent. A primary and secondary
-pcurve can be one paired closed-surface representation rather than two matching representations
-for one face use. Authored cylinder, sphere, and torus witnesses serialize `Curve2ds` counts of
-6, 4, and 4 with both polygon tables at count zero.
-
-**Conflict.** topology_transfer.rs:1723-1745 rejects multiple matching representations, but the
-witnesses do not distinguish repeated 3D or polygon carriers from multiple matching pcurves for
-one face use. The FreeCAD/OCCT writer path for repeated carriers and for duplicate matching pcurves
-has not been traced, so their uniqueness, equivalence, and precedence remain open.
-
-**Need.** Establish cardinality and precedence for repeated 3D carriers, repeated polygon carriers,
-and multiple matching pcurves for one face use. Select by a serialized role or prove geometric
-equivalence when duplicates are legal; otherwise define the exact malformed form.
-
-**Note.** This pass settled the valid paired closed-surface pcurve form and its separation from
-polygon carriers. Repeated 3D or polygon carriers and multiple matching pcurves for one face use
-remain open.
-
 ## 5. Design projection
 
 ## 6. Product structure

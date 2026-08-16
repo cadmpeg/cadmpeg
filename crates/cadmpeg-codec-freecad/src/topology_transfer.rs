@@ -24,7 +24,7 @@ use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
-    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve2d,
+    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve, TextCurve2d,
     TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
     TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
     TextTShapeGeometry, TextTriangulation,
@@ -86,6 +86,7 @@ pub(crate) fn transfer(
 struct Tables<'a> {
     locations: &'a [TextLocation],
     curve2ds: &'a [TextCurve2d],
+    curves: &'a [TextCurve],
     surfaces: &'a [TextSurface],
     polygons3d: &'a [TextPolygon3d],
     polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
@@ -102,6 +103,7 @@ impl<'a> Tables<'a> {
             .map(|text| Self {
                 locations: &text.locations,
                 curve2ds: &text.curve2ds,
+                curves: &text.curves,
                 surfaces: &text.surfaces,
                 polygons3d: &text.polygons3d,
                 polygons_on_triangulations: &text.polygons_on_triangulations,
@@ -113,6 +115,7 @@ impl<'a> Tables<'a> {
                 payload.binary.as_ref().map(|binary| Self {
                     locations: &binary.locations,
                     curve2ds: &binary.curve2ds,
+                    curves: &binary.curves,
                     surfaces: &binary.surfaces,
                     polygons3d: &binary.polygons3d,
                     polygons_on_triangulations: &binary.polygons_on_triangulations,
@@ -824,8 +827,7 @@ impl<'a> Builder<'a> {
                 let edge_transform =
                     wire_transform.compose(self.tables.location(edge_use.location));
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
-                let pcurve =
-                    self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
+                let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
                 let id = coedge_ids[index].clone();
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
@@ -916,19 +918,10 @@ impl<'a> Builder<'a> {
             &self.payload.id,
             self.topology_label(edge_use.shape, transform),
         ));
-        let curve_representation = unique_edge_representation(
-            edge_use.shape,
-            &representations,
-            |representation| representation.kind == 1,
-            "3D curve",
-        )?;
+        let curve_representation =
+            select_exact_curve_representation(edge_use.shape, &representations, &self.tables)?;
         let polygon_representation = if curve_representation.is_none() {
-            unique_edge_representation(
-                edge_use.shape,
-                &representations,
-                |representation| matches!(representation.kind, 5..=7),
-                "polygon",
-            )?
+            unique_fallback_polygon_representation(edge_use.shape, &representations)?
         } else {
             None
         };
@@ -1227,31 +1220,24 @@ impl<'a> Builder<'a> {
         edge_transform: Transform,
         surface: usize,
         surface_transform: Transform,
-    ) -> Result<Option<FacePcurve>, CodecError> {
+    ) -> Option<FacePcurve> {
         let TextTShapeGeometry::Edge {
             degenerated,
             representations,
             ..
         } = &self.tables.tshapes[edge_use.shape - 1].geometry
         else {
-            return Ok(None);
+            return None;
         };
-        let Some((index, representation)) = unique_edge_representation(
-            edge_use.shape,
-            representations,
-            |representation| {
+        let (index, representation) =
+            first_edge_representation(representations, |representation| {
                 matches!(representation.kind, 2 | 3)
                     && representation.surface == Some(surface)
                     && transforms_equal(
                         edge_transform.compose(self.tables.location(representation.location)),
                         surface_transform,
                     )
-            },
-            "matching pcurve",
-        )?
-        else {
-            return Ok(None);
-        };
+            })?;
         let reversed = is_reversed(edge_use.orientation);
         let secondary = representation.secondary.is_some() && reversed;
         let curve_index = if secondary {
@@ -1264,10 +1250,10 @@ impl<'a> Builder<'a> {
         let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
         let parameter_range =
             normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
-        Ok(Some((
+        Some((
             self.pcurve_id(edge_use.shape, index, secondary),
             bounded_pcurve_range(*degenerated, parameter_range),
-        )))
+        ))
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
@@ -1720,25 +1706,71 @@ fn edge_endpoint_uses(
     })
 }
 
-fn unique_edge_representation<'a, Predicate>(
-    edge: usize,
-    representations: &'a [TextEdgeRepresentation],
+fn first_edge_representation<Predicate>(
+    representations: &[TextEdgeRepresentation],
     predicate: Predicate,
-    role: &str,
-) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError>
+) -> Option<(usize, &TextEdgeRepresentation)>
 where
     Predicate: Fn(&TextEdgeRepresentation) -> bool,
 {
+    representations
+        .iter()
+        .enumerate()
+        .find(|(_, representation)| predicate(representation))
+}
+
+fn select_exact_curve_representation<'a>(
+    edge: usize,
+    representations: &'a [TextEdgeRepresentation],
+    tables: &Tables<'_>,
+) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError> {
     let mut matches = representations
         .iter()
         .enumerate()
-        .filter(|(_, representation)| predicate(representation));
+        .filter(|(_, representation)| representation.kind == 1);
+    let Some(first) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.any(|(_, representation)| {
+        !equivalent_exact_curve_representation(first.1, representation, tables)
+    }) {
+        return Err(CodecError::Malformed(format!(
+            "edge TShape {edge} has non-equivalent 3D curve representations"
+        )));
+    }
+    Ok(Some(first))
+}
+
+fn equivalent_exact_curve_representation(
+    left: &TextEdgeRepresentation,
+    right: &TextEdgeRepresentation,
+    tables: &Tables<'_>,
+) -> bool {
+    let Some(left_curve) = left.primary.checked_sub(1) else {
+        return false;
+    };
+    let Some(right_curve) = right.primary.checked_sub(1) else {
+        return false;
+    };
+    tables.curves.get(left_curve) == tables.curves.get(right_curve)
+        && tables.location(left.location) == tables.location(right.location)
+        && left.parameter_range == right.parameter_range
+}
+
+fn unique_fallback_polygon_representation(
+    edge: usize,
+    representations: &[TextEdgeRepresentation],
+) -> Result<Option<(usize, &TextEdgeRepresentation)>, CodecError> {
+    let mut matches = representations
+        .iter()
+        .enumerate()
+        .filter(|(_, representation)| matches!(representation.kind, 5..=7));
     let Some(first) = matches.next() else {
         return Ok(None);
     };
     if matches.next().is_some() {
         return Err(CodecError::Malformed(format!(
-            "edge TShape {edge} has multiple {role} representations"
+            "edge TShape {edge} has multiple fallback polygon representations"
         )));
     }
     Ok(Some(first))

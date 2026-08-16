@@ -82,6 +82,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
     let tables = Tables {
         locations: &locations,
         curve2ds: &[],
+        curves: &[],
         surfaces: &[],
         polygons3d: &[],
         polygons_on_triangulations: &[],
@@ -176,10 +177,10 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
 }
 
 #[test]
-fn edge_representation_selection_requires_unique_candidates() {
-    let representation = |kind| TextEdgeRepresentation {
+fn edge_representation_selection_follows_family_rules() {
+    let representation = |kind, primary| TextEdgeRepresentation {
         kind,
-        primary: 1,
+        primary,
         secondary: None,
         surface: None,
         second_surface: None,
@@ -189,46 +190,58 @@ fn edge_representation_selection_requires_unique_candidates() {
         continuity: None,
         uv_endpoints: None,
     };
-    let exact = [representation(1), representation(1)];
-    assert!(matches!(
-        unique_edge_representation(7, &exact, |candidate| candidate.kind == 1, "3D curve"),
-        Err(CodecError::Malformed(_))
-    ));
-    let fallback = [representation(5), representation(6)];
-    assert!(matches!(
-        unique_edge_representation(
-            7,
-            &fallback,
-            |candidate| matches!(candidate.kind, 5..=7),
-            "polygon"
-        ),
-        Err(CodecError::Malformed(_))
-    ));
-    let matching_pcurves = [representation(2), representation(2)];
-    assert!(matches!(
-        unique_edge_representation(
-            7,
-            &matching_pcurves,
-            |candidate| candidate.kind == 2,
-            "matching pcurve"
-        ),
-        Err(CodecError::Malformed(_))
-    ));
-    let one = [representation(1), representation(2)];
-    let selected = unique_edge_representation(7, &one, |candidate| candidate.kind == 1, "3D curve")
-        .expect("unique exact curve")
+    let curves = [
+        TextCurve::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        TextCurve::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        TextCurve::Line {
+            origin: Point3::new(0.0, 1.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+    ];
+    let tables = Tables {
+        locations: &[],
+        curve2ds: &[],
+        curves: &curves,
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &[],
+        triangulations: &[],
+        roots: &[],
+    };
+    let equivalent_exact = [representation(1, 1), representation(1, 2)];
+    let selected = select_exact_curve_representation(7, &equivalent_exact, &tables)
+        .expect("equivalent exact curves")
         .expect("exact curve");
     assert_eq!(selected.0, 0);
 
-    let exact_precedes_polygon = [representation(5), representation(1)];
-    let selected = unique_edge_representation(
-        7,
-        &exact_precedes_polygon,
-        |candidate| candidate.kind == 1,
-        "3D curve",
-    )
-    .expect("exact curve after polygon")
-    .expect("exact curve");
+    let distinct_exact = [representation(1, 1), representation(1, 3)];
+    assert!(matches!(
+        select_exact_curve_representation(7, &distinct_exact, &tables),
+        Err(CodecError::Malformed(_))
+    ));
+
+    let fallback = [representation(5, 1), representation(6, 1)];
+    assert!(matches!(
+        unique_fallback_polygon_representation(7, &fallback),
+        Err(CodecError::Malformed(_))
+    ));
+
+    let matching_pcurves = [representation(2, 1), representation(2, 1)];
+    let selected = first_edge_representation(&matching_pcurves, |candidate| candidate.kind == 2)
+        .expect("first matching pcurve");
+    assert_eq!(selected.0, 0);
+
+    let exact_precedes_polygon = [representation(5, 1), representation(1, 1)];
+    let selected = select_exact_curve_representation(7, &exact_precedes_polygon, &tables)
+        .expect("exact curve after polygon")
+        .expect("exact curve");
     assert_eq!(selected.0, 1);
 }
 
@@ -436,9 +449,10 @@ pub(crate) fn transfers_connected_text_brep_topology() {
 </Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
-Curve2ds 2
+Curve2ds 3
 1 0 0 1 0
 1 1 0 -1 0
+1 0 0 1 0
 Curves 2
 1 0 0 0 1 0 0
 1 1 0 0 -1 0 0
@@ -450,7 +464,7 @@ Triangulations 0
 TShapes 9
 Ve 0.001 0 0 0 0 0 1001000 *
 Ve 0.001 1 0 0 0 0 1001000 *
-Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 2 3 1 0 0 1 0 1001000 +9 0 -8 0 *
 Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
 Wi 1001000 +7 0 +6 0 *
 Fa 0 0.001 1 0 1001000 +5 0 *
@@ -485,6 +499,12 @@ Co 1001000 +2 0 *
     assert_eq!(result.ir().model.edges.len(), 2);
     assert_eq!(result.ir().model.vertices.len(), 2);
     assert_eq!(result.ir().model.pcurves.len(), 2);
+    assert!(result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .any(|coedge| { coedge.pcurves[0].pcurve.0.ends_with("3%3A2%3A1") }));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(
@@ -570,7 +590,7 @@ Co 1001000 +2 0 *
         .expect("carrier census");
     assert_eq!(census.len(), 1);
     assert_eq!(census[0].topology_version, 1);
-    assert_eq!(census[0].curves_2d["line"], 2);
+    assert_eq!(census[0].curves_2d["line"], 3);
     assert_eq!(census[0].curves_3d["line"], 2);
     assert_eq!(census[0].surfaces["plane"], 1);
     assert_eq!(census[0].topology["edge"], 2);
@@ -762,6 +782,39 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(result.ir().model.shells.len(), 1);
     assert_eq!(result.ir().model.shells[0].wire_edges.len(), 1);
     assert!(result.ir().model.shells[0].faces.is_empty());
+}
+
+#[test]
+fn accepts_equivalent_repeated_exact_curve_records() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 2
+1 0 0 0 1 0 0
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 3
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 1 2 0 0 1 0 1001000 +3 0 -2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("equivalent repeated exact curve");
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.curves.len(), 2);
+    assert!(result.ir().model.edges[0]
+        .curve
+        .as_ref()
+        .is_some_and(|curve| curve.0.ends_with(":1")));
 }
 
 #[test]

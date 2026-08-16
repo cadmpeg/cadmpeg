@@ -251,23 +251,26 @@ without an exact 3D curve representation. `Internal` and `External` child uses a
 non-endpoint uses and do not supply endpoint incidence. A second `Forward` or `Reversed` use, or
 the absence of either required orientation, is malformed.
 
-Edge geometry access follows serialized representation order. At most one 3D-curve representation
-can supply the exact neutral carrier and parameter range. Only when no 3D curve exists can one
-stored polygon representation supply an approximate carrier; multiple fallback polygons are
-invalid. For a face use, at most one pcurve representation whose surface and composed location
-equal the face surface supplies the pcurve. A closed-surface representation supplies its second
-pcurve when the edge use is reversed. Later nonmatching representations remain in the native edge
-record. A primary and secondary pcurve in one closed-surface representation are one paired edge
-representation, not duplicate matching pcurves for one face use. Polygon carriers are separate
-representation families and are not implied by pcurve multiplicity. Duplicate matching
-representations are invalid. The neutral analytic-surface frame uses
-the cross product of its axis and reference direction. If the persisted plane frame has the
-opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or
-torus frame has the opposite circumferential direction, the pcurve U parameter is negated. A cone
-pcurve V parameter is also multiplied by the cosine of the cone half-angle to convert persisted
-slant distance to neutral axial distance. A surface of revolution uses U as its rotation angle and
-V as its directrix parameter. A trimmed surface converts its persisted support-coordinate bounds
-and pcurves to zero-based local parameters while preserving each bound's direction.
+Edge geometry access follows serialized representation order. Repeated 3D-curve representations
+are equivalent only when their referenced curve records, composed carrier locations, and parameter
+ranges are equal. Equivalent repeats select the first representation for the exact neutral
+carrier and parameter range. A repeat with different curve geometry, carrier location, or
+parameter range is malformed. Only when no 3D curve exists can the first stored polygon
+representation supply an approximate carrier; a second fallback polygon is malformed. Polygon
+carriers that coexist with an exact 3D curve do not compete for the neutral carrier. For a face
+use, the first pcurve representation whose surface and composed location equal the face surface
+supplies the pcurve; later matching pcurves remain native and do not replace it. A closed-surface
+representation supplies its second pcurve when the edge use is reversed. A primary and secondary
+pcurve in one closed-surface representation are one paired edge representation, not duplicate
+matching pcurves for one face use. Polygon carriers are separate representation families and are
+not implied by pcurve multiplicity. The neutral analytic-surface frame uses the cross product of
+its axis and reference direction. If the persisted plane frame has the opposite V direction, the
+pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or torus frame has the
+opposite circumferential direction, the pcurve U parameter is negated. A cone pcurve V parameter
+is also multiplied by the cosine of the cone half-angle to convert persisted slant distance to
+neutral axial distance. A surface of revolution uses U as its rotation angle and V as its directrix
+parameter. A trimmed surface converts its persisted support-coordinate bounds and pcurves to
+zero-based local parameters while preserving each bound's direction.
 
 The serialized edge child uses provide endpoint incidence but no radial-neighbor relation. One
 coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;
