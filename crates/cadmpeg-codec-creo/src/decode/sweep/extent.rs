@@ -439,6 +439,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     .then_some(())?;
     let mut carriers = Vec::new();
     let mut planes = Vec::new();
+    let local_planes = placed_planes(scan);
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
@@ -450,21 +451,23 @@ pub(in super::super) fn generated_nurbs_translation_extent(
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
         match row.kind {
-            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
-                [] => {}
-                [Surface {
-                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
-                    ..
-                }] => planes.push((
-                    [origin.x, origin.y, origin.z],
-                    [normal.x, normal.y, normal.z],
-                )),
-                [Surface {
-                    geometry: SurfaceGeometry::Unknown { .. },
-                    ..
-                }] => {}
-                _ => return None,
-            },
+            crate::surface::SurfaceKind::Plane => {
+                let plane = match surfaces.as_slice() {
+                    []
+                    | [Surface {
+                        geometry: SurfaceGeometry::Unknown { .. },
+                        ..
+                    }] => local_planes.get(&row.id).copied(),
+                    [Surface {
+                        geometry: SurfaceGeometry::Plane { .. },
+                        ..
+                    }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
+                    _ => return None,
+                };
+                if let Some(plane) = plane {
+                    planes.push((plane.origin, plane.normal));
+                }
+            }
             crate::surface::SurfaceKind::Extrusion => match surfaces.as_slice() {
                 [] => {}
                 [Surface {
