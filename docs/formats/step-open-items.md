@@ -18,6 +18,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
+## 2. AP242 BO-Model sidecars
+
 ### BM-02. Sidecar composition
 
 **Question.** How do AP242 BO-Model XML identities and values combine with the Part 21 instance graph?
