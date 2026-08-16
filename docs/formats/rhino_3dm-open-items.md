@@ -927,6 +927,24 @@ transform, localizer, future-minor, and major-rejection paths. This change
 closes this slice; the docs gate and pre-commit workspace gate remain to be
 run.
 
+The curve-on-surface slice is closed by `ON_CurveOnSurface::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_curveonsurface.cpp:167-232`, the
+authored `/home/pcurve/side2/tmp/agent-rhino-l9-20260816/curve_on_surface_witness.cpp`,
+and its V4/V50/V6 plus inch-unit V6 outputs. `cadmpeg inspect` finds the
+`ON_CurveOnSurface` class UUID at V4 `0x8d6`, V50 `0x9d4`, V6 `0xa0d`, and
+inch V6 `0xa17`; the nested line-carrier UUID occurs twice and the plane
+surface UUID once in each class payload. The producer writer emits the
+parameter curve, presence integer, optional model curve, and support surface
+in that order. The source reader's optional-C3 branch unconditionally clears
+its success flag, so the OpenNURBS model reader drops this otherwise valid
+object; that implementation defect is not promoted to a format rule. The
+Rust decoder transfers all three carriers: V4/V50/V6 keep parameter controls
+`[0.75,1.75]` and `[2.25,4.25]`, while inch V6 keeps those values and converts
+the model curve to `[381,635,889]`/`[1143,1397,1651]` and the support-plane
+origin to `[127,152.4,177.8]`. The owner test
+`decodes_parameter_model_and_support_carriers` now asserts the parameter
+curve remains unscaled while the model curve and support plane scale.
+
 ### FV-06. Later major payload admission
 
 **Question.** Which later major versions of built-in table, object, geometry,
