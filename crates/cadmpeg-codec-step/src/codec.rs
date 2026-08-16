@@ -343,7 +343,10 @@ fn decode_zip(
 }
 
 fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    if bytes.starts_with(b"\x89HDF\r\n\x1a\n") {
+    // CE-05/CE-06: the HDF5 signature identifies the binary container, not
+    // an AP schema or an entity graph. Forced STEP selection may report the
+    // Part 26 family, but no HDF5 object becomes a Part 21 occurrence here.
+    if has_hdf5_signature(bytes) {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),
         ));
@@ -365,6 +368,25 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
         ));
     }
     Ok(())
+}
+
+fn has_hdf5_signature(bytes: &[u8]) -> bool {
+    const SIGNATURE: &[u8] = b"\x89HDF\r\n\x1a\n";
+    if bytes.starts_with(SIGNATURE) {
+        return true;
+    }
+
+    let mut offset = 512;
+    while offset < bytes.len() {
+        if bytes[offset..].starts_with(SIGNATURE) {
+            return true;
+        }
+        let Some(next) = offset.checked_mul(2) else {
+            break;
+        };
+        offset = next;
+    }
+    false
 }
 
 fn is_part28_xml(bytes: &[u8]) -> bool {

@@ -22,31 +22,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-05. Part 26 binary grammar
-
-**Question.** What HDF5 layout represents an AP203, AP214, or AP242 exchange structure in Part 26?
-
-**Known.** ISO/TS 10303-26 defines an EXPRESS-driven HDF5 mapping. The HDF5
-layout is schema- and mapping-version dependent; the HDF5 signature alone
-does not identify AP203, AP214, or AP242.
-
-**Note.** The codec has no Part 26 mapping tables or HDF5 reader.
-
-**Need.** We must know the layout to parse record boundaries, values, and references from Part 26 data.
-
-### CE-06. Part 26 graph mapping
-
-**Question.** How does each Part 26 HDF5 construct map to the entity graph and invariants in `step.md`?
-
-**Known.** Part 26 defines the schema-driven mapping from EXPRESS values and
-entity identity to HDF5 datasets, datatypes, and links. It does not make every
-HDF5 dataset self-describing as an AP203, AP214, or AP242 instance graph.
-
-**Note.** Applying the mapping needs the exact Part 26 mapping version and AP
-schema. No such Part 26 input or IR adapter exists in this codec.
-
-**Need.** We must know the mapping to apply schema decoding to a Part 26 exchange structure.
-
 ## 4. Signatures
 
 ### SG-04. Signature verification result

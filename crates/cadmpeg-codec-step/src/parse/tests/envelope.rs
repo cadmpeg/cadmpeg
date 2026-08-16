@@ -460,6 +460,22 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message == reason)
         );
     }
+    // The HDF5 signature does not identify the Part 26 schema or population,
+    // so automatic STEP detection must not admit it as a Part 21 input.
+    assert_eq!(
+        codec.detect(b"\x89HDF\r\n\x1a\nGeometry_encoding"),
+        Confidence::No
+    );
+    let mut hdf5_user_block = vec![0u8; 512];
+    hdf5_user_block.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
+    assert!(matches!(
+        codec.decode(
+            &mut Cursor::new(hdf5_user_block),
+            &DecodeOptions::default()
+        ),
+        Err(cadmpeg_core::CodecError::NotImplemented(message))
+            if message == "STEP Part 26 binary/HDF5 encoding"
+    ));
     assert_eq!(
         codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
         Confidence::Medium
