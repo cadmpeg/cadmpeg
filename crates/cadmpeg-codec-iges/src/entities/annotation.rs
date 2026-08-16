@@ -2,6 +2,7 @@
 //! Text annotation entities.
 
 use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::presentation::{general_note_font_valid, new_general_note_font_valid};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord};
@@ -21,15 +22,6 @@ fn exact_parameter_count(
     trailing_pointer_groups(record, entries)
         .map_or(record.parameter_end(), |groups| groups.token_start)
         == expected
-}
-
-fn font_valid(value: i64, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    value >= 0
-        || value
-            .checked_neg()
-            .and_then(|value| u32::try_from(value).ok())
-            .and_then(|sequence| entries.get(&sequence).copied())
-            .is_some_and(|entry| entry.entity_type == 310 && entry.form == 0)
 }
 
 fn justification_valid(value: i64) -> bool {
@@ -71,7 +63,7 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                 })
                 && record
                     .integer_or(start + 3, 1)
-                    .is_some_and(|value| font_valid(value, entries))
+                    .is_some_and(|value| general_note_font_valid(value, entries))
                 && record
                     .number_or(start + 4, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)
@@ -116,7 +108,7 @@ fn new_general_note_valid(
             let text = record.string_or_empty(start + 19);
             // PS-01: Type 213 FONT has no explicit default; the generic
             // integer default is zero.
-            let font_style = record.integer_or(start + 11, 0);
+            let font_style = record.integer_or(start + 5, 0);
             let metrics_valid = character_width
                 .zip(character_height)
                 .zip(spacing)
@@ -135,7 +127,6 @@ fn new_general_note_valid(
                 && fixed.is_some_and(fixed_or_variable_valid);
             metrics_valid
                 && record.number_or(start + 4, 0.0).is_some_and(f64::is_finite)
-                && record.integer_or(start + 5, 0).is_some()
                 && record.number_or(start + 6, 0.0).is_some_and(|value| {
                     value.is_finite() && (0.0..=std::f64::consts::TAU).contains(&value)
                 })
@@ -150,7 +141,7 @@ fn new_general_note_valid(
                         .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
-                && font_style.is_some_and(|value| font_valid(value, entries))
+                && font_style.is_some_and(new_general_note_font_valid)
                 && record
                     .number_or(start + 12, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)

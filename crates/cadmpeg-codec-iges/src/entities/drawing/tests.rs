@@ -179,6 +179,38 @@ fn decode_types_orthographic_and_perspective_views() {
 }
 
 #[test]
+fn decode_rejects_out_of_table_depth_clipping_indicator() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_depth_clipping_view_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_rejects_out_of_table_segmented_display_flag() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_segmented_display_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
 fn decode_applies_defaults_and_accepts_zero_text_box_dimensions() {
     let result = IgesCodec
         .decode(

@@ -50,6 +50,28 @@ fn standard_color(number: i64) -> Option<Color> {
     Some(Color { r, g, b, a: 1.0 })
 }
 
+pub(super) fn general_note_font_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    matches!(
+        value,
+        0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001 | 1002 | 1003 | 2001 | 3001
+    ) || value
+        .checked_neg()
+        .and_then(|value| u32::try_from(value).ok())
+        .is_some_and(|sequence| {
+            sequence % 2 == 1
+                && entries
+                    .get(&sequence)
+                    .is_some_and(|entry| entry.entity_type == 310 && entry.form == 0)
+        })
+}
+
+pub(super) fn new_general_note_font_valid(value: i64) -> bool {
+    matches!(value, 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19)
+}
+
 fn mirror_flag_valid(value: i64) -> bool {
     matches!(value, 0..=2)
 }
@@ -216,14 +238,7 @@ pub(super) fn project(
         let parameter_end = trailing_pointer_groups(record, &entries)
             .map_or(record.parameter_end(), |groups| groups.token_start);
         let font = record.integer_or(3, 1);
-        let font_valid = font.is_some_and(|font| {
-            font >= 0
-                || font
-                    .checked_neg()
-                    .and_then(|value| u32::try_from(value).ok())
-                    .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|target| target.entity_type == 310 && target.form == 0)
-        });
+        let font_valid = font.is_some_and(|font| general_note_font_valid(font, &entries));
         let directory_valid = entry.status.use_flag == 2
             && entry.structure == 0
             && entry.line_font == 0

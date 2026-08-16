@@ -237,6 +237,25 @@ pub(crate) fn symbol_and_sectioned_area_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn out_of_table_sectioned_area_pattern_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00000000",
+            parameters: "100,0,0,0,5,0,5,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 230,
+            form: 0,
+            label: "BADPAT".into(),
+            status: "00000100",
+            parameters: "230,1,21,0,0,0,0,0;".into(),
+        },
+    ])
+}
+
 pub(crate) fn associativity_definition_file() -> Vec<u8> {
     owned_test_file(&[OwnedTestEntity {
         entity_type: 302,
@@ -535,6 +554,16 @@ pub(crate) fn text_display_template_forms_file() -> Vec<u8> {
             parameters: "312,3,1,18,1.5707963267948966,0.25,1,1,2,-1,0;".into(),
         },
     ])
+}
+
+pub(crate) fn out_of_table_text_template_font_file() -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 312,
+        form: 0,
+        label: "BADFONT".into(),
+        status: "00000200",
+        parameters: "312,4,2,4,1.5707963267948966,0,0,0,0,0,0;".into(),
+    }])
 }
 
 pub(crate) fn text_font_definition_file() -> Vec<u8> {

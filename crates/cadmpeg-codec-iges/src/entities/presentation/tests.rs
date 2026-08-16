@@ -29,10 +29,26 @@ use cadmpeg_ir::CadIr;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
-use super::{mirror_flag_valid, standard_color, vertical_text_flag_valid};
+use super::{general_note_font_valid, mirror_flag_valid, standard_color, vertical_text_flag_valid};
 
 #[test]
 fn presentation_enumerations_match_the_iges_tables() {
+    let entries = BTreeMap::new();
+    for value in [
+        0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
+    ] {
+        assert!(
+            general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+    for value in [-1, 4, 5, 7, 1000, 3002] {
+        assert!(
+            !general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+
     for value in 0..=2 {
         assert!(mirror_flag_valid(value));
     }
@@ -161,6 +177,22 @@ fn decode_types_template_and_visible_blank_line_fonts() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_out_of_table_text_template_font() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_text_template_font_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::DisplayDataNotProjected.kind()));
 }
 
 #[test]

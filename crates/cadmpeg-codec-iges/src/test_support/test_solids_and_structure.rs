@@ -1510,6 +1510,35 @@ pub(crate) fn view_forms_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn out_of_table_depth_clipping_view_file() -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 410,
+        form: 1,
+        label: "BADDCI".into(),
+        status: "00000000",
+        parameters: "410,2,1.5,0,0,1,0,0,0,0,0,10,0,1,0,5,-2,2,-1,1,4,-5,5;".into(),
+    }])
+}
+
+pub(crate) fn out_of_table_segmented_display_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 19,
+            label: "BADDF".into(),
+            status: "00000000",
+            parameters: "402,1,1,0.5,2,0,0,0;".into(),
+        },
+    ])
+}
+
 pub(crate) fn defaulted_text_and_view_fields_file() -> Vec<u8> {
     let note_parameters = [
         "212", "1", "1", "1", "1", "", "", "", "", "", "", "", "", "1HA",
@@ -1731,6 +1760,10 @@ pub(crate) fn defaulted_new_general_note_file() -> Vec<u8> {
     new_general_note_file_with_character_metrics("1", "1")
 }
 
+pub(crate) fn omitted_font_style_new_general_note_file() -> Vec<u8> {
+    new_general_note_file_with_font("0", "1", "1", "", "0", "")
+}
+
 pub(crate) fn variable_spacing_default_new_general_note_file() -> Vec<u8> {
     new_general_note_file_with_fields("1", "1", "1", "", "0")
 }
@@ -1809,6 +1842,24 @@ fn new_general_note_file_with_fields(
     character_spacing: &str,
     character_count: &str,
 ) -> Vec<u8> {
+    new_general_note_file_with_font(
+        fixed_or_variable,
+        character_width,
+        character_height,
+        character_spacing,
+        character_count,
+        "1",
+    )
+}
+
+fn new_general_note_file_with_font(
+    fixed_or_variable: &str,
+    character_width: &str,
+    character_height: &str,
+    character_spacing: &str,
+    character_count: &str,
+    font_style: &str,
+) -> Vec<u8> {
     let mut fields = vec![String::from("213")];
     fields.extend((0..11).map(|_| String::new()));
     fields.push(String::from("1"));
@@ -1819,7 +1870,7 @@ fn new_general_note_file_with_fields(
             character_height,
             character_spacing,
             "", // LSPACE
-            "", // FONT
+            font_style,
             "", // CHRANG
             "", // CCTEXT
             character_count,
@@ -1845,6 +1896,25 @@ fn new_general_note_file_with_fields(
         status: "00000100",
         parameters: fields.join(",") + ";",
     }])
+}
+
+pub(crate) fn out_of_table_annotation_font_values_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "BAD212".into(),
+            status: "00000100",
+            parameters: "212,1,1,1,4,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "BAD213".into(),
+            status: "00000100",
+            parameters: "213,40,20,2,0,20,0,0,0,18,0,-5,1,0,2,3,-0.5,0,4,0,4HTUNL,4,12,3,1,1.5707963267948966,0,0,0,2,18,0,4HTOL!;".into(),
+        },
+    ])
 }
 
 pub(crate) fn leader_forms_file() -> Vec<u8> {

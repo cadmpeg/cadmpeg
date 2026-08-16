@@ -55,16 +55,4 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-04. Enumerated value tables exist only in the source
-
-**Question.** What are the complete enumerated tables for the supported view, annotation, leader, and presentation fields?
-
-**Known.** `entities/annotation.rs:35-49` and `entities/drawing.rs:41-55` implement local tables for justification, mirror, orientation, depth, display, line-font, and color values. The current specification repeats selected ranges and pattern codes, but it gives no direct IGES field-table citations for the complete presentation set.
-
-**Need.** Cite the complete source tables, including reserved and invalid values, and define the handling of values outside each table.
-
-**Conflict.** The specification presents local validation tables as settled format rules while the closure evidence does not independently establish the complete tables.
-
-**Note.** Reopened by QA audit 2026-08-16. Code, prose, and synthesized fixtures are one implementation evidence chain.
-
 ## 7. Write path

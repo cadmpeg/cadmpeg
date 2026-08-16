@@ -32,8 +32,9 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 use super::{
     fill_pattern_valid, fixed_or_variable_valid, justification_valid, mirror_flag_valid,
-    vertical_text_flag_valid,
+    new_general_note_font_valid, vertical_text_flag_valid,
 };
+use crate::entities::presentation::general_note_font_valid;
 
 #[test]
 fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
@@ -173,6 +174,59 @@ fn decode_rejects_omitted_new_general_note_character_metrics() {
 }
 
 #[test]
+fn decode_rejects_omitted_new_general_note_font_style() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(omitted_font_style_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_rejects_out_of_table_annotation_font_values() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_annotation_font_values_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 2, "{:#?}", result.report().losses);
+    assert!(result.ir().model.semantic_annotations.is_empty());
+}
+
+#[test]
+fn decode_rejects_out_of_table_sectioned_area_pattern() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_sectioned_area_pattern_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(result.ir().model.semantic_annotations.is_empty());
+}
+
+#[test]
 fn decode_rejects_negative_text_box_dimensions_at_cadir_boundary() {
     let result = IgesCodec
         .decode(
@@ -197,6 +251,28 @@ fn decode_rejects_negative_text_box_dimensions_at_cadir_boundary() {
 
 #[test]
 fn drawing_and_presentation_enumerations_match_the_iges_tables() {
+    let entries = BTreeMap::new();
+    for value in [
+        0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
+    ] {
+        assert!(
+            general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+    for value in [-1, 4, 5, 7, 1000, 3002] {
+        assert!(
+            !general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+    for value in [1, 2, 3, 6, 12, 13, 14, 17, 18, 19] {
+        assert!(new_general_note_font_valid(value), "font style {value}");
+    }
+    for value in [0, 4, 5, 7, 1001, -1] {
+        assert!(!new_general_note_font_valid(value), "font style {value}");
+    }
+
     for value in 0..=3 {
         assert!(justification_valid(value));
     }
