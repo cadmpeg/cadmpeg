@@ -350,7 +350,8 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
                     && !section_degenerate_axis_line(definition, segment)
             });
     }
-    let solver_family = section_incidence_curve_family_evidence(definition, item.entity_id);
+    let solver_family =
+        section_incidence_curve_family_evidence_without_type35(definition, item.entity_id);
     if solver_family.len() == 1
         && ((solver_family.contains(&SectionEntityIncidenceFamily::BoundedCurve)
             || solver_family.contains(&SectionEntityIncidenceFamily::Line)
@@ -403,6 +404,21 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
+    section_incidence_curve_family_evidence_with_type35(definition, entity_id, true)
+}
+
+fn section_incidence_curve_family_evidence_without_type35(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> BTreeSet<SectionEntityIncidenceFamily> {
+    section_incidence_curve_family_evidence_with_type35(definition, entity_id, false)
+}
+
+fn section_incidence_curve_family_evidence_with_type35(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+    include_type35: bool,
+) -> BTreeSet<SectionEntityIncidenceFamily> {
     let mut evidence = BTreeSet::new();
     if complete_section_skamps(definition).any(|skamp| {
         matches!(
@@ -424,6 +440,35 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
             }
             if item.entity_id == entity_id && item.sense == 4 {
                 evidence.insert(SectionEntityIncidenceFamily::Circular);
+            }
+        }
+        if include_type35 {
+            let type35_line_role =
+                |target: &crate::feature::FeatureSkampItem,
+                 point: &crate::feature::FeatureSkampItem| {
+                    if target.sense != 0
+                        || (point.sense == 4
+                            && unique_centered_line_segment(definition, point.entity_id).is_some())
+                        || !section_skamp_has_proven_point_locus(definition, point)
+                    {
+                        return false;
+                    }
+                    let native_target = definition.segments.as_ref().is_some_and(|segments| {
+                        segments
+                            .opaque_rows
+                            .iter()
+                            .any(|segment| segment.external_id == target.entity_id)
+                            && segments.external_id_count(target.entity_id) == 1
+                    });
+                    native_target
+                        || solver_only_section_entities(definition).contains_key(&target.entity_id)
+                };
+            if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+                if (first.entity_id == entity_id && type35_line_role(first, second))
+                    || (second.entity_id == entity_id && type35_line_role(second, first))
+                {
+                    evidence.insert(SectionEntityIncidenceFamily::Line);
+                }
             }
         }
         // Line-family roles are structural; type-six circular evidence is
@@ -564,4 +609,130 @@ pub(in super::super) fn solver_only_section_entity_family(
     let mut evidence = evidence.into_iter();
     let family = evidence.next()?;
     evidence.next().is_none().then_some(family)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opaque(external_id: u32) -> crate::feature::FeatureOpaqueSegment {
+        crate::feature::FeatureOpaqueSegment {
+            kind: 25,
+            directions: [None; 3],
+            point_ids: [None; 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        }
+    }
+
+    fn midpoint(target: u32, point: u32) -> crate::feature::FeatureSkamp {
+        crate::feature::FeatureSkamp {
+            id: target,
+            kind: 35,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: target,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: point,
+                    sense: 0,
+                },
+            ],
+            offset: target as usize,
+        }
+    }
+
+    fn definition(target: u32, opaque_target: bool) -> crate::feature::FeatureDefinition {
+        let opaque_rows: Vec<crate::feature::FeatureOpaqueSegment> =
+            opaque_target.then(|| opaque(target)).into_iter().collect();
+        let point_rows = vec![crate::feature::FeaturePointSegment {
+            point_id: 7,
+            external_id: 7,
+            offset: 7,
+        }];
+        crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: u32::try_from(opaque_rows.len() + point_rows.len())
+                    .expect("segment count"),
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: Vec::new(),
+                circle_rows: Vec::new(),
+                point_rows,
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows,
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(crate::feature::FeatureRelationTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                skamps: vec![midpoint(target, 7)],
+                skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+                    declared_count: 1,
+                    entity_ref: 0,
+                    offset: 0,
+                }),
+                triples: Vec::new(),
+                triples_header: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn type35_point_locus_establishes_unique_native_line_family() {
+        let opaque_target = definition(101, true);
+        assert_eq!(
+            unique_section_incidence_curve_family(&opaque_target, 101),
+            Some(SectionEntityIncidenceFamily::Line)
+        );
+
+        let solver_only_target = definition(201, false);
+        assert_eq!(
+            unique_section_incidence_curve_family(&solver_only_target, 201),
+            Some(SectionEntityIncidenceFamily::Line)
+        );
+        assert_eq!(
+            solver_only_section_entity_family(&solver_only_target, 201),
+            Some(SectionEntityIncidenceFamily::Line)
+        );
+    }
+
+    #[test]
+    fn type35_line_family_requires_unique_native_target() {
+        let mut definition = definition(101, true);
+        let segments = definition.segments.as_mut().expect("segments");
+        segments.opaque_rows.push(opaque(101));
+        segments.declared_count = 2;
+        assert_eq!(
+            unique_section_incidence_curve_family(&definition, 101),
+            None
+        );
+    }
 }
