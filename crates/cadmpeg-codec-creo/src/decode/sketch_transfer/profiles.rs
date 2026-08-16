@@ -404,20 +404,21 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
-    section_incidence_curve_family_evidence_with_type35(definition, entity_id, true)
+    section_incidence_curve_family_evidence_with_solver_roles(definition, entity_id, true, true)
 }
 
 fn section_incidence_curve_family_evidence_without_type35(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
-    section_incidence_curve_family_evidence_with_type35(definition, entity_id, false)
+    section_incidence_curve_family_evidence_with_solver_roles(definition, entity_id, false, false)
 }
 
-fn section_incidence_curve_family_evidence_with_type35(
+fn section_incidence_curve_family_evidence_with_solver_roles(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
     include_type35: bool,
+    include_type_zero: bool,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
     let mut evidence = BTreeSet::new();
     if complete_section_skamps(definition).any(|skamp| {
@@ -453,14 +454,7 @@ fn section_incidence_curve_family_evidence_with_type35(
                     {
                         return false;
                     }
-                    let native_target = definition.segments.as_ref().is_some_and(|segments| {
-                        segments
-                            .opaque_rows
-                            .iter()
-                            .any(|segment| segment.external_id == target.entity_id)
-                            && segments.external_id_count(target.entity_id) == 1
-                    });
-                    native_target
+                    unique_opaque_section_entity(definition, target.entity_id)
                         || solver_only_section_entities(definition).contains_key(&target.entity_id)
                 };
             if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
@@ -468,6 +462,24 @@ fn section_incidence_curve_family_evidence_with_type35(
                     || (second.entity_id == entity_id && type35_line_role(second, first))
                 {
                     evidence.insert(SectionEntityIncidenceFamily::Line);
+                }
+            }
+        }
+        if include_type_zero {
+            let type_zero_point_role =
+                |target: &crate::feature::FeatureSkampItem,
+                 point: &crate::feature::FeatureSkampItem| {
+                    target.sense == 0
+                        && section_skamp_has_proven_point_locus(definition, point)
+                        && (unique_opaque_section_entity(definition, target.entity_id)
+                            || solver_only_section_entities(definition)
+                                .contains_key(&target.entity_id))
+                };
+            if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+                if (first.entity_id == entity_id && type_zero_point_role(first, second))
+                    || (second.entity_id == entity_id && type_zero_point_role(second, first))
+                {
+                    evidence.insert(SectionEntityIncidenceFamily::Point);
                 }
             }
         }
@@ -494,6 +506,19 @@ fn section_incidence_curve_family_evidence_with_type35(
     }
     normalize_section_incidence_curve_family_evidence(&mut evidence);
     evidence
+}
+
+fn unique_opaque_section_entity(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> bool {
+    definition.segments.as_ref().is_some_and(|segments| {
+        segments
+            .opaque_rows
+            .iter()
+            .any(|segment| segment.external_id == entity_id)
+            && segments.external_id_count(entity_id) == 1
+    })
 }
 
 pub(in super::super) fn unique_section_incidence_curve_family(
@@ -583,27 +608,6 @@ pub(in super::super) fn solver_only_section_entity_family(
         });
         if solver_only_point_from_midpoint {
             evidence.insert(SectionEntityIncidenceFamily::Point);
-        }
-    }
-    for skamp in definition
-        .relations
-        .iter()
-        .filter(|relations| feature_skamp_table_complete(relations))
-        .flat_map(|relations| &relations.skamps)
-    {
-        if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-            if first.entity_id == entity_id
-                && first.sense == 0
-                && section_skamp_has_proven_point_locus(definition, second)
-            {
-                evidence.insert(SectionEntityIncidenceFamily::Point);
-            }
-            if second.entity_id == entity_id
-                && second.sense == 0
-                && section_skamp_has_proven_point_locus(definition, first)
-            {
-                evidence.insert(SectionEntityIncidenceFamily::Point);
-            }
         }
     }
     let mut evidence = evidence.into_iter();
@@ -730,6 +734,45 @@ mod tests {
         let segments = definition.segments.as_mut().expect("segments");
         segments.opaque_rows.push(opaque(101));
         segments.declared_count = 2;
+        assert_eq!(
+            unique_section_incidence_curve_family(&definition, 101),
+            None
+        );
+    }
+
+    #[test]
+    fn type_zero_point_locus_establishes_unique_native_point_family() {
+        let mut opaque_target = definition(101, true);
+        opaque_target.relations.as_mut().expect("relations").skamps[0].kind = 0;
+        assert_eq!(
+            unique_section_incidence_curve_family(&opaque_target, 101),
+            Some(SectionEntityIncidenceFamily::Point)
+        );
+
+        let mut solver_only_target = definition(201, false);
+        solver_only_target
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .kind = 0;
+        assert_eq!(
+            unique_section_incidence_curve_family(&solver_only_target, 201),
+            Some(SectionEntityIncidenceFamily::Point)
+        );
+        assert_eq!(
+            solver_only_section_entity_family(&solver_only_target, 201),
+            Some(SectionEntityIncidenceFamily::Point)
+        );
+    }
+
+    #[test]
+    fn type_zero_point_family_requires_unique_native_target() {
+        let mut definition = definition(101, true);
+        let segments = definition.segments.as_mut().expect("segments");
+        segments.opaque_rows.push(opaque(101));
+        segments.declared_count += 1;
+        definition.relations.as_mut().expect("relations").skamps[0].kind = 0;
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 101),
             None

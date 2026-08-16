@@ -713,6 +713,8 @@ pub(in super::super) fn section_skamp_is_point(
 ) -> bool {
     solver_only_section_entity_family(definition, item.entity_id)
         == Some(SectionEntityIncidenceFamily::Point)
+        || unique_section_incidence_curve_family(definition, item.entity_id)
+            == Some(SectionEntityIncidenceFamily::Point)
         || unique_point_segment(definition, item.entity_id).is_some()
         || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
             segment.kind == crate::feature::FeatureSegmentKind::Point
@@ -1459,6 +1461,106 @@ mod tests {
             ),
             Some(SketchLocus::Start(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:102".to_string(),
+            )))
+        );
+    }
+
+    #[test]
+    fn inferred_declared_point_family_gates_point_predicates() {
+        let opaque = crate::feature::FeatureOpaqueSegment {
+            kind: 25,
+            directions: [None; 3],
+            point_ids: [None; 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 99,
+            body: Vec::new(),
+            offset: 99,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 2,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids: [1, 2],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 12,
+                    body: Vec::new(),
+                    offset: 12,
+                }],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: vec![opaque],
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(crate::feature::FeatureRelationTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                skamps: vec![crate::feature::FeatureSkamp {
+                    id: 1,
+                    kind: 0,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 99,
+                            sense: 0,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 2,
+                        },
+                    ],
+                    offset: 1,
+                }],
+                skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+                    declared_count: 1,
+                    entity_ref: 0,
+                    offset: 0,
+                }),
+                triples: Vec::new(),
+                triples_header: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        };
+        let item = crate::feature::FeatureSkampItem {
+            entity_id: 99,
+            sense: 0,
+        };
+        let sketch = SketchId("creo:model:sketch#917".to_string());
+        assert!(section_skamp_is_point(&definition, &item));
+        assert_eq!(
+            section_skamp_point_locus(&definition, &sketch, &item),
+            Some(SketchLocus::Entity(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:99".to_string(),
             )))
         );
     }
