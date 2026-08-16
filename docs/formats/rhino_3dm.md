@@ -2644,6 +2644,12 @@ format construct.
 
 ## 12. Curves and points
 
+For archive versions 4, 50, and 60, `ON_BinaryArchive::WriteObject` writes
+these point and curve classes through their class `Write` methods. Its curve
+compatibility translation to an `ON_NurbsCurve` applies only to archive
+versions 1 and 2. The payloads below are therefore the direct class-data
+payloads used by the V4, V5, and V6 object tables.
+
 ### 12.1 Point
 
 Packed version `1.0`; major 1 is accepted. The payload is:
@@ -2652,6 +2658,11 @@ Packed version `1.0`; major 1 is accepted. The payload is:
 u8 version
 ON_3dPoint point
 ```
+
+The point coordinates are document-length values. CADIR transfers one neutral
+point and one free vertex with the same source object identity, and converts
+the three coordinates to millimetres. There is no point parameter or
+dimension field.
 
 ### 12.2 Point cloud
 
@@ -2710,7 +2721,17 @@ ON_Interval domain
 i32 dimension
 ```
 
-The line is bounded. `dimension` is serialized without fallback.
+`ON_Line` is two `ON_3dPoint` values in `from`, then `to` order. The line
+domain is two f64 values. `dimension` is serialized without fallback. A
+source-valid line has distinct endpoints and a nondecreasing domain; the
+source `SetDomain` mutator accepts only a strictly increasing domain. CADIR's
+typed admission requires finite distinct endpoints, a finite strictly
+increasing domain, and dimension 2 or 3. A source-writable equal-domain line
+is retained as a native object record when it fails that CADIR gate.
+
+CADIR transfers a line as a degree-one NURBS curve with control points
+`from`, `to` and knots `[t0,t0,t1,t1]`. Endpoint coordinates are converted to
+millimetres; domain parameters and `dimension` are not converted.
 
 ### 12.4 Arc curve
 
@@ -2723,6 +2744,28 @@ ON_Interval angle
 ON_Interval curve domain
 i32 dimension
 ```
+
+The serialized `ON_Circle` is:
+
+```text
+ON_Plane
+  ON_3dPoint origin
+  ON_3dVector x axis
+  ON_3dVector y axis
+  ON_3dVector z axis
+  ON_PlaneEquation x, y, z, d
+f64 radius
+ON_3dPoint point at angle 0
+ON_3dPoint point at angle π/2
+ON_3dPoint point at angle π
+```
+
+The three points are consistency values written by `ON_BinaryArchive` from
+the circle at the stated angles. The plane origin, radius, consistency
+points, and plane-equation `d` are document-length values; plane axes and the
+first three plane-equation coefficients are dimensionless. The angle and
+curve-domain intervals are parameters and are not converted. The source
+reader accepts major 1 and normalizes a dimension other than 2 or 3 to 3.
 
 Invalid dimensions are normalized to 3 by the payload rule. Radius and both
 intervals must be valid.
@@ -2752,6 +2795,10 @@ for parameters `t[0..n)` is:
 [t0, t0, t1, ..., t[n-2], t[n-1], t[n-1]]
 ```
 
+Polyline points are document-length values; parameters and `dimension` are
+not converted. CADIR transfers the point sequence as one degree-one NURBS
+curve with the knot vector above.
+
 ### 12.6 Polycurve
 
 A packed version byte precedes this bounded layout:
@@ -2767,8 +2814,23 @@ parameter count × f64 segment parameters
 segment count × polymorphic ON_Curve
 ```
 
-Parameter count is segment count plus one. Segment parameters are finite and
-strictly increasing. Each child is a curve.
+The two reserved `i32` values are zero in the source writer. The reserved
+`ON_BoundingBox` is written and read but has no defined procedural meaning;
+the source writer uses a default/unset value. `WriteArray(m_t)` supplies the
+parameter count and values. Parameter count is segment count plus one.
+Segment parameters are finite and strictly increasing. Each child is a
+polymorphic `ON_Curve` class wrapper, in child order. The source validity
+check also requires every child to be valid and of the same dimension, rejects
+a closed child in a multi-child polycurve, and rejects gaps between adjacent
+children.
+
+CADIR emits one compound procedural-curve record for the polycurve and one
+neutral carrier curve for each child. Child geometry is converted to
+millimetres; child and polycurve parameters, the reserved values, and the
+reserved bounds are not converted. The parent retains the source object
+record. A bounded child gap is represented by the midpoint join repair and
+emits its geometry warning; a malformed child or parameter array does not
+enter the typed compound record.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of

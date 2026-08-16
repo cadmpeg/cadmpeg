@@ -787,6 +787,26 @@ unknown and source-fidelity boundary. A source-readable differential with
 nonmatching optional counts confirms the CADIR repair rule: each nonzero
 mismatch is consumed and dropped with `container.redundant-field-repaired`,
 while the point sequence remains transferred.
+The `ON_Point` and direct simple-curve classes are independently covered by
+V4, V50, V6, and inch-unit V6 witnesses. `ON_Point::Write`/`Read` defines the
+packed point prefix. `ON_LineCurve`, `ON_ArcCurve`, `ON_PolylineCurve`, and
+`ON_PolyCurve` define the direct field order, nested primitive values,
+parameter arrays, reserved polycurve prefix, and polymorphic child wrappers.
+The source model writer reaches those class writers unchanged for archive
+versions 4, 50, and 60; its curve-to-NURBS compatibility translation is only
+for archive versions 1 and 2. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/simple_curves_witness.cpp`
+reports source-valid readback for all five classes in all four files.
+`cadmpeg inspect` reads the V6 payload versions and witnessed point, endpoint,
+domain, radius, angle, parameter, dimension, and polycurve fields. The Rust
+decoder transfers the point, line, arc, and polyline geometry; it retains
+polycurve child order and domains in a compound procedural-curve record. The
+inch differential scales only document-length coordinates and radii, retaining
+all curve parameters, knots, weights, and domains. The equal-domain witness
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/equal_line_witness.cpp` is a
+separate CADIR boundary: OpenNURBS reports the source line valid and writes it,
+while the Rust typed gate rejects the non-strict domain and retains the
+complete native object record.
 `ON_PointGrid` is settled as nonpersistent rather than as a missing geometry
 reader. The class UUID is registered by OpenNURBS, but its `Write` and `Read`
 implementations return false. A source witness with a valid materialized 2×3
@@ -1105,6 +1125,30 @@ V4 decodes as a valid BRep. The absent-profile result has
 `geometry_transferred=false`, is retained by CADIR, and validates after the
 owner test `nil_profile_is_rejected_before_extrusion_transfer` gates the
 malformed boundary.
+
+The point and simple-curve slice is closed by `ON_Point::Write`/`Read` in
+`/home/pcurve/side2/opennurbs/opennurbs_pointgeometry.cpp:24-60`,
+`ON_LineCurve::Write`/`Read` and `IsValid` in
+`/home/pcurve/side2/opennurbs/opennurbs_linecurve.cpp:187-238`,
+`ON_ArcCurve::Write`/`Read` and `IsValid` in
+`/home/pcurve/side2/opennurbs/opennurbs_arccurve.cpp:192-280`,
+`ON_PolylineCurve::Write`/`Read` and `IsValid` in
+`/home/pcurve/side2/opennurbs/opennurbs_polylinecurve.cpp:168-260`, and
+`ON_PolyCurve::Write`/`Read` and `IsValid` in
+`/home/pcurve/side2/opennurbs/opennurbs_polycurve.cpp:272-534`. The nested
+primitive writers are in `opennurbs_archive.cpp:1287-1402`; the archive
+version dispatch in `opennurbs_archive.cpp:4507-4647` proves that V4, V50,
+and V6 preserve these direct class payloads. The authored
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/simple_curves_witness.cpp`
+and byte report
+`/home/pcurve/side2/tmp/agent-rhino-l9-20260816/simple_curves_differential.txt`
+cover source-valid point, line, arc, polyline, and two-child polycurve
+readback, V4/V50/V6 class UUIDs and payload fields, and the inch differential.
+The equal-domain witness is the explicit CADIR boundary: OpenNURBS accepts
+and writes `[7,7]`, while the Rust decoder rejects that non-strict typed line
+and retains its complete source record. The Rust curve readers and the
+existing owner/integration tests now implement the specified field order,
+unit conversion, NURBS carriers, and compound polycurve transfer.
 
 ### FV-06. Later major payload admission
 
