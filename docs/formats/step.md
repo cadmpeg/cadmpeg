@@ -471,14 +471,18 @@ mapped by that phase after their angular unit conversion. Cartesian selectors
 invert the canonical carrier and therefore need no phase adjustment. The
 phase is inherited by curve replicas, trims, and spatial offsets.
 
-`TRIMMED_CURVE` stores trim selects as parameter values, Cartesian points, or
-both. Cartesian selects on lines, circles, and ellipses resolve through the
-basis curve's parameterization. Its local parameter domain is the directed
-trim interval measured from the first select. On a cyclic basis, a forward
-trim increases the second select by one period when it is below the first;
-a reversed trim increases the first select by one period when it is below the
-second. The stored sense maps local parameters in the increasing or decreasing
-parent direction. A
+ISO 10303-42 defines `TRIMMED_CURVE` as a selected portion of an unchanged
+basis curve. Trim selects are parameter values, Cartesian points, or both.
+Cartesian selects on lines, circles, and ellipses resolve through the basis
+curve's parameterization. Its local parameter domain is the directed trim
+interval measured from the first select. For basis parameter `t` and trim
+parameters `t1` and `t2`, the local parameter is `s = t - t1` for a TRUE sense
+and `s = t1 - t` for a FALSE sense. On a cyclic basis, the forward directed
+branch increases the second select by one period when it is below the first;
+the reversed directed branch increases the first select by one period when it
+is below the second. The domain is `0..abs(t2-t1)` after that branch
+adjustment. The stored sense maps local parameters in the increasing or
+decreasing parent direction. A
 `CURVE_REPLICA` retains the complete parent relation, including a trim, and
 inherits the parent's parameter range and parameterization; its transformation
 changes model-space location and dimensions only. Deferred curve dependencies
@@ -503,12 +507,16 @@ segments resolve to bounded surface curves, bounded pcurves, or nested
 composite curves on that surface. A plain three-dimensional composite curve
 has a general curve role.
 
-`RECTANGULAR_TRIMMED_SURFACE` retains its basis surface, both parameter
-endpoint pairs, and both parameter-direction senses as a surface subset. Its
-local U and V domains are `0..abs(u2-u1)` and `0..abs(v2-v1)`. A local parameter
-maps to `u1 + s` or `u1 - s`, and to `v1 + t` or `v1 - t`, according to the
-stored senses. On a cyclic basis axis, apply the same directed-branch period
-adjustment to the second endpoint before computing the absolute span. A
+ISO 10303-42 defines `RECTANGULAR_TRIMMED_SURFACE` by applying the
+`TRIMMED_CURVE` interval construction independently to its U and V boundary
+parameters. It retains its basis surface, both parameter endpoint pairs, and
+both parameter-direction senses as a surface subset. Its local U and V
+domains are `0..abs(u2-u1)` and `0..abs(v2-v1)` after the directed cyclic
+branch adjustment. A local parameter maps to `u1 + s` or `u1 - s`, and to
+`v1 + t` or `v1 - t`, according to the stored senses. On a cyclic basis axis,
+the forward branch increases the second endpoint by one period when it is
+below the first; the reversed branch increases the first endpoint by one
+period when it is below the second. A
 `SURFACE_REPLICA` retains the complete parent relation,
 including a rectangular or curve-bounded surface; its transformation changes
 model-space location and dimensions while preserving the parent parameter

@@ -444,22 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PC-05. Periodic trim interval
-
-**Question.** What STEP rule establishes periodic trim interval?
-
-**Known.** A cyclic trim follows the directed parameter branch. For a
-forward sense, if the second select is below the first, add one basis period
-to the second select. For a reversed sense, if the first select is below the
-second, add one basis period to the first select. The stored local domain is
-the absolute directed span after that adjustment. Non-cyclic trims use the
-stored selects without adjustment. The same rule applies independently to
-the U and V axes of `RECTANGULAR_TRIMMED_SURFACE`.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PC-06. Default placement reference direction
 
 **Question.** What STEP rule establishes default placement reference direction?

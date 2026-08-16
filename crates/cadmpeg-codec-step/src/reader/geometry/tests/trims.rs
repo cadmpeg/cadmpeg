@@ -173,6 +173,76 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
 }
 
 #[test]
+fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc05_periodic_trim.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode periodic trim witness");
+
+    let expected = [
+        (
+            "step:data:surface#8",
+            [[5.5, 0.5 + std::f64::consts::TAU], [0.5, 4.5]],
+            true,
+            true,
+        ),
+        (
+            "step:data:surface#9",
+            [
+                [5.5, 0.5 + std::f64::consts::TAU],
+                [0.5 + std::f64::consts::TAU, 4.5],
+            ],
+            true,
+            false,
+        ),
+        (
+            "step:data:surface#10",
+            [
+                [0.5 + std::f64::consts::TAU, 5.5],
+                [5.5, 0.5 + std::f64::consts::TAU],
+            ],
+            false,
+            true,
+        ),
+        (
+            "step:data:surface#11",
+            [[4.5, 0.5], [4.5, 0.5]],
+            false,
+            false,
+        ),
+    ];
+    for (surface_id, expected_ranges, expected_u_sense, expected_v_sense) in expected {
+        let construction = decoded
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|surface| surface.surface.as_str() == surface_id)
+            .expect("periodic trimmed surface construction");
+        assert!(matches!(
+            &construction.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
+                parameter_ranges,
+                u_sense: Some(u_sense),
+                v_sense: Some(v_sense),
+                ..
+            } if parameter_ranges
+                .iter()
+                .flatten()
+                .zip(expected_ranges.iter().flatten())
+                .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12)
+                && *u_sense == expected_u_sense
+                && *v_sense == expected_v_sense
+        ));
+    }
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn rectangular_trimmed_surface_keeps_topology_pcurves_in_local_uv_space() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec(),
