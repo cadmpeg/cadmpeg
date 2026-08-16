@@ -112,6 +112,47 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
 }
 
 #[test]
+fn property_readers_follow_source_version_gates_and_boundaries() {
+    let mut revision_body = vec![0x1f];
+    revision_body.extend(utf16_bytes("creator"));
+    revision_body.extend((0..8).flat_map(i32::to_le_bytes));
+    revision_body.extend(utf16_bytes("editor"));
+    revision_body.extend((8..16).flat_map(i32::to_le_bytes));
+    revision_body.extend(7_i32.to_le_bytes());
+    revision_body.extend([0xde, 0xad]);
+    let (revision_data, revision_record) = metadata_record(0x2000_8021, revision_body);
+    let revision = settings::parse_revision(&revision_data, &revision_record)
+        .expect("revision-history future minor");
+    assert_eq!(revision.created_by, "creator");
+    assert_eq!(revision.last_edited_by, "editor");
+    assert_eq!(revision.revision_count, 7);
+
+    let mut notes_body = vec![0x1f];
+    notes_body.extend(1_i32.to_le_bytes());
+    notes_body.extend(utf16_bytes("notes"));
+    notes_body.extend(1_i32.to_le_bytes());
+    notes_body.extend([10_i32, 20, 30, 40].into_iter().flat_map(i32::to_le_bytes));
+    notes_body.push(1);
+    notes_body.extend([0xbe, 0xef]);
+    let (notes_data, notes_record) = metadata_record(0x2000_8022, notes_body);
+    let notes = settings::parse_notes(&notes_data, &notes_record).expect("notes future minor");
+    assert_eq!(notes.text, "notes");
+    assert!(notes.locked);
+
+    let mut application_body = vec![0x2f];
+    application_body.extend(utf16_bytes("app"));
+    application_body.extend(utf16_bytes("https://example.test"));
+    application_body.extend(utf16_bytes("details"));
+    application_body.extend([0xaa, 0xbb]);
+    let (application_data, application_record) = metadata_record(0x2000_8024, application_body);
+    let application = settings::parse_application(&application_data, &application_record)
+        .expect("application future major");
+    assert_eq!(application.name, "app");
+    assert_eq!(application.url, "https://example.test");
+    assert_eq!(application.details, "details");
+}
+
+#[test]
 fn parses_plugin_list_entries_and_bounded_future_minors() {
     let archive = ArchiveVersion::V8;
     let plugin_payload = |minor: i32, detailed: bool| {

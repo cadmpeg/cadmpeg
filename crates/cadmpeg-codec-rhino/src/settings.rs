@@ -789,13 +789,7 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
 
 fn parse_application(data: &[u8], record: &Record) -> Result<Application, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
-    let version = packed(&mut reader)?;
-    if version.0 != 1 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported application version",
-        ));
-    }
+    packed(&mut reader)?;
     let value = Application {
         source: SourceRange {
             range: record.range.clone(),

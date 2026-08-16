@@ -253,6 +253,10 @@ for viewport userdata, V3 wallpaper, and view attributes, and the short zero
 marker and accepts a bounded suffix after it. The Rust view parser now requires
 the source child type, stops at the marker, and reports a typed loss for a
 failed child or malformed named-construction-plane list.
+The property readers are also source-backed: `ON_3dmRevisionHistory` uses a
+major-1 prefix, `ON_3dmNotes` uses major 1 with `locked` at minor 1, and
+`ON_3dmApplication` reads its three strings without a major/minor gate; all
+three stop at their containing property-record boundaries.
 
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
@@ -262,7 +266,8 @@ layout. Remove only rejection not required by that evidence.
 settled; annotation settings, grid defaults, units/tolerances, plugin list,
 settings attributes, render-mesh, analysis-mesh, render-settings, render
 settings userdata, the current-selector records, and the V1 settings
-presentation stream are now source-backed through their known prefixes,
+presentation stream, and revision-history, notes, and application property
+records are now source-backed through their known prefixes,
 child types, stream markers, version gates, settings-attributes, mesh, and
 modern render-settings outer-CRC ranges. The
 historical unused settings

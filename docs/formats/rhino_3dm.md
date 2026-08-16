@@ -795,7 +795,14 @@ UTF-16 application details
 
 The writer-version property is a short value in
 `TCODE_PROPERTIES_OPENNURBS_VERSION`. The preview records are bounded binary
-payloads.
+payloads. The revision-history writer emits version `1.0`; its reader requires
+major version 1 for the typed prefix, then the containing property record
+boundary consumes the remainder. The notes writer emits version `1.1`; its
+reader requires major version 1, reads `locked` at minor 1 and later, and then
+ends at the containing boundary. The application writer emits version `1.0`;
+its reader reads the three strings after the packed version without a major or
+minor gate and then ends at the containing boundary. Later direct suffix bytes
+are not typed fields.
 
 ### 8.2 Units and tolerances
 
