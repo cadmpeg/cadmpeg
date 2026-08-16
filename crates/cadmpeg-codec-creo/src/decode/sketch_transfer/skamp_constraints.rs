@@ -552,6 +552,7 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         SketchConstraintDefinition::SameCoordinate { first, second, .. }
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinition::VerticalDistance { first, second, .. }
         | SketchConstraintDefinition::HorizontalLoci { first, second }

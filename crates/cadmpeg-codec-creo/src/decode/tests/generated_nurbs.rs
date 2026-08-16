@@ -673,6 +673,18 @@ fn equation_function_six_derives_positive_point_distance() {
         resolved_section_radii(&definition(Some(6.0))).get(&20),
         Some(&6.0)
     );
+
+    let mut stored_without_coordinates = definition(Some(5.0));
+    for row in &mut stored_without_coordinates
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows[..4]
+    {
+        row.value = None;
+        row.guess = None;
+    }
+    assert!(!resolved_section_scalar_values(&stored_without_coordinates).contains_key(&(3, 20)));
 }
 
 #[test]

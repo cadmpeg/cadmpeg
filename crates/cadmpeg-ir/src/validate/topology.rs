@@ -1662,6 +1662,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 distance_parameter: Some(parameter),
                 ..
             }
+            | Definition::DistanceLociValue {
+                first,
+                second,
+                parameter: Some(parameter),
+                ..
+            }
             | Definition::HorizontalDistance {
                 first,
                 second,
@@ -1679,6 +1685,15 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 first,
                 second,
                 distance_parameter: None,
+                ..
+            } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
+            Definition::DistanceLociValue {
+                first,
+                second,
+                parameter: None,
                 ..
             } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],

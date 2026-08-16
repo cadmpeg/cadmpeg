@@ -1175,6 +1175,18 @@ pub enum SketchConstraintDefinition {
         /// Driving distance parameter.
         parameter: ParameterId,
     },
+    /// Euclidean distance between two loci with a source-evaluated value.
+    DistanceLociValue {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+        /// Non-negative measured distance in model units.
+        distance: Length,
+        /// Driving distance parameter, when the source supplies one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<ParameterId>,
+    },
     /// A second locus is displaced from the first by a polar sketch-space
     /// distance and direction.
     PolarDistance {

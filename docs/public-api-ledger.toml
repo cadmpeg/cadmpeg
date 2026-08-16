@@ -406,6 +406,13 @@ item = "cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance"
 reason = "Creo function 0 transfers complete polar endpoint displacement as a typed sketch relation"
 
 [[change]]
+commit = "bdf272ab22500b5ad2b0c22704a0026488218cbf"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue"
+reason = "Creo function 6 transfers fixed Euclidean locus distance as a typed sketch relation"
+
+[[change]]
 commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
 crate = "cadmpeg-core"
 kind = "deletion"

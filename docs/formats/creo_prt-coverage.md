@@ -70,6 +70,10 @@ fixtures, scores above L1 remain blocked.
   both point loci and finite radial and angular values reconcile. Zero-length
   rows omit the undefined direction, and a reconciled type-3 radius dimension
   remains attached as the driving distance parameter.
+- Function-six equations transfer as typed fixed Euclidean locus-distance
+  constraints when their positive scalar and both point loci reconcile. A
+  reconciled type-3 radius dimension remains attached as an optional driving
+  distance parameter.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots

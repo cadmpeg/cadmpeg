@@ -26,7 +26,8 @@ use super::{
     native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
     reconcile_constraint_entity_references, resolved_profile_chains, section_degenerate_axis_line,
     section_dimension_constraints, section_equation_axis_distance_constraints,
-    section_equation_equal_distance_constraints, section_equation_native_constraints,
+    section_equation_equal_distance_constraints,
+    section_equation_function_six_distance_constraints, section_equation_native_constraints,
     section_equation_point_on_line_constraints, section_equation_polar_distance_constraints,
     section_equation_radius_dimension_constraints, section_equation_same_coordinate_constraints,
     section_equation_unsigned_distance_constraints, section_segment_identity_suffix,
@@ -645,6 +646,9 @@ pub(in super::super) fn transfer_sketches(
                     definition, &sketch_id,
                 ))
                 .chain(section_equation_polar_distance_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(section_equation_function_six_distance_constraints(
                     definition, &sketch_id,
                 ))
                 .chain(section_equation_equal_distance_constraints(

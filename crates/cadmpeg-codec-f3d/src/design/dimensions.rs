@@ -1788,6 +1788,7 @@ pub(crate) fn constraint_parameters(
         Definition::PolarDistance {
             distance_parameter, ..
         } => distance_parameter.iter().collect(),
+        Definition::DistanceLociValue { parameter, .. } => parameter.iter().collect(),
         Definition::Distance { parameter, .. }
         | Definition::DistanceLoci { parameter, .. }
         | Definition::HorizontalDistance { parameter, .. }

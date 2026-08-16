@@ -11,6 +11,7 @@ use crate::sketches::{
 use std::collections::{HashMap, HashSet};
 
 const EPS_EQUAL_DISTANCE: f64 = 1.0e-9;
+const EPS_DISTANCE_VALUE: f64 = 1.0e-9;
 const EPS_POLAR_ANGLE: f64 = 1.0e-9;
 const EPS_POLAR_ZERO: f64 = 1.0e-12;
 
@@ -1450,6 +1451,37 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .max(EPS_EQUAL_DISTANCE * (1.0 + first.abs().max(second.abs())))
                     })
             }
+            Constraint::DistanceLociValue {
+                first,
+                second,
+                distance,
+                parameter,
+            } => {
+                let measured_points =
+                    sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
+                let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
+                    let measured = distance2(*first, *second);
+                    (measured - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_DISTANCE_VALUE * (1.0 + measured.abs().max(distance.0)))
+                });
+                let parameter_matches = parameter.as_ref().is_none_or(|parameter| {
+                    let Some(Some(crate::features::ParameterValue::Length(value))) =
+                        parameter_values.get(parameter)
+                    else {
+                        return false;
+                    };
+                    let expected = value.0.abs();
+                    (expected - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.0)))
+                });
+                distance.0.is_finite() && distance.0 >= 0.0 && distance_matches && parameter_matches
+            }
             Constraint::PolarDistance {
                 first,
                 second,
@@ -1947,6 +1979,7 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
         Constraint::Midpoint { point, .. } | Constraint::PointOnObject { point, .. } => vec![point],
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
+        | Constraint::DistanceLociValue { first, second, .. }
         | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => vec![first, second],

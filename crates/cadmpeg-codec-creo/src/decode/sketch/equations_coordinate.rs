@@ -8,11 +8,35 @@ use super::super::sketch_transfer::section_solver_equation_is_disabled;
 use super::equations_scalar::SectionScalarVariable;
 use super::skamp::SectionPointSource;
 
+#[derive(Clone, Copy)]
+pub(crate) struct SectionFunctionSixDistance {
+    pub(crate) first: u32,
+    pub(crate) second: u32,
+    pub(crate) radius: SectionScalarVariable,
+    pub(crate) distance: Option<f64>,
+    pub(crate) coordinate_distance: Option<f64>,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
+}
+
 pub(crate) fn section_equation_function_six_distance_values(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(SectionScalarVariable, f64)> {
+    section_equation_function_six_distance_rows(definition, coordinates, ambiguous_point_ids)
+        .into_iter()
+        .filter(|equation| equation.active)
+        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance?)))
+        .collect()
+}
+
+pub(crate) fn section_equation_function_six_distance_rows(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionFunctionSixDistance> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -39,7 +63,6 @@ pub(crate) fn section_equation_function_six_distance_values(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter_map(|equation| {
             if equation.function_id != 6 {
                 return None;
@@ -71,25 +94,49 @@ pub(crate) fn section_equation_function_six_distance_values(
             {
                 return None;
             }
-            let first = coordinates
-                .get(&first_u.key)
-                .and_then(|point| Some([point[0]?, point[1]?]))?;
-            let second = coordinates
-                .get(&second_u.key)
-                .and_then(|point| Some([point[0]?, point[1]?]))?;
-            let delta = [second[0] - first[0], second[1] - first[1]];
-            let distance = delta[0].hypot(delta[1]);
-            if !distance.is_finite() || distance <= 0.0 {
+            let stored_distance = radius
+                .value
+                .filter(|value| value.is_finite() && *value > 0.0);
+            if radius.value.is_some() && stored_distance.is_none() {
                 return None;
             }
-            if radius.value.is_some_and(|stored| {
-                !stored.is_finite()
-                    || stored <= 0.0
-                    || (stored - distance).abs() > 1e-9 * stored.abs().max(distance).max(1.0)
-            }) {
-                return None;
-            }
-            Some(((radius.variable_type, radius.key), distance))
+            let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+            let (distance, coordinate_distance) = if active {
+                let first = coordinates
+                    .get(&first_u.key)
+                    .and_then(|point| Some([point[0]?, point[1]?]));
+                let second = coordinates
+                    .get(&second_u.key)
+                    .and_then(|point| Some([point[0]?, point[1]?]));
+                match (first, second) {
+                    (Some(first), Some(second)) => {
+                        let delta = [second[0] - first[0], second[1] - first[1]];
+                        let distance = delta[0].hypot(delta[1]);
+                        if !distance.is_finite() || distance <= 0.0 {
+                            return None;
+                        }
+                        if stored_distance
+                            .is_some_and(|stored| !approximately_equal(stored, distance))
+                        {
+                            return None;
+                        }
+                        (Some(distance), Some(distance))
+                    }
+                    _ => (stored_distance, None),
+                }
+            } else {
+                (stored_distance, None)
+            };
+            Some(SectionFunctionSixDistance {
+                first: first_u.key,
+                second: second_u.key,
+                radius: (radius.variable_type, radius.key),
+                distance,
+                coordinate_distance,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active,
+            })
         })
         .collect()
 }

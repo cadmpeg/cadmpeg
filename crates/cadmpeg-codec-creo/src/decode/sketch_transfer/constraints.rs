@@ -8,10 +8,11 @@ use super::super::feature_history::{
 use super::super::sketch::{
     approximately_equal, resolved_section_coordinates,
     section_equation_function_forty_three_axis_distance_rows,
-    section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
-    section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
-    section_line_fixed_coordinate, section_linear_distance_coordinate, section_segment_rows,
-    section_type5_radius_arc, unique_section_skamp_segment,
+    section_equation_function_six_distance_rows, section_equation_point_on_line_constraint_rows,
+    section_equation_radial_constraint_rows, section_equation_radius_dimensions,
+    section_equation_unsigned_coordinate_distance_rows, section_line_fixed_coordinate,
+    section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
+    unique_section_skamp_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
@@ -97,6 +98,7 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::SameCoordinate { first, second, .. }
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
         | SketchConstraintDefinition::PolarDistance { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
@@ -195,6 +197,15 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
                 .is_some_and(|parameter| !emitted.contains(parameter))
             {
                 *distance_parameter = None;
+            }
+            true
+        }
+        SketchConstraintDefinition::DistanceLociValue { parameter, .. } => {
+            if parameter
+                .as_ref()
+                .is_some_and(|parameter| !emitted.contains(parameter))
+            {
+                *parameter = None;
             }
             true
         }
@@ -745,6 +756,114 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
     .collect()
 }
 
+fn section_equation_radius_dimension_parameters(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> BTreeMap<(u32, u32), Option<(ParameterId, f64)>> {
+    let mut dimension_parameters = BTreeMap::<(u32, u32), Option<(ParameterId, f64)>>::new();
+    let Some(dimensions) = definition.dimensions.as_ref() else {
+        return dimension_parameters;
+    };
+    for equation in section_equation_radius_dimensions(definition) {
+        let Some(ordinal) = usize::try_from(equation.scalar.1).ok() else {
+            continue;
+        };
+        let Some((dimension, parameter)) =
+            resolved_feature_dimension_parameter(sketch, dimensions, ordinal)
+        else {
+            continue;
+        };
+        let Some(dimension_value) = dimension.value else {
+            continue;
+        };
+        if dimension.dimension_type != 3
+            || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
+            || !dimension_value.is_finite()
+            || dimension_value <= 0.0
+            || !approximately_equal(dimension_value, equation.value)
+        {
+            continue;
+        }
+        let candidate = (parameter, dimension_value);
+        for variable in [equation.radius_variable, equation.scalar] {
+            let slot = dimension_parameters
+                .entry(variable)
+                .or_insert_with(|| Some(candidate.clone()));
+            if slot.as_ref() != Some(&candidate) {
+                *slot = None;
+            }
+        }
+    }
+    dimension_parameters
+}
+
+fn section_equation_dimension_parameter(
+    parameters: &BTreeMap<(u32, u32), Option<(ParameterId, f64)>>,
+    variable: (u32, u32),
+    value: f64,
+) -> Option<ParameterId> {
+    let Some(Some((parameter, dimension_value))) = parameters.get(&variable) else {
+        return None;
+    };
+    approximately_equal(*dimension_value, value).then(|| parameter.clone())
+}
+
+pub(in super::super) fn section_equation_function_six_distance_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let coordinates = resolved_section_coordinates(definition);
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .filter(|variables| variables.is_complete())
+        .map(|variables| variables.reconciled_points().1)
+        .unwrap_or_default();
+    let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch);
+    section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
+        .into_iter()
+        .filter_map(|equation| {
+            let distance = equation.distance?;
+            if !distance.is_finite() || distance <= 0.0 {
+                return None;
+            }
+            let first = section_point_locus(definition, sketch, equation.first)?;
+            let second = section_point_locus(definition, sketch, equation.second)?;
+            let parameter = section_equation_dimension_parameter(
+                &dimension_parameters,
+                equation.radius,
+                distance,
+            );
+            Some((
+                SketchConstraint {
+                    id: sketch_constraint_id(
+                        sketch,
+                        format_args!("equation:{}", equation.equation_id),
+                    ),
+                    sketch: sketch.clone(),
+                    definition: SketchConstraintDefinition::DistanceLociValue {
+                        first,
+                        second,
+                        distance: Length(distance),
+                        parameter,
+                    },
+                    name: None,
+                    driving: None,
+                    active: Some(equation.active),
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
+                    native_ref: Some(sketch_native_ref(sketch)),
+                },
+                equation.offset,
+            ))
+        })
+        .collect()
+}
+
 pub(in super::super) fn section_equation_polar_distance_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -756,36 +875,7 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    let mut dimension_parameters = BTreeMap::<(u32, u32), Option<ParameterId>>::new();
-    if let Some(dimensions) = definition.dimensions.as_ref() {
-        for equation in section_equation_radius_dimensions(definition) {
-            let Some(ordinal) = usize::try_from(equation.scalar.1).ok() else {
-                continue;
-            };
-            let Some((dimension, parameter)) =
-                resolved_feature_dimension_parameter(sketch, dimensions, ordinal)
-            else {
-                continue;
-            };
-            if dimension.dimension_type != 3
-                || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-                || !dimension
-                    .value
-                    .is_some_and(|value| value.is_finite() && value > 0.0)
-                || !approximately_equal(dimension.value.unwrap_or_default(), equation.value)
-            {
-                continue;
-            }
-            for variable in [equation.radius_variable, equation.scalar] {
-                let slot = dimension_parameters
-                    .entry(variable)
-                    .or_insert_with(|| Some(parameter.clone()));
-                if slot.as_ref() != Some(&parameter) {
-                    *slot = None;
-                }
-            }
-        }
-    }
+    let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch);
     section_equation_radial_constraint_rows(definition, &coordinates, &ambiguous_point_ids)
         .into_iter()
         .filter_map(|equation| {
@@ -800,9 +890,11 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
             };
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
-            let distance_parameter = dimension_parameters
-                .get(&equation.radius)
-                .and_then(Clone::clone);
+            let distance_parameter = section_equation_dimension_parameter(
+                &dimension_parameters,
+                equation.radius,
+                distance,
+            );
             Some((
                 SketchConstraint {
                     id: sketch_constraint_id(

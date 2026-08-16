@@ -265,6 +265,7 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::EllipseAngle { .. }
         | Constraint::Distance { .. }
         | Constraint::DistanceLoci { .. }
+        | Constraint::DistanceLociValue { .. }
         | Constraint::PolarDistance { .. }
         | Constraint::HorizontalDistance { .. }
         | Constraint::VerticalDistance { .. }
