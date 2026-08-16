@@ -55,16 +55,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-08. Type 406 Form 6 requires an ordered layer pair
-
-**Question.** Must the Type 406 Form 6 layer numbers be in ascending order?
-
-**Known.** `entities/structure.rs:298-310` requires nonnegative lower and upper values with `upper >= lower`; the property test rejects a descending pair. The Appearance section of `iges.md` calls the pair ordered.
-
-**Need.** We need the field definitions and order rule for the Form 6 layer pair.
-
-**Note.** Reopened by the 2026-08-16 audit. The check and fixture establish implementation behavior, but the closure did not establish the ordering requirement from the IGES specification.
-
 ## 7. Write path
 
 ### WR-10. Fixed protocol constants with no complete source mapping

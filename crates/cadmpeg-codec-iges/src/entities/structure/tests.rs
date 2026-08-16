@@ -503,11 +503,33 @@ fn decode_rejects_descending_drilled_hole_layer_range() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(result
+    let loss = result
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .find(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
+}
+
+#[test]
+fn decode_accepts_equal_drilled_hole_layer_range() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(equal_drilled_hole_layer_range_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 #[test]

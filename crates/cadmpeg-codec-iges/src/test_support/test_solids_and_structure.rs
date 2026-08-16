@@ -1168,6 +1168,16 @@ pub(crate) fn invalid_drilled_hole_layer_order_file() -> Vec<u8> {
     }])
 }
 
+pub(crate) fn equal_drilled_hole_layer_range_file() -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 406,
+        form: 6,
+        label: "DRILL".into(),
+        status: "00000000",
+        parameters: "406,5,0.5,0.45,1,2,2;".into(),
+    }])
+}
+
 pub(crate) fn grid_property_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
