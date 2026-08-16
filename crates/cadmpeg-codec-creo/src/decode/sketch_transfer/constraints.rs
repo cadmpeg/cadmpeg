@@ -829,6 +829,9 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
     section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
         .into_iter()
         .filter_map(|equation| {
+            if !equation.points_complete {
+                return None;
+            }
             let distance = equation.distance?;
             if !distance.is_finite() || distance <= 0.0 {
                 return None;

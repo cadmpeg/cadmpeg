@@ -525,11 +525,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
     variables.rows.push(variable(3, 21, Some(5.0)));
     let propagated_constraints =
         section_equation_function_six_distance_constraints(&propagated_distance, &sketch);
-    assert_eq!(propagated_constraints.len(), 1);
-    assert_eq!(
-        propagated_constraints[0].0.definition,
-        constraints[0].0.definition
-    );
+    assert!(propagated_constraints.is_empty());
     let mut conflicting_equality_distance = propagated_distance.clone();
     conflicting_equality_distance
         .variables

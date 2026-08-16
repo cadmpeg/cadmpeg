@@ -19,6 +19,7 @@ pub(crate) struct SectionFunctionSixDistance {
     pub(crate) radius: SectionScalarVariable,
     pub(crate) distance: Option<f64>,
     pub(crate) coordinate_distance: Option<f64>,
+    pub(crate) points_complete: bool,
     pub(crate) equation_id: u32,
     pub(crate) offset: usize,
     pub(crate) active: bool,
@@ -110,14 +111,15 @@ pub(crate) fn section_equation_function_six_distance_rows(
                 return None;
             }
             let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+            let first_point = coordinates
+                .get(&first_u.key)
+                .and_then(|point| Some([point[0]?, point[1]?]));
+            let second_point = coordinates
+                .get(&second_u.key)
+                .and_then(|point| Some([point[0]?, point[1]?]));
+            let points_complete = first_point.is_some() && second_point.is_some();
             let (distance, coordinate_distance) = if active {
-                let first = coordinates
-                    .get(&first_u.key)
-                    .and_then(|point| Some([point[0]?, point[1]?]));
-                let second = coordinates
-                    .get(&second_u.key)
-                    .and_then(|point| Some([point[0]?, point[1]?]));
-                match (first, second) {
+                match (first_point, second_point) {
                     (Some(first), Some(second)) => {
                         let delta = [second[0] - first[0], second[1] - first[1]];
                         let distance = delta[0].hypot(delta[1]);
@@ -142,6 +144,7 @@ pub(crate) fn section_equation_function_six_distance_rows(
                 radius: (radius.variable_type, radius.key),
                 distance,
                 coordinate_distance,
+                points_complete,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
                 active,

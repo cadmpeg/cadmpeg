@@ -74,7 +74,8 @@ fixtures, scores above L1 remain blocked.
   rows omit the undefined direction, and a reconciled type-3 radius dimension
   remains attached as the driving distance parameter.
 - Function-six equations transfer as typed fixed Euclidean locus-distance
-  constraints when their positive scalar and both point loci reconcile. A
+  constraints when their positive scalar agrees with a complete point pair and
+  both point loci reconcile. A
   reconciled type-3 radius dimension remains attached as an optional driving
   distance parameter.
 - Function-thirty-one equations transfer as typed two-axis point-coordinate
