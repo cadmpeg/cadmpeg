@@ -2183,6 +2183,7 @@ pub(super) fn explicit_reference_plane_frame(
 ) -> Result<Option<(Point3, Vector3, Vector3)>, ()> {
     let matrix_candidates = matrix_reference_plane_frame_candidates(payload);
     let fixed_candidates = fixed_reference_plane_frame_candidates(payload, &matrix_candidates);
+    let compact_candidates = compact_reference_plane_frame_candidates(payload);
     let mut frames = matrix_candidates
         .iter()
         .map(|(_, frame)| *frame)
@@ -2190,7 +2191,30 @@ pub(super) fn explicit_reference_plane_frame(
     frames.extend(fixed_candidates.iter().map(|(_, frame)| *frame));
     frames.extend(angled_reference_plane_frame(payload));
     frames.extend(minimal_reference_plane_frame(payload));
-    frames.extend(compact_reference_plane_frame(payload));
+    let strong_ranges = matrix_candidates
+        .iter()
+        .map(|(offset, _)| (*offset, matrix_plane::LEN))
+        .chain(
+            fixed_candidates
+                .iter()
+                .map(|(offset, _)| (*offset, fixed_plane::LEN)),
+        )
+        .collect::<Vec<_>>();
+    frames.extend(
+        compact_candidates
+            .iter()
+            .filter(|(offset, _)| {
+                strong_ranges.iter().all(|(strong_offset, strong_len)| {
+                    !ranges_overlap(
+                        *offset,
+                        COMPACT_REFERENCE_PLANE_FRAME_LEN,
+                        *strong_offset,
+                        *strong_len,
+                    )
+                })
+            })
+            .map(|(_, frame)| *frame),
+    );
     frames.sort_by_key(reference_plane_frame_key);
     frames.dedup_by(|left, right| left == right);
     match frames.as_slice() {
@@ -2712,6 +2736,21 @@ pub(super) fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
 }
 
 pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    let mut frames = compact_reference_plane_frame_candidates(payload)
+        .into_iter()
+        .map(|(_, frame)| frame)
+        .collect::<Vec<_>>();
+    frames.sort_by_key(reference_plane_frame_key);
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn compact_reference_plane_frame_candidates(
+    payload: &[u8],
+) -> Vec<(usize, (Point3, Vector3, Vector3))> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = View::f64_le_at(bytes, relative)?;
@@ -2719,8 +2758,9 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
     };
     let mut frames = payload
         .windows(COMPACT_REFERENCE_PLANE_FRAME_LEN)
-        .filter(|bytes| bytes[64] == 0 && bytes[81] == 0)
-        .flat_map(|bytes| {
+        .enumerate()
+        .filter(|(_, bytes)| bytes[64] == 0 && bytes[81] == 0)
+        .flat_map(|(offset, bytes)| {
             let Some(origin) = (|| {
                 Some(Point3::new(
                     scalar(bytes, 0)? * NATIVE_TO_IR,
@@ -2762,29 +2802,23 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
                         && (normal.dot(normal) - 1.0).abs() <= 1.0e-9
                         && (normal.x - normal_xy.0).abs() <= 1.0e-9
                         && (normal.y - normal_xy.1).abs() <= 1.0e-9)
-                        .then_some((origin, normal, u_axis))
+                        .then_some((offset, (origin, normal, u_axis)))
                 })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    frames.sort_by_key(|(origin, normal, u_axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            normal.x.to_bits(),
-            normal.y.to_bits(),
-            normal.z.to_bits(),
-            u_axis.x.to_bits(),
-            u_axis.y.to_bits(),
-            u_axis.z.to_bits(),
-        ]
-    });
-    frames.dedup();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    frames.sort_by_key(|(offset, frame)| (*offset, reference_plane_frame_key(frame)));
+    frames
+}
+
+fn ranges_overlap(
+    left_offset: usize,
+    left_len: usize,
+    right_offset: usize,
+    right_len: usize,
+) -> bool {
+    left_offset < right_offset.saturating_add(right_len)
+        && right_offset < left_offset.saturating_add(left_len)
 }
 
 #[cfg(test)]
@@ -2792,3 +2826,6 @@ mod reference_geometry_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod frame_ownership;
