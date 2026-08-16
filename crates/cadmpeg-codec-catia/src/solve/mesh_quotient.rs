@@ -6584,9 +6584,16 @@ fn singleton_mesh_boundary_directions(
     }
     let first = boundary[0];
     let first_pair = *edge_candidates.get(first.edge)?.first()?;
-    let first_directions = first
-        .reversed
-        .map_or_else(|| vec![false, true], |direction| vec![direction]);
+    let first_directions = first.reversed.map_or_else(
+        || {
+            if first_pair[0] == first_pair[1] {
+                vec![false]
+            } else {
+                vec![false, true]
+            }
+        },
+        |direction| vec![direction],
+    );
     let mut solutions = Vec::new();
     for first_direction in first_directions {
         let first_start = if first_direction {
@@ -6603,11 +6610,17 @@ fn singleton_mesh_boundary_directions(
         let mut valid = true;
         for use_ in &boundary[1..] {
             let pair = *edge_candidates.get(use_.edge)?.first()?;
-            let mut choices = [pair[0] == current, pair[1] == current]
-                .into_iter()
-                .enumerate()
-                .filter_map(|(direction, matches)| matches.then_some(direction == 1))
-                .collect::<Vec<_>>();
+            let mut choices = if pair[0] == pair[1] {
+                (pair[0] == current).then(|| vec![use_.reversed.unwrap_or(false)])
+            } else {
+                Some(
+                    [pair[0] == current, pair[1] == current]
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(direction, matches)| matches.then_some(direction == 1))
+                        .collect::<Vec<_>>(),
+                )
+            }?;
             if let Some(required) = use_.reversed {
                 choices.retain(|direction| *direction == required);
             }
@@ -6696,7 +6709,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
         || port_identities.len() != edge_rows.len()
         || edge_candidates
             .iter()
-            .any(|candidates| candidates.len() != 1 || candidates[0][0] == candidates[0][1])
+            .any(|candidates| candidates.len() != 1)
     {
         return None;
     }
@@ -6768,7 +6781,6 @@ fn resolve_standard_mesh_endpoint_candidates(
     budget: &WorkBudget<'_>,
 ) -> MeshEndpointResolve {
     const MAX_SELECTION_WORK: usize = 100_000;
-
     let face_count = assignments.len();
     let mut edge_candidates = edge_candidates.to_vec();
     if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
@@ -7432,4 +7444,39 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
     };
     assert_eq!(topology.faces.len(), 1);
     assert_eq!(point_assignment, vec![0, 1, 2]);
+}
+
+#[test]
+fn singleton_mesh_path_handles_closed_endpoint_pairs() {
+    let edge_rows = vec![EdgeRow {
+        kind: 1,
+        handles: Vec::new(),
+        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+    }];
+    let vertex_points = vec![[0.0, 0.0, 0.0]];
+    let edge_candidates = vec![vec![[0, 0]]];
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    }]];
+    let port_identities = vec![[0, 0]];
+
+    let MeshEndpointResolve::Solved(topology, point_assignment) =
+        resolve_singleton_mesh_endpoint_candidates(
+            &edge_rows,
+            &vertex_points,
+            &edge_candidates,
+            &assignments,
+            &port_identities,
+        )
+        .expect("closed endpoint pair should use a direction gauge")
+    else {
+        panic!("closed endpoint pair did not solve");
+    };
+    assert_eq!(topology.logical_vertex_count, 1);
+    assert_eq!(point_assignment, vec![0]);
 }
