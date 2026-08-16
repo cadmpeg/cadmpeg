@@ -444,25 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PS-04. Product and product-definition identity
-
-**Question.** What STEP rule establishes product and product-definition identity?
-
-**Known.** A CADIR product definition represents one STEP
-`PRODUCT_DEFINITION` view. A product with one definition keeps the historical
-`step:product:product#<product>` identity. When one `PRODUCT` has multiple
-definitions, each view receives a distinct deterministic identity suffixed by
-its definition instance. Shape bodies and definition descriptions bind to
-their own view; they are not merged. Each definition not named as a usage
-receives one root occurrence, and every usage occurrence references the
-specific child definition view. When a presentation layer references the
-source `PRODUCT`, the reader emits all of that product's definition views, but
-the source rule for their order is not established.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: reopened after reviewing closing commits `dd0761ab4` and `225b25fb6`. `dd0761ab4` changed `crates/cadmpeg-codec-step/src/reader/product.rs:72-88` to sort definitions by `RawRecord.span.start`; `step.md` §8 then states that byte order as “source-definition order.” The reordered test in `crates/cadmpeg-codec-step/src/reader/presentation/tests.rs:71-106` was authored with that implementation and proves only that the policy is applied. The presentation assignment carries a set of items, and no ordered source attribute tying a `PRODUCT` to its definitions was identified. If two otherwise equivalent definitions are reserialized with their DATA records swapped, the emitted `PresentationItem` order changes while the source relationships do not. Native-reference assertions do not establish the order or the rule that every definition view must be expanded. Keep this item open until the ISO 10303 part text or an exporter-authored witness file settles view identity and order.
-
 ### PS-05. Mapped-item scope for occurrence placement
 
 **Question.** Must a `MAPPED_ITEM` that supplies an occurrence placement

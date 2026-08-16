@@ -761,13 +761,25 @@ topology-transfer loss. Omitted outer shells, void shells, and outer bounds
 are errors. Other omitted topology relations are warnings. The strict
 unsupported policy rejects output when any topology-transfer loss exists.
 
-Each CADIR product definition represents one `PRODUCT_DEFINITION` view.
-A product with one definition uses identity `step:product:product#<product>`.
-When one `PRODUCT` has multiple definitions, each view receives a distinct
-identity suffixed by its definition instance. Shape bodies and definition
-descriptions bind to their own view and are not merged. Each definition that
-is not a usage child receives one root occurrence. Every usage occurrence
-references the specific child definition view.
+ISO 10303-41 defines a `PRODUCT_DEFINITION` as one aspect or view of a
+product for an identified life-cycle stage. Different
+`PRODUCT_DEFINITION` instances for one `PRODUCT_DEFINITION_FORMATION` are
+different views. `PRODUCT_DEFINITION_FORMATION.of_product` associates a
+formation with its `PRODUCT`, and the formation identifier is unique within
+the formations of that product. The standard permits a product to have
+multiple definition groups. The product-definition function resolves these
+associations as a `SET`; `PRESENTATION_LAYER_ASSIGNMENT.assigned_items` is also
+a `SET`, so neither relationship supplies a view order.
+CADIR decision: each linked `PRODUCT_DEFINITION` is one product-definition
+view. A product with one definition uses identity
+`step:product:product#<product>`. When one `PRODUCT` has multiple definitions,
+each view receives a distinct identity suffixed by its definition instance.
+Shape bodies and definition descriptions bind to their own view and are not
+merged. Each definition that is not a usage child receives one root occurrence.
+Every usage occurrence references the specific child definition view. When a
+presentation layer references a `PRODUCT`, CADIR expands all of that
+product's definition views in `PRODUCT_DEFINITION` DATA record order; this is
+deterministic projection order, not a STEP view-order rule.
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,
 including `ADVANCED_BREP_REPRESENTATION` and

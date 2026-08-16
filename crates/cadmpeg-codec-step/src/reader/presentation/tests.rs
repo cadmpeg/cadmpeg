@@ -114,6 +114,76 @@ fn presentation_layer_expands_all_product_definition_views() {
 }
 
 #[test]
+fn ps04_product_definition_views_keep_identity_when_records_reordered() {
+    use cadmpeg_ir::presentation::PresentationItem;
+
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-04 fixture")
+    };
+    let product_views = |result: &cadmpeg_ir::codec::DecodeResult| {
+        let mut views = result
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.as_str().to_owned(),
+                    definition.description.clone(),
+                    definition.native_ref.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        views.sort_by(|left, right| left.0.cmp(&right.0));
+        views
+    };
+    let layer_items = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .ir()
+            .model
+            .presentation_layers
+            .first()
+            .expect("PS-04 layer")
+            .items
+            .iter()
+            .map(|item| match item {
+                PresentationItem::Product { product } => product.as_str().to_owned(),
+                other => panic!("unexpected PS-04 layer item: {other:?}"),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let source_order = decode_fixture(include_bytes!(
+        "tests/data/ps04_product_definition_views_source_order.p21"
+    ));
+    let reordered = decode_fixture(include_bytes!(
+        "tests/data/ps04_product_definition_views_reordered.p21"
+    ));
+
+    assert_eq!(product_views(&source_order), product_views(&reordered));
+    assert_eq!(
+        layer_items(&source_order),
+        [
+            "step:product:product#3-definition-8",
+            "step:product:product#3-definition-6",
+        ]
+    );
+    assert_eq!(
+        layer_items(&reordered),
+        [
+            "step:product:product#3-definition-6",
+            "step:product:product#3-definition-8",
+        ]
+    );
+    for result in [&source_order, &reordered] {
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn presentation_layer_preserves_empty_label_and_visibility() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
