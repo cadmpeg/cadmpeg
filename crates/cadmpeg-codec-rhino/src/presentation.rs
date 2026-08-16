@@ -391,6 +391,8 @@ struct RenderingMaterialReference {
 struct MeshModifiersRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     displacement: Option<DisplacementRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edge_softening: Option<EdgeSofteningRecord>,
 }
 
 #[derive(Debug, Serialize)]
@@ -427,9 +429,22 @@ struct DisplacementSubItemRecord {
     white_point: f64,
 }
 
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct EdgeSofteningRecord {
+    xml_version: i32,
+    on: bool,
+    softening: f64,
+    chamfer: bool,
+    faceted: bool,
+    force_softening: bool,
+    edge_angle_threshold: f64,
+}
+
 fn mesh_modifiers_record(modifiers: &crate::mesh_modifiers::MeshModifiers) -> MeshModifiersRecord {
     MeshModifiersRecord {
         displacement: modifiers.displacement.as_ref().map(displacement_record),
+        edge_softening: modifiers.edge_softening.as_ref().map(edge_softening_record),
     }
 }
 
@@ -466,6 +481,20 @@ fn displacement_record(
                 white_point: item.white_point,
             })
             .collect(),
+    }
+}
+
+fn edge_softening_record(
+    edge_softening: &crate::mesh_modifiers::EdgeSofteningModifier,
+) -> EdgeSofteningRecord {
+    EdgeSofteningRecord {
+        xml_version: edge_softening.xml_version,
+        on: edge_softening.on,
+        softening: edge_softening.softening,
+        chamfer: edge_softening.chamfer,
+        faceted: edge_softening.faceted,
+        force_softening: edge_softening.force_softening,
+        edge_angle_threshold: edge_softening.edge_angle_threshold,
     }
 }
 

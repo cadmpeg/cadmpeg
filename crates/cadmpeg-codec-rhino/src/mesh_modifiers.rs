@@ -9,6 +9,7 @@ use crate::wire::Uuid;
 const XML_USERDATA_VERSION: i32 = 2;
 const DISPLACEMENT_ROOT: &str = "new-displacement-object-data";
 const DISPLACEMENT_SUB: &str = "sub";
+const EDGE_SOFTENING_ROOT: &str = "edge-softening-object-data";
 
 /// The class UUID registered by `ON_DisplacementUserData`.
 pub(crate) const DISPLACEMENT_CLASS: Uuid = Uuid::from_canonical([
@@ -18,6 +19,16 @@ pub(crate) const DISPLACEMENT_CLASS: Uuid = Uuid::from_canonical([
 /// The item UUID returned by `ON_DisplacementUserData::Uuid`.
 pub(crate) const DISPLACEMENT_ITEM: Uuid = Uuid::from_canonical([
     0x82, 0x24, 0xa7, 0xc4, 0x55, 0x90, 0x4a, 0xc4, 0xa3, 0x2c, 0xde, 0x85, 0xdc, 0x2f, 0xfd, 0xae,
+]);
+
+/// The class UUID registered by `ON_EdgeSofteningUserData`.
+pub(crate) const EDGE_SOFTENING_CLASS: Uuid = Uuid::from_canonical([
+    0xcb, 0x5e, 0xb3, 0x95, 0xbf, 0x1b, 0x41, 0x12, 0x8f, 0x2f, 0xf7, 0x28, 0xfc, 0xe8, 0x16, 0x9c,
+]);
+
+/// The item UUID returned by `ON_EdgeSofteningUserData::Uuid`.
+pub(crate) const EDGE_SOFTENING_ITEM: Uuid = Uuid::from_canonical([
+    0x8c, 0xbe, 0x61, 0x60, 0x5c, 0xbd, 0x4b, 0x4d, 0x8c, 0xd2, 0x7c, 0xe0, 0xa7, 0xc8, 0xc2, 0xd8,
 ]);
 
 /// The application UUID registered by `ON_MeshModifier::PlugInId`.
@@ -30,6 +41,8 @@ pub(crate) const MESH_MODIFIER_PLUGIN: Uuid = Uuid::from_canonical([
 pub(crate) struct MeshModifiers {
     /// The displacement modifier, when the object carries one.
     pub(crate) displacement: Option<DisplacementModifier>,
+    /// The edge-softening modifier, when the object carries one.
+    pub(crate) edge_softening: Option<EdgeSofteningModifier>,
 }
 
 /// The XML parameters written by `ON_DisplacementUserData`.
@@ -92,37 +105,95 @@ pub(crate) struct DisplacementSubItem {
     pub(crate) white_point: f64,
 }
 
-/// Reads the first matching displacement item from an object-attributes userdata stream.
+/// The XML parameters written by `ON_EdgeSofteningUserData`.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct EdgeSofteningModifier {
+    /// `ON_XMLUserData` payload version.
+    pub(crate) xml_version: i32,
+    /// Whether edge softening is enabled.
+    pub(crate) on: bool,
+    /// Edge-softening radius.
+    pub(crate) softening: f64,
+    /// Whether softened edges are chamfered.
+    pub(crate) chamfer: bool,
+    /// Whether edges are left faceted; serialized as `unweld`.
+    pub(crate) faceted: bool,
+    /// Whether to soften edges despite an excessive radius.
+    pub(crate) force_softening: bool,
+    /// Adjacent-face angle threshold in degrees.
+    pub(crate) edge_angle_threshold: f64,
+}
+
+/// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
 pub(crate) fn parse_attribute_userdata(
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Option<MeshModifiers> {
-    let descriptor = descriptors.iter().find(|descriptor| {
-        descriptor.class_uuid == Some(DISPLACEMENT_CLASS)
-            && descriptor.item_uuid == Some(DISPLACEMENT_ITEM)
-            && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN)
-    })?;
-    let Some(payload_range) = descriptor.payload_range.clone() else {
-        warnings.push(format!(
-            "displacement userdata at {} has no bounded payload",
-            descriptor.range.start
-        ));
+    let displacement_descriptor =
+        first_matching_descriptor(descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM);
+    let edge_softening_descriptor =
+        first_matching_descriptor(descriptors, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM);
+    if displacement_descriptor.is_none() && edge_softening_descriptor.is_none() {
         return None;
-    };
-    match parse_displacement(bytes, payload_range, archive) {
-        Ok(displacement) => Some(MeshModifiers {
-            displacement: Some(displacement),
-        }),
-        Err(error) => {
+    }
+
+    let displacement = displacement_descriptor.and_then(|descriptor| {
+        let Some(payload_range) = descriptor.payload_range.clone() else {
             warnings.push(format!(
-                "displacement userdata at {} dropped: {error}",
+                "displacement userdata at {} has no bounded payload",
                 descriptor.range.start
             ));
-            None
+            return None;
+        };
+        match parse_displacement(bytes, payload_range, archive) {
+            Ok(displacement) => Some(displacement),
+            Err(error) => {
+                warnings.push(format!(
+                    "displacement userdata at {} dropped: {error}",
+                    descriptor.range.start
+                ));
+                None
+            }
         }
-    }
+    });
+    let edge_softening = edge_softening_descriptor.and_then(|descriptor| {
+        let Some(payload_range) = descriptor.payload_range.clone() else {
+            warnings.push(format!(
+                "edge-softening userdata at {} has no bounded payload",
+                descriptor.range.start
+            ));
+            return None;
+        };
+        match parse_edge_softening(bytes, payload_range) {
+            Ok(edge_softening) => Some(edge_softening),
+            Err(error) => {
+                warnings.push(format!(
+                    "edge-softening userdata at {} dropped: {error}",
+                    descriptor.range.start
+                ));
+                None
+            }
+        }
+    });
+    (displacement.is_some() || edge_softening.is_some()).then_some(MeshModifiers {
+        displacement,
+        edge_softening,
+    })
+}
+
+fn first_matching_descriptor(
+    descriptors: &[AttributeUserdataDescriptor],
+    class_uuid: Uuid,
+    item_uuid: Uuid,
+) -> Option<&AttributeUserdataDescriptor> {
+    descriptors.iter().find(|descriptor| {
+        descriptor.class_uuid == Some(class_uuid)
+            && descriptor.item_uuid == Some(item_uuid)
+            && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN)
+    })
 }
 
 fn parse_displacement(
@@ -130,6 +201,22 @@ fn parse_displacement(
     payload_range: std::ops::Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
+    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    parse_xml(&xml, xml_version, archive)
+}
+
+fn parse_edge_softening(
+    bytes: &[u8],
+    payload_range: std::ops::Range<usize>,
+) -> Result<EdgeSofteningModifier, FramingError> {
+    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    parse_edge_softening_xml(&xml, xml_version)
+}
+
+fn parse_xml_userdata(
+    bytes: &[u8],
+    payload_range: std::ops::Range<usize>,
+) -> Result<(i32, String), FramingError> {
     let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
     let xml_version = reader.i32()?;
     let xml = match xml_version {
@@ -154,12 +241,6 @@ fn parse_displacement(
                 .map(str::to_owned)
                 .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?
         }
-        version if version > XML_USERDATA_VERSION => {
-            return Err(FramingError::structural(
-                payload_range.start,
-                format!("XML userdata version {version} is unsupported"),
-            ));
-        }
         version => {
             return Err(FramingError::structural(
                 payload_range.start,
@@ -168,7 +249,7 @@ fn parse_displacement(
         }
     };
     reader.skip_remaining()?;
-    parse_xml(&xml, xml_version, archive)
+    Ok((xml_version, xml))
 }
 
 fn parse_xml(
@@ -224,6 +305,40 @@ fn parse_xml(
     })
 }
 
+fn parse_edge_softening_xml(
+    xml: &str,
+    xml_version: i32,
+) -> Result<EdgeSofteningModifier, FramingError> {
+    let document = roxmltree::Document::parse(xml).map_err(|error| {
+        FramingError::structural(0, format!("invalid edge-softening XML: {error}"))
+    })?;
+    let root = document.root_element();
+    if !same_name(root, "xml") {
+        return Err(FramingError::structural(
+            0,
+            format!(
+                "edge-softening XML root is `{}`, expected `xml`",
+                root.tag_name().name()
+            ),
+        ));
+    }
+    let edge_softening = direct_child(root, EDGE_SOFTENING_ROOT).ok_or_else(|| {
+        FramingError::structural(
+            0,
+            format!("edge-softening XML has no `{EDGE_SOFTENING_ROOT}` child"),
+        )
+    })?;
+    Ok(EdgeSofteningModifier {
+        xml_version,
+        on: field_bool(edge_softening, "on", false),
+        softening: field_f64(edge_softening, "softening", 0.1),
+        chamfer: field_bool(edge_softening, "chamfer", false),
+        faceted: field_bool(edge_softening, "unweld", false),
+        force_softening: field_bool(edge_softening, "force-softening", false),
+        edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0),
+    })
+}
+
 fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> DisplacementSubItem {
     DisplacementSubItem {
         face_index: field_i32(node, "sub-index", -1),
@@ -249,8 +364,14 @@ fn typed_child<'a, 'input>(
     name: &str,
 ) -> Option<roxmltree::Node<'a, 'input>> {
     let node = direct_child(parent, name)?;
-    node.attribute("type")?;
+    attribute(node, "type")?;
     Some(node)
+}
+
+fn attribute<'a>(node: roxmltree::Node<'a, '_>, name: &str) -> Option<&'a str> {
+    node.attributes()
+        .find(|attribute| attribute.name().eq_ignore_ascii_case(name))
+        .map(|attribute| attribute.value())
 }
 
 fn field_bool(parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> bool {
@@ -258,7 +379,7 @@ fn field_bool(parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> boo
         return default;
     };
     let text = node.text().unwrap_or_default().trim();
-    let kind = node.attribute("type").unwrap_or_default();
+    let kind = attribute(node, "type").unwrap_or_default();
     if kind.eq_ignore_ascii_case("string") {
         text.eq_ignore_ascii_case("true")
             || text.eq_ignore_ascii_case("t")
@@ -282,7 +403,7 @@ fn field_i32(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> i32 {
 fn field_i32_optional(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<i32> {
     let node = typed_child(parent, name)?;
     let text = node.text().unwrap_or_default().trim();
-    let kind = node.attribute("type").unwrap_or_default();
+    let kind = attribute(node, "type").unwrap_or_default();
     let value = if kind.eq_ignore_ascii_case("bool") {
         i32::from(
             text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1",
@@ -314,7 +435,7 @@ fn field_f64(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) -> f64 {
         return default;
     };
     let text = node.text().unwrap_or_default().trim();
-    let kind = node.attribute("type").unwrap_or_default();
+    let kind = attribute(node, "type").unwrap_or_default();
     let value = if kind.eq_ignore_ascii_case("bool") {
         f64::from(
             text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1",
@@ -337,7 +458,7 @@ fn field_f64(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) -> f64 {
 
 fn field_uuid(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
     let node = typed_child(parent, name)?;
-    let kind = node.attribute("type").unwrap_or_default();
+    let kind = attribute(node, "type").unwrap_or_default();
     if !(kind.eq_ignore_ascii_case("uuid") || kind.eq_ignore_ascii_case("string")) {
         return None;
     }
@@ -367,14 +488,40 @@ mod tests {
     use super::*;
 
     fn descriptor(payload: &[u8], application_uuid: Option<Uuid>) -> AttributeUserdataDescriptor {
+        descriptor_with_ids(
+            0..payload.len(),
+            DISPLACEMENT_CLASS,
+            DISPLACEMENT_ITEM,
+            application_uuid,
+        )
+    }
+
+    fn edge_descriptor(
+        payload: &[u8],
+        application_uuid: Option<Uuid>,
+    ) -> AttributeUserdataDescriptor {
+        descriptor_with_ids(
+            0..payload.len(),
+            EDGE_SOFTENING_CLASS,
+            EDGE_SOFTENING_ITEM,
+            application_uuid,
+        )
+    }
+
+    fn descriptor_with_ids(
+        range: std::ops::Range<usize>,
+        class_uuid: Uuid,
+        item_uuid: Uuid,
+        application_uuid: Option<Uuid>,
+    ) -> AttributeUserdataDescriptor {
         AttributeUserdataDescriptor {
-            range: 0..payload.len(),
+            range: range.clone(),
             known: true,
-            class_uuid: Some(DISPLACEMENT_CLASS),
-            item_uuid: Some(DISPLACEMENT_ITEM),
+            class_uuid: Some(class_uuid),
+            item_uuid: Some(item_uuid),
             application_uuid,
             writer_version: Some(2_348_836_140),
-            payload_range: Some(0..payload.len()),
+            payload_range: Some(range),
         }
     }
 
@@ -418,6 +565,15 @@ mod tests {
 <sub-white-point type=\"double\">0.6</sub-white-point></sub>\
 </new-displacement-object-data></xml>";
 
+    const EDGE_SOFTENING_XML: &str = "<xml><edge-softening-object-data>\
+<on type=\"bool\">true</on>\
+<softening type=\"double\">0.25</softening>\
+<chamfer type=\"bool\">true</chamfer>\
+<unweld type=\"bool\">false</unweld>\
+<force-softening type=\"bool\">true</force-softening>\
+<edge-threshold type=\"double\">17.5</edge-threshold>\
+</edge-softening-object-data></xml>";
+
     #[test]
     fn parses_v2_displacement_fields_and_sub_item() {
         let payload = v2_payload(XML);
@@ -452,6 +608,81 @@ mod tests {
         assert_eq!(displacement.sub_items[0].channel, 9);
         assert_eq!(displacement.sub_items[0].black_point, -0.1);
         assert_eq!(displacement.sub_items[0].white_point, 0.6);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn parses_v2_edge_softening_fields() {
+        let payload = v2_payload(EDGE_SOFTENING_XML);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[edge_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("edge-softening userdata");
+        let edge_softening = modifiers.edge_softening.expect("edge softening");
+        assert_eq!(edge_softening.xml_version, 2);
+        assert!(edge_softening.on);
+        assert_eq!(edge_softening.softening, 0.25);
+        assert!(edge_softening.chamfer);
+        assert!(!edge_softening.faceted);
+        assert!(edge_softening.force_softening);
+        assert_eq!(edge_softening.edge_angle_threshold, 17.5);
+        assert!(modifiers.displacement.is_none());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn edge_softening_defaults_and_xml_names_are_stable() {
+        let xml = "<XML><EDGE-SOFTENING-OBJECT-DATA>\
+<ON TYPE=\"BOOL\">true</ON>\
+<softening>9</softening>\
+<EDGE-THRESHOLD TYPE=\"DOUBLE\">12.5</EDGE-THRESHOLD>\
+<unknown type=\"double\">99</unknown>\
+</EDGE-SOFTENING-OBJECT-DATA></XML>";
+        let payload = v2_payload(xml);
+        let mut warnings = Vec::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[edge_descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        )
+        .expect("edge-softening userdata");
+        let edge_softening = modifiers.edge_softening.expect("edge softening");
+        assert!(edge_softening.on);
+        assert_eq!(edge_softening.softening, 0.1);
+        assert!(!edge_softening.chamfer);
+        assert!(!edge_softening.faceted);
+        assert!(!edge_softening.force_softening);
+        assert_eq!(edge_softening.edge_angle_threshold, 12.5);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn parses_displacement_and_edge_softening_from_one_attributes_stream() {
+        let displacement_payload = v2_payload("<xml><new-displacement-object-data/></xml>");
+        let edge_start = displacement_payload.len();
+        let edge_payload = v2_payload(EDGE_SOFTENING_XML);
+        let mut bytes = displacement_payload;
+        bytes.extend(&edge_payload);
+        let descriptors = [
+            descriptor(&bytes[..edge_start], Some(MESH_MODIFIER_PLUGIN)),
+            descriptor_with_ids(
+                edge_start..bytes.len(),
+                EDGE_SOFTENING_CLASS,
+                EDGE_SOFTENING_ITEM,
+                Some(MESH_MODIFIER_PLUGIN),
+            ),
+        ];
+        let mut warnings = Vec::new();
+        let modifiers =
+            parse_attribute_userdata(&bytes, &descriptors, ArchiveVersion::V6, &mut warnings)
+                .expect("mesh modifiers");
+        assert!(modifiers.displacement.is_some());
+        assert!(modifiers.edge_softening.is_some());
         assert!(warnings.is_empty());
     }
 
@@ -521,5 +752,18 @@ mod tests {
         )
         .is_none());
         assert!(ignored_warnings.is_empty());
+
+        let malformed_edge = v2_payload("<xml><edge-softening-object-data>");
+        let mut edge_warnings = Vec::new();
+        assert!(parse_attribute_userdata(
+            &malformed_edge,
+            &[edge_descriptor(&malformed_edge, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut edge_warnings,
+        )
+        .is_none());
+        assert!(edge_warnings.iter().any(|warning| {
+            warning.contains("edge-softening userdata") && warning.contains("dropped")
+        }));
     }
 }

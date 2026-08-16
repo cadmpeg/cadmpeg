@@ -1233,6 +1233,40 @@ triple owns the typed value. A malformed recognized payload leaves the object
 attributes and geometry admitted, omits this native value, and retains the
 bounded userdata record for opaque fidelity handling.
 
+#### 7.2.13 `ON_EdgeSofteningUserData`
+
+`ON_EdgeSofteningUserData` uses class UUID
+`CB5EB395-BF1B-4112-8F2F-F728FCE8169C`, item UUID
+`8CBE6160-5CBD-4B4D-8CD2-7CE0A7C8C2D8`, and application UUID
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. It is attached to the
+`ON_3dmObjectAttributes` mesh-modifier owner and uses the same XML userdata
+payload framing as section 7.2.12. The writer emits XML userdata version 2;
+the reader accepts versions 1 and 2 and skips remaining bytes at the bounded
+userdata payload boundary.
+
+The XML document has root `xml` and a direct child named
+`edge-softening-object-data`. Parameter and property names are matched
+case-insensitively. A parameter with no `type` property is absent to the
+parameter reader. Unknown child elements are ignored. Missing parameters use
+the class getter defaults below:
+
+| XML child | Type | Meaning | Missing value |
+| --- | --- | --- | ---: |
+| `on` | bool | Enables edge softening | `false` |
+| `softening` | double | Softening radius | `0.1` |
+| `chamfer` | bool | Chamfers softened edges | `false` |
+| `unweld` | bool | Leaves softened edges faceted (`Faceted`) | `false` |
+| `force-softening` | bool | Softens edges despite an excessive radius | `false` |
+| `edge-threshold` | double | Adjacent-face angle threshold, in degrees | `5.0` |
+
+CADIR stores the recognized item under the owning object presentation's
+`mesh_modifiers.edge_softening` native value. The native `faceted` field is
+the typed form of the XML `unweld` parameter. It does not create geometry or
+a second object identity. The first serialized matching
+class/item/application triple owns the typed value. A malformed recognized
+payload leaves the object attributes and geometry admitted, omits this native
+value, and retains the bounded userdata record for opaque fidelity handling.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2076,6 +2110,11 @@ owning native object presentation.
 
 The `ON_DisplacementUserData` item is a typed attributes carrier. Its XML
 payload and displacement/sub-item fields are specified in section 7.2.12; the
+resulting modifier is retained under the same object presentation without
+changing the transferred object geometry.
+
+The `ON_EdgeSofteningUserData` item is a typed attributes carrier. Its XML
+payload and edge-softening fields are specified in section 7.2.13; the
 resulting modifier is retained under the same object presentation without
 changing the transferred object geometry.
 

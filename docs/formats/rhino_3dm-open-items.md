@@ -251,6 +251,15 @@ pre-V6 formula insertion, and ordered `sub` overrides. Section 7.2.12 and the
 decoder retain the serialized sub-object count without using it as the child
 count.
 
+The built-in `ON_EdgeSofteningUserData` class is also settled. Its class UUID
+is `CB5EB395-BF1B-4112-8F2F-F728FCE8169C`, item UUID is
+`8CBE6160-5CBD-4B4D-8CD2-7CE0A7C8C2D8`, and application UUID is
+`F293DE5C-D1FF-467A-9BD1-CAC8EC4B2E6B`. Its object-attributes payload uses
+`ON_XMLUserData` version 1 or 2 framing, the `xml`/
+`edge-softening-object-data` XML roots, and the source getter defaults for
+the six edge-softening parameters. Section 7.2.13 and the decoder retain the
+typed `faceted` value from the XML `unweld` parameter.
+
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
 
