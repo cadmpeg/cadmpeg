@@ -4771,7 +4771,6 @@
             "feature_pattern_references": [
               {
                 "id": "nx:feature-history:pattern-reference#0000000000-0000000007-0000000000",
-                "layout": "geometry_instance",
                 "object_index": 801,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000007",
                 "ordinal": 0,

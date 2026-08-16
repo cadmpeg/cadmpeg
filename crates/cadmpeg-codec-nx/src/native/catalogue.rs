@@ -325,11 +325,6 @@ impl ContainerNoted for FeatureOperationObjectRelation {
         (&self.id, self.source_offset)
     }
 }
-impl ContainerNoted for FeatureOperationTaggedReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
-    }
-}
 impl ContainerNoted for FeatureOperationCommonFrame {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1809,18 +1804,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_operation_tagged_references",
-        tag: Some("FEATURE_OPERATION_TAGGED_REFERENCE"),
-        exactness: Exactness::ByteExact,
-        phase: Phase::GroupA,
-        note: Some(|m, r, a| {
-            note_container(&m.features.feature_operation_tagged_references, r, a);
-        }),
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_tagged_references, r, ns),
-        len: |m| m.features.feature_operation_tagged_references.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
         arena: "feature_operation_common_frames",
         tag: Some("FEATURE_OPERATION_COMMON_FRAME"),
         exactness: Exactness::ByteExact,
@@ -2479,16 +2462,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.features.feature_pattern_references, r, ns),
         len: |m| m.features.feature_pattern_references.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "feature_pattern_counted_reference_lanes",
-        tag: None,
-        exactness: Exactness::ByteExact,
-        phase: Phase::ArenaOnly,
-        note: None,
-        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_counted_reference_lanes, r, ns),
-        len: |m| m.features.feature_pattern_counted_reference_lanes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

@@ -1975,8 +1975,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
             }
             section
                 .records
-                .iter()
-                .cloned()
+                .into_iter()
                 .enumerate()
                 .map(move |(record_ordinal, record)| {
                     let record_id = |ordinal| {
@@ -2198,14 +2197,14 @@ pub fn data_block_control_class_references(
                 .om_sections()
                 .into_iter()
                 .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
-                .flat_map(|(_, section)| section.types)
+                .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
                 .chain(
                     container
                         .indexed_om_sections()
                         .into_iter()
                         .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
                         .flat_map(|(_, section)| {
-                            std::sync::Arc::as_ref(&section.types).to_owned()
+                            section.types.iter().cloned().collect::<Vec<_>>()
                         }),
                 )
             {
@@ -2509,8 +2508,7 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
             let block_count = section.records.len() + 1;
             section
                 .records
-                .iter()
-                .cloned()
+                .into_iter()
                 .enumerate()
                 .flat_map(|(record_ordinal, block)| {
                     let block_ordinal = record_ordinal + 1;
@@ -3552,8 +3550,7 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             section
                 .records
-                .iter()
-                .cloned()
+                .into_iter()
                 .enumerate()
                 .filter_map(|(record_ordinal, record)| {
                     let object_id = record.object_id?;

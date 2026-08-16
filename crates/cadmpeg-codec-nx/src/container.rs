@@ -365,7 +365,7 @@ impl<'a> Container<'a> {
                 }
             }
             let materialized = if let Cow::Borrowed(bytes) = &self.data {
-                let bytes: &'a [u8] = bytes;
+                let bytes: &'a [u8] = *bytes;
                 Some(
                     layouts
                         .iter()

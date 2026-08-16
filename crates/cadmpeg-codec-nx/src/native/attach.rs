@@ -1089,8 +1089,6 @@ fn attach_feature_operations(
     let delete_reference_fields = features.feature_delete_reference_fields.as_slice();
     let delete_construction_payloads = features.feature_delete_construction_payloads.as_slice();
     let pattern_references = features.feature_pattern_references.as_slice();
-    let pattern_counted_reference_lanes =
-        features.feature_pattern_counted_reference_lanes.as_slice();
     let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
     let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
     let pattern_construction_fixed_lanes =
@@ -1210,6 +1208,15 @@ fn attach_feature_operations(
             .or_default()
             .push(use_);
     }
+    let body_reference_counts_by_operation =
+        body_references
+            .iter()
+            .fold(BTreeMap::<&str, usize>::new(), |mut counts, reference| {
+                *counts
+                    .entry(reference.operation_label.as_str())
+                    .or_default() += 1;
+                counts
+            });
     let body_writer_references_by_operation =
         crate::native::features::unique_feature_body_references(body_references);
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
@@ -1379,10 +1386,6 @@ fn attach_feature_operations(
         });
     let pattern_references_by_operation =
         records_by_operation(pattern_references, |reference| &reference.operation_label);
-    let pattern_counted_reference_lanes_by_operation =
-        records_by_operation(pattern_counted_reference_lanes, |lane| {
-            &lane.operation_label
-        });
     let pattern_construction_payloads_by_operation =
         records_by_operation(pattern_construction_payloads, |payload| {
             &payload.operation_label
@@ -1666,12 +1669,21 @@ fn attach_feature_operations(
             }
         }
     }
-    let explicit_hole_outputs = primary_hole_outputs(
-        simple_hole_templates,
-        &body_references,
-        body_bindings,
-        &bodies_by_object_index,
-    );
+    let explicit_hole_outputs = simple_hole_templates
+        .iter()
+        .filter_map(|template| {
+            let operation = template.operation_label.as_str();
+            body_reference_counts_by_operation.get(operation)?;
+            Some((
+                template.operation_label.clone(),
+                body_references
+                    .get(operation)
+                    .map_or_else(Vec::new, |object_index| {
+                        feature_body_outputs(*object_index, body_bindings, &bodies_by_object_index)
+                    }),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
     let simple_hole_operations = simple_hole_operations(
         simple_hole_templates,
         simple_hole_construction_groups,
@@ -2606,16 +2618,6 @@ fn attach_feature_operations(
             source_properties.insert(
                 "pattern_construction_payload".to_string(),
                 payload.id.clone(),
-            );
-        }
-        for lane in pattern_counted_reference_lanes_by_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-        {
-            source_properties.insert(
-                "pattern_counted_reference_lane".to_string(),
-                lane.id.clone(),
             );
         }
         for value in pattern_construction_strings_by_operation
@@ -5617,27 +5619,6 @@ fn native_feature_parameters(
         }
     }
     parameters
-}
-
-/// Resolve explicit hole outputs only from the proven segment-body namespace.
-/// Offset-store body fields remain absent so a complete unique-solid topology
-/// witness can apply the documented fallback.
-fn primary_hole_outputs(
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
-    body_references: &BTreeMap<&str, u32>,
-    body_bindings: &[crate::native::segments::SegmentBodyBinding],
-    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> BTreeMap<String, Vec<BodyId>> {
-    templates
-        .iter()
-        .filter_map(|template| {
-            let object_index = body_references.get(template.operation_label.as_str())?;
-            Some((
-                template.operation_label.clone(),
-                feature_body_outputs(*object_index, body_bindings, bodies_by_object_index),
-            ))
-        })
-        .collect()
 }
 
 fn simple_hole_operations(

@@ -434,7 +434,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What relation does each feature-history object index that is not a primary-body writer or Boolean tool use?
 
-**Known.** `siemens_nx.md` §7.1 "A nested operation object-relation frame is" defines the exact nested frame, canonical endpoint encoding, ordered endpoint retention, and source offsets. The native decoder retains these frames as `feature_operation_object_relations` without assigning endpoint roles. `siemens_nx.md` §7.1 "A direct operation tagged-reference field is" defines the exact direct `0x17` field, canonical object-index encoding, optional unique offset-store target, and source offsets. The native decoder retains these fields as `feature_operation_tagged_references` without assigning endpoint roles. `siemens_nx.md` §2 "Within a feature-history record area, an operation header is encoded as the" and `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §2 "A body-affecting operation record contains exactly one primary-body field" define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands.
+**Known.** `siemens_nx.md` §7.1 "A nested operation object-relation frame is" defines the exact nested frame, canonical endpoint encoding, ordered endpoint retention, and source offsets. The native decoder retains these frames as `feature_operation_object_relations` without assigning endpoint roles. `siemens_nx.md` §2 "Within a feature-history record area, an operation header is encoded as the" and `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §2 "A body-affecting operation record contains exactly one primary-body field" define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands.
 
 **Need.** We must map each retained nested frame to its owning feature relation before constructing feature dependencies or selections. The link tag and endpoint identities alone do not establish a body, operand, input, or output role.
 
@@ -516,7 +516,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which ordered references in `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` select the seed, transform, and pattern controls?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the two construction graph framings, logical payload, and counted row forms.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the construction graph, logical payload, and counted row forms.
 
 **Need.** We must know the roles to construct neutral pattern dependencies and transforms.
 
@@ -532,7 +532,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each compact selector in a counted pattern row select?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and §7.1 "`Pattern Feature` payloads contain at most one counted reference lane." define selector framing, non-null requirements, row ordinals, counted references, and exact tokens.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." defines selector framing, non-null requirements, row ordinals, and exact tokens.
 
 **Need.** We must know the roles to bind each row to its seed or transform operand.
 
@@ -548,7 +548,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
 
-**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
+**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
 
 **Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
