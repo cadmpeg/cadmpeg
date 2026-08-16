@@ -478,12 +478,21 @@ reference is parallel or anti-parallel, the reader reports
 `PlacementReferenceInferred` and uses the projected default reference. This
 STEP-local salvage does not change neutral transform or chart semantics.
 
-The IR stores the longer `ELLIPSE` semi-axis as `major_direction` and
-`major_radius`. If the first STEP semi-axis is shorter than the second, the
-canonical parameter is `v = u - π/2`; numeric `TRIMMED_CURVE` selectors are
-mapped by that phase after their angular unit conversion. Cartesian selectors
-invert the canonical carrier and therefore need no phase adjustment. The
-phase is inherited by curve replicas, trims, and spatial offsets.
+ISO 10303-42 defines `ELLIPSE` with positive `semi_axis_1` and
+`semi_axis_2`. `semi_axis_1` lies in placement `p[1]` and `semi_axis_2` lies
+in placement `p[2]`. Its source parameter is
+`λ(u) = C + R1 cos(u) p[1] + R2 sin(u) p[2]`, where `R1` and `R2` are the
+two stored semiaxes. The format does not require `R1 >= R2`; the parameter is
+an angular parameter in the active plane-angle unit.
+
+CADIR decision: the IR stores the longer semiaxis as `major_radius` and its
+direction as `major_direction`. If `R1 >= R2`, `major_direction` is `p[1]`
+and the canonical parameter is `v = u`. If `R1 < R2`, `major_direction` is
+`p[2] = axis × p[1]`, `minor_radius` is `R1`, and the canonical parameter is
+`v = u - π/2`. Numeric `TRIMMED_CURVE` selectors apply this phase after
+angular-unit conversion. Cartesian selectors invert the canonical carrier and
+therefore apply no phase. Curve replicas, nested trims, and spatial offsets
+inherit the phase; the source STEP record is unchanged.
 
 ISO 10303-42 defines `TRIMMED_CURVE` as a selected portion of an unchanged
 basis curve. Trim selects are parameter values, Cartesian points, or both.

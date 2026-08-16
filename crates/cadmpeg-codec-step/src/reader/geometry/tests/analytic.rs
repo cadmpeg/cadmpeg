@@ -458,6 +458,112 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
 }
 
 #[test]
+fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc07_ellipse_canonicalization.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode ellipse canonicalization witness");
+
+    let reversed = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#9")
+        .expect("reversed ellipse");
+    assert!(matches!(
+        reversed.geometry,
+        CurveGeometry::Ellipse {
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } if major_direction == Vector3::new(0.0, 1.0, 0.0)
+            && major_radius == 6.0
+            && minor_radius == 2.0
+    ));
+
+    let ordered = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#10")
+        .expect("ordered ellipse");
+    assert!(matches!(
+        ordered.geometry,
+        CurveGeometry::Ellipse {
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } if major_direction == Vector3::new(1.0, 0.0, 0.0)
+            && major_radius == 6.0
+            && minor_radius == 2.0
+    ));
+
+    for (curve_id, expected_range) in [
+        ("#13", [-std::f64::consts::FRAC_PI_2, 0.0]),
+        ("#14", [-std::f64::consts::FRAC_PI_2, 0.0]),
+        ("#18", [-std::f64::consts::FRAC_PI_2, 0.0]),
+        ("#20", [-std::f64::consts::FRAC_PI_2, 0.0]),
+    ] {
+        let construction_id = ProceduralCurveId(StepIdentity::construction(
+            "trimmed_curve",
+            curve_id.trim_start_matches('#'),
+        ));
+        let construction = decoded
+            .ir()
+            .model
+            .procedural_curves
+            .iter()
+            .find(|curve| curve.id == construction_id)
+            .expect("trimmed ellipse construction");
+        assert!(matches!(
+            &construction.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range,
+                ..
+            } if parameter_range
+                .iter()
+                .zip(expected_range.iter())
+                .all(|(actual, expected)| (*actual - *expected).abs() < 1.0e-12)
+        ));
+    }
+
+    let numeric_start = model_curve_point_by_id(
+        &ModelIndex::new(decoded.ir()),
+        &CurveId("step:data:curve#13".into()),
+        0.0,
+    )
+    .expect("numeric trim start");
+    assert!((numeric_start.x - 2.0).abs() < 1.0e-12);
+    assert!(numeric_start.y.abs() < 1.0e-12);
+    let cartesian_end = model_curve_point_by_id(
+        &ModelIndex::new(decoded.ir()),
+        &CurveId("step:data:curve#14".into()),
+        std::f64::consts::FRAC_PI_2,
+    )
+    .expect("Cartesian trim end");
+    assert!(cartesian_end.x.abs() < 1.0e-12);
+    assert!((cartesian_end.y - 6.0).abs() < 1.0e-12);
+
+    let index = ModelIndex::new(decoded.ir());
+    let replica_start = model_curve_point_by_id(
+        &index,
+        &CurveId("step:data:curve#17".into()),
+        -std::f64::consts::FRAC_PI_2,
+    )
+    .expect("replica start");
+    assert!((replica_start.x - 12.0).abs() < 1.0e-12);
+    assert!(replica_start.y.abs() < 1.0e-12);
+
+    assert!(decoded.report().losses.is_empty());
+}
+
+#[test]
 fn annotation_plane_keeps_its_neutral_plane_reachable() {
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

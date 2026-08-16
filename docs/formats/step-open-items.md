@@ -444,21 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PC-07. Ellipse semi-axis canonicalization
-
-**Question.** What STEP rule establishes ellipse semi-axis canonicalization?
-
-**Known.** The IR keeps `major_radius ≥ minor_radius`. For
-`semi_axis_1 < semi_axis_2`, it stores `cross(axis, ref_direction)` as the
-major direction and maps the source parameter with `v = u − π/2`. Numeric
-`TRIMMED_CURVE` selectors apply that phase after angular unit conversion;
-Cartesian selectors invert the canonical geometry directly. Replicas, nested
-trims, and spatial offsets inherit the phase.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### BR-01. Topology root identity
 
 **Question.** What STEP rule establishes topology root identity?
