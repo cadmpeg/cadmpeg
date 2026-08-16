@@ -18,8 +18,8 @@ use crate::decode::sketch_transfer::{
     saved_section_external_id, section_dimension_constraints, section_entity_external_ids,
     section_skamp_constraints_for_geometry, section_skamp_incidence_locus,
     section_skamp_point_locus, semantic_saved_section_entities, solver_only_section_entity_family,
-    unique_saved_section_internal_ids, unresolved_saved_section_entity,
-    SectionEntityIncidenceFamily,
+    unique_saved_section_internal_ids, unique_section_incidence_curve_family,
+    unresolved_saved_section_entity, SectionEntityIncidenceFamily,
 };
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -745,6 +745,54 @@ fn saved_line_joins_through_order_table() {
     assert_eq!(
         solver_only_section_entity_family(&disabled_line_family, 99),
         Some(SectionEntityIncidenceFamily::Line)
+    );
+    let mut disabled_circular_family = constrained.clone();
+    disabled_circular_family
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count = 1;
+    disabled_circular_family
+        .segments
+        .as_mut()
+        .expect("segments")
+        .opaque_rows
+        .push(crate::feature::FeatureOpaqueSegment {
+            kind: 25,
+            directions: [None; 3],
+            point_ids: [None; 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 101,
+            body: Vec::new(),
+            offset: 35,
+        });
+    let disabled_circular_relations = disabled_circular_family
+        .relations
+        .as_mut()
+        .expect("relations");
+    disabled_circular_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 8,
+        kind: 99,
+        flags: 0,
+        status: 0,
+        items: vec![crate::feature::FeatureSkampItem {
+            entity_id: 101,
+            sense: 4,
+        }],
+        offset: 35,
+    }];
+    disabled_circular_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 1;
+    assert_eq!(
+        unique_section_incidence_curve_family(&disabled_circular_family, 101),
+        Some(SectionEntityIncidenceFamily::Circular)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
     family_relations.skamps.push(crate::feature::FeatureSkamp {

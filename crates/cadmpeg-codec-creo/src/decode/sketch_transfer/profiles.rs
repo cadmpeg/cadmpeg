@@ -422,8 +422,7 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
             if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
                 evidence.insert(SectionEntityIncidenceFamily::BoundedCurve);
             }
-            if section_skamp_active(skamp.status) && item.entity_id == entity_id && item.sense == 4
-            {
+            if item.entity_id == entity_id && item.sense == 4 {
                 evidence.insert(SectionEntityIncidenceFamily::Circular);
             }
         }
