@@ -215,6 +215,13 @@ records, identity-transform gate, archive-version write split, and parent-mesh
 transfer check. A valid top-level proxy is promoted to the neutral SubD; a
 failed admission retains the parent mesh under the CADIR decision in section
 7.2.6.
+The built-in `ON_OBSOLETE_IDefAlternativePathUserData` class is also settled.
+Its class and item UUID is `F42D9671-21EB-4692-9B9A-BC3507FF28F5`, its
+application UUID is `C8CDA597-D957-4625-A4B3-A0B510FC30D4`, and section 7.2.7
+defines its anonymous path-and-relative-flag payload, trim rule, linked-type
+gate, and empty-slot precedence. The decoder stores both legacy full and
+relative paths and applies the carrier to the existing external-reference
+record without creating another identity.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -224,8 +231,9 @@ built-in hatch gradient userdata, the V5 dimension-style extra, and
 `ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`,
 `ON_OBSOLETE_V5_TextExtra`, `ON_V5_MeshDoubleVertices`,
 `ON_V4V5_MeshNgonUserData`, `ON_V5_BrepRegionTopologyUserData`, and
-`ON_SubDMeshProxyUserData` are settled, including the Brep, extrusion, history,
-and top-level SubD proxy carriers where applicable; other future
+`ON_SubDMeshProxyUserData`, and `ON_OBSOLETE_IDefAlternativePathUserData` are
+settled, including the Brep, extrusion, history, top-level SubD proxy, and
+linked-definition carriers where applicable; other future
 class-specific payload semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes

@@ -1002,6 +1002,44 @@ userdata transform, a count or hash mismatch, a malformed payload, or an
 embedded payload without a neutral control cage leaves the parent mesh as the
 admitted tessellation and does not create a second SubD entity.
 
+#### 7.2.7 `ON_OBSOLETE_IDefAlternativePathUserData`
+
+The built-in `ON_OBSOLETE_IDefAlternativePathUserData` class uses class and
+item UUID `F42D9671-21EB-4692-9B9A-BC3507FF28F5`. Its application UUID is
+`C8CDA597-D957-4625-A4B3-A0B510FC30D4` (`ON_opennurbs5_id`). It is a V4/V5
+linked-instance-definition compatibility carrier. Its payload is the body of
+the outer anonymous userdata child from this section. The body contains one
+anonymous major-1 child:
+
+```text
+anonymous version 1.0
+UTF-16 alternate path
+bool alternate path is relative
+```
+
+The class reader requires major version 1, reads the UTF-16 path and Boolean,
+and skips later bytes at the anonymous boundary. The path is trimmed at both
+ends before it is applied. An empty trimmed path has no effect.
+
+For a V5 instance definition, the class-data path is initially the full path.
+When the class-data relative-path Boolean is true, that path occupies the
+relative slot instead and the full slot is empty. A linked type with an empty
+class-data path is converted to static before class userdata is applied; this
+carrier cannot restore the linked type. On a linked definition, a relative
+carrier fills the relative slot only when that slot is empty. A full-path
+carrier fills the full slot only when that slot is empty and preserves the
+existing relative path and content hash. The same slot rule applies to a
+structured file reference when this carrier is present alongside one.
+
+CADIR stores both path strings in the definition's external-reference record.
+For the legacy V5 path slots, the class-data relative Boolean and a
+successfully applied relative carrier set `relative_path_preferred`; a full
+carrier does not clear an existing relative path or preference. A structured
+V5 file-reference has no source preference bit, so its paths transfer with
+`relative_path_preferred = false`; the carrier does not change that bit. A
+recognized, well-framed carrier whose bounded payload is malformed is
+discarded and the linked definition remains admitted.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2813,6 +2851,11 @@ minor >= 7: file-reference presence and record
 The unit-system detail replaces the earlier unit fields. A version-1.7 reader
 skips all bytes after the optional file-reference record as an abandoned tail.
 
+For a linked definition, the legacy relative-path Boolean makes the
+serialized path the relative path; otherwise it is the full path. A present
+`ON_OBSOLETE_IDefAlternativePathUserData` item follows the bounded update rule
+in section 7.2.7 after the V5 class-data prefix.
+
 V6 through V8 use anonymous major-1 payloads:
 
 ```
@@ -3654,6 +3697,11 @@ obsolete linked-layer-settings Boolean. The reader does not assign that final
 Boolean a field meaning and returns after the file-reference record, so the
 obsolete Boolean and any later bytes are an abandoned suffix at the enclosing
 class-data boundary.
+
+The V5 legacy path fields use the full-path slot when the relative-path
+Boolean is false and the relative-path slot when it is true. The optional
+class-userdata carrier can fill the other slot without replacing a nonempty
+slot.
 
 The anonymous V6 reader requires major version 1 and consumes the fixed prefix
 above without a minor gate. The linked-type child has the same major-version

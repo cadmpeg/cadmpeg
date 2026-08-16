@@ -11,7 +11,7 @@ use crate::chunks::{
     ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::Record;
-use crate::objects::parse_class_wrapper;
+use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{bbox, utf16};
 use crate::wire::Uuid;
 
@@ -20,6 +20,12 @@ const INSTANCE_DEFINITION_UUID: Uuid = Uuid::from_canonical([
 ]);
 const INSTANCE_REFERENCE_UUID: Uuid = Uuid::from_canonical([
     0xf9, 0xcf, 0xb6, 0x38, 0xb9, 0xd4, 0x43, 0x40, 0x87, 0xe3, 0xc5, 0x6e, 0x78, 0x65, 0xd9, 0x6a,
+]);
+const IDEF_ALTERNATIVE_PATH_USERDATA: Uuid = Uuid::from_canonical([
+    0xf4, 0x2d, 0x96, 0x71, 0x21, 0xeb, 0x46, 0x92, 0x9b, 0x9a, 0xbc, 0x35, 0x07, 0xff, 0x28, 0xf5,
+]);
+const OPENNURBS5_APPLICATION: Uuid = Uuid::from_canonical([
+    0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc, 0x30, 0xd4,
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
@@ -106,6 +112,8 @@ pub(crate) struct InstanceDefinition {
     pub(crate) units: UnitDetail,
     /// V5 linked full path.
     pub(crate) legacy_linked_path: String,
+    /// V5 linked relative path.
+    pub(crate) legacy_relative_linked_path: String,
     /// Exact serialized V5 linked-file checksum range.
     pub(crate) legacy_checksum_range: Option<Range<usize>>,
     /// Legacy relative-path selector.
@@ -613,13 +621,19 @@ fn parse_v5(
     let url_tag = utf16(&mut reader)?;
     let _bounds = bbox(&mut reader)?;
     let mut kind = v5_definition_kind(reader.u32()?);
-    let legacy_linked_path = utf16(&mut reader)?;
+    let mut legacy_linked_path = utf16(&mut reader)?;
     if matches!(
         kind,
         DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
     ) && legacy_linked_path.is_empty()
     {
         kind = DefinitionKind::Static;
+    }
+    if !matches!(
+        kind,
+        DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
+    ) {
+        legacy_linked_path.clear();
     }
     let legacy_checksum_range = Some(legacy_checksum(&mut reader)?);
     let unit = i32::try_from(reader.u32()?)
@@ -632,6 +646,11 @@ fn parse_v5(
         ));
     }
     let legacy_relative_path = reader.bool()?;
+    let legacy_relative_linked_path = if legacy_relative_path {
+        std::mem::take(&mut legacy_linked_path)
+    } else {
+        String::new()
+    };
     let units = unit_detail(data, &mut reader, archive, warnings)?;
     let _ = (unit, meters_per_unit);
     let linked_depth = reader.i32()?;
@@ -661,6 +680,7 @@ fn parse_v5(
         kind,
         units,
         legacy_linked_path,
+        legacy_relative_linked_path,
         legacy_checksum_range,
         legacy_relative_path,
         linked_depth,
@@ -780,6 +800,7 @@ fn parse_v6(
         kind,
         units,
         legacy_linked_path: String::new(),
+        legacy_relative_linked_path: String::new(),
         legacy_checksum_range: None,
         legacy_relative_path: false,
         linked_depth,
@@ -837,6 +858,91 @@ fn extract_member_ids(
     }
 }
 
+fn parse_idef_alternative_path(
+    data: &[u8],
+    userdata: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Result<(String, bool), FramingError> {
+    let mut reader = BoundedReader::new(
+        data,
+        userdata.payload_range.start,
+        userdata.payload_range.end,
+    )?;
+    let (_chunk, mut payload, version) = anonymous_versioned(
+        data,
+        &mut reader,
+        archive,
+        "instance-definition alternate path",
+        true,
+        warnings,
+    )?;
+    if version.0 != 1 || version.1 < 0 {
+        return Err(FramingError::structural(
+            payload.position(),
+            "unsupported instance-definition alternate-path version",
+        ));
+    }
+    let path = utf16(&mut payload)?;
+    let relative = payload.bool()?;
+    finish(&mut payload, "instance-definition alternate path")?;
+    finish(&mut reader, "instance-definition alternate-path userdata")?;
+    Ok((path, relative))
+}
+
+fn apply_idef_alternative_path(
+    data: &[u8],
+    userdata: &[UserdataDescriptor],
+    archive: ArchiveVersion,
+    definition: &mut InstanceDefinition,
+    warnings: &mut Vec<String>,
+) {
+    if !matches!(
+        definition.kind,
+        DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
+    ) {
+        return;
+    }
+
+    for item in userdata.iter().filter(|item| {
+        item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
+            && item.item_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
+            && (item.application_uuid.is_none()
+                || item.application_uuid == Some(OPENNURBS5_APPLICATION))
+    }) {
+        let (path, relative) = match parse_idef_alternative_path(data, item, archive, warnings) {
+            Ok(value) => value,
+            Err(error) => {
+                warnings.push(format!(
+                    "instance-definition alternate-path userdata at offset {} was dropped: {error}",
+                    item.range.start
+                ));
+                continue;
+            }
+        };
+        let path = path.trim();
+        if path.is_empty() {
+            continue;
+        }
+        if let Some(reference) = definition.file_reference.as_mut() {
+            if relative {
+                if reference.relative_path.is_empty() {
+                    path.clone_into(&mut reference.relative_path);
+                }
+            } else if reference.full_path.is_empty() {
+                path.clone_into(&mut reference.full_path);
+            }
+        } else if relative {
+            if definition.legacy_relative_linked_path.is_empty() {
+                path.clone_into(&mut definition.legacy_relative_linked_path);
+                definition.legacy_relative_path = true;
+            }
+        } else if definition.legacy_linked_path.is_empty() {
+            path.clone_into(&mut definition.legacy_linked_path);
+        }
+    }
+}
+
 /// Parses all instance-definition records without losing framing after a bad record.
 pub(crate) fn parse_definitions(
     data: &[u8],
@@ -848,7 +954,12 @@ pub(crate) fn parse_definitions(
     for record in records {
         let parsed = (|| {
             let mut warnings = Vec::new();
-            let class = parse_class_wrapper(data, record.body.clone(), archive, &mut warnings)?;
+            let (class, userdata) = parse_class_wrapper_with_userdata(
+                data,
+                record.body.clone(),
+                archive,
+                &mut warnings,
+            )?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
@@ -866,7 +977,7 @@ pub(crate) fn parse_definitions(
             {
                 result.member_object_ids.extend(member_ids);
             }
-            let definition = if v5_layout {
+            let mut definition = if v5_layout {
                 parse_v5(
                     data,
                     record.range.clone(),
@@ -883,6 +994,7 @@ pub(crate) fn parse_definitions(
                     &mut warnings,
                 )
             }?;
+            apply_idef_alternative_path(data, &userdata, archive, &mut definition, &mut warnings);
             for warning in warnings {
                 result.diagnostics.push(DefinitionDiagnostic {
                     message: warning,

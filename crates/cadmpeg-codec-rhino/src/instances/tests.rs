@@ -214,6 +214,159 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
 }
 
 #[test]
+fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
+    let archive = ArchiveVersion::V5;
+    let definition_id = [0x41; 16];
+    let class_uuid = super::IDEF_ALTERNATIVE_PATH_USERDATA.to_wire();
+    let application_uuid = super::OPENNURBS5_APPLICATION.to_wire();
+
+    let relative_carrier = class_userdata(
+        archive,
+        class_uuid,
+        application_uuid,
+        "  relative/source.3dm  ",
+        true,
+    );
+    let relative_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        definition_id,
+        &[],
+        true,
+        "/full/source.3dm",
+        false,
+    );
+    let record = definition_record_with_userdata(archive, &relative_payload, &relative_carrier);
+    let mut scan =
+        crate::container::scan_owned(document_with_definitions("50", archive, &[record], &[]))
+            .expect("V5 alternate-path witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.kind, crate::instances::DefinitionKind::Linked);
+    assert_eq!(parsed.legacy_linked_path, "/full/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path, "relative/source.3dm");
+    assert!(parsed.legacy_relative_path);
+    assert!(scan.definitions.diagnostics.is_empty());
+    set_test_units(&mut scan, 1.0);
+    let result = crate::decode::decode_for_test(&scan);
+    let external = &result
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("Rhino native namespace")
+        .arenas["external_references"][0];
+    assert_eq!(external.fields()["full_path"], "/full/source.3dm");
+    assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
+    assert_eq!(external.fields()["relative_path_preferred"], true);
+
+    let full_carrier = class_userdata(
+        archive,
+        class_uuid,
+        application_uuid,
+        "/replacement/source.3dm",
+        false,
+    );
+    let occupied_full = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x42; 16],
+        &[],
+        true,
+        "/full/original.3dm",
+        false,
+    );
+    let occupied_full_record =
+        definition_record_with_userdata(archive, &occupied_full, &full_carrier);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        &[occupied_full_record],
+        &[],
+    ))
+    .expect("occupied full-path witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.legacy_linked_path, "/full/original.3dm");
+    assert!(parsed.legacy_relative_linked_path.is_empty());
+
+    let relative_base = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x43; 16],
+        &[],
+        true,
+        "relative/base.3dm",
+        true,
+    );
+    let relative_base_record =
+        definition_record_with_userdata(archive, &relative_base, &full_carrier);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        &[relative_base_record],
+        &[],
+    ))
+    .expect("relative-base witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.legacy_linked_path, "/replacement/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path, "relative/base.3dm");
+    assert!(parsed.legacy_relative_path);
+
+    let static_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x44; 16],
+        &[],
+        false,
+        "ignored-on-static-definition.3dm",
+        false,
+    );
+    let static_record = definition_record_with_userdata(archive, &static_payload, &full_carrier);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        &[static_record],
+        &[],
+    ))
+    .expect("static-path witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.kind, crate::instances::DefinitionKind::Static);
+    assert!(parsed.legacy_linked_path.is_empty());
+    assert!(parsed.legacy_relative_linked_path.is_empty());
+
+    let malformed_body = utf16_bytes("/ignored/malformed.3dm");
+    let malformed_carrier =
+        class_userdata_with_payload(archive, class_uuid, application_uuid, &malformed_body);
+    let malformed_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x45; 16],
+        &[],
+        true,
+        "/retained/source.3dm",
+        false,
+    );
+    let malformed_record =
+        definition_record_with_userdata(archive, &malformed_payload, &malformed_carrier);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        &[malformed_record],
+        &[],
+    ))
+    .expect("malformed optional carrier remains framed");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.legacy_linked_path, "/retained/source.3dm");
+    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert!(scan
+        .definitions
+        .diagnostics
+        .iter()
+        .any(
+            |diagnostic| diagnostic.message.contains("alternate-path userdata")
+                && diagnostic.message.contains("was dropped")
+        ));
+}
+
+#[test]
 pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     let definition_id = [0x10; 16];
     let member_id = [0x20; 16];

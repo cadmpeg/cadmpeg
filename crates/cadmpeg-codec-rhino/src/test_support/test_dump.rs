@@ -282,6 +282,14 @@ pub(crate) fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
 }
 
 pub(crate) fn definition_record(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
+    definition_record_with_userdata(archive, payload, &[])
+}
+
+pub(crate) fn definition_record_with_userdata(
+    archive: ArchiveVersion,
+    payload: &[u8],
+    userdata: &[u8],
+) -> Vec<u8> {
     let mut uuid_body = INSTANCE_DEFINITION_CLASS.to_vec();
     uuid_body.extend(crc32fast::hash(&INSTANCE_DEFINITION_CLASS).to_le_bytes());
     let uuid = long_chunk(archive, 0x0002_fffb, &uuid_body);
@@ -290,7 +298,7 @@ pub(crate) fn definition_record(archive: ArchiveVersion, payload: &[u8]) -> Vec<
     let class = long_chunk(
         archive,
         0x0002_7ffa,
-        &[uuid, class_data, class_end].concat(),
+        &[uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
     crc_chunk(archive, 0x2000_8076, &class)
 }
@@ -301,6 +309,26 @@ pub(crate) fn v5_definition_payload(
     id: [u8; 16],
     members: &[[u8; 16]],
     linked: bool,
+) -> Vec<u8> {
+    v5_definition_payload_with_paths(
+        archive,
+        minor,
+        id,
+        members,
+        linked,
+        if linked { "/full/source.3dm" } else { "" },
+        false,
+    )
+}
+
+pub(crate) fn v5_definition_payload_with_paths(
+    archive: ArchiveVersion,
+    minor: u8,
+    id: [u8; 16],
+    members: &[[u8; 16]],
+    linked: bool,
+    linked_path: &str,
+    relative_path: bool,
 ) -> Vec<u8> {
     let mut payload = vec![0x10 | minor];
     payload.extend(id);
@@ -316,7 +344,7 @@ pub(crate) fn v5_definition_payload(
         payload.extend(value.to_le_bytes());
     }
     payload.extend(if linked { 3_u32 } else { 0_u32 }.to_le_bytes());
-    payload.extend(utf16_bytes(if linked { "/full/source.3dm" } else { "" }));
+    payload.extend(utf16_bytes(linked_path));
     payload.extend(123_u64.to_le_bytes());
     payload.extend(456_u64.to_le_bytes());
     for value in 0_u32..8 {
@@ -324,7 +352,7 @@ pub(crate) fn v5_definition_payload(
     }
     payload.extend(2_u32.to_le_bytes());
     payload.extend(0.001_f64.to_le_bytes());
-    payload.push(0);
+    payload.push(u8::from(relative_path));
     payload.extend(unit_detail(archive, 2, 0.001));
     payload.extend(1_i32.to_le_bytes());
     payload.extend(0_u32.to_le_bytes());
@@ -453,6 +481,60 @@ pub(crate) fn class_wrapper(
         archive,
         0x0002_7ffa,
         &[uuid, class_data, class_end].concat(),
+    )
+}
+
+pub(crate) fn class_userdata(
+    archive: ArchiveVersion,
+    class_uuid: [u8; 16],
+    application_uuid: [u8; 16],
+    path: &str,
+    relative: bool,
+) -> Vec<u8> {
+    let mut userdata_body = utf16_bytes(path);
+    userdata_body.push(u8::from(relative));
+    class_userdata_with_payload(archive, class_uuid, application_uuid, &userdata_body)
+}
+
+pub(crate) fn class_userdata_with_payload(
+    archive: ArchiveVersion,
+    class_uuid: [u8; 16],
+    application_uuid: [u8; 16],
+    userdata_body: &[u8],
+) -> Vec<u8> {
+    let userdata_payload = anonymous_chunk(archive, 0, userdata_body);
+    let mut transform = Vec::with_capacity(16 * 8);
+    for index in 0..16 {
+        let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
+        transform.extend(value.to_le_bytes());
+    }
+    let header_body = [
+        class_uuid.to_vec(),
+        class_uuid.to_vec(),
+        1_i32.to_le_bytes().to_vec(),
+        transform,
+        application_uuid.to_vec(),
+        vec![0],
+        50_i32.to_le_bytes().to_vec(),
+        0_i32.to_le_bytes().to_vec(),
+    ]
+    .concat();
+    let header = crc_chunk(archive, 0x0002_fff9, &header_body);
+    let mut body = vec![0x22];
+    let header_range_start = body.len();
+    body.extend(header);
+    let header_range_end = body.len();
+    let payload_range_start = body.len();
+    body.extend(crc_chunk(archive, 0x4000_8000, &userdata_payload));
+    let payload_range_end = body.len();
+    crc_chunk_excluding(
+        archive,
+        0x0002_7ffd,
+        &body,
+        &[
+            header_range_start..header_range_end,
+            payload_range_start..payload_range_end,
+        ],
     )
 }
 
@@ -695,6 +777,7 @@ pub(crate) fn static_definition(
             custom_name: String::new(),
         },
         legacy_linked_path: String::new(),
+        legacy_relative_linked_path: String::new(),
         legacy_checksum_range: None,
         legacy_relative_path: false,
         linked_depth: 0,
