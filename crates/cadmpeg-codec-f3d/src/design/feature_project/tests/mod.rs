@@ -18,5 +18,6 @@ mod mirror;
 mod parameters;
 mod prelude;
 mod sheet_metal;
+mod surface;
 mod timeline;
 mod treatments;

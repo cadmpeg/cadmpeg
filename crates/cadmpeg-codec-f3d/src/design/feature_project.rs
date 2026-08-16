@@ -724,32 +724,35 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: BTreeMap::new(),
                     properties: native_scope_properties(scope, native_scope),
                 }),
-                Some(DesignFeatureFamily::SurfaceExtend) => scope
-                    .surface_extend_operation
-                    .as_ref()
-                    .and_then(|operation| {
-                        use crate::records::DesignSurfaceExtendMethod;
-                        use cadmpeg_ir::features::{FaceSelection, SurfaceExtension};
+                Some(DesignFeatureFamily::SurfaceExtend) => {
+                    scope.surface_extend_operation.as_ref().map_or_else(
+                        || FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        },
+                        |operation| {
+                            use crate::records::DesignSurfaceExtendMethod;
+                            use cadmpeg_ir::features::{FaceSelection, SurfaceExtension};
 
-                        let method = match operation.method {
-                            DesignSurfaceExtendMethod::Natural => SurfaceExtension::Natural,
-                            DesignSurfaceExtendMethod::Tangent => SurfaceExtension::Linear,
-                            DesignSurfaceExtendMethod::Perpendicular => return None,
-                        };
-                        Some(FeatureDefinition::ExtendSurface {
-                            faces: FaceSelection::Native(format!(
-                                "{native_scope}:design-record#{}",
-                                operation.boundary_record_index
-                            )),
-                            distance: Some(Length(operation.distance * 10.0)),
-                            method,
-                        })
-                    })
-                    .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }),
+                            let method = match operation.method {
+                                DesignSurfaceExtendMethod::Natural => SurfaceExtension::Natural,
+                                DesignSurfaceExtendMethod::Tangent => SurfaceExtension::Linear,
+                                DesignSurfaceExtendMethod::Perpendicular => {
+                                    SurfaceExtension::Perpendicular
+                                }
+                            };
+                            FeatureDefinition::ExtendSurface {
+                                faces: FaceSelection::Native(format!(
+                                    "{native_scope}:design-record#{}",
+                                    operation.boundary_record_index
+                                )),
+                                distance: Some(Length(operation.distance * 10.0)),
+                                method,
+                            }
+                        },
+                    )
+                }
                 Some(DesignFeatureFamily::SurfaceOffset) => scope
                     .surface_offset_operation
                     .as_ref()

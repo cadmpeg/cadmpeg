@@ -2271,6 +2271,8 @@ pub enum SurfaceExtension {
     Natural,
     /// Extend boundary tangents as ruled linear strips.
     Linear,
+    /// Extend boundary faces perpendicular to the source faces.
+    Perpendicular,
 }
 
 /// Direction law for a ruled-surface operation.
