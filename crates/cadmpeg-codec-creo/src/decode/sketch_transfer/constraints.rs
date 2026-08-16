@@ -13,8 +13,8 @@ use super::super::sketch::{
     section_equation_function_thirty_one_point_coordinate_rows,
     section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
-    section_line_fixed_coordinate, section_linear_distance_coordinate, section_segment_rows,
-    section_type5_radius_arc, unique_section_skamp_segment,
+    section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
+    unique_section_skamp_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
@@ -1439,6 +1439,13 @@ pub(in super::super) fn section_dimension_constraints(
     let segments = section_segment_rows(definition);
     let segment_refs = segments.iter().collect::<Vec<_>>();
     let known_entities = section_entity_external_ids(definition);
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .filter(|variables| variables.is_complete())
+        .map(|variables| variables.reconciled_points().1)
+        .unwrap_or_default();
+    let resolved_coordinates = resolved_section_coordinates(definition);
     relations
         .rows
         .iter()
@@ -1573,6 +1580,15 @@ pub(in super::super) fn section_dimension_constraints(
                 if let Some(vectors) = relation.operand_vectors {
                     if section_linear_distance_vectors(vectors) {
                         if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
+                            let coordinate = section_linear_distance_coordinate(
+                                definition,
+                                &segment_refs,
+                                first_id,
+                                second_id,
+                                &resolved_coordinates,
+                                &[],
+                                &ambiguous_point_ids,
+                            );
                             let matching = segments
                                 .iter()
                                 .filter(|segment| {
@@ -1581,7 +1597,9 @@ pub(in super::super) fn section_dimension_constraints(
                                 })
                                 .collect::<Vec<_>>();
                             if let [measured] = matching.as_slice() {
-                                if known_entities.contains(&measured.external_id) {
+                                if measured.kind == crate::feature::FeatureSegmentKind::Line
+                                    && known_entities.contains(&measured.external_id)
+                                {
                                     let entity = sketch_entity_id(sketch, measured.external_id);
                                     let [first, second] =
                                         if measured.point_ids == [first_id, second_id] {
@@ -1595,38 +1613,23 @@ pub(in super::super) fn section_dimension_constraints(
                                                 SketchLocus::Start(entity),
                                             ]
                                         };
-                                    match section_line_fixed_coordinate(definition, measured) {
-                                        Some(0) => {
-                                            return Some(
-                                                SketchConstraintDefinition::VerticalDistance {
-                                                    first,
-                                                    second,
-                                                    parameter,
-                                                },
-                                            );
-                                        }
-                                        Some(1) => {
-                                            return Some(
-                                                SketchConstraintDefinition::HorizontalDistance {
-                                                    first,
-                                                    second,
-                                                    parameter,
-                                                },
-                                            );
-                                        }
-                                        _ => {}
+                                    if let Some(coordinate) = coordinate {
+                                        return Some(match coordinate {
+                                            0 => SketchConstraintDefinition::HorizontalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            },
+                                            1 => SketchConstraintDefinition::VerticalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            },
+                                            _ => return None,
+                                        });
                                     }
                                 }
                             }
-                            let coordinate = section_linear_distance_coordinate(
-                                definition,
-                                &segment_refs,
-                                first_id,
-                                second_id,
-                                &resolved_section_coordinates(definition),
-                                &[],
-                                &BTreeSet::new(),
-                            );
                             if let (Some(coordinate), Some(first), Some(second)) = (
                                 coordinate,
                                 section_point_locus(definition, sketch, first_id),

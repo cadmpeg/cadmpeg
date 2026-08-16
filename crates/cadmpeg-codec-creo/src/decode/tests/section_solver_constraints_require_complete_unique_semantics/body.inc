@@ -3758,6 +3758,26 @@
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );
+    let mut conflicting_spanning_distance = distance_definition.clone();
+    conflicting_spanning_distance
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 2,
+            u: Some(4.0),
+            v: Some(3.0),
+        });
+    assert!(matches!(
+        section_dimension_constraints(
+            &conflicting_spanning_distance,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
     let mut schema_orientation = distance_definition.clone();
     let schema_dimension = &mut schema_orientation
         .dimensions
