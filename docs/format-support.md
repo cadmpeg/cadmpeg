@@ -4,11 +4,11 @@
 
 ### Scoring rules
 
-1. **One score.** Score is the highest fully passed level. Surplus capability shows as extras.
+1. **One score per codec.** Score is the highest level whose requirements pass for every admitted file the codec decodes. Surplus capability in a subset of versions, layouts, or files shows as extras. Refused bands are outside the score.
 2. **Full pass.** A level passes when its requirements and the proof criteria hold across mainstream files in the declared envelope. One fixture, an entity census, or an opaque record capture does not pass a level.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
-4. **One score per envelope.** Version and layout bands each receive their own score. Discontinuous support is stated per band.
-5. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for that envelope.
+4. **No per-band scores.** Version and layout bands do not receive their own ladder integers. Discontinuous support is extras or a refusal, not a second score.
+5. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec.
 
 ### Proof criteria
 
@@ -38,27 +38,19 @@ A level passes only when every criterion holds for the declared envelope:
 
 ### Current scores
 
-| Codec                                                                 | Score  | Extras above score                                                                                                         |
-| --------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| FreeCAD `.FCStd` (schema 4, file 1)                                   | **L5** | deterministic retained writes, checked edits, source-less typed application graphs                                         |
-| Autodesk Fusion `.f3d`                                                | **L4** | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records                      |
-| Autodesk Inventor `.ipt`/`.iam` (CFB v3, RSe 31, Meta Stream 8)       | **L1** | typed part carriers, parameters, planar sketches, and closed extrude, hole, fillet, and chamfer operation branches         |
-| SolidWorks `.sldprt`                                                  | **L4** | typed features, sketches, parameters, configurations, native replay + bounded generation                                   |
-| Rhino `.3dm` (archive 50/60/70/80)                                    | **L1** | partial typed geometry, topology, presentation, and bounded source-less native writing                                     |
-| CATIA V5 `.CATPart` (standard-nested band)                            | **L2** | conditionally connected B-rep, closed zero-entity topology lowering                                                        |
-| Siemens NX `.prt` (selected or terminal-lineage-resolved body images) | **L3** | feature and history transfer, procedural carriers, topology attributes, external-dependency inspection, named arrangements |
-| Siemens NX `.prt` (unselected multi-partition history)                | **L2** | connected candidate B-reps, external-dependency inspection                                                                 |
-| CATIA V5 `.CATPart` (other layout bands)                              | **L1** |                                                                                                                            |
-| Creo Parametric `.prt`                                                | **L1** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features                      |
-| ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` (admitted branches)         | **L3** | retained unknown SAB records; unsupported ACIS binary save-format bands identified and refused                             |
-| Rhino `.3dm` (V3/V4)                                                  | **L1** | metadata and bounded object-record retention                                                                               |
-| Rhino `.3dm` (V2)                                                     | **L1** | partial legacy geometry transfer                                                                                           |
-| Rhino `.3dm` (V1 and archive 5)                                       | **L0** | bounded header and legacy-record inspection                                                                                |
-| STEP Part 21 AP242 editions 1–3                                       | **L9** |                                                                                                                            |
-| STEP Part 21 AP203 editions 1–2 and AP214                             | **L9** |                                                                                                                            |
-| IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                      | **L8** | bounded semantic writing and application checks remain extras; L9 gate open                                                |
-
-Each current score applies to the envelope described in its profile.
+| Codec                                                           | Score  | Extras above score                                                                                                                                                                                  |
+| --------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FreeCAD `.FCStd` (schema 4, file 1)                             | **L5** | deterministic retained writes, checked edits, source-less typed application graphs                                                                                                                  |
+| Autodesk Fusion `.f3d`                                          | **L4** | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records                                                                                               |
+| Autodesk Inventor `.ipt`/`.iam` (CFB v3, RSe 31, Meta Stream 8) | **L1** | typed part carriers, parameters, planar sketches, and closed extrude, hole, fillet, and chamfer operation branches                                                                                  |
+| SolidWorks `.sldprt`                                            | **L4** | typed features, sketches, parameters, configurations, native replay + bounded generation                                                                                                            |
+| Rhino `.3dm`                                                    | **L0** | L1 open on archive 2/3/4/50/60/70/80 and V2–V4; partial typed geometry, topology, presentation, and bounded source-less native writing                                                              |
+| CATIA V5 `.CATPart`                                             | **L1** | L2 geometry on the standard-nested band; conditionally connected B-rep; closed zero-entity topology lowering                                                                                        |
+| Siemens NX `.prt`                                               | **L2** | L3 connected B-rep on selected or terminal-lineage-resolved body images; feature and history transfer, procedural carriers, topology attributes, external-dependency inspection, named arrangements |
+| Creo Parametric `.prt`                                          | **L1** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features                                                                                               |
+| ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` (admitted branches)   | **L3** | retained unknown SAB records; unsupported ACIS binary save-format bands identified and refused                                                                                                      |
+| STEP Part 21 AP203/AP214/AP242                                  | **L9** |                                                                                                                                                                                                     |
+| IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                | **L8** | bounded semantic writing and application checks remain extras; L9 gate open                                                                                                                         |
 
 ## Autodesk Inventor `.ipt` and `.iam`
 
@@ -69,7 +61,7 @@ Each current score applies to the envelope described in its profile.
 **Ladder: L1.** Structural detection requires directory evidence. The codec enumerates the complete CFB hierarchy, versioned databases, registry and revision tables, exact segment pairs, metadata tables, typed bulk records, OLE property sets, previews when present, Protein package entries and decoded catalog assets, and `UFRxDoc` external references. Optional or unknown segments remain named native records.
 
 - **Part geometry: extra above L1.** One typed active carrier in one `PmBRep` segment transfers through `cadmpeg-asm`. The kernel header controls width, units, tolerances, and SAB framing. Kernel unknown records and source annotations are retained. An empty or invalid decoded carrier produces blocking `geometry_not_transferred`.
-- **ACIS 217/218 part carriers: L3.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder. Connected B-rep validation and direct-carrier parity pass for this finite envelope. Other ACIS save-format bands remain retained and produce blocking `geometry_not_transferred`.
+- **ACIS 217/218 part carriers: extra above L1.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder. Connected B-rep validation and direct-carrier parity pass for this finite subset. Other ACIS save-format bands remain retained and produce blocking `geometry_not_transferred`.
 - **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
 - **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
 - **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
@@ -116,7 +108,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 **Model:** IGES 5.1/5.2/5.3 entity graph
 
-**Ladder: L8 for the IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document envelope.** The L9 gate is open: bounded semantic writing and independent-application checks are extras above L8 until decode termination, valid-IR output, and complete loss accounting pass together. Compressed ASCII, Binary, other Fixed ASCII versions, and extensions are separate envelopes.
+**Ladder: L8.** The declared envelope is IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document. The L9 gate is open: bounded semantic writing and independent-application checks are extras above L8 until decode termination, valid-IR output, and complete loss accounting pass together. Compressed ASCII, Binary, and other Fixed ASCII versions are outside the score.
 
 ### Envelopes
 
@@ -156,7 +148,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 **Model:** 3DM object graph
 
-**Ladder: L1 for archive 2/3/4/50/60/70/80; L0 for V1 and archive 5.** Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above L1.
+**Ladder: L0.** Archive 2/3/4/50/60/70/80 and V2–V4 open at L1 and show as extras. Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above that L1 subset. V1 and archive 5 keep the codec at L0.
 
 ### Read profile
 
@@ -192,7 +184,7 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md), [`formats/rhino_3dm-open-ite
 - **Tessellation: Partial.** Display-list geometry transfers into tessellation arenas and can be regenerated. Stable face-to-triangle ownership remains open.
 - **Design intent: Partial.** Configurations transfer as neutral records with material and property overrides. `SourceIndex` binds each configuration to its configuration-specific solid partition independently of element order and resolved-feature slot identity. Source-less body membership remains unresolved and is reported. Active configuration names resolve uniquely and take precedence over the active geometry partition; unresolved active identity is reported. Geometry partitions without native configuration definitions produce explicitly reported inferred states. Keywords history retains feature element tags, exact containment including id-less nodes, order, names, suppression, dimensions, expressions, and attributes. Arithmetic parameter expressions evaluate across unambiguous dependency references with dimensional type checking. Semantic PMI dimensions enrich uniquely owner-qualified parameters; unbound records and native dimension subtypes are reported. Explicit feature output scopes resolve to model bodies; unresolved non-empty scopes are reported. Unknown operation families retain their kind, dimensions, and non-parameter attributes in the neutral native-operation definition. Reference planes, axes, points, and coordinate systems retain complete model-space placement. Planar profile B-reps nested in feature-input lanes transfer as placed sketches with solved lines, circles, arcs, ellipses, and rational or non-rational NURBS, plus oriented profile loops. Boss and cut extrusions retain blind, symmetric, two-sided, through-all, and native-face termination, explicit direction, draft, profile, and Boolean operation. Explicit-axis revolutions retain one-sided, symmetric, and two-sided angular extents, profile, axis placement, and Boolean operation. Projected split lines retain their planar sketch tool, generated target faces, and complete regeneration dependencies. Profile sweeps, lofts including boundary boss and cut forms, ribs, bending, twisting, tapering, and stretching flexes, drafts with selected faces and neutral planes, direct body Boolean combines, body deletion and isolation, body scaling about an explicit center, face deletion and replacement, face offset/translation/rotation, spherical and elliptical domes, linear patterns, circular patterns with a resolved axis, mirrors, constant and variable-radius fillets with selected edges, dimensional chamfers with selected edges, shells with removed faces, face thickening in either direction or both directions, and simple, counterbore, and countersink holes with explicit face, position, direction, and blind or through-all termination project to neutral operations and write edits through retained native records. A circular pattern with an unresolved axis retains its seed and native count and angle but reports the unresolved axis. An extrusion whose end-condition token is outside the defined set or whose blind depth scalar is absent or not a positive length, and a draft without a resolvable angle or outward flag, keep their remaining typed semantics and report the unresolved operand. The equation container projects as a typed feature-tree node, and its dimensions remain document-global. Decode reports parameters without evaluated scalars, expressions with unresolved quoted parameter references, history records with ambiguous identities or unresolved structural references, native sketch relation records omitted before constraint projection, native-only sketch geometry and constraints, native-only feature definitions, every typed feature retaining unresolved required operation semantics, and body delete/keep features whose retention mode is unresolved. Sketch constraints and other operation families remain open.
 - **Product structure: None.** `.sldprt` support covers parts only.
-- **Presentation and metadata: Partial.** Base colors, appearance bindings, previews, SolidWorks XML metadata, units, and selected attributes transfer. Full appearance precedence and all embedded metadata stores remain open.
+- **Presentation and metadata: Partial.** Parasolid face colors transfer. DisplayLists body defaults, VisualStates feature appearances, and face-local appearances transfer with body → feature → face precedence. Feature ownership requires agreeing framed persistent-surface references. Definition counts, table order, geometry proximity, and opaque ATOM values do not assign appearances. Part, configuration, and display-state ownership remains open. Previews, SolidWorks XML metadata, units, and selected attributes transfer.
 
 ### Write and round trip
 
@@ -244,7 +236,7 @@ See [`formats/f3d.md`](formats/f3d.md), [`formats/f3d-open-items.md`](formats/f3
 
 **Kernel:** Parasolid in an SPLMSSTR container
 
-**Ladder: L3 for the current cumulative validation envelope on single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 for unresolved multi-partition history.** Feature and history transfer above L3 shows as extras until L4 coverage gates close. Multi-partition histories remain L2 unless every emitted partition receives one unambiguous terminal lineage status.
+**Ladder: L2.** Connected B-rep on single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images shows as extras. Feature and history transfer above that subset shows as extras until L4 coverage gates close. Unresolved multi-partition history keeps the codec at L2.
 
 ### Read profile
 
@@ -269,7 +261,7 @@ See the [format specification](formats/siemens_nx.md), [coverage contract](forma
 
 **Kernel:** CGM
 
-**Ladder: L2 (standard-nested band); L1 (other layout bands).** L3 requires connected topology across the band. Current topology depends on resolved trim, support, and endpoint assignments.
+**Ladder: L1.** Geometry on the standard-nested band shows as extras. L3 requires connected topology across admitted files. Current topology depends on resolved trim, support, and endpoint assignments.
 
 ### Read profile
 
@@ -321,7 +313,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 **Model:** ISO 10303-21 clear-text exchange with AP203, AP214, or AP242 application data
 
-**Ladder: L9 for AP242 editions 1–3 and AP203 editions 1–2/AP214.** Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the declared bands. ZIP packaging is an extra read profile for the `ISO-10303.p21` root; subsidiary graph composition is outside the declared band. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. Part 21 exchange documents have no originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable.
+**Ladder: L9.** Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the declared bands. ZIP packaging is an extra read profile for the `ISO-10303.p21` root; subsidiary graph composition is outside the declared band. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. Part 21 exchange documents have no originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable.
 
 ### Read profile
 

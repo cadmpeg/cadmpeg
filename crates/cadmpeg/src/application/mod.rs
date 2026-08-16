@@ -15,4 +15,4 @@ pub use catalogs::{
 pub use document::{LoadOrigin, LoadedDocument};
 pub use encoders::{build_encoder, EncoderRequest};
 pub use refusal::ConversionRefusal;
-pub use transcoder::{export_target, ConversionPolicy, SourceRequest, Transcoder, ValidationMode};
+pub use transcoder::{export_target, ConversionPolicy, SourceRequest, Transcoder};

@@ -19,6 +19,7 @@ pub mod search;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
@@ -52,22 +53,30 @@ pub enum ByteCommand {
 /// One format-agnostic byte tool.
 #[derive(Debug, Subcommand)]
 pub enum ByteTool {
-    /// Print a hexadecimal dump with absolute offsets and an ASCII gutter.
+    /// Dump bytes as hex.
+    ///
+    /// Prints a hexadecimal dump with absolute offsets and an ASCII gutter.
     Hex(HexArgs),
-    /// Read fixed-width scalars at an offset, optionally striding a record array.
+    /// Read numbers at an offset.
+    ///
+    /// Reads fixed-width scalars at an offset, optionally striding a record array.
     Read(ReadArgs),
-    /// Report every offset where a byte pattern or a text string occurs.
+    /// Search for a byte pattern or string.
     Find(FindArgs),
-    /// Extract printable strings.
+    /// List printable strings.
     Strings(StringsArgs),
-    /// Decode records with an inline `--layout` spec.
+    /// Decode records from a layout spec.
     Struct(StructArgs),
-    /// List ZIP entries with their physical offsets.
+    /// List container members (ZIP or CFB).
     Container(ContainerArgs),
-    /// Write one ZIP entry or CFB stream to a file or standard output.
+    /// Write one ZIP entry or CFB stream.
     Extract(ExtractArgs),
-    /// Compare two files byte for byte at the same offsets.
-    Diff(DiffArgs),
+    /// Compare two files as raw bytes.
+    ///
+    /// Compares byte n of one file with byte n of the other.
+    /// `cadmpeg diff` compares decoded models.
+    /// Exit status 1 means the files differ.
+    Cmp(CmpArgs),
 }
 
 /// The file a single-input byte tool reads, under either spelling.
@@ -258,9 +267,9 @@ pub struct ExtractArgs {
     pub json: bool,
 }
 
-/// Arguments for `cadmpeg inspect diff`.
+/// Arguments for `cadmpeg inspect cmp`.
 #[derive(Debug, Args)]
-pub struct DiffArgs {
+pub struct CmpArgs {
     /// First file.
     pub a: PathBuf,
     /// Second file.
@@ -285,19 +294,19 @@ pub struct DiffArgs {
 ///
 /// Returns an operational error when a file cannot be read, an argument does
 /// not parse, or a requested offset lies past end of file.
-pub fn run(command: ByteCommand) -> Result<()> {
+pub fn run(command: ByteCommand) -> Result<ExitCode> {
     let tool = match command {
         ByteCommand::Tool(tool) | ByteCommand::Bytes { tool } => tool,
     };
     match tool {
-        ByteTool::Hex(args) => hex(&args),
-        ByteTool::Read(args) => read(&args),
-        ByteTool::Find(args) => find(&args),
-        ByteTool::Strings(args) => strings(&args),
-        ByteTool::Struct(args) => structure(&args),
-        ByteTool::Container(args) => container_list(&args),
-        ByteTool::Extract(args) => extract_entry(&args),
-        ByteTool::Diff(args) => diff_files(&args),
+        ByteTool::Hex(args) => hex(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Read(args) => read(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Find(args) => find(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Strings(args) => strings(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Struct(args) => structure(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Container(args) => container_list(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Extract(args) => extract_entry(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Cmp(args) => cmp_files(&args),
     }
 }
 
@@ -579,18 +588,18 @@ fn structure(args: &StructArgs) -> Result<()> {
 fn container_list(args: &ContainerArgs) -> Result<()> {
     let file_path = args.file.path();
     let bytes = read_whole(file_path)?;
-    let entries = container::list(&bytes, args.limits.limits()).with_context(|| {
+    let listing = container::list(&bytes, args.limits.limits()).with_context(|| {
         format!(
-            "cannot list {} as a ZIP container; `cadmpeg inspect {}` reads \
+            "cannot list {} as a ZIP or CFB container; `cadmpeg inspect {}` reads \
              the other container families through their codec",
             file_path.display(),
             file_path.display()
         )
     })?;
     if args.json {
-        print!("{}", container::render_json(&entries));
+        print!("{}", container::render_json(&listing));
     } else {
-        print!("{}", container::render(&entries));
+        print!("{}", container::render(&listing));
     }
     Ok(())
 }
@@ -630,10 +639,10 @@ fn write_payload_to_stdout(payload: &[u8]) -> Result<()> {
         .context("writing the entry to standard output")
 }
 
-fn diff_files(args: &DiffArgs) -> Result<()> {
+fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
     if args.json {
         bail!(
-            "`inspect diff` has no JSON form; JSON lives on `inspect FILE --json` \
+            "`inspect cmp` has no JSON form; JSON lives on `inspect FILE --json` \
              (the container summary), `inspect container --json`, and `inspect \
              find --json`"
         );
@@ -651,7 +660,7 @@ fn diff_files(args: &DiffArgs) -> Result<()> {
     );
     if summary.identical() {
         println!("identical");
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
     if summary.len_a != summary.len_b {
         println!(
@@ -662,7 +671,7 @@ fn diff_files(args: &DiffArgs) -> Result<()> {
     }
     let Some(first) = summary.first else {
         println!("the common prefix is identical");
-        return Ok(());
+        return Ok(ExitCode::from(1));
     };
     println!(
         "first difference: 0x{first:08x} ({first})\ndiffering bytes: {} of {}\nruns (gap {}): {}",
@@ -697,7 +706,7 @@ fn diff_files(args: &DiffArgs) -> Result<()> {
         println!("b @ 0x{window_start:x}:");
         print!("{}", window(&b, window_start, args.context));
     }
-    Ok(())
+    Ok(ExitCode::from(1))
 }
 
 /// Renders a bounded hexadecimal window of an in-memory buffer.

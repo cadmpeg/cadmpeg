@@ -99,9 +99,9 @@ for crate_dir in "$ROOT"/crates/cadmpeg-codec-*; do
   echo "$codec	$size	$rel" | tee -a "$OUT/decode-selection.txt"
   echo "timing $codec ($(basename "$fixture"), ${size} bytes)"
   # Write CADIR to stdout (not -o /dev/null): the CLI stages a temp file next to
-  # -o, and /dev is not writable. Discard stdout so the timed path is decode only.
+  # -o, and /dev is not writable. Discard stdout so the timed path is dump only.
   hyperfine --warmup 1 --runs 5 --export-json "$OUT/decode-${codec}.json" \
-    "timeout 120 '$CADMPEG' decode '$fixture' >/dev/null"
+    "timeout 120 '$CADMPEG' dump '$fixture' >/dev/null"
 done
 
 echo "==> build metrics (cadmpeg-codec-iges representative + CLI + test-fast)"
