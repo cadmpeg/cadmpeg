@@ -43,7 +43,7 @@ native validators).
 
 ## Application composition
 
-`cadmpeg validate` / convert validation =
+`cadmpeg check` / convert validation =
 
 1. `validate_neutral` (or `validate_neutral_with_source_fidelity`)
 2. plus every registered native validator whose namespace is present

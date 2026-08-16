@@ -42,8 +42,8 @@ pub struct ConversionPolicy {
     pub force: bool,
     /// Stream a binary output format to standard output instead of refusing.
     pub binary_stdout: bool,
-    /// Write output even if validation finds errors.
-    pub allow_invalid: bool,
+    /// Write even if the check finds errors.
+    pub allow_errors: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
     /// Refuse to export when decode or export planning reported any loss.
@@ -126,10 +126,10 @@ impl<'a> Transcoder<'a> {
                 loaded.fidelity(),
                 losses(decode_report.as_ref()),
             );
-            if !validation.is_ok() && !policy.allow_invalid {
-                return Err(ConversionRefusal::ValidationFailed {
+            if !validation.is_ok() && !policy.allow_errors {
+                return Err(ConversionRefusal::CheckFailed {
                     message: format!(
-                        "validation found {} error(s); refusing to export (use --allow-invalid to override)",
+                        "check found {} error(s); refusing to export (use --allow-errors to override)",
                         validation.error_count()
                     ),
                     decode_report,
@@ -323,7 +323,7 @@ pub fn export_target(
     #[cfg(feature = "rhino")]
     if rhino_version.is_some() && format != Format::Rhino {
         return Err(ConversionRefusal::UnsupportedTarget {
-            message: "--rhino-version requires Rhino output".into(),
+            message: "--rhino-target requires Rhino output".into(),
         });
     }
     #[cfg(feature = "iges")]

@@ -116,7 +116,7 @@ impl StepOutputArgs {
                   cadmpeg convert part.sldprt -o part.step\n  \
                   cadmpeg inspect part.sldprt\n  \
                   cadmpeg diff a.sldprt b.step\n\n\
-                  Exit codes: 0 success, 1 semantic failure, 2 operational error."
+                  Exit codes: 0 success, 1 negative verdict (failed check, refused write, files differ), 2 operational error."
 )]
 struct Cli {
     /// Operation to perform.
@@ -351,9 +351,9 @@ struct DecodeArgs {
     /// Read the container only; do not decode geometry.
     #[arg(long)]
     container_only: bool,
-    /// Fail if required content cannot be decoded.
+    /// Fail if required content cannot be decoded. Salvage is off.
     #[arg(long)]
-    strict: bool,
+    no_salvage: bool,
     /// Resource-limit profile: `desktop` (generous, the default) or `service`
     /// (tight ceilings for unattended use).
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
@@ -372,7 +372,7 @@ enum LimitProfile {
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
         let limits = self.limits.limits();
-        let mode = if self.strict {
+        let mode = if self.no_salvage {
             cadmpeg_core::decode::DecodeMode::Strict
         } else {
             cadmpeg_core::decode::DecodeMode::Salvage
@@ -397,10 +397,10 @@ impl LimitProfile {
 enum Command {
     /// Convert a CAD file to another format.
     ///
-    /// Reads a CAD file, validates it, and writes another format.
+    /// Reads a CAD file, checks it, and writes another format.
     /// The output path's extension selects the format. Pass `-f` when writing to stdout.
     ///
-    /// `--allow-invalid` writes the file even if validation finds errors.
+    /// `--allow-errors` writes the file even if the check finds errors.
     #[command(
         display_order = 1,
         after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.f3d -f step"
@@ -436,9 +436,9 @@ enum Command {
         /// Write a JSON report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
-        /// Write output even if validation finds errors.
+        /// Write output even if the check finds errors. The check runs and prints findings. Skip the refusal.
         #[arg(long)]
-        allow_invalid: bool,
+        allow_errors: bool,
         /// Write output even if no geometry was decoded.
         #[arg(long)]
         allow_empty: bool,
@@ -448,7 +448,7 @@ enum Command {
         /// Target Rhino archive version; valid only for Rhino output.
         #[cfg(feature = "rhino")]
         #[arg(long, value_enum)]
-        rhino_version: Option<RhinoVersion>,
+        rhino_target: Option<RhinoVersion>,
         /// Target IGES specification version; valid only for IGES output.
         #[cfg(feature = "iges")]
         #[arg(long, value_enum)]
@@ -467,7 +467,7 @@ enum Command {
     ///
     /// Byte tools (hex, find, extract, ...) dump raw bytes. They work on any file.
     ///
-    /// `query` prints tables from JSON that `convert` and `decode` write. `inspect` reads the CAD file.
+    /// `query` prints tables from JSON that `convert` and `dump` write. `inspect` reads the CAD file.
     #[command(
         display_order = 2,
         args_conflicts_with_subcommands = true,
@@ -507,15 +507,15 @@ enum Command {
     },
     /// Write a CAD file as CADIR JSON.
     ///
-    /// CADIR is cadmpeg's JSON form of a model. decode does not validate.
+    /// CADIR is cadmpeg's JSON form of a model. dump does not check.
     ///
-    /// `convert` validates and writes another CAD format. Use decode when you want the JSON.
+    /// `convert` checks and writes another CAD format. Use dump when you want the JSON.
     #[command(
         display_order = 5,
-        after_help = "Examples:\n  cadmpeg decode part.sldprt -o part.cadir.json"
+        after_help = "Examples:\n  cadmpeg dump part.sldprt -o part.cadir.json"
     )]
-    Decode {
-        /// CAD file to decode.
+    Dump {
+        /// CAD file to dump.
         #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
         /// Tolerated spelling of the positional input.
@@ -526,7 +526,7 @@ enum Command {
             conflicts_with = "input"
         )]
         input_flag: Option<PathBuf>,
-        /// Rejected placeholder: decode's stdout is already the CADIR JSON.
+        /// Rejected placeholder: dump's stdout is already CADIR JSON; dump report goes to --report.
         #[arg(long, hide = true)]
         json: bool,
         /// Output file; omit to write CADIR to standard output.
@@ -545,7 +545,7 @@ enum Command {
     },
     /// Print a table from a report or CADIR JSON.
     ///
-    /// Reads JSON from `--report`, from decode, or from a decode sidecar.
+    /// Reads JSON from `--report`, from dump, or from a decode sidecar.
     #[command(
         display_order = 6,
         subcommand_help_heading = "Views",
@@ -561,9 +561,9 @@ enum Command {
     /// Accepts a native CAD file or CADIR JSON.
     #[command(
         display_order = 4,
-        after_help = "Examples:\n  cadmpeg validate part.sldprt"
+        after_help = "Examples:\n  cadmpeg check part.sldprt"
     )]
-    Validate {
+    Check {
         /// CAD file to check.
         #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
@@ -597,7 +597,7 @@ enum Command {
         display_order = 3,
         after_help = "Examples:\n  cadmpeg diff a.sldprt b.step\n  cadmpeg diff before.f3d after.f3d\n\n\
                       Exit status 1 means the models differ.\n\
-                      `inspect diff` compares raw bytes, not decoded models."
+                      `inspect cmp` compares raw bytes, not decoded models."
     )]
     Diff {
         /// First CAD file.
@@ -660,7 +660,7 @@ fn main() -> ExitCode {
             input_args,
             bytes,
         } => match bytes {
-            Some(byte_command) => inspect::run(byte_command).map(|()| ExitCode::SUCCESS),
+            Some(byte_command) => inspect::run(byte_command),
             None => {
                 let input = resolve_input(input, input_flag);
                 commands::inspect(
@@ -675,7 +675,7 @@ fn main() -> ExitCode {
                 .map(|()| ExitCode::SUCCESS)
             }
         },
-        Command::Decode {
+        Command::Dump {
             input,
             input_flag,
             json,
@@ -687,12 +687,12 @@ fn main() -> ExitCode {
         } => {
             if json {
                 Err(anyhow::anyhow!(
-                    "decode writes the CADIR JSON artifact itself; its standard output is \
-                     already JSON when -o is omitted; the decode report goes to --report FILE, \
+                    "dump writes the CADIR JSON artifact itself; its standard output is \
+                     already JSON when -o is omitted; the dump report goes to --report FILE, \
                      projected with `cadmpeg query`"
                 ))
             } else {
-                commands::decode(
+                commands::dump(
                     &catalogs,
                     &resolve_input(input, input_flag),
                     output.as_deref(),
@@ -705,7 +705,7 @@ fn main() -> ExitCode {
         }
         .map(|()| ExitCode::SUCCESS),
         Command::Query { view } => query::run(&view).map(|()| ExitCode::SUCCESS),
-        Command::Validate {
+        Command::Check {
             input,
             input_flag,
             json,
@@ -713,7 +713,7 @@ fn main() -> ExitCode {
             force,
             input_args,
             decode,
-        } => commands::validate_cmd(
+        } => commands::check_cmd(
             &catalogs,
             &resolve_input(input, input_flag),
             input_args.forced(),
@@ -756,11 +756,11 @@ fn main() -> ExitCode {
             output,
             force,
             report,
-            allow_invalid,
+            allow_errors,
             allow_empty,
             reject_lossy,
             #[cfg(feature = "rhino")]
-            rhino_version,
+            rhino_target,
             #[cfg(feature = "iges")]
             iges_target,
             input_args,
@@ -775,11 +775,11 @@ fn main() -> ExitCode {
                     force,
                     report,
                     binary_stdout,
-                    allow_invalid,
+                    allow_errors,
                     allow_empty,
                     reject_lossy,
                     #[cfg(feature = "rhino")]
-                    rhino_version: rhino_version.map(RhinoVersion::codec),
+                    rhino_target: rhino_target.map(RhinoVersion::codec),
                     #[cfg(feature = "step")]
                     step_options: step.flag_present().then(|| step.options()),
                     #[cfg(feature = "step")]

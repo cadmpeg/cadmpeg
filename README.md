@@ -47,14 +47,14 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/re
 cadmpeg convert part.f3d -f step
 ```
 
-Conversion reports validation results and loss:
+Conversion reports check results and loss:
 
 ```text
 decode report (f3d): geometry_transferred=true
 losses:
   [info/geometry] 22 spline surface record(s) were decoded into NURBS carriers.
   ...
-validation: OK (0 error(s), 0 warning(s))
+check: OK (0 error(s), 0 warning(s))
 wrote part.step (2125 entities)
 ```
 

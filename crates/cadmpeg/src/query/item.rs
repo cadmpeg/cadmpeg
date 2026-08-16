@@ -136,12 +136,12 @@ pub fn run(args: &ItemArgs) -> Result<()> {
         Artifact::Report(_) => bail!(
             "{} is a command report; reports have no arenas. Use \
              `cadmpeg query findings` / `cadmpeg query losses` on the report, or \
-             `cadmpeg decode SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
+             `cadmpeg dump SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
             args.file.display()
         ),
         Artifact::Sidecar(_) => bail!(
             "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
-             arenas. Run `cadmpeg decode SOURCE -o doc.json && cadmpeg query item \
+             arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query item \
              doc.json ARENA ID`",
             args.file.display()
         ),
