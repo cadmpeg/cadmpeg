@@ -444,29 +444,6 @@ STEP record as opaque data.
 
 **Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
 
-### PS-01. Placement binding for repeated child uses
-
-**Question.** What STEP rule establishes placement binding for repeated child uses?
-
-**Known.** A parent representation's mapped-item order does not bind
-repeated uses of one child definition to individual
-`NEXT_ASSEMBLY_USAGE_OCCURRENCE` records.
-
-`step.md` §8 "Repeated child uses without an occurrence-specific
-shape representation remain ambiguous and report the unresolved placement."
-settles this as unresolvable.
-
-The decoder may infer a parent-representation placement only when
-each child definition occurs once in that parent's usage set and the complete
-mapped-child sequence agrees with the usage set. Repeated child uses require
-an occurrence-owned shape representation or an explicit context-dependent
-placement. Without one, the occurrence keeps identity transform and reports
-`AssemblyPlacementsNotTransferred`.
-
-**Need.** We need the primary format rule from the ISO 10303 part text and a reordered or malformed witness input that verifies this behavior.
-
-**Note.** QA audit: this item was removed by 74d66189d during a bulk refactor and open-item cleanup. The removal did not include an item-specific evidence change for this rule. Reopen until the current specification and implementation are tied to primary format evidence and an adversarial fixture.
-
 ### PS-02. Transform direction of `ITEM_DEFINED_TRANSFORMATION`
 
 **Question.** Which of `transform_item_1` and `transform_item_2` is expressed

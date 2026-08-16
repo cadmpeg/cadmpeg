@@ -788,6 +788,28 @@ transform is the target transform composed with the inverse mapping-origin
 transform. Reused source topology roots of the same root type and shell
 orientation reuse their committed body identity. Distinct topology roots
 retain their governing root type, even when they share shell carriers.
+ISO 10303-44 defines each `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one individual
+constituent occurrence. A second use of the same child is a distinct
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE` when position or orientation is assigned.
+ISO 10303-43 defines `representation.items` as a `SET`; the source order of
+mapped items therefore has no format meaning. The mapped-item assembly pattern
+binds one occurrence through a separate `SHAPE_REPRESENTATION` containing its
+mapped item, with `SHAPE_DEFINITION_REPRESENTATION` and
+`PRODUCT_DEFINITION_SHAPE` identifying that occurrence. The
+context-dependent pattern binds the occurrence through
+`CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`; its shape relationship uses the child
+representation as `rep_1`, the parent representation as `rep_2`, and an
+`ITEM_DEFINED_TRANSFORMATION` whose `transform_item_1` is in the child context
+and whose `transform_item_2` is in the parent context.
+CADIR decision: a parent representation's mapped items do not bind repeated
+uses of one child definition to individual occurrences. When each child
+definition occurs once in a parent usage set and the complete mapped-child
+sequence agrees with that usage set, CADIR may use physical record order as a
+deterministic inference; this is a CADIR salvage rule and does not assign
+meaning to the STEP `SET` order. Repeated child definitions disable that
+inference even when their mapped targets differ. Without an occurrence-owned
+mapped representation or a context-dependent placement, each repeated use
+keeps the identity transform and reports `AssemblyPlacementsNotTransferred`.
 An inferred occurrence placement uses only a mapped item directly listed by a
 representation of the parent definition. A mapped item listed by an unrelated
 representation does not place the occurrence and produces an assembly-placement

@@ -740,6 +740,79 @@ fn repeated_child_uses_without_owned_placements_remain_unresolved() {
 }
 
 #[test]
+fn ps01_repeated_child_binding_requires_occurrence_identity() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-01 fixture")
+    };
+
+    let single = decode_fixture(include_bytes!(
+        "tests/data/ps01_single_child_parent_mapping.p21"
+    ));
+    let single_child = single
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .expect("single child occurrence");
+    assert_eq!(single_child.transform.rows[0][3], 25.0);
+    assert_eq!(single_child.transform.rows[1][3], 0.0);
+    assert!(!single
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+
+    for bytes in [
+        &include_bytes!("tests/data/ps01_repeated_child_parent_mapping.p21")[..],
+        &include_bytes!("tests/data/ps01_repeated_child_parent_mapping_reordered.p21")[..],
+    ] {
+        let repeated = decode_fixture(bytes);
+        let children = repeated
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| occurrence.id.0.contains("#12") || occurrence.id.0.contains("#13"))
+            .collect::<Vec<_>>();
+        assert_eq!(children.len(), 2);
+        assert!(children
+            .iter()
+            .all(|occurrence| occurrence.transform == Transform::identity()));
+        for usage_id in [12, 13] {
+            assert!(repeated.report().losses.iter().any(|loss| {
+                loss.code == StepLossCode::NauoPlacementUnresolved.kind()
+                    && loss.message.contains(&format!("NAUO #{usage_id}"))
+            }));
+        }
+    }
+
+    let occurrence_owned = decode_fixture(include_bytes!(
+        "tests/data/ps01_repeated_child_occurrence_mapping.p21"
+    ));
+    let mut children = occurrence_owned
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.id.0.contains("#12") || occurrence.id.0.contains("#13"))
+        .collect::<Vec<_>>();
+    children.sort_by_key(|occurrence| occurrence.id.clone());
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0].transform.rows[0][3], 25.0);
+    assert_eq!(children[0].transform.rows[1][3], 0.0);
+    assert_eq!(children[1].transform.rows[0][3], -10.0);
+    assert_eq!(children[1].transform.rows[1][3], 4.0);
+    assert!(!occurrence_owned
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+}
+
+#[test]
 fn mapped_child_unique_per_parent_uses_parent_local_uniqueness() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
