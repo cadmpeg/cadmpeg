@@ -152,7 +152,7 @@ pub fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
         return Ok(None);
     };
     let mut table = parse(bytes)?;
-    bind_occurrences(scan, &mut table);
+    bind_occurrences(scan, &mut table)?;
     Ok(Some(table))
 }
 
@@ -327,19 +327,29 @@ pub fn bind_component_insert_features(
 
 /// Expand container references through their occurrence records in the active
 /// Design `BulkStream` and retain each occurrence-local placement matrix.
-fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
-    let streams = scan
+fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) -> Result<(), CodecError> {
+    let mut streams = Vec::new();
+    for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM));
-    let mut streams = streams
-        .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
-        .map(|bytes| {
-            let headers = indexed_records(bytes);
-            let placements = occurrence_placements(bytes, &headers);
-            (bytes, headers, placements)
-        })
-        .collect::<Vec<_>>();
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let meta_name = entry
+            .name
+            .strip_suffix("BulkStream.dat")
+            .map(|prefix| format!("{prefix}MetaStream.dat"));
+        let serializer_magic = meta_name
+            .filter(|name| scan.entries.iter().any(|candidate| candidate.name == *name))
+            .map(|name| {
+                let bytes = scan.entry_bytes(&name)?;
+                crate::metastream::serializer_magic(bytes, &name)
+            })
+            .transpose()?;
+        let headers = indexed_records(bytes);
+        let placements = occurrence_placements(bytes, &headers, serializer_magic);
+        streams.push((bytes, headers, placements));
+    }
     let mut expanded = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
@@ -367,6 +377,7 @@ fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
         }
     }
     table.references = expanded;
+    Ok(())
 }
 
 fn role_adjacent_transforms(
@@ -467,16 +478,22 @@ struct OccurrencePlacement {
 
 /// Parse every indexed record that closes exactly under the occurrence-placement
 /// grammar, in record order.
-fn occurrence_placements(bytes: &[u8], records: &[IndexedRecord]) -> Vec<OccurrencePlacement> {
+fn occurrence_placements(
+    bytes: &[u8],
+    records: &[IndexedRecord],
+    serializer_magic: Option<u32>,
+) -> Vec<OccurrencePlacement> {
     records
         .iter()
-        .filter_map(|record| occurrence_placement(bytes.get(record.offset..record.end)?))
+        .filter_map(|record| {
+            occurrence_placement(bytes.get(record.offset..record.end)?, serializer_magic)
+        })
         .collect()
 }
 
 /// Parse one record body, header included, requiring the member sequence to end
 /// exactly at the record end.
-fn occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
+fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<OccurrencePlacement> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
     let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
@@ -531,7 +548,7 @@ fn occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
             transform = Some(matrix);
             cursor += 128;
         }
-        if placement_tail(body, cursor).is_some() {
+        if placement_tail(body, cursor, serializer_magic).is_some() {
             return Some(OccurrencePlacement {
                 link_names,
                 discriminators,
@@ -544,7 +561,7 @@ fn occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
 
 /// Consume the three reference runs that close a placement, returning `Some`
 /// only when they end exactly at the record end.
-fn placement_tail(body: &[u8], mut at: usize) -> Option<()> {
+fn placement_tail(body: &[u8], mut at: usize, serializer_magic: Option<u32>) -> Option<()> {
     let count = usize::try_from(View::u32_le_at(body, at)?).ok()?;
     if count > 256 {
         return None;
@@ -553,9 +570,12 @@ fn placement_tail(body: &[u8], mut at: usize) -> Option<()> {
     for _ in 0..count {
         take_reference(body, &mut at)?;
     }
-    // A modern container inserts a tagged u32 run and one reference before the
-    // two closing references. Its tag byte is neither reference presence value.
-    if !matches!(body.get(at), Some(0 | 1)) {
+    // Only the modern MetaStream serializer magic admits the tagged run. Its
+    // tag byte is neither reference presence value.
+    if serializer_magic == Some(crate::metastream::MODERN_SERIALIZER_MAGIC) {
+        if matches!(body.get(at), Some(0 | 1)) {
+            return None;
+        }
         at += 1;
         let tagged = usize::try_from(View::u32_le_at(body, at)?).ok()?;
         if tagged > 256 {

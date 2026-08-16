@@ -284,16 +284,6 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** A stream that holds both forms loses the placement count and the placement transforms. Components then appear at the wrong pose or in the wrong number, and the merged `.f3z` document repeats the error. The precedence, and the gate that limits the carrier scan to class-256 records, settle the item.
 
-### XR-06. Gate of the placement tagged run
-
-**Question.** Which stored field gates the tagged u32 run of an occurrence placement?
-
-**Known.** `f3d.md` §1.4 "**Placement.**" states that the tagged u32 run and its reference occur only where the meta stream's serializer magic is `1234`. `placement_tail` in `xref.rs` does not read that magic. It takes the run to be present when the next byte is neither zero nor one, which is the presence encoding of a reference.
-
-The crate reads the same magic elsewhere: `design/decode/sketch.rs` selects a header width from it, and `ids::design_segment` reaches the sibling meta stream.
-
-**Need.** A modern-container placement whose tag byte is zero or one takes the legacy branch, the record does not close on its end, and the placement is dropped. The stored discriminator is available and unread.
-
 ### XR-07. Absent occurrence transform against the identity placement
 
 **Question.** How does a reader separate an occurrence that stores no transform from an occurrence whose placement did not decode?

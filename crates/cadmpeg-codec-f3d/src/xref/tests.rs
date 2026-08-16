@@ -134,6 +134,16 @@ fn occurrence_record(
     discriminators: &[u32],
     transform: Option<[[f64; 4]; 4]>,
 ) -> Vec<u8> {
+    occurrence_record_with_serializer_magic(role, entity_id, discriminators, transform, None)
+}
+
+fn occurrence_record_with_serializer_magic(
+    role: &str,
+    entity_id: u64,
+    discriminators: &[u32],
+    transform: Option<[[f64; 4]; 4]>,
+    serializer_magic: Option<u32>,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(b"380");
@@ -162,6 +172,12 @@ fn occurrence_record(
     }
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend(local_reference(7));
+    if serializer_magic == Some(crate::metastream::MODERN_SERIALIZER_MAGIC) {
+        bytes.push(2);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&42_u32.to_le_bytes());
+        bytes.extend(local_reference(8));
+    }
     bytes.extend(local_reference(3));
     bytes.extend(local_reference(6));
     bytes
@@ -203,7 +219,7 @@ fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
     ];
     let mut bytes = occurrence_record("role", 10, &[1], Some(first));
     bytes.extend_from_slice(&occurrence_record("role", 11, &[1, 2], Some(second)));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes));
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(
         super::occurrence_transforms(&placements, "role"),
@@ -215,7 +231,7 @@ fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
 fn identity_marked_placement_stores_no_matrix() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.extend_from_slice(&occurrence_record("role", 11, &[3], None));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes));
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(placements.len(), 2);
     assert_eq!(
@@ -225,9 +241,96 @@ fn identity_marked_placement_stores_no_matrix() {
 }
 
 #[test]
+fn tagged_placement_tail_requires_the_modern_serializer_magic() {
+    let modern = occurrence_record_with_serializer_magic(
+        "role",
+        10,
+        &[1],
+        None,
+        Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+    );
+    let records = super::indexed_records(&modern);
+    assert_eq!(
+        super::occurrence_placements(
+            &modern,
+            &records,
+            Some(crate::metastream::MODERN_SERIALIZER_MAGIC)
+        )
+        .len(),
+        1
+    );
+    assert!(
+        super::occurrence_placements(&modern, &records, Some(999)).is_empty(),
+        "a legacy MetaStream must not admit the modern tagged tail"
+    );
+
+    let legacy = occurrence_record("role", 11, &[2], None);
+    let records = super::indexed_records(&legacy);
+    assert_eq!(
+        super::occurrence_placements(&legacy, &records, Some(999)).len(),
+        1
+    );
+    assert!(
+        super::occurrence_placements(
+            &legacy,
+            &records,
+            Some(crate::metastream::MODERN_SERIALIZER_MAGIC)
+        )
+        .is_empty(),
+        "the modern form requires its tagged tail"
+    );
+}
+
+#[test]
+fn paired_design_metastream_selects_the_tagged_placement_form() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let properties =
+        br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
+    let placement = occurrence_record_with_serializer_magic(
+        role,
+        10,
+        &[1],
+        Some([
+            [1.0, 0.0, 0.0, 7.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]),
+        Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("Properties.dat", stored).unwrap();
+    zip.write_all(&(properties.len() as u32).to_le_bytes())
+        .unwrap();
+    zip.write_all(properties).unwrap();
+    zip.start_file("RedirectionsStream.dat", stored).unwrap();
+    zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
+        .unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design_metastream(&[])).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&placement).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("synthetic XRef archive");
+    let native = f3d_native(decoded.ir());
+    assert_eq!(native.xref_references.len(), 1);
+    let transform = native.xref_references[0]
+        .transform
+        .expect("tagged placement transform");
+    assert!((transform[0][3] - 7.0).abs() < 1e-12);
+}
+
+#[test]
 fn placement_keeps_the_instance_discriminator_of_every_path_element() {
     let bytes = occurrence_record("role", 10, &[7, 4, 2], None);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes));
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(placements[0].discriminators, vec![7, 4, 2]);
     assert_eq!(placements[0].link_names, vec!["role".to_owned()]);
@@ -239,7 +342,10 @@ fn a_placement_that_does_not_close_on_the_record_end_is_not_a_placement() {
     bytes.push(0);
     let records = super::indexed_records(&bytes);
 
-    assert_eq!(super::occurrence_placements(&bytes, &records), Vec::new());
+    assert_eq!(
+        super::occurrence_placements(&bytes, &records, None),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -252,13 +358,16 @@ fn a_nonrigid_matrix_is_not_a_placement() {
     let bytes = occurrence_record("role", 10, &[1], Some(nonrigid));
     let records = super::indexed_records(&bytes);
 
-    assert_eq!(super::occurrence_placements(&bytes, &records), Vec::new());
+    assert_eq!(
+        super::occurrence_placements(&bytes, &records, None),
+        Vec::new()
+    );
 }
 
 #[test]
 fn a_role_that_no_path_element_names_places_nothing() {
     let bytes = occurrence_record("role", 10, &[1], None);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes));
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(
         super::occurrence_transforms(&placements, "other"),

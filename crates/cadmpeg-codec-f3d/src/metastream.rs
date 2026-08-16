@@ -7,6 +7,9 @@ use cadmpeg_core::CodecError;
 use crate::bytes::{is_guid_hyphenated, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::records::SegmentType;
 
+/// Serializer magic that selects the modern `MetaStream` header group.
+pub(crate) const MODERN_SERIALIZER_MAGIC: u32 = 1234;
+
 /// One record-index entry locating a header in the sibling `BulkStream`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RecordIndexEntry {
@@ -202,10 +205,7 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
     }
 }
 
-fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
-    // Header: short segment type name, segment id, asset GUID, serializer
-    // magic and its magic-gated integer group, full segment type name, add-in
-    // name, and the segment type code.
+fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseFailure> {
     let (_, at) = require(
         lp_ascii_filtered(bytes, 0, 1..=256, u8::is_ascii_graphic),
         "short segment type name",
@@ -215,7 +215,11 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     let (_, at) = require(lp_utf16_bounded(bytes, at, 0..=256), "asset GUID", at)?;
     let magic = require(View::u32_le_at(bytes, at), "serializer magic", at)?;
     let at = require(
-        at.checked_add(if magic == 1234 { 16 } else { 8 }),
+        at.checked_add(if magic == MODERN_SERIALIZER_MAGIC {
+            16
+        } else {
+            8
+        }),
         "serializer integer group",
         at,
     )?;
@@ -224,6 +228,28 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         "serializer integer group",
         at.min(bytes.len()),
     )?;
+    Ok((magic, at))
+}
+
+fn parse_error(failure: ParseFailure, stream: &str) -> CodecError {
+    CodecError::Malformed(format!(
+        "invalid F3D MetaStream {} at byte {}: {stream}",
+        failure.field, failure.offset
+    ))
+}
+
+/// Read the serializer magic from a `MetaStream` header.
+pub(crate) fn serializer_magic(bytes: &[u8], stream: &str) -> Result<u32, CodecError> {
+    parse_segment_header(bytes)
+        .map(|(magic, _)| magic)
+        .map_err(|failure| parse_error(failure, stream))
+}
+
+fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
+    // Header: short segment type name, segment id, asset GUID, serializer
+    // magic and its magic-gated integer group, full segment type name, add-in
+    // name, and the segment type code.
+    let (_, at) = parse_segment_header(bytes)?;
     let (_, at) = require(
         lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic),
         "full segment type name",
@@ -367,12 +393,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
 
 /// Parse one complete `MetaStream` segment and reject any unframed remainder.
 pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError> {
-    parse_inner(bytes).map_err(|failure| {
-        CodecError::Malformed(format!(
-            "invalid F3D MetaStream {} at byte {}: {stream}",
-            failure.field, failure.offset
-        ))
-    })
+    parse_inner(bytes).map_err(|failure| parse_error(failure, stream))
 }
 
 #[cfg(test)]

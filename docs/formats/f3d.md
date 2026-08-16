@@ -193,7 +193,7 @@ The path names the occurrence by its chain of component references. The integer 
 
 The matrix is a proper rigid motion. Its upper-left 3×3 block is orthonormal, column 3 is the translation in centimetres, the bottom row is `(0, 0, 0, 1)`, and the determinant is `1`. An `identity_flag` of `1` states that the placement is the identity transform and stores no matrix. The 128-byte matrix is the only length difference between the two forms.
 
-The counted reference run after the matrix reaches both local and cross-document targets. The tagged u32 run and its reference occur only where the meta stream's serializer magic is `1234`. The two references that close the record name the same pair of entities for every placement of one document.
+The counted reference run after the matrix reaches both local and cross-document targets. The parser selects the tagged u32 run and its reference exactly when the paired Design `MetaStream.dat` header's serializer magic is `1234`; every other serializer magic selects the two-reference form without that run. The two references that close the record name the same pair of entities for every placement of one document.
 
 The transform belongs to the occurrence record rather than the referenced target. Each reference placement projects as one root external occurrence whose target path is `relativePath`; translation converts from centimetres to millimetres. An external occurrence without a serialized transform places the target document's model in the referencing document's frame unchanged.
 
