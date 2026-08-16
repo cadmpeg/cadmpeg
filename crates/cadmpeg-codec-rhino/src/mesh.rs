@@ -60,8 +60,16 @@ pub(crate) const ON_MESH: Uuid = Uuid::from_canonical([
 pub(crate) const V5_MESH_DOUBLE_VERTICES: Uuid = Uuid::from_canonical([
     0x17, 0xf2, 0x4e, 0x75, 0x21, 0xbe, 0x4a, 0x7b, 0x9f, 0x3d, 0x7f, 0x85, 0x22, 0x52, 0x47, 0xe3,
 ]);
+/// V4/V5 class-userdata UUID for the legacy mesh n-gon list.
+pub(crate) const V4V5_MESH_NGON_USERDATA: Uuid = Uuid::from_canonical([
+    0x31, 0xf5, 0x5a, 0xa3, 0x71, 0xfb, 0x49, 0xf5, 0xa9, 0x75, 0x75, 0x75, 0x84, 0xd9, 0x37, 0xff,
+]);
 /// Anonymous userdata payload chunk.
 const ANONYMOUS: u32 = 0x4000_8000;
+/// `ON_opennurbs4_id`, the legacy mesh n-gon userdata application UUID.
+const OPENNURBS4: Uuid = Uuid::from_canonical([
+    0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe, 0x52, 0x0d,
+]);
 /// Codec-owned UV channel kind.
 pub(crate) const CHANNEL_UV: u32 = 0x5248_0001;
 /// Codec-owned color channel kind.
@@ -74,6 +82,10 @@ pub(crate) const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const MAX_MESH_VERTICES: usize = 1 << 24;
 /// Maximum face count declared by one mesh.
 const MAX_MESH_FACES: usize = 1 << 24;
+/// Maximum number of legacy n-gon records accepted by the bounded reader.
+const MAX_MESH_NGONS: usize = 1 << 20;
+/// Maximum corners in one legacy n-gon record.
+const MAX_MESH_NGON_CORNERS: usize = 100_000;
 /// Maximum decompressed size of one mesh buffer.
 const MAX_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 /// Maximum retained mesh-buffer bytes per document.
@@ -376,6 +388,25 @@ pub(crate) fn decode(
         if minor >= 8 {
             for _ in 0..6 {
                 reader.f64()?;
+            }
+        }
+    }
+    if ngon_count == 0 {
+        if let Some(extra) = userdata.iter().find(|value| {
+            value.class_uuid == V4V5_MESH_NGON_USERDATA
+                && value.item_uuid == V4V5_MESH_NGON_USERDATA
+                && (value.application_uuid.is_none() || value.application_uuid == Some(OPENNURBS4))
+        }) {
+            match read_v4v5_ngon_userdata(data, extra, archive, vertex_count, face_count) {
+                Ok(Some(count)) => ngon_count = count,
+                Ok(None) => decoded.warnings.push(format!(
+                    "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
+                    extra.range.start
+                )),
+                Err(error) => decoded.warnings.push(format!(
+                    "V4/V5 mesh n-gon userdata at offset {} was dropped: {error}",
+                    extra.range.start
+                )),
             }
         }
     }
@@ -1041,6 +1072,136 @@ fn read_v5_double_vertices(
     Ok(Some(values))
 }
 
+/// Reads the V4/V5 legacy mesh n-gon userdata list.
+///
+/// `ON_V4V5_MeshNgonUserData::Read` stores each positive-`N` record as two
+/// signed index arrays. `ON_ValidateMeshNgonUserData` admits nonzero matching
+/// mesh counts without rechecking those arrays; the older zero-count form is
+/// checked for in-range vertices and face indices with a `-1` suffix.
+fn read_v4v5_ngon_userdata(
+    data: &[u8],
+    extra: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    vertex_count: usize,
+    face_count: usize,
+) -> Result<Option<usize>, GeometryError> {
+    let chunk = chunk_at(
+        data,
+        extra.payload_range.start,
+        extra.payload_range.end,
+        archive,
+        false,
+    )?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(error(
+            chunk.header_start,
+            "V4/V5 mesh n-gon userdata is not anonymous",
+        ));
+    }
+    if matches!(
+        verify_checksum(data, &chunk)?,
+        ChecksumStatus::Mismatch { .. }
+    ) {
+        return Ok(None);
+    }
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let major = reader.i32()?;
+    let minor = reader.i32()?;
+    if major != 1 || minor < 0 {
+        return Err(GeometryError::unsupported(
+            reader.position() - 8,
+            "unsupported V4/V5 mesh n-gon userdata version",
+        ));
+    }
+    let raw_count = reader.i32()?;
+    if raw_count <= 0 {
+        reader.skip_remaining()?;
+        return Ok(Some(0));
+    }
+    let count = usize::try_from(raw_count)
+        .ok()
+        .filter(|count| *count <= MAX_MESH_NGONS)
+        .ok_or_else(|| error(reader.position() - 4, "mesh n-gon count exceeds cap"))?;
+    let mut records = Vec::new();
+    records
+        .try_reserve_exact(count)
+        .map_err(|_| error(reader.position(), "mesh n-gon allocation failed"))?;
+    for _ in 0..count {
+        let raw_corner_count = reader.i32()?;
+        if raw_corner_count <= 0 {
+            continue;
+        }
+        if raw_corner_count < 3 {
+            return Ok(None);
+        }
+        let Some(corner_count) = usize::try_from(raw_corner_count)
+            .ok()
+            .filter(|count| *count <= MAX_MESH_NGON_CORNERS)
+        else {
+            return Ok(None);
+        };
+        let mut vertices = Vec::new();
+        vertices.try_reserve_exact(corner_count).map_err(|_| {
+            error(
+                reader.position(),
+                "mesh n-gon vertex-index allocation failed",
+            )
+        })?;
+        for _ in 0..corner_count {
+            vertices.push(reader.i32()?);
+        }
+        let mut faces = Vec::new();
+        faces
+            .try_reserve_exact(corner_count)
+            .map_err(|_| error(reader.position(), "mesh n-gon face-index allocation failed"))?;
+        for _ in 0..corner_count {
+            faces.push(reader.i32()?);
+        }
+        records.push((vertices, faces));
+    }
+    let stored_face_count = if minor >= 1 { reader.i32()? } else { 0 };
+    let stored_vertex_count = if minor >= 1 { reader.i32()? } else { 0 };
+    reader.skip_remaining()?;
+
+    let mesh_face_count = i32::try_from(face_count).expect("mesh face cap fits i32");
+    let mesh_vertex_count = i32::try_from(vertex_count).expect("mesh vertex cap fits i32");
+    let valid = if stored_face_count == 0 && stored_vertex_count == 0 {
+        records.iter().all(|(vertices, faces)| {
+            legacy_ngon_indices_valid(vertices, faces, mesh_vertex_count, mesh_face_count)
+        })
+    } else {
+        stored_face_count == mesh_face_count && stored_vertex_count == mesh_vertex_count
+    };
+    if !valid {
+        return Ok(None);
+    }
+    Ok(Some(records.len()))
+}
+
+fn legacy_ngon_indices_valid(
+    vertices: &[i32],
+    faces: &[i32],
+    vertex_count: i32,
+    face_count: i32,
+) -> bool {
+    if vertices.len() != faces.len()
+        || vertices
+            .iter()
+            .any(|index| *index < 0 || *index >= vertex_count)
+    {
+        return false;
+    }
+    let mut unused_faces = false;
+    for index in faces {
+        if *index == -1 {
+            unused_faces = true;
+        } else if unused_faces || *index < 0 || *index >= face_count {
+            return false;
+        }
+    }
+    true
+}
+
 fn consume_optional_chunk(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1264,6 +1425,46 @@ mod tests {
         }
     }
 
+    fn v4v5_ngon_userdata_payload(
+        minor: i32,
+        vertices: &[i32],
+        faces: &[i32],
+        mesh_face_count: i32,
+        mesh_vertex_count: i32,
+        suffix: &[u8],
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend(1_i32.to_le_bytes());
+        body.extend(minor.to_le_bytes());
+        body.extend(1_i32.to_le_bytes());
+        body.extend((vertices.len() as i32).to_le_bytes());
+        body.extend(vertices.iter().flat_map(|value| value.to_le_bytes()));
+        body.extend(faces.iter().flat_map(|value| value.to_le_bytes()));
+        if minor >= 1 {
+            body.extend(mesh_face_count.to_le_bytes());
+            body.extend(mesh_vertex_count.to_le_bytes());
+        }
+        body.extend(suffix);
+        chunk(&body)
+    }
+
+    fn v4v5_ngon_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
+        UserdataDescriptor {
+            range: range.clone(),
+            version: (2, 2),
+            class_uuid: V4V5_MESH_NGON_USERDATA,
+            item_uuid: V4V5_MESH_NGON_USERDATA,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: Some(OPENNURBS4),
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: range,
+            unknown_version: false,
+        }
+    }
+
     fn compressed_mesh() -> Vec<u8> {
         let mut payload = vec![0x30];
         payload.extend(3_i32.to_le_bytes());
@@ -1374,6 +1575,219 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.starts_with("redundant V5 mesh double-precision userdata")));
+    }
+
+    #[test]
+    fn v4v5_ngon_userdata_reports_admitted_group_count() {
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v4v5_ngon_userdata_payload(
+            1,
+            &[0, 1, 2],
+            &[0, -1, -1],
+            1,
+            3,
+            &[0xa5, 0x5a],
+        ));
+        let descriptor = v4v5_ngon_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v4v5-ngon".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("legacy n-gon userdata mesh");
+        assert_eq!(decoded.ngon_count, 1);
+        assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
+    }
+
+    #[test]
+    fn v4v5_ngon_userdata_is_retained_in_a_later_archive_band() {
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v4v5_ngon_userdata_payload(
+            1,
+            &[0, 1, 2],
+            &[0, -1, -1],
+            1,
+            3,
+            &[],
+        ));
+        let descriptor = v4v5_ngon_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V6,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v4v5-ngon-later".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("later-band legacy n-gon userdata mesh");
+        assert_eq!(decoded.ngon_count, 1);
+    }
+
+    #[test]
+    fn v4v5_ngon_userdata_zero_counts_validate_indices() {
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v4v5_ngon_userdata_payload(
+            0,
+            &[0, 1, 2],
+            &[0, -1, -1],
+            0,
+            0,
+            &[],
+        ));
+        let descriptor = v4v5_ngon_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v4v5-ngon-old".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("old legacy n-gon userdata mesh");
+        assert_eq!(decoded.ngon_count, 1);
+    }
+
+    #[test]
+    fn v4v5_ngon_userdata_rejects_bad_validation_counts() {
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v4v5_ngon_userdata_payload(
+            1,
+            &[0, 1, 2],
+            &[0, -1, -1],
+            99,
+            3,
+            &[],
+        ));
+        let descriptor = v4v5_ngon_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v4v5-ngon-invalid".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("float mesh survives invalid legacy n-gon userdata");
+        assert_eq!(decoded.ngon_count, 0);
+        assert!(decoded
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("V4/V5 mesh n-gon userdata")));
+    }
+
+    #[test]
+    fn v4v5_ngon_userdata_old_counts_reject_bad_indices() {
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v4v5_ngon_userdata_payload(
+            0,
+            &[0, 1, 99],
+            &[0, -1, -1],
+            0,
+            0,
+            &[],
+        ));
+        let descriptor = v4v5_ngon_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v4v5-ngon-bad-index".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("float mesh survives invalid old legacy n-gon userdata");
+        assert_eq!(decoded.ngon_count, 0);
+        assert!(decoded
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("V4/V5 mesh n-gon userdata")));
+    }
+
+    #[test]
+    fn v4v5_ngon_userdata_crc_rejects_records() {
+        let mut bytes = compressed_mesh();
+        let payload_start = bytes.len();
+        bytes.extend(v4v5_ngon_userdata_payload(
+            1,
+            &[0, 1, 2],
+            &[0, -1, -1],
+            1,
+            3,
+            &[],
+        ));
+        let crc = bytes.len() - 1;
+        bytes[crc] ^= 1;
+        let descriptor = v4v5_ngon_userdata_descriptor(payload_start..bytes.len());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..payload_start,
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "v4v5-ngon-crc".to_string(),
+                    scale: 1.0,
+                    userdata: std::slice::from_ref(&descriptor),
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("float mesh survives corrupt legacy n-gon userdata");
+        assert_eq!(decoded.ngon_count, 0);
+        assert!(decoded
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("V4/V5 mesh n-gon userdata")));
     }
 
     #[test]

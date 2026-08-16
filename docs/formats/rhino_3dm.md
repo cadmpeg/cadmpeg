@@ -837,6 +837,54 @@ CADIR maps an accepted array to tessellation vertices before unit scaling. A
 rejected or malformed recognized item retains the mesh and its float vertices
 and emits `container.redundant-field-repaired`.
 
+#### 7.2.4 `ON_V4V5_MeshNgonUserData`
+
+The built-in `ON_V4V5_MeshNgonUserData` class uses class UUID and item UUID
+`31F55AA3-71FB-49F5-A975-757584D937FF`. Its application UUID is
+`17B3ECDA-17BA-4E45-9E67-A2B8D9BE520D`. Its userdata payload is the body of
+the outer anonymous userdata child from section 7.2. The body contains an
+anonymous major-1 child. Writers emit minor 1:
+
+```text
+i32 n-gon record count
+repeat n-gon record count:
+  i32 corner count N
+  if N > 0:
+    N × i32 mesh vertex index
+    N × i32 mesh face index
+minor >= 1: i32 mesh face count, i32 mesh vertex count
+```
+
+Each positive writer corner count is at least 3 and at most 100000. The vertex
+indices identify the ordered n-gon boundary. The face indices identify the
+mesh faces that fill that boundary; unused trailing positions are `-1` and
+follow only other `-1` positions. A nonpositive corner count contributes no
+record. The reader skips later bytes through the anonymous child boundary.
+
+The list is a V4/V5 compatibility carrier. `ON_Mesh::V4V5_ModifyNgonList`
+attaches it. The critical archive filter permits this `ON_opennurbs4_id`
+userdata in archive versions 4 and 5; an empty userdata filter serializes all
+attached userdata, so an explicitly attached list can also remain in a later
+archive band. Archive version 60 and later writes the separate major-3 mesh
+n-gon chunk from section 19.3 when modern n-gons exist. The reader accepts the
+legacy list in every archive band supported by the class wrapper.
+
+When both stored validation counts are zero, the reader validates every
+vertex index against the owning mesh and every face index against the owning
+face table, allowing only a trailing `-1` face suffix. When either count is
+nonzero, the list is admitted only when both counts equal the owning mesh
+counts; the class reader does not repeat index validation in this branch. A
+count mismatch or failed old-form index validation discards the list. The
+serialized record count is not the admitted list count when a nonpositive
+corner count is skipped.
+
+CADIR decision: neutral tessellation carries the mesh faces and their derived
+triangles but has no n-gon grouping field. A valid legacy list therefore
+contributes its admitted record count to the existing
+`mesh.ngon-grouping-dropped` loss; it does not alter the face triangles. An
+invalid or malformed list contributes no grouping count and leaves the mesh
+admissible.
+
 ### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
@@ -2210,6 +2258,12 @@ double-precision channel. Its accepted coordinates are the serialized f64
 values whose casts equal the float vertex channel; rejected userdata leaves
 the float channel authoritative.
 
+Mesh objects in every archive band can carry the class-userdata item in
+section 7.2.4 when it remains attached. Its admitted record count reports
+source n-gon grouping; the mesh face table remains the neutral tessellation
+input. When both this item and the inline major-3 n-gon chunk are present, the
+inline count is authoritative for the neutral grouping loss.
+
 ## 15. Brep
 
 `ON_Brep` major 3 uses payload version 3.minor. Minor 1 adds mesh-side
@@ -2375,6 +2429,10 @@ byte per face; nonzero is followed by a polymorphic object which must be an
 `ON_V5_MeshDoubleVertices` userdata item from section 7.2.3; the same actual
 count and exact f64-to-f32 cast checks apply to that nested mesh. These are
 cache channels and do not alter Brep topology.
+Any archive band can carry the `ON_V4V5_MeshNgonUserData` item from section
+7.2.4 on the nested mesh when it remains attached. Its admitted grouping count
+contributes the same neutral `mesh.ngon-grouping-dropped` loss; it does not
+alter Brep topology.
 If a present slot has the wrong class or its bounded mesh payload cannot be
 parsed, the slot is discarded independently and the decode report emits
 `brep.mesh-cache-degraded` with the diagnostic cause. The Brep remains
@@ -3143,6 +3201,11 @@ if double_vertex_count != 0:
 The double-vertex count equals mesh vertex count and every value is finite.
 Vertex and face indices are in range.
 
+Archive versions 4 and 5 do not have the inline minor-6 n-gon chunk. Their
+legacy n-gon grouping, when present, is the section 7.2.4 class-userdata item.
+That class-userdata item can also persist in a later archive when it remains
+attached and all userdata is serialized.
+
 ### 19.4 Brep framing and version table
 
 The Brep class-data payload starts with packed version `3.minor`. C2, C3, and
@@ -3190,6 +3253,9 @@ The first wrapper is render mesh and the second analysis mesh. A nonzero entry
 must contain `ON_Mesh`; wrong-type entries are discarded independently. Its
 class wrapper can contain the section 7.2.3 V5 mesh double-vertex userdata;
 that userdata is decoded against the nested mesh's float vertex channel.
+The same wrapper can contain section 7.2.4 legacy mesh n-gon userdata in any
+archive band; its validated record count is reported as dropped neutral
+grouping when no inline n-gon count takes precedence.
 
 For Brep minor 3, the region wrapper is anonymous version 1.1, contains a
 one-byte region-topology-present flag, and then one anonymous version 1.0

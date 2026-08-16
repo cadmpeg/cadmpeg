@@ -189,6 +189,15 @@ settled carrier: class/item UUID `A8130A3E-E4F3-4CB0-BB8A-F10A473912D0` with
 the OpenNURBS 5 application UUID. Its bounded payload contains render,
 analysis, and null object wrappers; the first two accept null or `ON_Mesh`, the
 third is discarded, and a nested mesh carries the same section 7.2.3 rule.
+The built-in `ON_V4V5_MeshNgonUserData` class is also settled. Its class and
+item UUID is `31F55AA3-71FB-49F5-A975-757584D937FF`, its application UUID is
+`17B3ECDA-17BA-4E45-9E67-A2B8D9BE520D`, and section 7.2.4 defines its minor-1
+anonymous record list, validation counts, and old zero-count index checks.
+The decoder uses its admitted record count for the existing neutral grouping
+loss; the mesh face triangles remain the transferred geometry. The class is a
+V4/V5 compatibility carrier. An explicitly attached item can persist in a
+later all-userdata archive; when an inline n-gon count is present, that newer
+count takes precedence for the neutral grouping loss.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -196,9 +205,10 @@ for each version that is to be typed, including its fields and loss mapping.
 **Note.** Narrowed 2026-08-16. Generic header and boundary semantics, the
 built-in hatch gradient userdata, the V5 dimension-style extra, and
 `ON_UserStringList`, `ON__LayerExtensions`, `ON_AngularDimension2Extra`, and
-`ON_OBSOLETE_V5_TextExtra`, and `ON_V5_MeshDoubleVertices` are settled,
-including the Brep, extrusion, and history carriers; other future
-class-specific payload semantics remain open.
+`ON_OBSOLETE_V5_TextExtra`, `ON_V5_MeshDoubleVertices`, and
+`ON_V4V5_MeshNgonUserData` are settled, including the Brep, extrusion, and
+history carriers where applicable; other future class-specific payload
+semantics remain open.
 
 ### RS-01. Later-minor bounded suffixes
 
