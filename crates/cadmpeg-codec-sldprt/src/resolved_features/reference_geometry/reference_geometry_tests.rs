@@ -1595,16 +1595,16 @@ fn angled_reference_plane_requires_its_redundant_normal_and_basis() {
     }
     payload[root + 16] = 1;
     assert_eq!(
-        angled_reference_plane_frame(&payload),
-        Some((
+        angled_reference_plane_frame_candidates(&payload)[0].1,
+        (
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, inverse_sqrt_two, inverse_sqrt_two),
             Vector3::new(1.0, 0.0, 0.0),
-        ))
+        )
     );
 
     payload[root + 8..root + 16].copy_from_slice(&(-inverse_sqrt_two).to_le_bytes());
-    assert_eq!(angled_reference_plane_frame(&payload), None);
+    assert!(angled_reference_plane_frame_candidates(&payload).is_empty());
 }
 
 #[test]
@@ -1629,7 +1629,7 @@ fn angled_reference_plane_does_not_reinterpret_a_complete_fixed_frame() {
     }
     payload[48] = 1;
     assert!(fixed_reference_plane_frame(&payload[..97]).is_some());
-    assert_eq!(angled_reference_plane_frame(&payload), None);
+    assert!(angled_reference_plane_frame_candidates(&payload).is_empty());
 }
 
 #[test]
