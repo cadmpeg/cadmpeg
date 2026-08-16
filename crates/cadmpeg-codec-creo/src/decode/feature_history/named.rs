@@ -182,13 +182,14 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     op: BooleanOp,
 ) -> IrFeatureDefinition {
     let extent = feature_revolution_extent(scan, feature_id);
+    let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     IrFeatureDefinition::Revolve {
         construction: RevolutionConstruction {
             profile: unique_feature_profile_ref(scan, ir, feature_id),
             axis: feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
             extent,
             axis_reference: None,
-            solid: None,
+            solid: sweep_solid(output_kind),
             face_maker_class: None,
             fuse_order: None,
             allow_multi_profile_faces: None,

@@ -33,10 +33,10 @@ use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, Length, RevolutionAxis, RevolveExtent, Termination};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{PointId, SurfaceId};
+use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
-use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -625,12 +625,23 @@ fn named_revolve_transfers_profile_axis() {
             kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
             offset: 1,
         });
-    let ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:revolution#822:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
         construction:
             cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(axis), ..
+                axis: Some(axis),
+                solid: Some(true),
+                ..
             },
         ..
     }) = named_feature_definition(&scan, &ir, 822, "Revolve")
