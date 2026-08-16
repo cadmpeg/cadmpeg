@@ -210,6 +210,12 @@ fn checksum_warning(
         };
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_RENDER_SETTINGS {
+        let Ok(children) = render_settings_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
     }
@@ -263,6 +269,29 @@ fn mesh_checksum_children(
         return Err(FramingError::structural(
             reader.position(),
             "mesh SubD display parameters must be an anonymous chunk",
+        ));
+    }
+    Ok(vec![child.range()])
+}
+
+/// Returns the modern anonymous render-settings child, when present.
+///
+/// Legacy V5 render settings are direct fields beginning with an integer
+/// version. Modern V6-and-later settings begin with one anonymous chunk; a
+/// direct suffix after that child remains part of the outer checksum.
+fn render_settings_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    if View::u32_le_at(data, chunk.body.start) != Some(TCODE_ANONYMOUS) {
+        return Ok(Vec::new());
+    }
+    let child = chunk_at(data, chunk.body.start, chunk.body.end, archive, false)?;
+    if child.short {
+        return Err(FramingError::structural(
+            chunk.body.start,
+            "modern render settings must be an anonymous long chunk",
         ));
     }
     Ok(vec![child.range()])

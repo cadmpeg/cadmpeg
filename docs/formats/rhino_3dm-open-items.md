@@ -199,6 +199,10 @@ minor-5 SubD child and skips their remaining bytes at the top-level record.
 The outer CRC for each record covers the direct mesh bytes, excludes the
 complete anonymous SubD-display child, and includes any direct suffix after
 that child.
+`ON_3dmSettings::Write_v2/Read_v2` place modern render settings in one
+anonymous child of `TCODE_SETTINGS_RENDER`; legacy V5 render settings are
+direct. The modern outer CRC excludes that child and includes a direct suffix;
+the legacy outer CRC covers its direct body.
 `ON_3dmSettings::Write_v2` places `TCODE_SETTINGS_PLUGINLIST` first for
 archive versions at least 4 when the list is nonempty. Its outer reader uses
 packed major 1 and a count, then calls `ON_PlugInRef::Read` for each anonymous
@@ -253,7 +257,8 @@ settled; annotation settings, grid defaults, units/tolerances, plugin list,
 settings attributes, render-mesh, analysis-mesh, render-settings, render
 settings userdata, the current-selector records, and the V1 settings
 presentation stream are now source-backed through their known prefixes,
-child types, stream markers, version gates, and mesh outer-CRC ranges. The
+child types, stream markers, version gates, mesh outer-CRC ranges, and modern
+render-settings outer-CRC range. The
 historical unused settings
 record and the three counted view-list wrappers are also source-backed through
 the same evidence.

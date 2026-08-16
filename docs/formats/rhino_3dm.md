@@ -3881,6 +3881,10 @@ only nonnegative minor versions. A legacy reader rejects versions outside
 100–199. A reader consumes only the fields admitted by these gates. Remaining
 bytes in a modern body end at the anonymous chunk boundary; remaining bytes in
 a legacy body end at the containing `TCODE_SETTINGS_RENDER` record boundary.
+The modern `TCODE_SETTINGS_RENDER` record CRC excludes the complete anonymous
+render-settings child, including its header and CRC. A direct suffix after
+that child is included. The legacy record has no nested body child, so its CRC
+covers the direct legacy body.
 
 When the archive version is at least 60 and the render-settings object has
 writable userdata, the writer places `TCODE_SETTINGS_RENDER_USERDATA`

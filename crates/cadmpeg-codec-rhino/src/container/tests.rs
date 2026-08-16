@@ -402,6 +402,40 @@ fn mesh_settings_crc_excludes_nested_subd_display_chunk() {
 }
 
 #[test]
+fn modern_render_settings_crc_excludes_anonymous_body() {
+    let archive = ArchiveVersion::V6;
+    let mut body = anonymous_chunk(archive, 3, &[0; 16]);
+    let child_range = 0..body.len();
+    body.extend([0xde, 0xad]);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_803d,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
+            .expect("render-settings checksum framing"),
+        None
+    );
+}
+
+#[test]
+fn legacy_render_settings_crc_covers_direct_body() {
+    let archive = ArchiveVersion::V5;
+    let mut body = 103_i32.to_le_bytes().to_vec();
+    body.extend([0; 12]);
+    let record = crc_chunk(archive, 0x2000_803d, &body);
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
+            .expect("legacy render-settings checksum framing"),
+        None
+    );
+}
+
+#[test]
 fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
     let archive = ArchiveVersion::V5;
     let record = crc_chunk(archive, 0x2000_803e, &[0; 24]);
