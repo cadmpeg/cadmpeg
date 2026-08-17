@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::PmiId;
+use cadmpeg_ir::ids::{format_identity, PmiId};
 use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue};
 
 use crate::entity_table::{RangeInterval, RangeIntervalSlot};
@@ -45,7 +45,7 @@ pub(crate) fn transfer_dimensions(
         let Some(definition) = dimension_definition(range, constraint) else {
             continue;
         };
-        let id = PmiId(format!("catia:model:pmi#{}", entity.id));
+        let id = pmi_id(entity.byte_offset);
         if ir.model.pmi.iter().any(|annotation| annotation.id == id) {
             continue;
         }
@@ -58,6 +58,18 @@ pub(crate) fn transfer_dimensions(
         transferred += 1;
     }
     transferred
+}
+
+fn pmi_id(source_offset: u64) -> PmiId {
+    PmiId(
+        format_identity(
+            "catia",
+            "model",
+            "pmi",
+            format!("entity-record-{source_offset:010}"),
+        )
+        .expect("CATIA PMI source offset produces a valid identity"),
+    )
 }
 
 fn dimension_definition(
@@ -160,7 +172,7 @@ mod tests {
         let lower = (-0.1_f64).to_bits();
         let upper = 0.2_f64.to_bits();
         CatiaEntityRecord {
-            id: "catia:entity#dimension".to_string(),
+            id: "catia:outer:entity-record#0000000000".to_string(),
             object_graph: "graph".to_string(),
             object_record: "catia:object#dimension".to_string(),
             ordinal: 0,
@@ -258,7 +270,7 @@ mod tests {
         assert_eq!(upper_deviation.expect("upper").value, 0.2);
         assert_eq!(
             ir.model.pmi[0].id.0,
-            "catia:model:pmi#catia:entity#dimension"
+            "catia:model:pmi#entity-record-0000000000"
         );
     }
 
