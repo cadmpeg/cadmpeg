@@ -55,6 +55,38 @@ remain the governing cardinality and ordering rules; XML serialization order
 does not add order to a SET or BAG. The configuration and generated schema
 also govern complex entity encoding and unset OPTIONAL attributes.
 
+The Part 28 common XML Schema declares `Entity.id` as `xs:ID`, `Entity.ref`
+and `Entity.proxy` as `xs:IDREF`, and `Seq-IDREF` as `xs:IDREFS`. Its aggregate
+metadata uses `itemType`, `cType`, and `arraySize`; a derived AP schema adds
+the entity-specific declarations and `key`/`keyref` constraints. The [OASIS
+AP239 schema index](https://docs.oasis-open.org/plcs/dexlib/R2/dexlib/sys/dexlib_ap239_summary.htm)
+identifies the EXPRESS source and the XML Schemas derived from it under
+ISO 10303-28 edition 2. These declarations make duplicate IDs, unresolved
+references, wrong reference types, and invalid aggregate cardinalities schema
+errors. The `id` and reference values are scoped to the XML resource. They do
+not bind to Part 21 occurrence names.
+
+For a configured `attribute-content`/`tagless` binding, the generated schema
+maps simple EXPRESS values to the declared XML Schema simple type, entity
+attributes to the configured XML attribute or content form, and an aggregate
+to the configured sequence or aggregate representation. A `LIST` or `ARRAY`
+preserves member position and bounds. A `SET` or `BAG` preserves membership
+and bounds but not member order. A SELECT value uses the generated schema's
+choice or type marker; a lexical value alone does not select between EXPRESS
+alternatives with the same XML value space. The [ISO 10303-28:2007
+preview](https://webstore.ansi.org/preview-pages/ISO/preview_ISO%2B10303-28-2007.pdf)
+defines the default and configured binding rules for entity attributes,
+references, SELECT values, and aggregate values.
+
+An XML parser accepts only XML well-formedness. The selected derived XML Schema
+must then accept the element names, XML types, identifiers, references,
+aggregate bounds, SELECT alternative, and OPTIONAL representation. The
+governing EXPRESS schema must also accept the mapped data. A missing target ID,
+duplicate ID, invalid lexical value, invalid bound, or unselected SELECT
+alternative is a mapping error. Missing or conflicting binding inputs make the
+value unbound; the caller does not infer a schema from a prefix, local name,
+filename, namespace, or `xsi:schemaLocation`.
+
 ISO 10303-28:2003 is withdrawn. The current Part 28 edition is ISO
 10303-28:2007, edition 1. AP242 BO-Model XML uses ISO/TS 10303-3001 schemas,
 not the Part 28 mapping, and is a separate encoding.
@@ -87,11 +119,16 @@ namespace, `schema` attribute, or `xsi:schemaLocation`; it does not implement a
 generic schema-driven XML adapter or join XML data to a Part 21 file by
 filename or identifier. A caller that needs Part 28 must provide the exact
 Part 28 binding edition, configuration, governing EXPRESS schema edition,
-derived AP XML Schema, and schema-validation result. The CADIR admission
-operand is `(XML resource, Part 28 binding edition, configuration, governing
-EXPRESS schema edition, derived AP XML Schema, validation result)`. A Part 28
-UOS is admitted only when its data conforms to the governing EXPRESS schema
-and its XML infoset validates against that configuration's derived XML Schema.
+derived AP XML Schema, schema-validation result, resource-local identity scope,
+reference-resolution result, and mapping result. The CADIR admission operand
+is `(XML resource, Part 28 binding edition, configuration, governing EXPRESS
+schema edition, derived AP XML Schema, validation result, identity scope,
+reference-resolution result, mapping result)`. A Part 28 UOS is admitted only
+when its data conforms to the governing EXPRESS schema and its XML infoset
+validates against that configuration's derived XML Schema. The mapping result
+contains one neutral node for each admitted entity instance and one neutral
+edge for each admitted reference; it contains no node or edge for a rejected
+or unbound value.
 The STEP codec consumes none of these caller inputs: it classifies the
 alternate encoding and returns the stated `NotImplemented` error before XML
 schema validation or graph construction.

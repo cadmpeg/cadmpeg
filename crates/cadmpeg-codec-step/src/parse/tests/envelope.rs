@@ -532,6 +532,131 @@ fn part28_configuration_witnesses_are_refused_before_schema_admission() {
 }
 
 #[test]
+fn part28_schema_mapping_witnesses_stop_at_the_caller_boundary() {
+    const AP238_NAMESPACE: &str = "urn:oid:1.0.10303.238.2.0.1";
+    const EXPRESS_SCHEMA: &str = "integrated_cnc_schema";
+
+    // The accepted witness is the published AP238 attribute-content example.
+    // Its Location value is a reference to the entity with id2, and its
+    // Coordinates value is an aggregate of three lexical numbers. The
+    // selected derived schema supplies those meanings and their constraints.
+    let accepted = roxmltree::Document::parse(include_str!("data/ce03_part28_ap238_e2.xml"))
+        .expect("parse accepted Part 28 mapping witness");
+    let accepted_root = accepted.root_element();
+    let accepted_axis = accepted
+        .descendants()
+        .find(|node| node.has_tag_name((AP238_NAMESPACE, "Axis2_placement_3d")))
+        .expect("accepted axis placement");
+    assert_eq!(accepted_axis.attribute("Location"), Some("id2"));
+    let accepted_location = accepted
+        .descendants()
+        .find(|node| node.attribute("id") == Some("id2"))
+        .expect("accepted location target");
+    assert_eq!(
+        accepted_location.tag_name(),
+        roxmltree::ExpandedName::from((AP238_NAMESPACE, "Cartesian_point"))
+    );
+    assert_eq!(
+        accepted_location
+            .attribute("Coordinates")
+            .expect("accepted coordinates")
+            .split_whitespace()
+            .collect::<Vec<_>>(),
+        ["3.5", "-3.5", "-4.16875"]
+    );
+    assert_eq!(accepted_root.attribute("schema"), Some(EXPRESS_SCHEMA));
+
+    // Changing only the reference lexical value leaves a well-formed XML
+    // candidate, but the selected schema has no target for the reference.
+    let rejected =
+        roxmltree::Document::parse(include_str!("data/ce04_part28_ap238_missing_reference.xml"))
+            .expect("parse rejected Part 28 mapping witness");
+    let rejected_axis = rejected
+        .descendants()
+        .find(|node| node.has_tag_name((AP238_NAMESPACE, "Axis2_placement_3d")))
+        .expect("rejected axis placement");
+    let rejected_location = rejected_axis
+        .attribute("Location")
+        .expect("rejected location reference");
+    assert_eq!(rejected_location, "id-missing");
+    assert!(!rejected
+        .descendants()
+        .any(|node| node.attribute("id") == Some(rejected_location)));
+    assert_eq!(
+        rejected.root_element().attribute("schema"),
+        Some(EXPRESS_SCHEMA)
+    );
+
+    // The AP238 EXPRESS aggregate bound rejects a fourth coordinate even
+    // though the attribute remains syntactically well-formed XML.
+    let invalid_aggregate =
+        roxmltree::Document::parse(include_str!("data/ce04_part28_ap238_invalid_aggregate.xml"))
+            .expect("parse invalid aggregate mapping witness");
+    let invalid_coordinates = invalid_aggregate
+        .descendants()
+        .find(|node| node.has_tag_name((AP238_NAMESPACE, "Cartesian_point")))
+        .and_then(|node| node.attribute("Coordinates"))
+        .expect("invalid coordinate aggregate");
+    assert_eq!(invalid_coordinates.split_whitespace().count(), 4);
+
+    // XML Schema identity constraints reject duplicate instance IDs even
+    // when the duplicate values would otherwise look like valid references.
+    let duplicate_id =
+        roxmltree::Document::parse(include_str!("data/ce04_part28_ap238_duplicate_id.xml"))
+            .expect("parse duplicate-id mapping witness");
+    assert_eq!(
+        duplicate_id
+            .descendants()
+            .filter(|node| node.attribute("id") == Some("id2"))
+            .count(),
+        2
+    );
+
+    // The unbound witness keeps the same element names and values but omits
+    // the required schema selector. Without the exact configuration and
+    // derived schema, the lexical values have no unique EXPRESS meaning.
+    let unbound =
+        roxmltree::Document::parse(include_str!("data/ce04_part28_ap238_unbound_schema.xml"))
+            .expect("parse unbound Part 28 mapping witness");
+    let unbound_axis = unbound
+        .descendants()
+        .find(|node| node.has_tag_name((AP238_NAMESPACE, "Axis2_placement_3d")))
+        .expect("unbound axis placement");
+    assert_eq!(unbound_axis.attribute("Location"), Some("id2"));
+    assert_eq!(
+        unbound.root_element().attribute("schema"),
+        None,
+        "the AP238 configuration requires this selector"
+    );
+    assert_eq!(
+        unbound_axis.tag_name().name(),
+        accepted_axis.tag_name().name()
+    );
+    assert_eq!(
+        unbound_axis.attribute("Location"),
+        accepted_axis.attribute("Location")
+    );
+
+    // The STEP codec does not guess the mapping or build a partial graph for
+    // any of the three caller outcomes.
+    let codec = StepCodec::default();
+    for bytes in [
+        include_bytes!("data/ce03_part28_ap238_e2.xml").as_slice(),
+        include_bytes!("data/ce04_part28_ap238_missing_reference.xml").as_slice(),
+        include_bytes!("data/ce04_part28_ap238_invalid_aggregate.xml").as_slice(),
+        include_bytes!("data/ce04_part28_ap238_duplicate_id.xml").as_slice(),
+        include_bytes!("data/ce04_part28_ap238_unbound_schema.xml").as_slice(),
+    ] {
+        assert_eq!(codec.detect(bytes), Confidence::Medium);
+        assert!(matches!(
+            codec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
+            Err(cadmpeg_core::CodecError::NotImplemented(message))
+                if message == "STEP Part 28 XML encoding"
+        ));
+    }
+}
+
+#[test]
 fn codec_refuses_out_of_envelope_encodings_by_name() {
     let codec = StepCodec::default();
     let cases: &[(&[u8], &str)] = &[

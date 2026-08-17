@@ -20,18 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-04. Part 28 schema mapping
-
-**Question.** How do Part 28 XML elements and values map to EXPRESS entities, attributes, and references?
-
-**Known.** An AP XML Schema is derived from an EXPRESS schema. XML prefixes, local names, filenames, and `xsi:schemaLocation` do not select the missing schema or configuration.
-
-**Need.** Define the schema-driven mapping, identity rules, aggregate handling, and error behavior for a selected Part 28 configuration.
-
-**Conflict.** The codec does not implement a schema-driven XML adapter and refuses the detected encoding. The refusal supplies no mapping or validation behavior.
-
-**Note.** `crates/cadmpeg-codec-step/src/codec.rs:371-374` refuses Part 28 before a document graph is built. `step.md` §1 "CADIR decision: the STEP codec admits Part 21 clear text and its ZIP container" records the missing schema and graph-binding inputs as caller inputs. No mapping witness tests a selected schema against accepted, rejected, and ambiguous XML values.
-
 ### CE-05. Part 26 HDF5 mapping
 
 **Question.** How does the Part 26 HDF5 representation map to EXPRESS schema data?
