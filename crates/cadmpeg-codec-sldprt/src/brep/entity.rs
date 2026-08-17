@@ -7635,6 +7635,11 @@ fn keyed_direct_face_use_root_body(
     let mut selected_faces = HashSet::new();
     let mut selected_uses = HashSet::new();
     let mut selected_keys = HashSet::new();
+    let use_nodes = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == use_disc && record.flo() == 4)
+        .collect::<Vec<_>>();
     for face in by_attr
         .values()
         .copied()
@@ -7664,7 +7669,28 @@ fn keyed_direct_face_use_root_body(
             return Vec::new();
         }
     }
-    if selected_faces.is_empty() || selected_faces.len() != selected_uses.len() {
+    let reciprocal_use_nodes = use_nodes.iter().all(|use_node| {
+        let Some(key) = use_node.refs.first().copied().filter(|key| *key > 1) else {
+            return false;
+        };
+        let Some(face) = use_node
+            .refs
+            .get(2)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+        else {
+            return false;
+        };
+        face.disc == canonical_disc
+            && face.flo() == 1
+            && face.refs.first() == Some(&key)
+            && face.refs.get(1) == Some(&use_node.attr)
+    });
+    if selected_faces.is_empty()
+        || selected_faces.len() != selected_uses.len()
+        || selected_uses.len() != use_nodes.len()
+        || !reciprocal_use_nodes
+    {
         return Vec::new();
     }
     let Some(shell) = chain.get(shell_index).copied() else {
