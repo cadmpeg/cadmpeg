@@ -74,7 +74,7 @@ fn transfer_ledger_reports_an_unprojected_native_only_direction() {
 
 #[test]
 fn container_decode_retains_unknown_flag_three_name_but_semantic_decode_refuses() {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,3Hnmi,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,7Hfurlong,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let bytes = point_file_with_global(global);
 
     let error = IgesCodec
@@ -97,9 +97,38 @@ fn container_decode_retains_unknown_flag_three_name_but_semantic_decode_refuses(
         .unwrap();
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["native_units"],
-        "nmi"
+        "furlong"
     );
     assert!(result.ir().model.points.is_empty());
+}
+
+#[test]
+fn semantic_decode_applies_delegated_nmi_factor() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,3Hnmi,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(point_file_with_global(global)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let point = &result.ir().model.points[0].position;
+    for (actual, expected) in [
+        (point.x, 1_852_000.0),
+        (point.y, 3_704_000.0),
+        (point.z, 5_556_000.0),
+    ] {
+        let tolerance = f64::EPSILON * 64.0 * expected;
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "{actual} != {expected}"
+        );
+    }
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["native_units"],
+        "nmi"
+    );
 }
 
 #[test]

@@ -237,19 +237,33 @@ fn version_flags_clamp_unrecognized_values() {
 }
 
 #[test]
-fn standard_unit_names_use_exact_ascii_aliases() {
+fn delegated_length_symbols_use_exact_case_sensitive_factors() {
     for (name, expected) in [
-        ("IN", 25.4_f64),
-        ("INCH", 25.4),
-        ("MM", 1.0),
-        ("FT", 304.8),
-        ("MI", 1_609_344.0),
-        ("M", 1_000.0),
-        ("KM", 1_000_000.0),
-        ("MIL", 0.0254),
-        ("UM", 0.001),
-        ("CM", 10.0),
-        ("UIN", 0.000_025_4),
+        ("A", 0.000_000_1_f64),
+        ("in", 25.4),
+        ("ft", 304.8),
+        ("mi", 1_609_344.0),
+        ("mil", 0.0254),
+        ("uin", 0.000_025_4),
+        ("yd", 914.4),
+        ("nmi", 1_852_000.0),
+        ("dam", 10_000.0),
+        ("hm", 100_000.0),
+        ("km", 1_000_000.0),
+        ("Mm", 1_000_000_000.0),
+        ("Gm", 1_000_000_000_000.0),
+        ("Tm", 1_000_000_000_000_000.0),
+        ("Pm", 1_000_000_000_000_000_000.0),
+        ("Em", 1_000_000_000_000_000_000_000.0),
+        ("m", 1_000.0),
+        ("dm", 100.0),
+        ("cm", 10.0),
+        ("mm", 1.0),
+        ("um", 0.001),
+        ("nm", 0.000_001),
+        ("pm", 0.000_000_001),
+        ("fm", 0.000_000_000_001),
+        ("am", 0.000_000_000_000_001),
     ] {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
@@ -258,6 +272,16 @@ fn standard_unit_names_use_exact_ascii_aliases() {
         let actual = parsed.length_factor_mm();
         let tolerance = f64::EPSILON * 64.0 * expected.abs().max(1.0);
         assert!((actual - expected).abs() <= tolerance, "{name}: {actual}");
+    }
+
+    for name in [
+        "IN", "INCH", "MM", "FT", "MI", "M", "KM", "MIL", "UM", "CM", "UIN", "NMI",
+    ] {
+        let mut fields = valid_global_fields();
+        fields[13] = "3".into();
+        fields[14] = format!("{}H{name}", name.len());
+        let parsed = parse_global_fields(&fields).unwrap();
+        assert!(!parsed.has_supported_length_factor(), "{name}");
     }
 
     let mut fields = valid_global_fields();
@@ -337,14 +361,20 @@ fn real_significance_fields_are_required_and_positive() {
 }
 
 #[test]
-fn flag_three_units_require_a_nonempty_name_but_allow_external_symbols() {
-    for units_name in ["2Hmm", "3Hnmi"] {
+fn flag_three_units_require_a_nonempty_name_and_accept_delegated_symbols() {
+    for (units_name, expected) in [("2Hmm", 1.0_f64), ("3Hnmi", 1_852_000.0)] {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
         fields[14] = units_name.into();
         let parsed = parse_global_fields(&fields).unwrap();
         assert_eq!(parsed.units_name().as_deref(), Some(&units_name[2..]));
-        assert!(!parsed.has_supported_length_factor());
+        assert!(parsed.has_supported_length_factor());
+        let actual = parsed.length_factor_mm();
+        let tolerance = f64::EPSILON * 64.0 * expected.max(1.0);
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "{units_name}: {actual}"
+        );
     }
 
     let mut fields = valid_global_fields();

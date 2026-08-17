@@ -498,24 +498,42 @@ impl Global {
         }
     }
 
-    fn named_unit_factor_mm(&self) -> Option<f64> {
+    fn delegated_unit_factor_mm(&self) -> Option<f64> {
         match self.values.get(14).and_then(Value::string_bytes)? {
-            b"IN" | b"INCH" => Some(25.4),
-            b"MM" => Some(1.0),
-            b"FT" => Some(304.8),
-            b"MI" => Some(1_609_344.0),
-            b"M" => Some(1_000.0),
-            b"KM" => Some(1_000_000.0),
-            b"MIL" => Some(0.0254),
-            b"UM" => Some(0.001),
-            b"CM" => Some(10.0),
-            b"UIN" => Some(0.000_025_4),
+            // IEEE 260-1978 unit symbols are case-sensitive. The ASCII
+            // substitutions `um` and `uin` represent the unavailable
+            // micro sign in an IGES ASCII field.
+            b"A" => Some(0.000_000_1),
+            b"in" => Some(25.4),
+            b"ft" => Some(304.8),
+            b"mi" => Some(1_609_344.0),
+            b"mil" => Some(0.0254),
+            b"uin" => Some(0.000_025_4),
+            b"yd" => Some(914.4),
+            b"nmi" => Some(1_852_000.0),
+            b"dam" => Some(10_000.0),
+            b"hm" => Some(100_000.0),
+            b"km" => Some(1_000_000.0),
+            b"Mm" => Some(1_000_000_000.0),
+            b"Gm" => Some(1_000_000_000_000.0),
+            b"Tm" => Some(1_000_000_000_000_000.0),
+            b"Pm" => Some(1_000_000_000_000_000_000.0),
+            b"Em" => Some(1_000_000_000_000_000_000_000.0),
+            b"m" => Some(1_000.0),
+            b"dm" => Some(100.0),
+            b"cm" => Some(10.0),
+            b"mm" => Some(1.0),
+            b"um" => Some(0.001),
+            b"nm" => Some(0.000_001),
+            b"pm" => Some(0.000_000_001),
+            b"fm" => Some(0.000_000_000_001),
+            b"am" => Some(0.000_000_000_000_001),
             _ => None,
         }
     }
 
     pub(crate) fn has_supported_length_factor(&self) -> bool {
-        self.units_flag() != 3 || self.named_unit_factor_mm().is_some()
+        self.units_flag() != 3 || self.delegated_unit_factor_mm().is_some()
     }
 
     pub(crate) fn length_factor_mm(&self) -> f64 {
@@ -523,7 +541,7 @@ impl Global {
             1 => 25.4,
             2 => 1.0,
             3 => self
-                .named_unit_factor_mm()
+                .delegated_unit_factor_mm()
                 .expect("validated Global named units"),
             4 => 304.8,
             5 => 1_609_344.0,

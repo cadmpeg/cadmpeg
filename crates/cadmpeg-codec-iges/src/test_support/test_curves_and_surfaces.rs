@@ -1618,7 +1618,12 @@ pub(crate) fn model_curve_only_trimmed_plane_file() -> Vec<u8> {
 }
 
 pub(crate) fn bounded_plane_file() -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    bounded_plane_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+fn bounded_plane_file_with_global(global: &[u8]) -> Vec<u8> {
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     for (sequence, entity_type, label, status) in [
@@ -1676,7 +1681,10 @@ pub(crate) fn bounded_plane_file() -> Vec<u8> {
 }
 
 pub(crate) fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
-    let mut bytes = bounded_plane_file();
+    bounded_plane_with_resolution_gap(bounded_plane_file())
+}
+
+fn bounded_plane_with_resolution_gap(mut bytes: Vec<u8>) -> Vec<u8> {
     let original = b"110,1,1,0,1,0,0;";
     let replacement = b"110,1,1,0,1,0.000999,0;";
     let start = bytes
@@ -1696,15 +1704,9 @@ pub(crate) fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
 }
 
 pub(crate) fn centimetre_bounded_plane_with_resolution_gap_file() -> Vec<u8> {
-    let mut bytes = bounded_plane_with_resolution_gap_file();
-    let millimetres = b",2,2HM";
-    let centimetres = b",3,2HC";
-    let start = bytes
-        .windows(millimetres.len())
-        .position(|window| window == millimetres)
-        .expect("bounded-plane Global units fields");
-    bytes[start..start + millimetres.len()].copy_from_slice(centimetres);
-    bytes
+    bounded_plane_with_resolution_gap(bounded_plane_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,2Hcm,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    ))
 }
 
 pub(crate) fn bounded_plane_with_significance_gap_file() -> Vec<u8> {
