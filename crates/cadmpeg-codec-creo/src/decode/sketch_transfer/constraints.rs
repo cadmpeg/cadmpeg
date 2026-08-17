@@ -14,7 +14,7 @@ use super::super::sketch::{
     section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
     section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
-    unique_section_skamp_segment,
+    unique_decoded_section_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
@@ -1703,7 +1703,7 @@ pub(in super::super) fn section_dimension_constraints(
                         if item.sense != 0 {
                             return None;
                         }
-                        let measured = unique_section_skamp_segment(definition, item.entity_id)?;
+                        let measured = unique_decoded_section_segment(definition, item.entity_id)?;
                         if measured.kind == crate::feature::FeatureSegmentKind::Line
                             && (measured.point_ids == [first_id, second_id]
                                 || measured.point_ids == [second_id, first_id])

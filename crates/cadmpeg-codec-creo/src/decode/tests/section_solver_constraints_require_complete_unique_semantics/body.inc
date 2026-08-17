@@ -4526,6 +4526,74 @@
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );
+    let mut relation_orientation = definition.clone();
+    relation_orientation
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .value = Some(0.0);
+    relation_orientation
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .value_unit = crate::feature::DimensionUnit::SchemaDefined;
+    let relation = relation_orientation
+        .relations
+        .as_mut()
+        .expect("relations");
+    relation.rows[0].relation_type = 0;
+    relation.rows[0].operand_vectors = Some([
+        [Some(1), Some(2), None, Some(1)],
+        [Some(0), Some(0), Some(0), Some(0)],
+        [Some(15), Some(16), Some(15), Some(1)],
+    ]);
+    relation_orientation
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows[0]
+        .vertical_horizontal = Some(1);
+    relation.triples = vec![crate::feature::FeatureRelationTriple {
+        relation_id: Some(8),
+        equation_id: None,
+        skamp_id: Some(3),
+        offset: 94,
+    }];
+    relation.triples_header = Some(crate::feature::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 2,
+        offset: 94,
+    });
+    assert_eq!(
+        section_dimension_constraints(
+            &relation_orientation,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Horizontal {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
+    let mut incomplete_relation_orientation = relation_orientation.clone();
+    incomplete_relation_orientation
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count += 1;
+    assert_eq!(
+        section_dimension_constraints(
+            &incomplete_relation_orientation,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Horizontal {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
     radius_definition
         .dimensions
         .as_mut()

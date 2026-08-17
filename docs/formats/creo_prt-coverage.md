@@ -397,6 +397,9 @@ fixtures, scores above L1 remain blocked.
   coordinates both participate in that axis proof. A pair of separate incident
   lines does not select an axis. The selected equation can derive a missing
   ordinate; ambiguous endpoint or orientation evidence does not derive one.
+- Schema-defined zero-valued relation rows with complete relation, incidence,
+  and dimension joins emit typed horizontal or vertical constraints from a
+  unique ordinary line row even when the segment table is incomplete.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and
