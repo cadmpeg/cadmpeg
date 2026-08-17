@@ -35,6 +35,30 @@ file extension or payload signature does not select an application grammar.
 
 **Note.** New hostile-sweep finding.
 
+### AG-02. Typed geometry side-entry ownership
+
+**Question.** Which direct `Mesh` or `Points` value root owns a binary side entry for a typed
+kernel property, and how are file attributes on other retained values handled?
+
+**Known.** FreeCAD writes one direct `Mesh` or `Points` value root, and the root's non-empty
+`file` attribute identifies the property's side entry. `persistence.rs:484-538` retains every
+descendant value and collects every descendant `file` or `File` attribute into
+`PropertyRecord.side_entries`. `application_geometry.rs:21-61` rejects more than one collected
+side entry, while `application_geometry.rs:80-98` counts only direct expected roots and does not
+bind the side entry to that root.
+
+**Need.** Require the side-entry reference to be the canonical attribute on the one direct typed
+root. Reject or retain a property when another direct or nested value contributes a file reference
+or when the root and side entry cannot be associated unambiguously.
+
+**Conflict.** A property containing one direct `Mesh` root and a nested or sibling
+`<Extra file="payload"/>` produces one expected root and one collected side entry, so the transfer
+reads `payload` even though no `Mesh` root names it. The same framing admits an unowned `Points`
+payload. Moving or adding that unrelated file attribute therefore changes the neutral geometry
+without a refusal or loss.
+
+**Note.** New hostile-sweep finding.
+
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars
@@ -238,7 +262,53 @@ without a refusal or loss.
 
 **Note.** New hostile-sweep finding.
 
+### XT-05. Neutral topology transform equality
+
+**Question.** What exact location equality and identity rule selects neutral topology and located
+geometry identities when equal shapes occur at nearby composed locations?
+
+**Known.** The specification gives a distinct indexed position to a shape at a different composed
+location. `topology_transfer.rs:146-168` uses tolerant `OccurrenceKey` values for neutral vertices
+and edges; `topology_transfer.rs:1135-1181` uses the same tolerance for located curves and
+surfaces. `transform_digest` at `topology_transfer.rs:1612-1627` rounds matrix components to
+`1.0e-11`, and `transforms_equal` at `topology_transfer.rs:1644-1650` treats components within
+`1.0e-12` as equal. The source-index map uses an exact transform digest, so it does not repair
+the neutral identity collapse.
+
+**Need.** Establish the producer or kernel equality rule for composed locations and apply it to
+all neutral identity and identity-elision decisions. A decoder tolerance must be source-backed and
+specified; otherwise distinct locations must remain distinct.
+
+**Conflict.** Two uses of one shape at translations of `2.0e-12` and `4.0e-12` are different
+locations but round to the same transform digest and reuse one neutral edge, vertex, curve, or
+surface identity. A location within `1.0e-12` of identity is also elided as identity. The neutral
+topology can therefore collapse or omit source-distinct locations without a refusal or loss,
+despite the specification's separate-location rule.
+
+**Note.** New hostile-sweep finding.
+
 ## 5. Design projection
+
+### DP-02. Sketch profile seed order
+
+**Question.** Which neutral seed rule applies when the producer does not persist a profile-chain
+seed?
+
+**Known.** FreeCAD persists ordered `GeometryList` and `ConstraintList` values, but no profile
+chain or seed entity. The current projection at `design.rs:2527-2555` starts each disconnected
+profile at the lowest unassigned non-construction entity ordinal.
+
+**Need.** Establish the neutral seed rule and retain the persisted entity ordinal in the decision,
+or define an explicit decoder-owned policy with an attributable result for an unsupported or
+ambiguous seed.
+
+**Conflict.** The closure evidence in `d61600a25` establishes source order and the absence of a
+seed carrier, but it does not establish that the lowest ordinal is the neutral seed. The current
+`BTreeSet::pop_first()` choice is a decoder policy, so exchanging serialized geometry order can
+change profile order without a producer-defined tie-break or loss.
+
+**Note.** Reopened by closure audit. Producer field absence does not settle neutral projection
+ownership.
 
 ### DP-03. Sketch profile junction ambiguity and tolerance
 
@@ -258,6 +328,27 @@ not by a source tolerance or a complete topology contract. A near-coincident end
 change profile connectivity solely when it crosses a decoder-owned threshold.
 
 **Note.** Reopened. The closure established producer field absence, not the neutral numeric policy.
+
+### DP-05. Dependency-cycle ordinal fallback
+
+**Question.** What neutral projection applies when feature dependencies, parents, or expressions
+form a cycle?
+
+**Known.** FreeCAD persists directed dependency cycles in the native graph. The current ordinal
+assignment at `design.rs:679-694` selects remaining cycle-affected objects in source order, and
+the dependency filter at `design.rs:450-456` keeps only targets with earlier neutral ordinals.
+
+**Need.** Define a stable neutral cycle projection that preserves the admissible relation set and
+its source provenance, or retain the affected relation and operation as native with an explicit
+blocking result. Do not silently discard cycle edges by a decoder-owned source-order rule.
+
+**Conflict.** The closure evidence in `f6fd9df86` establishes that FreeCAD can persist reciprocal
+links and that recompute requires a DAG, but it does not establish source-order ordinal assignment
+or earlier-target edge discard as the neutral result. Reordering the persisted objects can therefore
+change the neutral dependency subset while the native cycle remains the same.
+
+**Note.** Reopened by closure audit. Native cycle retention and a blocking loss do not establish
+the neutral relation projection.
 
 ### DP-07. Legacy point carrier provenance
 
