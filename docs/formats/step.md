@@ -91,52 +91,107 @@ separate graph-binding policy.
 
 ISO/TS 10303-26:2011 defines a binary representation of EXPRESS-driven data
 using HDF5 version 5. The [ISO/TS 10303-26 standard
-listing](https://www.iso.org/standard/50029.html) identifies the edition. The
-[public Part 26 clause-equivalent text](https://normadocs.ru/gost_r_iso%21ts_10303-26-2015)
-defines the schema-driven mapping. A conforming population uses a schema
-encoding group directly below the HDF5 root, named from the schema with the
-`_encoding` suffix and carrying `iso_10303_26_schema`. Each population group
-carries `iso_10303-26_data` with the schema identifier and
-`iso_10303_26_data_set_names` with the population's entity dataset names.
-Optional population metadata does not change the graph mapping. One HDF5 file
-may contain several populations of the same schema.
+listing](https://www.iso.org/standard/50029.html) identifies edition 1 and
+confirms it as current. The [public Part 26 clause-equivalent
+text](https://normadocs.ru/gost_r_iso%21ts_10303-26-2015) defines the mapping.
 
-For each EXPRESS entity, the schema group defines a named HDF5 compound type.
-Its relative name is the schema-group name followed by the EXPRESS entity
-name; a complex entity joins its leaf entity names with `+` in alphabetical
-order. The first compound member is `set_unset_bitmap`; the second is
-`Entity-Instance-Identifier`. The remaining members represent explicit
-attributes, including inherited attributes, with the HDF5 types selected by
-the EXPRESS mapping. Derived and inverse attributes, EXPRESS WHERE and UNIQUE
-rules, and EXPRESS executable declarations are not stored as entity members.
-Primitive EXPRESS values map to the Part 26 HDF5 integer, floating-point,
-boolean/logical, string, binary, enumeration, and aggregate encodings.
+A Part 26 file conforms when it is an HDF5 file, is based on a valid EXPRESS
+schema, and represents the EXPRESS data by this mapping. The mapping does not
+represent EXPRESS `RULE` declarations, entity and type domain rules, `UNIQUE`
+rules, `SUPERTYPE` declarations, `FUNCTION` declarations, `PROCEDURE`
+declarations, ordinary `CONSTANT` declarations, derived attributes, inverse
+attributes, or EXPRESS interface specifications. It does not represent the
+constraints or application programming interface of an EXPRESS schema. The
+governing EXPRESS schema is required to evaluate those constraints.
 
-Entity instances are rows in datasets under the entity's HDF5 object group,
-using its compound type. An entity reference is a pair of HDF5 dataset and
-instance indexes; an aggregate is embedded or stored in an aggregate dataset
-according to the Part 26 storage rules and contains the corresponding element
-or reference values. The `Entity-Instance-Identifier` identifies an instance
-within its entity
-population; it is not a Part 21 `#` identifier. One HDF5 row maps to one
-EXPRESS entity node, compound members map to explicit attributes, bitmap bits
-map to OPTIONAL presence, and dataset/instance pairs map to graph edges.
-EXPRESS SET and BAG order has no semantic meaning; LIST and ARRAY order is
-preserved by their aggregate representation.
+The HDF5 signature is `89 48 44 46 0d 0a 1a 0a`. The [HDF5 file-format
+specification](https://support.hdfgroup.org/documentation/hdf5/latest/_f_m_t11.html)
+permits the signature at offset zero or at offset 512 and successive offsets
+obtained by doubling the previous offset. A signature identifies an HDF5 file.
+It does not identify Part 26, an AP203, AP214, or AP242 edition, or an EXPRESS
+schema. Part 26 has no Part 21 `FILE_SCHEMA` header. An AP203, AP214, or AP242
+population is bound by its exact EXPRESS schema and edition supplied with the
+Part 26 mapping.
 
-ISO/TS 10303-26:2011 is edition 1 and remains the current confirmed edition.
-An HDF5 signature identifies an HDF5 file, not a valid Part 26 population or
-an AP203, AP214, or AP242 schema. The schema identifier, mapping version,
-population markers, compound types, and dataset conventions are all required
-to decode the graph.
+The schema group is directly below the HDF5 root. Its name is
+`<schema_name>_encoding`, and it has the HDF5 string attribute
+`iso_10303_26_schema` with value `<schema_id>`. The optional
+`iso_10303_26_express_text` attribute carries EXPRESS text. The schema group
+contains the named HDF5 types used by its populations. One schema group can be
+shared by several populations, and one file can contain several schema groups.
 
-CADIR decision: the STEP codec refuses an input beginning with the HDF5
-signature `89 48 44 46 0d 0a 1a 0a` with
+Each EXPRESS population is an HDF5 group with the HDF5 string attribute
+`iso_10303-26_data` containing the schema identifier and the array attribute
+`iso_10303_26_data_set_names`. The array contains the entity dataset names
+used by instance-reference handles; the Part 26 naming rules resolve each
+name to its object group and instance dataset. Optional population attributes
+such as description, timestamp, author, organization, originating system,
+preprocessor version, context, and language do not change the instance graph.
+
+For each EXPRESS entity, the schema group contains a named HDF5 compound type
+whose relative name is `<schema_group_name>/<entity_id>`. A complex entity
+uses the leaf entity IDs in alphabetical order separated by `+`. The first
+compound member is the HDF5 integer `set_unset_bitmap`. Its bits carry the
+present or absent state of the remaining members, except the mandatory second
+member. Bit zero is the first EXPRESS attribute in that member sequence. The
+second member is the HDF5 integer `Entity-Instance-Identifier`; it is unique
+within the complete population for that entity type and remains stable for
+the instance. Every explicit attribute, including inherited explicit
+attributes, is a compound member. Attribute member names are uppercase
+EXPRESS names. A redeclared inherited attribute uses the Part 26 qualified
+member name. Derived and inverse attributes are not compound members.
+
+The simple type mapping is fixed as follows. `INTEGER` uses an 8-, 16-, 32-,
+or 64-bit signed HDF5 integer in either byte order. `REAL` and `NUMBER` use
+32- or 64-bit IEEE HDF5 floating point in either byte order. `BOOLEAN` and
+`LOGICAL` use HDF5 enumerations; `LOGICAL` has true, false, and unknown
+values. `STRING` uses variable-length HDF5 string. `BINARY` uses fixed or
+variable-length HDF5 opaque data according to its declaration. `ENUMERATION`
+uses an HDF5 enumeration whose symbolic names contain the schema group,
+enumeration, and literal names. A population may select a permitted primitive
+encoding through the corresponding `iso_10303_26_<data_type>_encoding`
+attribute; the EXPRESS schema and the HDF5 type remain the type authority.
+
+An entity population uses the group `<entity_id>_objects` and the dataset
+`<entity_id>_objects/<entity_id>_instances`. The dataset uses the entity's
+compound type and has one row per entity instance. A `CONSTANT` object uses
+the same instance mapping but is not the target of an ordinary instance
+reference. An entity reference is a compound member named for the EXPRESS
+attribute and typed as `_HDF_INSTANCE_REFERENCE_HANDLE_`. Its
+`_HDF5_dataset_index_` selects an entry in the parent population's
+`iso_10303_26_data_set_names`; its `_HDF5_instance_index_` selects the row in
+the resolved target dataset. The pair identifies an HDF5 population row, not
+a Part 21 numeric `#` occurrence.
+
+An `ARRAY` uses an HDF5 array with its schema rank and dimensions. `LIST`,
+`SET`, and `BAG` use HDF5 variable-length values whose rank and dimensions
+come from the data. An aggregate may be stored inline in the entity compound
+or in a separate dataset. The size threshold is an implementation choice. A
+separate aggregate dataset has the relative name
+`<schema_group_name>/<entity_id>_objects/Aggr_<attribute_id>_<aggr_unique_id>`.
+Dynamic aggregate storage uses a compound descriptor with
+`obj_ref_or_vlen`, `object_reference`, and `vlen_array`: the object reference
+selects the separate aggregate dataset when the flag is zero, and the VLEN
+value is inline when the flag is one. Array elements that can be unset use a
+two-member compound with `set_unset_array_element` and `value`. `SET` and
+`BAG` member order has no meaning. `LIST` and `ARRAY` order and bounds are
+preserved.
+
+A SELECT containing only entity types maps to the selected entity reference.
+A SELECT containing different value domains uses a compound type with one
+field for each possible underlying value. Its first field is `select_bitmap`;
+an ambiguous value path uses the VLEN string field `type_path`. A selected
+value has exactly one active field.
+
+CADIR decision: the STEP codec classifies an HDF5 signature at an allowed
+offset as a medium-confidence alternate encoding. With explicit STEP
+selection it refuses the input with
 `NotImplemented("STEP Part 26 binary/HDF5 encoding")` before Part 21 parsing.
-It does not treat arbitrary HDF5 as STEP, infer an AP schema or mapping from
-the signature, implement a schema-bound HDF5 adapter, or compose the HDF5
-graph with a Part 21 file. A caller that needs Part 26 must provide the exact
-EXPRESS schema, Part 26 mapping edition, and a separate graph-binding policy.
+It does not validate HDF5, infer an AP schema or Part 26 edition, read schema
+groups, populations, named types, datasets, row identifiers, aggregates, or
+reference handles, or compose a Part 26 graph with a Part 21 file. A caller
+that needs Part 26 must provide the exact EXPRESS schema, mapping edition,
+HDF5 validation result, and graph-binding policy.
 
 An AP242 BO-Model XML exchange uses the XML Schema for its selected AP242 BO
 Model edition. AP242 Edition 1 (2014) uses the ISO/TS 10303-3001 edition-1

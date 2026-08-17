@@ -382,7 +382,22 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
 }
 
 fn is_part26_hdf5(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"\x89HDF\r\n\x1a\n")
+    const SIGNATURE: &[u8] = b"\x89HDF\r\n\x1a\n";
+    if bytes.starts_with(SIGNATURE) {
+        return true;
+    }
+
+    let mut offset = 512;
+    while offset < bytes.len() {
+        if bytes[offset..].starts_with(SIGNATURE) {
+            return true;
+        }
+        let Some(next) = offset.checked_mul(2) else {
+            break;
+        };
+        offset = next;
+    }
+    false
 }
 
 fn is_part28_xml(bytes: &[u8]) -> bool {

@@ -507,6 +507,28 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         codec.detect(b"\x89HDF\r\n\x1a\ncontent"),
         Confidence::Medium
     );
+    let mut hdf5_user_block = vec![0u8; 512];
+    hdf5_user_block.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
+    assert_eq!(codec.detect(&hdf5_user_block), Confidence::Medium);
+    assert!(matches!(
+        codec.decode(
+            &mut Cursor::new(hdf5_user_block),
+            &DecodeOptions::default()
+        ),
+        Err(cadmpeg_core::CodecError::NotImplemented(message))
+            if message == "STEP Part 26 binary/HDF5 encoding"
+    ));
+    let mut invalid_hdf5_offset = vec![0u8; 256];
+    invalid_hdf5_offset.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
+    assert_eq!(codec.detect(&invalid_hdf5_offset), Confidence::No);
+    assert!(matches!(
+        codec.decode(
+            &mut Cursor::new(invalid_hdf5_offset),
+            &DecodeOptions::default()
+        ),
+        Err(cadmpeg_core::CodecError::WrongFormat(message))
+            if message == "missing ISO-10303-21 magic"
+    ));
     assert_eq!(
         codec.detect(include_bytes!("data/ce03_part28_ap242.xml")),
         Confidence::Medium
@@ -539,6 +561,27 @@ fn codec_refuses_schema_marked_part26_hdf5_population() {
         .collect::<Vec<_>>();
     let bytes = STANDARD.decode(encoded).expect("Part 26 HDF5 witness");
     assert!(bytes.starts_with(b"\x89HDF\r\n\x1a\n"));
+    for marker in [
+        "Geometry_encoding",
+        "Geometry_population",
+        "iso_10303_26_schema",
+        "iso_10303-26_data",
+        "iso_10303_26_data_set_names",
+        "set_unset_bitmap",
+        "Entity-Instance-Identifier",
+        "_HDF_INSTANCE_REFERENCE_HANDLE_",
+        "_HDF5_dataset_index_",
+        "_HDF5_instance_index_",
+        "select_bitmap",
+        "Aggr-properties-1",
+    ] {
+        assert!(
+            bytes
+                .windows(marker.len())
+                .any(|window| window == marker.as_bytes()),
+            "Part 26 witness is missing {marker}"
+        );
+    }
 
     let codec = StepCodec::default();
     assert_eq!(codec.detect(&bytes), Confidence::Medium);

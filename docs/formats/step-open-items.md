@@ -20,26 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-05. Part 26 binary grammar
-
-**Question.** Which Part 26 mapping and HDF5 layout define each supported AP203, AP214, or AP242 binary exchange?
-
-**Known.** Part 26 is an EXPRESS-driven HDF5 mapping. The codec refuses an HDF5 signature before Part 21 parsing (`crates/cadmpeg-codec-step/src/codec.rs:365-370`).
-
-**Need.** Define the supported AP schema, mapping version, HDF5 layout, and independent conforming exchanges.
-
-**Conflict.** Signature detection and refusal do not implement the Part 26 grammar.
-
-### CE-06. Part 26 graph mapping
-
-**Question.** How does each supported Part 26 construct map to the STEP instance graph and CADIR?
-
-**Known.** The mapping uses schema and population groups, compound entity types, optional bitmaps, instance identifiers, aggregates, and links. The codec implements none of these mappings (`crates/cadmpeg-codec-step/src/codec.rs:365-370`).
-
-**Need.** Define the mapping version and conformance witnesses for identity, references, aggregates, and optional values.
-
-**Conflict.** Unsupported-input refusal provides no graph-mapping operand.
-
 ## 4. Signatures
 
 ## 5. Topology and pcurve decisions
