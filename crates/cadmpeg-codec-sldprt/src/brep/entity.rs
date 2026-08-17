@@ -586,6 +586,43 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
             by_attr.insert(record.attr, record);
         }
     }
+    if std::env::var_os("SLDPRT_DEBUG_FAMILY_CENSUS").is_some() {
+        let chains = keyed_forward_chain_candidates(&by_attr)
+            .into_iter()
+            .map(|chain| {
+                chain
+                    .into_iter()
+                    .map(|record| (record.attr, record.disc, record.flo(), record.refs.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        eprintln!("SLDPRT_DEBUG_FAMILY_CHAINS {:?}", chains);
+        let mut records = by_attr
+            .values()
+            .filter(|record| {
+                matches!(
+                    record.disc,
+                    0x0004
+                        | 0x0006
+                        | 0x000c
+                        | 0x000e
+                        | 0x0010
+                        | 0x0012
+                        | 0x0014
+                        | 0x0016
+                        | 0x0018
+                        | 0x001a
+                        | 0x001c
+                        | 0x001e
+                        | 0x0020
+                        | 0x0022
+                ) && matches!(record.flo(), 1 | 4)
+            })
+            .map(|record| (record.attr, record.disc, record.flo(), record.refs.clone()))
+            .collect::<Vec<_>>();
+        records.sort_by_key(|record| record.0);
+        eprintln!("SLDPRT_DEBUG_FAMILY_RECORDS {:?}", records);
+    }
     let mut out = Vec::new();
     for root in by_attr
         .values()
