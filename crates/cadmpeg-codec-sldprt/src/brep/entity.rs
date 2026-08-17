@@ -778,6 +778,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(
             disc22_disc20_disc1e_disc1a_disc18_disc12_disc10_disc04_face_root_body(&by_attr),
         );
@@ -3990,6 +3993,33 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc04_face_root_body(
     )
 }
 
+fn disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0018, 1),
+            (0x0016, 2),
+            (0x0010, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        true,
+    )
+}
+
 fn disc22_disc20_disc1e_disc1a_disc18_disc12_disc10_disc04_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7026,6 +7056,7 @@ mod tests {
     mod disc20_disc18;
     mod disc20_disc1a_disc18;
     mod disc20_disc1e_disc1c;
+    mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc22_disc20_disc1e_disc1a;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
@@ -7050,7 +7081,6 @@ mod tests {
         }
         bytes
     }
-
     fn prefixed_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
         bytes.extend_from_slice(&1_u32.to_be_bytes());
