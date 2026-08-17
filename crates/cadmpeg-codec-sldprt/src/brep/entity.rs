@@ -986,6 +986,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         ));
     }
     if out.is_empty() {
+        out.extend(disc1e_disc1a_disc18_disc16_disc14_disc12_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc1e_disc18_disc16_disc14_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -6426,6 +6429,36 @@ fn disc1e_disc1a_disc18_disc14_disc12_disc04_face_root_body(
     )
 }
 
+fn disc1e_disc1a_disc18_disc16_disc14_disc12_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_with_unselected_companions(
+        by_attr,
+        &[
+            (0x001e, 2),
+            (0x001a, 2),
+            (0x0018, 2),
+            (0x0016, 1),
+            (0x0014, 2),
+            (0x0012, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001c,
+        0x0020,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: Some(KeyedFaceBridge {
+                disc: 0x0010,
+                flo: 1,
+            }),
+            face_use_shape: None,
+            shell_index: 2,
+            require_exact_use_population: false,
+        },
+        false,
+    )
+}
+
 #[derive(Clone, Copy)]
 struct KeyedFaceBridge {
     disc: u16,
@@ -8260,6 +8293,7 @@ mod tests {
     mod disc1c_disc14_linked;
     mod disc1c_disc16_disc0e;
     mod disc1e_disc04;
+    mod disc1e_disc1a_disc18_disc16_disc14_disc12_disc04;
     mod disc1e_disc1c_disc1a_disc16_disc14_disc12;
     mod disc20_disc12_disc1e_disc1c_disc18;
     mod disc20_disc18;
