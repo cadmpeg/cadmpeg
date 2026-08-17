@@ -306,7 +306,6 @@ pub(in super::super) fn prototype_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Option<f64> {
-    (scan.framing.layout == crate::container::Layout::Nd).then_some(())?;
     let feature_id = rows.first()?.feature_id;
     let (radius1, radius2) = exactly_one(
         unique_surface_prototype_associations(scan)

@@ -338,6 +338,12 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         Some(0.5)
     );
 
+    scan.framing.layout = crate::container::Layout::Depdb;
+    assert_eq!(
+        super::prototype_round_radius(&scan, &[first_row]),
+        Some(0.5)
+    );
+
     scan.framing.sections.push(crate::container::Section {
         name: "second".to_string(),
         raw_name: "second".to_string(),
