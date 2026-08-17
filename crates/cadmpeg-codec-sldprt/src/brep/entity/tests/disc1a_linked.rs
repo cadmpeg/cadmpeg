@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use super::super::{
-    disc16_disc14_disc04_face_root_body, disc1a_disc12_disc04_face_root_body,
-    disc1a_disc14_disc04_face_root_body, disc1a_disc14_disc0c_face_root_body,
-    disc1a_disc14_disc12_face_root_body, BodyRecord, EntityRecord,
+    disc16_disc14_disc04_face_root_body, disc18_disc14_disc12_disc04_face_root_body,
+    disc1a_disc12_disc04_face_root_body, disc1a_disc14_disc04_face_root_body,
+    disc1a_disc14_disc0c_face_root_body, disc1a_disc14_disc12_face_root_body, BodyRecord,
+    EntityRecord,
 };
 use super::{flo2, flo4, index_records, record};
 
@@ -142,6 +143,24 @@ fn disc16_disc14_disc04_chain_allows_auxiliary_use_nodes() {
 
     records[8].refs[2] = 1;
     assert!(disc16_disc14_disc04_face_root_body(&index_records(&records)).is_empty());
+}
+
+#[test]
+fn disc18_disc14_disc12_disc04_chain_owns_disc0c_faces() {
+    let records = lattice_with_use(
+        &[
+            (0x18, 2),
+            (0x14, 2),
+            (0x12, 2),
+            (0x10, 1),
+            (0x0e, 2),
+            (0x04, 2),
+        ],
+        0x0c,
+        0x16,
+        0x1a,
+    );
+    assert_body(&records, disc18_disc14_disc12_disc04_face_root_body);
 }
 
 #[test]
