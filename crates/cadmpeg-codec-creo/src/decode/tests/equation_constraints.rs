@@ -120,7 +120,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
 }
 
 #[test]
-fn equation_function_two_emits_radius_dimension_constraint() {
+fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segment_table() {
     let variable =
         |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
             variable_type,
@@ -156,7 +156,7 @@ fn equation_function_two_emits_radius_dimension_constraint() {
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 1,
+            declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
             rows: Vec::new(),

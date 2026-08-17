@@ -66,9 +66,10 @@ fixtures, scores above L1 remain blocked.
   equality graph when their type-five selector has a stored or independently
   reconciled zero value.
 - Function-two type-3/type-0 radius equations transfer as typed radius
-  constraints when the radius key binds to unique emitted arc or circle
-  entities and the complete type-3 dimension agrees with the inline or
-  scalar-equality-resolved equation scalars; solver activity is retained.
+  constraints when the radius key binds to a unique emitted arc or circle
+  entity, including a complete row in an incomplete segment table, and the
+  complete type-3 dimension agrees with the inline or scalar-equality-resolved
+  equation scalars; solver activity is retained.
 - Function-zero equations transfer as typed polar-distance constraints when
   both point loci and finite radial and angular values reconcile. Zero-length
   rows omit the undefined direction, and a reconciled type-3 radius dimension

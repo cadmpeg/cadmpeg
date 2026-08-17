@@ -680,11 +680,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    let Some(segments) = definition
-        .segments
-        .as_ref()
-        .filter(|segments| segments.is_complete())
-    else {
+    let Some(segments) = definition.segments.as_ref() else {
         return Vec::new();
     };
     let Some(dimensions) = definition.dimensions.as_ref() else {
