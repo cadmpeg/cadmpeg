@@ -17,6 +17,9 @@ fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtr
         | DesignExtrudePrologue::ReferenceAware {
             operation: value, ..
         }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
+            operation: value, ..
+        }
         | DesignExtrudePrologue::LegacyShifted {
             operation: value, ..
         },
@@ -77,6 +80,16 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::SymmetricThroughAll => ([3, 0], [4, 4]),
             };
         }
+        DesignExtrudePrologue::ShiftedReferenceAware {
+            extent: value,
+            direction_face_extend_values,
+            side_extent_discriminators,
+            ..
+        } => {
+            assert_eq!(extent, DesignExtrudeExtent::TwoSidedToFaces);
+            *value = extent;
+            (*direction_face_extend_values, *side_extent_discriminators) = ([2, 1], [2, 0]);
+        }
     }
 }
 
@@ -86,6 +99,9 @@ fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bo
             direction_reversed, ..
         }
         | DesignExtrudePrologue::ReferenceAware {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
             direction_reversed, ..
         }
         | DesignExtrudePrologue::LegacyShifted {
@@ -101,6 +117,7 @@ fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bo
 fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart) {
     let Some(
         DesignExtrudePrologue::ReferenceAware { start: value, .. }
+        | DesignExtrudePrologue::ShiftedReferenceAware { start: value, .. }
         | DesignExtrudePrologue::LegacyShifted { start: value, .. },
     ) = scope.extrude_prologue.as_mut()
     else {

@@ -6454,6 +6454,7 @@ pub(crate) fn project_extrude(
             ..
         } => first_side_target_ordinal.map(|target| target.scope_reference_ordinal),
         DesignExtrudePrologue::LegacyDistance { .. }
+        | DesignExtrudePrologue::ShiftedReferenceAware { .. }
         | DesignExtrudePrologue::LegacyShifted { .. } => None,
     };
     let target_shape_groups = scope_groups

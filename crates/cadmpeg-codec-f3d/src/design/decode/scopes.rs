@@ -68,6 +68,7 @@ use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
 use crate::layout::shifted_extrude_prologue as shifted_extrude;
+use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
@@ -7718,6 +7719,14 @@ fn exact_extrude_prologue(
 ) -> Option<DesignExtrudePrologue> {
     exact_current_extrude_prologue(bytes, start, reference_count_at, reference_members)
         .or_else(|| {
+            exact_shifted_reference_aware_extrude_prologue(
+                bytes,
+                start,
+                reference_count_at,
+                reference_members,
+            )
+        })
+        .or_else(|| {
             exact_legacy_shifted_extrude_prologue(
                 bytes,
                 start,
@@ -7795,7 +7804,7 @@ fn exact_compact_shifted_extrude_prologue(
         _ => return None,
     };
     let start_offset = start.checked_add(compact_extrude::START_SUPPORT)?;
-    let start = match bytes.get(start_offset)? {
+    let start_support = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
@@ -7821,7 +7830,7 @@ fn exact_compact_shifted_extrude_prologue(
         direction_reversed_offset: direction_reversed_offset as u64,
         solid_operation,
         solid_operation_offset: solid_operation_offset as u64,
-        start,
+        start: start_support,
         start_offset: start_offset as u64,
     })
 }
@@ -7885,7 +7894,7 @@ fn exact_compact_shifted_extrude_mixed_prologue(
         _ => return None,
     };
     let start_offset = start.checked_add(compact_extrude::START_SUPPORT)?;
-    let start = match bytes.get(start_offset)? {
+    let start_support = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
@@ -7911,7 +7920,7 @@ fn exact_compact_shifted_extrude_mixed_prologue(
         direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
         solid_operation,
         solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
-        start,
+        start: start_support,
         start_offset: u64::try_from(start_offset).ok()?,
     })
 }
@@ -8173,6 +8182,233 @@ fn exact_current_extrude_prologue(
         solid_operation_offset: solid_operation_offset as u64,
         start,
         start_offset: start_offset as u64,
+    })
+}
+
+fn exact_shifted_reference_aware_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+    const FRAME_LENGTH: usize = 538;
+    const CLASS_TAG_OFFSET: usize = 4;
+    const CLASS_TAG_LENGTH: usize = 3;
+    const REFERENCE_MEMBER_COUNT: usize = 13;
+
+    if reference_count_at.checked_sub(start)? != shifted_reference_aware::REFERENCE_COUNT
+        || reference_members.len() != REFERENCE_MEMBER_COUNT
+        || View::u32_le_at(
+            bytes,
+            start.checked_add(shifted_reference_aware::PREFIX_CONSTANT)?,
+        )? != 1
+        || bytes.get(
+            start.checked_add(shifted_reference_aware::ZERO_RUN_3)?
+                ..start.checked_add(shifted_reference_aware::OPERATION)?,
+        )? != [0; 3]
+        || bytes.get(
+            start.checked_add(shifted_reference_aware::ZERO_RUN_3_AFTER_START)?
+                ..start.checked_add(shifted_reference_aware::PROFILE_NORMAL)?,
+        )? != [0; 3]
+    {
+        return None;
+    }
+    let primary_class = bytes.get(
+        start.checked_add(CLASS_TAG_OFFSET)?
+            ..start.checked_add(CLASS_TAG_OFFSET + CLASS_TAG_LENGTH)?,
+    )?;
+    let paired_start = start.checked_add(FRAME_LENGTH)?;
+    let paired_class = bytes.get(
+        paired_start.checked_add(CLASS_TAG_OFFSET)?
+            ..paired_start.checked_add(CLASS_TAG_OFFSET + CLASS_TAG_LENGTH)?,
+    )?;
+    if !((primary_class == b"357" && paired_class == b"258")
+        || (primary_class == b"275" && paired_class == b"262")
+        || (primary_class == b"361" && paired_class == b"262"))
+    {
+        return None;
+    }
+    let operation_offset = start.checked_add(shifted_reference_aware::OPERATION)?;
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let direction_face_extend_offsets = [
+        start.checked_add(shifted_reference_aware::DIRECTION)?,
+        start.checked_add(shifted_reference_aware::FACE_EXTEND)?,
+    ];
+    let direction_face_extend_values = [
+        View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
+        View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
+    ];
+    if direction_face_extend_values != [2, 1] {
+        return None;
+    }
+    let direction_reversed_offset =
+        start.checked_add(shifted_reference_aware::DIRECTION_REVERSED)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let solid_operation_offset = start.checked_add(shifted_reference_aware::GEOMETRY_KIND)?;
+    let solid_operation = match bytes.get(solid_operation_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let start_offset = start.checked_add(shifted_reference_aware::START_SUPPORT)?;
+    let start_support = match bytes.get(start_offset)? {
+        0 => DesignExtrudeStart::ProfilePlane,
+        1 => DesignExtrudeStart::OffsetProfilePlane,
+        2 => DesignExtrudeStart::FromFace,
+        _ => return None,
+    };
+    let profile_normal_offset = start.checked_add(shifted_reference_aware::PROFILE_NORMAL)?;
+    let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
+    let profile_normal_squared = profile_normal
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>();
+    if profile_normal
+        .iter()
+        .any(|component| !component.is_finite())
+        || (profile_normal_squared - 1.0).abs() > PROFILE_NORMAL_UNIT_EPS
+    {
+        return None;
+    }
+
+    let mut slot_offset = start.checked_add(shifted_reference_aware::REFERENCE_SLOTS)?;
+    for expected_present in [false, false, false, true, true, true, true] {
+        let present = match bytes.get(slot_offset)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        if present != expected_present {
+            return None;
+        }
+        if present {
+            let record_index = marked_record_reference(bytes, slot_offset)?;
+            if !reference_members.contains(&record_index) {
+                return None;
+            }
+            slot_offset = slot_offset.checked_add(11)?;
+        } else {
+            slot_offset = slot_offset.checked_add(1)?;
+        }
+    }
+    let first_side_extent_offset = start.checked_add(shifted_reference_aware::FIRST_SIDE_EXTENT)?;
+    if slot_offset != first_side_extent_offset {
+        return None;
+    }
+    let second_side_extent_offset = reference_count_at.checked_sub(4)?;
+    let side_extent_discriminators = [
+        View::u32_le_at(bytes, first_side_extent_offset)?,
+        View::u32_le_at(bytes, second_side_extent_offset)?,
+    ];
+    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
+    if side_extent_discriminators != [2, 0] {
+        return None;
+    }
+    let tail_references = [
+        marked_record_reference(
+            bytes,
+            start.checked_add(shifted_reference_aware::FIRST_SIDE_OWNER_REFERENCE)?,
+        )?,
+        marked_record_reference(
+            bytes,
+            start.checked_add(shifted_reference_aware::SECOND_SIDE_OFFSET_REFERENCE)?,
+        )?,
+        marked_record_reference(
+            bytes,
+            start.checked_add(shifted_reference_aware::SECOND_SIDE_TAPER_REFERENCE)?,
+        )?,
+        marked_record_reference(
+            bytes,
+            start.checked_add(shifted_reference_aware::PROFILE_GROUP_REFERENCE)?,
+        )?,
+        marked_record_reference(
+            bytes,
+            start.checked_add(shifted_reference_aware::BODY_GROUP_REFERENCE)?,
+        )?,
+    ];
+    let tail_references_valid = tail_references
+        .iter()
+        .all(|record_index| reference_members.contains(record_index));
+    let tail_fixed_valid = bytes
+        .get(
+            start + shifted_reference_aware::FIRST_SIDE_PADDING
+                ..start + shifted_reference_aware::FIRST_SIDE_DISCRIMINANT,
+        )
+        .is_some_and(|value| value == [0; 4])
+        && View::u32_le_at(
+            bytes,
+            start + shifted_reference_aware::FIRST_SIDE_DISCRIMINANT,
+        ) == Some(1)
+        && View::u32_le_at(bytes, start + shifted_reference_aware::FIRST_SIDE_PAYLOAD) == Some(2)
+        && bytes.get(start + shifted_reference_aware::FIRST_SIDE_SEPARATOR) == Some(&0)
+        && bytes
+            .get(
+                start + shifted_reference_aware::SECOND_SIDE_OFFSET_PADDING
+                    ..start + shifted_reference_aware::SECOND_SIDE_TAPER_REFERENCE,
+            )
+            .is_some_and(|value| value == [0; 4])
+        && bytes
+            .get(
+                start + shifted_reference_aware::SECOND_SIDE_TAPER_PADDING
+                    ..start + shifted_reference_aware::PROFILE_GROUP_COUNT,
+            )
+            .is_some_and(|value| value == [0; 5])
+        && View::u32_le_at(bytes, start + shifted_reference_aware::PROFILE_GROUP_COUNT) == Some(1)
+        && bytes
+            .get(
+                start + shifted_reference_aware::PROFILE_GROUP_PADDING
+                    ..start + shifted_reference_aware::BODY_GROUP_COUNT,
+            )
+            .is_some_and(|value| value == [0; 8])
+        && View::u32_le_at(bytes, start + shifted_reference_aware::BODY_GROUP_COUNT) == Some(1);
+    if !tail_references_valid || !tail_fixed_valid {
+        return None;
+    }
+    let (guid, guid_end) = lp_utf16_bounded(
+        bytes,
+        start.checked_add(shifted_reference_aware::BODY_GROUP_GUID_PREFIX)?,
+        36..=36,
+    )?;
+    if !is_guid_relaxed(&guid)
+        || guid_end
+            != start
+                .checked_add(shifted_reference_aware::SECOND_SIDE_EXTENT)?
+                .checked_add(1)?
+        || bytes.get(guid_end..reference_count_at)? != [0; 3]
+    {
+        return None;
+    }
+    Some(DesignExtrudePrologue::ShiftedReferenceAware {
+        operation,
+        operation_offset: u64::try_from(operation_offset).ok()?,
+        direction_face_extend_values,
+        side_extent_discriminators,
+        side_extent_discriminator_offsets: [
+            u64::try_from(first_side_extent_offset).ok()?,
+            u64::try_from(second_side_extent_offset).ok()?,
+        ],
+        extent,
+        direction_face_extend_offsets: [
+            u64::try_from(direction_face_extend_offsets[0]).ok()?,
+            u64::try_from(direction_face_extend_offsets[1]).ok()?,
+        ],
+        direction_reversed,
+        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        solid_operation,
+        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        start: start_support,
+        start_offset: u64::try_from(start_offset).ok()?,
     })
 }
 

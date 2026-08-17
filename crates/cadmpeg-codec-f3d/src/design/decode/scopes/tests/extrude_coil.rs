@@ -1131,6 +1131,127 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
 }
 
 #[test]
+fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
+    const REFERENCE_COUNT_OFFSET: usize = 292;
+    const FRAME_LENGTH: usize = 538;
+    const RECORD_INDEX: u32 = 12;
+    const REFERENCE_MEMBERS: [u32; 13] = [11, 22, 33, 44, 55, 66, 77, 88, 99, 111, 122, 133, 144];
+
+    let make_bytes = |first_side_discriminant: u32| {
+        let mut bytes = vec![0; REFERENCE_COUNT_OFFSET];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"357");
+        bytes[7..11].copy_from_slice(&RECORD_INDEX.to_le_bytes());
+        bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+        bytes[27..31].copy_from_slice(&1u32.to_le_bytes());
+        bytes[31..35].copy_from_slice(&2u32.to_le_bytes());
+        bytes[35..39].copy_from_slice(&1u32.to_le_bytes());
+        bytes[39] = 0;
+        bytes[40] = 1;
+        bytes[41] = 0;
+        bytes[61..69].copy_from_slice(&1.0f64.to_le_bytes());
+
+        let put_reference = |bytes: &mut [u8], offset: usize, record_index: u32| {
+            bytes[offset] = 1;
+            bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+        };
+        for (offset, record_index) in [(72, 55), (83, 66), (94, 22), (105, 111)] {
+            put_reference(&mut bytes, offset, record_index);
+        }
+        bytes[116..120].copy_from_slice(&2u32.to_le_bytes());
+        put_reference(&mut bytes, 120, 11);
+        bytes[135..139].copy_from_slice(&1u32.to_le_bytes());
+        bytes[139..143].copy_from_slice(&first_side_discriminant.to_le_bytes());
+        put_reference(&mut bytes, 144, 33);
+        put_reference(&mut bytes, 159, 44);
+        bytes[175..179].copy_from_slice(&1u32.to_le_bytes());
+        put_reference(&mut bytes, 179, 88);
+        bytes[198..202].copy_from_slice(&1u32.to_le_bytes());
+        put_reference(&mut bytes, 202, 66);
+        let mut guid = Vec::new();
+        lp_utf16(&mut guid, "00000000-0000-0000-0000-000000000000");
+        bytes[213..289].copy_from_slice(&guid);
+
+        bytes.extend_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+        for record_index in REFERENCE_MEMBERS {
+            let offset = bytes.len();
+            bytes.resize(offset + 11, 0);
+            put_reference(&mut bytes, offset, record_index);
+        }
+        bytes.extend_from_slice(&5u32.to_le_bytes());
+        lp_utf16(&mut bytes, "Extrude");
+        let mut tail = [0; 77];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"258");
+        bytes.extend_from_slice(&RECORD_INDEX.to_le_bytes());
+        assert_eq!(bytes.len(), FRAME_LENGTH + 11);
+        bytes
+    };
+
+    let parse = |bytes: &[u8]| {
+        let header = DesignRecordHeader {
+            id: "generated:scope-header#0".into(),
+            record_index: RECORD_INDEX,
+            class_tag: "357".into(),
+            byte_offset: 0,
+        };
+        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
+            .expect("shifted reference-aware Extrude scope")
+    };
+
+    let scope = parse(&make_bytes(2));
+    assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
+    assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
+    assert_eq!(
+        scope.extrude_prologue,
+        Some(DesignExtrudePrologue::ShiftedReferenceAware {
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 27,
+            direction_face_extend_values: [2, 1],
+            side_extent_discriminators: [2, 0],
+            side_extent_discriminator_offsets: [116, 288],
+            extent: DesignExtrudeExtent::TwoSidedToFaces,
+            direction_face_extend_offsets: [31, 35],
+            direction_reversed: false,
+            direction_reversed_offset: 39,
+            solid_operation: true,
+            solid_operation_offset: 40,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 41,
+        })
+    );
+
+    let mut invalid_tail = make_bytes(2);
+    invalid_tail[135..139].copy_from_slice(&0u32.to_le_bytes());
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: RECORD_INDEX,
+        class_tag: "357".into(),
+        byte_offset: 0,
+    };
+    let invalid_scope = parse_parameter_scope(
+        &invalid_tail,
+        &IndexedRecordOffsets::build(&invalid_tail),
+        &header,
+    )
+    .expect("scope envelope remains parseable");
+    assert!(invalid_scope.extrude_prologue.is_none());
+
+    let mut invalid_class = make_bytes(2);
+    invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
+    let invalid_scope = parse_parameter_scope(
+        &invalid_class,
+        &IndexedRecordOffsets::build(&invalid_class),
+        &header,
+    )
+    .expect("scope envelope remains parseable");
+    assert!(invalid_scope.extrude_prologue.is_none());
+}
+
+#[test]
 fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
     let scope = |frame_length: usize, operation: u32| {
         let reference_members: [u32; 10] =

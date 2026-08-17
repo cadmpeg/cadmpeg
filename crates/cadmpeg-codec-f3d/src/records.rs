@@ -714,6 +714,39 @@ pub enum DesignExtrudePrologue {
         /// Byte offset of `start`.
         start_offset: u64,
     },
+    /// Shifted reference-aware two-sided face-target layout.
+    ShiftedReferenceAware {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of `operation`.
+        operation_offset: u64,
+        /// Raw travel-direction and face-extension values.
+        #[serde(alias = "extent_discriminators")]
+        direction_face_extend_values: [u32; 2],
+        /// Per-side extent discriminators stored in the fixed legacy tail.
+        #[serde(default)]
+        side_extent_discriminators: [u32; 2],
+        /// Byte offsets parallel to `side_extent_discriminators`.
+        #[serde(default)]
+        side_extent_discriminator_offsets: [u64; 2],
+        /// Decoded extent form.
+        extent: DesignExtrudeExtent,
+        /// Byte offsets parallel to `direction_face_extend_values`.
+        #[serde(alias = "extent_discriminator_offsets")]
+        direction_face_extend_offsets: [u64; 2],
+        /// Direction-reversal state.
+        direction_reversed: bool,
+        /// Byte offset of `direction_reversed`.
+        direction_reversed_offset: u64,
+        /// Whether the operation creates solid rather than sheet geometry.
+        solid_operation: bool,
+        /// Byte offset of `solid_operation`.
+        solid_operation_offset: u64,
+        /// Starting support.
+        start: DesignExtrudeStart,
+        /// Byte offset of `start`.
+        start_offset: u64,
+    },
     /// Shifted layout without the reference-aware prefix.
     LegacyShifted {
         /// Optional marker immediately before the operation fields.
@@ -762,6 +795,7 @@ impl DesignExtrudePrologue {
         match self {
             Self::LegacyDistance { operation, .. }
             | Self::ReferenceAware { operation, .. }
+            | Self::ShiftedReferenceAware { operation, .. }
             | Self::LegacyShifted { operation, .. } => operation,
         }
     }
@@ -774,6 +808,7 @@ impl DesignExtrudePrologue {
             }
             Self::LegacyDistance { .. } => None,
             Self::ReferenceAware { extent, .. } => Some(extent),
+            Self::ShiftedReferenceAware { extent, .. } => Some(extent),
             Self::LegacyShifted { extent, .. } => extent,
         }
     }
@@ -785,6 +820,9 @@ impl DesignExtrudePrologue {
                 direction_reversed, ..
             }
             | Self::ReferenceAware {
+                direction_reversed, ..
+            }
+            | Self::ShiftedReferenceAware {
                 direction_reversed, ..
             }
             | Self::LegacyShifted {
@@ -800,6 +838,9 @@ impl DesignExtrudePrologue {
             Self::ReferenceAware {
                 solid_operation, ..
             }
+            | Self::ShiftedReferenceAware {
+                solid_operation, ..
+            }
             | Self::LegacyShifted {
                 solid_operation, ..
             } => solid_operation,
@@ -810,7 +851,9 @@ impl DesignExtrudePrologue {
     pub fn start(self) -> DesignExtrudeStart {
         match self {
             Self::LegacyDistance { .. } => DesignExtrudeStart::ProfilePlane,
-            Self::ReferenceAware { start, .. } | Self::LegacyShifted { start, .. } => start,
+            Self::ReferenceAware { start, .. }
+            | Self::ShiftedReferenceAware { start, .. }
+            | Self::LegacyShifted { start, .. } => start,
         }
     }
 }

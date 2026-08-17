@@ -3175,6 +3175,43 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 (
                     true,
+                    Some(records::DesignExtrudePrologue::ShiftedReferenceAware {
+                        operation_offset,
+                        direction_face_extend_values,
+                        side_extent_discriminators,
+                        side_extent_discriminator_offsets,
+                        extent,
+                        direction_face_extend_offsets,
+                        direction_reversed_offset,
+                        solid_operation_offset,
+                        start_offset,
+                        ..
+                    }),
+                ) => {
+                    scope.frame_length == 538
+                        && scope.paired_byte_offset == scope.byte_offset.saturating_add(538)
+                        && scope.reference_count_offset == scope.byte_offset.saturating_add(292)
+                        && scope.reference_members.len() == 13
+                        && operation_offset == scope.byte_offset.saturating_add(27)
+                        && direction_face_extend_values == [2, 1]
+                        && side_extent_discriminators == [2, 0]
+                        && extent == records::DesignExtrudeExtent::TwoSidedToFaces
+                        && side_extent_discriminator_offsets
+                            == [
+                                scope.byte_offset.saturating_add(116),
+                                scope.reference_count_offset.saturating_sub(4),
+                            ]
+                        && direction_face_extend_offsets
+                            == [
+                                scope.byte_offset.saturating_add(31),
+                                scope.byte_offset.saturating_add(35),
+                            ]
+                        && direction_reversed_offset == scope.byte_offset.saturating_add(39)
+                        && solid_operation_offset == scope.byte_offset.saturating_add(40)
+                        && start_offset == scope.byte_offset.saturating_add(41)
+                }
+                (
+                    true,
                     Some(records::DesignExtrudePrologue::ReferenceAware {
                         reference,
                         operation_offset,

@@ -5986,6 +5986,234 @@ source = "spec"
 anchor = "the start-support byte at offset 41"
 
 [[record]]
+name = "shifted_reference_aware_extrude_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The shifted reference-aware two-sided face-target `Extrude` form has a 538-byte frame"
+size = 296
+note = "Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the 13-entry ordered reference table and the scope tail follow it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding scope envelope are outside this fixed prefix."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "stores u32 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_3"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "`+24..+26`"
+
+[[record.field]]
+name = "operation"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "result operation: `1 = join`"
+
+[[record.field]]
+name = "direction"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "travel direction `2`"
+value = 2
+
+[[record.field]]
+name = "face_extend"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "face-extend option `1`"
+value = 1
+
+[[record.field]]
+name = "direction_reversed"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "direction reversal"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "geometry kind"
+
+[[record.field]]
+name = "start_support"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "start support"
+
+[[record.field]]
+name = "zero_run_3_after_start"
+offset = 42
+type = "bytes[3]"
+source = "spec"
+anchor = "`+42..+44`"
+
+[[record.field]]
+name = "profile_normal"
+offset = 45
+type = "f64[3]"
+source = "spec"
+anchor = "finite unit profile normal"
+
+[[record.field]]
+name = "reference_slots"
+offset = 69
+type = "bytes[47]"
+source = "spec"
+anchor = "three absent and four present nullable slots"
+
+[[record.field]]
+name = "first_side_extent"
+offset = 116
+type = "u32"
+source = "spec"
+anchor = "first-side extent `2`"
+value = 2
+
+[[record.field]]
+name = "first_side_owner_reference"
+offset = 120
+type = "bytes[11]"
+source = "spec"
+anchor = "`Side1Offset` owner reference"
+
+[[record.field]]
+name = "first_side_padding"
+offset = 131
+type = "bytes[4]"
+source = "spec"
+anchor = "`+131..+134`"
+
+[[record.field]]
+name = "first_side_discriminant"
+offset = 135
+type = "u32"
+source = "spec"
+anchor = "`+135`"
+value = 1
+
+[[record.field]]
+name = "first_side_payload"
+offset = 139
+type = "u32"
+source = "spec"
+anchor = "`+139`"
+value = 2
+
+[[record.field]]
+name = "first_side_separator"
+offset = 143
+type = "u8"
+source = "spec"
+anchor = "`+143`"
+value = 0
+
+[[record.field]]
+name = "second_side_offset_reference"
+offset = 144
+type = "bytes[11]"
+source = "spec"
+anchor = "`Side2Offset` owner reference"
+
+[[record.field]]
+name = "second_side_offset_padding"
+offset = 155
+type = "bytes[4]"
+source = "spec"
+anchor = "`+155..+158`"
+
+[[record.field]]
+name = "second_side_taper_reference"
+offset = 159
+type = "bytes[11]"
+source = "spec"
+anchor = "`Side2TaperAngle` owner reference"
+
+[[record.field]]
+name = "second_side_taper_padding"
+offset = 170
+type = "bytes[5]"
+source = "spec"
+anchor = "`+170..+174`"
+
+[[record.field]]
+name = "profile_group_count"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "`+175`"
+value = 1
+
+[[record.field]]
+name = "profile_group_reference"
+offset = 179
+type = "bytes[11]"
+source = "spec"
+anchor = "profile construction-group reference"
+
+[[record.field]]
+name = "profile_group_padding"
+offset = 190
+type = "bytes[8]"
+source = "spec"
+anchor = "`+190..+197`"
+
+[[record.field]]
+name = "body_group_count"
+offset = 198
+type = "u32"
+source = "spec"
+anchor = "`+198`"
+value = 1
+
+[[record.field]]
+name = "body_group_reference"
+offset = 202
+type = "bytes[11]"
+source = "spec"
+anchor = "body construction-group reference"
+
+[[record.field]]
+name = "body_group_guid_prefix"
+offset = 213
+type = "bytes[75]"
+source = "spec"
+anchor = "UTF-16 code-unit count `36`"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 288
+type = "u32"
+source = "spec"
+anchor = "second-side extent `0`"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 292
+type = "u32"
+source = "spec"
+anchor = "`+292`"
+value = 13
+
+[[record]]
 name = "compact_shifted_extrude_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

@@ -1855,6 +1855,51 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
 
+## `shifted_reference_aware_extrude_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 296 B
+
+Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the 13-entry ordered reference table and the scope tail follow it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | stores u32 `1` · value `1` |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | `+24..+26` |
+| 27 | 4 | `operation` | `u32` | little | spec | result operation: `1 = join` |
+| 31 | 4 | `direction` | `u32` | little | spec | travel direction `2` · value `2` |
+| 35 | 4 | `face_extend` | `u32` | little | spec | face-extend option `1` · value `1` |
+| 39 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal |
+| 40 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind |
+| 41 | 1 | `start_support` | `u8` | little | spec | start support |
+| 42 | 3 | `zero_run_3_after_start` | `bytes[3]` | little | spec | `+42..+44` |
+| 45 | 24 | `profile_normal` | `f64[3]` | little | spec | finite unit profile normal |
+| 69 | 47 | `reference_slots` | `bytes[47]` | little | spec | three absent and four present nullable slots |
+| 116 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent `2` · value `2` |
+| 120 | 11 | `first_side_owner_reference` | `bytes[11]` | little | spec | `Side1Offset` owner reference |
+| 131 | 4 | `first_side_padding` | `bytes[4]` | little | spec | `+131..+134` |
+| 135 | 4 | `first_side_discriminant` | `u32` | little | spec | `+135` · value `1` |
+| 139 | 4 | `first_side_payload` | `u32` | little | spec | `+139` · value `2` |
+| 143 | 1 | `first_side_separator` | `u8` | little | spec | `+143` · value `0` |
+| 144 | 11 | `second_side_offset_reference` | `bytes[11]` | little | spec | `Side2Offset` owner reference |
+| 155 | 4 | `second_side_offset_padding` | `bytes[4]` | little | spec | `+155..+158` |
+| 159 | 11 | `second_side_taper_reference` | `bytes[11]` | little | spec | `Side2TaperAngle` owner reference |
+| 170 | 5 | `second_side_taper_padding` | `bytes[5]` | little | spec | `+170..+174` |
+| 175 | 4 | `profile_group_count` | `u32` | little | spec | `+175` · value `1` |
+| 179 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | profile construction-group reference |
+| 190 | 8 | `profile_group_padding` | `bytes[8]` | little | spec | `+190..+197` |
+| 198 | 4 | `body_group_count` | `u32` | little | spec | `+198` · value `1` |
+| 202 | 11 | `body_group_reference` | `bytes[11]` | little | spec | body construction-group reference |
+| 213 | 75 | `body_group_guid_prefix` | `bytes[75]` | little | spec | UTF-16 code-unit count `36` |
+| 288 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `0` · value `0` |
+| 292 | 4 | `reference_count` | `u32` | little | spec | `+292` · value `13` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding scope envelope are outside this fixed prefix.
+
 ## `compact_shifted_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 41 B
