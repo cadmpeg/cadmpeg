@@ -76,32 +76,6 @@ emits no ambiguity loss. This is a partial closure.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-01 — Display-attribute pointer resolution
-
-**Question.** When a Directory display field is a negative pointer, when may
-the native display arena expose a typed definition identity?
-
-**Known.** `native.rs` creates a `NativeDisplayAttributes` record for every
-Directory entry and constructs `line_font_definition`, `level_definition`, and
-`color_definition` identities directly from the signed fields. `graph.rs`
-separately resolves the exact target types and emits `graph.pointer-unresolved`
-for a missing or wrong target. The direct native projection does not use that
-resolution result.
-
-**Need.** A typed native identity must resolve to an existing definition of the
-required type and form, or the field must remain raw and carry an attributed
-loss. A consumer must not receive a dead typed link.
-
-**Conflict.** The native arena can expose `iges:presentation:*#D<n>` for a
-missing or wrong target while the reference graph says that the pointer is
-unresolved. Native raw retention does not validate the typed identity.
-
-**Note.** A Directory entry with `line_font = -99` and no Type 304 D99
-produces a non-null typed native path with no corresponding line-font record.
-The same failure exists for level and color. The broad closure in
-`6f8556118971` did not cover this direct projection path. This is a partial
-closure.
-
 ## 4. Geometry carriers and tolerances
 
 ## 5. Surfaces and topology

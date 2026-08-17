@@ -135,6 +135,74 @@ fn decode_applies_standard_body_color_and_face_color_override() {
 }
 
 #[test]
+fn decode_keeps_raw_display_pointers_when_definition_targets_do_not_resolve() {
+    let bytes = owned_test_file_with_directory_fields(
+        &[
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "SOURCE".into(),
+                status: "00000000",
+                parameters: "116,1,2,3;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 304,
+                form: 99,
+                label: "BADFONT".into(),
+                status: "00000000",
+                parameters: "304;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "FILLER".into(),
+                status: "00000000",
+                parameters: "116,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 314,
+                form: 9,
+                label: "BADCOLOR".into(),
+                status: "00000000",
+                parameters: "314,0,0,0;".into(),
+            },
+        ],
+        &[(1, -7)],
+        &[(1, -3)],
+        &[(1, -99)],
+        &[],
+        &[],
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let display = result.ir().native.namespace("iges").unwrap().arenas["display_attributes"]
+        .iter()
+        .find(|record| record.id() == "iges:presentation:display-attributes#D1")
+        .unwrap();
+    assert_eq!(display.fields()["line_font_number"], -3);
+    assert!(display.fields()["line_font_definition"].is_null());
+    assert_eq!(display.fields()["level_number"], -99);
+    assert!(display.fields()["level_definition"].is_null());
+    assert_eq!(display.fields()["color_number"], -7);
+    assert!(display.fields()["color_definition"].is_null());
+
+    let pointer_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::IgesLossCode::PointerUnresolved.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(pointer_losses.len(), 3);
+    assert!(pointer_losses.iter().all(|loss| {
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref())
+            == Some("D1")
+    }));
+}
+
+#[test]
 fn decode_types_template_and_visible_blank_line_fonts() {
     let result = IgesCodec
         .decode(

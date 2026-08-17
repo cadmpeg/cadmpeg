@@ -7,7 +7,7 @@ use crate::entities::annotation::{parameterized_curve_type, section_boundary_typ
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::array_base_type;
 use crate::global::{Global, RealPrecision};
-use crate::graph::{ParameterResolver, ReferenceEdge};
+use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -127,6 +127,24 @@ struct NativeDisplayAttributes {
     line_weight_mm: Option<f64>,
     color_number: i64,
     color_definition: Option<String>,
+}
+
+fn resolved_display_definition(
+    references: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    source_sequence: u32,
+    pointer: i64,
+    kind: ReferenceKind,
+    arena: &str,
+) -> Option<String> {
+    (pointer < 0)
+        .then(|| {
+            references
+                .get(&source_sequence)?
+                .iter()
+                .find_map(|reference| reference.resolved_target_sequence_for(kind))
+        })
+        .flatten()
+        .map(|sequence| format!("iges:presentation:{arena}#D{sequence}"))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1722,25 +1740,32 @@ pub(crate) fn store(
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             visible: entry.status.blank == 0,
             line_font_number: entry.line_font,
-            line_font_definition: (entry.line_font < 0).then(|| {
-                format!(
-                    "iges:presentation:line-font#D{}",
-                    entry.line_font.unsigned_abs()
-                )
-            }),
+            line_font_definition: resolved_display_definition(
+                references,
+                entry.sequence,
+                entry.line_font,
+                ReferenceKind::LineFont,
+                "line-font",
+            ),
             level_number: entry.level,
-            level_definition: (entry.level < 0).then(|| {
-                format!(
-                    "iges:presentation:definition-levels#D{}",
-                    entry.level.unsigned_abs()
-                )
-            }),
+            level_definition: resolved_display_definition(
+                references,
+                entry.sequence,
+                entry.level,
+                ReferenceKind::Level,
+                "definition-levels",
+            ),
             view: entry.view,
             line_weight_number: entry.line_weight,
             line_weight_mm: global.line_weight_mm(entry.line_weight),
             color_number: entry.color,
-            color_definition: (entry.color < 0)
-                .then(|| format!("iges:presentation:color#D{}", entry.color.unsigned_abs())),
+            color_definition: resolved_display_definition(
+                references,
+                entry.sequence,
+                entry.color,
+                ReferenceKind::Color,
+                "color",
+            ),
         })
         .collect::<Vec<_>>();
     let line_fonts = directory
