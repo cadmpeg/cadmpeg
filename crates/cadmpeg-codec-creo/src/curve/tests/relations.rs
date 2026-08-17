@@ -139,7 +139,9 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     assert_eq!(evaluate_expression("tan(90)", &values), None);
     assert_eq!(evaluate_expression("tan(-90)", &values), None);
     assert_eq!(evaluate_expression("atan2(0,0)", &values), None);
-    assert_eq!(evaluate_expression("sinh(86)", &values), None);
+    let sinh_86 = evaluate_expression("sinh(86)", &values).expect("finite hyperbolic result");
+    assert!(sinh_86.is_finite() && sinh_86 > 1.0e30);
+    assert_eq!(evaluate_expression("sinh(1000)", &values), None);
     assert_eq!(evaluate_expression("bound(1,2,1)", &values), None);
     assert_eq!(evaluate_expression("sin()", &values), None);
     assert_eq!(evaluate_expression("1<2<3", &values), None);

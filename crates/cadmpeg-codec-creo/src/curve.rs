@@ -4165,9 +4165,9 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
         (CreoMathFunction::Acos, [x]) => x.acos().to_degrees(),
         (CreoMathFunction::Atan, [x]) => x.atan().to_degrees(),
         (CreoMathFunction::Atan2, [y, x]) if *x != 0.0 || *y != 0.0 => y.atan2(*x).to_degrees(),
-        (CreoMathFunction::Sinh, [x]) if x.abs() <= 85.0 => x.sinh(),
-        (CreoMathFunction::Cosh, [x]) if x.abs() <= 85.0 => x.cosh(),
-        (CreoMathFunction::Tanh, [x]) if x.abs() <= 85.0 => x.tanh(),
+        (CreoMathFunction::Sinh, [x]) => x.sinh(),
+        (CreoMathFunction::Cosh, [x]) => x.cosh(),
+        (CreoMathFunction::Tanh, [x]) => x.tanh(),
         (CreoMathFunction::Sign, [x, y]) => {
             if *y < 0.0 {
                 -x.abs()
