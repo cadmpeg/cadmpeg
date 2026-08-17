@@ -66,14 +66,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** The neutral model still needs one edge identity per operand for standard recipes whose reference, incidence, cardinality, transition, or complete compact-group proof does not resolve the candidate. Other alternate recipe tails still require their identity rules.
 
-### DR-16. Extrude face-recipe candidate discriminator
-
-**Question.** Which field selects one active B-rep face candidate when two rules both fail?
-
-**Known.** `f3d.md` §3.1 "An `Extrude` face-group member" gives the two rules that work. The first rule applies when every effective active candidate has a support mapping and every mapping names the same non-empty predecessor-face set. The second rule uses a counted-boundary predecessor set. A nonempty current-BREP candidate lane and a complete face recipe do not replace an effective preceding-topology identity: candidates absent from that topology have no support context and do not select a profile face.
-
-**Need.** The neutral model needs one face per recipe member when both predecessor-topology rules fail. The source-side identity that distinguishes those candidates is not admitted.
-
 ### DR-17. Extrude selection unknowns
 
 **Question.** We must find four answers:

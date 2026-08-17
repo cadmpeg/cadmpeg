@@ -4599,6 +4599,10 @@ pub struct DesignFaceOperand {
     /// or exact feature transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resolved_face_slots: Vec<i64>,
+    /// Current active-BREP face identity proven by a legacy Extrude recipe
+    /// when no preceding historical slot exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_active_face: Option<FaceId>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.

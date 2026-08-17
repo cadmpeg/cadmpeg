@@ -843,6 +843,9 @@ fn is_split_face_context_member(operand: &DesignFaceOperand) -> bool {
 }
 
 fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+    if let Some(face) = &operand.resolved_active_face {
+        return Some(vec![face.clone()]);
+    }
     if !operand.resolved_face_slots.is_empty() {
         let active_candidates = operand
             .candidate_faces
@@ -973,6 +976,46 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
             .and_then(|boundaries| boundary_edge_count(&boundaries));
     (operand.recipe_nodes.len() == header_value || boundary_edge_count == Some(header_value))
         .then_some(header_value)
+}
+
+/// Return the first result-face lane of a legacy bounded-face recipe.
+///
+/// Older Extrude envelopes do not repeat the recipe's own Design reference in
+/// the aggregate candidate lane. Their first persistent recipe reference is
+/// still the result-face lane. It is admitted here only when the counted
+/// envelope and node run are complete, the operand has no alternate or
+/// unreferenced lane, and any aggregate candidate lane equals that first lane;
+/// otherwise the ordinary candidate and support rules remain authoritative.
+pub(crate) fn legacy_face_recipe_reference_candidates(
+    operand: &DesignFaceOperand,
+) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+        || !matches!(
+            crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
+            Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. })
+        )
+        || operand.recipe_nodes.is_empty()
+        || operand.recipe_node_offsets.len() != operand.recipe_nodes.len()
+        || !operand.unreferenced_candidate_faces.is_empty()
+        || !operand.alternate_selector_candidate_faces.is_empty()
+    {
+        return None;
+    }
+    let reference = operand.recipe_references.first()?;
+    let mut candidates = if reference.candidate_faces.is_empty() {
+        reference.alternate_selector_faces.clone()
+    } else {
+        reference.candidate_faces.clone()
+    };
+    candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    candidates.dedup();
+    if !operand.candidate_faces.is_empty()
+        && operand.candidate_faces.iter().collect::<HashSet<_>>()
+            != candidates.iter().collect::<HashSet<_>>()
+    {
+        return None;
+    }
+    (!candidates.is_empty()).then_some(candidates)
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
@@ -1681,6 +1724,15 @@ mod tests {
                 native: group.id.clone(),
             })
         );
+        operand.resolved_active_face = Some(FaceId("f3d:brep/legacy/entity#30".into()));
+        assert_eq!(
+            resolved_face_group(&group, std::slice::from_ref(&operand)),
+            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+                faces: vec![FaceId("f3d:brep/legacy/entity#30".into())],
+                native: group.id.clone(),
+            })
+        );
+        operand.resolved_active_face = None;
 
         operand.candidate_faces.clear();
         operand.recipe_references = vec![
@@ -1688,12 +1740,22 @@ mod tests {
             reference(20, "selected-b", 201),
             reference(30, "context", 202),
         ];
+        operand.candidate_faces = vec![face(10)];
+        assert_eq!(
+            legacy_face_recipe_reference_candidates(&operand),
+            Some(vec![face(10)])
+        );
+        operand.candidate_faces.clear();
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()]),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
             })
+        );
+        assert_eq!(
+            legacy_face_recipe_reference_candidates(&operand),
+            Some(vec![face(10)])
         );
         operand.recipe_references.pop();
         operand.recipe_references[0]

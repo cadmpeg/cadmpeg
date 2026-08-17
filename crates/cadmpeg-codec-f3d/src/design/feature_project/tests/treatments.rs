@@ -176,6 +176,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: vec![282],
+        resolved_active_face: None,
         next_record_index: record_index + 4,
         next_byte_offset: 1411,
     };

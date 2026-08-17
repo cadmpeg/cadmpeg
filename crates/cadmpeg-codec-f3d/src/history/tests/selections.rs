@@ -1980,10 +1980,10 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
             changed_preceding_face_slots: vec![50],
         }],
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 14,
         next_byte_offset: 400,
     };
-
     bind_edge_identity_bounded_face_rules(&mut identities, &[face.clone()]);
     assert_eq!(identities[0].resolved_edge_slots, [8, 7]);
     assert_eq!(

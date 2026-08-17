@@ -1250,6 +1250,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1500,
     };
@@ -1426,6 +1427,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1_500,
     };
@@ -1700,6 +1702,60 @@ fn historical_brep_source_qualifies_state_local_candidates() {
         Some("example.smbh")
     );
     assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
+}
+
+#[test]
+fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let source_face = |source: &str, slot| FaceId(format!("f3d:brep/{source}/entity#{slot}"));
+    let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &active_candidates,
+            &AsmHistoricalTopology::default(),
+            &HashSet::new(),
+            Some("old"),
+        ),
+        Some(LegacyFaceResolution::Active(source_face("old", 10)))
+    );
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &active_candidates,
+            &AsmHistoricalTopology::default(),
+            &HashSet::new(),
+            Some("missing"),
+        ),
+        None
+    );
+
+    let historical_candidates = vec![FaceId("f3d:brep:entity#20".into()), source_face("new", 21)];
+    let topology = AsmHistoricalTopology {
+        faces: vec![20, 21],
+        ..AsmHistoricalTopology::default()
+    };
+    let mut changed = HashSet::new();
+    changed.insert(21);
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &historical_candidates,
+            &topology,
+            &changed,
+            Some("new"),
+        ),
+        Some(LegacyFaceResolution::Historical(21))
+    );
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &[FaceId("f3d:brep:entity#20".into())],
+            &topology,
+            &changed,
+            None,
+        ),
+        Some(LegacyFaceResolution::Historical(20))
+    );
 }
 
 #[test]

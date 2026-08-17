@@ -4191,6 +4191,7 @@ pub(crate) fn parse_face_operand(
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index,
         next_byte_offset,
     })

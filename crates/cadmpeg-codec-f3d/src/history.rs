@@ -3220,6 +3220,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand.changed_candidate_faces.clear();
         operand.historical_support_contexts.clear();
         operand.resolved_face_slots.clear();
+        operand.resolved_active_face = None;
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -3277,6 +3278,24 @@ pub(crate) fn bind_face_operand_history_candidates(
         .then(|| grouped_reference_face_candidate(operand, topology, &changed_faces))
         .flatten()
         .map(|face| vec![face]);
+        let legacy_face_candidates = (feature_family
+            == Some(crate::design::DesignFeatureFamily::Extrude))
+        .then(|| {
+            let group_record_index = operand.group_record_index?;
+            let mut groups = operand_groups.iter().filter(|group| {
+                crate::ids::native_stream(&group.id) == stream
+                    && group.scope_record_index == scope.record_index
+                    && group.record_index == group_record_index
+                    && group.extrude_role == Some(crate::records::DesignExtrudeOperandRole::Faces)
+                    && group.extrude_face_role.is_some()
+            });
+            groups.next()?;
+            if groups.next().is_some() {
+                return None;
+            }
+            crate::design::face_resolve::legacy_face_recipe_reference_candidates(operand)
+        })
+        .flatten();
         let history_candidates = thread_face_candidates
             .clone()
             .or(nested_split_face_candidates)
@@ -3419,6 +3438,24 @@ pub(crate) fn bind_face_operand_history_candidates(
                 })
             {
                 operand.resolved_face_slots = vec![face];
+            }
+        }
+        if operand.resolved_face_slots.is_empty() {
+            if let Some(candidates) = &legacy_face_candidates {
+                match select_legacy_extrude_face_candidate(
+                    candidates,
+                    topology,
+                    &changed_faces,
+                    historical_brep_source(&history.id),
+                ) {
+                    Some(LegacyFaceResolution::Historical(slot)) => {
+                        operand.resolved_face_slots = vec![slot];
+                    }
+                    Some(LegacyFaceResolution::Active(face)) => {
+                        operand.resolved_active_face = Some(face);
+                    }
+                    None => {}
+                }
             }
         }
     }
@@ -4025,6 +4062,46 @@ fn complete_body_face_slots(topology: &AsmHistoricalTopology, body: i64) -> Opti
 
 fn active_brep_face_matches_source(face: &cadmpeg_ir::ids::FaceId, source: &str) -> bool {
     face.0.starts_with("f3d:brep:entity#") || face.0.starts_with(&format!("f3d:brep/{source}/"))
+}
+
+#[derive(Debug, PartialEq)]
+enum LegacyFaceResolution {
+    Historical(i64),
+    Active(cadmpeg_ir::ids::FaceId),
+}
+
+fn select_legacy_extrude_face_candidate(
+    candidates: &[cadmpeg_ir::ids::FaceId],
+    topology: &AsmHistoricalTopology,
+    changed_faces: &HashSet<i64>,
+    history_source: Option<&str>,
+) -> Option<LegacyFaceResolution> {
+    let preceding = faces_in_topology(candidates, topology);
+    let changed_preceding = preceding
+        .iter()
+        .filter(|face| stable_ref(&face.0).is_some_and(|slot| changed_faces.contains(&slot)))
+        .cloned()
+        .collect::<Vec<_>>();
+    for faces in [&changed_preceding, &preceding] {
+        if let [face] = faces.as_slice() {
+            if let Some(slot) = stable_ref(&face.0) {
+                return Some(LegacyFaceResolution::Historical(slot));
+            }
+        }
+    }
+    if let Some(source) = history_source {
+        let source_candidates = candidates
+            .iter()
+            .filter(|face| face.0.starts_with(&format!("f3d:brep/{source}/")))
+            .collect::<Vec<_>>();
+        if let [face] = source_candidates.as_slice() {
+            return Some(LegacyFaceResolution::Active((*face).clone()));
+        }
+    }
+    let [face] = candidates else {
+        return None;
+    };
+    Some(LegacyFaceResolution::Active(face.clone()))
 }
 
 fn historical_brep_source(state_id: &str) -> Option<&str> {

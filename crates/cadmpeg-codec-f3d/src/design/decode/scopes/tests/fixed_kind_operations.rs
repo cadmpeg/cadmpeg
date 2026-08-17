@@ -735,6 +735,7 @@ pub(super) fn continue_fixed_kind_operations(
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 905,
         next_byte_offset: 0,
     };

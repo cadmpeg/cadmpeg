@@ -569,6 +569,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1411,
     };
