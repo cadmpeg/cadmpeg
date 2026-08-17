@@ -291,10 +291,8 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
+    let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
         .map(|row| (row.id, row))
         .collect::<BTreeMap<_, _>>();
     let local_planes = placed_planes(scan);

@@ -247,6 +247,24 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
 }
 
 #[test]
+fn split_outline_rejects_duplicate_surface_rows() {
+    let mut scan = split_outline_scan();
+    let duplicate = scan.surfaces.rows[1].clone();
+    scan.surfaces.rows.push(duplicate);
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    assert_eq!(
+        super::transfer_split_outline_cylinders(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        0
+    );
+    assert!(ir.model.surfaces.is_empty());
+}
+
+#[test]
 fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_are_absent() {
     let mut scan = slot_fillet_scan();
     scan.planes.positional_frames.clear();
