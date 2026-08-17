@@ -622,6 +622,44 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
             .collect::<Vec<_>>();
         records.sort_by_key(|record| record.0);
         eprintln!("SLDPRT_DEBUG_FAMILY_RECORDS {:?}", records);
+        for shell_index in [2, 3] {
+            let bodies = keyed_face_root_body(
+                &by_attr,
+                &[
+                    (0x0020, 2),
+                    (0x001a, 2),
+                    (0x0018, 2),
+                    (0x0016, 1),
+                    (0x0014, 2),
+                    (0x0012, 2),
+                    (0x0004, 2),
+                ],
+                0x000e,
+                0x0010,
+                0x0022,
+                KeyedFaceRootOptions {
+                    canonical_face_bridge: None,
+                    face_use_shape: Some(KeyedFaceUse {
+                        disc: 0x001e,
+                        bridge: None,
+                        by_key: true,
+                    }),
+                    shell_index,
+                    require_exact_use_population: false,
+                },
+            );
+            eprintln!(
+                "SLDPRT_DEBUG_FAMILY_CANDIDATE shell_index={shell_index} {:?}",
+                bodies
+                    .iter()
+                    .map(|body| (
+                        body.attr,
+                        body.regions[0].shells[0].attr,
+                        body.regions[0].shells[0].refs.len()
+                    ))
+                    .collect::<Vec<_>>()
+            );
+        }
     }
     let mut out = Vec::new();
     for root in by_attr
