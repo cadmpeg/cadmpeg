@@ -107,6 +107,26 @@ fn split_neutral_component_shells(
     shell_specs
 }
 
+fn component_is_closed(
+    component_face_curves: &BTreeSet<u32>,
+    emitted_half_edges: &BTreeSet<HalfEdgeId>,
+    half_edges: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdge>,
+    faces: &[u32],
+) -> bool {
+    component_face_curves.iter().all(|curve_id| {
+        let face_uses = emitted_half_edges
+            .iter()
+            .filter(|half_edge| half_edge.curve_id == *curve_id)
+            .filter_map(|half_edge| half_edges.get(half_edge))
+            .map(|half_edge| half_edge.face_id)
+            .collect::<Vec<_>>();
+        face_uses.len() == 2
+            && face_uses
+                .iter()
+                .all(|face_id| *face_id != 0 && faces.contains(face_id))
+    })
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -476,15 +496,12 @@ pub(in super::super) fn transfer_native_brep(
             .difference(&face_curves)
             .copied()
             .collect::<BTreeSet<_>>();
-        let closed = component_face_curves.iter().all(|curve_id| {
-            let adjacent = emitted_half_edges
-                .iter()
-                .filter(|half_edge| half_edge.curve_id == *curve_id)
-                .filter_map(|half_edge| half_edges.get(half_edge))
-                .map(|half_edge| half_edge.face_id)
-                .collect::<BTreeSet<_>>();
-            adjacent.len() == 2 && adjacent.iter().all(|face| faces.contains(face))
-        });
+        let closed = component_is_closed(
+            &component_face_curves,
+            &emitted_half_edges,
+            &half_edges,
+            faces,
+        );
 
         let mut face_adjacency = faces
             .iter()

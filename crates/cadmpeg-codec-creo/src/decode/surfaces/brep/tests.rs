@@ -9,7 +9,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
-use super::{split_neutral_component_shells, transfer_native_brep, NeutralShellSpec};
+use super::{
+    component_is_closed, split_neutral_component_shells, transfer_native_brep, NeutralShellSpec,
+};
 
 #[test]
 fn partitions_face_shells_and_retains_unattached_wire_curves() {
@@ -84,6 +86,69 @@ fn retains_wire_curve_when_shell_attachment_is_ambiguous() {
             },
         ]
     );
+}
+
+#[test]
+fn closed_component_counts_two_uses_of_one_face() {
+    let edges = BTreeMap::from([
+        (
+            crate::topology::HalfEdgeId {
+                curve_id: 7,
+                side: 0,
+            },
+            crate::topology::HalfEdge {
+                id: crate::topology::HalfEdgeId {
+                    curve_id: 7,
+                    side: 0,
+                },
+                face_id: 5,
+                next: None,
+            },
+        ),
+        (
+            crate::topology::HalfEdgeId {
+                curve_id: 7,
+                side: 1,
+            },
+            crate::topology::HalfEdge {
+                id: crate::topology::HalfEdgeId {
+                    curve_id: 7,
+                    side: 1,
+                },
+                face_id: 5,
+                next: None,
+            },
+        ),
+    ]);
+    let half_edges = edges
+        .iter()
+        .map(|(id, edge)| (*id, edge))
+        .collect::<BTreeMap<_, _>>();
+
+    assert!(component_is_closed(
+        &BTreeSet::from([7]),
+        &BTreeSet::from([
+            crate::topology::HalfEdgeId {
+                curve_id: 7,
+                side: 0,
+            },
+            crate::topology::HalfEdgeId {
+                curve_id: 7,
+                side: 1,
+            },
+        ]),
+        &half_edges,
+        &[5],
+    ));
+    assert!(!component_is_closed(
+        &BTreeSet::from([7]),
+        &BTreeSet::from([crate::topology::HalfEdgeId {
+            curve_id: 7,
+            side: 0,
+        }]),
+        &half_edges,
+        &[5],
+    ));
 }
 
 #[test]
