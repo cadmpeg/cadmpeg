@@ -793,6 +793,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc22_disc18_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc22_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc1e_disc14_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -1478,6 +1481,122 @@ fn disc22_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<Bo
         regions: vec![RegionRecord {
             attr: region.attr,
             offset: region.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
+}
+
+fn disc22_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let roots = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x0022 && record.flo() == 2)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Vec::new();
+    };
+    if root.refs.get(1).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+    let key = root.refs.first().copied().filter(|key| *key > 1);
+    let Some(key) = key else {
+        return Vec::new();
+    };
+    let follows = |record: &EntityRecord, disc: u16, flo: u8| {
+        let next = record
+            .refs
+            .get(2)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|next| next.disc == disc && next.flo() == flo)?;
+        (next.refs.first() == Some(&key) && next.refs.get(1) == Some(&record.attr)).then_some(next)
+    };
+    let Some(disc_1e) = follows(root, 0x001e, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_1c) = follows(disc_1e, 0x001c, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_18) = follows(disc_1c, 0x0018, 2) else {
+        return Vec::new();
+    };
+    let Some(shell) = follows(disc_18, 0x0016, 2) else {
+        return Vec::new();
+    };
+    let Some(terminal) = follows(shell, 0x0014, 2) else {
+        return Vec::new();
+    };
+    if terminal.refs.get(2).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+
+    let canonical_faces = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x0004 && record.flo() == 1)
+        .collect::<Vec<_>>();
+    if canonical_faces.is_empty() {
+        return Vec::new();
+    }
+    let mut companions = HashSet::new();
+    let mut use_nodes = HashSet::new();
+    for face in canonical_faces {
+        let Some(companion) = face
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|record| {
+                record.disc == 0x001a && record.flo() == 1 && record.refs.get(2) == Some(&face.attr)
+            })
+        else {
+            return Vec::new();
+        };
+        let Some(use_node) = companion
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|record| {
+                record.disc == 0x0020
+                    && record.flo() == 4
+                    && record.refs.get(2) == Some(&companion.attr)
+            })
+        else {
+            return Vec::new();
+        };
+        if !companions.insert(companion.attr) || !use_nodes.insert(use_node.attr) {
+            return Vec::new();
+        }
+    }
+    if companions.len() != use_nodes.len()
+        || companions.len()
+            != by_attr
+                .values()
+                .filter(|record| record.disc == 0x001a && record.flo() == 1)
+                .count()
+        || use_nodes.len()
+            != by_attr
+                .values()
+                .filter(|record| record.disc == 0x0020 && record.flo() == 4)
+                .count()
+    {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
             shells: vec![ShellRecord {
                 attr: shell.attr,
                 offset: shell.offset,
@@ -4754,6 +4873,64 @@ mod linked_disc04_disc12_tests {
         ];
         records[4].refs[2] = 99;
         assert!(disc04_disc12_flo1_face_root_body(&index(&records)).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod disc22_disc04_tests {
+    use super::{disc22_disc04_face_root_body, EntityRecord};
+    use std::collections::HashMap;
+
+    fn record(attr: u16, disc: u16, flags: u32, refs: [u16; 6]) -> EntityRecord {
+        EntityRecord {
+            attr,
+            flags,
+            seq: u32::from(attr),
+            disc,
+            refs: refs.to_vec(),
+            offset: usize::from(attr),
+            end: usize::from(attr) + 26,
+        }
+    }
+
+    fn index(records: &[EntityRecord]) -> HashMap<u16, &EntityRecord> {
+        records.iter().map(|record| (record.attr, record)).collect()
+    }
+
+    fn lattice() -> Vec<EntityRecord> {
+        vec![
+            record(10, 0x22, 2, [3, 1, 11, 1, 1, 1]),
+            record(11, 0x1e, 2, [3, 10, 12, 1, 1, 1]),
+            record(12, 0x1c, 2, [3, 11, 13, 1, 1, 1]),
+            record(13, 0x18, 2, [3, 12, 14, 1, 1, 1]),
+            record(14, 0x16, 2, [3, 13, 15, 1, 1, 1]),
+            record(15, 0x14, 2, [3, 14, 1, 1, 1, 1]),
+            record(20, 0x04, 1, [1, 30, 1, 1, 1, 1]),
+            record(30, 0x1a, 1, [1, 40, 20, 1, 1, 1]),
+            record(40, 0x20, 4, [1, 1, 30, 1, 1, 1]),
+        ]
+    }
+
+    #[test]
+    fn reciprocal_lattice_owns_the_disc04_site() {
+        let records = lattice();
+        let bodies = disc22_disc04_face_root_body(&index(&records));
+        let [body] = bodies.as_slice() else {
+            panic!("one disc22-disc04 body");
+        };
+        assert_eq!((body.attr, body.regions[0].shells[0].attr), (10, 14));
+        assert!(body.refs.contains(&20) && body.refs.contains(&40));
+    }
+
+    #[test]
+    fn reciprocal_lattice_rejects_a_broken_backlink() {
+        let mut records = lattice();
+        records[1].refs[1] = 99;
+        assert!(disc22_disc04_face_root_body(&index(&records)).is_empty());
+
+        let mut records = lattice();
+        records[7].refs[2] = 21;
+        assert!(disc22_disc04_face_root_body(&index(&records)).is_empty());
     }
 }
 
