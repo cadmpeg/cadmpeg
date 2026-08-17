@@ -5,7 +5,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
-use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::io::Cursor;
@@ -16,6 +16,40 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 mod encode;
 mod roundtrip;
+
+#[test]
+fn type_508_requires_an_explicit_isoparametric_flag() {
+    let pcurve = PcurveUse {
+        pcurve: "pcurve#type-508".into(),
+        isoparametric: Some(false),
+        parameter_range: None,
+    };
+    assert_eq!(
+        isoparametric_flag(&pcurve, "loop").expect("explicit false is supported"),
+        0
+    );
+
+    assert_eq!(
+        isoparametric_flag(
+            &PcurveUse {
+                isoparametric: Some(true),
+                ..pcurve.clone()
+            },
+            "loop"
+        )
+        .expect("explicit true is supported"),
+        1
+    );
+
+    let pcurve = PcurveUse {
+        isoparametric: None,
+        ..pcurve
+    };
+    assert!(matches!(
+        isoparametric_flag(&pcurve, "loop"),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
 
 #[test]
 fn generation_timestamp_uses_utc_calendar_fields() {

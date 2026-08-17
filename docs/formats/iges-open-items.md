@@ -155,27 +155,3 @@ reader rejects as inconsistent. Reversing loop order changes the result.
 **Note.** Commit `1b024e5af` fixed the outer/inner role marker for unclassified
 BRep loops. It did not close the cross-loop Type 143 representation invariant.
 This is a partial closure.
-
-### WR-12 — Missing ISOP metadata in Type 508 output
-
-**Question.** What does the semantic BRep writer emit when
-`PcurveUse.isoparametric` is absent?
-
-**Known.** The IR defines `isoparametric: Option<bool>` and uses `None` when a
-source does not declare the property. Type 508 requires an explicit `ISOP`
-value. `writer.rs` emits `i32::from(pcurve_use.isoparametric.unwrap_or(false))`.
-`validate_brep_pcurve_uses` checks p-curve identity, range, metadata, and
-orientation, but not a missing ISOP value. Type 141 and Type 144 decoding can
-produce `None`.
-
-**Need.** The writer must derive or validate a false value, preserve the
-unknown state through an allowed representation, or refuse/classify the
-record. It must not convert absent metadata to an explicit assertion without a
-documented rule.
-
-**Conflict.** The IR distinguishes “not declared” from `false`, but the writer
-silently emits `ISOP = 0` for both states.
-
-**Note.** A neutral BRep with an absent ISOP declaration can therefore change
-meaning on export. The current validation and Type 508 specification do not
-define this substitution. This is a new hostile-sweep item.

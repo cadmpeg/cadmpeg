@@ -1413,7 +1413,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     let _ = write!(
                         parameters,
                         ",{},{}",
-                        i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                        isoparametric_flag(pcurve_use, loop_.id.as_str())?,
                         reference_marker(pcurve_index)
                     );
                 }
@@ -1435,7 +1435,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         let _ = write!(
                             parameters,
                             ",{},{}",
-                            i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                            isoparametric_flag(pcurve_use, loop_.id.as_str())?,
                             reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
                         );
                     }
@@ -1456,7 +1456,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         let _ = write!(
                             parameters,
                             ",{},{}",
-                            i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                            isoparametric_flag(pcurve_use, loop_.id.as_str())?,
                             reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
                         );
                     }
@@ -3079,11 +3079,22 @@ fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
         .all(|(left, right)| (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10)
 }
 
+fn isoparametric_flag(pcurve_use: &PcurveUse, owner: &str) -> Result<i32, CodecError> {
+    match pcurve_use.isoparametric {
+        Some(isoparametric) => Ok(i32::from(isoparametric)),
+        None => Err(CodecError::NotImplemented(format!(
+            "IGES {owner} requires an explicit isoparametric flag for pcurve {}",
+            pcurve_use.pcurve
+        ))),
+    }
+}
+
 fn validate_brep_pcurve_uses(
     orientation: &PcurveOrientationContext<'_>,
     uses: &[PcurveUse],
 ) -> Result<(), CodecError> {
     for pcurve_use in uses {
+        isoparametric_flag(pcurve_use, orientation.owner)?;
         let pcurve = orientation
             .ir
             .model
