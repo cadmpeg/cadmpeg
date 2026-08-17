@@ -253,6 +253,9 @@ child owns its own suffix boundary before its parent continues. A tagged stream
 ends at its explicit terminator; an unknown item ID does not supply a generic
 value width. These boundaries apply independently to nested payloads, so a
 suffix in one child cannot consume the fields of its parent.
+Every typed field is owned by exactly one such bounded payload. An unknown
+suffix has no inferred value width until a producer-defined field grammar
+assigns one.
 
 The first outer properties table and the first outer settings table are read.
 Within those tables, a repeated singleton record replaces the preceding value;
