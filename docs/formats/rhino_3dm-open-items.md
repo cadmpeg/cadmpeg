@@ -45,6 +45,36 @@ with changed layout remain open. The current source has no later object-class
 producer to characterize; the remaining question requires a later producer or
 an independent versioned witness.
 
+### FV-02. Archive-90 table grammar
+
+**Question.** What complete container and table grammar does archive version 90
+use, and which table-record writers add fields beyond the archive-80 grammar?
+
+**Known.** The archive-90 header is syntactically valid. The OpenNURBS 9.x
+`ON_HatchPattern::Write` path in `opennurbs_hatch.cpp` selects `WriteV8` below
+archive 90 and, at archive 90 and later, writes the anonymous major-1,
+minor-0 hatch body followed by a `u8` pattern unit-system code and a Boolean
+always-model-distances flag. `opennurbs_hatch.h` defines the meanings of those
+two fields: `none` makes pattern lines model-distance values; another unit code
+defines the pattern units; the Boolean selects model-distance display versus
+page-layout or printed-output lengths and widths. The archive-90 witness
+contains the two bytes `02 01` for millimeters and true after the line-list
+body, and OpenNURBS reads the values back. Archive versions through 80 use the
+settled prefix without those bytes. The current codec classifies archive 90 as
+an unsupported archive version, reports it header-only during inspection, and
+refuses typed decoding.
+
+**Need.** An independent inventory of the archive-90 container and table
+boundaries, every changed table-record payload, and the neutral admission rules
+needed before archive 90 can leave the header-only boundary.
+
+**Conflict.** None.
+
+**Note.** Reopened 2026-08-17. The earlier FV-02 closure treated the 9.x table
+writer inventory as complete, but it missed the archive-version branch in
+`ON_HatchPattern::Write`. The hatch prefix is settled and is now specified;
+archive-90 admission and the rest of its table grammar remain open.
+
 ### FV-03. Future user-data payloads
 
 **Question.** Which later user-data versions have a typed payload grammar, and

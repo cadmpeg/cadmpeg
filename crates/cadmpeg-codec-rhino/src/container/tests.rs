@@ -230,7 +230,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
 
 #[test]
 fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
-    for version in ["5", "999"] {
+    for version in ["5", "90", "999"] {
         let bytes = header(version);
         let summary = RhinoCodec
             .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())

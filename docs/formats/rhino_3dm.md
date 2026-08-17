@@ -5006,7 +5006,7 @@ i32 dash count
 count × f64 dash length
 ```
 
-For archives version 60 and later, the class-data payload contains one
+For archive versions 60 through 80, the class-data payload contains one
 anonymous major-1, minor-0 chunk. Its body is model-component attributes
 restricted to ID, archive index, and name, followed by the fill type, UTF-16
 description, and an anonymous line-list chunk. The line-list body is an `i32`
@@ -5019,10 +5019,27 @@ nonnegative and every anonymous child is bounded independently. A line angle
 is in radians. Base coordinates, offsets, and signed dash lengths are lengths;
 positive dashes draw and negative dashes leave gaps.
 
+Archive version 90 and later retain that anonymous major-1, minor-0 body and
+append these fields after the line-list chunk:
+
+```text
+u8 pattern unit-system code
+bool always model distances
+```
+
+The pattern unit-system code uses the table in section 8.2. `none` means the
+hatch lines are always model-distance values; another code defines the unit
+system in which the pattern lines are specified. `always model distances` true
+displays hatch-line lengths and widths in model distances. False interprets
+them as page-layout or printed-output lengths and widths. These two fields are
+part of the archive-90 class-data grammar, not an untyped suffix of the
+archive-80 grammar.
+
 The writer emits packed version 1.2 below archive 60 and anonymous version 1.0
-at archive 60 and later. A missing or nil pattern UUID is not a source
-identity; CADIR keys that record by its source record offset and leaves
-`source_uuid` unset.
+for archive versions 60 through 80. Archive version 90 and later use the same
+anonymous prefix followed by the two fields above. A missing or nil pattern
+UUID is not a source identity; CADIR keys that record by its source record
+offset and leaves `source_uuid` unset.
 
 Group and light records use packed major-1 versions. The group class UUID is
 `721D9F97-3645-44C4-8BE6-B2CF697D25CE`. A group table record is:
@@ -6345,6 +6362,14 @@ typed decoding, even when its class or record UUID is registered. The complete
 containing record remains retained, and the codec does not apply a known-major
 prefix to a later major. A future major can enter typed decoding only after its
 field grammar and neutral admission rule are added to this specification.
+
+CADIR decision: the archive container grammar is admitted only for the archive
+versions listed in section 1. A syntactically valid positive archive version
+outside that list is header-only: inspection reports the header and decoding is
+refused. The codec does not infer a table sequence or apply a supported archive
+grammar to that version. A later archive version can enter typed decoding only
+after its container grammar, table boundaries, and typed admission rules are
+added to this specification.
 
 `ON_ArchivableDictionary` has dictionary UUID
 `21EE7933-1E2D-4047-869E-6BDBF986EA11`. Its structure is:
