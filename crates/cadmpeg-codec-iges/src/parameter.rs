@@ -306,6 +306,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 123 §4.20 has three primary values, so its groups start at token four.
 /// Type 402 Forms 1, 7, 14, and 15 use `N` plus `N` member pointers, so their
 /// groups start at token `N + 2`.
+/// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
+/// groups start at token `18 + 5*K + M`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
 /// layout returns the record end as a sentinel and never enables generic
 /// recovery.
@@ -322,6 +324,7 @@ pub(crate) fn entity_primary_end(
         (110, 0..=2) => Some(7),
         (116, 0) => Some(5),
         (123, 0) => Some(4),
+        (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
         _ => None,
     }
 }
@@ -332,6 +335,28 @@ fn counted_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(2))
+        .unwrap_or(record.tokens.len())
+}
+
+fn rational_bspline_curve_primary_end(record: &ParameterRecord) -> usize {
+    let Some(k) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(degree) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    if k < degree {
+        return record.tokens.len();
+    }
+    k.checked_mul(5)
+        .and_then(|span| span.checked_add(degree))
+        .and_then(|span| span.checked_add(18))
         .unwrap_or(record.tokens.len())
 }
 

@@ -627,6 +627,132 @@ fn type402_malformed_member_count_does_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type126_entity_table_boundary_uses_k_and_degree() {
+    for (form, k, degree) in [(0_i64, 0_i64, 0_i64), (0, 1, 1), (3, 2, 1), (5, 3, 2)] {
+        let association = directory_target(1, 402);
+        let mut curve = directory_target(3, 126);
+        curve.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &curve)]);
+        let expected_start =
+            18 + usize::try_from(k).unwrap() * 5 + usize::try_from(degree).unwrap();
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 126;
+        values[1] = k;
+        values[2] = degree;
+        values[expected_start] = 1;
+        values[expected_start + 1] = 1;
+        values[expected_start + 2] = 0;
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: expected_start + 3,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis.groups.expect("Type 126 table boundary");
+        assert_eq!(groups.token_start, expected_start, "Form {form}");
+        assert_eq!(groups.associations, vec![1], "Form {form}");
+        assert!(groups.properties.is_empty(), "Form {form}");
+    }
+}
+
+#[test]
+fn type126_entity_table_boundary_precedes_valid_generic_alternative() {
+    let target_1 = directory_target(1, 402);
+    let target_7 = directory_target(7, 402);
+    let target_21 = directory_target(21, 402);
+    let target_23 = directory_target(23, 402);
+    let curve = directory_target(25, 126);
+    let directory = BTreeMap::from([
+        (1, &target_1),
+        (7, &target_7),
+        (21, &target_21),
+        (23, &target_23),
+        (25, &curve),
+    ]);
+    let record = ParameterRecord {
+        directory_sequence: 25,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [
+            126, 1, 1, 0, 0, 1, 0, 18, 21, 23, 23, 21, 21, 21, 21, 21, 23, 21, 21, 21, 23, 1, 1, 1,
+            1, 7, 0,
+        ]
+        .into_iter()
+        .map(|value| Token {
+            value: TokenValue::Integer(value),
+            span: 0..0,
+        })
+        .collect(),
+        parameter_end: 27,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 126 table boundary");
+    assert_eq!(groups.token_start, 24);
+    assert_eq!(groups.associations, vec![7]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type126_malformed_k_or_degree_does_not_enable_generic_recovery() {
+    let target_1 = directory_target(1, 402);
+    let target_7 = directory_target(7, 402);
+    let target_21 = directory_target(21, 402);
+    let target_23 = directory_target(23, 402);
+    let mut curve = directory_target(25, 126);
+    curve.form = 0;
+    let directory = BTreeMap::from([
+        (1, &target_1),
+        (7, &target_7),
+        (21, &target_21),
+        (23, &target_23),
+        (25, &curve),
+    ]);
+    for (k, degree) in [(0_i64, 1_i64), (-1, 0), (1, -1)] {
+        let mut values = [
+            126, 1, 1, 0, 0, 1, 0, 18, 21, 23, 23, 21, 21, 21, 21, 21, 23, 21, 21, 21, 23, 1, 1, 1,
+            1, 7, 0,
+        ];
+        values[1] = k;
+        values[2] = degree;
+        let record = ParameterRecord {
+            directory_sequence: 25,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: 27,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "K={k}, M={degree}");
+        assert_eq!(analysis.valid_candidate_count, 0, "K={k}, M={degree}");
+        assert!(analysis.groups.is_none(), "K={k}, M={degree}");
+    }
+}
+
+#[test]
 fn type106_entity_table_boundary_uses_interpretation_width() {
     let cases = [
         (1_i64, 1_i64, 2_usize, 2_usize),
@@ -1149,6 +1275,46 @@ fn decode_uses_type402_entity_boundary_for_group_forms() {
         assert_eq!(
             group.fields()["back_pointers_required"],
             matches!(form, 1 | 14)
+        );
+    }
+}
+
+#[test]
+fn decode_uses_type126_entity_boundary_for_form7_association() {
+    for form in 0_i64..=5 {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[
+                    OwnedTestEntity {
+                        entity_type: 402,
+                        form: 7,
+                        label: "GROUP".into(),
+                        status: "00000000",
+                        parameters: "402,1,3;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 126,
+                        form,
+                        label: "NURBS".into(),
+                        status: "00010000",
+                        parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1,1,1,0;"
+                            .into(),
+                    },
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result.report().losses.is_empty(), "Form {form}");
+        assert_eq!(result.ir().model.curves.len(), 1, "Form {form}");
+        let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+            .iter()
+            .find(|record| record.id() == "iges:entity:directory#3")
+            .unwrap();
+        assert_eq!(
+            source.fields()["association_links"].as_array().unwrap(),
+            &[serde_json::json!("iges:entity:directory#1")],
+            "Form {form}"
         );
     }
 }
