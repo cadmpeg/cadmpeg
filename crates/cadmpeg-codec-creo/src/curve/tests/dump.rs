@@ -124,6 +124,29 @@ fn decode_preserves_counted_curve_expression_programs() {
 }
 
 #[test]
+fn decode_preserves_curve_expression_source_section() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01value=5\0"
+        .to_vec();
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let records = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"];
+
+    assert_eq!(records.len(), 1);
+    assert_annotation(
+        &result.source_fidelity().annotations,
+        records[0].id(),
+        "creo:FeatDefs",
+        scan.curves.expressions[0].expression_offset as u64,
+        "curve_expression_program",
+        Exactness::ByteExact,
+    );
+}
+
+#[test]
 fn decode_binds_unique_forward_curve_expression_dependencies() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x04r=A\0a=5\0theta=T*360\0z=1\0"

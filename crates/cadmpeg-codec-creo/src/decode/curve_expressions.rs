@@ -15,6 +15,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
 
+use super::coverage::source_section;
 use super::native::annotate;
 
 pub(crate) fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
@@ -225,6 +226,7 @@ pub(crate) fn transfer_curve_expression_features(
         .filter(|record| !record.backup)
         .enumerate()
     {
+        let source_section = source_section(scan, record.offset);
         let ordinal = ordinal_base + expression_ordinal as u64;
         let feature_id = IrFeatureId(format!(
             "creo:depdb:curve_expression_feature#{}-{}",
@@ -409,7 +411,7 @@ pub(crate) fn transfer_curve_expression_features(
             annotate(
                 annotations,
                 &parameter_id.0,
-                "DEPDB_DATA",
+                &source_section,
                 assignment.offset as u64,
                 "curve_expression_assignment",
                 Exactness::Derived,
@@ -447,7 +449,7 @@ pub(crate) fn transfer_curve_expression_features(
         annotate(
             annotations,
             &feature_id.0,
-            "DEPDB_DATA",
+            &source_section,
             record.expression_offset as u64,
             "curve_expression_feature",
             Exactness::Derived,
@@ -466,7 +468,7 @@ pub(crate) fn transfer_curve_expression_features(
             annotate(
                 annotations,
                 &curve_id.0,
-                "DEPDB_DATA",
+                &source_section,
                 record.offset as u64,
                 "curve_expression_carrier",
                 Exactness::Unknown,
@@ -474,7 +476,7 @@ pub(crate) fn transfer_curve_expression_features(
             annotate(
                 annotations,
                 &procedural_id.0,
-                "DEPDB_DATA",
+                &source_section,
                 record.offset as u64,
                 "curve_expression_helix",
                 Exactness::Derived,

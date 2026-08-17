@@ -8,6 +8,7 @@ use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
 
+use super::super::coverage::source_section;
 use super::super::expanded::{
     fc05_circle_records, fc05_cylinder_cap_pair_records, feature_surface_replay_associations,
 };
@@ -672,10 +673,11 @@ pub(in super::super) fn emit_geometry_arenas(
     // the record, so annotation zips the two before the arena is stored.
     let curve_expressions = curve_expression_records(scan);
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
+        let source_section = source_section(scan, source.expression_offset);
         annotate(
             annotations,
             &expression.id,
-            "DEPDB_DATA",
+            &source_section,
             source.expression_offset as u64,
             "curve_expression_program",
             Exactness::ByteExact,

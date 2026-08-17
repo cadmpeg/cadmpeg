@@ -1312,10 +1312,7 @@ fn curve_expressions(
     model_name: Option<&str>,
 ) -> Vec<CurveExpressionRecord> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.name == VISIBGEOM || section.name == "DEPDB_DATA")
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             curve::expression_records_with_model_name(&data[section.offset..end], model_name)

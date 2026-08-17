@@ -122,6 +122,18 @@ fn scan_enumerates_and_classifies_sections() {
 }
 
 #[test]
+fn scan_finds_curve_expression_in_feature_definition_section() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01value=5\0"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    assert_eq!(scan.curves.expressions.len(), 1);
+    assert_eq!(scan.curves.expressions[0].entity_id, 7);
+    assert_eq!(scan.curves.expressions[0].lines[0].text, "value=5");
+}
+
+#[test]
 fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
     let mut data = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n#UGC_TOC\n\
         DEPDB_DATA 1 2 3\nVisibGeom 4 5 6\nAllFeatur 7 8 9\n\
