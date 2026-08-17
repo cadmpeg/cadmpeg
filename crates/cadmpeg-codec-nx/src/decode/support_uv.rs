@@ -6,7 +6,8 @@ use super::blend::{
     blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
     blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_parameters_from_grid_for_fit_and_budget, decoded_surface_point_with_geometry,
-    spine_contact_pcurve, BlendParameterGrid, BoundaryInverseTarget,
+    decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve, BlendParameterGrid,
+    BoundaryInverseTarget,
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
@@ -659,13 +660,14 @@ fn complete_support_uv_wave(
                 }
             }
             let reproduces_chart = uv.iter().zip(points).all(|(uv, point)| {
-                decoded_surface_point_with_geometry(
+                decoded_surface_point_with_geometry_and_budget(
                     &model_index,
                     surface_id,
                     &surface.geometry,
                     uv.u,
                     uv.v,
                     0,
+                    geometry_budget,
                 )
                 .is_some_and(|actual| point_distance(actual, *point) <= effective_fit_tolerance)
             });

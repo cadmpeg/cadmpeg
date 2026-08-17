@@ -90,6 +90,30 @@ pub(crate) fn decoded_surface_point_with_geometry(
         .or_else(|| decoded_surface_point_inner(index, surface, u, v, depth))
 }
 
+pub(crate) fn decoded_surface_point_with_geometry_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    depth: usize,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point3> {
+    (depth < 32).then_some(())?;
+    surface_point(geometry, u, v)
+        .or_else(|| model_surface_point_by_id(index, surface, u, v))
+        .or_else(|| {
+            blend_surface_point_inner_with_index_and_budget(
+                index,
+                surface,
+                u,
+                v,
+                depth + 1,
+                geometry_budget,
+            )
+        })
+}
+
 #[cfg(test)]
 pub(crate) fn blend_surface_parameters(
     ir: &CadIr,

@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::{DecodeMode, InspectOptions, WorkBudget};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -1327,6 +1327,26 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     });
     let expected = Point2::new(4.0, 0.2);
     let point = crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
+    let outer_geometry = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == outer)
+        .map(|surface| &surface.geometry)
+        .unwrap();
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let geometry_budget = WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let evaluated = crate::decode::blend::decoded_surface_point_with_geometry_and_budget(
+        &index,
+        &outer,
+        outer_geometry,
+        expected.u,
+        expected.v,
+        0,
+        &geometry_budget,
+    )
+    .expect("budgeted evaluation handles a nested blend support");
+    assert!(point_distance(evaluated, point) <= 64.0 * f64::EPSILON);
     let actual = crate::decode::blend_surface_parameters(&ir, &outer, point, None).unwrap();
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
