@@ -2517,7 +2517,9 @@ impl SymbolicRelationDimension {
 
     fn variable(name: &str) -> Self {
         Self {
-            axes: std::array::from_fn(|_| DimensionForm::variable(name)),
+            axes: std::array::from_fn(|axis| {
+                DimensionForm::variable(&dimension_variable_key(name, axis))
+            }),
         }
     }
 
@@ -2557,6 +2559,10 @@ impl SymbolicRelationDimension {
     fn is_zero(&self) -> bool {
         self.axes.iter().all(DimensionForm::is_zero)
     }
+}
+
+fn dimension_variable_key(name: &str, axis: usize) -> String {
+    format!("{name}#{axis}")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4559,12 +4565,18 @@ fn infer_solve_variable_dimensions(
 
     let mut axis_rows: [Vec<AffineEquationRow>; 5] =
         std::array::from_fn(|_| Vec::<AffineEquationRow>::new());
+    let axis_variable_keys: [Vec<String>; 5] = std::array::from_fn(|axis| {
+        variable_keys
+            .iter()
+            .map(|variable| dimension_variable_key(variable, axis))
+            .collect()
+    });
     for equality in constraints {
         for (axis, rows) in axis_rows.iter_mut().enumerate() {
             let difference = equality.left.axes[axis]
                 .clone()
                 .combine(equality.right.axes[axis].clone(), true)?;
-            let coefficients = variable_keys
+            let coefficients = axis_variable_keys[axis]
                 .iter()
                 .map(|variable| {
                     difference

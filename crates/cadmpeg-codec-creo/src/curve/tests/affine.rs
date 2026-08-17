@@ -729,6 +729,36 @@ fn solves_affine_systems_with_different_unknown_dimensions() {
 }
 
 #[test]
+fn infers_independent_dimensions_for_untyped_solve_variables() {
+    let lines = [
+        "speed=2[mm/s]",
+        "total=10[mm]",
+        "SOLVE",
+        "distance+speed*duration=total",
+        "duration=2[s]",
+        "FOR distance,duration",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(offset, text)| CurveExpressionLine {
+        text: text.to_owned(),
+        offset,
+    })
+    .collect::<Vec<_>>();
+
+    let evaluation =
+        evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+    assert_eq!(
+        evaluation.solve_solutions[&2],
+        [
+            CurveExpressionValue::Length(6.0),
+            quantity_value(2.0, RelationDimension::TIME),
+        ]
+    );
+}
+
+#[test]
 fn preserves_reserved_quantity_dimensions_in_affine_systems() {
     let lines = [
         "acceleration=0[mm/s^2]",
