@@ -173,6 +173,91 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 }
 
 #[test]
+fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 10,
+            type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Cone,
+            feature_id: 914,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 10,
+        },
+        crate::surface::SurfaceRow {
+            id: 31,
+            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 3,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 31,
+        },
+    ]);
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 10,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 10,
+            body_offset: 11,
+        });
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 914,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![31],
+            offset: 0,
+        });
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.extend([
+        cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#10".to_string()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cone {
+                origin: cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: std::f64::consts::FRAC_PI_4,
+            },
+            source_object: None,
+        },
+        cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#31".to_string()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+
+    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+
+    let duplicate = scan.surfaces.parameters[0].clone();
+    scan.surfaces.parameters.push(duplicate);
+    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), None);
+}
+
+#[test]
 fn round_support_radius_reconciles_placed_and_transferred_planes() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features

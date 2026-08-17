@@ -648,6 +648,56 @@ pub(in super::super) fn equal_distance_chamfer_setback(
     unique_positive_length(&setbacks)
 }
 
+fn chamfer_cone_equation(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    row: &crate::surface::SurfaceRow,
+) -> Option<ConeEquation> {
+    let parameter_records = scan
+        .surfaces
+        .parameters
+        .iter()
+        .filter(|record| record.offset == row.offset)
+        .collect::<Vec<_>>();
+    if parameter_records.len() > 1 {
+        return None;
+    }
+    if let Some(frame) = parameter_records
+        .first()
+        .and_then(|record| record.positional_cone_frame)
+    {
+        return Some(ConeEquation {
+            origin: frame.apex,
+            axis: frame.axis,
+            ref_direction: frame.ref_direction,
+            radius: 0.0,
+            ratio: 1.0,
+            half_angle: frame.half_angle,
+        });
+    }
+    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
+    let SurfaceGeometry::Cone {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+        ratio,
+        half_angle,
+    } = &surface.geometry
+    else {
+        return None;
+    };
+    Some(ConeEquation {
+        origin: [origin.x, origin.y, origin.z],
+        axis: [axis.x, axis.y, axis.z],
+        ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+        radius: *radius,
+        ratio: *ratio,
+        half_angle: *half_angle,
+    })
+}
+
 pub(in super::super) fn chamfer_constant_distance(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -666,17 +716,7 @@ pub(in super::super) fn chamfer_constant_distance(
     .then_some(())?;
     let cones = rows
         .iter()
-        .map(|row| {
-            let frame = unique_surface_parameter_record(scan, row)?.positional_cone_frame?;
-            Some(ConeEquation {
-                origin: frame.apex,
-                axis: frame.axis,
-                ref_direction: frame.ref_direction,
-                radius: 0.0,
-                ratio: 1.0,
-                half_angle: frame.half_angle,
-            })
-        })
+        .map(|row| chamfer_cone_equation(scan, ir, row))
         .collect::<Option<Vec<_>>>()?;
     let affected_ids = agreed_feature_geometry_ids(
         &scan.features.affected_ids,

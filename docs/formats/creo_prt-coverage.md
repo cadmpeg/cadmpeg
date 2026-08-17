@@ -181,6 +181,9 @@ fixtures, scores above L1 remain blocked.
 - A round with a complete placed set of generated cylinder carriers transfers
   their common positive radius even when generated cap or support rows are
   also present.
+- An equal-distance chamfer uses a complete transferred model cone carrier
+  when its row-local parameter body is opaque; duplicate parameter records do
+  not supply an alternate placement.
 - A round whose generated type-26 rows all replay the same uniquely associated
   prototype minor radius transfers that exact value as its constant radius;
   patch placement is independent of the radius proof.
