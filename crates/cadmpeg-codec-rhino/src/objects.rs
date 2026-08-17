@@ -25,6 +25,7 @@ const CLASS_UUID: u32 = 0x0002_fffb;
 const CLASS_DATA: u32 = 0x0002_fffc;
 const CLASS_END: u32 = 0x8002_7fff;
 const ANONYMOUS: u32 = 0x4000_8000;
+const LEGACY_OBJECT_ATTRIBUTES_CUTOFF: i64 = 200_712_190;
 pub(crate) const USER_STRING_LIST: Uuid = Uuid::from_canonical([
     0xce, 0x28, 0xde, 0x29, 0xf4, 0xc5, 0x4f, 0xaa, 0xa5, 0x0a, 0xc3, 0xa6, 0x84, 0x9b, 0x63, 0x29,
 ]);
@@ -691,7 +692,10 @@ pub(crate) fn parse_attributes(
         (value >> 4, value & 0x0f)
     };
     if version.0 == 1 {
-        if archive.value() >= 50 || version.1 > 8 {
+        if (archive.value() >= 5
+            && writer_version.is_some_and(|version| version >= LEGACY_OBJECT_ATTRIBUTES_CUTOFF))
+            || version.1 > 8
+        {
             return Err(FramingError::structural(
                 body_range.start,
                 "unsupported fixed object-attributes version",
@@ -906,6 +910,7 @@ pub(crate) fn parse_attributes(
         custom_render_mesh: None,
         mesh_modifiers: None,
     };
+    let mut last_item = 0_u8;
     while reader.remaining() > 0 {
         let item = reader.u8()?;
         if item == 0 {
@@ -926,26 +931,22 @@ pub(crate) fn parse_attributes(
             39 => 11,
             40 => 12,
             41 | 42 => 13,
-            _ if version.1 > 13 => {
-                // A future item has no length prefix. The source reader consumes
-                // only its ID and lets the enclosing chunk boundary discard the
-                // value bytes it cannot type.
+            _ => {
+                // Item values have no length prefix. The source reader consumes
+                // only an unknown ID and lets the enclosing chunk boundary
+                // discard the value bytes it cannot type.
                 finish_attributes(&mut reader, "future tagged object attributes")?;
                 return Ok(attributes);
             }
-            _ => {
-                return Err(FramingError::structural(
-                    reader.position() - 1,
-                    format!("unknown future object-attributes item {item}"),
-                ))
-            }
         };
-        if version.1 < gate {
-            return Err(FramingError::structural(
-                reader.position() - 1,
-                format!("attribute item {item} precedes its version gate"),
-            ));
+        if item <= last_item || version.1 < gate {
+            // This is the source reader's ordered cascade. The ID has been
+            // consumed, but its value has no generic width, so the rest stays
+            // at the containing attributes boundary.
+            finish_attributes(&mut reader, "bounded tagged object attributes")?;
+            return Ok(attributes);
         }
+        last_item = item;
         match item {
             1 => attributes.name = settings::utf16(&mut reader)?,
             2 => attributes.url = settings::utf16(&mut reader)?,

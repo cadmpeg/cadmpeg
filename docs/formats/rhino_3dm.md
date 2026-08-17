@@ -2421,6 +2421,11 @@ minor >= 6: u8 active space, explicit display-material UUID pairs
 minor >= 7: [rendering attributes](#84-rendering-attributes)
 ```
 
+Archives below version 5 write this fixed payload. The V5 and later writer
+uses the tagged payload below. The reader selects the tagged V5 reader when
+the recorded OpenNURBS writer version is at least `200712190`; an older
+OpenNURBS writer uses this fixed payload.
+
 Defaults are normal object mode, visible unless hidden, layer color/linetype/
 material/plot color/plot weight sources, model space, wire density 1, and plot
 weight 0.0.
@@ -2518,12 +2523,14 @@ Item 42 is a Boolean. Detail backgrounds are transparent by default; true
 requests the detail's display-mode background settings. The writer emits item
 42 only when the value is true. The packed minor is a four-bit value. A minor
 greater than 13 is a future minor. Its known prefix uses the item grammars
-above. When a future minor contains an item ID outside 1 through 42, the reader
-consumes that one-byte ID, stops typed parsing, and leaves the value and all
-following bytes untyped until the containing
-`TCODE_OBJECT_RECORD_ATTRIBUTES` boundary. The zero item still terminates the
-stream; bytes after that terminator are bounded suffix bytes and are not
-another tagged item stream.
+above. The reader applies these gates through the source's ascending cascade.
+After a typed item, a lower or equal item ID, a known item before its minor
+gate, or an item ID outside 1 through 42 consumes only that one-byte ID and
+stops typed parsing. The item's value and all following bytes remain untyped
+until the containing `TCODE_OBJECT_RECORD_ATTRIBUTES` boundary. Such a stop
+does not require a terminator. Item zero terminates the stream normally; bytes
+after that terminator are bounded suffix bytes and are not another tagged item
+stream.
 
 Default values are empty strings, unset indexes, default rendering attributes,
 unset colors, plot weight 0.0, decoration none, wire density 1, visible true,

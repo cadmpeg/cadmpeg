@@ -179,6 +179,15 @@ uses anonymous outer minor 1 before archive 60 and minor 2 from archive 60;
 record type and copy-on-replace are gated at minors 1 and 2. The values
 wrapper and each value are independent anonymous version-1.0 children, and
 later bytes remain at the child or enclosing history boundary.
+Object attributes are also settled. Archives below version 5 write the fixed
+packed 1.8 payload; the V5 and later writer emits packed 2.13 tagged
+attributes. The reader selects the tagged V5 reader at OpenNURBS writer
+version `200712190` and later, and the fixed reader before that cutoff. Tagged
+items 1 through 21 are minor 0, with later IDs admitted at the gates listed in
+§9.2. The source reader accepts only the ascending item cascade. A lower or
+equal ID, a known ID before its gate, or an unknown ID consumes only the ID
+and leaves its value and the rest of the stream at the containing
+`TCODE_OBJECT_RECORD_ATTRIBUTES` boundary.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -269,5 +278,12 @@ minor 1 before archive 60 and minor 2 from archive 60; its values wrapper and
 each value child are independent version-1.0 anonymous chunks. The history
 owner tests cover both outer writer bands and suffixes in the values and outer
 records.
+The object-attributes boundary is established by
+`ON_3dmObjectAttributes::Write`/`Read`, `Internal_WriteV5`/`Internal_ReadV5`,
+and the direct writer/reader in `opennurbs_3dm_attributes.cpp`: the writer
+cutoff is `200712190`, the fixed payload is packed 1.8, and the modern tagged
+payload is packed 2.13. The object owner tests cover the pre-cutoff V5 direct
+branch, gate-inadmissible IDs, and out-of-order IDs at the bounded attributes
+boundary.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

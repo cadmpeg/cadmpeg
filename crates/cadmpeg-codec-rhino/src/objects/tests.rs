@@ -98,6 +98,36 @@ fn fixed_explicit_visibility_overrides_hidden_mode_default() {
 }
 
 #[test]
+fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
+    let bytes = fixed_attributes(1, 0, Some(true));
+    let parsed = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        Some(200_712_189),
+        &mut Vec::new(),
+    )
+    .expect("pre-cutoff V5 writer uses the fixed attributes reader");
+    assert_eq!(parsed.version, (1, 1));
+    assert_eq!(parsed.name, "name");
+
+    let error = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        Some(200_712_190),
+        &mut Vec::new(),
+    )
+    .expect_err("the cutoff selects the tagged V5 reader");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Structural { .. }
+    ));
+}
+
+#[test]
 fn object_attribute_booleans_use_writer_version_strictness() {
     let bytes = tagged_attributes(&[(11, vec![2])], 0);
     let legacy = crate::objects::parse_attributes(
@@ -241,17 +271,28 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         );
         if gate > 0 {
             let preceding = tagged_attributes(&[(*item, payload.clone())], gate - 1);
-            assert!(
-                crate::objects::parse_attributes(
-                    &preceding,
-                    0..preceding.len(),
-                    0..preceding.len(),
-                    ArchiveVersion::V8,
-                    None,
-                    &mut Vec::new(),
-                )
-                .is_err(),
-                "item {item} was accepted before minor {gate}"
+            let decoded = crate::objects::parse_attributes(
+                &preceding,
+                0..preceding.len(),
+                0..preceding.len(),
+                ArchiveVersion::V8,
+                None,
+                &mut Vec::new(),
+            )
+            .unwrap_or_else(|error| panic!("item {item} failed before minor {gate}: {error}"));
+            let empty = tagged_attributes(&[], gate - 1);
+            let expected = crate::objects::parse_attributes(
+                &empty,
+                0..empty.len(),
+                0..preceding.len(),
+                ArchiveVersion::V8,
+                None,
+                &mut Vec::new(),
+            )
+            .expect("empty tagged attributes have source defaults");
+            assert_eq!(
+                decoded, expected,
+                "item {item} crossed its gate instead of stopping at the boundary"
             );
         }
     }
@@ -334,24 +375,52 @@ fn object_rendering_attributes_consume_mapping_reference_and_channel() {
 }
 
 #[test]
-fn tagged_attributes_reject_bad_gates_and_missing_terminator() {
-    for (minor, item) in [(0, 22), (1, 23), (2, 27), (8, 36), (12, 41), (12, 42)] {
-        let bytes = tagged_attributes(&[(item, vec![0])], minor);
-        assert!(
-            crate::objects::parse_attributes(
-                &bytes,
-                0..bytes.len(),
-                0..bytes.len(),
-                ArchiveVersion::V8,
-                None,
-                &mut Vec::new()
-            )
-            .is_err(),
-            "minor {minor} item {item}"
-        );
+fn tagged_attributes_follow_source_cascade_boundaries() {
+    for (minor, item) in [(0, 22), (1, 23), (2, 27), (12, 41), (12, 42)] {
+        let bytes = tagged_attributes(&[(item, vec![0xaa, 0xbb])], minor);
+        let parsed = crate::objects::parse_attributes(
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            &mut Vec::new(),
+        )
+        .unwrap_or_else(|error| panic!("minor {minor} item {item}: {error}"));
+        assert_eq!(parsed.version, (2, minor));
     }
-    let mut bytes = tagged_attributes(&[(1, utf16_bytes("N"))], 0);
-    bytes.pop();
+
+    let mut out_of_order = tagged_attributes(&[(2, utf16_bytes("U")), (1, utf16_bytes("N"))], 0);
+    out_of_order.extend([0xde, 0xad]);
+    let parsed = crate::objects::parse_attributes(
+        &out_of_order,
+        0..out_of_order.len(),
+        0..out_of_order.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .expect("out-of-order item stops at the containing attributes boundary");
+    assert_eq!(parsed.url, "U");
+    assert!(parsed.name.is_empty());
+}
+
+#[test]
+fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
+    let bytes = tagged_attributes(&[(36, vec![0])], 8);
+    assert!(
+        crate::objects::parse_attributes(
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            &mut Vec::new()
+        )
+        .is_err(),
+        "an admitted object-frame item still requires its value grammar"
+    );
+    let bytes = tagged_attributes(&[(42, vec![])], 13);
     assert!(crate::objects::parse_attributes(
         &bytes,
         0..bytes.len(),
@@ -361,7 +430,9 @@ fn tagged_attributes_reject_bad_gates_and_missing_terminator() {
         &mut Vec::new()
     )
     .is_err());
-    let bytes = tagged_attributes(&[(42, vec![])], 13);
+
+    let mut bytes = tagged_attributes(&[(1, utf16_bytes("N"))], 0);
+    bytes.pop();
     assert!(crate::objects::parse_attributes(
         &bytes,
         0..bytes.len(),
