@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -44,6 +44,7 @@ const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
 const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
 const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
 const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
+const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -1448,7 +1449,7 @@ pub(crate) fn try_decode_standard(
     );
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
-    let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
+    let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS as u64);
     let topology_result = attach_standard_topology(
         &mut topology_ir,
         &mut topology_annotations,
@@ -3039,6 +3040,9 @@ fn attach_standard_topology(
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
     let limit_curve_bindings =
         standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves);
+    let mut ordered_endpoint_pairs =
+        alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
+            .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
@@ -3221,6 +3225,25 @@ fn attach_standard_topology(
         .as_ref()
         .map_or(0, |pairs| pairs.iter().flatten().count());
     if let Some(pairs) = &native_endpoint_evidence {
+        for (edge, pair) in pairs
+            .iter()
+            .enumerate()
+            .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
+        {
+            if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+            }
+        }
+    }
+    for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
+        let Ok([binding]) = <[StandardLimitCurveBinding; 1]>::try_from(bindings.as_slice()) else {
+            continue;
+        };
+        if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, binding.points) {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+        }
+    }
+    if let Some(pairs) = &native_endpoint_evidence {
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     let mut endpoint_options = resolve_standard_endpoint_pairs(
@@ -3250,30 +3273,31 @@ fn attach_standard_topology(
             }
         }
     }
-    if let Some(options) = &mut endpoint_options {
-        for edge in 0..supports.len() {
-            let Some(pair) = native_supports_by_row
-                .get(edge)
-                .and_then(Option::as_ref)
-                .and_then(|native| {
-                    standard_native_support_endpoint_pair(
-                        native,
-                        &ir.model.points,
-                        &endpoint_candidates[edge],
-                        native_endpoint_evidence
-                            .as_ref()
-                            .and_then(|pairs| pairs[edge]),
-                    )
-                })
-                .filter(|pair| {
-                    options[edge]
-                        .iter()
-                        .any(|candidate| missing_edge::same_unordered_pair(*candidate, *pair))
-                })
-            else {
-                continue;
-            };
-            options[edge] = vec![pair];
+    for edge in 0..supports.len() {
+        let native_pair = native_supports_by_row
+            .get(edge)
+            .and_then(Option::as_ref)
+            .and_then(|native| {
+                standard_native_support_endpoint_pair(
+                    native,
+                    &ir.model.points,
+                    &endpoint_candidates[edge],
+                    native_endpoint_evidence
+                        .as_ref()
+                        .and_then(|pairs| pairs[edge]),
+                )
+            });
+        let Some(pair) = native_pair else { continue };
+        if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+        }
+        if let Some(options) = &mut endpoint_options {
+            if options[edge]
+                .iter()
+                .any(|candidate| missing_edge::same_unordered_pair(*candidate, pair))
+            {
+                options[edge] = vec![pair];
+            }
         }
     }
     if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
@@ -3289,7 +3313,11 @@ fn attach_standard_topology(
     let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
         Some(pairs) => {
             let Some(propagated) =
-                missing_edge::propagate_partial_edge_port_points(&native_port_options, pairs)
+                missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
+                    &native_port_options,
+                    pairs,
+                    &ordered_endpoint_pairs,
+                )
             else {
                 return Err(StandardTopologyFailure::NativeEndpointPropagation);
             };
@@ -3532,7 +3560,11 @@ fn attach_standard_topology(
                         .map(|[pair]| pair)
                 })
                 .collect::<Vec<_>>();
-            let propagated = missing_edge::propagate_edge_port_points(ports, &seeds)?;
+            let propagated = missing_edge::propagate_edge_port_points_with_ordered_seeds(
+                ports,
+                &seeds,
+                &ordered_endpoint_pairs,
+            )?;
             if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
                 return Some(complete);
             }
@@ -3560,7 +3592,11 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points(&ports, &pairs)
+            missing_edge::propagate_edge_port_points_with_ordered_seeds(
+                &ports,
+                &pairs,
+                &ordered_endpoint_pairs,
+            )
         })
         .zip(endpoint_options.as_ref())
         .map(|(propagated, options)| {
@@ -3588,7 +3624,11 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points(&ports, &pairs)
+            missing_edge::propagate_edge_port_points_with_ordered_seeds(
+                &ports,
+                &pairs,
+                &ordered_endpoint_pairs,
+            )
         });
     let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
         propagated_endpoint_pairs,
@@ -3762,42 +3802,77 @@ fn attach_standard_topology(
             .then(|| standard_curve_branch_assignment_dependencies(&supports, &branch_groups));
         let preferred_budget =
             work_budget.session_child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-        let fallback_budget =
-            work_budget.session_child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+        let fallback_budget = WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+        let edge_identity_evidence = supports
+            .iter()
+            .enumerate()
+            .map(|(edge, _)| {
+                ordered_endpoint_pairs[edge].is_some()
+                    || native_endpoint_evidence
+                        .as_ref()
+                        .and_then(|pairs| pairs.get(edge))
+                        .is_some_and(Option::is_some)
+                    || native_port_options[edge].is_some()
+                    || native_supports_by_row[edge].is_some()
+                    || !limit_curve_bindings[edge].is_empty()
+            })
+            .collect::<Vec<_>>();
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             spine,
             &edge_faces,
             &solver_options,
             &edge_classes,
+            &edge_identity_evidence,
             &circle_constraint_edges,
             &branch_preferred_edges,
             branch_assignment_dependencies.as_deref(),
             &preferred_budget,
-            |_| true,
             |pairs| {
-                (fbb_only
+                standard_line_pair_solution_is_simple(&ir.model.points, &supports, options, pairs)
+            },
+            |pairs| {
+                let branch_valid = fbb_only
                     || standard_curve_branch_assignment_is_ranked(
                         &supports,
                         &solver_options,
                         &branch_groups,
                         pairs,
                         None,
-                    ))
-                    && standard_circle_pair_solution_is_simple(
-                        ir,
-                        bindings,
-                        &surface_indices,
-                        brep,
-                        &supports,
-                        &solver_options,
-                        pairs,
-                    )
+                    );
+                if !branch_valid {
+                    return false;
+                }
+                let line_valid = standard_line_pair_solution_is_simple(
+                    &ir.model.points,
+                    &supports,
+                    options,
+                    pairs,
+                );
+                if !line_valid {
+                    return false;
+                }
+                standard_circle_pair_solution_is_simple(
+                    ir,
+                    bindings,
+                    &surface_indices,
+                    brep,
+                    &supports,
+                    &solver_options,
+                    pairs,
+                )
             },
         );
         let has_circle_preference = circle_constraint_edges
             .iter()
             .any(|constrained| *constrained);
-        let outcome = if has_circle_preference {
+        let has_line_preference = !fbb_only
+            && supports.iter().zip(options).any(|(support, options)| {
+                matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Line
+                ) && options.len() > 1
+            });
+        let outcome = if has_circle_preference || has_line_preference {
             // Distinct B-rep edges may legally occupy overlapping ranges of the same
             // circular carrier. Treat range separation as a search preference, then
             // accept the unconstrained bounded result only when it is uniquely
@@ -3808,6 +3883,7 @@ fn attach_standard_topology(
                     &edge_faces,
                     &solver_options,
                     &edge_classes,
+                    &edge_identity_evidence,
                     &circle_constraint_edges,
                     &branch_preferred_edges,
                     branch_assignment_dependencies.as_deref(),
@@ -5725,6 +5801,23 @@ pub(crate) fn merge_native_endpoint_evidence(
     }
 }
 
+fn merge_ordered_endpoint_pair(
+    ordered_pairs: &mut [Option<[usize; 2]>],
+    edge: usize,
+    pair: [usize; 2],
+) -> bool {
+    let Some(slot) = ordered_pairs.get_mut(edge) else {
+        return false;
+    };
+    match slot {
+        Some(previous) => *previous == pair,
+        None => {
+            *slot = Some(pair);
+            true
+        }
+    }
+}
+
 pub(crate) fn standard_successor_endpoint_pairs(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     vertex_roster: &[u32],
@@ -6832,9 +6925,102 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
             ranges.entry(key).or_default().push(*range);
         }
     }
-    ranges
-        .values()
-        .all(|ranges| circular_ranges_are_nonoverlapping_or_coincident(ranges))
+    for ranges in ranges.values() {
+        if !circular_ranges_are_nonoverlapping_or_coincident(ranges) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Prefer line endpoint assignments that partition each shared straight
+/// carrier into disjoint edge intervals. Exact coincident intervals remain
+/// admissible because seam and duplicate-edge representations can share one
+/// carrier; a partial collinear overlap is the non-simple alternative.
+pub(crate) fn standard_line_pair_solution_is_simple(
+    points: &[Point],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    endpoint_options: &[Vec<[usize; 2]>],
+    pairs: &[Option<[usize; 2]>],
+) -> bool {
+    #[derive(Clone, Copy)]
+    struct Segment {
+        faces: [usize; 2],
+        start: Point3,
+        end: Point3,
+    }
+
+    let segments = supports
+        .iter()
+        .zip(endpoint_options)
+        .zip(pairs)
+        .filter_map(|((support, options), pair)| {
+            if !matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Line
+            ) {
+                return None;
+            }
+            if options.len() <= 1 {
+                return None;
+            }
+            let pair = pair.as_ref()?;
+            Some(Segment {
+                faces: support.faces,
+                start: points.get(pair[0])?.position,
+                end: points.get(pair[1])?.position,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut segments_by_face = HashMap::<usize, Vec<Segment>>::new();
+    for segment in segments {
+        for face in segment.faces {
+            segments_by_face.entry(face).or_default().push(segment);
+        }
+    }
+    segments_by_face.into_values().all(|segments| {
+        segments.iter().enumerate().all(|(left_index, left)| {
+            segments[left_index + 1..].iter().all(|right| {
+                let left_axis = left.end.vector_from(left.start);
+                let left_length = left_axis.norm();
+                let right_axis = right.end.vector_from(right.start);
+                let right_length = right_axis.norm();
+                if left_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+                    || right_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+                {
+                    return true;
+                }
+                let left_unit = left_axis.scale(1.0 / left_length);
+                let parallel_error = left_unit.cross(right_axis.scale(1.0 / right_length)).norm();
+                let line_error = left_unit
+                    .cross(right.start.vector_from(left.start))
+                    .norm()
+                    .max(left_unit.cross(right.end.vector_from(left.start)).norm());
+                if parallel_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
+                    || line_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
+                {
+                    return true;
+                }
+                let left_interval = [0.0, left_length];
+                let right_interval = [
+                    left_unit.dot(right.start.vector_from(left.start)),
+                    left_unit.dot(right.end.vector_from(left.start)),
+                ];
+                let right_interval = [
+                    right_interval[0].min(right_interval[1]),
+                    right_interval[0].max(right_interval[1]),
+                ];
+                let overlap = left_interval[1].min(right_interval[1])
+                    - left_interval[0].max(right_interval[0]);
+                if overlap <= LINE_SEGMENT_GEOMETRY_TOLERANCE {
+                    return true;
+                }
+                (left_interval[0] - right_interval[0]).abs() <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+                    && (left_interval[1] - right_interval[1]).abs()
+                        <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+            })
+        })
+    })
 }
 
 pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {

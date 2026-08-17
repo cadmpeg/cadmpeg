@@ -324,6 +324,40 @@ fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {
 }
 
 #[test]
+fn standard_line_pair_preference_rejects_partial_collinear_overlap() {
+    let points = [0.0, 1.0, 2.0, 3.0]
+        .into_iter()
+        .enumerate()
+        .map(|(index, x)| Point {
+            id: PointId(format!("p{index}")),
+            position: Point3::new(x, 0.0, 0.0),
+            source_object: None,
+        })
+        .collect::<Vec<_>>();
+    let supports = (0..3)
+        .map(|tag| StandardCurveSupport {
+            pos: tag,
+            tag: tag as u32,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        })
+        .collect::<Vec<_>>();
+    let options = vec![vec![[0, 1], [0, 2]]; 3];
+    let simple = [Some([0, 1]), Some([1, 2]), Some([2, 3])];
+    let overlapping = [Some([0, 2]), Some([2, 3]), Some([1, 3])];
+
+    assert!(standard_line_pair_solution_is_simple(
+        &points, &supports, &options, &simple,
+    ));
+    assert!(!standard_line_pair_solution_is_simple(
+        &points,
+        &supports,
+        &options,
+        &overlapping,
+    ));
+}
+
+#[test]
 fn standard_plane_normals_require_signed_face_frame_vectors() {
     let plane = |target| {
         StandardSurfaceRecord::Analytic(SurfacePrefix {

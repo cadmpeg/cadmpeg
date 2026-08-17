@@ -1579,6 +1579,10 @@ fn standard_mesh_missing_edge_assignment_domains(
         .zip(edge_point_transitions.as_deref());
     let coverage = &context.coverage;
     let edge_ports = &context.edge_ports;
+    let complete_boundary_ports = edge_rows
+        .iter()
+        .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun);
+    let placement_ports = complete_boundary_ports.then_some(edge_ports.as_slice());
     let singleton_edge_points = edge_candidates.map(|candidates| {
         candidates
             .iter()
@@ -1596,16 +1600,18 @@ fn standard_mesh_missing_edge_assignment_domains(
     for run in edge_runs {
         let length = context.cycle_lengths[run.face][run.cycle];
         let end = (run.start + run.segment_count) % length;
-        let ports = edge_ports[run.edge];
-        let oriented = if run.reversed {
-            [ports[1], ports[0]]
-        } else {
-            ports
-        };
-        for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
-            match corner_ports.insert((run.face, run.cycle, corner), port) {
-                Some(stored) if stored != port => return None,
-                Some(_) | None => {}
+        if edge_rows[run.edge].boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun {
+            let ports = edge_ports[run.edge];
+            let oriented = if run.reversed {
+                [ports[1], ports[0]]
+            } else {
+                ports
+            };
+            for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
+                match corner_ports.insert((run.face, run.cycle, corner), port) {
+                    Some(stored) if stored != port => return None,
+                    Some(_) | None => {}
+                }
             }
         }
         if let Some(candidates) = edge_candidates {
@@ -1681,7 +1687,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     &face.missing_edges,
                     edge_rows,
                     (
-                        Some(edge_ports),
+                        placement_ports,
                         &corner_ports,
                         endpoint_constraints,
                         &corner_points,
@@ -1720,8 +1726,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                 defer_validation.then(|| MeshFaceAssignmentDomain::DeferredValidation(face.clone()))
             })
     });
-    let domains = assignment_results.collect::<Option<Vec<_>>>()?;
-    Some((domains, edge_runs.clone()))
+    Some((
+        assignment_results.collect::<Option<Vec<_>>>()?,
+        edge_runs.clone(),
+    ))
 }
 
 pub(crate) fn standard_mesh_missing_edge_assignments(
@@ -1826,12 +1834,15 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                     .collect::<Vec<_>>();
                 for run in runs.iter().filter(|run| run.face == face) {
                     let length = cycles[run.cycle].length;
+                    let fixed_direction = edge_candidates.is_none()
+                        || context.edge_rows[run.edge].boundary_layout
+                            == EdgeBoundaryLayout::CompleteBoundaryRun;
                     cycles[run.cycle].exact_uses.push((
                         MeshBoundaryEdgeCandidate {
                             edge: run.edge,
                             start: run.start,
                             end: (run.start + run.segment_count) % length,
-                            reversed: Some(run.reversed),
+                            reversed: fixed_direction.then_some(run.reversed),
                         },
                         run.segment_count,
                     ));
@@ -1858,13 +1869,16 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                     )
                     .ok()?;
                     for run in runs.iter().filter(|run| run.face == face) {
+                        let fixed_direction = edge_candidates.is_none()
+                            || context.edge_rows[run.edge].boundary_layout
+                                == EdgeBoundaryLayout::CompleteBoundaryRun;
                         boundaries[run.cycle].push((
                             MeshBoundaryEdgeCandidate {
                                 edge: run.edge,
                                 start: run.start,
                                 end: (run.start + run.segment_count)
                                     % cycle_lengths[face][run.cycle],
-                                reversed: edge_candidates.is_none().then_some(run.reversed),
+                                reversed: fixed_direction.then_some(run.reversed),
                             },
                             run.segment_count,
                         ));
@@ -2474,6 +2488,16 @@ pub fn standard_mesh_placement_endpoint_pairs(
     Some(domains)
 }
 
+fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usize) -> bool {
+    match port_points.entry(port) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(point);
+            true
+        }
+        std::collections::hash_map::Entry::Occupied(entry) => *entry.get() == point,
+    }
+}
+
 /// Propagate byte-level endpoint ports through independently resolved physical
 /// edge endpoint pairs. The result is rejected atomically when any port mapping
 /// contradicts a resolved pair.
@@ -2482,7 +2506,27 @@ pub fn propagate_edge_port_points(
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Option<Vec<Option<[usize; 2]>>> {
+    propagate_edge_port_points_with_ordered_seeds(edge_ports, endpoint_pairs, &[])
+}
+
+/// Propagate endpoint points through physical edge ports, retaining an
+/// independently decoded orientation when one is available.
+///
+/// `ordered_endpoint_pairs` is indexed like `edge_ports`. A supplied pair is
+/// in the physical row direction, not merely an unordered candidate. It must
+/// agree with an existing candidate when that candidate is present. Such a
+/// seed is the only valid way to orient a port component whose resolved rows
+/// all carry the same unordered pair.
+#[must_use]
+pub fn propagate_edge_port_points_with_ordered_seeds(
+    edge_ports: &[[u32; 2]],
+    endpoint_pairs: &[Option<[usize; 2]>],
+    ordered_endpoint_pairs: &[Option<[usize; 2]>],
+) -> Option<Vec<Option<[usize; 2]>>> {
     if edge_ports.len() != endpoint_pairs.len() {
+        return None;
+    }
+    if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
         return None;
     }
     let mut resolved = endpoint_pairs.to_vec();
@@ -2495,6 +2539,25 @@ pub fn propagate_edge_port_points(
     }
     let mut port_points = HashMap::<u32, usize>::new();
 
+    if !ordered_endpoint_pairs.is_empty() {
+        for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
+            let Some(ordered) = ordered else { continue };
+            if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+                return None;
+            }
+            let ports = edge_ports[edge];
+            if ports[0] == ports[1] && ordered[0] != ordered[1] {
+                return None;
+            }
+            if !bind_port_point(&mut port_points, ports[0], ordered[0])
+                || !bind_port_point(&mut port_points, ports[1], ordered[1])
+            {
+                return None;
+            }
+            resolved[edge] = Some(*ordered);
+        }
+    }
+
     for (&port, edges) in &edges_by_port {
         let mut intersection: Option<HashSet<usize>> = None;
         for &edge in edges {
@@ -2506,8 +2569,9 @@ pub fn propagate_edge_port_points(
             });
         }
         if let Some(points) = intersection {
-            if points.len() == 1 {
-                port_points.insert(port, *points.iter().next()?);
+            if points.len() == 1 && !bind_port_point(&mut port_points, port, *points.iter().next()?)
+            {
+                return None;
             }
         }
     }
@@ -2539,6 +2603,7 @@ pub fn propagate_edge_port_points(
                     port_points.insert(ports[0], left);
                     inserted.push(ports[0]);
                 }
+                (Some(_), None) | (None, Some(_)) => return None,
                 (Some(left_point), Some(right_point))
                     if !same_unordered_pair([left_point, right_point], [left, right]) =>
                 {
@@ -2576,16 +2641,30 @@ pub fn propagate_edge_port_points(
     Some(resolved)
 }
 
-/// Propagate endpoint points through the subgraph of edges carrying native
-/// endpoint identities. Edges without a native identity pair remain
-/// unresolved and do not weaken or invalidate known components.
+/// Propagate ordered endpoint seeds through the subset of rows with native
+/// port identities. Rows without a port pair retain their independent seed or
+/// candidate, but cannot participate in port propagation.
 #[must_use]
-pub fn propagate_partial_edge_port_points(
+pub fn propagate_partial_edge_port_points_with_ordered_seeds(
     edge_ports: &[Option<[u32; 2]>],
     endpoint_pairs: &[Option<[usize; 2]>],
+    ordered_endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Option<Vec<Option<[usize; 2]>>> {
     if edge_ports.len() != endpoint_pairs.len() {
         return None;
+    }
+    if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
+        return None;
+    }
+    let mut resolved = endpoint_pairs.to_vec();
+    if !ordered_endpoint_pairs.is_empty() {
+        for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
+            let Some(ordered) = ordered else { continue };
+            if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+                return None;
+            }
+            resolved[edge] = Some(*ordered);
+        }
     }
     let known = edge_ports
         .iter()
@@ -2593,15 +2672,18 @@ pub fn propagate_partial_edge_port_points(
         .filter_map(|(edge, ports)| ports.map(|ports| (edge, ports)))
         .collect::<Vec<_>>();
     if known.is_empty() {
-        return Some(endpoint_pairs.to_vec());
+        return Some(resolved);
     }
     let ports = known.iter().map(|(_, ports)| *ports).collect::<Vec<_>>();
     let pairs = known
         .iter()
-        .map(|(edge, _)| endpoint_pairs[*edge])
+        .map(|(edge, _)| resolved[*edge])
         .collect::<Vec<_>>();
-    let propagated = propagate_edge_port_points(&ports, &pairs)?;
-    let mut resolved = endpoint_pairs.to_vec();
+    let ordered = known
+        .iter()
+        .map(|(edge, _)| ordered_endpoint_pairs.get(*edge).copied().flatten())
+        .collect::<Vec<_>>();
+    let propagated = propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered)?;
     for ((edge, _), pair) in known.into_iter().zip(propagated) {
         resolved[edge] = pair;
     }

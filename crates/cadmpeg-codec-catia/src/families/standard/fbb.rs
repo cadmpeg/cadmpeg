@@ -608,7 +608,7 @@ fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
 }
 
 pub(crate) fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
-    if let Some(result) = parse_edge_tables_at(bytes, position) {
+    if let Some(result) = parse_standard_edge_tables(bytes, position) {
         return Some(result);
     }
     parse_fbb_edge_tables(bytes, position).map(|(rows, _, vertex_header, _)| (rows, vertex_header))
@@ -661,11 +661,13 @@ pub(crate) fn parse_standard_edge_tables_scoped(
     .then_some((rows, scopes, vertex_header, handle_width))
 }
 
+#[cfg(test)]
 pub(crate) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
     parse_edge_tables_scoped_at(bytes, position)
         .map(|(rows, _, vertex_header)| (rows, vertex_header))
 }
 
+#[cfg(test)]
 pub(crate) fn parse_edge_tables_scoped_at(
     bytes: &[u8],
     position: usize,

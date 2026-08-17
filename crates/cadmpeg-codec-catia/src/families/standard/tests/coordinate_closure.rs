@@ -11,6 +11,42 @@ fn endpoint_ports_propagate_resolved_pairs_to_unresolved_edges() {
 }
 
 #[test]
+fn ordered_endpoint_seed_orients_a_seedless_port_component() {
+    let ports = [[10, 11]];
+    let pairs = [Some([0, 1])];
+    let ordered = [Some([1, 0])];
+
+    assert_eq!(
+        propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        Some(vec![Some([1, 0])])
+    );
+}
+
+#[test]
+fn ordered_endpoint_seed_must_agree_with_the_unordered_candidate() {
+    assert_eq!(
+        propagate_edge_port_points_with_ordered_seeds(
+            &[[10, 11]],
+            &[Some([0, 1])],
+            &[Some([0, 2])],
+        ),
+        None
+    );
+}
+
+#[test]
+fn partial_ordered_endpoint_seed_resolves_a_row_without_native_ports() {
+    let ports = [Some([10, 11]), None];
+    let pairs = [Some([0, 1]), None];
+    let ordered = [Some([1, 0]), Some([2, 3])];
+
+    assert_eq!(
+        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        Some(vec![Some([1, 0]), Some([2, 3])])
+    );
+}
+
+#[test]
 fn partial_endpoint_ports_propagate_known_components_only() {
     let ports = [
         Some([10, 11]),
@@ -22,7 +58,7 @@ fn partial_endpoint_ports_propagate_known_components_only() {
     let pairs = [Some([0, 1]), Some([1, 2]), Some([8, 9]), None, Some([3, 0])];
 
     assert_eq!(
-        propagate_partial_edge_port_points(&ports, &pairs),
+        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &[]),
         Some(vec![
             Some([0, 1]),
             Some([1, 2]),

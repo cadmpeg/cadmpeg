@@ -24,20 +24,25 @@ pub(super) use crate::solve::incidence::{
     prune_ordered_face_endpoint_support, reconstruct_incidence_candidates,
 };
 pub(super) use crate::solve::matching::unique_coordinate_bijection;
+pub(super) use crate::solve::mesh_gauge::{
+    canonicalize_mesh_vertex_labels, mesh_candidates_equivalent,
+    mesh_candidates_equivalent_with_gauge,
+};
 pub(super) use crate::solve::mesh_quotient::{
-    canonicalize_mesh_vertex_labels, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
-    mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable, mesh_candidates_equivalent,
-    mesh_edge_points_compatible, mesh_face_endpoint_configurations, possible_face_choices,
-    possible_face_choices_with_limit, possible_face_equations, prune_mesh_endpoint_pair_support,
+    deduplicate_mesh_quotient_assignments, initial_mesh_quotient, mesh_assignment_can_merge,
+    mesh_assignment_endpoint_cycles_viable, mesh_edge_points_compatible,
+    mesh_face_endpoint_configurations, possible_face_choices, possible_face_choices_with_limit,
+    possible_face_equations, prune_mesh_endpoint_pair_support,
     prune_mesh_endpoint_pair_support_with_limit, MeshPartialEndpointConstraint, MeshQuotient,
     MeshSelectionSearch, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 pub(super) use crate::solve::missing_edge::{
     bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
     face_endpoint_candidates_close, motif_port_points, propagate_edge_port_points,
-    propagate_partial_edge_port_points, resolve_edge_faces_from_runs, same_unordered_pair,
-    unique_duplicate_face_assignment, FaceEndpointClosureOutcome, MeshBoundaryEdgeCandidate,
-    MeshEdgeRun, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+    propagate_edge_port_points_with_ordered_seeds,
+    propagate_partial_edge_port_points_with_ordered_seeds, resolve_edge_faces_from_runs,
+    same_unordered_pair, unique_duplicate_face_assignment, FaceEndpointClosureOutcome,
+    MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 pub(super) use crate::solve::UnionFind;
 pub(super) use cadmpeg_core::decode::WorkBudget;

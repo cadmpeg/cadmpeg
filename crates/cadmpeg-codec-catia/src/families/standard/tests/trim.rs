@@ -367,6 +367,76 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
 }
 
 #[test]
+fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
+    let edge_rows = vec![
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![20, 21],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+    ];
+    let topology = |swapped: bool| StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![Boundary {
+                coedges: if swapped {
+                    vec![
+                        CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: 1,
+                            end_vertex: 2,
+                        },
+                    ]
+                } else {
+                    vec![
+                        CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: 1,
+                            end_vertex: 2,
+                        },
+                    ]
+                },
+            }],
+        }],
+        edge_rows: edge_rows.clone(),
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        logical_vertex_count: 3,
+    };
+    let left = (topology(false), vec![0, 1, 2]);
+    let right = (topology(true), vec![0, 1, 2]);
+    let edge_classes = [7, 7];
+    let edge_candidates = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
+    let edge_identity_evidence = [false, false];
+
+    assert!(!mesh_candidates_equivalent(&left, &right));
+    assert!(mesh_candidates_equivalent_with_gauge(
+        &left,
+        &right,
+        &edge_classes,
+        &edge_candidates,
+        &edge_identity_evidence,
+    ));
+}
+
+#[test]
 fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
     let invalid = (
         StandardTopology {
