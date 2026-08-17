@@ -6,6 +6,32 @@ Settled format rules remain in
 
 ## Remaining items
 
+### PR-05. Current view-child checksum coverage
+
+**Question.** Which direct byte ranges does the CRC on each current long view
+child cover, including `TCODE_VIEW_ATTRIBUTES` and
+`TCODE_VIEW_VIEWPORT_USERDATA` nested children, and how does the codec report
+a mismatch without changing the enclosing view boundary?
+
+**Known.** `ON_3dmView::Write` emits CRC-bearing long children for the
+viewport, construction plane, target, position, name, images, and attributes;
+`TCODE_VIEW_VIEWPORT_USERDATA` is another CRC-bearing long child when viewport
+userdata exists. The view parser frames and decodes these children but does not
+verify their checksums. A public V5 witness with one byte changed in the first
+`TCODE_VIEW_VIEWPORT` stored CRC still produces a typed view and no integrity
+loss.
+
+**Need.** Trace the producer and reader CRC lifecycle for the direct-body leaf
+children, the anonymous page-settings and clipping-plane children inside
+`TCODE_VIEW_ATTRIBUTES`, and the class-userdata children through the fake
+class-end marker inside `TCODE_VIEW_VIEWPORT_USERDATA`. State each direct
+range, align the view owner with the recoverable checksum policy, and add
+source-shaped owner tests. Keep this child coverage separate from the already
+settled outer `TCODE_VIEW_RECORD` checksum.
+
+**Note.** This is a current checksum-boundary question. It does not change
+view field transfer or the CADIR identity of a view.
+
 ### FV-01. Future object-class payloads
 
 **Question.** What field grammar does each later built-in object-class major
