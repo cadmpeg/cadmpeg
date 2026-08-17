@@ -1560,6 +1560,7 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let has_supported_length_factor = global.has_supported_length_factor();
     let display_attributes = directory
         .iter()
         .map(|entry| NativeDisplayAttributes {
@@ -1582,7 +1583,9 @@ pub(crate) fn store(
             }),
             view: entry.view,
             line_weight_number: entry.line_weight,
-            line_weight_mm: global.line_weight_mm(entry.line_weight),
+            line_weight_mm: has_supported_length_factor
+                .then(|| global.line_weight_mm(entry.line_weight))
+                .flatten(),
             color_number: entry.color,
             color_definition: (entry.color < 0)
                 .then(|| format!("iges:presentation:color#D{}", entry.color.unsigned_abs())),

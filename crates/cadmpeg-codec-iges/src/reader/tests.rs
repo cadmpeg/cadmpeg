@@ -136,6 +136,41 @@ fn container_only_retains_unknown_flag_three_units_without_projection() {
     assert_eq!(result.ir().model.entity_count(), 0);
 }
 
+#[test]
+fn type316_property_does_not_supply_a_global_flag_three_factor() {
+    let mut bytes = units_data_file();
+    let old = b",1.0,2,2HMG";
+    let new = b",1.0,3,2HFG";
+    let position = bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .expect("Global units fields");
+    bytes[position..position + old.len()].copy_from_slice(new);
+    let old = b"\nM,1,1.0";
+    let new = b"\nO,1,1.0";
+    let position = bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .expect("Global continuation");
+    bytes[position..position + old.len()].copy_from_slice(new);
+
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &options)
+        .unwrap();
+    let units = &result.ir().native.namespace("iges").unwrap().arenas["units_data"][0];
+    assert_eq!(units.fields()["owners"][0], "iges:entity:directory#1");
+    assert_eq!(units.fields()["units"][0]["scale_factor"], 1852.0);
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(error, CodecError::NotImplemented(_)));
+}
+
 /// Phase 5 freeze: shared builders must match the IGES rejection gate.
 #[test]
 fn phase5_freeze_shared_admissibility_fixtures() {
