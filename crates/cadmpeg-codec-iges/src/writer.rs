@@ -5334,7 +5334,6 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> 
 }
 
 fn number(value: f64) -> String {
-    let value = stabilize_real(value);
     if value == 0.0 {
         "0".into()
     } else {
@@ -5348,22 +5347,6 @@ fn unit_normal_number(value: f64) -> String {
     } else {
         format!("{value:.16e}").replace('e', "D")
     }
-}
-
-/// Quantize a real so Fixed ASCII card layout does not depend on platform libm.
-///
-/// Near-zeros within [`cadmpeg_ir::compare::FLOAT_TOLERANCE`] collapse to
-/// `0`. Other values round-trip through twelve significant digits before the
-/// sixteen-digit write format runs, absorbing last-place disagreement that
-/// would otherwise change token width and reflow parameter cards.
-fn stabilize_real(value: f64) -> f64 {
-    if !value.is_finite() {
-        return value;
-    }
-    if value.abs() <= cadmpeg_ir::compare::FLOAT_TOLERANCE {
-        return 0.0;
-    }
-    format!("{value:.12e}").parse().unwrap_or(value)
 }
 
 #[cfg(test)]

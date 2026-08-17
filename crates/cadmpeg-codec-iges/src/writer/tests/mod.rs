@@ -31,15 +31,21 @@ fn generation_timestamp_uses_utc_calendar_fields() {
 }
 
 #[test]
-fn number_collapses_libm_near_zeros_and_near_ones() {
-    // cos(π/2)-class near-zeros and 1-ε near-ones must share one Fixed ASCII
-    // spelling so parameter cards do not reflow across platforms.
-    assert_eq!(number(6.123_233_995_736_766e-17), "0");
-    assert_eq!(number(9.999_999_999_999_998e-1), number(1.0));
-    assert_eq!(
-        number(1.802_581_857_082_682),
-        number(1.802_581_857_082_681_5)
-    );
+fn number_preserves_distinct_finite_values() {
+    for value in [
+        6.123_233_995_736_766e-17,
+        5.0e-13,
+        9.999_999_999_999_998e-1,
+        1.802_581_857_082_682,
+        1.802_581_857_082_681_5,
+    ] {
+        let encoded = number(value);
+        let decoded = encoded
+            .replace('D', "E")
+            .parse::<f64>()
+            .expect("generated real must parse");
+        assert_eq!(decoded.to_bits(), value.to_bits(), "{value}: {encoded}");
+    }
 }
 
 #[test]
@@ -391,12 +397,16 @@ fn orthonormal_pair_refuses_skew_beyond_the_repair_bound() {
 }
 
 #[test]
-fn generated_reals_round_trip_after_writer_stabilization() {
+fn generated_reals_round_trip_without_writer_quantization() {
     for value in [
         -std::f64::consts::PI,
         1.0,
         f64::MAX,
         1.234_567_890_123_456_7e50,
+        f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        1.0e-20,
+        5.0e-13,
     ] {
         let encoded = number(value);
         assert!(encoded.contains('D'), "{value}: {encoded}");
@@ -404,15 +414,7 @@ fn generated_reals_round_trip_after_writer_stabilization() {
             .replace('D', "E")
             .parse::<f64>()
             .expect("generated real must parse");
-        assert_eq!(
-            decoded.to_bits(),
-            stabilize_real(value).to_bits(),
-            "{value}: {encoded}"
-        );
-    }
-    // Sub-tolerance magnitudes collapse so Fixed ASCII layout stays portable.
-    for value in [f64::MIN_POSITIVE, f64::from_bits(1), 1.0e-20] {
-        assert_eq!(number(value), "0", "{value}");
+        assert_eq!(decoded.to_bits(), value.to_bits(), "{value}: {encoded}");
     }
     assert_eq!(number(0.0), "0");
     assert_eq!(number(-0.0), "0");

@@ -156,31 +156,6 @@ reader rejects as inconsistent. Reversing loop order changes the result.
 BRep loops. It did not close the cross-loop Type 143 representation invariant.
 This is a partial closure.
 
-### WR-08 — Preservation of finite real values
-
-**Question.** How must the writer spell finite binary64 values so that nonzero
-values are not changed by serialization?
-
-**Known.** `writer.rs::stabilize_real` maps every finite value with absolute
-magnitude at most `cadmpeg_ir::compare::FLOAT_TOLERANCE` (`1e-12`) to zero and
-pre-rounds other finite values through a twelve-decimal exponential string
-before final formatting. The writer tests require near-zero collapse. `iges.md`
-requires every nonzero finite real to be written with seventeen significant
-decimal digits and to round-trip without flushing small nonzero values to zero.
-
-**Need.** Serialization must preserve finite values, or the specification must
-state and justify a separate writer quantization rule with its loss or refusal
-behavior. A comparison tolerance must not silently become a write tolerance.
-
-**Conflict.** A finite value such as `5e-13` is written as `0`, and other values
-are pre-rounded before the seventeen-digit spelling. This disagrees with the
-settled writer contract.
-
-**Note.** The current behavior is present in the refactor identified by
-`66419386cf82`. The earlier closure of WR-08 did not account for this
-quantization path. Geometry coordinates, coefficients, and weights can change
-without a loss or refusal. This is a spec-code disagreement.
-
 ### WR-12 — Missing ISOP metadata in Type 508 output
 
 **Question.** What does the semantic BRep writer emit when
