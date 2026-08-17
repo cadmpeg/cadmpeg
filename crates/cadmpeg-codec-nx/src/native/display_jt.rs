@@ -1322,7 +1322,8 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
             (row_count > 0).then_some(())?;
             let table_end = 8usize.checked_add(row_count.checked_mul(16)?)?;
             (table_end <= payload.len()).then_some(())?;
-            let mut rows = Vec::with_capacity(row_count);
+            let mut rows = Vec::new();
+            rows.try_reserve_exact(row_count).ok()?;
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
@@ -1468,7 +1469,10 @@ pub fn display_jt_documents(
             .id
             .rsplit_once('#')
             .map_or(row.id.as_str(), |(_, key)| key);
-        let mut toc_entries = Vec::with_capacity(toc_count_usize);
+        let mut toc_entries = Vec::new();
+        if toc_entries.try_reserve_exact(toc_count_usize).is_err() {
+            return Vec::new();
+        }
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let bytes = &document[offset..offset + jt_toc::LEN];
@@ -1815,14 +1819,23 @@ pub fn display_jt_topology_packet_sequences(
         else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let mut roles = Vec::with_capacity(23 + high_degree_lane_count);
+        let Some(role_count) = 23usize.checked_add(high_degree_lane_count) else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let mut roles = Vec::new();
+        if roles.try_reserve_exact(role_count).is_err() {
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
         roles.extend(PREFIX_ROLES.map(str::to_string));
         roles.extend(
             (0..high_degree_lane_count)
                 .map(|ordinal| format!("high_degree_face_attribute_masks_{ordinal}")),
         );
         roles.extend(SPLIT_ROLES.map(str::to_string));
-        let mut packets = Vec::with_capacity(roles.len());
+        let mut packets = Vec::new();
+        if packets.try_reserve_exact(role_count).is_err() {
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
         for role in roles {
             let Some(remaining) = representation.get(cursor..) else {
                 return (Vec::new(), Vec::new(), Vec::new());
@@ -2488,7 +2501,10 @@ pub fn display_jt_compressed_element_sequences(
         let Some((parsed, framed_end)) = parse_jt_element_sequence(&inflated) else {
             return (Vec::new(), Vec::new());
         };
-        let mut element_ids = Vec::with_capacity(parsed.len());
+        let mut element_ids = Vec::new();
+        if element_ids.try_reserve_exact(parsed.len()).is_err() {
+            return (Vec::new(), Vec::new());
+        }
         for (ordinal, element) in parsed.into_iter().enumerate() {
             let id = format!("{}-inflated-element-{ordinal}", segment.id);
             element_ids.push(id.clone());
@@ -3643,6 +3659,7 @@ pub(crate) fn display_jt_tessellations(
         ..
     } = *inputs;
     let mut tessellations = Vec::new();
+    tessellations.try_reserve(meshes.len()).ok()?;
     for mesh in meshes {
         let coordinate_header = coordinate_headers
             .iter()
@@ -3679,6 +3696,7 @@ pub(crate) fn display_jt_tessellations(
         }
         let paths = display_jt_node_paths(&binding.scene_segment, shape_node.object_id, inputs)?;
         let mut rendered = Vec::new();
+        rendered.try_reserve_exact(mesh.polygons.len()).ok()?;
         for ((polygon, attributes), &group) in mesh
             .polygons
             .iter()
@@ -3760,14 +3778,22 @@ pub(crate) fn display_jt_tessellations(
                 || !texture_arrays.is_empty()
                 || vertex_flag_array.is_some();
             let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
-                let mut vertices = Vec::with_capacity(rendered.len() * 3);
-                let mut triangles = Vec::with_capacity(rendered.len());
-                let mut normal_vectors = normal_array
-                    .map(|_| Vec::with_capacity(rendered.len() * 3))
-                    .unwrap_or_default();
-                let mut color_data = color_array
-                    .map(|_| Vec::with_capacity(rendered.len() * 3 * 16))
-                    .unwrap_or_default();
+                let triangle_vertex_count = rendered.len().checked_mul(3)?;
+                let mut vertices = Vec::new();
+                vertices.try_reserve_exact(triangle_vertex_count).ok()?;
+                let mut triangles = Vec::new();
+                triangles.try_reserve_exact(rendered.len()).ok()?;
+                let mut normal_vectors = Vec::new();
+                if normal_array.is_some() {
+                    normal_vectors
+                        .try_reserve_exact(triangle_vertex_count)
+                        .ok()?;
+                }
+                let mut color_data = Vec::new();
+                if color_array.is_some() {
+                    let color_byte_count = triangle_vertex_count.checked_mul(16)?;
+                    color_data.try_reserve_exact(color_byte_count).ok()?;
+                }
                 let texture_component_counts = texture_arrays
                     .iter()
                     .map(|array| {
@@ -3778,13 +3804,23 @@ pub(crate) fn display_jt_tessellations(
                             .filter(|count| array.values.iter().all(|value| value.len() == *count))
                     })
                     .collect::<Option<Vec<_>>>()?;
-                let mut texture_data = texture_component_counts
-                    .iter()
-                    .map(|count| Vec::with_capacity(rendered.len() * 3 * count * 4))
-                    .collect::<Vec<_>>();
-                let mut vertex_flag_data = vertex_flag_array
-                    .map(|_| Vec::with_capacity(rendered.len() * 3 * 4))
-                    .unwrap_or_default();
+                let mut texture_data = Vec::new();
+                texture_data
+                    .try_reserve_exact(texture_component_counts.len())
+                    .ok()?;
+                for component_count in &texture_component_counts {
+                    let byte_count = triangle_vertex_count
+                        .checked_mul(*component_count)?
+                        .checked_mul(4)?;
+                    let mut data = Vec::new();
+                    data.try_reserve_exact(byte_count).ok()?;
+                    texture_data.push(data);
+                }
+                let mut vertex_flag_data = Vec::new();
+                if vertex_flag_array.is_some() {
+                    let flag_byte_count = triangle_vertex_count.checked_mul(4)?;
+                    vertex_flag_data.try_reserve_exact(flag_byte_count).ok()?;
+                }
                 for (triangle, attributes) in rendered.iter().copied() {
                     let base = u32::try_from(vertices.len()).ok()?;
                     for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
@@ -3856,12 +3892,19 @@ pub(crate) fn display_jt_tessellations(
                 }
                 (vertices, triangles, normal_vectors, channels)
             } else {
-                let vertices = (0..coordinates.points_m.len())
-                    .map(|index| convert_point(index as u32))
-                    .collect::<Option<Vec<_>>>()?;
-                let triangles = rendered.iter().map(|(triangle, _)| *triangle).collect();
+                let mut vertices = Vec::new();
+                vertices
+                    .try_reserve_exact(coordinates.points_m.len())
+                    .ok()?;
+                for index in 0..coordinates.points_m.len() {
+                    vertices.push(convert_point(index as u32)?);
+                }
+                let mut triangles = Vec::new();
+                triangles.try_reserve_exact(rendered.len()).ok()?;
+                triangles.extend(rendered.iter().map(|(triangle, _)| *triangle));
                 (vertices, triangles, Vec::new(), Vec::new())
             };
+            tessellations.try_reserve(1).ok()?;
             tessellations.push((
                 Tessellation {
                     id: if path.node_path.len() == 1 {

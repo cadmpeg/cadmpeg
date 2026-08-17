@@ -114,7 +114,8 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
         return None;
     }
 
-    let mut entries = Vec::with_capacity(count);
+    let mut entries = Vec::new();
+    entries.try_reserve_exact(count).ok()?;
     for ordinal in 0..count {
         let member_offset = view.position();
         let raw_byte_len = view.array::<2>()?;
@@ -149,12 +150,15 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
     if !view.is_empty() {
         return None;
     }
+    let mut entry_ids = Vec::new();
+    entry_ids.try_reserve_exact(entries.len()).ok()?;
+    entry_ids.extend(entries.iter().map(|entry| entry.id.clone()));
     Some(ParsedToggleStream {
         stream: SavedToggleStream {
             id: "nx:saved-toggle:stream#0".to_string(),
             version,
             raw_count,
-            entries: entries.iter().map(|entry| entry.id.clone()).collect(),
+            entries: entry_ids,
             trailer,
             source_offset,
             trailer_source_offset: source_offset.checked_add(trailer_at as u64)?,
@@ -203,5 +207,13 @@ mod tests {
         let mut wrong_count = complete;
         wrong_count[1] = 2;
         assert!(parse_saved_toggle_stream(&wrong_count, 0).is_none());
+    }
+
+    #[test]
+    fn rejects_count_before_count_driven_reservation() {
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        assert!(parse_saved_toggle_stream(&bytes, 0).is_none());
     }
 }
