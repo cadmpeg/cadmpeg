@@ -24,9 +24,9 @@ use super::entities::transfer_section_entities;
 use super::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
     native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
-    reconcile_constraint_entity_references, resolved_profile_chains, section_degenerate_axis_line,
-    section_dimension_constraints, section_equation_axis_distance_constraints,
-    section_equation_equal_distance_constraints,
+    reconcile_constraint_entity_references, reconcile_section_dimension_constraint,
+    resolved_profile_chains, section_degenerate_axis_line, section_dimension_constraints,
+    section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
     section_equation_function_six_distance_constraints,
     section_equation_function_thirty_one_point_coordinate_constraints,
@@ -599,9 +599,23 @@ pub(in super::super) fn transfer_sketches(
                 })
             })
             .collect::<Vec<_>>();
-        for (mut constraint, offset) in section_dimension_constraints(definition, &sketch_id) {
-            if !reconcile_constraint_entity_references(
+        for (relation_index, (mut constraint, offset)) in
+            section_dimension_constraints(definition, &sketch_id)
+                .into_iter()
+                .enumerate()
+        {
+            let Some(relation) = definition
+                .relations
+                .as_ref()
+                .and_then(|relations| relations.rows.get(relation_index))
+            else {
+                continue;
+            };
+            if !reconcile_section_dimension_constraint(
                 &mut constraint.definition,
+                definition,
+                &sketch_id,
+                relation,
                 &emitted_entity_ids,
             ) {
                 continue;

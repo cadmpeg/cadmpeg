@@ -1429,6 +1429,132 @@ pub(in super::super) fn circular_dimension_constraint(
     }
 }
 
+pub(in super::super) fn native_section_dimension_constraint_definition(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    relation: &crate::feature::FeatureRelation,
+) -> SketchConstraintDefinition {
+    let Some(relations) = definition.relations.as_ref() else {
+        return SketchConstraintDefinition::Native {
+            native_kind: format!("creo:relation:{}", relation.relation_type),
+            native_state: Some(u64::from(relation.used)),
+            native_flags: None,
+            native_properties: BTreeMap::from([
+                (
+                    "dimension_id".to_string(),
+                    relation.dimension_id.to_string(),
+                ),
+                ("sign".to_string(), relation.sign.to_string()),
+                ("relation_id".to_string(), relation.relation_id.to_string()),
+            ]),
+            entities: Vec::new(),
+            parameter: None,
+            operands: Vec::new(),
+        };
+    };
+    let unique_relation_id = feature_relation_table_complete(relations)
+        && relations
+            .rows
+            .iter()
+            .filter(|candidate| candidate.relation_id == relation.relation_id)
+            .count()
+            == 1;
+    let joined_relation_incidence_link = unique_relation_id
+        .then(|| joined_relation_incidence_link(definition, relation.relation_id))
+        .flatten();
+    let joined_incidence = joined_relation_incidence_link.map(|(_, incidence)| incidence);
+    let parameter = definition.dimensions.as_ref().and_then(|dimensions| {
+        resolved_feature_dimension_parameter(
+            sketch,
+            dimensions,
+            usize::try_from(relation.dimension_id).ok()?,
+        )
+        .map(|(_, parameter)| parameter)
+    });
+    let entities = if unique_relation_id {
+        joined_relation_incidence_entities(definition, sketch, relation.relation_id)
+    } else {
+        Vec::new()
+    };
+    let native_ref = sketch_native_ref(sketch);
+    let mut native_properties = BTreeMap::from([
+        (
+            "dimension_id".to_string(),
+            relation.dimension_id.to_string(),
+        ),
+        ("sign".to_string(), relation.sign.to_string()),
+    ]);
+    if !unique_relation_id {
+        native_properties.insert("relation_id".to_string(), relation.relation_id.to_string());
+    }
+    let mut operands = Vec::new();
+    if unique_relation_id {
+        operands.push(SketchNativeOperand {
+            native_kind: "relat_ptr".to_string(),
+            native_field: None,
+            native_role: None,
+            object_index: relation.relation_id,
+            native_ref: Some(native_ref.clone()),
+        });
+    }
+    if let Some(incidence) = joined_incidence {
+        operands.push(SketchNativeOperand {
+            native_kind: "skamp_ptr".to_string(),
+            native_field: Some("triples_ptr.skamp_id".to_string()),
+            native_role: None,
+            object_index: incidence.id,
+            native_ref: Some(native_ref.clone()),
+        });
+    }
+    if let Some(equation_id) = joined_relation_incidence_link.and_then(|(join, _)| join.equation_id)
+    {
+        operands.push(SketchNativeOperand {
+            native_kind: "triples_ptr".to_string(),
+            native_field: Some("equation_id".to_string()),
+            native_role: None,
+            object_index: equation_id,
+            native_ref: Some(native_ref.clone()),
+        });
+    }
+    if let Some(vectors) = relation.operand_vectors {
+        for (vector, values) in ["a", "b", "c"].into_iter().zip(vectors) {
+            operands.extend(values.into_iter().enumerate().filter_map(|(slot, value)| {
+                value.map(|object_index| SketchNativeOperand {
+                    native_kind: "relat_ptr".to_string(),
+                    native_field: Some(format!("{vector}[{slot}]")),
+                    native_role: None,
+                    object_index,
+                    native_ref: Some(native_ref.clone()),
+                })
+            }));
+        }
+    }
+    SketchConstraintDefinition::Native {
+        native_kind: format!("creo:relation:{}", relation.relation_type),
+        native_state: Some(u64::from(relation.used)),
+        native_flags: None,
+        native_properties,
+        entities,
+        parameter,
+        operands,
+    }
+}
+
+pub(in super::super) fn reconcile_section_dimension_constraint(
+    constraint_definition: &mut SketchConstraintDefinition,
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    relation: &crate::feature::FeatureRelation,
+    emitted: &BTreeSet<SketchEntityId>,
+) -> bool {
+    if reconcile_constraint_entity_references(constraint_definition, emitted) {
+        return true;
+    }
+    *constraint_definition =
+        native_section_dimension_constraint_definition(definition, sketch, relation);
+    reconcile_constraint_entity_references(constraint_definition, emitted)
+}
+
 pub(in super::super) fn section_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -1696,85 +1822,10 @@ pub(in super::super) fn section_dimension_constraints(
                     parameter,
                 })
             })();
-            let incidence_entities = if unique_relation_id {
-                joined_relation_incidence_entities(definition, sketch, relation.relation_id)
-            } else {
-                Vec::new()
-            };
             let active = joined_incidence.map(|incidence| section_skamp_active(incidence.status));
-            let constraint_definition =
-                typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
-                    native_kind: format!("creo:relation:{}", relation.relation_type),
-                    native_state: Some(u64::from(relation.used)),
-                    native_flags: None,
-                    native_properties: {
-                        let mut properties = BTreeMap::from([
-                            (
-                                "dimension_id".to_string(),
-                                relation.dimension_id.to_string(),
-                            ),
-                            ("sign".to_string(), relation.sign.to_string()),
-                        ]);
-                        if !unique_relation_id {
-                            properties.insert(
-                                "relation_id".to_string(),
-                                relation.relation_id.to_string(),
-                            );
-                        }
-                        properties
-                    },
-                    entities: incidence_entities,
-                    parameter,
-                    operands: {
-                        let native_ref = sketch_native_ref(sketch);
-                        let mut operands = Vec::new();
-                        if unique_relation_id {
-                            operands.push(SketchNativeOperand {
-                                native_kind: "relat_ptr".to_string(),
-                                native_field: None,
-                                native_role: None,
-                                object_index: relation.relation_id,
-                                native_ref: Some(native_ref.clone()),
-                            });
-                        }
-                        if let Some(incidence) = joined_incidence {
-                            operands.push(SketchNativeOperand {
-                                native_kind: "skamp_ptr".to_string(),
-                                native_field: Some("triples_ptr.skamp_id".to_string()),
-                                native_role: None,
-                                object_index: incidence.id,
-                                native_ref: Some(native_ref.clone()),
-                            });
-                        }
-                        if let Some(equation_id) =
-                            joined_incidence_link.and_then(|(join, _)| join.equation_id)
-                        {
-                            operands.push(SketchNativeOperand {
-                                native_kind: "triples_ptr".to_string(),
-                                native_field: Some("equation_id".to_string()),
-                                native_role: None,
-                                object_index: equation_id,
-                                native_ref: Some(native_ref.clone()),
-                            });
-                        }
-                        if let Some(vectors) = relation.operand_vectors {
-                            for (vector, values) in ["a", "b", "c"].into_iter().zip(vectors) {
-                                operands.extend(values.into_iter().enumerate().filter_map(
-                                    |(slot, value)| {
-                                        value.map(|object_index| SketchNativeOperand {
-                                            native_kind: "relat_ptr".to_string(),
-                                            native_field: Some(format!("{vector}[{slot}]")),
-                                            native_role: None,
-                                            object_index,
-                                            native_ref: Some(native_ref.clone()),
-                                        })
-                                    },
-                                ));
-                            }
-                        }
-                        operands
-                    },
-                });
+            let constraint_definition = typed.unwrap_or_else(|| {
+                native_section_dimension_constraint_definition(definition, sketch, relation)
+            });
             (
                 SketchConstraint {
                     id: if unique_relation_id {
@@ -1814,4 +1865,75 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
             [Some(0), Some(0), Some(0), Some(0)] | [Some(1), Some(1), Some(0), Some(1)]
         )
         && vectors[2] == [Some(15), Some(16), Some(15), Some(1)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reconcile_section_dimension_constraint;
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchId};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn typed_dimension_relation_falls_back_to_native_when_entity_is_not_emitted() {
+        let relation = crate::feature::FeatureRelation {
+            relation_id: 7,
+            used: 1,
+            operands: Vec::new(),
+            operand_vectors: None,
+            sign: 1,
+            dimension_id: 0,
+            relation_type: 0,
+            body: Vec::new(),
+            offset: 11,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 1,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(crate::feature::FeatureRelationTable {
+                declared_count: 3,
+                entity_ref: None,
+                rows: vec![relation.clone()],
+                skamps: Vec::new(),
+                skamp_header: None,
+                triples: Vec::new(),
+                triples_header: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId("synthetic:test:dimension-relation".into());
+        let missing = SketchEntityId("synthetic:test:dimension-relation#missing".into());
+        let mut constraint = SketchConstraintDefinition::Distance {
+            entities: vec![missing],
+            parameter: ParameterId("synthetic:test:dimension-parameter".into()),
+        };
+
+        assert!(reconcile_section_dimension_constraint(
+            &mut constraint,
+            &definition,
+            &sketch,
+            &relation,
+            &BTreeSet::new(),
+        ));
+        assert!(matches!(
+            constraint,
+            SketchConstraintDefinition::Native {
+                native_kind,
+                entities,
+                ..
+            } if native_kind == "creo:relation:0" && entities.is_empty()
+        ));
+    }
 }
