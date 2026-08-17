@@ -2447,7 +2447,9 @@ pub(crate) fn parse_metadata(
                 }
             }
             if let Err(error) = result {
-                if table_type == LAYER && record.typecode == LAYER_RECORD {
+                if matches!(table_type, PROPERTIES | SETTINGS | LAYER)
+                    && (table_type != LAYER || record.typecode == LAYER_RECORD)
+                {
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),

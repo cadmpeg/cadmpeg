@@ -10,7 +10,7 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
     ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::Record;
+use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{bbox, utf16};
 use crate::wire::Uuid;
@@ -150,6 +150,15 @@ pub(crate) struct DefinitionScan {
     pub(crate) member_object_ids: HashSet<Uuid>,
     /// Recoverable per-record diagnostics.
     pub(crate) diagnostics: Vec<DefinitionDiagnostic>,
+}
+
+/// Result of scanning instance-definition records.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DefinitionParse {
+    /// Typed definitions and diagnostics.
+    pub(crate) scan: DefinitionScan,
+    /// Complete records whose registered class payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
 /// Recoverable instance-definition parser diagnostic.
@@ -948,8 +957,9 @@ pub(crate) fn parse_definitions(
     data: &[u8],
     records: &[Record],
     archive: ArchiveVersion,
-) -> DefinitionScan {
-    let mut result = DefinitionScan::default();
+    table_typecode: u32,
+) -> DefinitionParse {
+    let mut result = DefinitionParse::default();
     let mut seen = HashSet::new();
     for record in records {
         let parsed = (|| {
@@ -975,7 +985,7 @@ pub(crate) fn parse_definitions(
             if let Ok(member_ids) =
                 extract_member_ids(data, class.class_data_range.clone(), archive, v5_layout)
             {
-                result.member_object_ids.extend(member_ids);
+                result.scan.member_object_ids.extend(member_ids);
             }
             let mut definition = if v5_layout {
                 parse_v5(
@@ -996,7 +1006,7 @@ pub(crate) fn parse_definitions(
             }?;
             apply_idef_alternative_path(data, &userdata, archive, &mut definition, &mut warnings);
             for warning in warnings {
-                result.diagnostics.push(DefinitionDiagnostic {
+                result.scan.diagnostics.push(DefinitionDiagnostic {
                     message: warning,
                     source_range: record.range.clone(),
                 });
@@ -1006,25 +1016,36 @@ pub(crate) fn parse_definitions(
         match parsed {
             Ok(definition) if seen.insert(definition.id) => {
                 result
+                    .scan
                     .member_object_ids
                     .extend(definition.members.iter().copied());
-                result.definitions.push(definition);
+                result.scan.definitions.push(definition);
             }
             Ok(definition) => {
                 result
+                    .scan
                     .member_object_ids
                     .extend(definition.members.iter().copied());
-                result.ambiguous_ids.insert(definition.id);
-                result.definitions.retain(|value| value.id != definition.id);
-                result.diagnostics.push(DefinitionDiagnostic {
+                result.scan.ambiguous_ids.insert(definition.id);
+                result
+                    .scan
+                    .definitions
+                    .retain(|value| value.id != definition.id);
+                result.scan.diagnostics.push(DefinitionDiagnostic {
                     message: format!("duplicate instance definition UUID {}", definition.id),
                     source_range: record.range.clone(),
                 });
             }
-            Err(error) => result.diagnostics.push(DefinitionDiagnostic {
-                message: format!("instance definition retained: {error}"),
-                source_range: record.range.clone(),
-            }),
+            Err(error) => {
+                result.scan.diagnostics.push(DefinitionDiagnostic {
+                    message: format!("instance definition retained: {error}"),
+                    source_range: record.range.clone(),
+                });
+                result.opaque_records.push(OpaqueRecord {
+                    table_typecode,
+                    record: record.clone(),
+                });
+            }
         }
     }
     result

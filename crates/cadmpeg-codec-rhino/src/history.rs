@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
-use crate::container::Record;
+use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
 use crate::wire::Uuid;
@@ -120,6 +120,15 @@ pub(crate) struct HistoryRecord {
     pub(crate) values: Vec<HistoryValue>,
     pub(crate) record_type: RecordType,
     pub(crate) copy_on_replace: bool,
+}
+
+/// Result of scanning the history-record table.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct HistoryScan {
+    /// Valid history records in source order.
+    pub(crate) records: Vec<HistoryRecord>,
+    /// Complete records whose registered class payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
@@ -719,22 +728,25 @@ pub(crate) fn parse_records(
     records: &[Record],
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
-) -> Vec<HistoryRecord> {
-    records
-        .iter()
-        .filter_map(
-            |record| match parse_record(bytes, record, archive, warnings) {
-                Ok(value) => Some(value),
-                Err(error) => {
-                    warnings.push(format!(
-                        "history record at {} degraded: {error}",
-                        record.range.start
-                    ));
-                    None
-                }
-            },
-        )
-        .collect()
+    table_typecode: u32,
+) -> HistoryScan {
+    let mut result = HistoryScan::default();
+    for record in records {
+        match parse_record(bytes, record, archive, warnings) {
+            Ok(value) => result.records.push(value),
+            Err(error) => {
+                warnings.push(format!(
+                    "history record at {} degraded: {error}",
+                    record.range.start
+                ));
+                result.opaque_records.push(OpaqueRecord {
+                    table_typecode,
+                    record: record.clone(),
+                });
+            }
+        }
+    }
+    result
 }
 
 fn list<T: ToString>(values: &[T]) -> String {

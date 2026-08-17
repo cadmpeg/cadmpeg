@@ -179,6 +179,29 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     assert_eq!(scan.definitions.definitions.len(), 1);
     assert!(scan.definitions.definitions[0].file_reference.is_some());
 
+    let mut future_payload =
+        v5_definition_payload(ArchiveVersion::V5, 6, definition_id, &[], false);
+    future_payload[0] = 0x20;
+    let future_record = definition_record(ArchiveVersion::V5, &future_payload);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        ArchiveVersion::V5,
+        std::slice::from_ref(&future_record),
+        &[],
+    ))
+    .expect("future instance-definition record");
+    assert!(scan.definitions.definitions.is_empty());
+    let retained = scan
+        .opaque_records
+        .iter()
+        .find(|record| record.table_typecode & !crate::chunks::TCODE_CRC == 0x1000_0021)
+        .expect("future instance-definition record is retained");
+    assert_eq!(retained.record.typecode, 0x2000_8076);
+    assert_eq!(
+        &scan.data[retained.record.range.clone()],
+        future_record.as_slice()
+    );
+
     let mut v6_payload = v6_definition_payload(
         ArchiveVersion::V7,
         [0x30; 16],

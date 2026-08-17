@@ -9,7 +9,7 @@ use crate::chunks::{
     checksum_children_through_class_end, chunk_at, direct_checksum_ranges, verify_checksum_ranges,
     ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_ENDOFTABLE,
 };
-use crate::container::{Record, Scan};
+use crate::container::{OpaqueRecord, Record, Scan};
 use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -1143,8 +1143,16 @@ fn parse_named_cplanes(
     Ok(values)
 }
 
+/// Result of installing saved and active view records.
+pub(crate) struct ViewInstall {
+    /// Losses from view records that could not be transferred.
+    pub(crate) losses: Vec<LossNote>,
+    /// Complete settings records whose view payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
+}
+
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> ViewInstall {
     let scale = scan
         .metadata
         .settings
@@ -1155,6 +1163,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
     let mut losses = Vec::new();
+    let mut opaque_records = Vec::new();
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
@@ -1163,23 +1172,41 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
             if record.typecode == NAMED_CPLANES {
                 match parse_named_cplanes(scan.data, record, scan.archive, scale) {
                     Ok(values) => cplanes.extend(values),
-                    Err(error) => losses.push(
-                        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
-                            "named construction-plane list at offset {} was omitted after parsing failed: {error}",
-                            record.range.start
-                        )),
-                    ),
+                    Err(error) => {
+                        losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
+                            format!(
+                                "named construction-plane list at offset {} was omitted after parsing failed: {error}",
+                                record.range.start
+                            ),
+                        ));
+                        opaque_records.push(OpaqueRecord {
+                            table_typecode: table.typecode,
+                            record: record.clone(),
+                        });
+                    }
                 }
             }
             if record.typecode == NAMED_VIEWS {
                 let (parsed, mut parse_losses) =
                     parse_list(scan.data, record, scan.archive, scale, "named");
+                if !parse_losses.is_empty() {
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
+                }
                 views.extend(parsed);
                 losses.append(&mut parse_losses);
             }
             if record.typecode == ACTIVE_VIEWS {
                 let (parsed, mut parse_losses) =
                     parse_list(scan.data, record, scan.archive, scale, "active");
+                if !parse_losses.is_empty() {
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
+                }
                 views.extend(parsed);
                 losses.append(&mut parse_losses);
             }
@@ -1193,7 +1220,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     namespace
         .set_arena("construction_planes", &cplanes)
         .expect("Rhino construction planes serialize");
-    losses
+    ViewInstall {
+        losses,
+        opaque_records,
+    }
 }
 
 #[cfg(test)]

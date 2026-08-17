@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::ops::Range;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
-use crate::container::{Record, Scan};
+use crate::container::{OpaqueRecord, Record, Scan};
 use crate::objects::{parse_userdata, UserdataDescriptor};
 use crate::settings::utf16;
 use crate::wire::{scaled_coordinate, Uuid};
@@ -494,7 +494,10 @@ fn render_userdata(
 }
 
 /// Installs complete typed document-level metadata and named setting records.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
+///
+/// The returned records are complete settings records whose payload was not
+/// admitted by a registered owner.
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
     let properties = &scan.metadata.properties;
     let revisions = properties
         .revision_history
@@ -581,6 +584,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
+    let mut opaque_records = Vec::new();
     let mut render_settings_seen = false;
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
@@ -605,12 +609,24 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                     renders.push(value);
                     render_settings_seen = true;
                 })
-            } else if record.typecode == RENDER_USERDATA && render_settings_seen {
-                render_userdata(scan.data, record, scan.archive).map(|_| ())
+            } else if record.typecode == RENDER_USERDATA {
+                if render_settings_seen {
+                    render_userdata(scan.data, record, scan.archive).map(|_| ())
+                } else {
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
+                    continue;
+                }
             } else {
                 continue;
             };
             if let Err(error) = result {
+                opaque_records.push(OpaqueRecord {
+                    table_typecode: table.typecode,
+                    record: record.clone(),
+                });
                 setting_records.push(SettingRecord {
                     id: format!("rhino:document:setting#error-{:04}", setting_records.len()),
                     source_offset: record.range.start as u64,
@@ -651,6 +667,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     namespace
         .set_arena("render_settings", &renders)
         .expect("Rhino render settings serialize");
+    opaque_records
 }
 
 #[cfg(test)]

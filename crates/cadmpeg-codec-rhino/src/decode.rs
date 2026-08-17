@@ -26,7 +26,7 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ArchiveVersion;
-use crate::container::Scan;
+use crate::container::{OpaqueRecord, Scan};
 use crate::loss::RhinoLossCode;
 use crate::objects::ObjectDescriptor;
 
@@ -2374,12 +2374,20 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn commit(mut self) -> DecodeResult {
         self.typed_losses
             .extend(crate::annotations::install(self.scan, &mut self.ir));
-        crate::document_data::install(self.scan, &mut self.ir);
-        self.typed_losses
-            .extend(crate::presentation::install(self.scan, &mut self.ir));
+        for source in crate::document_data::install(self.scan, &mut self.ir) {
+            self.retain_opaque_record(&source);
+        }
+        let presentation = crate::presentation::install(self.scan, &mut self.ir);
+        self.typed_losses.extend(presentation.losses);
+        for source in presentation.opaque_records {
+            self.retain_opaque_record(&source);
+        }
         crate::product::install(self.scan, &mut self.ir);
-        self.typed_losses
-            .extend(crate::views::install(self.scan, &mut self.ir));
+        let views = crate::views::install(self.scan, &mut self.ir);
+        self.typed_losses.extend(views.losses);
+        for source in views.opaque_records {
+            self.retain_opaque_record(&source);
+        }
         self.ir.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let decoded = self
@@ -2586,13 +2594,17 @@ impl<'a> DecodeContext<'a> {
     fn retain_opaque_records(&mut self) {
         for index in 0..self.scan.opaque_records.len() {
             let source = &self.scan.opaque_records[index];
-            let id = UnknownId(format!(
-                "rhino:opaque:record#{:08x}-{:08x}-{:016x}",
-                source.table_typecode, source.record.typecode, source.record.range.start
-            ));
-            let record = self.source_record(id, source.record.range.clone());
-            self.opaque_records.push(record);
+            self.retain_opaque_record(source);
         }
+    }
+
+    fn retain_opaque_record(&mut self, source: &OpaqueRecord) {
+        let id = UnknownId(format!(
+            "rhino:opaque:record#{:08x}-{:08x}-{:016x}",
+            source.table_typecode, source.record.typecode, source.record.range.start
+        ));
+        let record = self.source_record(id, source.record.range.clone());
+        self.opaque_records.push(record);
     }
 
     fn source_record(&mut self, id: UnknownId, range: std::ops::Range<usize>) -> UnknownRecord {

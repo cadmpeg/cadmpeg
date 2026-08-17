@@ -288,6 +288,116 @@ fn registered_future_object_major_is_retained_without_known_prefix() {
     assert_valid(&result);
 }
 
+#[test]
+fn registered_future_table_major_is_retained_without_known_prefix() {
+    let archive = ArchiveVersion::V5;
+    let group_class = crate::wire::Uuid::from_canonical([
+        0x72, 0x1d, 0x9f, 0x97, 0x36, 0x45, 0x44, 0xc4, 0x8b, 0xe6, 0xb2, 0xcf, 0x69, 0x7d, 0x25,
+        0xce,
+    ])
+    .to_wire();
+    let mut future_group_payload = vec![0x21];
+    future_group_payload.extend(7_i32.to_le_bytes());
+    future_group_payload.extend(crate::test_support::test_dump::utf16_bytes("future group"));
+    future_group_payload.extend([0_u8; 16]);
+    future_group_payload.extend([0xde, 0xad]);
+    let future_group = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_8073,
+        &crate::test_support::test_dump::class_wrapper(archive, group_class, &future_group_payload),
+    );
+    let valid_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let mut units_body = 100_i32.to_le_bytes().to_vec();
+    units_body.extend(2_i32.to_le_bytes());
+    units_body.extend(0.01_f64.to_le_bytes());
+    units_body.extend(0.1_f64.to_le_bytes());
+    units_body.extend(0.001_f64.to_le_bytes());
+    let units = crate::test_support::test_dump::crc_chunk(archive, 0x2000_8031, &units_body);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[units]),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0018,
+                std::slice::from_ref(&future_group),
+            ),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[valid_point]),
+        ],
+    );
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| {
+            record
+                .id
+                .starts_with("rhino:opaque:record#10000018-20008073-")
+        })
+        .expect("future-major table record is retained");
+    assert_eq!(retained.data.as_deref(), Some(future_group.as_slice()));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            && loss.message.contains("could not be transferred")
+    }));
+    assert_valid(&result);
+}
+
+#[test]
+fn future_settings_payload_is_retained_without_known_prefix() {
+    let archive = ArchiveVersion::V5;
+    let future_annotation =
+        crate::test_support::test_dump::crc_chunk(archive, 0x2000_8034, &[0x20]);
+    let valid_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let mut units_body = 100_i32.to_le_bytes().to_vec();
+    units_body.extend(2_i32.to_le_bytes());
+    units_body.extend(0.01_f64.to_le_bytes());
+    units_body.extend(0.1_f64.to_le_bytes());
+    units_body.extend(0.001_f64.to_le_bytes());
+    let units = crate::test_support::test_dump::crc_chunk(archive, 0x2000_8031, &units_body);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0015,
+                &[units, future_annotation.clone()],
+            ),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[valid_point]),
+        ],
+    );
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| {
+            record
+                .id
+                .starts_with("rhino:opaque:record#10000015-20008034-")
+        })
+        .expect("future settings payload is retained");
+    assert_eq!(retained.data.as_deref(), Some(future_annotation.as_slice()));
+    assert_valid(&result);
+}
+
 /// Object types from `docs/formats/rhino_3dm.md` "object type values".
 const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
 const CURVE_OBJECT_TYPE: i64 = 0x0000_0004;

@@ -5,11 +5,20 @@ use super::*;
 use crate::chunks::TCODE_CRC;
 use crate::test_support::test_dump::*;
 
-fn anonymous_value(minor: i32, body: &[u8]) -> Vec<u8> {
-    let mut payload = 1_i32.to_le_bytes().to_vec();
+fn versioned_anonymous_chunk(
+    archive: ArchiveVersion,
+    major: i32,
+    minor: i32,
+    body: &[u8],
+) -> Vec<u8> {
+    let mut payload = major.to_le_bytes().to_vec();
     payload.extend(minor.to_le_bytes());
     payload.extend(body);
-    crate::test_support::crc_chunk(ANONYMOUS, &payload)
+    crate::test_support::test_dump::crc_chunk(archive, ANONYMOUS, &payload)
+}
+
+fn anonymous_value(minor: i32, body: &[u8]) -> Vec<u8> {
+    versioned_anonymous_chunk(ArchiveVersion::V8, 1, minor, body)
 }
 
 fn value(type_code: i32, payload: &[u8]) -> Vec<u8> {
@@ -43,6 +52,14 @@ fn record(record_id: u8, command: u8, antecedents: &[u8], descendants: &[u8]) ->
 }
 
 fn source_band_history_record(archive: ArchiveVersion, minor: i32) -> Vec<u8> {
+    source_band_history_record_with_major(archive, 1, minor)
+}
+
+fn source_band_history_record_with_major(
+    archive: ArchiveVersion,
+    major: i32,
+    minor: i32,
+) -> Vec<u8> {
     let mut values_body = 0_i32.to_le_bytes().to_vec();
     values_body.extend([0xcc, 0xdd]);
     let values = anonymous_chunk(archive, 0, &values_body);
@@ -62,7 +79,7 @@ fn source_band_history_record(archive: ArchiveVersion, minor: i32) -> Vec<u8> {
     }
     body.extend([0xaa, 0xbb]);
 
-    let payload = anonymous_chunk(archive, minor, &body);
+    let payload = versioned_anonymous_chunk(archive, major, minor, &body);
     let class = class_wrapper(archive, HISTORY_CLASS.to_wire(), &payload);
     crc_chunk(archive, 0x2000_807b, &class)
 }
@@ -171,6 +188,34 @@ fn history_record_writer_bands_follow_archive_version() {
         assert_eq!(history.record_type, RecordType::FeatureParameters);
         assert_eq!(history.copy_on_replace, copy_on_replace);
     }
+}
+
+#[test]
+fn future_history_major_is_retained_as_a_complete_record() {
+    let archive = ArchiveVersion::V5;
+    let future_record = source_band_history_record_with_major(archive, 2, 1);
+    let bytes = minimal_document(
+        "50",
+        &[
+            crc_table(archive, 0x1000_0014, &[]),
+            crc_table(archive, 0x1000_0015, &[]),
+            crc_table(archive, 0x1000_0013, &[]),
+            crc_table(archive, 0x1000_0026, std::slice::from_ref(&future_record)),
+        ],
+    );
+
+    let scan = crate::container::scan_owned(bytes).expect("future history record");
+    assert!(scan.history.is_empty());
+    let retained = scan
+        .opaque_records
+        .iter()
+        .find(|record| record.table_typecode & !TCODE_CRC == 0x1000_0026)
+        .expect("future history record is retained");
+    assert_eq!(retained.record.typecode, 0x2000_807b);
+    assert_eq!(
+        &scan.data[retained.record.range.clone()],
+        future_record.as_slice()
+    );
 }
 
 #[test]

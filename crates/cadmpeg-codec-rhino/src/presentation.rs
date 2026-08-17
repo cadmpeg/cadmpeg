@@ -12,7 +12,7 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::{Record, Scan};
+use crate::container::{OpaqueRecord, Record, Scan};
 use crate::loss::RhinoLossCode;
 use crate::objects::{
     apply_attribute_userdata, parse_attribute_userdata, parse_attributes, parse_class_wrapper,
@@ -3703,7 +3703,15 @@ fn parse_text_style(
     })
 }
 
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
+/// Results of transferring table-owned presentation records.
+pub(crate) struct PresentationInstall {
+    /// Losses from records that could not be transferred.
+    pub(crate) losses: Vec<LossNote>,
+    /// Complete records whose registered class payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
+}
+
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
     let scale = scan
         .metadata
         .settings
@@ -3726,6 +3734,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let mut object_presentation = Vec::new();
     let mut object_id_counts = BTreeMap::<Uuid, usize>::new();
     let mut losses = Vec::new();
+    let mut opaque_records = Vec::new();
     for object in &scan.objects {
         if let Some(identity) = &object.identity {
             *object_id_counts.entry(identity.object_id).or_default() += 1;
@@ -3959,6 +3968,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                     "record at offset {} in table {table_type:#x} could not be transferred",
                     record.range.start
                 )));
+                opaque_records.push(OpaqueRecord {
+                    table_typecode: table.typecode,
+                    record: record.clone(),
+                });
             }
         }
     }
@@ -4142,7 +4155,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     namespace
         .set_arena("object_presentation", &object_presentation)
         .expect("Rhino object presentation serializes");
-    losses
+    PresentationInstall {
+        losses,
+        opaque_records,
+    }
 }
 
 #[cfg(test)]

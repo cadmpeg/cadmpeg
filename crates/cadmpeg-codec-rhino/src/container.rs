@@ -1019,10 +1019,20 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             warnings.push(note);
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
-            definitions = parse_definitions(data, &records, archive);
+            let parsed = parse_definitions(data, &records, archive, chunk.typecode);
+            definitions = parsed.scan;
+            opaque_records.extend(parsed.opaque_records);
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
-            history = crate::history::parse_records(data, &records, archive, &mut warnings);
+            let parsed = crate::history::parse_records(
+                data,
+                &records,
+                archive,
+                &mut warnings,
+                chunk.typecode,
+            );
+            history = parsed.records;
+            opaque_records.extend(parsed.opaque_records);
         }
         tables.push(Table {
             typecode: chunk.typecode,
