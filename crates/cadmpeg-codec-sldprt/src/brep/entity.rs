@@ -794,6 +794,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         ));
     }
     if out.is_empty() {
+        out.extend(disc20_disc1e_disc1c_disc14_disc12_disc10_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(
             disc22_disc20_disc1e_disc1a_disc18_disc12_disc10_disc04_face_root_body(&by_attr),
         );
@@ -4063,6 +4066,33 @@ fn disc20_disc1e_disc1c_disc16_disc14_disc12_face_root_body(
     )
 }
 
+fn disc20_disc1e_disc1c_disc14_disc12_disc10_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0014, 1),
+            (0x0012, 2),
+            (0x0010, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 3,
+            require_exact_use_population: false,
+        },
+        true,
+    )
+}
+
 fn keyed_disc1a_disc18_disc14_disc12_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7205,6 +7235,7 @@ mod tests {
     mod disc20_disc18;
     mod disc20_disc1a_disc18;
     mod disc20_disc1e_disc1c;
+    mod disc20_disc1e_disc1c_disc14_disc12_disc10_disc04;
     mod disc20_disc1e_disc1c_disc16_disc14_disc12;
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc22_disc20_disc1e_disc1a;
@@ -7317,7 +7348,6 @@ mod tests {
             .collect::<HashMap<_, _>>();
 
         let bodies = disc14_bodies(&by_attr);
-
         assert_eq!(bodies.len(), 2);
         assert_eq!(
             bodies
