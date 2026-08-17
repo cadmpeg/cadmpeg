@@ -813,6 +813,7 @@ pub(crate) fn try_decode_geometry(
         invalidate_inconsistent_support_uv_with_budget(
             &mut ir,
             &pending_ext11_support_uv,
+            &support_budget,
             &adaptive_geometry_budget,
         );
         complete_ext11_support_uv_with_budget(

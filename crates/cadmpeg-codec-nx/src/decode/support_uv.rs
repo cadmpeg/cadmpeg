@@ -127,6 +127,9 @@ pub(crate) fn support_uv_lane_matches_surface_with_budget(
     let Some(values) = values.filter(|values| values.len() == points.len()) else {
         return false;
     };
+    if values.len() > MAX_SUPPORT_UV_SAMPLES {
+        return false;
+    }
     let Some(geometry) = ir
         .model
         .surfaces
@@ -136,7 +139,10 @@ pub(crate) fn support_uv_lane_matches_surface_with_budget(
     else {
         return false;
     };
-    values.iter().zip(points).all(|(uv, point)| {
+    for (uv, point) in values.iter().zip(points) {
+        if geometry_budget.exhausted() {
+            return false;
+        }
         if uv
             .iter()
             .any(|value| !value.is_finite() || missing_support_parameter(*value))
@@ -146,7 +152,7 @@ pub(crate) fn support_uv_lane_matches_surface_with_budget(
         let Some(uv) = surface_parameters(geometry, *uv) else {
             return false;
         };
-        decoded_surface_point_with_geometry_and_budget(
+        let Some(candidate) = decoded_surface_point_with_geometry_and_budget(
             index,
             surface,
             geometry,
@@ -154,9 +160,14 @@ pub(crate) fn support_uv_lane_matches_surface_with_budget(
             uv.v,
             0,
             geometry_budget,
-        )
-        .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
-    })
+        ) else {
+            return false;
+        };
+        if point_distance(candidate, *point) > fit_tolerance {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -423,18 +434,23 @@ pub(crate) fn invalidate_inconsistent_support_uv(
     pending: &[PendingExt11SupportUv],
 ) {
     let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    invalidate_inconsistent_support_uv_with_budget(ir, pending, &geometry_budget);
+    let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
+    invalidate_inconsistent_support_uv_with_budget(ir, pending, &support_budget, &geometry_budget);
 }
 
 pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
+    support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let invalid = {
         let index = cadmpeg_ir::index::ModelIndex::new(ir);
         let mut invalid = Vec::new();
         for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+            if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
+                break;
+            }
             let Some(procedural_index) = ir
                 .model
                 .procedural_curves
@@ -449,6 +465,9 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
                 continue;
             };
             for (side, support) in context.sides.iter().enumerate() {
+                if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
+                    break;
+                }
                 let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
                     continue;
                 };
@@ -460,23 +479,30 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
                 };
                 let tolerance =
                     blend_spine_cache_fit_tolerance_with_index(&index, ir, surface, *fit_tolerance);
-                let inconsistent = parameters
-                    .iter()
-                    .zip(points)
-                    .filter_map(|(parameter, point)| {
-                        let uv = pcurve_uv(pcurve, *parameter)?;
-                        decoded_surface_point_with_geometry_and_budget(
-                            &index,
-                            surface,
-                            geometry,
-                            uv.u,
-                            uv.v,
-                            0,
-                            geometry_budget,
-                        )
-                        .map(|actual| point_distance(actual, *point) > tolerance)
-                    })
-                    .any(|inconsistent| inconsistent);
+                let mut inconsistent = false;
+                for (parameter, point) in parameters.iter().zip(points) {
+                    if geometry_budget.exhausted() || !support_budget.charge() {
+                        break;
+                    }
+                    let Some(uv) = pcurve_uv(pcurve, *parameter) else {
+                        continue;
+                    };
+                    let Some(actual) = decoded_surface_point_with_geometry_and_budget(
+                        &index,
+                        surface,
+                        geometry,
+                        uv.u,
+                        uv.v,
+                        0,
+                        geometry_budget,
+                    ) else {
+                        break;
+                    };
+                    if point_distance(actual, *point) > tolerance {
+                        inconsistent = true;
+                        break;
+                    }
+                }
                 if inconsistent {
                     invalid.push((procedural_index, side));
                 }
@@ -1208,5 +1234,40 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
                 parameter_range: None,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oversized_serialized_lane_is_declined_before_geometry_work() {
+        let surface_id = SurfaceId("synthetic:support-plane".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
+        let values = vec![[0.0, 0.0]; MAX_SUPPORT_UV_SAMPLES + 1];
+        let geometry_budget = WorkBudget::new(1);
+
+        assert!(!support_uv_lane_matches_surface_with_budget(
+            &ir,
+            &index,
+            &surface_id,
+            &points,
+            0.0,
+            Some(&values),
+            &geometry_budget,
+        ));
+        assert_eq!(geometry_budget.remaining(), 1);
     }
 }
