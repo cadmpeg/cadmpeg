@@ -35,7 +35,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         return 0;
     }
     let mut transferred = 0;
-    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan) {
+    let associations = unique_surface_prototype_associations(scan)
+        .into_iter()
+        .filter_map(|(prototype, associated_row, section)| {
+            let frame = surface_prototype_frame_bounds(scan, section, prototype.offset)?;
+            Some((prototype, associated_row, section, frame))
+        })
+        .collect::<Vec<_>>();
+    for (prototype, associated_row, section, (frame_start, frame_end)) in &associations {
         if prototype.family != crate::surface::SurfacePrototypeFamily::Torus
             || prototype_scalar(prototype, "radius1") != Some(0.0)
         {
@@ -46,18 +53,24 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         else {
             continue;
         };
-        let Some((frame_start, frame_end)) =
-            surface_prototype_frame_bounds(scan, section, prototype.offset)
-        else {
+        let associated_prototype_count = associations
+            .iter()
+            .filter(|(candidate, candidate_row, _, candidate_frame)| {
+                candidate.family == crate::surface::SurfacePrototypeFamily::Torus
+                    && candidate_row.feature_id == associated_row.feature_id
+                    && candidate_frame == &(*frame_start, *frame_end)
+            })
+            .count();
+        if associated_prototype_count != 1 {
             continue;
-        };
+        }
         let rows = scan
             .surfaces
             .rows
             .iter()
             .filter(|row| {
-                row.offset >= frame_start
-                    && row.offset < frame_end
+                row.offset >= *frame_start
+                    && row.offset < *frame_end
                     && row.feature_id == associated_row.feature_id
                     && row.kind == crate::surface::SurfaceKind::TorusOrSphere
             })

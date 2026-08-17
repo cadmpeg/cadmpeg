@@ -518,6 +518,8 @@ two hemispheres of one Z-axis sphere. Each row stores
 The axial spans share only the sphere-center endpoint and their union is one
 diameter. The X and Y center coordinates are the midpoint of the radial range;
 the shared axial endpoint is the Z center coordinate.
+The prototype association for the frame and feature is unique. A frame and
+feature with multiple torus-prototype associations does not pair its rows.
 
 A complete plane envelope whose two model-space diagonal corners have exactly
 one byte-equal coordinate defines an axis-aligned plane through that held
