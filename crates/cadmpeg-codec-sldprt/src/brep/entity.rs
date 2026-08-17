@@ -740,6 +740,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc20_disc1a_disc04_face_root_body(&by_attr, entities));
     }
     if out.is_empty() {
+        out.extend(disc20_disc1a_disc14_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc20_disc18_disc12_face_root_body(&by_attr, entities));
     }
     if out.is_empty() {
@@ -4633,8 +4636,11 @@ fn disc1c_disc16_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0004,
         0x0014,
         0x001a,
-        2,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 2,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4655,8 +4661,11 @@ fn disc1c_disc16_disc0e_disc04_face_root_body(
         0x000c,
         0x0014,
         0x001a,
-        2,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 2,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4676,8 +4685,11 @@ fn disc1c_disc16_disc12_disc0e_face_root_body(
         0x0004,
         0x0014,
         0x001a,
-        2,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 2,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4698,8 +4710,11 @@ fn disc1c_disc16_disc14_disc04_face_root_body(
         0x000c,
         0x0012,
         0x001a,
-        2,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 2,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4717,8 +4732,11 @@ fn disc1a_disc14_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x000c,
         0x0012,
         0x0018,
-        1,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 1,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4736,8 +4754,11 @@ fn disc1a_disc14_disc0c_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0004,
         0x0012,
         0x0018,
-        1,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 1,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4755,8 +4776,11 @@ fn disc1a_disc12_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x000c,
         0x0014,
         0x0018,
-        1,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 1,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4773,8 +4797,11 @@ fn disc1a_disc14_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x000e,
         0x0014,
         0x0018,
-        1,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 1,
+            require_exact_use_population: true,
+        },
     )
 }
 
@@ -4791,8 +4818,11 @@ fn disc16_disc14_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x000e,
         0x0018,
         0x001a,
-        1,
-        false,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 1,
+            require_exact_use_population: false,
+        },
     )
 }
 
@@ -4812,9 +4842,52 @@ fn disc18_disc14_disc12_disc04_face_root_body(
         0x000c,
         0x0016,
         0x001a,
-        1,
-        true,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 1,
+            require_exact_use_population: true,
+        },
     )
+}
+
+fn disc20_disc1a_disc14_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001c, 2),
+            (0x001a, 2),
+            (0x0014, 1),
+            (0x0012, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x0010,
+        0x001e,
+        KeyedFaceRootOptions {
+            face_use_shape: Some(KeyedFaceUse {
+                disc: 0x0018,
+                bridge_disc: Some(0x0016),
+            }),
+            shell_index: 2,
+            require_exact_use_population: true,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+struct KeyedFaceUse {
+    disc: u16,
+    bridge_disc: Option<u16>,
+}
+
+#[derive(Clone, Copy)]
+struct KeyedFaceRootOptions {
+    face_use_shape: Option<KeyedFaceUse>,
+    shell_index: usize,
+    require_exact_use_population: bool,
 }
 
 fn keyed_face_root_body(
@@ -4823,8 +4896,7 @@ fn keyed_face_root_body(
     canonical_disc: u16,
     companion_disc: u16,
     use_disc: u16,
-    shell_index: usize,
-    require_exact_use_population: bool,
+    options: KeyedFaceRootOptions,
 ) -> Vec<BodyRecord> {
     let matching_chains = keyed_forward_chain_candidates(by_attr)
         .into_iter()
@@ -4866,12 +4938,57 @@ fn keyed_face_root_body(
         .then_some(companion)
     };
     let mut companions = HashSet::new();
+    let mut face_uses = HashSet::new();
+    let mut face_use_bridges = HashSet::new();
     let mut use_nodes = HashSet::new();
     for face in canonical_faces.iter().copied() {
         let Some(companion) = companion_of(face) else {
             return Vec::new();
         };
-        let Some(use_node) = companion
+        let (face_use, bridge) = if let Some(face_use_shape) = options.face_use_shape {
+            let direct = companion
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .copied()
+                .filter(|record| {
+                    record.disc == face_use_shape.disc
+                        && record.flo() == 1
+                        && record.refs.get(2) == Some(&companion.attr)
+                });
+            let bridged = face_use_shape.bridge_disc.and_then(|bridge_disc| {
+                let bridge = companion
+                    .refs
+                    .get(1)
+                    .and_then(|attr| by_attr.get(attr))
+                    .copied()
+                    .filter(|record| {
+                        record.disc == bridge_disc
+                            && record.flo() == 2
+                            && record.refs.get(2) == Some(&companion.attr)
+                    })?;
+                let face_use = bridge
+                    .refs
+                    .get(1)
+                    .and_then(|attr| by_attr.get(attr))
+                    .copied()
+                    .filter(|record| {
+                        record.disc == face_use_shape.disc
+                            && record.flo() == 1
+                            && record.refs.get(2) == Some(&bridge.attr)
+                    })?;
+                Some((face_use, bridge))
+            });
+            match (direct, bridged) {
+                (Some(_), Some(_)) => return Vec::new(),
+                (Some(face_use), None) => (face_use, None),
+                (None, Some((face_use, bridge))) => (face_use, Some(bridge)),
+                (None, None) => return Vec::new(),
+            }
+        } else {
+            (companion, None)
+        };
+        let Some(use_node) = face_use
             .refs
             .get(1)
             .and_then(|attr| by_attr.get(attr))
@@ -4879,13 +4996,21 @@ fn keyed_face_root_body(
             .filter(|record| {
                 record.disc == use_disc
                     && record.flo() == 4
-                    && record.refs.get(2) == Some(&companion.attr)
+                    && record.refs.get(2) == Some(&face_use.attr)
             })
         else {
             return Vec::new();
         };
         if !companions.insert(companion.attr) || !use_nodes.insert(use_node.attr) {
             return Vec::new();
+        }
+        if !face_uses.insert(face_use.attr) {
+            return Vec::new();
+        }
+        if let Some(bridge) = bridge {
+            if !face_use_bridges.insert(bridge.attr) {
+                return Vec::new();
+            }
         }
     }
     let companion_count = by_attr
@@ -4896,16 +5021,23 @@ fn keyed_face_root_body(
         .values()
         .filter(|record| record.disc == use_disc && record.flo() == 4)
         .count();
+    let face_use_count = options.face_use_shape.map(|face_use_shape| {
+        by_attr
+            .values()
+            .filter(|record| record.disc == face_use_shape.disc && record.flo() == 1)
+            .count()
+    });
     if companions.len() != companion_count
-        || (require_exact_use_population && use_nodes.len() != use_node_count)
-        || (!require_exact_use_population && use_nodes.len() > use_node_count)
+        || face_use_count.is_some_and(|count| face_uses.len() != count)
+        || (options.require_exact_use_population && use_nodes.len() != use_node_count)
+        || (!options.require_exact_use_population && use_nodes.len() > use_node_count)
     {
         return Vec::new();
     }
     let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
     refs.sort_unstable();
     let root = chain[0];
-    let Some(shell) = chain.get(shell_index).copied() else {
+    let Some(shell) = chain.get(options.shell_index).copied() else {
         return Vec::new();
     };
     vec![BodyRecord {
