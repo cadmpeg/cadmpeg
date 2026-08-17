@@ -29,6 +29,13 @@ use cadmpeg_ir::CadIr;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+fn global_with_units(units_flag: i64, units_name: &str) -> Vec<u8> {
+    let global = format!(
+        "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,{units_flag},{units_name},1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;"
+    );
+    fixed_ascii_with_global(global.as_bytes())
+}
+
 #[test]
 fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     let product = "p".repeat(70);
@@ -108,18 +115,70 @@ fn real_significance_fields_are_required_and_positive() {
 }
 
 #[test]
-fn other_units_require_an_exact_supported_standard_name() {
-    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,2Hmm,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;";
-    let error = IgesCodec
+fn standard_units_names_match_the_flag_three_table() {
+    for (encoded_name, decoded_name, expected_factor_mm) in [
+        ("2HIN", "IN", 25.4),
+        ("4HINCH", "INCH", 25.4),
+        ("2HMM", "MM", 1.0),
+        ("2HFT", "FT", 304.8),
+        ("2HMI", "MI", 1_609_344.0),
+        ("1HM", "M", 1_000.0),
+        ("2HKM", "KM", 1_000_000.0),
+        ("3HMIL", "MIL", 0.0254),
+        ("2HUM", "UM", 0.001),
+        ("2HCM", "CM", 10.0),
+        ("3HUIN", "UIN", 0.000_025_4),
+    ] {
+        let bytes = global_with_units(3, encoded_name);
+        let scan = crate::card::scan(&bytes).unwrap();
+        let parsed = crate::global::parse(&scan).unwrap();
+
+        assert_eq!(parsed.units_name().as_deref(), Some(decoded_name));
+        assert!((parsed.length_factor_mm() - expected_factor_mm).abs() <= f64::EPSILON * 16.0);
+    }
+}
+
+#[test]
+fn flag_three_requires_a_nonempty_name() {
+    for units_name in ["", "0H"] {
+        let bytes = global_with_units(3, units_name);
+        let scan = crate::card::scan(&bytes).unwrap();
+        let error = crate::global::parse(&scan).unwrap_err();
+
+        match error {
+            CodecError::Malformed(_) => {}
+            other => panic!("{units_name:?}: expected malformed input, got {other}"),
+        }
+    }
+}
+
+#[test]
+fn unknown_flag_three_unit_name_is_inspectable_but_not_projected() {
+    let bytes = global_with_units(3, "3HFOO");
+    let summary = IgesCodec
         .inspect(
-            &mut Cursor::new(fixed_ascii_with_global(global)),
+            &mut Cursor::new(bytes.clone()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap_err();
+        .unwrap();
 
-    assert!(error
-        .to_string()
-        .contains("field 15 (units name) is not a supported standard unit name"));
+    assert!(summary.notes.contains(&"units=FOO".into()));
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(error, CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn non_three_units_flags_ignore_inconsistent_names() {
+    let bytes = global_with_units(2, "3HFOO");
+    let scan = crate::card::scan(&bytes).unwrap();
+    let parsed = crate::global::parse(&scan).unwrap();
+
+    assert_eq!(parsed.units_flag(), 2);
+    assert_eq!(parsed.units_name().as_deref(), Some("FOO"));
+    assert!((parsed.length_factor_mm() - 1.0).abs() <= f64::EPSILON * 16.0);
 }
 
 #[test]

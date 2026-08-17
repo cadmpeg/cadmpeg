@@ -94,6 +94,11 @@ fn decode_with_occurrence_limits(
             global.version()
         )));
     }
+    if !options.container_only && !global.has_supported_length_factor() {
+        return Err(CodecError::NotImplemented(
+            "IGES units flag 3 names a unit without a known millimetre factor".into(),
+        ));
+    }
     let directory = directory::parse(&scan)?;
     charge_entities(ctx, directory.len() as u64, "iges_directory_entries")?;
     let parameters = parameter::assemble_with_context(&scan, &directory, &global, ctx)?;

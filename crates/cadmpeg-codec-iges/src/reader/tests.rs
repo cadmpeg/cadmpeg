@@ -111,6 +111,31 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
     assert!(error.to_string().contains("iges:model:point#missing"));
 }
 
+#[test]
+fn container_only_retains_unknown_flag_three_units_without_projection() {
+    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;";
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(fixed_ascii_with_global(global)), &options)
+        .unwrap();
+
+    assert!(result.report().container_only);
+    assert_eq!(
+        result
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("native_units"))
+            .map(String::as_str),
+        Some("FOO")
+    );
+    assert_eq!(result.ir().model.entity_count(), 0);
+}
+
 /// Phase 5 freeze: shared builders must match the IGES rejection gate.
 #[test]
 fn phase5_freeze_shared_admissibility_fixtures() {

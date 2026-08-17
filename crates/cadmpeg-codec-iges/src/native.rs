@@ -4364,32 +4364,37 @@ pub(crate) fn store(
     let mut product_occurrences = Vec::new();
     let mut output_truncated = false;
     let mut depth_truncated = false;
-    let expansion = OccurrenceExpansion {
-        entries: &entries,
-        records: &by_directory,
-        definitions: &occurrence_definitions,
-        neutral_links: &occurrence_neutral_links,
-        length_factor: global.length_factor_mm(),
-        precision: global.real_precision(),
-        output_limit: limits.output,
-        depth_limit: limits.depth,
-        ctx,
-    };
-    if !root_inference_blocked {
-        for root in directory.iter().filter(|entry| {
-            matches!(entry.entity_type, 408 | 420)
-                && entry.form == 0
-                && !contained_instances.contains(&entry.sequence)
-        }) {
-            if expansion.expand(
-                root.sequence,
-                Affine::IDENTITY,
-                &mut Vec::new(),
-                &mut product_occurrences,
-                &mut depth_truncated,
-            )? {
-                output_truncated = true;
-                break;
+    if let Some(length_factor) = global
+        .has_supported_length_factor()
+        .then(|| global.length_factor_mm())
+    {
+        let expansion = OccurrenceExpansion {
+            entries: &entries,
+            records: &by_directory,
+            definitions: &occurrence_definitions,
+            neutral_links: &occurrence_neutral_links,
+            length_factor,
+            precision: global.real_precision(),
+            output_limit: limits.output,
+            depth_limit: limits.depth,
+            ctx,
+        };
+        if !root_inference_blocked {
+            for root in directory.iter().filter(|entry| {
+                matches!(entry.entity_type, 408 | 420)
+                    && entry.form == 0
+                    && !contained_instances.contains(&entry.sequence)
+            }) {
+                if expansion.expand(
+                    root.sequence,
+                    Affine::IDENTITY,
+                    &mut Vec::new(),
+                    &mut product_occurrences,
+                    &mut depth_truncated,
+                )? {
+                    output_truncated = true;
+                    break;
+                }
             }
         }
     }

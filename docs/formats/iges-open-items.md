@@ -176,11 +176,13 @@ from a conformant file.
 
 **Question.** How is the Global units name compared with the standard unit codes?
 
-**Known.** `global.rs:340-352` compares the raw Hollerith payload against an exact, case-sensitive list. It accepts aliases such as `IN` and `INCH`, but does not normalize padding or case. A units flag of 3 with another spelling yields no length factor, minimum resolution, or line-weight conversion.
+**Known.** IGES 5.3 §2.2.4.3.14 makes field 14 authoritative unless it is `3`. Section 2.2.4.3.15 makes field 15 redundant for the other flags and lists the exact table payloads `IN`, `INCH`, `MM`, `FT`, `MI`, `M`, `KM`, `MIL`, `UM`, `CM`, and `UIN`. When field 14 is `3`, the same section delegates the desired-unit name to MIL-STD-12 or IEEE 260 rather than defining a closed list. `global.rs:271-284` now requires a nonempty flag-3 name without claiming that the canonical table is exhaustive. `reader.rs:97-101` refuses semantic projection when the name has no known millimetre factor, while inspection retains the name.
 
-**Need.** We need the standard comparison rule and the complete alias set. A rejected spelling removes the tolerance used by topology projection, so the behavior must be evidence-based.
+**Need.** We need the complete admissible flag-3 byte namespace from the referenced standards, including case, padding, aliases, and length units. We also need to establish whether a custom flag-3 name obtains its millimetre factor from the Global section, a Type 316 Units Data entity, or an external application contract.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` recorded the current list as settled, but the checked external unit tables do not establish the repository's exact padding, case, and alias policy.
+**Conflict.** The earlier exact-eleven-name rule was contradicted by the IGES flag-3 cross-reference and by Open CASCADE `IGESData_BasicEditor::SetUnitName`, which accepts a user-defined name when the flag is `3`. The codec cannot assign a neutral millimetre scale to an unresolved name without risking silent geometric rescaling.
+
+**Note.** Closure audit 2026-08-10 reopened the prior exact-list closure because it had no independent format or producer evidence. This pass settles field-14 precedence, the ordinary-flag table, nonempty flag-3 storage, and the CADIR refusal boundary; the flag-3 namespace and factor source remain open.
 
 ### GL-03. A missing or zero Global minimum resolution
 
