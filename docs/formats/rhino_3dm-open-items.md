@@ -111,6 +111,10 @@ OpenNURBS writes non-default item codes in increasing order, consumes the same
 ordered cascade with each family’s minor gates, and leaves an out-of-order,
 gate-inadmissible, or future item value at the containing bounded boundary.
 The Rust parsers follow those cascades.
+The revision-history, notes, and application property readers are also settled
+as direct prefixes: their writers emit the listed packed versions and fields,
+their readers consume those prefixes, and the containing property record is the
+only suffix boundary.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -120,6 +124,8 @@ rule.
 OpenNURBS `ON_Linetype::Write`/`Read`, `ON_SectionStyle::Write`/`Read`, and
 `ON_Layer::Write`/`Read` implementations establish the ordered tagged-stream
 boundaries; an authored out-of-order section-style payload witness and owner
-tests exercise the boundary. The earlier aggregate closure did not provide
-this reader-level trace. The direct-reader and writer-band inventory remains
-open.
+tests exercise the boundary. The property subset is established by
+`ON_3dmRevisionHistory::Write`/`Read`, `ON_3dmNotes::Write`/`Read`, and
+`ON_3dmApplication::Write`/`Read`; the owner test exercises direct suffixes.
+The earlier aggregate closure did not provide this reader-level trace. The
+remaining direct-reader and writer-band inventory remains open.

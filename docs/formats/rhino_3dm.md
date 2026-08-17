@@ -1710,6 +1710,10 @@ its reader reads the three strings after the packed version without a major or
 minor gate and then ends at the containing boundary. Later direct suffix bytes
 are not typed fields.
 
+These three payloads are direct prefixes of their length-bounded property
+records. The packed version selects fields within the prefix; it does not create
+a child boundary or assign a grammar to bytes after the prefix.
+
 ### 8.2 Units and tolerances
 
 The units/tolerances structure begins with an ordinary `i32` structure version,
