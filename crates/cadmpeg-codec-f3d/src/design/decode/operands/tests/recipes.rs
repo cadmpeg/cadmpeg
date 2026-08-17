@@ -10,7 +10,7 @@
 use super::prelude::*;
 
 #[test]
-fn body_recipe_operand_decodes_counted_reference_table() {
+fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
@@ -154,6 +154,25 @@ fn body_recipe_operand_decodes_counted_reference_table() {
             FaceId("same-stream".into())
         ]
     );
+
+    // A legacy Combine tool keeps the same identity envelope with no
+    // persistent Design-reference clauses. The marker therefore follows the
+    // zero count at the ordinary reference-table cursor.
+    let mut empty_bytes = bytes[..25].to_vec();
+    empty_bytes[21..25].fill(0);
+    empty_bytes.extend_from_slice(&bytes[49..]);
+    let empty_recipe_at = recipe_at - 24;
+    let empty_next_at = next_at - 24;
+    let empty_recipe = ConstructionRecipe {
+        id: format!("f3d:Design/BulkStream.dat:construction-recipe#{empty_recipe_at}"),
+        byte_offset: empty_recipe_at as u64,
+        ..recipe.clone()
+    };
+    let empty = parse_body_recipe_operand(&empty_bytes, &group, 0, &record, &empty_recipe)
+        .expect("empty body recipe operand");
+    assert!(empty.references.is_empty());
+    assert_eq!(empty.nested_record_index, 103);
+    assert_eq!(empty.next_byte_offset, empty_next_at as u64);
 
     let mut combine_scope =
         DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#80", "Combine", 80);

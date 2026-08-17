@@ -2655,11 +2655,11 @@ fn parse_body_recipe_operand_frame(
     let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
     let next_at = body_recipe_operand_end(bytes, prologue_end, header.record_index, recipe_at)?;
     let reference_count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
-    if start >= recipe_at
-        || recipe_at >= next_at
-        || bytes.get(start + 11..start + 21)? != [0; 10]
-        || reference_count == 0
-    {
+    // The legacy Combine form permits an empty persistent-reference table;
+    // its marker then starts at the ordinary post-count cursor. The history
+    // binder keeps that operand native because an empty identity cannot prove
+    // a body selection.
+    if start >= recipe_at || recipe_at >= next_at || bytes.get(start + 11..start + 21)? != [0; 10] {
         return None;
     }
     let mut cursor = start.checked_add(25)?;
