@@ -206,6 +206,24 @@ pub(in super::super) fn transfer_native_brep(
                 .then_some((row.id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
+    let model_curve_counts = edge_vertices
+        .keys()
+        .map(|curve_id| {
+            let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+            let count = ir
+                .model
+                .curves
+                .iter()
+                .filter(|curve| curve.id == id)
+                .count();
+            (*curve_id, count)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let admitted_edge_curves = edge_vertices
+        .keys()
+        .copied()
+        .filter(|curve_id| model_curve_counts[curve_id] <= 1)
+        .collect::<BTreeSet<_>>();
     let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
     for lp in &scan.topology.loops {
         loops_by_face.entry(lp.face_id).or_default().push(lp);
@@ -219,7 +237,7 @@ pub(in super::super) fn transfer_native_brep(
                 .all(|lp| {
                     lp.half_edges
                         .iter()
-                        .all(|half_edge| edge_vertices.contains_key(&half_edge.curve_id))
+                        .all(|half_edge| admitted_edge_curves.contains(&half_edge.curve_id))
                 })
                 .then_some(())?;
             let ordered = ordered_face_loops(
@@ -276,7 +294,7 @@ pub(in super::super) fn transfer_native_brep(
         .face_components
         .iter()
         .flat_map(|component| component.curve_ids.iter().copied())
-        .filter(|curve_id| edge_vertices.contains_key(curve_id))
+        .filter(|curve_id| admitted_edge_curves.contains(curve_id))
         .collect::<BTreeSet<_>>();
     let body_components = scan
         .topology
@@ -363,15 +381,7 @@ pub(in super::super) fn transfer_native_brep(
                     .iter()
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
-        let model_curve_count = ir
-            .model
-            .curves
-            .iter()
-            .filter(|candidate| candidate.id == curve)
-            .count();
-        if model_curve_count > 1 {
-            continue;
-        }
+        let model_curve_count = model_curve_counts[curve_id];
         let derived_line = (derived_intersection_curves.contains(&curve)
             || analytic_pcurve_carriers.contains(&curve))
             && exactly_one(

@@ -295,6 +295,14 @@ fn native_brep_rejects_duplicate_model_curve_ids() {
         &BTreeSet::new(),
     );
 
-    assert_eq!(counts, (3, 3));
+    assert_eq!(counts, (0, 0));
+    assert!(ir.model.points.is_empty());
+    assert!(ir.model.vertices.is_empty());
     assert!(ir.model.edges.is_empty());
+    assert!(ir.model.faces.is_empty());
+    assert!(ir.model.loops.is_empty());
+    assert!(ir.model.coedges.is_empty());
+    assert!(ir.model.bodies.is_empty());
+    assert!(ir.model.regions.is_empty());
+    assert!(ir.model.shells.is_empty());
 }
