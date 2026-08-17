@@ -161,6 +161,10 @@ The settings plugin list is settled: the list is emitted from archive 4 when
 nonempty, its outer version is 1.0, and each plugin-reference child writes
 version 1.2 with developer fields at minor 1 and platform/SDK fields at minor
 2. The list and every child close independently.
+The settings-attributes record is settled: archive 4 and later writes packed
+version 1.7, direct fields gate at minors 1 through 7, page-units,
+earth-anchor, IO-settings, and SubD-display children close independently, and
+custom render-mesh direct fields end at the outer settings-attributes boundary.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -217,5 +221,10 @@ The plugin subset is established by the settings writer path and
 `ON_PlugInRef::Write`/`Read` in `opennurbs_pluginlist.cpp`; the
 `parses_plugin_list_entries_and_bounded_future_minors` owner witness exercises
 outer and child suffixes and both minor branches.
+The settings-attributes subset is established by `ON_3dmSettings::Write_v2`/
+`Read_v2`, `ON_EarthAnchorPoint::Write`/`Read`, `ON_3dmIOSettings::Write`/
+`Read`, `ON_MeshParameters::Write`/`Read`, and
+`ON_SubDDisplayParameters::Write`/`Read`; the settings owner witnesses cover
+the nested children and direct future-minor suffix.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.
