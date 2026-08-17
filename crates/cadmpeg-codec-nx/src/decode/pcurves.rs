@@ -7,7 +7,7 @@ use super::blend::{
     blend_surface_definition_with_index, blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_point_inner_with_index_and_budget, closest_spine_parameter_with_index_and_budget,
     decoded_surface_point_inner_with_budget, decoded_surface_point_with_geometry_and_budget,
-    spine_contact_pcurve, BlendParameterGrid, BoundaryInverseTarget,
+    spine_contact_pcurve_with_index, BlendParameterGrid, BoundaryInverseTarget,
 };
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
@@ -2104,7 +2104,7 @@ fn blend_transfer_contact<'a>(
     Some(BlendTransferContact {
         support,
         support_geometry: &index.surfaces(support.0.as_str())?.geometry,
-        pcurve: spine_contact_pcurve(ir, support, &spine, radius, 0)?,
+        pcurve: spine_contact_pcurve_with_index(index, support, &spine, radius, 0)?,
         boundary: *boundary,
     })
 }

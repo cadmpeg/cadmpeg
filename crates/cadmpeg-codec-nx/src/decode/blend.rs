@@ -1026,8 +1026,8 @@ impl BlendContactDerivativeContext<'_> {
         geometry_budget: &GeometryWorkBudget<'_>,
     ) -> Option<(Vector3, Vector3)> {
         (self.depth < 32).then_some(())?;
-        let pcurve = spine_contact_pcurve(
-            self.index.ir(),
+        let pcurve = spine_contact_pcurve_with_index(
+            self.index,
             support,
             self.spine,
             self.radius,
@@ -1268,7 +1268,7 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_bud
     let [boundary] = matches.as_slice() else {
         return None;
     };
-    let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, 0)?;
+    let contact_pcurve = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)?;
     blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
         index,
         support,
@@ -2043,34 +2043,36 @@ pub(crate) fn spine_contact_point_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let pcurve = spine_contact_pcurve(ir, support, spine, radius, depth + 1)?;
+    let pcurve = spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)?;
     let uv = pcurve_uv(pcurve, parameter)?;
     decoded_surface_point_inner_with_budget(index, support, uv.u, uv.v, depth + 1, geometry_budget)
 }
 
-pub(crate) fn spine_contact_pcurve<'a>(
-    ir: &'a CadIr,
+pub(crate) fn spine_contact_pcurve_with_index<'a>(
+    index: &cadmpeg_ir::index::ModelIndex<'a>,
     support: &SurfaceId,
     spine: &CurveId,
     radius: f64,
     depth: usize,
 ) -> Option<&'a PcurveGeometry> {
     (depth < 32).then_some(())?;
-    let procedural = ir.model.procedural_curves.iter().find(|candidate| {
-        candidate.curve == *spine
-            && matches!(
+    let procedural = index
+        .procedural_curves_for_curve(spine.0.as_str())?
+        .iter()
+        .copied()
+        .find(|candidate| {
+            matches!(
                 candidate.definition,
                 ProceduralCurveDefinition::Intersection { .. }
             )
-    })?;
+        })?;
     let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
         unreachable!("definition selected above");
     };
     let candidates = context.sides.iter().filter_map(|side| {
         let side_surface = side.surface.as_ref()?;
         let pcurve = side.pcurve.as_ref()?;
-        let offset = constant_surface_offset_between(ir, support, side_surface, depth + 1)?;
+        let offset = constant_surface_offset_between(index.ir(), support, side_surface, depth + 1)?;
         if !blend_contact_offset_matches(0.0, offset, radius) {
             return None;
         }

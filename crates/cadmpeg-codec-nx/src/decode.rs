@@ -141,16 +141,21 @@ pub(crate) use support_uv::{
 };
 
 mod blend;
+#[allow(unused_imports)]
+pub(crate) use blend::analytic_surface_offset;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use blend::closest_pcurve_parameters;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use blend::closest_spine_parameter;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use blend::surface_offset_lineage;
 #[allow(unused_imports)]
 pub(crate) use blend::{
-    add_bernstein_polynomials, analytic_surface_offset, bernstein_product, bezier_spans,
-    binomial_coefficient, blend_boundary_parameter_from_support_pcurve_with_budget,
+    add_bernstein_polynomials, bernstein_product, bezier_spans, binomial_coefficient,
+    blend_boundary_parameter_from_support_pcurve_with_budget,
     blend_boundary_point_with_index_and_budget, blend_contact_offset_matches,
     blend_surface_definition, blend_surface_offset, blend_surface_point_from_frame,
     blend_surface_point_inner_with_index_and_budget,
@@ -160,12 +165,11 @@ pub(crate) use blend::{
     homogeneous_residual_distance, insert_homogeneous_curve_knot, lift_periodic_parameters,
     polynomial_roots_in_unit_interval, polynomial_value, rational_squared_distance_derivative,
     real_polynomial_roots, rodrigues_rotate, scalar_bernstein_sign_variations, scalar_bezier_value,
-    signed_angle, spine_contact_direction_with_index_and_budget, spine_contact_pcurve,
+    signed_angle, spine_contact_direction_with_index_and_budget,
     spine_contact_point_with_index_and_budget, stationary_rational_distance_candidates,
     subdivide_scalar_bezier_span, subtract_bernstein_polynomials, sum_bernstein_polynomials,
-    surface_offset_lineage, BezierSpan, BlendContactDerivativeContext, BlendParameterGrid,
-    BlendSurfaceFrame, BoundaryInverseTarget, HomogeneousCurveSpans, ScalarBezierRoots,
-    ScalarBezierSpan,
+    BezierSpan, BlendContactDerivativeContext, BlendParameterGrid, BlendSurfaceFrame,
+    BoundaryInverseTarget, HomogeneousCurveSpans, ScalarBezierRoots, ScalarBezierSpan,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

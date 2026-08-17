@@ -8,8 +8,8 @@ use super::blend::{
     blend_surface_parameters_for_fit_with_source_continuation_and_budget,
     blend_surface_parameters_from_grid_for_fit_and_budget,
     blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget,
-    decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve, BlendParameterGrid,
-    BoundaryInverseTarget,
+    decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve_with_index,
+    BlendParameterGrid, BoundaryInverseTarget,
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
@@ -630,8 +630,13 @@ fn complete_support_uv_wave(
                     let [boundary] = boundaries.as_slice() else {
                         return None;
                     };
-                    let contact_pcurve =
-                        spine_contact_pcurve(ir, other_surface, &spine, radius, 0)?;
+                    let contact_pcurve = spine_contact_pcurve_with_index(
+                        &model_index,
+                        other_surface,
+                        &spine,
+                        radius,
+                        0,
+                    )?;
                     Some((
                         other_surface,
                         other_pcurve,
