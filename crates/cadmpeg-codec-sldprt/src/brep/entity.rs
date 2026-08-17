@@ -2840,13 +2840,12 @@ fn disc1e_disc04_terminal_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) 
     let Some(disc_14) = follows(shell, 0x0014, 2) else {
         return Vec::new();
     };
-    let Some(disc_12) = follows(disc_14, 0x0012, 2) else {
-        return Vec::new();
-    };
-    let Some(disc_10) = follows(disc_12, 0x0010, 2) else {
-        return Vec::new();
-    };
-    let Some(terminal) = follows(disc_10, 0x0004, 2) else {
+    let terminal = follows(disc_14, 0x0004, 2).or_else(|| {
+        let disc_12 = follows(disc_14, 0x0012, 2)?;
+        let disc_10 = follows(disc_12, 0x0010, 2)?;
+        follows(disc_10, 0x0004, 2)
+    });
+    let Some(terminal) = terminal else {
         return Vec::new();
     };
     if terminal.refs.get(2).is_some_and(|attr| *attr > 1) {
@@ -6627,6 +6626,7 @@ mod tests {
     mod disc1a_linked;
     mod disc1c_disc14_linked;
     mod disc1c_disc16_disc0e;
+    mod disc1e_disc04;
     mod disc20_disc18;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
@@ -7317,7 +7317,6 @@ mod tests {
                 flo4(40 + index, 0x22, [1; 6]),
             ]);
         }
-        // A later record reuses a face attribute; framed counts still see both records.
         records.push(record(20, 0x0f, [1; 6]));
         let by_attr = records
             .iter()
