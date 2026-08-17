@@ -371,6 +371,10 @@ fixtures, scores above L1 remain blocked.
   table is present or the segment table is incomplete. A joined saved circle
   also seeds its radius-reference component. Disagreement with stored or
   constraint-derived coordinates or radii withholds the inconsistent derivation.
+- Trim-vertex intersections and saved-section generated-entity replay accept a
+  uniquely identified ordinary segment row from an incomplete segment table.
+  Profile chains, model-space placement, and whole-table topology continue to
+  require the complete-table proof.
 - Positional `entity(line)` rows require exactly one six-scalar endpoint suffix
   start that consumes the complete row body; competing starts withhold the
   line.

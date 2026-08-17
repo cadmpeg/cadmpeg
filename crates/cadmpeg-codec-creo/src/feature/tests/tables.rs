@@ -1155,6 +1155,19 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         Some([3.0, 4.0])
     );
 
+    let mut incomplete_segments = segments.clone();
+    incomplete_segments.declared_count += 1;
+    assert!(!incomplete_segments.is_complete());
+    assert!(incomplete_segments.segment(9).is_none());
+    assert_eq!(
+        incomplete_segments.unique_segment(9),
+        Some(&segments.rows[0])
+    );
+    assert_eq!(
+        entity_intersection(&[9, 10], Some(&incomplete_segments), Some(&variables)),
+        Some([3.0, 4.0])
+    );
+
     let mut duplicate_segments = segments.clone();
     duplicate_segments.rows.push(segments.rows[0].clone());
     assert!(duplicate_segments.segment(9).is_none());
@@ -1277,6 +1290,16 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         entity_intersection(
             &[9, 10],
             Some(&bounded_unique),
+            Some(&bounded_unique_variables),
+        ),
+        Some([1.0, 0.0])
+    );
+    let mut incomplete_bounded_unique = bounded_unique.clone();
+    incomplete_bounded_unique.declared_count += 1;
+    assert_eq!(
+        entity_intersection(
+            &[9, 10],
+            Some(&incomplete_bounded_unique),
             Some(&bounded_unique_variables),
         ),
         Some([1.0, 0.0])

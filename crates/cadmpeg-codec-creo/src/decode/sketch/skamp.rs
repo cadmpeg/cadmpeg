@@ -307,12 +307,7 @@ pub(crate) fn unique_decoded_section_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSegment> {
-    let segments = definition.segments.as_ref()?;
-    let segment = segments
-        .rows
-        .iter()
-        .find(|segment| segment.external_id == external_id)?;
-    (segments.external_id_count(external_id) == 1).then_some(segment)
+    definition.segments.as_ref()?.unique_segment(external_id)
 }
 
 pub(crate) fn section_segment_rows(

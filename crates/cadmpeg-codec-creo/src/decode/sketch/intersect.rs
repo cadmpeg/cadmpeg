@@ -267,7 +267,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
         let Some(external_id) = trim_segment_id(definition, trim) else {
             continue;
         };
-        let Some(segment) = segments.segment(external_id) else {
+        let Some(segment) = segments.unique_segment(external_id) else {
             continue;
         };
         let Some(([center_u, center_v], radius)) = saved_section_arc_carrier(definition, segment)
@@ -321,7 +321,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
                     let external_id = match matches.as_slice() {
                         [entity] => trim_segment_id(definition, entity),
                         [] => segments
-                            .segment(*entity_id)
+                            .unique_segment(*entity_id)
                             .map(|segment| segment.external_id),
                         _ => None,
                     };
@@ -357,7 +357,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|external_id| {
-            let segment = segments.segment(external_id)?;
+            let segment = segments.unique_segment(external_id)?;
             let carrier = section_segment_intersection_carrier_with_missing_line(
                 definition,
                 &radii,
@@ -384,7 +384,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
         // complete carrier cannot be evaluated from the remaining points.
         let common_points = entities
             .iter()
-            .filter_map(|external_id| segments.segment(*external_id))
+            .filter_map(|external_id| segments.unique_segment(*external_id))
             .map(|segment| segment.point_ids.into_iter().collect::<BTreeSet<_>>())
             .reduce(|common, points| common.intersection(&points).copied().collect());
         if let Some(common_points) = common_points {
@@ -420,7 +420,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
             let Some(external_id) = trim_segment_id(definition, trim) else {
                 continue;
             };
-            let Some(segment) = segments.segment(external_id) else {
+            let Some(segment) = segments.unique_segment(external_id) else {
                 continue;
             };
             let Some(SketchGeometry::Line { start, end }) =

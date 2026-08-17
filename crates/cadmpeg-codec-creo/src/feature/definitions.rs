@@ -469,14 +469,19 @@ impl FeatureSegmentTable {
             .count()
     }
 
-    /// Resolve a uniquely identified defining-sketch segment.
-    pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
-        self.is_complete().then_some(())?;
+    /// Resolve a unique ordinary row without requiring whole-table completeness.
+    pub(crate) fn unique_segment(&self, external_id: u32) -> Option<&FeatureSegment> {
         let segment = self
             .rows
             .iter()
             .find(|segment| segment.external_id == external_id)?;
         (self.external_id_count(external_id) == 1).then_some(segment)
+    }
+
+    /// Resolve a uniquely identified defining-sketch segment from a complete table.
+    pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
+        self.is_complete().then_some(())?;
+        self.unique_segment(external_id)
     }
 }
 
@@ -3298,7 +3303,7 @@ pub(crate) fn entity_intersection(
     let (points, ambiguous_points) = variables.reconciled_points();
     let segments = entity_ids
         .iter()
-        .map(|entity_id| segments.segment(*entity_id))
+        .map(|entity_id| segments.unique_segment(*entity_id))
         .collect::<Option<Vec<_>>>()?;
     let common_point_ids = segments
         .iter()
@@ -5440,7 +5445,7 @@ pub(crate) fn saved_positional_generated_entities(
             (order_table.internal_id(row.external_id) == Some(row.internal_id)
                 && order_table.external_id(row.internal_id) == Some(row.external_id))
             .then_some(())?;
-            let segment = segments.segment(row.external_id)?;
+            let segment = segments.unique_segment(row.external_id)?;
             Some((row.internal_id, segment))
         })
         .collect::<BTreeMap<_, _>>();

@@ -610,6 +610,17 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
     assert_eq!(arc.center, [Some(0.0); 3]);
     assert_eq!(arc.radius, Some(0.0));
     assert_eq!(arc.body, payload[1..payload.len() - 1]);
+    let mut incomplete_segments = segments.clone();
+    incomplete_segments.declared_count += 1;
+    let incomplete_entities = saved_positional_generated_entities(
+        &payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        Some(&order),
+        Some(&incomplete_segments),
+    );
+    assert_eq!(incomplete_entities, entities);
     let section = positional_saved_section(
         &payload,
         0,
