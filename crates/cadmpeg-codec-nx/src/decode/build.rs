@@ -6,17 +6,23 @@ use super::emit::{
     retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta, surface_tag,
     unknown_stream_metadata,
 };
-use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+use super::geometry_work::{
+    MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+};
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
 use super::pcurves::{
-    transfer_budget_exhausted, MAX_COMPLETION_TRANSFER_SAMPLES, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+    completion_transfer_budget_limit, transfer_budget_exhausted,
+    MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
 };
 use super::report::{build_geometry_report, CompletionBudgetStatus};
 use super::support_uv::{
     assign_ext11_support_uv_with_index, attach_completed_intersection_pcurves_with_budget,
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
     complete_support_uv_with_budget, invalidate_inconsistent_support_uv_with_budget, linear_knots,
-    support_uv_budget_exhausted, validate_serialized_support_uv_with_index, MAX_SUPPORT_UV_SAMPLES,
+    support_uv_budget_exhausted, support_uv_completion_budget_limit,
+    validate_serialized_support_uv_with_index,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
@@ -182,10 +188,40 @@ pub(crate) fn try_decode_geometry(
                 .map(|streams| (selected, streams, "terminal_feature_body_lineage"))
         });
     let preselection = rmfastload_preselection.or(terminal_preselection);
+    let chart_count = scan
+        .streams
+        .iter()
+        .enumerate()
+        .filter(|(si, stream)| {
+            stream.kind.is_parasolid()
+                && preselection
+                    .as_ref()
+                    .is_none_or(|(_, selected, _)| selected.contains(si))
+        })
+        .map(|(si, _)| {
+            parsed
+                .stream(si)
+                .view_for_geometry()
+                .intersections
+                .curves
+                .len()
+        })
+        .sum::<usize>();
+    let transfer_limit = completion_transfer_budget_limit(chart_count);
+    let support_uv_limit = support_uv_completion_budget_limit(chart_count);
     let exact_transfer_budget = ctx.work_budget(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES as u64);
-    let transfer_budget = ctx.work_budget(MAX_COMPLETION_TRANSFER_SAMPLES as u64);
-    let support_budget = ctx.work_budget(MAX_SUPPORT_UV_SAMPLES as u64);
+    let transfer_budget = ctx.work_budget(transfer_limit as u64);
+    let support_uv_validation_budget = ctx.work_budget(support_uv_limit as u64);
+    let support_budget = ctx.work_budget(support_uv_limit as u64);
+    let coupled_support_budget = ctx.work_budget(support_uv_limit as u64);
     let adaptive_geometry_budget = ctx.work_budget(MAX_ADAPTIVE_GEOMETRY_WORK as u64);
+    let completion_geometry_budget = ctx.work_budget(MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64);
+    let support_uv_geometry_budget =
+        ctx.work_budget(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64);
+    let coupled_support_uv_geometry_budget =
+        ctx.work_budget(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64);
+    let serialized_support_uv_geometry_budget =
+        ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -549,7 +585,7 @@ pub(crate) fn try_decode_geometry(
                         &charted.points,
                         charted.fit_tolerance,
                         &charted.support_uv,
-                        &adaptive_geometry_budget,
+                        &serialized_support_uv_geometry_budget,
                     );
                     if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
                         &model_index,
@@ -558,7 +594,7 @@ pub(crate) fn try_decode_geometry(
                         &charted.points,
                         charted.fit_tolerance,
                         &charted.ext_support_uv,
-                        &adaptive_geometry_budget,
+                        &serialized_support_uv_geometry_budget,
                     ) {
                         for side in 0..2 {
                             if support_uv[side].is_none() {
@@ -807,24 +843,27 @@ pub(crate) fn try_decode_geometry(
             &exact_transfer_budget,
             &transfer_budget,
             &adaptive_geometry_budget,
+            &completion_geometry_budget,
         );
         invalidate_inconsistent_support_uv_with_budget(
             &mut ir,
             &pending_ext11_support_uv,
-            &support_budget,
-            &adaptive_geometry_budget,
+            &support_uv_validation_budget,
+            &completion_geometry_budget,
         );
         complete_ext11_support_uv_with_budget(
             &mut ir,
             &pending_ext11_support_uv,
-            &adaptive_geometry_budget,
+            &serialized_support_uv_geometry_budget,
         );
         complete_parameterization_equivalent_support_uv(&mut ir);
         complete_support_uv_with_budget(
             &mut ir,
             &pending_ext11_support_uv,
             &support_budget,
-            &adaptive_geometry_budget,
+            &support_uv_geometry_budget,
+            &coupled_support_budget,
+            &coupled_support_uv_geometry_budget,
         );
         attach_completed_intersection_pcurves_with_budget(
             &mut ir,
@@ -832,7 +871,7 @@ pub(crate) fn try_decode_geometry(
             &format!("nx:s{si}"),
             source_stream,
             &mut annotations,
-            &adaptive_geometry_budget,
+            &completion_geometry_budget,
         );
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
@@ -921,7 +960,17 @@ pub(crate) fn try_decode_geometry(
     let completion_budget = CompletionBudgetStatus {
         exact_boundary_exhausted: transfer_budget_exhausted(&exact_transfer_budget),
         transfer_exhausted: transfer_budget_exhausted(&transfer_budget),
+        support_uv_validation_exhausted: support_uv_budget_exhausted(&support_uv_validation_budget),
         support_uv_exhausted: support_uv_budget_exhausted(&support_budget),
+        coupled_support_uv_exhausted: support_uv_budget_exhausted(&coupled_support_budget),
+        completion_geometry_exhausted: completion_geometry_budget.exhausted(),
+        serialized_support_uv_geometry_exhausted: serialized_support_uv_geometry_budget.exhausted(),
+        support_uv_geometry_exhausted: support_uv_geometry_budget.exhausted(),
+        coupled_support_uv_geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
+        transfer_limit,
+        support_uv_validation_limit: support_uv_limit,
+        support_uv_limit,
+        coupled_support_uv_limit: support_uv_limit,
     };
     let mut report = build_geometry_report(
         scan,

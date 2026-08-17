@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Certified offset-cache fit and offset-surface parameter inversion.
 
-use super::blend::{blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGrid};
+use super::blend::{
+    blend_surface_parameter_grid_with_index_and_budget,
+    blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGrid,
+};
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
@@ -1193,6 +1196,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
@@ -1201,6 +1205,27 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[Vec<Point2>; 2]> {
+    let mut blend_parameter_grids = BTreeMap::new();
+    continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+        index,
+        surfaces,
+        chart,
+        fit_tolerance,
+        seeds,
+        geometry_budget,
+        &mut blend_parameter_grids,
+    )
+}
+
+pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surfaces: [&SurfaceId; 2],
+    chart: &[Point3],
+    fit_tolerance: f64,
+    seeds: [Option<Point2>; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
+    blend_parameter_grids: &mut BTreeMap<SurfaceId, Option<Vec<(Point2, Point3)>>>,
+) -> Option<[Vec<Point2>; 2]> {
     if chart.len() < 2
         || surfaces[0] == surfaces[1]
         || !fit_tolerance.is_finite()
@@ -1208,7 +1233,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     {
         return None;
     }
-    let fit_parameters = |surface: &SurfaceId, point: Point3, seed: Option<Point2>| {
+    let mut fit_parameters = |surface: &SurfaceId, point: Point3, seed: Option<Point2>| {
         let geometry = &index.surfaces(surface.0.as_str())?.geometry;
         match geometry {
             SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
@@ -1228,13 +1253,26 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                     geometry_budget,
                 )
                 .or_else(|| {
+                    let grid = blend_parameter_grids
+                        .entry(surface.clone())
+                        .or_insert_with(|| {
+                            blend_surface_parameter_grid_with_index_and_budget(
+                                index,
+                                surface,
+                                0,
+                                geometry_budget,
+                            )
+                        });
+                    let grid = grid
+                        .as_deref()
+                        .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
                     blend_surface_parameters_for_fit_with_grid_and_budget(
                         index,
                         surface,
                         point,
                         seed,
                         fit_tolerance,
-                        BlendParameterGrid::Build,
+                        grid,
                         geometry_budget,
                     )
                 })

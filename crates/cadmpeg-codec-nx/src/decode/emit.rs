@@ -51,6 +51,7 @@ pub(super) fn emit_topology(
     exact_transfer_budget: &TransferBudget<'_>,
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
+    completion_geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let prefix = format!("nx:s{stream_index}");
     let body_shape_shells = graph.body_shape_shells();
@@ -682,20 +683,20 @@ pub(super) fn emit_topology(
         ir,
         &serialized_branch_pcurves,
         annotations,
-        adaptive_geometry_budget,
+        completion_geometry_budget,
     );
     complete_exact_boundary_intersection_pcurves_with_budget(
         ir,
         annotations,
         procedural_start,
         exact_transfer_budget,
-        adaptive_geometry_budget,
+        completion_geometry_budget,
     );
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ir,
         procedural_start,
         completion_transfer_budget,
-        adaptive_geometry_budget,
+        completion_geometry_budget,
     );
 
     let owned_edges: BTreeSet<_> = ir

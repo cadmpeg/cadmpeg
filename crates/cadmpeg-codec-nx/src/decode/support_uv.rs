@@ -13,7 +13,7 @@ use super::blend::{
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
-    continue_surface_intersection_parameters_with_index_and_seeds_and_budget,
+    continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
     offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
     surface_parameters,
 };
@@ -34,8 +34,33 @@ use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Maximum support-UV point fits admitted for one model completion.
+/// Maximum serialized support-UV lane length admitted by one model record.
 pub(super) const MAX_SUPPORT_UV_SAMPLES: usize = 1_024;
+
+/// Minimum support-UV point fits admitted while completing one model.
+const MIN_SUPPORT_UV_COMPLETION_SAMPLES: usize = 1_024;
+
+/// Support-UV fits reserved for each admitted chart candidate before the
+/// model-wide ceiling applies.
+const SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART: usize = 8;
+
+/// Hard support-UV completion ceiling for one model and one completion
+/// strategy. The direct and coupled strategies receive independent slices so
+/// a difficult continuation pass cannot starve direct surface inversion.
+///
+/// Completion work scales with the chart census so a valid model is not
+/// truncated at an arbitrary candidate prefix. The ceiling remains in place
+/// for unusually large or adversarial inputs.
+pub(super) const MAX_SUPPORT_UV_COMPLETION_SAMPLES: usize = 65_536;
+
+pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
+    chart_count
+        .saturating_mul(SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART)
+        .clamp(
+            MIN_SUPPORT_UV_COMPLETION_SAMPLES,
+            MAX_SUPPORT_UV_COMPLETION_SAMPLES,
+        )
+}
 
 pub(super) type SupportUvBudget<'a> = WorkBudget<'a>;
 
@@ -381,8 +406,16 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
 #[cfg(test)]
 pub(super) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let support_budget = new_support_uv_budget();
+    let coupled_support_budget = new_support_uv_budget();
     let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    complete_support_uv_with_budget(ir, pending, &support_budget, &geometry_budget);
+    complete_support_uv_with_budget(
+        ir,
+        pending,
+        &support_budget,
+        &geometry_budget,
+        &coupled_support_budget,
+        &geometry_budget,
+    );
 }
 
 pub(super) fn complete_support_uv_with_budget(
@@ -390,6 +423,8 @@ pub(super) fn complete_support_uv_with_budget(
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
+    coupled_support_budget: &SupportUvBudget<'_>,
+    coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     // A failed fit can become solvable when its opposite lane is filled by an
     // earlier wave. Keep that dependency as the retry key; repeating the same
@@ -405,6 +440,8 @@ pub(super) fn complete_support_uv_with_budget(
             pending,
             support_budget,
             geometry_budget,
+            coupled_support_budget,
+            coupled_geometry_budget,
             &mut failed_attempts,
         );
         let after = pending_support_lanes_requiring_completion(ir, pending);
@@ -536,8 +573,16 @@ fn complete_support_uv_wave(
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
+    coupled_support_budget: &SupportUvBudget<'_>,
+    coupled_geometry_budget: &GeometryWorkBudget<'_>,
     failed_attempts: &mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
 ) {
+    if !coupled_geometry_budget.exhausted() {
+        complete_coupled_support_uv(ir, pending, coupled_support_budget, coupled_geometry_budget);
+    }
+    if support_uv_budget_exhausted(support_budget) || geometry_budget.exhausted() {
+        return;
+    }
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
@@ -806,9 +851,6 @@ fn complete_support_uv_wave(
             }
         }
     }
-    if !support_uv_budget_exhausted(support_budget) {
-        complete_coupled_support_uv(ir, pending, support_budget, geometry_budget);
-    }
 }
 
 #[cfg(test)]
@@ -840,10 +882,14 @@ pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
 fn complete_coupled_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    support_budget: &SupportUvBudget<'_>,
+    coupled_support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
+    if geometry_budget.exhausted() {
+        return;
+    }
     let mut replacements = Vec::new();
+    let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
@@ -862,7 +908,15 @@ fn complete_coupled_support_uv(
             continue;
         };
         let surfaces = [first_surface, second_surface];
-        let unresolved_procedural_support = (0..2).any(|side| {
+        let both_lanes_missing = missing == [true, true];
+        let has_procedural_support = surfaces.iter().any(|surface| {
+            model_index
+                .surfaces(surface.0.as_str())
+                .is_some_and(|surface| {
+                    matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
+                })
+        });
+        let seeded_procedural_support = (0..2).any(|side| {
             missing[side]
                 && pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), 0).is_some()
                 && model_index
@@ -871,25 +925,43 @@ fn complete_coupled_support_uv(
                         matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
                     })
         });
-        if !unresolved_procedural_support {
+        let sourced_procedural_support = (0..2).any(|side| {
+            missing[side]
+                && context.sides[1 - side]
+                    .pcurve
+                    .as_ref()
+                    .is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)))
+                && model_index
+                    .surfaces(surfaces[side].0.as_str())
+                    .is_some_and(|surface| {
+                        matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
+                    })
+        });
+        if !(seeded_procedural_support
+            || sourced_procedural_support
+            || (both_lanes_missing && has_procedural_support))
+        {
             continue;
         }
         let missing_lanes = missing.iter().filter(|missing| **missing).count();
-        if !support_budget.charge_by(points.len().saturating_mul(missing_lanes).max(1)) {
+        if !coupled_support_budget.charge_by(points.len().saturating_mul(missing_lanes).max(1)) {
             break;
         }
         let seeds = context
             .sides
             .each_ref()
             .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
-        let Some(lanes) = continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
-            &model_index,
-            surfaces,
-            points,
-            *fit_tolerance,
-            seeds,
-            geometry_budget,
-        ) else {
+        let Some(lanes) =
+            continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+                &model_index,
+                surfaces,
+                points,
+                *fit_tolerance,
+                seeds,
+                geometry_budget,
+                &mut blend_parameter_grids,
+            )
+        else {
             continue;
         };
         for side in 0..2 {
@@ -926,6 +998,16 @@ fn complete_coupled_support_uv(
             context.sides[side].pcurve = Some(pcurve);
         }
     }
+}
+
+#[cfg(test)]
+pub(super) fn complete_coupled_support_uv_for_test(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+) {
+    let coupled_support_budget = new_support_uv_budget();
+    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    complete_coupled_support_uv(ir, pending, &coupled_support_budget, &geometry_budget);
 }
 
 pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {

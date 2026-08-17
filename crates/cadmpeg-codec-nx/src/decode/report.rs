@@ -21,9 +21,13 @@ use super::feature_completeness::{
     thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
     trim_surface_definition_is_incomplete, valid_feature_direction,
 };
-use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
-use super::pcurves::{MAX_COMPLETION_TRANSFER_SAMPLES, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES};
-use super::support_uv::{pcurve_requires_completion, MAX_SUPPORT_UV_SAMPLES};
+use super::geometry_work::{
+    MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+};
+use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
+use super::support_uv::pcurve_requires_completion;
 use super::{summary_notes, Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
@@ -35,10 +39,23 @@ use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+// Each flag is an independent model-wide phase fact surfaced in the loss
+// report; combining them would hide which bounded phase stopped.
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct CompletionBudgetStatus {
     pub(crate) exact_boundary_exhausted: bool,
     pub(crate) transfer_exhausted: bool,
+    pub(crate) support_uv_validation_exhausted: bool,
     pub(crate) support_uv_exhausted: bool,
+    pub(crate) coupled_support_uv_exhausted: bool,
+    pub(crate) completion_geometry_exhausted: bool,
+    pub(crate) serialized_support_uv_geometry_exhausted: bool,
+    pub(crate) support_uv_geometry_exhausted: bool,
+    pub(crate) coupled_support_uv_geometry_exhausted: bool,
+    pub(crate) transfer_limit: usize,
+    pub(crate) support_uv_validation_limit: usize,
+    pub(crate) support_uv_limit: usize,
+    pub(crate) coupled_support_uv_limit: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
@@ -130,7 +147,13 @@ pub(crate) fn build_geometry_report(
     if unresolved_intersection_lanes > 0
         && (completion_budget.exact_boundary_exhausted
             || completion_budget.transfer_exhausted
-            || completion_budget.support_uv_exhausted)
+            || completion_budget.support_uv_validation_exhausted
+            || completion_budget.support_uv_exhausted
+            || completion_budget.coupled_support_uv_exhausted
+            || completion_budget.completion_geometry_exhausted
+            || completion_budget.serialized_support_uv_geometry_exhausted
+            || completion_budget.support_uv_geometry_exhausted
+            || completion_budget.coupled_support_uv_geometry_exhausted)
     {
         let mut bounded_phases = Vec::new();
         if completion_budget.exact_boundary_exhausted {
@@ -139,15 +162,39 @@ pub(crate) fn build_geometry_report(
         if completion_budget.transfer_exhausted {
             bounded_phases.push("opposite-chart transfer");
         }
+        if completion_budget.support_uv_validation_exhausted {
+            bounded_phases.push("support-UV consistency checks");
+        }
         if completion_budget.support_uv_exhausted {
             bounded_phases.push("EXT11 support-UV fitting");
         }
+        if completion_budget.coupled_support_uv_exhausted {
+            bounded_phases.push("coupled EXT11 support-UV fitting");
+        }
+        if completion_budget.completion_geometry_exhausted {
+            bounded_phases.push("pcurve geometry fitting");
+        }
+        if completion_budget.serialized_support_uv_geometry_exhausted {
+            bounded_phases.push("serialized support-UV geometry fitting");
+        }
+        if completion_budget.support_uv_geometry_exhausted {
+            bounded_phases.push("support-UV geometry fitting");
+        }
+        if completion_budget.coupled_support_uv_geometry_exhausted {
+            bounded_phases.push("coupled support-UV geometry fitting");
+        }
         losses.push(NxLossCode::IntersectionPcurveCompletionBounded.note(format!(
-            "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV point fits); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
+            "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
             bounded_phases.join(" and "),
             MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
-            MAX_COMPLETION_TRANSFER_SAMPLES,
-            MAX_SUPPORT_UV_SAMPLES,
+            completion_budget.transfer_limit,
+            completion_budget.support_uv_validation_limit,
+            completion_budget.support_uv_limit,
+            completion_budget.coupled_support_uv_limit,
+            MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
+            MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
             unresolved_intersection_lanes,
         )));
     }

@@ -180,9 +180,10 @@ pub(crate) fn blend_surface_parameters_for_fit(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum BlendParameterGrid {
+pub(crate) enum BlendParameterGrid<'a> {
     Build,
     Disabled,
+    Provided(&'a [(Point2, Point3)]),
 }
 
 #[cfg(test)]
@@ -192,7 +193,7 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    grid: BlendParameterGrid,
+    grid: BlendParameterGrid<'_>,
 ) -> Option<Point2> {
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_parameters_for_fit_with_grid_and_budget(
@@ -212,7 +213,7 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid_and_budget(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    grid: BlendParameterGrid,
+    grid: BlendParameterGrid<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
@@ -233,7 +234,7 @@ pub(crate) fn blend_surface_parameters_for_fit_with_source_continuation_and_budg
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    grid: BlendParameterGrid,
+    grid: BlendParameterGrid<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
@@ -257,7 +258,7 @@ fn blend_surface_parameters_for_fit_with_section_domain_and_budget(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    grid: BlendParameterGrid,
+    grid: BlendParameterGrid<'_>,
     section_domain: BlendSectionDomain,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
@@ -283,7 +284,7 @@ fn blend_surface_parameters_inner(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
-    grid: BlendParameterGrid,
+    grid: BlendParameterGrid<'_>,
     section_domain: BlendSectionDomain,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -404,6 +405,7 @@ fn blend_surface_parameters_inner(
             geometry_budget,
         ),
         BlendParameterGrid::Disabled => None,
+        BlendParameterGrid::Provided(grid) => closest_blend_surface_grid_parameters(grid, point),
     };
     if let Some(initial) = initial {
         let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(

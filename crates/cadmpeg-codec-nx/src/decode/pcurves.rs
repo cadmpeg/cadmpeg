@@ -2062,11 +2062,29 @@ fn boundary_curve_speed_bound_with_index(
     }
 }
 
-/// Total transfer samples admitted while completing one model's opposite charts.
+/// Minimum transfer samples admitted while completing one model's opposite
+/// charts.
+const MIN_COMPLETION_TRANSFER_SAMPLES: usize = 1_024;
+
+/// Transfer samples reserved for each admitted chart candidate before the
+/// model-wide ceiling applies.
+const COMPLETION_TRANSFER_SAMPLES_PER_CHART: usize = 8;
+
+/// Hard transfer-sample ceiling for one model's opposite-chart completion.
 ///
-/// This second bound keeps many individually valid but expensive curves from
-/// multiplying into an unbounded decode cost.
-pub(super) const MAX_COMPLETION_TRANSFER_SAMPLES: usize = 1_024;
+/// The candidate-scaled slice prevents a large valid model from starving
+/// later charts behind an arbitrary fixed prefix. The ceiling still bounds
+/// models whose charts or adaptive subdivisions are pathological.
+pub(super) const MAX_COMPLETION_TRANSFER_SAMPLES: usize = 65_536;
+
+pub(super) fn completion_transfer_budget_limit(chart_count: usize) -> usize {
+    chart_count
+        .saturating_mul(COMPLETION_TRANSFER_SAMPLES_PER_CHART)
+        .clamp(
+            MIN_COMPLETION_TRANSFER_SAMPLES,
+            MAX_COMPLETION_TRANSFER_SAMPLES,
+        )
+}
 
 /// Total inverse-surface samples admitted while completing exact-boundary
 /// pcurves in one model.
