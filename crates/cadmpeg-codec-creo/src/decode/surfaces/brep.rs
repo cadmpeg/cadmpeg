@@ -45,7 +45,8 @@ struct NeutralShellSpec {
 ///
 /// Face shells follow admitted face connectivity through edges or vertices.
 /// Solved curves excluded from a face loop remain wire topology, attached to
-/// a touching face shell when possible and otherwise grouped in a wire shell.
+/// a face shell only when exactly one shell touches an endpoint and otherwise
+/// grouped in a wire shell.
 fn split_neutral_component_shells(
     faces: &[u32],
     wire_curves: &BTreeSet<u32>,
@@ -79,13 +80,20 @@ fn split_neutral_component_shells(
     let mut unattached_wire_curves = BTreeSet::new();
     for curve_id in wire_curves {
         let curve_vertices = edge_vertices[curve_id].into_iter().collect::<BTreeSet<_>>();
-        if let Some(shell) = shell_specs.iter_mut().find(|shell| {
-            shell
-                .faces
+        let matching_shell = exactly_one(
+            shell_specs
                 .iter()
-                .any(|face_id| !face_vertices[face_id].is_disjoint(&curve_vertices))
-        }) {
-            shell.wire_curves.insert(*curve_id);
+                .enumerate()
+                .filter(|(_, shell)| {
+                    shell
+                        .faces
+                        .iter()
+                        .any(|face_id| !face_vertices[face_id].is_disjoint(&curve_vertices))
+                })
+                .map(|(index, _)| index),
+        );
+        if let Some(index) = matching_shell {
+            shell_specs[index].wire_curves.insert(*curve_id);
         } else {
             unattached_wire_curves.insert(*curve_id);
         }

@@ -54,6 +54,39 @@ fn partitions_face_shells_and_retains_unattached_wire_curves() {
 }
 
 #[test]
+fn retains_wire_curve_when_shell_attachment_is_ambiguous() {
+    let faces = [1, 2];
+    let face_adjacency = BTreeMap::from([(1, BTreeSet::new()), (2, BTreeSet::new())]);
+    let face_vertices =
+        BTreeMap::from([(1, BTreeSet::from([10, 11])), (2, BTreeSet::from([20, 21]))]);
+    let edge_vertices = BTreeMap::from([(100, [10, 20])]);
+
+    assert_eq!(
+        split_neutral_component_shells(
+            &faces,
+            &BTreeSet::from([100]),
+            &face_adjacency,
+            &face_vertices,
+            &edge_vertices,
+        ),
+        vec![
+            NeutralShellSpec {
+                faces: vec![1],
+                wire_curves: BTreeSet::new(),
+            },
+            NeutralShellSpec {
+                faces: vec![2],
+                wire_curves: BTreeSet::new(),
+            },
+            NeutralShellSpec {
+                faces: Vec::new(),
+                wire_curves: BTreeSet::from([100]),
+            },
+        ]
+    );
+}
+
+#[test]
 fn native_brep_rejects_duplicate_model_curve_ids() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.framing.declared_body_count = Some(1);
