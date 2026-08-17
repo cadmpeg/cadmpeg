@@ -6,26 +6,6 @@ Settled format rules remain in
 
 ## Remaining items
 
-### PR-01. Current light-record attributes
-
-**Question.** What does the current `LIGHT_RECORD_ATTRIBUTES` child own, and
-where must its object-attributes fields and attribute userdata enter CADIR?
-
-**Known.** OpenNURBS writes the child after the light class wrapper and reads
-it as `ON_3dmObjectAttributes`; archive versions at least 4 may add the
-attribute-userdata child. The current Rhino presentation parser stops after
-the light class-data boundary, so a table light's layer, name, and other
-object-attribute fields are not transferred to the native light record.
-
-**Need.** The section-9 attribute grammar, child boundaries, CRC rule, and a
-CADIR ownership decision must be applied to a public producer witness. The
-change must preserve the light class data and transfer or explicitly retain
-the recognized attribute fields and userdata carriers.
-
-**Note.** This is a current-format branch, not a later-version suffix. The
-object-attributes parser and its existing userdata ownership rules are the
-candidate shared implementation.
-
 ### FV-01. Future object-class payloads
 
 **Question.** What field grammar does each later built-in object-class major

@@ -1180,6 +1180,22 @@ pub(crate) fn parse_attribute_userdata(
     result
 }
 
+/// Applies the recognized carriers owned by one object-attributes stream.
+pub(crate) fn apply_attribute_userdata(
+    bytes: &[u8],
+    attributes: &mut ObjectAttributes,
+    descriptors: &[AttributeUserdataDescriptor],
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) {
+    let modern_custom_mesh = parse_per_object_mesh_userdata(bytes, descriptors, archive, warnings);
+    let obsolete_custom_mesh =
+        parse_obsolete_custom_mesh_userdata(bytes, descriptors, archive, warnings);
+    attributes.custom_render_mesh = obsolete_custom_mesh.or(modern_custom_mesh);
+    attributes.mesh_modifiers =
+        crate::mesh_modifiers::parse_attribute_userdata(bytes, descriptors, archive, warnings);
+}
+
 fn parse_obsolete_custom_mesh_userdata(
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
@@ -1556,17 +1572,9 @@ pub(crate) fn parse_object_record(
         .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
     if let Some(attributes) = attributes.as_mut() {
-        let modern_custom_mesh =
-            parse_per_object_mesh_userdata(bytes, &attributes_userdata, archive, &mut warnings);
-        let obsolete_custom_mesh = parse_obsolete_custom_mesh_userdata(
+        apply_attribute_userdata(
             bytes,
-            &attributes_userdata,
-            archive,
-            &mut warnings,
-        );
-        attributes.custom_render_mesh = obsolete_custom_mesh.or(modern_custom_mesh);
-        attributes.mesh_modifiers = crate::mesh_modifiers::parse_attribute_userdata(
-            bytes,
+            attributes,
             &attributes_userdata,
             archive,
             &mut warnings,

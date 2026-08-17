@@ -8,12 +8,16 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{
+    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
+    BoundedReader, ChecksumStatus, FramingError,
+};
 use crate::container::{Record, Scan};
 use crate::loss::RhinoLossCode;
 use crate::objects::{
-    parse_class_wrapper, parse_class_wrapper_with_userdata, parse_user_string_list,
-    AttributeUserdataDescriptor, UserdataDescriptor, USER_STRING_LIST,
+    apply_attribute_userdata, parse_attribute_userdata, parse_attributes, parse_class_wrapper,
+    parse_class_wrapper_with_userdata, parse_user_string_list, AttributeUserdataDescriptor,
+    ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
 use crate::settings::{self, utf16};
 use crate::wire::{scaled_coordinate, Uuid};
@@ -23,6 +27,9 @@ const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
 const UTF8_STRING_CHUNK: u32 = 0x4000_8001;
 const MATERIAL_TABLE: u32 = 0x1000_0010;
 const LIGHT_TABLE: u32 = 0x1000_0012;
+const LIGHT_RECORD_ATTRIBUTES: u32 = 0x0200_8061;
+const LIGHT_RECORD_ATTRIBUTES_USERDATA: u32 = 0x0200_0062;
+const LIGHT_RECORD_END: u32 = 0x8200_006f;
 const BITMAP_TABLE: u32 = 0x1000_0016;
 const GROUP_TABLE: u32 = 0x1000_0018;
 const FONT_TABLE: u32 = 0x1000_0019;
@@ -232,6 +239,8 @@ struct LightRecord {
     length: [f64; 3],
     width: [f64; 3],
     hotspot: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attributes: Option<LightAttributesRecord>,
     links: Vec<String>,
 }
 
@@ -716,9 +725,7 @@ struct LayerPresentationRecord {
     clippy::struct_excessive_bools,
     reason = "independent serialized object display flags"
 )]
-struct ObjectPresentationRecord {
-    id: String,
-    source_offset: u64,
+struct ObjectAttributesPresentation {
     source_uuid: String,
     name: String,
     url: String,
@@ -771,7 +778,22 @@ struct ObjectPresentationRecord {
     custom_render_mesh: Option<settings::MeshParameters>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mesh_modifiers: Option<MeshModifiersRecord>,
+}
+
+#[derive(Debug, Serialize)]
+struct ObjectPresentationRecord {
+    id: String,
+    source_offset: u64,
+    #[serde(flatten)]
+    attributes: ObjectAttributesPresentation,
     links: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct LightAttributesRecord {
+    source_offset: u64,
+    #[serde(flatten)]
+    attributes: ObjectAttributesPresentation,
 }
 
 #[derive(Debug, Serialize)]
@@ -840,6 +862,99 @@ fn first_user_string_records(
         attributes.remove(index);
     }
     (geometry, attributes)
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the projection keeps source data, both userdata owners, and loss reporting explicit"
+)]
+fn object_attributes_presentation(
+    data: &[u8],
+    attributes: &ObjectAttributes,
+    class_userdata: &[UserdataDescriptor],
+    attribute_userdata: &[AttributeUserdataDescriptor],
+    archive: ArchiveVersion,
+    source_offset: usize,
+    source_uuid: String,
+    losses: &mut Vec<LossNote>,
+) -> ObjectAttributesPresentation {
+    let rendering = rendering_attributes(
+        data,
+        attributes.rendering_range.clone(),
+        archive,
+        settings::RenderingAttributesKind::Object,
+    )
+    .unwrap_or_else(|error| {
+        losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+            "object rendering attributes at offset {source_offset} could not be transferred: {error}"
+        )));
+        RenderingAttributesPresentation::default()
+    });
+    let (user_strings, attribute_user_strings) = first_user_string_records(
+        data,
+        archive,
+        class_userdata,
+        attribute_userdata,
+        source_offset,
+        losses,
+    );
+    ObjectAttributesPresentation {
+        source_uuid,
+        name: attributes.name.clone(),
+        url: attributes.url.clone(),
+        layer_index: attributes.layer_index,
+        material_index: attributes.material_index,
+        linetype_index: attributes.linetype_index,
+        color: attributes.color,
+        visible: attributes.visible,
+        object_mode: attributes.object_mode,
+        decoration: attributes.decoration,
+        wire_density: attributes.wire_density,
+        color_source: attributes.color_source,
+        linetype_source: attributes.linetype_source,
+        material_source: attributes.material_source,
+        plot_color_source: attributes.plot_color_source,
+        plot_weight_source: attributes.plot_weight_source,
+        plot_color: attributes.plot_color,
+        plot_weight_mm: attributes.plot_weight,
+        group_indexes: attributes.groups.clone(),
+        display_materials: attributes
+            .display_materials
+            .iter()
+            .map(|(viewport, material)| [viewport.to_string(), material.to_string()])
+            .collect(),
+        active_space: attributes.active_space,
+        viewport_uuid: (!attributes.viewport_id.is_nil())
+            .then(|| attributes.viewport_id.to_string()),
+        display_order: attributes.display_order,
+        clipping_proof: attributes.clipping_proof,
+        clipping_plane_uuids: attributes
+            .clipping_plane_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        hatch_pattern_index: attributes.hatch_pattern_index,
+        section_hatch_scale: attributes.section_hatch_scale,
+        section_hatch_rotation: attributes.section_hatch_rotation,
+        linetype_pattern_scale: attributes.linetype_pattern_scale,
+        hatch_background: attributes.hatch_background,
+        hatch_boundary_visible: attributes.hatch_boundary_visible,
+        detail_background_visible: attributes.detail_background_visible.then_some(true),
+        section_fill_rule: attributes.section_fill_rule,
+        clipping_plane_label_style: attributes.clipping_plane_label_style,
+        rendering_materials: rendering.materials,
+        rendering_mappings: rendering.mappings,
+        casts_shadows: rendering.casts_shadows,
+        receives_shadows: rendering.receives_shadows,
+        advanced_texture_preview: rendering.advanced_texture_preview,
+        user_strings,
+        attribute_user_strings,
+        custom_render_mesh: attributes.custom_render_mesh.clone(),
+        mesh_modifiers: attributes
+            .mesh_modifiers
+            .as_ref()
+            .map(mesh_modifiers_record),
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -1236,6 +1351,154 @@ fn class_data_prefix(
         ));
     }
     Ok(class.class_data_range)
+}
+
+fn parse_light_record_attributes(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<LightAttributesRecord>, FramingError> {
+    let mut warnings = Vec::new();
+    let _ = class_data_prefix(data, record, archive, LIGHT)?;
+    let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
+    let mut offset = wrapper.next_offset;
+    let mut attributes_chunk = None;
+    let mut attributes_body_range = None;
+    let mut attributes_userdata_body_range = None;
+    let mut phase = 0_u8;
+    let mut record_end_seen = false;
+    while offset < record.body.end {
+        let item = chunk_at(data, offset, record.body.end, archive, false)?;
+        if item.typecode == LIGHT_RECORD_END {
+            if !item.short || item.value != 0 {
+                return Err(FramingError::structural(
+                    item.header_start,
+                    "light record end must be short with value zero",
+                ));
+            }
+            if item.next_offset != record.body.end {
+                return Err(FramingError::structural(
+                    item.header_start,
+                    "light record end is not final",
+                ));
+            }
+            record_end_seen = true;
+            break;
+        }
+        match item.typecode {
+            LIGHT_RECORD_ATTRIBUTES if phase == 0 => {
+                if item.short {
+                    return Err(FramingError::structural(
+                        item.header_start,
+                        "light record attributes must be a long chunk",
+                    ));
+                }
+                attributes_chunk = Some(item.clone());
+                attributes_body_range = Some(item.body.clone());
+                phase = 1;
+            }
+            LIGHT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
+                if item.short {
+                    return Err(FramingError::structural(
+                        item.header_start,
+                        "light attribute userdata must be a long chunk",
+                    ));
+                }
+                attributes_userdata_body_range = Some(item.body.clone());
+                phase = 2;
+            }
+            _ => {
+                return Err(FramingError::structural(
+                    item.header_start,
+                    format!("unexpected light record child {:#x}", item.typecode),
+                ));
+            }
+        }
+        offset = item.next_offset;
+    }
+    if !record_end_seen {
+        return Err(FramingError::structural(
+            record.body.end,
+            "light record is missing light record end",
+        ));
+    }
+
+    let mut attributes = attributes_body_range
+        .as_ref()
+        .map(|body_range| {
+            parse_attributes(
+                data,
+                body_range.clone(),
+                attributes_chunk
+                    .as_ref()
+                    .map_or_else(|| body_range.clone(), crate::chunks::Chunk::range),
+                archive,
+                writer_version,
+                &mut warnings,
+            )
+        })
+        .transpose()?;
+    let attributes_userdata = attributes_userdata_body_range
+        .as_ref()
+        .map(|range| parse_attribute_userdata(data, range.clone(), archive, &mut warnings))
+        .unwrap_or_default();
+    if attributes.is_none() && !attributes_userdata.is_empty() {
+        return Err(FramingError::structural(
+            record.range.start,
+            "light attribute userdata has no attributes owner",
+        ));
+    }
+    if let Some(item) = attributes_chunk.as_ref() {
+        let children = attributes
+            .as_ref()
+            .and_then(|value| value.rendering_range.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        let direct = direct_checksum_ranges(&item.body, &children)?;
+        if let Some(note) = match verify_checksum_ranges(data, item, &direct)? {
+            ChecksumStatus::Mismatch { expected, actual } => Some(format!(
+                "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
+                item.header_start, item.typecode
+            )),
+            _ => None,
+        } {
+            warnings.push(note);
+        }
+    }
+    let Some(attributes) = attributes.as_mut() else {
+        return Ok(None);
+    };
+    apply_attribute_userdata(
+        data,
+        attributes,
+        &attributes_userdata,
+        archive,
+        &mut warnings,
+    );
+    let presentation = object_attributes_presentation(
+        data,
+        attributes,
+        &[],
+        &attributes_userdata,
+        archive,
+        record.range.start,
+        attributes.object_id.to_string(),
+        losses,
+    );
+    for warning in warnings {
+        losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
+            "light record attributes at offset {}: {warning}",
+            record.range.start
+        )));
+    }
+    Ok(Some(LightAttributesRecord {
+        source_offset: attributes_chunk
+            .as_ref()
+            .map_or(record.range.start, |chunk| chunk.header_start) as u64,
+        attributes: presentation,
+    }))
 }
 
 fn class_data_with_userdata(
@@ -1817,6 +2080,7 @@ fn parse_light(
         length,
         width,
         hotspot,
+        attributes: None,
         links: link.into_iter().collect(),
     })
 }
@@ -3540,9 +3804,24 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 }
             } else if table_type == LIGHT_TABLE {
                 if let Ok(range) = class_data_prefix(scan.data, record, scan.archive, LIGHT) {
-                    if let Ok(light) =
+                    if let Ok(mut light) =
                         parse_light(scan.data, range, scale, record.range.start, None)
                     {
+                        match parse_light_record_attributes(
+                            scan.data,
+                            record,
+                            scan.archive,
+                            scan.metadata.properties.writer_version,
+                            &mut losses,
+                        ) {
+                            Ok(attributes) => light.attributes = attributes,
+                            Err(error) => losses.push(RhinoLossCode::ObjectAttributesDegraded.note(
+                                format!(
+                                    "light attributes at offset {} could not be transferred: {error}",
+                                    record.range.start
+                                ),
+                            )),
+                        }
                         push_light(&mut lights, &mut light_indexes, light);
                         parsed = true;
                     }
@@ -3717,85 +3996,20 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
             } else {
                 identity.object_id.to_string()
             };
-            let rendering = rendering_attributes(
+            let attributes_presentation = object_attributes_presentation(
                 scan.data,
-                attributes.rendering_range.clone(),
-                scan.archive,
-                settings::RenderingAttributesKind::Object,
-            )
-            .unwrap_or_else(|error| {
-                losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
-                    "object rendering attributes at offset {} could not be transferred: {error}",
-                    object.range.start
-                )));
-                RenderingAttributesPresentation::default()
-            });
-            let (user_strings, attribute_user_strings) = first_user_string_records(
-                scan.data,
-                scan.archive,
+                attributes,
                 &object.userdata,
                 &object.attributes_userdata,
+                scan.archive,
                 object.range.start,
+                identity.object_id.to_string(),
                 &mut losses,
             );
             object_presentation.push(ObjectPresentationRecord {
                 id: format!("rhino:presentation:object#{key}"),
                 source_offset: object.range.start as u64,
-                source_uuid: identity.object_id.to_string(),
-                name: attributes.name.clone(),
-                url: attributes.url.clone(),
-                layer_index: attributes.layer_index,
-                material_index: attributes.material_index,
-                linetype_index: attributes.linetype_index,
-                color: attributes.color,
-                visible: attributes.visible,
-                object_mode: attributes.object_mode,
-                decoration: attributes.decoration,
-                wire_density: attributes.wire_density,
-                color_source: attributes.color_source,
-                linetype_source: attributes.linetype_source,
-                material_source: attributes.material_source,
-                plot_color_source: attributes.plot_color_source,
-                plot_weight_source: attributes.plot_weight_source,
-                plot_color: attributes.plot_color,
-                plot_weight_mm: attributes.plot_weight,
-                group_indexes: attributes.groups.clone(),
-                display_materials: attributes
-                    .display_materials
-                    .iter()
-                    .map(|(viewport, material)| [viewport.to_string(), material.to_string()])
-                    .collect(),
-                active_space: attributes.active_space,
-                viewport_uuid: (!attributes.viewport_id.is_nil())
-                    .then(|| attributes.viewport_id.to_string()),
-                display_order: attributes.display_order,
-                clipping_proof: attributes.clipping_proof,
-                clipping_plane_uuids: attributes
-                    .clipping_plane_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect(),
-                hatch_pattern_index: attributes.hatch_pattern_index,
-                section_hatch_scale: attributes.section_hatch_scale,
-                section_hatch_rotation: attributes.section_hatch_rotation,
-                linetype_pattern_scale: attributes.linetype_pattern_scale,
-                hatch_background: attributes.hatch_background,
-                hatch_boundary_visible: attributes.hatch_boundary_visible,
-                detail_background_visible: attributes.detail_background_visible.then_some(true),
-                section_fill_rule: attributes.section_fill_rule,
-                clipping_plane_label_style: attributes.clipping_plane_label_style,
-                rendering_materials: rendering.materials,
-                rendering_mappings: rendering.mappings,
-                casts_shadows: rendering.casts_shadows,
-                receives_shadows: rendering.receives_shadows,
-                advanced_texture_preview: rendering.advanced_texture_preview,
-                user_strings,
-                attribute_user_strings,
-                custom_render_mesh: attributes.custom_render_mesh.clone(),
-                mesh_modifiers: attributes
-                    .mesh_modifiers
-                    .as_ref()
-                    .map(mesh_modifiers_record),
+                attributes: attributes_presentation,
                 links: vec![format!("rhino:object:record#{source_order:06}")],
             });
         }
@@ -4372,6 +4586,87 @@ mod tests {
 
         let range = class_data_prefix(&body, &record, archive, LIGHT).expect("light class");
         assert_eq!(&body[range], payload);
+    }
+
+    #[test]
+    fn light_record_attributes_use_the_object_attribute_projection() {
+        let archive = ArchiveVersion::V5;
+        let mut attributes = vec![0x20];
+        attributes.extend([0; 16]);
+        attributes.extend(7_i32.to_le_bytes());
+        attributes.push(1);
+        attributes.extend(utf16("table light"));
+        attributes.push(11);
+        attributes.push(0);
+        attributes.push(0);
+        let mut body =
+            crate::test_support::test_dump::class_wrapper(archive, LIGHT.to_wire(), &[0x12, 0xaa]);
+        body.extend(crate::test_support::test_dump::crc_chunk(
+            archive,
+            LIGHT_RECORD_ATTRIBUTES,
+            &attributes,
+        ));
+        let user_string_body = [
+            1_i32.to_le_bytes().as_slice(),
+            crate::test_support::test_dump::anonymous_chunk(
+                archive,
+                0,
+                &[utf16("attribute key"), utf16("attribute value")].concat(),
+            )
+            .as_slice(),
+        ]
+        .concat();
+        let userdata = crate::test_support::test_dump::class_userdata_with_payload(
+            archive,
+            USER_STRING_LIST.to_wire(),
+            [0; 16],
+            &user_string_body,
+        );
+        body.extend(crate::test_support::test_dump::long_chunk(
+            archive,
+            LIGHT_RECORD_ATTRIBUTES_USERDATA,
+            &[
+                userdata,
+                crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0),
+            ]
+            .concat(),
+        ));
+        body.extend(crate::test_support::test_dump::short_chunk(
+            archive,
+            LIGHT_RECORD_END,
+            0,
+        ));
+        let record = Record {
+            typecode: 0x2000_8060,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+        let mut losses = Vec::new();
+        let value = parse_light_record_attributes(
+            &body,
+            &record,
+            archive,
+            Some(2_024_071_000),
+            &mut losses,
+        )
+        .expect("light record attributes")
+        .expect("light attributes child");
+        assert!(losses.is_empty());
+        assert_eq!(value.attributes.layer_index, 7);
+        assert_eq!(value.attributes.name, "table light");
+        assert!(!value.attributes.visible);
+        assert_eq!(value.attributes.source_uuid, Uuid::nil().to_string());
+        assert_eq!(
+            value.attributes.attribute_user_strings[0].key,
+            "attribute key"
+        );
+        assert_eq!(
+            value.attributes.attribute_user_strings[0].value,
+            "attribute value"
+        );
+        assert!(value.source_offset > 0);
     }
 
     #[test]

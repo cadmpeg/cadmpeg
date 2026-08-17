@@ -5514,6 +5514,37 @@ The light reader requires major 1 and leaves bytes after the known
 minor-gated prefix at the `OPENNURBS_CLASS_DATA` boundary. The class-data
 boundary ends before class userdata and the class-end marker.
 
+`LIGHT_RECORD_ATTRIBUTES` is an optional CRC-bearing long child after the
+class wrapper. Its body is the `ON_3dmObjectAttributes` payload from section
+9: archives below version 5 use the fixed version-1 grammar, and V5 and later
+use the version-2 tagged grammar selected by the OpenNURBS writer version.
+The attribute-child CRC covers its direct body bytes and excludes the complete
+rendering-attributes child described in section 8.4. The light record accepts
+at most one attributes child, followed by at most one
+`LIGHT_RECORD_ATTRIBUTES_USERDATA` long child, and ends with the short zero
+`LIGHT_RECORD_END` child. The userdata body is the attribute-userdata stream
+from section 9.3 and ends with the short zero class-end marker.
+
+CADIR decision: table-light attributes belong to the light component. When
+the attributes child is valid, `native.rhino.lights[].attributes` contains a
+nested object-attribute projection. Its `source_offset` is the attributes
+child header offset and its `source_uuid` is the serialized attribute object
+UUID. The projection contains `name`, `url`, `layer_index`, `material_index`,
+`linetype_index`, `color`, `visible`, `object_mode`, `decoration`,
+`wire_density`, the color/linetype/material/plot source selectors, plot color
+and weight, group indexes, display-material pairs, active-space and viewport
+selectors, display order, clipping state and UUIDs, hatch and linetype
+settings, detail-background state, section-fill and clipping-label values,
+rendering material and mapping references, shadow and texture-preview flags,
+geometry and attribute user strings, custom render-mesh settings, and mesh
+modifiers. The projection uses the same field defaults and userdata ownership
+rules as `native.rhino.object_presentation`; it does not create an object
+record or a second light identity. A missing attributes child omits the
+nested projection. A malformed attributes child leaves the typed light class
+data admitted, omits the projection, and records an object-attributes
+degradation; malformed recognized attribute-userdata carriers leave the light
+attributes admitted and record a bounded diagnostic.
+
 The same class-data payload is used when `ON_Light` appears in an object
 record; the object record then uses the common object-attributes and
 object-record-end children instead of the light-table children.
