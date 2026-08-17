@@ -786,6 +786,14 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(disc20_disc1e_disc1c_disc18_disc16_disc04_face_root_body(
+            &by_attr,
+        ));
+    }
+    if out.is_empty() {
+        out.extend(disc20_disc1e_disc1c_disc18_disc16_disc12_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4006,6 +4014,65 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc04_face_root_body(
             require_exact_use_population: false,
         },
         false,
+    )
+}
+
+fn disc20_disc1e_disc1c_disc18_disc16_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0018, 1),
+            (0x0016, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: Some(KeyedFaceBridge {
+                disc: 0x0010,
+                flo: 1,
+            }),
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        true,
+    )
+}
+
+fn disc20_disc1e_disc1c_disc18_disc16_disc12_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0018, 1),
+            (0x0016, 2),
+            (0x0012, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: Some(KeyedFaceBridge {
+                disc: 0x0010,
+                flo: 1,
+            }),
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        true,
     )
 }
 
@@ -7237,7 +7304,9 @@ mod tests {
     mod disc20_disc1e_disc1c;
     mod disc20_disc1e_disc1c_disc14_disc12_disc10_disc04;
     mod disc20_disc1e_disc1c_disc16_disc14_disc12;
+    mod disc20_disc1e_disc1c_disc18_disc16;
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
+    mod disc20_disc1e_disc1c_disc18_disc16_disc12;
     mod disc22_disc20_disc1e_disc1a;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
@@ -7346,7 +7415,6 @@ mod tests {
             .iter()
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
-
         let bodies = disc14_bodies(&by_attr);
         assert_eq!(bodies.len(), 2);
         assert_eq!(
@@ -7382,7 +7450,6 @@ mod tests {
             .iter()
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
-
         let bodies = disc20_bodies(&by_attr);
         let [body] = bodies.as_slice() else {
             panic!("one schema-36001 body");
