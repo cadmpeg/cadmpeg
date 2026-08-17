@@ -5078,6 +5078,15 @@ nonnegative and every anonymous child is bounded independently. A line angle
 is in radians. Base coordinates, offsets, and signed dash lengths are lengths;
 positive dashes draw and negative dashes leave gaps.
 
+The hatch-line writer emits the packed 1.1 payload below archive version 60 and
+the anonymous 1.0 line child at archive version 60 and later. The hatch-pattern
+writer emits the packed 1.2 payload below archive version 60, the anonymous
+1.0 pattern child for archive versions 60 through 89, and the same anonymous
+pattern prefix with the archive-90 tail at archive version 90 and later. The
+line child ends before the next line-list byte, the line-list child ends before
+the pattern unit-system byte or archive-90 tail, and the pattern child ends at
+its enclosing class-data boundary.
+
 Archive version 90 retains that anonymous major-1, minor-0 body and
 append these fields after the line-list chunk:
 

@@ -5263,8 +5263,10 @@ mod tests {
         for value in [1.25_f64, -0.75, 0.5] {
             line.extend(value.to_le_bytes());
         }
+        line.extend([0xa5; 3]);
         let mut line_list = 1_i32.to_le_bytes().to_vec();
         line_list.extend(anonymous(0, &line));
+        line_list.extend([0xb6; 5]);
 
         let mut component = 1_i32.to_le_bytes().to_vec();
         component.extend(0_i32.to_le_bytes());
@@ -5286,7 +5288,9 @@ mod tests {
         body.extend(1_i32.to_le_bytes());
         body.extend(utf16("modern description"));
         body.extend(anonymous_body(&line_list));
-        let bytes = anonymous(0, &body);
+        let mut v8_body = body.clone();
+        v8_body.extend([0xc7; 4]);
+        let bytes = anonymous(0, &v8_body);
         let value = parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V8, 10.0, 321)
             .expect("modern hatch pattern");
 
@@ -5306,6 +5310,7 @@ mod tests {
 
         let mut v9_body = body;
         v9_body.extend([2, 1]);
+        v9_body.extend([0xd8; 4]);
         let v9_bytes = anonymous(0, &v9_body);
         let v9 = parse_hatch_pattern(&v9_bytes, 0..v9_bytes.len(), ArchiveVersion::V9, 10.0, 321)
             .expect("archive-90 hatch pattern");

@@ -133,6 +133,12 @@ children close independently, source writer bands select the known texture
 minors, and later bytes remain at the child that contains them. A material
 reference consumes and drops its obsolete mapping-channel array before its
 minor-gated back-face fields.
+The hatch-pattern and hatch-line readers now have the same source-selected
+inventory: packed pattern 1.2 and line 1.1 below archive 60, anonymous pattern
+and line children from archive 60, and the pattern unit-system and
+model-distance fields at archive 90. The line, line-list, and pattern child
+boundaries are independent; the direct `ON_Hatch` record separately admits its
+minor-2 basepoint from archive 60 and leaves loop children bounded.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -165,5 +171,10 @@ subset is established by `ON_Material::Write`/`Read`, `ON_Texture::Write`/`Read`
 the owner tests exercise non-empty obsolete material-reference arrays and
 future suffixes at texture, texture-array, mapping, mapping-reference, and
 mapping-channel boundaries.
+The hatch subset is established by `ON_HatchPattern::Write`/`Read`,
+`WriteV8`/`ReadV8`, and `WriteV5`/`ReadV5`, `ON_HatchLine::Write`/`Read` and
+`WriteV5`/`ReadV5`, and `ON_Hatch::Write`/`Read`; the presentation and hatch
+owner tests exercise line, line-list, pattern, loop, and archive-90 suffix
+boundaries.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.
