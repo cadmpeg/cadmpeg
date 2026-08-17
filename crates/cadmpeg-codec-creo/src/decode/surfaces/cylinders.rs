@@ -25,6 +25,7 @@ use super::super::holes::{
 use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sketch_transfer::{feature_recipe, feature_section_sweep_semantics_conflict};
+use super::super::uniqueness::exactly_one;
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
     round_feature_ids: &BTreeSet<u32>,
@@ -181,12 +182,13 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             axis,
             ref_direction,
             radius,
-        }) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == sibling)
-            .map(|surface| &surface.geometry)
+        }) = exactly_one(
+            ir.model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == sibling),
+        )
+        .map(|surface| &surface.geometry)
         else {
             continue;
         };

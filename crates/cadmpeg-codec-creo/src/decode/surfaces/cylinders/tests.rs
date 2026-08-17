@@ -90,6 +90,19 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
     }
 }
 
+fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
+    cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        geometry: SurfaceGeometry::Cylinder {
+            origin: [0.0, 0.0, 0.0].into(),
+            axis: [0.0, 0.0, 1.0].into(),
+            ref_direction: [1.0, 0.0, 0.0].into(),
+            radius,
+        },
+        source_object: None,
+    }
+}
+
 fn split_outline_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([
@@ -278,6 +291,60 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
         .surfaces
         .iter()
         .all(|surface| { surface.id.as_str() != "creo:visibgeom:surface#7" }));
+}
+
+#[test]
+fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
+    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id: 23,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.rows.push(crate::feature::FeatureRow {
+        feature_id: 23,
+        header: [0, 0],
+        root_schema_class: Some(913),
+        stream_offset: 0,
+        body: Vec::new(),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows = vec![
+        row(10, crate::surface::SurfaceKind::Plane),
+        row(11, crate::surface::SurfaceKind::Plane),
+        row(13, crate::surface::SurfaceKind::Cylinder),
+    ];
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(23),
+            table_class_id: 80,
+            entry_ids: vec![10, 11, 12, 13],
+            entries: Vec::new(),
+            surface_ids: vec![10, 11, 13],
+            non_surface_entity_ids: vec![12],
+            offset: 47,
+        });
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model
+        .surfaces
+        .extend([model_cylinder(13, 2.0), model_cylinder(13, 3.0)]);
+
+    assert_eq!(
+        super::transfer_rowless_round_cylinders(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        0
+    );
+    assert_eq!(ir.model.surfaces.len(), 2);
 }
 
 #[test]
