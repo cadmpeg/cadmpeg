@@ -238,6 +238,12 @@ fn checksum_warning(
         };
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_COMPRESSED_PREVIEW {
+        let Ok(children) = compressed_preview_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
         let Ok(children) = user_table_uuid_checksum_children(data, &chunk, archive) else {
             return Ok(None);
@@ -392,6 +398,134 @@ fn settings_attributes_checksum_children(
         reader.skip(16 * 6)?;
     }
     Ok(children)
+}
+
+/// Returns the deflate children in an `ON_WindowsBitmap::WriteCompressed`
+/// preview payload.
+///
+/// The bitmap header is direct data. Each nonzero compressed-buffer record
+/// contains a direct uncompressed size, buffer CRC, and method byte. Method 1
+/// stores the deflate bytes in a complete anonymous CRC chunk; method 0 stores
+/// the bytes directly. A non-contiguous bitmap writes a second buffer after a
+/// palette-only first buffer.
+fn compressed_preview_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    reader.i32()?;
+    reader.i32()?;
+    reader.i32()?;
+    reader.i16()?;
+    let bit_count = reader.u16()?;
+    reader.i32()?;
+    let image_size = reader.i32()?;
+    reader.i32()?;
+    reader.i32()?;
+    let colors_used = reader.i32()?;
+    reader.i32()?;
+
+    if image_size < 0 || colors_used < 0 {
+        return Ok(Vec::new());
+    }
+    let color_count = if colors_used != 0 {
+        usize::try_from(colors_used).map_err(|_| FramingError::Overflow {
+            offset: reader.position(),
+        })?
+    } else {
+        match bit_count {
+            1 => 2,
+            4 => 16,
+            8 => 256,
+            _ => 0,
+        }
+    };
+    let palette_size = color_count.checked_mul(4).ok_or(FramingError::Overflow {
+        offset: reader.position(),
+    })?;
+    let image_size = usize::try_from(image_size).map_err(|_| FramingError::Overflow {
+        offset: reader.position(),
+    })?;
+    let first_size = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
+        offset: reader.position(),
+    })?;
+
+    let mut children = Vec::new();
+    let contiguous_size = palette_size
+        .checked_add(image_size)
+        .ok_or(FramingError::Overflow {
+            offset: reader.position(),
+        })?;
+    if first_size == contiguous_size {
+        if let Some(child) = compressed_preview_buffer_child(
+            data,
+            &mut reader,
+            archive,
+            first_size,
+            "compressed preview buffer",
+        )? {
+            children.push(child);
+        }
+    } else if image_size > 0 && first_size == palette_size {
+        if let Some(child) = compressed_preview_buffer_child(
+            data,
+            &mut reader,
+            archive,
+            first_size,
+            "compressed preview palette buffer",
+        )? {
+            children.push(child);
+        }
+        let second_size = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
+            offset: reader.position(),
+        })?;
+        if second_size != image_size {
+            return Ok(Vec::new());
+        }
+        if let Some(child) = compressed_preview_buffer_child(
+            data,
+            &mut reader,
+            archive,
+            second_size,
+            "compressed preview image buffer",
+        )? {
+            children.push(child);
+        }
+    } else {
+        return Ok(Vec::new());
+    }
+
+    Ok(children)
+}
+
+/// Reads one `WriteCompressedBuffer` prefix and returns its nested deflate
+/// chunk, if method 1 is selected.
+fn compressed_preview_buffer_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    size: usize,
+    label: &str,
+) -> Result<Option<std::ops::Range<usize>>, FramingError> {
+    if size == 0 {
+        return Ok(None);
+    }
+    reader.skip(4)?;
+    let method_offset = reader.position();
+    match reader.u8()? {
+        0 => {
+            reader.skip(size)?;
+            Ok(None)
+        }
+        1 => Ok(Some(take_anonymous_checksum_child(
+            data, reader, archive, label,
+        )?)),
+        method => Err(FramingError::structural(
+            method_offset,
+            format!("{label} has unsupported compression method {method}"),
+        )),
+    }
 }
 
 /// Takes one long anonymous child and records its complete range.

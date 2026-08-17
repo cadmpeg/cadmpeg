@@ -434,6 +434,39 @@ version.
 | dictionary end            | `0xc0000013` |
 | XDATA                     | `0x40000001` |
 
+The compressed-preview record (`0x20008025`) body is:
+
+```
+i32 biSize
+i32 biWidth
+i32 biHeight
+i16 biPlanes
+i16 biBitCount
+i32 biCompression
+i32 biSizeImage
+i32 biXPelsPerMeter
+i32 biYPelsPerMeter
+i32 biClrUsed
+i32 biClrImportant
+u32 compressed-buffer size
+if size > 0:
+  u32 CRC32 of the uncompressed buffer
+  u8 compression method
+  if method = 0: size direct bytes
+  if method = 1: anonymous long chunk containing deflate bytes
+```
+
+The palette color count is `biClrUsed` when nonzero; otherwise it is 2, 16,
+or 256 for `biBitCount` 1, 4, or 8, and zero for other bit counts. The
+compressed-buffer size is the palette bytes plus `biSizeImage` for a
+contiguous bitmap. For a non-contiguous bitmap, the first buffer is the
+palette and a second buffer of `biSizeImage` bytes follows. A zero-size
+buffer has only its size field; a non-contiguous bitmap can then continue with
+the second image buffer. Method 1 stores deflate bytes in the anonymous child;
+the anonymous child is a complete CRC-bearing chunk and its bytes are excluded
+from the preview record's direct CRC. The direct CRC covers the bitmap header,
+buffer sizes, uncompressed-buffer CRCs, method bytes, and method-0 bytes.
+
 ### 6.4 Class wrapper chunks
 
 | Meaning         |     Typecode |

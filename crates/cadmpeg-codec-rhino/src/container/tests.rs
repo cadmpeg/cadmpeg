@@ -422,6 +422,80 @@ fn modern_render_settings_crc_excludes_anonymous_body() {
 }
 
 #[test]
+fn compressed_preview_crc_excludes_deflate_child() {
+    let archive = ArchiveVersion::V5;
+    let mut body = Vec::new();
+    body.extend(40_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i16.to_le_bytes());
+    body.extend(24_i16.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(4_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(4_u32.to_le_bytes());
+    body.extend(0x1122_3344_u32.to_le_bytes());
+    body.push(1);
+    let child_start = body.len();
+    body.extend(crc_chunk(archive, 0x4000_8000, &[0xde, 0xad, 0xbe, 0xef]));
+    let child_range = child_start..body.len();
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8025,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
+            .expect("compressed-preview checksum framing"),
+        None
+    );
+}
+
+#[test]
+fn compressed_preview_crc_tracks_noncontiguous_palette_and_image_buffers() {
+    let archive = ArchiveVersion::V5;
+    let mut body = Vec::new();
+    body.extend(40_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i16.to_le_bytes());
+    body.extend(1_i16.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(4_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(8_u32.to_le_bytes());
+    body.extend(0x1122_3344_u32.to_le_bytes());
+    body.push(0);
+    body.extend([0xaa; 8]);
+    body.extend(4_u32.to_le_bytes());
+    body.extend(0x5566_7788_u32.to_le_bytes());
+    body.push(1);
+    let child_start = body.len();
+    body.extend(crc_chunk(archive, 0x4000_8000, &[0xde, 0xad, 0xbe, 0xef]));
+    let child_range = child_start..body.len();
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8025,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
+            .expect("non-contiguous preview checksum framing"),
+        None
+    );
+}
+
+#[test]
 fn legacy_render_settings_crc_covers_direct_body() {
     let archive = ArchiveVersion::V5;
     let mut body = 103_i32.to_le_bytes().to_vec();
