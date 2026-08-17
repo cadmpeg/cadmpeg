@@ -256,6 +256,38 @@ fn recovery_pipeline_keeps_malformed_records_atomic_and_later_objects_decodable(
     crate::container::tests::structural_framing_errors_keep_diagnostics();
 }
 
+#[test]
+fn registered_future_object_major_is_retained_without_known_prefix() {
+    let mut future_point = support::point_payload([1.0, 2.0, 3.0]);
+    future_point[0] = 0x20;
+    future_point.extend([0xde, 0xad]);
+    let future_record = support::object_record(1, support::POINT_CLASS, &future_point);
+    let valid_record = support::object_record(
+        1,
+        support::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let result = decode(support::archive(&[future_record.clone(), valid_record]));
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| record.id == "rhino:object:record#000000")
+        .expect("future-major object record is retained");
+    assert_eq!(retained.data.as_deref(), Some(future_record.as_slice()));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("simple geometry retained")
+            && loss.message.contains("unsupported version")
+    }));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
+            && loss.message.contains("decoded 1/2 Rhino object records")
+    }));
+    assert_valid(&result);
+}
+
 /// Object types from `docs/formats/rhino_3dm.md` "object type values".
 const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
 const CURVE_OBJECT_TYPE: i64 = 0x0000_0004;
