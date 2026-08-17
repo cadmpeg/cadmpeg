@@ -178,6 +178,9 @@ fixtures, scores above L1 remain blocked.
   world-coordinate token.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
+- A round with a complete placed set of generated cylinder carriers transfers
+  their common positive radius even when generated cap or support rows are
+  also present.
 - A round whose generated type-26 rows all replay the same uniquely associated
   prototype minor radius transfers that exact value as its constant radius;
   patch placement is independent of the radius proof.

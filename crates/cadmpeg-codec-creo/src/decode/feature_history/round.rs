@@ -409,15 +409,17 @@ pub(in super::super) fn round_constant_radius(
         // witness from being assembled.
         return None;
     }
-    if cylinder_radii.len() == cylinder_rows.len()
-        && cylinder_rows.len()
-            == scan
-                .surfaces
-                .rows
-                .iter()
-                .filter(|row| row.feature_id == feature_id)
-                .count()
-    {
+    // A complete placed set of generated cylinder carriers is an independent
+    // radius witness when the remaining generated rows are cap or support
+    // planes. A toroidal or other rolling carrier still needs its own family
+    // proof, so it must not be hidden by the cylinder subset.
+    let non_radius_rows_are_planes = generated_rows.iter().all(|row| {
+        matches!(
+            row.kind,
+            crate::surface::SurfaceKind::Cylinder | crate::surface::SurfaceKind::Plane
+        )
+    });
+    if cylinder_radii.len() == cylinder_rows.len() && non_radius_rows_are_planes {
         return unique_positive_length(&cylinder_radii);
     }
     round_support_radius(scan, ir, feature_id)

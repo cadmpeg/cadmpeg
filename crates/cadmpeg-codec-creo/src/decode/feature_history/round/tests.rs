@@ -262,6 +262,68 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
 }
 
 #[test]
+fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 1,
+            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 1,
+        },
+        crate::surface::SurfaceRow {
+            id: 2,
+            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 2,
+        },
+        crate::surface::SurfaceRow {
+            id: 3,
+            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 3,
+        },
+        crate::surface::SurfaceRow {
+            id: 4,
+            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 4,
+        },
+    ]);
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    for id in [3, 4] {
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius: 0.5,
+            },
+            source_object: None,
+        });
+    }
+
+    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(0.5));
+}
+
+#[test]
 fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
