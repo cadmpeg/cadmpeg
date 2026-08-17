@@ -26,8 +26,8 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -645,7 +645,11 @@ fn complete_support_uv_wave(
                         .iter()
                         .enumerate()
                         .filter(|(_, candidate)| {
-                            parameterization_equivalent_surfaces(ir, candidate, other_surface)
+                            parameterization_equivalent_surfaces_with_index(
+                                &model_index,
+                                candidate,
+                                other_surface,
+                            )
                         })
                         .map(|(boundary, _)| boundary)
                         .collect::<Vec<_>>();
@@ -1011,37 +1015,44 @@ pub(super) fn complete_coupled_support_uv_for_test(
 }
 
 pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
-    let replacements = ir
-        .model
-        .procedural_curves
-        .iter()
-        .enumerate()
-        .filter_map(|(procedural_index, procedural)| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
-            else {
-                return None;
-            };
-            let missing = context
-                .sides
-                .each_ref()
-                .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
-            let target = match missing {
-                [true, false] => 0,
-                [false, true] => 1,
-                _ => return None,
-            };
-            let source = 1 - target;
-            let (Some(target_surface), Some(source_surface), Some(source_pcurve)) = (
-                context.sides[target].surface.as_ref(),
-                context.sides[source].surface.as_ref(),
-                context.sides[source].pcurve.as_ref(),
-            ) else {
-                return None;
-            };
-            parameterization_equivalent_surfaces(ir, target_surface, source_surface)
+    let replacements = {
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+        ir.model
+            .procedural_curves
+            .iter()
+            .enumerate()
+            .filter_map(|(procedural_index, procedural)| {
+                let ProceduralCurveDefinition::Intersection { context, .. } =
+                    &procedural.definition
+                else {
+                    return None;
+                };
+                let missing = context
+                    .sides
+                    .each_ref()
+                    .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+                let target = match missing {
+                    [true, false] => 0,
+                    [false, true] => 1,
+                    _ => return None,
+                };
+                let source = 1 - target;
+                let (Some(target_surface), Some(source_surface), Some(source_pcurve)) = (
+                    context.sides[target].surface.as_ref(),
+                    context.sides[source].surface.as_ref(),
+                    context.sides[source].pcurve.as_ref(),
+                ) else {
+                    return None;
+                };
+                parameterization_equivalent_surfaces_with_index(
+                    &model_index,
+                    target_surface,
+                    source_surface,
+                )
                 .then(|| (procedural_index, target, source_pcurve.clone()))
-        })
-        .collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>()
+    };
     for (procedural_index, side, pcurve) in replacements {
         let ProceduralCurveDefinition::Intersection { context, .. } =
             &mut ir.model.procedural_curves[procedural_index].definition
@@ -1054,13 +1065,23 @@ pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parameterization_equivalent_surfaces(
     ir: &CadIr,
     first: &SurfaceId,
     second: &SurfaceId,
 ) -> bool {
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    parameterization_equivalent_surfaces_with_index(&index, first, second)
+}
+
+pub(crate) fn parameterization_equivalent_surfaces_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    first: &SurfaceId,
+    second: &SurfaceId,
+) -> bool {
     fn equivalent(
-        ir: &CadIr,
+        index: &cadmpeg_ir::index::ModelIndex<'_>,
         first: &SurfaceId,
         second: &SurfaceId,
         visited: &mut BTreeSet<(SurfaceId, SurfaceId)>,
@@ -1072,10 +1093,8 @@ pub(crate) fn parameterization_equivalent_surfaces(
             return false;
         }
         let geometry = |id: &SurfaceId| {
-            ir.model
-                .surfaces
-                .iter()
-                .find(|surface| &surface.id == id)
+            index
+                .surfaces(id.0.as_str())
                 .map(|surface| &surface.geometry)
         };
         let (Some(first_geometry), Some(second_geometry)) = (geometry(first), geometry(second))
@@ -1103,8 +1122,12 @@ pub(crate) fn parameterization_equivalent_surfaces(
                 ..
             }),
         ) = (
-            procedural_surface_for_carrier(ir, first).map(|surface| &surface.definition),
-            procedural_surface_for_carrier(ir, second).map(|surface| &surface.definition),
+            index
+                .procedural_surface_for_carrier(first.0.as_str())
+                .map(|surface| &surface.definition),
+            index
+                .procedural_surface_for_carrier(second.0.as_str())
+                .map(|surface| &surface.definition),
         )
         else {
             return false;
@@ -1113,33 +1136,10 @@ pub(crate) fn parameterization_equivalent_surfaces(
             && first_u_sense == second_u_sense
             && first_v_sense == second_v_sense
             && first_extensions == second_extensions
-            && equivalent(ir, first_support, second_support, visited)
+            && equivalent(index, first_support, second_support, visited)
     }
 
-    equivalent(ir, first, second, &mut BTreeSet::new())
-}
-
-pub(crate) fn procedural_surface_for_carrier<'a>(
-    ir: &'a CadIr,
-    surface: &SurfaceId,
-) -> Option<&'a ProceduralSurface> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
-    if let SurfaceGeometry::Procedural { construction } = &carrier.geometry {
-        return ir
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|candidate| candidate.id == *construction && candidate.surface == *surface);
-    }
-    let mut producers = ir.model.procedural_surfaces.iter().filter(|candidate| {
-        candidate.surface == *surface && candidate.cache_fit_tolerance.is_some()
-    });
-    let producer = producers.next()?;
-    producers.next().is_none().then_some(producer)
+    equivalent(index, first, second, &mut BTreeSet::new())
 }
 
 #[cfg(test)]

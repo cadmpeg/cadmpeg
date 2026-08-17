@@ -6,10 +6,11 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::offset_surface_parameters_with_tolerance_with_index_and_budget;
 use super::offset::{least_squares_step, parameter_derivative_step, point_distance};
-use super::support_uv::{parameterization_equivalent_surfaces, procedural_surface_for_carrier};
+use super::support_uv::parameterization_equivalent_surfaces_with_index;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 #[cfg(test)]
 use cadmpeg_core::decode::WorkBudget;
+#[cfg(test)]
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use cadmpeg_ir::eval::{
@@ -1221,7 +1222,6 @@ pub(crate) struct BoundaryInverseTarget {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     blend: &SurfaceId,
     support: &SurfaceId,
     support_pcurve: &PcurveGeometry,
@@ -1229,15 +1229,9 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
-    let support_geometry = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == support)
-        .map(|surface| &surface.geometry)?;
+    let support_geometry = &index.surfaces(support.0.as_str())?.geometry;
     blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
         index,
-        ir,
         blend,
         support,
         support_geometry,
@@ -1251,7 +1245,6 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_budget(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     blend: &SurfaceId,
     support: &SurfaceId,
     support_geometry: &SurfaceGeometry,
@@ -1264,7 +1257,9 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_bud
     let matches = supports
         .iter()
         .enumerate()
-        .filter(|(_, candidate)| parameterization_equivalent_surfaces(ir, candidate, support))
+        .filter(|(_, candidate)| {
+            parameterization_equivalent_surfaces_with_index(index, candidate, support)
+        })
         .map(|(boundary, _)| boundary)
         .collect::<Vec<_>>();
     let [boundary] = matches.as_slice() else {
@@ -2074,7 +2069,8 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
     let candidates = context.sides.iter().filter_map(|side| {
         let side_surface = side.surface.as_ref()?;
         let pcurve = side.pcurve.as_ref()?;
-        let offset = constant_surface_offset_between(index.ir(), support, side_surface, depth + 1)?;
+        let offset =
+            constant_surface_offset_between_with_index(index, support, side_surface, depth + 1)?;
         if !blend_contact_offset_matches(0.0, offset, radius) {
             return None;
         }
@@ -2087,45 +2083,49 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
     Some(*pcurve)
 }
 
+#[cfg(test)]
 pub(crate) fn constant_surface_offset_between(
     ir: &CadIr,
     support: &SurfaceId,
     offset_surface: &SurfaceId,
     depth: usize,
 ) -> Option<f64> {
-    let (support_base, support_offset) = surface_offset_lineage(ir, support, depth + 1)?;
-    let (offset_base, offset_distance) = surface_offset_lineage(ir, offset_surface, depth + 1)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    constant_surface_offset_between_with_index(&index, support, offset_surface, depth)
+}
+
+fn constant_surface_offset_between_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    support: &SurfaceId,
+    offset_surface: &SurfaceId,
+    depth: usize,
+) -> Option<f64> {
+    let (support_base, support_offset) =
+        surface_offset_lineage_with_index(index, support, depth + 1)?;
+    let (offset_base, offset_distance) =
+        surface_offset_lineage_with_index(index, offset_surface, depth + 1)?;
     if support_base == offset_base {
         return Some(offset_distance - support_offset);
     }
-    let support_geometry = &ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == support_base)?
-        .geometry;
-    let offset_geometry = &ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == offset_base)?
-        .geometry;
-    let base_offset = analytic_surface_offset(support_geometry, offset_geometry)
-        .or_else(|| blend_surface_offset(ir, &support_base, &offset_base, depth + 1))?;
+    let support_geometry = &index.surfaces(support_base.0.as_str())?.geometry;
+    let offset_geometry = &index.surfaces(offset_base.0.as_str())?.geometry;
+    let base_offset = analytic_surface_offset(support_geometry, offset_geometry).or_else(|| {
+        blend_surface_offset_with_index(index, &support_base, &offset_base, depth + 1)
+    })?;
     Some(base_offset + offset_distance - support_offset)
 }
 
-pub(crate) fn blend_surface_offset(
-    ir: &CadIr,
+fn blend_surface_offset_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
     offset: &SurfaceId,
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
     let (support_carriers, support_spine, support_radius, support_reversed) =
-        blend_surface_definition(ir, support)?;
+        blend_surface_definition_for_carrier_with_index(index, support)?;
     let (offset_carriers, offset_spine, offset_radius, offset_reversed) =
-        blend_surface_definition(ir, offset)?;
+        blend_surface_definition_for_carrier_with_index(index, offset)?;
     (support_spine == offset_spine).then_some(())?;
 
     let distance = offset_radius - support_radius;
@@ -2138,8 +2138,8 @@ pub(crate) fn blend_surface_offset(
                 .enumerate()
                 .all(|(support_index, &offset_index)| {
                     support_reversed[support_index] == offset_reversed[offset_index]
-                        && constant_surface_offset_between(
-                            ir,
+                        && constant_surface_offset_between_with_index(
+                            index,
                             &support_carriers[support_index],
                             &offset_carriers[offset_index],
                             depth + 1,
@@ -2335,18 +2335,24 @@ pub(crate) fn blend_contact_offset_matches(
         && (actual - expected).abs() <= 64.0 * f64::EPSILON * scale
 }
 
+#[cfg(test)]
 pub(crate) fn surface_offset_lineage(
     ir: &CadIr,
     surface: &SurfaceId,
     depth: usize,
 ) -> Option<(SurfaceId, f64)> {
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    surface_offset_lineage_with_index(&index, surface, depth)
+}
+
+fn surface_offset_lineage_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    depth: usize,
+) -> Option<(SurfaceId, f64)> {
     (depth < 32).then_some(())?;
-    ir.model
-        .surfaces
-        .iter()
-        .any(|candidate| &candidate.id == surface)
-        .then_some(())?;
-    let Some(procedural) = procedural_surface_for_carrier(ir, surface) else {
+    index.surfaces(surface.0.as_str())?;
+    let Some(procedural) = index.procedural_surface_for_carrier(surface.0.as_str()) else {
         return Some((surface.clone(), 0.0));
     };
     let ProceduralSurfaceDefinition::Offset {
@@ -2355,16 +2361,8 @@ pub(crate) fn surface_offset_lineage(
     else {
         return Some((surface.clone(), 0.0));
     };
-    let (base, accumulated) = surface_offset_lineage(ir, support, depth + 1)?;
+    let (base, accumulated) = surface_offset_lineage_with_index(index, support, depth + 1)?;
     Some((base, accumulated + distance))
-}
-
-pub(crate) fn blend_surface_definition(
-    ir: &CadIr,
-    surface: &SurfaceId,
-) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
-    let procedural = procedural_surface_for_carrier(ir, surface)?;
-    blend_surface_definition_from_procedural(procedural)
 }
 
 pub(crate) fn blend_surface_definition_with_index(
@@ -2372,6 +2370,14 @@ pub(crate) fn blend_surface_definition_with_index(
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
     let procedural = index.procedural_surface_for_surface(surface.0.as_str())?;
+    blend_surface_definition_from_procedural(procedural)
+}
+
+fn blend_surface_definition_for_carrier_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
+    let procedural = index.procedural_surface_for_carrier(surface.0.as_str())?;
     blend_surface_definition_from_procedural(procedural)
 }
 
@@ -2449,11 +2455,7 @@ fn surface_contact_direction_with_index_and_budget(
     ) {
         return Some(direction);
     }
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(surface.0.as_str())?;
     let tolerance = ir.tolerances.linear;
     if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
         return None;
@@ -2521,8 +2523,7 @@ fn blend_surface_contact_direction_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
-    let ir = index.ir();
-    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     let u =
         closest_spine_parameter_with_index_and_budget(index, &spine, point, None, geometry_budget)?;
     let frame =

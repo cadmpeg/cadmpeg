@@ -10,7 +10,9 @@ use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
-use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
+use crate::geometry::{
+    Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface, SurfaceGeometry,
+};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::schema::EntitySchema;
@@ -31,6 +33,7 @@ macro_rules! define_model_index {
             ir: &'a CadIr,
             $($field: HashMap<&'a str, &'a $element>,)*
             procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
+            procedural_surface_for_carrier: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_curves_by_curve: HashMap<&'a str, Vec<&'a ProceduralCurve>>,
             identities: HashSet<&'a str>,
             native_identities: HashSet<&'a str>,
@@ -101,10 +104,51 @@ macro_rules! define_model_index {
                         .or_default()
                         .push(procedural);
                 }
+                let mut unique_cached_producers = HashMap::<
+                    &'a str,
+                    Option<&'a ProceduralSurface>,
+                >::new();
+                let mut procedural_surfaces_by_id =
+                    HashMap::with_capacity(ir.model.procedural_surfaces.len());
+                for procedural in &ir.model.procedural_surfaces {
+                    procedural_surfaces_by_id
+                        .entry(procedural.id.0.as_str())
+                        .or_insert(procedural);
+                }
+                for procedural in &ir.model.procedural_surfaces {
+                    if procedural.cache_fit_tolerance.is_some() {
+                        if let Some(producer) =
+                            unique_cached_producers.get_mut(procedural.surface.0.as_str())
+                        {
+                            *producer = None;
+                        } else {
+                            unique_cached_producers
+                                .insert(procedural.surface.0.as_str(), Some(procedural));
+                        }
+                    }
+                }
+                let mut procedural_surface_for_carrier =
+                    HashMap::with_capacity(ir.model.surfaces.len());
+                for carrier in &ir.model.surfaces {
+                    let procedural = match &carrier.geometry {
+                        SurfaceGeometry::Procedural { construction } => procedural_surfaces_by_id
+                            .get(construction.0.as_str())
+                            .copied()
+                            .filter(|procedural| procedural.surface == carrier.id),
+                        _ => unique_cached_producers
+                            .get(carrier.id.0.as_str())
+                            .copied()
+                            .flatten(),
+                    };
+                    if let Some(procedural) = procedural {
+                        procedural_surface_for_carrier.insert(carrier.id.0.as_str(), procedural);
+                    }
+                }
                 Self {
                     ir,
                     $($field,)*
                     procedural_surface_by_surface,
+                    procedural_surface_for_carrier,
                     procedural_curves_by_curve,
                     identities,
                     native_identities,
@@ -145,6 +189,18 @@ macro_rules! define_model_index {
                 curve: &str,
             ) -> Option<&[&'a ProceduralCurve]> {
                 self.procedural_curves_by_curve.get(curve).map(Vec::as_slice)
+            }
+
+            /// Looks up the unique procedural construction for a surface carrier.
+            ///
+            /// A procedural carrier follows its exact construction identity. A
+            /// non-procedural carrier accepts a cached producer only when that
+            /// producer is unique for the carrier.
+            pub fn procedural_surface_for_carrier(
+                &self,
+                surface: &str,
+            ) -> Option<&'a ProceduralSurface> {
+                self.procedural_surface_for_carrier.get(surface).copied()
             }
 
             $(
@@ -259,5 +315,77 @@ mod tests {
         assert!(!model_only
             .identities()
             .any(|identity| identity == native_id));
+    }
+
+    #[test]
+    fn procedural_carrier_index_preserves_exact_and_unique_producer_rules() {
+        let mut ir = CadIr::empty(Units::default());
+        let exact_surface = crate::ids::SurfaceId("test:surface#exact".to_string());
+        let exact_construction = crate::ids::ProceduralSurfaceId("test:procedural#exact".into());
+        ir.model.surfaces.push(Surface {
+            id: exact_surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: exact_construction.clone(),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: exact_construction.clone(),
+            surface: exact_surface.clone(),
+            definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: exact_construction,
+            surface: crate::ids::SurfaceId("test:surface#different".into()),
+            definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+
+        let cached_surface = crate::ids::SurfaceId("test:surface#cached".to_string());
+        ir.model.surfaces.push(Surface {
+            id: cached_surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: crate::math::Point3::new(0.0, 0.0, 0.0),
+                normal: crate::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: crate::math::Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: crate::ids::ProceduralSurfaceId("test:procedural#cached".into()),
+            surface: cached_surface.clone(),
+            definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            cache_fit_tolerance: Some(0.01),
+            record_bounds: None,
+        });
+
+        let index = ModelIndex::new_model_only(&ir);
+        assert_eq!(
+            index
+                .procedural_surface_for_carrier(exact_surface.0.as_str())
+                .map(|surface| surface.id.0.as_str()),
+            Some("test:procedural#exact")
+        );
+        assert_eq!(
+            index
+                .procedural_surface_for_carrier(cached_surface.0.as_str())
+                .map(|surface| surface.id.0.as_str()),
+            Some("test:procedural#cached")
+        );
+
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: crate::ids::ProceduralSurfaceId("test:procedural#cached-duplicate".into()),
+            surface: cached_surface.clone(),
+            definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            cache_fit_tolerance: Some(0.02),
+            record_bounds: None,
+        });
+        let ambiguous = ModelIndex::new_model_only(&ir);
+        assert!(ambiguous
+            .procedural_surface_for_carrier(cached_surface.0.as_str())
+            .is_none());
     }
 }
