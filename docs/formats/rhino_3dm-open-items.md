@@ -152,6 +152,11 @@ Trace-image and V3 wallpaper children are also settled: their writers select
 1.3/1.4 and 1.1/1.2 at archive 60, their file-reference children are gated at
 minors 4 and 2, and their remaining bytes stay at the respective view-child
 boundaries.
+Bitmap class data is settled: Windows bitmap writes use the compressed-buffer
+body, the archive-1 reader alone admits raw buffers, Windows bitmap Ex adds
+packed 1.0 and a path, and embedded bitmap writes packed 1.1 with UUID/name
+fields after its compressed buffer. All known buffers close before the bounded
+class-data suffix.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -199,5 +204,10 @@ The image subset is established by `ON_3dmViewTraceImage::Write`/`Read` and
 `ON_3dmWallpaperImage::Write`/`Read`; the existing view image owner witness
 exercises their direct suffixes and section 20.1 covers their shared file
 reference.
+The bitmap subset is established by `ON_WindowsBitmap::Write`/`Read`,
+`ON_WindowsBitmapEx::Internal_WriteV5`/`Internal_ReadV5`, and
+`ON_EmbeddedBitmap::Internal_WriteV5`/`Internal_ReadV5` in
+`opennurbs_bitmap.cpp`; the presentation owner tests exercise raw, contiguous,
+split, compressed, and suffix variants.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

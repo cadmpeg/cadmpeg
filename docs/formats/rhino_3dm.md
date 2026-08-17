@@ -5996,6 +5996,11 @@ The class writers emit §10 compressed buffers. The archive-version-1
 `ON_WindowsBitmap` reader additionally accepts raw palette bytes followed by
 raw image bytes. Except for that legacy reader branch, the
 `ON_WindowsBitmap` and `ON_WindowsBitmapEx` readers use §10 compressed buffers.
+`ON_WindowsBitmap` writes the compressed-buffer body without a version prefix.
+`ON_WindowsBitmapEx` writes packed version 1.0, its UTF-16 file path, and that
+same compressed body. `ON_EmbeddedBitmap` writes packed version 1.1, method 1,
+the compressed buffer, and the component UUID and name; its reader also admits
+the minor-0 prefix without those identity fields.
 The first buffer declares either `4*C + image byte count` and contains the
 combined palette and image, or `4*C` and contains the palette alone. When it
 declares the palette alone and the image byte count is nonzero, a second buffer
