@@ -1068,13 +1068,43 @@ fn stable_face_support_set(
 }
 
 fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
-    let mut active_faces = face_operand_candidates(operand)
+    let active_faces = effective_historical_face_slots(
+        face_operand_candidates(operand),
+        &operand.historical_support_contexts,
+    )?;
+    convergent_face_support(&active_faces, &operand.historical_support_contexts)
+}
+
+/// Return candidate slots that have a complete historical support context.
+///
+/// A persistent-reference lane can contain revisions that are absent from the
+/// retained history topology. Those revisions are not effective candidates for
+/// the common-support rule. The history binder omits them when it builds the
+/// support contexts, so the context-active set is the effective subset. Keep
+/// the subset admission explicit and reject a context that is not in the
+/// operand's candidate lane.
+fn effective_historical_face_slots(
+    candidates: &[cadmpeg_ir::ids::FaceId],
+    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+) -> Option<Vec<i64>> {
+    let mut candidate_slots = candidates
         .iter()
-        .filter_map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    candidate_slots.sort_unstable();
+    candidate_slots.dedup();
+
+    let mut active_faces = contexts
+        .iter()
+        .map(|context| context.active_face_slot)
         .collect::<Vec<_>>();
     active_faces.sort_unstable();
     active_faces.dedup();
-    convergent_face_support(&active_faces, &operand.historical_support_contexts)
+    (!active_faces.is_empty()
+        && active_faces
+            .iter()
+            .all(|slot| candidate_slots.binary_search(slot).is_ok()))
+    .then_some(active_faces)
 }
 
 fn convergent_face_support(
@@ -1933,6 +1963,24 @@ mod tests {
 
         let conflicting = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
         assert_eq!(convergent_face_support(&[10, 11], &conflicting), None);
+    }
+
+    #[test]
+    fn effective_historical_faces_exclude_unmapped_revisions() {
+        let contexts = [
+            support(10, &[(100, 4)]),
+            support(11, &[(100, 4)]),
+            support(12, &[(100, 4)]),
+        ];
+        let candidates = [face(10), face(11), face(12), face(13)];
+        assert_eq!(
+            effective_historical_face_slots(&candidates, &contexts),
+            Some(vec![10, 11, 12])
+        );
+        assert_eq!(
+            effective_historical_face_slots(&[face(10), face(11)], &contexts),
+            None
+        );
     }
 
     #[test]
