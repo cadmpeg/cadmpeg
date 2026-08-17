@@ -526,46 +526,6 @@ pub(crate) fn copious_data_file(form: i64, parameters: &[u8], status: &str) -> V
     bytes
 }
 
-pub(crate) fn copious_data_with_trailing_association_file() -> Vec<u8> {
-    owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 106,
-            form: 11,
-            label: "COPIOUS".into(),
-            status: "00000000",
-            parameters: "106,1,2,0,0,0,1,9,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "P0".into(),
-            status: "00000000",
-            parameters: "116,0,0,0,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "P1".into(),
-            status: "00000000",
-            parameters: "116,1,0,0,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "P2".into(),
-            status: "00000000",
-            parameters: "116,0,1,0,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 1,
-            label: "GROUP".into(),
-            status: "00000000",
-            parameters: "402,1,1;".into(),
-        },
-    ])
-}
-
 pub(crate) fn conic_arc_file(form: i64, parameters: &[u8]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let parameter_count = parameters.len().div_ceil(64);

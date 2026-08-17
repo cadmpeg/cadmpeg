@@ -297,14 +297,17 @@ pub(crate) fn analyze_trailing_pointer_groups(
 ///
 /// The entity type token is index zero. Type 102 §4.4 has `N` at index 1 and
 /// `N` constituent pointers at indexes 2 through `N + 1`, so its groups start
-/// at token `N + 2`. Type 110 §4.13 has six primary coordinates in Forms 0–2,
-/// so its additional-pointer groups start at token seven. Type 116 §4.16 has
-/// three coordinates and a display pointer, so its groups start at token five
-/// even when that pointer is zero or defaulted. Type 123 §4.20 has three
-/// primary values, so its groups start at token four. Layouts not represented
-/// here use generic CADIR recovery. A malformed Type 102 count returns the
-/// record end as a known-layout sentinel and never enables generic recovery.
-fn entity_primary_end(
+/// at token `N + 2`. Type 106 uses the IP-dependent tuple spans in §§4.6–4.11:
+/// IP 1 starts at token 4 with width 2, IP 2 starts at token 3 with width 3,
+/// and IP 3 starts at token 3 with width 6. Type 110 §4.13 has six primary
+/// coordinates in Forms 0–2, so its additional-pointer groups start at token
+/// seven. Type 116 §4.16 has three coordinates and a display pointer, so its
+/// groups start at token five even when that pointer is zero or defaulted.
+/// Type 123 §4.20 has three primary values, so its groups start at token four.
+/// Layouts not represented here use generic CADIR recovery. A malformed known
+/// layout returns the record end as a sentinel and never enables generic
+/// recovery.
+pub(crate) fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
@@ -318,11 +321,52 @@ fn entity_primary_end(
                 .and_then(|count| count.checked_add(2))
                 .unwrap_or(record.tokens.len()),
         ),
+        (106, form) if copious_expected_interpretation(form).is_some() => {
+            Some(copious_primary_end(record, form))
+        }
         (110, 0..=2) => Some(7),
         (116, 0) => Some(5),
         (123, 0) => Some(4),
         _ => None,
     }
+}
+
+fn copious_expected_interpretation(form: i64) -> Option<i64> {
+    match form {
+        1 | 11 | 20 | 21 | 31..=38 | 40 | 63 => Some(1),
+        2 | 12 => Some(2),
+        3 | 13 => Some(3),
+        _ => None,
+    }
+}
+
+fn copious_primary_end(record: &ParameterRecord, form: i64) -> usize {
+    let Some(expected_interpretation) = copious_expected_interpretation(form) else {
+        return record.tokens.len();
+    };
+    let Some(interpretation) = record.integer(1) else {
+        return record.tokens.len();
+    };
+    if interpretation != expected_interpretation {
+        return record.tokens.len();
+    }
+    let Some(tuple_count) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let (tuple_start, tuple_width): (usize, usize) = match interpretation {
+        1 => (4, 2),
+        2 => (3, 3),
+        3 => (3, 6),
+        _ => return record.tokens.len(),
+    };
+    tuple_count
+        .checked_mul(tuple_width)
+        .and_then(|span| tuple_start.checked_add(span))
+        .unwrap_or(record.tokens.len())
 }
 
 #[derive(Clone, Copy)]

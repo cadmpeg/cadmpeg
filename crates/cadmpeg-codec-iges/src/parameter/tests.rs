@@ -531,6 +531,125 @@ fn type102_malformed_count_does_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type106_entity_table_boundary_uses_interpretation_width() {
+    let cases = [
+        (1_i64, 1_i64, 2_usize, 2_usize),
+        (2, 2, 2, 3),
+        (3, 3, 2, 6),
+        (11, 1, 2, 2),
+        (12, 2, 2, 3),
+        (13, 3, 2, 6),
+        (20, 1, 2, 2),
+        (21, 1, 2, 2),
+        (31, 1, 2, 2),
+        (32, 1, 2, 2),
+        (33, 1, 2, 2),
+        (34, 1, 2, 2),
+        (35, 1, 2, 2),
+        (36, 1, 2, 2),
+        (37, 1, 2, 2),
+        (38, 1, 2, 2),
+        (40, 1, 3, 2),
+        (63, 1, 2, 2),
+    ];
+
+    for (form, interpretation, tuple_count, tuple_width) in cases {
+        let mut values = vec![106, interpretation, tuple_count as i64];
+        if interpretation == 1 {
+            values.push(0);
+        }
+        values.extend(std::iter::repeat_n(0, tuple_count * tuple_width));
+        values.extend([1, 1, 0]);
+        let expected_start = match interpretation {
+            1 => 4 + tuple_count * 2,
+            2 => 3 + tuple_count * 3,
+            3 => 3 + tuple_count * 6,
+            _ => unreachable!(),
+        };
+        let association = directory_target(1, 402);
+        let mut copious = directory_target(3, 106);
+        copious.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &copious)]);
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: expected_start + 3,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 106 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type106_form_interpretation_mismatch_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 402);
+    let mut copious = directory_target(3, 106);
+    copious.form = 11;
+    let directory = BTreeMap::from([(1, &association), (3, &copious)]);
+    let record = ParameterRecord {
+        directory_sequence: 3,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [106, 2, 1, 1, 1, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 6,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
+fn type106_form63_rejects_nonplanar_interpretation_for_boundary_recovery() {
+    let association = directory_target(1, 402);
+    let mut copious = directory_target(3, 106);
+    copious.form = 63;
+    let directory = BTreeMap::from([(1, &association), (3, &copious)]);
+    let record = ParameterRecord {
+        directory_sequence: 3,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [106, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 12,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
 fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
     let association = directory_target(1, 402);
     let point = directory_target(3, 116);
@@ -734,6 +853,45 @@ fn decode_uses_type102_entity_boundary_for_form7_association() {
     let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#7")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#1")]
+    );
+}
+
+#[test]
+fn decode_uses_type106_entity_boundary_for_form7_association() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,3;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,2,0,0,0,1,0,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
     assert_eq!(
         source.fields()["association_links"].as_array().unwrap(),

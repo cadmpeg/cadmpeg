@@ -1499,6 +1499,10 @@ pub(crate) fn store(
             .get(&sequence)
             .and_then(|groups| groups.as_ref())
             .map_or(record.parameter_end(), |groups| groups.token_start)
+            .min(
+                crate::parameter::entity_primary_end(record, &entries)
+                    .unwrap_or(record.parameter_end()),
+            )
     };
     let parameter_resolver = ParameterResolver::new(directory);
     let mut required_back_pointer_members = std::collections::BTreeSet::new();

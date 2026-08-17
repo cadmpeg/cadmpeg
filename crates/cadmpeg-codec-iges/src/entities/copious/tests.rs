@@ -232,32 +232,69 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
 }
 
 #[test]
-fn semantic_copious_projection_stops_before_trailing_association_group() {
+fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
     let result = IgesCodec
         .decode(
-            &mut Cursor::new(copious_data_with_trailing_association_file()),
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "COPIOUS".into(),
+                    status: "00000000",
+                    parameters: "106,1,2,0,0,0,1,9,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "P0".into(),
+                    status: "00000000",
+                    parameters: "116,0,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "P1".into(),
+                    status: "00000000",
+                    parameters: "116,1,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "P2".into(),
+                    status: "00000000",
+                    parameters: "116,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 1,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,1;".into(),
+                },
+            ])),
             &DecodeOptions::default(),
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
-    let loss = result
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(!result
         .report()
         .losses
         .iter()
-        .find(|loss| loss.message.contains("tuple array is truncated"))
-        .expect("boundary loss for the selected entity");
-    assert_eq!(
-        loss.provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("directory_entry:D1")
-    );
+        .any(|loss| loss.message.contains("tuple array is truncated")));
 
     let native = result.ir().native.namespace("iges").unwrap();
     let copious = &native.arenas["copious_data"][0];
     assert_eq!(copious.fields()["declared_tuple_count"], 2);
-    assert!(copious.fields()["tuples"].as_array().unwrap().is_empty());
+    assert_eq!(copious.fields()["tuples"].as_array().unwrap().len(), 2);
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|record| record.fields()["directory_sequence"] == 1)
+        .expect("copious entity");
+    assert!(entity.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
