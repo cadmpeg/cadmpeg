@@ -264,6 +264,49 @@ schema and edition, HDF5 validation result, Part 26 mapping validation result,
 resource-local population and reference graph)`. Composition with a Part 21
 resource is a separate CADIR decision.
 
+ISO/TS 10303-26:2011 Annex B.3 permits an HDF5 file to be part of an exchange
+data set referenced by a representation that uses another ISO 10303
+implementation method. It describes the HDF5 data as a table and gives
+`externally_defined_item` from ISO 10303-41 as one possible EXPRESS wrapper.
+The [public ISO 10303-41:2021 schema listing](https://ap238.org/SMRL_v8_final/data/resource_docs/fundamentals_of_product_description_and_support/sys/14_schema.htm)
+§§14.2 and 14.4.1–14.4.5 define an external source and an external item, but
+assign the role and meaning of their relationships to an annotated schema or
+an agreement between exchange partners. The
+`references` list of `externally_defined_item_with_multiple_references` is a
+path within the named external source. These clauses do not define a
+universal Part 26 row to Part 21 `#`-instance identity map.
+
+CADIR decision: Part 26 and Part 21 are separate resource graphs. A resource
+identity is the caller's resolver-qualified resource binding: its encoding,
+exact URI when present, retrieved representation, admission result, and
+verified digest when supplied. A Part 26 row identity is
+`(Part 26 resource, population, dataset name, entity type, row,
+Entity-Instance-Identifier)`; a Part 21 identity is its resource-local
+occurrence or anchor. A Part 26 row identifier is not a Part 21 numeric `#`
+identifier, and equal URIs, filenames, schema names, timestamps, or numeric
+identifiers do not create a binding.
+
+The caller composition operand is `(Part 26 resource identity, Part 21
+resource identity, selected Part 26 mapping edition, exact governing EXPRESS
+schemas and editions, Part 26 population/dataset/entity/row map or reference
+handle path, Part 21 occurrence or anchor, explicit identity map, source unit
+and coordinate-context agreement or explicit conversions, both validation
+results, and conflict policy)`. The caller admits the binding only when both
+resource graphs validate, the explicit map resolves the exact source row and
+target occurrence, and the selected schemas, units, and coordinate contexts
+agree or the recorded conversions apply. Part 26 context metadata does not by
+itself establish compatibility with a Part 21 context.
+
+The composed result retains both source graphs, source-local identifiers,
+resource identities, and the explicit binding edge. It does not merge or
+renumber either DATA namespace. Equal mapped values may receive an explicitly
+projected neutral value. A missing operand, unresolved row or occurrence,
+schema/unit/context mismatch without a conversion, or failed validation leaves
+the resources unbound. Different mapped values retain both source values and
+the binding conflict and produce no neutral value; neither resource has
+default precedence. The STEP codec refuses Part 26 before Part 21 parsing and
+performs none of this composition.
+
 An AP242 BO-Model XML exchange uses the XML Schema for its selected AP242 BO
 Model edition. AP242 Edition 1 (2014) uses the ISO/TS 10303-3001 edition-1
 schema; its 2016 technical corrigendum uses the edition-2 schema. The

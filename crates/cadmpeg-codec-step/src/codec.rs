@@ -373,6 +373,9 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
     // mapping. The caller owns the mapping edition, governing EXPRESS schema,
     // HDF5 and Part 26 validation, resource-local row/reference mapping, and
     // malformed-input result; this codec builds no partial graph.
+    // CE-06: Part 26 and Part 21 resource graphs have no universal join. The caller
+    // owns the exact resource identities, row-to-occurrence map, schema/unit/context
+    // agreement, conflict policy, and retention of both source graphs.
     if is_part26_hdf5(bytes) {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),

@@ -20,18 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-06. Part 26 graph binding
-
-**Question.** How does Part 26 data bind to a Part 21 graph when both resources describe one exchange?
-
-**Known.** Part 26 and Part 21 use separate encodings and require schema-specific identity and mapping rules. The codec does not compose them.
-
-**Need.** Define the resource identity, graph-binding operands, conflict policy, and retention rules for a composed Part 26 and Part 21 result.
-
-**Conflict.** The decoder refuses Part 26 and never compares or binds its graph to Part 21. The current caller-boundary statement does not supply a composition witness.
-
-**Note.** `crates/cadmpeg-codec-step/src/codec.rs:365-370` refuses HDF5 before graph construction. `step.md` §1 "CADIR decision: the STEP codec classifies an HDF5 signature at an allowed" explicitly leaves graph binding to the caller. No witness proves that identities, references, units, or conflicts remain resource-scoped during composition.
-
 ## 4. Signatures
 
 ## 5. Topology and pcurve decisions

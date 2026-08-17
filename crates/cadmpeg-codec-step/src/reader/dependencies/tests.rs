@@ -8,7 +8,8 @@
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use cadmpeg_core::decode::{DecodeMode, InspectOptions, View};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::eval::{
     model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
@@ -322,6 +323,425 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         bind_entity_reference(&root, &mismatched_context),
         Err("resource coordinate contexts differ")
     );
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Part26CompositionSource {
+    resource_uri: String,
+    schema_id: String,
+    mapping_edition: &'static str,
+    population: String,
+    dataset_name: String,
+    entity_name: String,
+    row_index: usize,
+    entity_instance_identifier: i32,
+    coordinates: [f64; 3],
+    unit_signature: String,
+    context_signature: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Part26Part21Relation {
+    part26_resource_uri: String,
+    part21_resource_uri: String,
+    population: String,
+    entity_name: String,
+    row_index: usize,
+    entity_instance_identifier: i32,
+    part21_anchor: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Part26PointBinding {
+    part26_resource_uri: String,
+    part26_population: String,
+    part26_entity_name: String,
+    part26_row_index: usize,
+    part26_entity_instance_identifier: i32,
+    part21_resource_uri: String,
+    part21_anchor: String,
+    part21_target_id: u64,
+    neutral_coordinates: Option<[f64; 3]>,
+}
+
+#[derive(Debug, PartialEq)]
+enum Part26Composition {
+    Bound(Part26PointBinding),
+    Unbound(&'static str),
+    Conflict {
+        binding: Part26PointBinding,
+        part26_coordinates: [f64; 3],
+        part21_coordinates: [f64; 3],
+    },
+}
+
+fn decode_part26_composition_source() -> Part26CompositionSource {
+    let encoded = include_bytes!("tests/data/ce06_part26_ap242_population.h5.b64")
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    let bytes = STANDARD
+        .decode(encoded)
+        .expect("CE-06 Part 26 HDF5 witness");
+    let file = hdf5_reader::Hdf5File::from_vec(bytes).expect("valid CE-06 HDF5 witness");
+    let schema_id = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
+    let schema = file
+        .group(&format!("/{schema_id}_encoding"))
+        .expect("Part 26 AP242 schema group");
+    assert_eq!(
+        schema
+            .attribute("iso_10303_26_schema")
+            .expect("Part 26 schema attribute")
+            .read_string()
+            .expect("Part 26 schema identifier"),
+        schema_id
+    );
+    let population_name = "AP242_population";
+    let population = file
+        .group(&format!("/{population_name}"))
+        .expect("Part 26 population group");
+    assert_eq!(
+        population
+            .attribute("iso_10303-26_data")
+            .expect("Part 26 population schema attribute")
+            .read_string()
+            .expect("Part 26 population schema identifier"),
+        schema_id
+    );
+    let dataset_name = population
+        .attribute("iso_10303_26_data_set_names")
+        .expect("Part 26 dataset-name table")
+        .read_strings()
+        .expect("Part 26 dataset names");
+    assert_eq!(dataset_name, ["CARTESIAN_POINT"]);
+    let context_signature = population
+        .attribute("iso_10303-26_context")
+        .expect("Part 26 context attribute")
+        .read_string()
+        .expect("Part 26 context");
+
+    let entity_name = "CARTESIAN_POINT";
+    let dataset = file
+        .dataset(&format!(
+            "/{population_name}/{entity_name}_objects/{entity_name}_instances"
+        ))
+        .expect("Part 26 entity dataset");
+    assert_eq!(dataset.shape(), [1]);
+    let row_bytes = dataset.read_raw_bytes().expect("Part 26 entity row");
+    assert_eq!(row_bytes.len(), 64);
+    let coordinates = [
+        View::f64_le_at(&row_bytes, 40).expect("Part 26 x coordinate"),
+        View::f64_le_at(&row_bytes, 48).expect("Part 26 y coordinate"),
+        View::f64_le_at(&row_bytes, 56).expect("Part 26 z coordinate"),
+    ];
+    Part26CompositionSource {
+        resource_uri: "https://example.invalid/er05/subsidiary.h5".into(),
+        schema_id: schema_id.into(),
+        mapping_edition: "ISO/TS 10303-26:2011",
+        population: population_name.into(),
+        dataset_name: dataset_name[0].clone(),
+        entity_name: entity_name.into(),
+        row_index: 0,
+        entity_instance_identifier: View::i32_le_at(&row_bytes, 4)
+            .expect("Part 26 entity instance identifier"),
+        coordinates,
+        unit_signature: "MILLI:METRE,RADIAN".into(),
+        context_signature,
+    }
+}
+
+fn part21_unit_signature(exchange: &crate::parse::Exchange) -> String {
+    let mut units = exchange
+        .records
+        .values()
+        .flat_map(|record| record.partials.iter())
+        .filter(|partial| partial.name == "SI_UNIT")
+        .filter_map(|partial| {
+            let prefix = match partial.parameters.first()? {
+                crate::parse::Value::Enumeration(value) => Some(value.as_str()),
+                crate::parse::Value::Omitted => None,
+                _ => return None,
+            };
+            let unit = match partial.parameters.get(1)? {
+                crate::parse::Value::Enumeration(value) => value.as_str(),
+                _ => return None,
+            };
+            Some(prefix.map_or_else(|| unit.to_owned(), |prefix| format!("{prefix}:{unit}")))
+        })
+        .collect::<Vec<_>>();
+    units.sort_unstable();
+    units.join(",")
+}
+
+fn part21_context_signature(exchange: &crate::parse::Exchange) -> Option<String> {
+    let context = exchange.records.values().find(|record| {
+        record
+            .partials
+            .iter()
+            .any(|partial| partial.name == "GEOMETRIC_REPRESENTATION_CONTEXT")
+    })?;
+    let representation_context = context
+        .partials
+        .iter()
+        .find(|partial| partial.name == "REPRESENTATION_CONTEXT")?;
+    let label = match representation_context.parameters.first()? {
+        crate::parse::Value::String(value) => String::from_utf8(value.clone()).ok()?,
+        _ => return None,
+    };
+    let dimension = match representation_context.parameters.get(1)? {
+        crate::parse::Value::String(value) => String::from_utf8(value.clone()).ok()?,
+        _ => return None,
+    };
+    Some(format!("{label},{dimension}"))
+}
+
+fn part21_point_coordinates(exchange: &crate::parse::Exchange, id: u64) -> Option<[f64; 3]> {
+    let record = exchange.records.get(&id)?;
+    let point = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "CARTESIAN_POINT")?;
+    let crate::parse::Value::List(values) = point.parameters.get(1)? else {
+        return None;
+    };
+    if values.len() != 3 {
+        return None;
+    }
+    let coordinates = values
+        .iter()
+        .map(|value| match value {
+            crate::parse::Value::Integer(value) => Some(*value as f64),
+            crate::parse::Value::Real(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    coordinates.try_into().ok()
+}
+
+fn compose_part26_point(
+    source: &Part26CompositionSource,
+    target_resource_uri: &str,
+    target: &crate::parse::Exchange,
+    relation: Option<&Part26Part21Relation>,
+) -> Part26Composition {
+    let Some(relation) = relation else {
+        return Part26Composition::Unbound("missing explicit resource binding");
+    };
+    if relation.part26_resource_uri != source.resource_uri
+        || relation.part21_resource_uri != target_resource_uri
+    {
+        return Part26Composition::Unbound("resource identities differ");
+    }
+    if relation.population != source.population
+        || relation.entity_name != source.entity_name
+        || relation.row_index != source.row_index
+        || relation.entity_instance_identifier != source.entity_instance_identifier
+        || source.dataset_name != source.entity_name
+    {
+        return Part26Composition::Unbound("Part 26 identity map does not resolve");
+    }
+    if source.mapping_edition != "ISO/TS 10303-26:2011" {
+        return Part26Composition::Unbound("Part 26 mapping edition is not selected");
+    }
+    if source.schema_id != crate::reader::schema_identifiers(target).join(",") {
+        return Part26Composition::Unbound("resource schemas differ");
+    }
+    if source.unit_signature != part21_unit_signature(target) {
+        return Part26Composition::Unbound("resource units differ");
+    }
+    if source.context_signature != part21_context_signature(target).unwrap_or_default() {
+        return Part26Composition::Unbound("resource coordinate contexts differ");
+    }
+    let anchor = target
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == relation.part21_anchor);
+    let Some(anchor) = anchor else {
+        return Part26Composition::Unbound("target anchor is missing");
+    };
+    let crate::parse::Value::Reference(target_id) = anchor.value else {
+        return Part26Composition::Unbound("target anchor is not an entity instance");
+    };
+    let Some(target_record) = target.records.get(&target_id) else {
+        return Part26Composition::Unbound("target entity instance is missing");
+    };
+    if !target_record
+        .partials
+        .iter()
+        .any(|partial| partial.name == source.entity_name)
+    {
+        return Part26Composition::Unbound("target entity type differs");
+    }
+    let Some(part21_coordinates) = part21_point_coordinates(target, target_id) else {
+        return Part26Composition::Unbound("target entity value is not mapped");
+    };
+    let binding = Part26PointBinding {
+        part26_resource_uri: source.resource_uri.clone(),
+        part26_population: source.population.clone(),
+        part26_entity_name: source.entity_name.clone(),
+        part26_row_index: source.row_index,
+        part26_entity_instance_identifier: source.entity_instance_identifier,
+        part21_resource_uri: target_resource_uri.to_owned(),
+        part21_anchor: relation.part21_anchor.clone(),
+        part21_target_id: target_id,
+        neutral_coordinates: None,
+    };
+    if source.coordinates != part21_coordinates {
+        return Part26Composition::Conflict {
+            binding,
+            part26_coordinates: source.coordinates,
+            part21_coordinates,
+        };
+    }
+    Part26Composition::Bound(Part26PointBinding {
+        neutral_coordinates: Some(source.coordinates),
+        ..binding
+    })
+}
+
+#[test]
+fn caller_composition_binds_part26_row_to_part21_anchor_only_with_explicit_policy() {
+    let part26 = decode_part26_composition_source();
+    let target_bytes = include_bytes!("tests/data/er05_distributed_subsidiary.p21");
+    let target_resource_uri = "https://example.invalid/er05/subsidiary.p21";
+    let (target, diagnostics) = crate::parse::parse(target_bytes).expect("parse Part 21 target");
+    assert!(diagnostics.is_empty());
+    let relation = Part26Part21Relation {
+        part26_resource_uri: part26.resource_uri.clone(),
+        part21_resource_uri: target_resource_uri.into(),
+        population: part26.population.clone(),
+        entity_name: part26.entity_name.clone(),
+        row_index: part26.row_index,
+        entity_instance_identifier: part26.entity_instance_identifier,
+        part21_anchor: "remote_point".into(),
+    };
+
+    let Part26Composition::Bound(binding) =
+        compose_part26_point(&part26, target_resource_uri, &target, Some(&relation))
+    else {
+        panic!("compatible Part 26 and Part 21 resources must bind");
+    };
+    assert_eq!(binding.part26_resource_uri, part26.resource_uri);
+    assert_eq!(binding.part26_population, part26.population);
+    assert_eq!(binding.part26_entity_name, part26.entity_name);
+    assert_eq!(binding.part26_row_index, part26.row_index);
+    assert_eq!(binding.part21_resource_uri, target_resource_uri);
+    assert_eq!(binding.part21_anchor, "remote_point");
+    assert_eq!(binding.part26_entity_instance_identifier, 12);
+    assert_eq!(binding.part21_target_id, 12);
+    assert_eq!(binding.neutral_coordinates, Some([25.4, 0.0, 0.0]));
+    assert_eq!(part21_unit_signature(&target), "MILLI:METRE,RADIAN");
+    assert_eq!(
+        part21_context_signature(&target).as_deref(),
+        Some("model,3D")
+    );
+
+    assert_eq!(
+        compose_part26_point(&part26, target_resource_uri, &target, None),
+        Part26Composition::Unbound("missing explicit resource binding")
+    );
+    let mut wrong_edition = part26.clone();
+    wrong_edition.mapping_edition = "ISO/TS 10303-26:2015";
+    assert_eq!(
+        compose_part26_point(
+            &wrong_edition,
+            target_resource_uri,
+            &target,
+            Some(&relation)
+        ),
+        Part26Composition::Unbound("Part 26 mapping edition is not selected")
+    );
+    let mut wrong_resource = relation.clone();
+    wrong_resource.part26_resource_uri = target_resource_uri.into();
+    assert_eq!(
+        compose_part26_point(&part26, target_resource_uri, &target, Some(&wrong_resource)),
+        Part26Composition::Unbound("resource identities differ")
+    );
+    let mut wrong_row = relation.clone();
+    wrong_row.row_index = 1;
+    assert_eq!(
+        compose_part26_point(&part26, target_resource_uri, &target, Some(&wrong_row)),
+        Part26Composition::Unbound("Part 26 identity map does not resolve")
+    );
+    let mut wrong_anchor = relation.clone();
+    wrong_anchor.part21_anchor = "local_point_with_same_numeric_id".into();
+    assert_eq!(
+        compose_part26_point(&part26, target_resource_uri, &target, Some(&wrong_anchor)),
+        Part26Composition::Unbound("target anchor is missing")
+    );
+
+    let mismatched_units = String::from_utf8(target_bytes.to_vec())
+        .expect("Part 21 target text")
+        .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)");
+    let (mismatched_units, _) =
+        crate::parse::parse(mismatched_units.as_bytes()).expect("parse mismatched units");
+    assert_eq!(
+        compose_part26_point(
+            &part26,
+            target_resource_uri,
+            &mismatched_units,
+            Some(&relation)
+        ),
+        Part26Composition::Unbound("resource units differ")
+    );
+
+    let mismatched_context = String::from_utf8(target_bytes.to_vec())
+        .expect("Part 21 target text")
+        .replace(
+            "REPRESENTATION_CONTEXT('model','3D')",
+            "REPRESENTATION_CONTEXT('other','3D')",
+        );
+    let (mismatched_context, _) =
+        crate::parse::parse(mismatched_context.as_bytes()).expect("parse mismatched context");
+    assert_eq!(
+        compose_part26_point(
+            &part26,
+            target_resource_uri,
+            &mismatched_context,
+            Some(&relation)
+        ),
+        Part26Composition::Unbound("resource coordinate contexts differ")
+    );
+
+    let mismatched_schema = String::from_utf8(target_bytes.to_vec())
+        .expect("Part 21 target text")
+        .replace("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", "AP214");
+    let (mismatched_schema, _) =
+        crate::parse::parse(mismatched_schema.as_bytes()).expect("parse mismatched schema");
+    assert_eq!(
+        compose_part26_point(
+            &part26,
+            target_resource_uri,
+            &mismatched_schema,
+            Some(&relation)
+        ),
+        Part26Composition::Unbound("resource schemas differ")
+    );
+
+    let conflicting_coordinates = String::from_utf8(target_bytes.to_vec())
+        .expect("Part 21 target text")
+        .replace("(25.4,0.,0.)", "(25.5,0.,0.)");
+    let (conflicting_coordinates, _) = crate::parse::parse(conflicting_coordinates.as_bytes())
+        .expect("parse conflicting coordinates");
+    let Part26Composition::Conflict {
+        binding: conflict_binding,
+        part26_coordinates,
+        part21_coordinates,
+    } = compose_part26_point(
+        &part26,
+        target_resource_uri,
+        &conflicting_coordinates,
+        Some(&relation),
+    )
+    else {
+        panic!("different mapped values must be a retained composition conflict");
+    };
+    assert_eq!(part26_coordinates, [25.4, 0.0, 0.0]);
+    assert_eq!(part21_coordinates, [25.5, 0.0, 0.0]);
+    assert_eq!(conflict_binding.neutral_coordinates, None);
+    assert_eq!(conflict_binding.part26_entity_instance_identifier, 12);
+    assert_eq!(conflict_binding.part21_target_id, 12);
 }
 
 #[test]
