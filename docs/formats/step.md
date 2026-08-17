@@ -737,6 +737,16 @@ resolution again. If the target does not meet these rules, the Part 21 result
 is `$`. Subsidiary members remain resources and are not read into the root
 graph by the codec.
 
+CADIR decision: ZIP composition uses the operand
+`(root-occurrence, archive-binding, subsidiary-member, anchor-name,
+target-exchange, target-schema, target-units, target-coordinate-context)`.
+The caller first requires the exact central-directory member named by the
+root-forwarded URI, then parses that member and applies its ANCHOR table. A
+member-presence result is not a target result. The caller admits the operand
+only when the member anchor resolves to the required entity or value and the
+schema, units, and coordinate context pass the general composition checks
+above. The member's numeric DATA identity remains local to the subsidiary.
+
 CADIR decision: external resource access is an admission boundary outside the
 STEP codec. The caller resolver interface is
 `resolve(uri, origin, occurrence, policy) -> retrieved | unresolved | refused`.

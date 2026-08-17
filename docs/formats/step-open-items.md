@@ -20,18 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-02. ZIP subsidiary composition
-
-**Question.** How does the ZIP root compose an addressed subsidiary exchange into the decoded graph?
-
-**Known.** The archive requires the exact root member `ISO-10303.p21`. Other members are subsidiaries. A root reference can name a subsidiary member and an anchor.
-
-**Need.** Define the resource-qualified target identity, anchor resolution, validation, and graph binding for an addressed subsidiary. A member-existence check is not a composition rule.
-
-**Conflict.** The decoder records an internal resource note after checking the central directory, but it does not read the subsidiary or import its graph. The specification leaves the composition operation to a caller.
-
-**Note.** `crates/cadmpeg-codec-step/src/archive.rs:122-152` checks only that the member exists. `crates/cadmpeg-codec-step/src/codec.rs:323-362` passes only `root_view` to the reader and appends the note. The ZIP tests retain the subsidiary as an unparsed resource. This is a root-only refusal and does not close the requested composition operand.
-
 ### CE-03. Part 28 grammar admission
 
 **Question.** Which Part 28 XML grammar and configuration admit an exchange for decoding?

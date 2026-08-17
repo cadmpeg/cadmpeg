@@ -33,7 +33,7 @@ fn rejects_archive_relative_traversal() {
 }
 
 use std::fmt::Write as _;
-use std::io::Cursor;
+use std::io::{Cursor, Read as _};
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
@@ -331,6 +331,105 @@ fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
         .notes
         .iter()
         .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+}
+
+#[test]
+fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
+    let root = include_bytes!("tests/data/ce02_composition_root.p21");
+    let subsidiary = include_bytes!("tests/data/ce02_composition_subsidiary.p21");
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/ce02_composition_subsidiary.p21",
+            subsidiary,
+            CompressionMethod::Stored,
+        ),
+    ]);
+
+    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse ZIP root");
+    let (subsidiary_exchange, subsidiary_diagnostics) =
+        crate::parse::parse(subsidiary).expect("parse ZIP subsidiary");
+    assert!(root_diagnostics.is_empty());
+    assert!(subsidiary_diagnostics.is_empty());
+    assert_eq!(root_exchange.references[0].name, "#10");
+    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(
+        root_exchange.anchors[0].value,
+        crate::parse::Value::Resource("parts/ce02_composition_subsidiary.p21#remote_point".into())
+    );
+    assert_eq!(
+        crate::reader::schema_identifiers(&root_exchange),
+        crate::reader::schema_identifiers(&subsidiary_exchange)
+    );
+
+    let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors[0].value else {
+        panic!("root forwarding anchor");
+    };
+    let ReferenceTarget::Internal { member, fragment } =
+        resolve_uri(ROOT_NAME, resource_uri).expect("resolve forwarded ZIP resource")
+    else {
+        panic!("forwarded ZIP resource became external");
+    };
+    assert_eq!(member, "parts/ce02_composition_subsidiary.p21");
+    assert_eq!(fragment.as_deref(), Some("remote_point"));
+    let anchor = subsidiary_exchange
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == "remote_point")
+        .expect("subsidiary target anchor");
+    let crate::parse::Value::Reference(target_id) = anchor.value else {
+        panic!("subsidiary anchor is not an entity");
+    };
+    let target = subsidiary_exchange
+        .records
+        .get(&target_id)
+        .expect("subsidiary target entity");
+    assert!(target
+        .partials
+        .iter()
+        .any(|partial| partial.name == "CARTESIAN_POINT"));
+    assert_eq!(target_id, 12);
+
+    let mut archive = ZipArchive::new(Cursor::new(&bytes)).expect("open composition ZIP");
+    let mut extracted = Vec::new();
+    archive
+        .by_name(&member)
+        .expect("open addressed subsidiary member")
+        .read_to_end(&mut extracted)
+        .expect("read addressed subsidiary member");
+    assert_eq!(extracted, subsidiary);
+
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode ZIP root without importing target");
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["entity_instances"],
+        "6"
+    );
+    assert!(result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#4"));
+    assert!(!result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#12"));
+    assert!(result.report().notes.iter().any(|note| note
+        == "internal resource #10 -> parts/ce02_composition_subsidiary.p21#remote_point"));
+
+    let target_result = StepCodec::default()
+        .decode(&mut Cursor::new(extracted), &DecodeOptions::default())
+        .expect("decode subsidiary independently");
+    assert!(target_result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#12"));
 }
 
 #[test]
