@@ -704,6 +704,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1c_disc16_disc0e_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1c_disc16_disc12_disc0e_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(direct_shell_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4625,6 +4628,23 @@ fn disc1c_disc16_disc0e_disc04_face_root_body(
             (0x0004, 2),
         ],
         0x000c,
+    )
+}
+
+fn disc1c_disc16_disc12_disc0e_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_disc1c_disc16_face_root_body(
+        by_attr,
+        &[
+            (0x001c, 2),
+            (0x0018, 2),
+            (0x0016, 2),
+            (0x0012, 2),
+            (0x0010, 1),
+            (0x000e, 2),
+        ],
+        0x0004,
     )
 }
 
