@@ -26,6 +26,12 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+const BLEND_SECTION_DOMAIN: [f64; 2] = [0.0, 1.0];
+
+fn blend_section_parameter_in_domain(parameter: f64) -> bool {
+    (BLEND_SECTION_DOMAIN[0]..=BLEND_SECTION_DOMAIN[1]).contains(&parameter)
+}
+
 pub(crate) fn decoded_surface_point_inner(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -163,15 +169,16 @@ pub(crate) fn blend_surface_parameters_inner(
             geometry_budget,
         )
         .filter(|parameters| {
-            blend_surface_point_inner_with_index_and_budget(
-                index,
-                surface,
-                parameters.u,
-                parameters.v,
-                depth + 1,
-                geometry_budget,
-            )
-            .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+            blend_section_parameter_in_domain(parameters.v)
+                && blend_surface_point_inner_with_index_and_budget(
+                    index,
+                    surface,
+                    parameters.u,
+                    parameters.v,
+                    depth + 1,
+                    geometry_budget,
+                )
+                .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
         }) {
             return Some(parameters);
         }
@@ -204,6 +211,7 @@ pub(crate) fn blend_surface_parameters_inner(
         (-2..=2)
             .filter_map(|turn| {
                 let v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
+                blend_section_parameter_in_domain(v).then_some(())?;
                 let candidate = blend_surface_point_inner_with_index_and_budget(
                     index,
                     surface,
@@ -238,17 +246,19 @@ pub(crate) fn blend_surface_parameters_inner(
             geometry_budget,
         )
         .unwrap_or(initial);
-        if let Some(candidate) = blend_surface_point_inner_with_index_and_budget(
-            index,
-            surface,
-            parameters.u,
-            parameters.v,
-            depth + 1,
-            geometry_budget,
-        ) {
-            let distance = point_distance(candidate, point);
-            if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
-                return Some(parameters);
+        if blend_section_parameter_in_domain(parameters.v) {
+            if let Some(candidate) = blend_surface_point_inner_with_index_and_budget(
+                index,
+                surface,
+                parameters.u,
+                parameters.v,
+                depth + 1,
+                geometry_budget,
+            ) {
+                let distance = point_distance(candidate, point);
+                if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
+                    return Some(parameters);
+                }
             }
         }
     }
@@ -272,7 +282,7 @@ pub(crate) fn blend_surface_parameters_inner(
             geometry_budget,
         )
         .unwrap_or(initial);
-        if (0.0..=1.0).contains(&parameters.v) {
+        if blend_section_parameter_in_domain(parameters.v) {
             let candidate = blend_surface_point_inner_with_index_and_budget(
                 index,
                 surface,
@@ -414,7 +424,7 @@ pub(crate) fn blend_surface_parameters_from_grid_for_fit_and_budget(
         geometry_budget,
     )
     .unwrap_or(initial);
-    (0.0..=1.0).contains(&parameters.v).then_some(())?;
+    blend_section_parameter_in_domain(parameters.v).then_some(())?;
     let candidate = blend_surface_point_inner_with_index_and_budget(
         index,
         surface,
@@ -469,6 +479,9 @@ pub(crate) fn refine_blend_surface_parameters_with_index_and_budget(
     if let Some(domain) = u_domain {
         parameters.u = parameters.u.clamp(domain[0], domain[1]);
     }
+    parameters.v = parameters
+        .v
+        .clamp(BLEND_SECTION_DOMAIN[0], BLEND_SECTION_DOMAIN[1]);
     let squared_distance = |candidate: Point3| {
         (candidate.x - point.x).powi(2)
             + (candidate.y - point.y).powi(2)
@@ -559,6 +572,9 @@ pub(crate) fn refine_blend_surface_parameters_with_index_and_budget(
             if let Some(domain) = u_domain {
                 candidate.u = candidate.u.clamp(domain[0], domain[1]);
             }
+            candidate.v = candidate
+                .v
+                .clamp(BLEND_SECTION_DOMAIN[0], BLEND_SECTION_DOMAIN[1]);
             if let Some(position) = blend_surface_point_inner_with_index_and_budget(
                 index,
                 surface,
@@ -2268,7 +2284,7 @@ pub(crate) fn blend_surface_contact_direction_with_budget(
     let angle = signed_angle(frame.2, radial, frame.1);
     let candidate = (-2..=2)
         .map(|turn| (angle + f64::from(turn) * std::f64::consts::TAU) / sweep)
-        .filter(|v| (0.0..=1.0).contains(v))
+        .filter(|v| blend_section_parameter_in_domain(*v))
         .map(|v| blend_surface_point_from_frame(frame, v))
         .chain([
             blend_surface_point_from_frame(frame, 0.0),

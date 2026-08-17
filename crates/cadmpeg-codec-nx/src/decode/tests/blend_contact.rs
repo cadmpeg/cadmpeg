@@ -885,6 +885,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     };
     use cadmpeg_ir::topology::Edge;
 
+    const OUTSIDE_BLEND_SECTION_DELTA: f64 = 1.0e-6;
+
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let first = SurfaceId("synthetic:first-plane".into());
     let second = SurfaceId("synthetic:second-plane".into());
@@ -1016,6 +1018,25 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
+
+    let boundary_point =
+        crate::decode::blend_surface_point(&ir, &surface, expected.u, 1.0).unwrap();
+    let boundary_parameters =
+        crate::decode::blend_surface_parameters(&ir, &surface, boundary_point, None)
+            .expect("blend inverse returns the section boundary");
+    assert!((0.0..=1.0).contains(&boundary_parameters.v));
+
+    let outside_boundary_point = crate::decode::blend_surface_point(
+        &ir,
+        &surface,
+        expected.u,
+        1.0 + OUTSIDE_BLEND_SECTION_DELTA,
+    )
+    .unwrap();
+    let outside_parameters =
+        crate::decode::blend_surface_parameters(&ir, &surface, outside_boundary_point, None);
+    assert!(outside_parameters.is_none());
+
     let continued = crate::decode::blend_surface_parameters_for_fit(
         &ir,
         &surface,
