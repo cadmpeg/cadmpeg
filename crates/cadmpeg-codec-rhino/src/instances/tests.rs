@@ -142,7 +142,7 @@ fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future
     assert!(parse_reference(&projective, 0..projective.len()).is_err());
 
     let mut trailing = valid;
-    trailing[0] = 0x11;
+    trailing[0] = 0x1f;
     trailing.push(0);
     let parsed = parse_reference(&trailing, 0..trailing.len()).expect("future suffix is bounded");
     assert_eq!(parsed.transform, Transform::identity());

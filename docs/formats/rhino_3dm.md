@@ -3901,7 +3901,8 @@ reference-component-settings presence, and optional settings. Static and
 linked-and-embedded definitions carry member UUIDs; linked external definitions
 normally do not.
 
-`ON_InstanceRef` uses packed major version 1:
+`ON_InstanceRef` writers emit packed version 1.0. Its reader requires major
+version 1 and does not assign meaning to the packed minor:
 
 ```
 definition UUID
@@ -3911,6 +3912,8 @@ ON_BoundingBox bounds
 
 Definition membership comes from the ordered definition UUID array, not object
 attributes. The reference payload carries one transform and one bounding box.
+The known prefix ends at the enclosing instance-reference class-data boundary;
+later bytes remain bounded there.
 The transform applies to the definition as a whole. When transfer of one
 member emits more than one typed geometry carrier, the same transform is applied
 to every carrier emitted from that member, including a body carrier and any
@@ -4875,8 +4878,9 @@ if true:
   if true: referenced-component-settings record
 ```
 
-`ON_InstanceRef` is packed major version 1. Minor 0 defines the fields below;
-later minors append fields:
+`ON_InstanceRef` is packed major version 1. The writer emits minor 0 and the
+reader ignores the minor after consuming the fields below. Later bytes remain
+bounded by the enclosing class-data record:
 
 ```
 u8 version = 0x10

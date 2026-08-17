@@ -236,5 +236,10 @@ minor-gated fields, unknown-major defaults, and bound normalization.
 The detail-view boundary is established by `ON_DetailView::Write`/`Read` in
 `opennurbs_detail.cpp`; the owner tests cover the view, boundary, and outer
 suffix locations and the minor-0 ratio default.
+The instance-reference payload is established by `ON_InstanceRef::Write`/
+`Read` in `opennurbs_instance.cpp`: the writer emits packed 1.0, the reader
+requires major 1 without a minor gate, and the UUID, transform, and bounding
+box prefix ends at the enclosing class-data boundary. The owner witness uses
+packed minor 15 and a bounded suffix.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

@@ -1036,7 +1036,7 @@ fn determinant3(rows: &[[f64; 4]; 4]) -> f64 {
         + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0])
 }
 
-/// Parses an exact packed 1.0 instance-reference payload.
+/// Parses a packed major-1 instance-reference payload.
 pub(crate) fn parse_reference(
     data: &[u8],
     range: Range<usize>,
@@ -1046,7 +1046,7 @@ pub(crate) fn parse_reference(
     if version >> 4 != 1 {
         return Err(FramingError::structural(
             reader.position(),
-            "instance reference version is not 1.0",
+            "instance reference major version is not 1",
         ));
     }
     let definition_id = uuid(&mut reader)?;
