@@ -8594,6 +8594,7 @@ fn reachable_refs(by_attr: &HashMap<u16, &EntityRecord>, root: &EntityRecord) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod disc18_disc1a_disc20_disc16_disc14;
     mod disc1a_disc14_disc12_disc10_disc0e_disc0c_disc04;
     mod disc1a_disc18_disc14_disc12;
     mod disc1a_linked;
