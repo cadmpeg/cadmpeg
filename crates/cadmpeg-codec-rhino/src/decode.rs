@@ -997,7 +997,10 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn decode_dimensions(&mut self) {
         if !matches!(
             self.archive(),
-            ArchiveVersion::V5
+            ArchiveVersion::V2
+                | ArchiveVersion::V3
+                | ArchiveVersion::V4
+                | ArchiveVersion::V5
                 | ArchiveVersion::V6
                 | ArchiveVersion::V7
                 | ArchiveVersion::V8
@@ -1040,32 +1043,40 @@ impl<'a> DecodeContext<'a> {
                 self.archive(),
             ) {
                 Ok(mut dimension) => {
-                    for (class, label) in [
-                        (crate::dimensions::V5_DIM_EXTRA, "dimension"),
-                        (crate::dimensions::V5_ANGULAR_EXTRA, "angular dimension"),
-                    ] {
-                        let count = duplicate_userdata_count(&object.userdata, class);
-                        if count > 1 {
-                            self.typed_losses.push(
-                                RhinoLossCode::DuplicateRecordResolved.note(format!(
-                                    "{label} object at offset {} has {count} matching userdata records; first serialized record wins",
-                                    object.range.start
-                                )),
-                            );
-                        }
-                    }
-                    if let Err(error) = crate::dimensions::apply_userdata(
-                        self.scan.data,
-                        &object.userdata,
-                        self.archive(),
-                        scale,
-                        &mut dimension,
+                    if matches!(
+                        object.class_uuid,
+                        crate::dimensions::V5_LINEAR
+                            | crate::dimensions::V5_ANGULAR
+                            | crate::dimensions::V5_RADIAL
+                            | crate::dimensions::V5_ORDINATE
                     ) {
-                        self.scan_warning(
-                            source_order,
-                            &format!("dimension extension retained: {error}"),
-                        );
-                        continue;
+                        for (class, label) in [
+                            (crate::dimensions::V5_DIM_EXTRA, "dimension"),
+                            (crate::dimensions::V5_ANGULAR_EXTRA, "angular dimension"),
+                        ] {
+                            let count = duplicate_userdata_count(&object.userdata, class);
+                            if count > 1 {
+                                self.typed_losses.push(
+                                    RhinoLossCode::DuplicateRecordResolved.note(format!(
+                                        "{label} object at offset {} has {count} matching userdata records; first serialized record wins",
+                                        object.range.start
+                                    )),
+                                );
+                            }
+                        }
+                        if let Err(error) = crate::dimensions::apply_userdata(
+                            self.scan.data,
+                            &object.userdata,
+                            self.archive(),
+                            scale,
+                            &mut dimension,
+                        ) {
+                            self.scan_warning(
+                                source_order,
+                                &format!("dimension extension retained: {error}"),
+                            );
+                            continue;
+                        }
                     }
                     // `SemanticAnnotation::order` must be globally unique and
                     // is a `u32`. The arena length is the dense next index and

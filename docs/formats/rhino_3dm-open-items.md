@@ -205,6 +205,31 @@ bytes stay at the enclosing `TCODE_OPENNURBS_CLASS_DATA` boundary. The Rust
 codec transfers V2 text dots to its native text-dot arena and V2 arrows to a
 native arrow arena; the latter has no neutral curve or semantic annotation
 mapping because the source class carries only display endpoints.
+The remaining V2 annotation classes are settled by the direct
+`ON_OBSOLETE_V2_Annotation::Write`/`Read` prefix and the subclass
+`ON_OBSOLETE_V2_DimAngular::Write`/`Read` and
+`ON_OBSOLETE_V2_TextObject::Write`/`Read` suffixes in
+`opennurbs_internal_V5_annotation.cpp`. The common prefix is packed 1.0,
+contains the type, plane, `ON_SimpleArray<ON_2dPoint>`, user/default UTF-16
+strings, and the user-positioned flag, and ends before subclass fields. The
+array implementation in `opennurbs_archive.cpp` establishes the count and
+contiguous point doubles; the base reader rejects a plane origin or point
+coordinate beyond `1.0e150`. Linear, radial, and leader subclasses add no bytes;
+angular adds angle and radius; text adds face name, font weight, and height.
+The enum mapping in `opennurbs_defines.cpp:2123-2140` establishes the stored
+type values, including the base-only `nothing` and `ordinate` values.
+The source conversion in `opennurbs_internal_Vx_annotation.cpp` establishes
+the text selection and trim rule, point roles, plane-origin shift, and
+family-specific user-positioning behavior. The angular source conversion in
+`opennurbs_internal_V2_annotation.cpp:3324-3415` establishes its valid-vector
+recomputation path. The authored OpenNURBS producer witness
+`/home/pcurve/side2/tmp/rhino-l9/v2-sweep/v2_annotation_witness.cpp` writes one
+object for each of the five concrete UUIDs; the rebuilt CLI transfers its three
+dimension records to semantic annotations and its text and leader records to
+`native.rhino.annotations`. The public
+`example_files/V2/v2_Stearman.3dm` witness supplies the separate text-dot and
+annotation-arrow records already described above. Owner tests exercise the
+shared prefix, subclass fields, and class-data suffix boundary.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission

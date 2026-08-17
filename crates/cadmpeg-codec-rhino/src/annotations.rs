@@ -66,6 +66,14 @@ struct AnnotationRecord {
     legacy_text_height: Option<f64>,
     legacy_justification: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    v2_default_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    v2_face_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    v2_font_weight: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    v2_text_height: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     v5_text_extra: Option<V5TextExtraRecord>,
     leader_points: Vec<[f64; 2]>,
     links: Vec<String>,
@@ -259,6 +267,61 @@ fn decode_legacy_annotation(
     let value = crate::dimensions::legacy_annotation(data, &mut outer, scale, archive)?;
     outer.skip_remaining()?;
     Ok(value)
+}
+
+struct V2AnnotationPayload {
+    base: crate::dimensions::V2Annotation,
+    face_name: Option<String>,
+    font_weight: Option<i32>,
+    text_height: Option<f64>,
+}
+
+fn decode_v2_annotation(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    scale: f64,
+    class: Uuid,
+) -> Result<V2AnnotationPayload, FramingError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    let base = crate::dimensions::v2_annotation_direct(&mut reader, scale)?;
+    let (face_name, font_weight, text_height) = if class == crate::dimensions::V2_TEXT_OBJECT {
+        if base.kind != 7 {
+            return Err(FramingError::structural(
+                range.start,
+                "V2 text object has a non-text annotation type",
+            ));
+        }
+        let face_name = utf16(&mut reader)?;
+        let font_weight = reader.i32()?;
+        let raw_text_height = reader.f64()?;
+        if !raw_text_height.is_finite()
+            || raw_text_height.abs() > crate::dimensions::V2_REALLY_BIG_NUMBER
+        {
+            return Err(FramingError::structural(
+                reader.position() - 8,
+                "V2 text height is outside the source bound",
+            ));
+        }
+        let text_height = scaled_coordinate(raw_text_height, scale).ok_or_else(|| {
+            FramingError::structural(reader.position() - 8, "scaled V2 text height is invalid")
+        })?;
+        (Some(face_name), Some(font_weight), Some(text_height))
+    } else {
+        if class == crate::dimensions::V2_LEADER && base.kind != 6 {
+            return Err(FramingError::structural(
+                range.start,
+                "V2 leader has a non-leader annotation type",
+            ));
+        }
+        (None, None, None)
+    };
+    reader.skip_remaining()?;
+    Ok(V2AnnotationPayload {
+        base,
+        face_name,
+        font_weight,
+        text_height,
+    })
 }
 
 fn decode_dot(
@@ -461,6 +524,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 legacy_style_index: None,
                 legacy_text_height: None,
                 legacy_justification: None,
+                v2_default_text: None,
+                v2_face_name: None,
+                v2_font_weight: None,
+                v2_text_height: None,
                 v5_text_extra,
                 leader_points: points,
                 links: vec![link],
@@ -501,8 +568,77 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 legacy_style_index: Some(value.dimstyle_index),
                 legacy_text_height: Some(value.text_height),
                 legacy_justification: Some(value.justification),
+                v2_default_text: None,
+                v2_face_name: None,
+                v2_font_weight: None,
+                v2_text_height: None,
                 v5_text_extra,
                 leader_points: value.points,
+                links: vec![link],
+            });
+        } else if matches!(
+            object.class_uuid,
+            crate::dimensions::V2_ANNOTATION
+                | crate::dimensions::V2_TEXT_OBJECT
+                | crate::dimensions::V2_LEADER
+        ) {
+            let Ok(value) = decode_v2_annotation(
+                scan.data,
+                object.class_data_range.clone(),
+                scale,
+                object.class_uuid,
+            ) else {
+                continue;
+            };
+            let is_leader = object.class_uuid == crate::dimensions::V2_LEADER
+                || (object.class_uuid == crate::dimensions::V2_ANNOTATION && value.base.kind == 6);
+            let is_text = object.class_uuid == crate::dimensions::V2_TEXT_OBJECT
+                || (object.class_uuid == crate::dimensions::V2_ANNOTATION && value.base.kind == 7);
+            let kind = if is_leader {
+                "leader"
+            } else if is_text {
+                "text"
+            } else {
+                "annotation"
+            };
+            let rich_text = crate::dimensions::v2_effective_text(&value.base);
+            let leader_points = if is_leader {
+                value.base.points.clone()
+            } else {
+                Vec::new()
+            };
+            annotations.push(AnnotationRecord {
+                id: format!("rhino:document:annotation#{key}"),
+                source_offset: object.range.start as u64,
+                source_uuid: source_uuid.clone(),
+                kind,
+                rich_text,
+                plane_origin: value.base.plane.origin.0,
+                plane_x_axis: value.base.plane.xaxis.0,
+                plane_y_axis: value.base.plane.yaxis.0,
+                plane_z_axis: value.base.plane.zaxis.0,
+                plane_equation: value.base.plane.equation,
+                dimstyle_uuid: None,
+                annotation_type: value.base.kind,
+                text_rectangle_width: 0.0,
+                text_rotation_radians: 0.0,
+                horizontal_alignment: 0,
+                vertical_alignment: 0,
+                wrapped: false,
+                horizontal_direction: [value.base.plane.xaxis.0[0], value.base.plane.yaxis.0[0]],
+                allow_text_scaling: false,
+                legacy_text_display_mode: None,
+                legacy_user_text: Some(value.base.user_text),
+                legacy_user_positioned_text: Some(value.base.user_positioned_text),
+                legacy_style_index: None,
+                legacy_text_height: None,
+                legacy_justification: None,
+                v2_default_text: Some(value.base.default_text),
+                v2_face_name: value.face_name,
+                v2_font_weight: value.font_weight,
+                v2_text_height: value.text_height,
+                v5_text_extra: None,
+                leader_points,
                 links: vec![link],
             });
         } else if matches!(object.class_uuid, TEXT_DOT | V2_TEXT_DOT) {
@@ -554,9 +690,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_annotation, decode_dot, decode_legacy_annotation, decode_v2_annotation_arrow,
-        decode_v2_text_dot, install, parse_v5_text_extra, ANONYMOUS, V2_ANNOTATION_ARROW,
-        V2_TEXT_DOT, V5_TEXT_EXTRA,
+        decode_annotation, decode_dot, decode_legacy_annotation, decode_v2_annotation,
+        decode_v2_annotation_arrow, decode_v2_text_dot, install, parse_v5_text_extra, ANONYMOUS,
+        V2_ANNOTATION_ARROW, V2_TEXT_DOT, V5_TEXT_EXTRA,
     };
     use crate::chunks::ArchiveVersion;
     use crate::objects::UserdataDescriptor;
@@ -625,6 +761,127 @@ mod tests {
         let mut outer = anonymous(i32::from(leader), &outer_body);
         outer.extend([0xfa, 0xce]);
         outer
+    }
+
+    fn v2_annotation_payload(
+        kind: i32,
+        points: &[[f64; 2]],
+        user_text: &str,
+        default_text: &str,
+        user_positioned: bool,
+    ) -> Vec<u8> {
+        let mut bytes = vec![0x10];
+        bytes.extend(kind.to_le_bytes());
+        bytes.extend(plane());
+        bytes.extend((points.len() as i32).to_le_bytes());
+        for point in points {
+            bytes.extend(point[0].to_le_bytes());
+            bytes.extend(point[1].to_le_bytes());
+        }
+        bytes.extend(utf16(user_text));
+        bytes.extend(utf16(default_text));
+        bytes.extend(i32::from(user_positioned).to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn v2_text_and_leader_readers_preserve_subclass_fields_and_suffixes() {
+        let mut text = v2_annotation_payload(7, &[], "  text  ", "default", false);
+        text.extend(utf16("Witness Sans"));
+        text.extend(700_i32.to_le_bytes());
+        text.extend(12.5_f64.to_le_bytes());
+        text.extend([0xd1, 0xce]);
+        let value = decode_v2_annotation(
+            &text,
+            0..text.len(),
+            10.0,
+            crate::dimensions::V2_TEXT_OBJECT,
+        )
+        .expect("V2 text object");
+        assert_eq!(value.base.user_text, "  text  ");
+        assert_eq!(value.base.default_text, "default");
+        assert_eq!(value.face_name.as_deref(), Some("Witness Sans"));
+        assert_eq!(value.font_weight, Some(700));
+        assert_eq!(value.text_height, Some(125.0));
+        assert_eq!(value.base.plane.origin.0, [10.0, 20.0, 30.0]);
+
+        let mut leader = v2_annotation_payload(
+            6,
+            &[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
+            "",
+            " leader ",
+            true,
+        );
+        leader.extend([0xa5, 0x5a]);
+        let value =
+            decode_v2_annotation(&leader, 0..leader.len(), 2.0, crate::dimensions::V2_LEADER)
+                .expect("V2 leader");
+        assert_eq!(value.base.points, [[2.0, 4.0], [6.0, 8.0], [10.0, 12.0]]);
+        assert!(value.base.user_positioned_text);
+        assert!(value.face_name.is_none());
+    }
+
+    #[test]
+    fn install_transfers_v2_text_leader_and_base_annotations() {
+        let mut text = v2_annotation_payload(7, &[], "  text  ", "default", false);
+        text.extend(utf16("Witness Sans"));
+        text.extend(700_i32.to_le_bytes());
+        text.extend(12.5_f64.to_le_bytes());
+        text.extend([0xd1, 0xce]);
+
+        let leader = v2_annotation_payload(6, &[[1.0, 2.0], [3.0, 4.0]], "", " leader ", true);
+        let base = v2_annotation_payload(7, &[], "base", "unused", false);
+        let unknown_base = v2_annotation_payload(123, &[], "unknown", "unused", false);
+        let scan = scan_with_objects(&[
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                crate::dimensions::V2_TEXT_OBJECT.to_wire(),
+                &text,
+            ),
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                crate::dimensions::V2_LEADER.to_wire(),
+                &leader,
+            ),
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                crate::dimensions::V2_ANNOTATION.to_wire(),
+                &base,
+            ),
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                crate::dimensions::V2_ANNOTATION.to_wire(),
+                &unknown_base,
+            ),
+        ]);
+        let mut ir = CadIr::empty(Units::default());
+        install(&scan, &mut ir);
+
+        let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
+        assert_eq!(namespace.arenas["annotations"].len(), 4);
+        let text = serde_json::to_value(&namespace.arenas["annotations"][0]).expect("text JSON");
+        assert_eq!(text["kind"], "text");
+        assert_eq!(text["rich_text"], "text");
+        assert_eq!(text["v2_default_text"], "default");
+        assert_eq!(text["v2_face_name"], "Witness Sans");
+        assert_eq!(text["v2_font_weight"], 700);
+        assert_eq!(text["v2_text_height"], 12.5);
+        let leader =
+            serde_json::to_value(&namespace.arenas["annotations"][1]).expect("leader JSON");
+        assert_eq!(leader["kind"], "leader");
+        assert_eq!(leader["rich_text"], "leader");
+        assert_eq!(leader["leader_points"][1][1], 4.0);
+        let base = serde_json::to_value(&namespace.arenas["annotations"][2]).expect("base JSON");
+        assert_eq!(base["kind"], "text");
+        assert_eq!(base["rich_text"], "base");
+        let unknown =
+            serde_json::to_value(&namespace.arenas["annotations"][3]).expect("unknown JSON");
+        assert_eq!(unknown["kind"], "annotation");
+        assert_eq!(unknown["annotation_type"], 123);
     }
 
     #[test]

@@ -5189,6 +5189,121 @@ false display flags. V2 annotation arrows enter
 source links. CADIR does not create a neutral curve or semantic annotation
 for an arrow because the V2 class carries only its display endpoints.
 
+The remaining V2 annotation classes use these class UUIDs:
+
+| class | UUID | payload role |
+| --- | --- | --- |
+| `ON_OBSOLETE_V2_Annotation` | `ABAF5873-4145-11D4-800F-0010830122F0` | virtual base |
+| `ON_OBSOLETE_V2_DimLinear` | `5DE6B20D-486B-11D4-8014-0010830122F0` | linear or aligned dimension |
+| `ON_OBSOLETE_V2_DimRadial` | `5DE6B20E-486B-11D4-8014-0010830122F0` | radius or diameter dimension |
+| `ON_OBSOLETE_V2_DimAngular` | `5DE6B20F-486B-11D4-8014-0010830122F0` | angular dimension |
+| `ON_OBSOLETE_V2_TextObject` | `5DE6B210-486B-11D4-8014-0010830122F0` | text |
+| `ON_OBSOLETE_V2_Leader` | `5DE6B211-486B-11D4-8014-0010830122F0` | leader |
+
+The class-data payload for each class is a direct packed version `1.minor`
+prefix. The reader requires major `1` and leaves an unread minor at the
+class-data boundary. The shared base prefix is:
+
+```text
+packed version 1.minor
+u32 annotation type
+ON_Plane plane
+i32 point count
+point count × ON_2dPoint
+UTF-16 user text
+UTF-16 default text
+i32 user-positioned-text flag
+```
+
+`ON_Plane` contains an origin, x axis, y axis, z axis, and plane equation as
+`16 × f64`. Each `ON_2dPoint` contains two `f64` values. The producer writes a
+nonnegative point count. The annotation type enum values are `0` nothing, `1`
+linear, `2` aligned, `3` angular, `4` diameter, `5` radius, `6` leader, `7`
+text block, and `8` ordinate. The flag is false for zero and true for every
+nonzero value. The two strings use the UTF-16 archive string grammar in
+section 7.3. The source reader rejects a plane origin or point coordinate
+whose absolute raw value is greater than `1.0e150`.
+
+The concrete payloads append these fields after the shared prefix:
+
+```text
+ON_OBSOLETE_V2_DimLinear: no fields
+ON_OBSOLETE_V2_DimRadial: no fields
+ON_OBSOLETE_V2_DimAngular:
+  f64 angle in radians
+  f64 radius in model length units
+ON_OBSOLETE_V2_TextObject:
+  UTF-16 face name
+  i32 Windows font weight
+  f64 text height in model length units
+ON_OBSOLETE_V2_Leader: no fields
+```
+
+The angular reader requires both stored values to be positive and no greater
+than `1.0e150`. The text reader accepts a signed height whose absolute value
+is no greater than `1.0e150`. The base class is virtual and has no concrete
+object admission; a direct base-class record is retained as a native
+annotation when its type is known. Types `0` and `8` have no concrete V2 class
+in this family and remain native when carried by a direct base record. All
+fields after a concrete prefix belong to `OPENNURBS_CLASS_DATA` and are not
+interpreted by the class reader.
+
+The source conversion selects `user text` when it is nonempty and otherwise
+selects `default text`, then trims Unicode whitespace and control characters
+from both ends. Plane origins and all point coordinates are document lengths.
+For linear and radial dimensions, conversion moves the first point to the
+plane origin and expresses the remaining points relative to that origin. A
+linear dimension uses points 0, 1, 2, and 3 as the first extension endpoint,
+first arrow tip, second extension endpoint, and second arrow tip; point 4 is
+the optional user-positioned text point. Its numeric distance is the length of
+point 1 minus point 3. A radial dimension uses point 0 as center, point 1 as
+the radius point, point 2 as the dimension-line point, and point 3 as the
+optional text point. Its numeric distance is the center-to-point-1 length,
+doubled for type 4. An angular dimension keeps its plane origin. Points 0 and
+1 are its stored direction vectors and point 2 is its optional text point; its
+stored angle is radians and its stored radius is a model length. A leader uses
+every point in order. The text object has no point-role interpretation.
+
+The V2-to-V5 source conversion applies additional point-count gates after it
+copies the common fields: linear and aligned dimensions require exactly five
+points after truncating extras; angular dimensions retain at most three points
+and require at least two; leaders require at least two points; radial
+dimensions and text objects have no source point-count gate. A failed minimum
+gate clears the converted point array. These conversion gates are separate
+from the CADIR admission decision below.
+
+CADIR decision: V2 linear, radial, and angular dimensions enter the semantic
+annotation arena. Linear and radial admission requires the points needed for
+the roles above; angular admission requires two direction points. A record
+that does not provide those roles remains retained and does not receive a
+typed semantic definition. The semantic measurement for linear and radial
+families is the source numeric distance after document-unit conversion. The
+semantic angular measurement is the stored angle in radians. Its degree
+conversion is retained as `v2_numeric_value_degrees`; this is the
+stored V2 value, not the possibly recomputed angle from the V2-to-V5
+conversion path.
+`v2_points`, `v2_default_text`, and the angular `v2_angle_radians` and
+`v2_radius` parameters preserve the V2 fields that have no common neutral
+field. CADIR uses the explicit stored angular values for its neutral
+dimension-line point and retains the source direction vectors unchanged; the
+source conversion may recompute an angular plane, angle, and radius from valid
+direction vectors. Linear text uses the default semantic text location
+because the V2-to-V5 conversion does not enable user positioning for that
+family. Radial and angular text use their optional points only when the
+serialized flag is true.
+
+CADIR decision: V2 text objects, leaders, and direct base annotations enter
+`native.rhino.annotations`. Their `rich_text` is the selected and trimmed
+text; the raw user text, raw default text, face name, font weight, text height,
+user-positioned flag, and leader points remain in the native record. V2 text
+height is converted as a document length. A direct base annotation with a
+type 6 or 7 receives the native `leader` or `text` kind; all other base types,
+including recognized dimension types, use native kind `annotation` and retain
+the numeric `annotation_type`. An unrecognized type also remains a native
+`annotation` record with its raw signed `i32` value; CADIR does not apply the
+source reader's fallback to `dtNothing`. No V2 text or leader is fabricated as
+a modern dimension or curve.
+
 Group and light records use packed major-1 versions. The group class UUID is
 `721D9F97-3645-44C4-8BE6-B2CF697D25CE`. A group table record is:
 
