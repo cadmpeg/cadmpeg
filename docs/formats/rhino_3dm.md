@@ -246,6 +246,12 @@ skipped at the bounded end. Array and element readers that define major version
 only when the containing archive grammar defines a writer-band ceiling for that
 payload; this is a grammar admission rule, not a trailing-byte rule.
 
+For a direct payload, the owning long chunk is the bounded end. An anonymous
+child owns its own suffix boundary before its parent continues. A tagged stream
+ends at its explicit terminator; an unknown item ID does not supply a generic
+value width. These boundaries apply independently to nested payloads, so a
+suffix in one child cannot consume the fields of its parent.
+
 The first outer properties table and the first outer settings table are read.
 Within those tables, a repeated singleton record replaces the preceding value;
 the last successfully read occurrence owns the field. A failed occurrence does
