@@ -486,134 +486,194 @@ pub(in super::super) fn native_section_segment_radius_definition(
     }
 }
 
+struct SectionSegmentRadiusBinding {
+    suffix: String,
+    external_id: u32,
+    field: &'static str,
+    ordinal: u32,
+    offset: usize,
+    typed_circle: Option<(u32, ParameterId)>,
+}
+
+fn section_segment_radius_bindings(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<SectionSegmentRadiusBinding> {
+    let unique_segment_ids = unique_section_segment_external_ids(definition);
+    let mut bindings = Vec::new();
+    let Some(segments) = definition.segments.as_ref() else {
+        return bindings;
+    };
+    for segment in &segments.rows {
+        let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+        for (field, ordinal) in [
+            ("radius", segment.radius_ref),
+            ("radius2", segment.radius2_ref),
+        ] {
+            let Some(ordinal) = ordinal else {
+                continue;
+            };
+            bindings.push(SectionSegmentRadiusBinding {
+                suffix: suffix.clone(),
+                external_id: segment.external_id,
+                field,
+                ordinal,
+                offset: segment.offset,
+                typed_circle: None,
+            });
+        }
+    }
+    for segment in &segments.circle_rows {
+        let suffix = if unique_segment_ids.contains(&segment.external_id) {
+            segment.external_id.to_string()
+        } else {
+            format!("circle:offset:{}", segment.offset)
+        };
+        let typed_circle = usize::try_from(segment.radius_ref)
+            .ok()
+            .and_then(|ordinal| {
+                resolved_feature_dimension_parameter(
+                    sketch,
+                    definition.dimensions.as_ref()?,
+                    ordinal,
+                )
+            })
+            .map(|(dimension, parameter)| (dimension.dimension_type, parameter));
+        bindings.push(SectionSegmentRadiusBinding {
+            suffix,
+            external_id: segment.external_id,
+            field: "radius",
+            ordinal: segment.radius_ref,
+            offset: segment.offset,
+            typed_circle,
+        });
+    }
+    for segment in &segments.opaque_rows {
+        let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+        for (field, ordinal) in [
+            ("radius", segment.radius_ref),
+            ("radius2", segment.radius2_ref),
+        ] {
+            let Some(ordinal) = ordinal else {
+                continue;
+            };
+            bindings.push(SectionSegmentRadiusBinding {
+                suffix: suffix.clone(),
+                external_id: segment.external_id,
+                field,
+                ordinal,
+                offset: segment.offset,
+                typed_circle: None,
+            });
+        }
+    }
+    bindings
+}
+
+fn section_segment_radius_constraint(
+    binding: SectionSegmentRadiusBinding,
+    sketch: &SketchId,
+) -> (SketchConstraint, usize) {
+    let entity = sketch_entity_id(sketch, &binding.suffix);
+    let (definition, kind) = match binding.typed_circle {
+        Some((dimension_type, parameter)) if matches!(dimension_type, 3 | 4) => (
+            circular_dimension_constraint(entity.clone(), parameter, dimension_type),
+            if dimension_type == 4 {
+                "diameter"
+            } else {
+                "radius"
+            },
+        ),
+        _ => (
+            native_section_segment_radius_definition(
+                sketch,
+                entity.clone(),
+                binding.external_id,
+                binding.field,
+                binding.ordinal,
+            ),
+            if binding.field == "radius2" {
+                "segtab-radius2"
+            } else {
+                "segtab-radius"
+            },
+        ),
+    };
+    (
+        SketchConstraint {
+            id: sketch_constraint_id(sketch, format_args!("{kind}:{}", binding.suffix)),
+            sketch: sketch.clone(),
+            definition,
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: Some(sketch_native_ref(sketch)),
+        },
+        binding.offset,
+    )
+}
+
 pub(in super::super) fn section_segment_radius_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    let unique_segment_ids = unique_section_segment_external_ids(definition);
-    let typed = definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .flat_map(|segment| {
-            let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
-            [
-                ("radius", segment.radius_ref),
-                ("radius2", segment.radius2_ref),
-            ]
-            .into_iter()
-            .filter_map(move |(field, ordinal)| {
-                Some((
-                    suffix.clone(),
-                    segment.external_id,
-                    field,
-                    ordinal?,
-                    segment.offset,
-                    None,
-                ))
-            })
-        });
-    let opaque = definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.opaque_rows)
-        .flat_map(|segment| {
-            let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
-            [
-                ("radius", segment.radius_ref),
-                ("radius2", segment.radius2_ref),
-            ]
-            .into_iter()
-            .filter_map(move |(field, ordinal)| {
-                Some((
-                    suffix.clone(),
-                    segment.external_id,
-                    field,
-                    ordinal?,
-                    segment.offset,
-                    None,
-                ))
-            })
-        });
-    let circles = definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.circle_rows)
-        .map(|segment| {
-            let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                segment.external_id.to_string()
-            } else {
-                format!("circle:offset:{}", segment.offset)
-            };
-            let parameter = usize::try_from(segment.radius_ref)
-                .ok()
-                .and_then(|ordinal| {
-                    resolved_feature_dimension_parameter(
-                        sketch,
-                        definition.dimensions.as_ref()?,
-                        ordinal,
-                    )
-                });
-            (
-                suffix,
-                segment.external_id,
-                "radius",
-                segment.radius_ref,
-                segment.offset,
-                parameter,
-            )
-        });
-    typed
-        .chain(circles)
-        .chain(opaque)
-        .map(
-            |(suffix, external_id, field, ordinal, offset, typed_circle)| {
-                let entity = sketch_entity_id(sketch, &suffix);
-                let (definition, kind) = match typed_circle {
-                    Some((dimension, parameter)) if matches!(dimension.dimension_type, 3 | 4) => (
-                        circular_dimension_constraint(entity, parameter, dimension.dimension_type),
-                        if dimension.dimension_type == 4 {
-                            "diameter"
-                        } else {
-                            "radius"
-                        },
-                    ),
-                    _ => (
-                        native_section_segment_radius_definition(
-                            sketch,
-                            entity,
-                            external_id,
-                            field,
-                            ordinal,
-                        ),
-                        if field == "radius2" {
-                            "segtab-radius2"
-                        } else {
-                            "segtab-radius"
-                        },
-                    ),
-                };
-                (
-                    SketchConstraint {
-                        id: sketch_constraint_id(sketch, format_args!("{kind}:{suffix}")),
-                        sketch: sketch.clone(),
-                        definition,
-                        name: None,
-                        driving: None,
-                        active: None,
-                        virtual_space: None,
-                        visible: None,
-                        orientation: None,
-                        label_distance: None,
-                        label_position: None,
-                        metadata: None,
-                        native_ref: Some(sketch_native_ref(sketch)),
-                    },
-                    offset,
-                )
-            },
-        )
+    section_segment_radius_bindings(definition, sketch)
+        .into_iter()
+        .map(|binding| section_segment_radius_constraint(binding, sketch))
         .collect()
+}
+
+pub(in super::super) fn section_segment_radius_constraints_for_emitted(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    emitted: &BTreeSet<SketchEntityId>,
+) -> Vec<(SketchConstraint, usize)> {
+    let bindings = section_segment_radius_bindings(definition, sketch);
+    section_segment_radius_constraints(definition, sketch)
+        .into_iter()
+        .zip(bindings)
+        .filter_map(|((mut constraint, offset), binding)| {
+            let entity = sketch_entity_id(sketch, &binding.suffix);
+            reconcile_section_segment_radius_constraint(
+                &mut constraint.definition,
+                sketch,
+                entity,
+                binding.external_id,
+                binding.field,
+                binding.ordinal,
+                emitted,
+            )
+            .then_some((constraint, offset))
+        })
+        .collect()
+}
+
+fn reconcile_section_segment_radius_constraint(
+    constraint_definition: &mut SketchConstraintDefinition,
+    sketch: &SketchId,
+    entity: SketchEntityId,
+    external_id: u32,
+    field: &str,
+    dimension_ordinal: u32,
+    emitted: &BTreeSet<SketchEntityId>,
+) -> bool {
+    if reconcile_constraint_entity_references(constraint_definition, emitted) {
+        return true;
+    }
+    *constraint_definition = native_section_segment_radius_definition(
+        sketch,
+        entity,
+        external_id,
+        field,
+        dimension_ordinal,
+    );
+    reconcile_constraint_entity_references(constraint_definition, emitted)
 }
 
 pub(in super::super) fn section_equation_radius_dimension_constraints(

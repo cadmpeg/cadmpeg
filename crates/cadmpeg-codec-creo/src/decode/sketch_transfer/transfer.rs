@@ -33,7 +33,7 @@ use super::{
     section_equation_native_constraints, section_equation_point_on_line_constraints,
     section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,
     section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
-    section_segment_identity_suffix, section_segment_radius_constraints,
+    section_segment_identity_suffix, section_segment_radius_constraints_for_emitted,
     section_segment_verhor_definition, section_skamp_constraints_for_geometry,
     solver_only_section_entities, solver_only_section_entity_family,
     unique_saved_section_internal_ids, unique_section_segment_external_ids,
@@ -630,13 +630,11 @@ pub(in super::super) fn transfer_sketches(
             );
             constraints.push(constraint);
         }
-        for (mut constraint, offset) in section_segment_radius_constraints(definition, &sketch_id) {
-            if !reconcile_constraint_entity_references(
-                &mut constraint.definition,
-                &emitted_entity_ids,
-            ) {
-                continue;
-            }
+        for (constraint, offset) in section_segment_radius_constraints_for_emitted(
+            definition,
+            &sketch_id,
+            &emitted_entity_ids,
+        ) {
             annotate(
                 annotations,
                 &constraint.id.0,

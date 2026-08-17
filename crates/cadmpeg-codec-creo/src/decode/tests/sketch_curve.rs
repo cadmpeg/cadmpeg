@@ -9,7 +9,8 @@ use crate::decode::feature_history::{
 };
 use crate::decode::sketch::{resolved_section_radii, section_circle_geometry};
 use crate::decode::sketch_transfer::{
-    section_segment_radius_constraints, section_segment_verhor_definition, section_skamp_active,
+    section_segment_radius_constraints, section_segment_radius_constraints_for_emitted,
+    section_segment_verhor_definition, section_skamp_active,
 };
 use crate::decode::sweep::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use cadmpeg_ir::document::CadIr;
@@ -20,7 +21,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind};
 use cadmpeg_ir::units::Units;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn sketch_curve_references_require_a_materialized_curve() {
@@ -304,6 +305,26 @@ fn dimension_identity_includes_its_feature_definition() {
             parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
         }
     );
+    let retained_without_circle =
+        section_segment_radius_constraints_for_emitted(&definition, &sketch_917, &BTreeSet::new());
+    assert_eq!(retained_without_circle.len(), 1);
+    let SketchConstraintDefinition::Native {
+        native_kind,
+        native_properties,
+        entities,
+        operands,
+        ..
+    } = &retained_without_circle[0].0.definition
+    else {
+        panic!("a missing circle entity must retain its native radius relation");
+    };
+    assert_eq!(native_kind, "creo:segtab:radius");
+    assert_eq!(native_properties["dimension_ordinal"], "0");
+    assert!(entities.is_empty());
+    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(operands[0].object_index, 42);
+    assert_eq!(operands[1].native_field.as_deref(), Some("radius"));
+    assert_eq!(operands[1].object_index, 0);
     definition
         .dimensions
         .as_mut()
