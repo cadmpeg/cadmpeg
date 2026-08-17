@@ -582,15 +582,14 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     assert_eq!(display["property_kind"], "dimension_display_data");
     assert_eq!(display["dimension_type"], 2);
     assert_eq!(display["label_position"], 1);
-    assert_eq!(display["declared_character_set"], 1);
-    assert_eq!(display["character_set"], 1);
+    assert_eq!(display["declared_character_set"], 1003);
+    assert_eq!(display["character_set"], 1003);
     assert_eq!(display["label"], serde_json::json!([68, 73, 65]));
     assert_eq!(display["decimal_symbol"], 0);
-    assert_eq!(
-        display["declared_witness_line_angle"],
-        std::f64::consts::FRAC_PI_2
-    );
-    assert_eq!(display["witness_line_angle"], std::f64::consts::FRAC_PI_2);
+    let declared_witness_line_angle = display["declared_witness_line_angle"].as_f64().unwrap();
+    assert!((declared_witness_line_angle - 0.25).abs() < f64::EPSILON * 16.0);
+    let witness_line_angle = display["witness_line_angle"].as_f64().unwrap();
+    assert!((witness_line_angle - 0.25).abs() < f64::EPSILON * 16.0);
     assert_eq!(display["text_alignment"], 1);
     assert_eq!(display["text_level"], 0);
     assert_eq!(display["text_placement"], 0);

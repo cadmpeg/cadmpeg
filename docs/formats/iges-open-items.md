@@ -214,16 +214,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `4080057b9` added suppression and a synthetic malformed fixture, but the rule that one malformed member invalidates every root inference is not established from the IGES specification or from witness files.
 
-### DR-10. Two fabricated defaults in the Type 406 Form 30 native record
-
-**Question.** What are the defaults of the Type 406 Form 30 character-set and witness-line-angle fields, and in which unit is the angle native?
-
-**Known.** `native.rs:2728-2737` supplies character set `1` and `FRAC_PI_2` for omitted fields. Other omitted Form 30 fields remain absent. The format documentation records no defaults or native angle unit.
-
-**Need.** We need the two defaults and the native unit of the angle field. An injected value must remain distinguishable from an explicit value.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `7472b1242` preserves declared and effective values, but the synthetic fixture and same-commit documentation do not prove the defaults or angle unit.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance

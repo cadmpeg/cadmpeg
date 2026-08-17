@@ -1297,7 +1297,7 @@ pub(crate) fn dimension_property_forms_file() -> Vec<u8> {
             form: 30,
             label: "DIMDISP".into(),
             status: "00010000",
-            parameters: "406,15,2,1,1,3HDIA,0,1.5707963267948966,1,0,0,0,12.5,1,1,1,1;".into(),
+            parameters: "406,15,2,1,1003,3HDIA,0,0.25,1,0,0,0,12.5,1,1,1,1;".into(),
         },
     ])
 }
