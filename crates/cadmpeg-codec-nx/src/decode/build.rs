@@ -12,9 +12,9 @@ use super::pcurves::{
 };
 use super::report::{build_geometry_report, CompletionBudgetStatus};
 use super::support_uv::{
-    assign_ext11_support_uv_with_index, attach_completed_intersection_pcurves,
-    complete_ext11_support_uv, complete_parameterization_equivalent_support_uv,
-    complete_support_uv_with_budget, invalidate_inconsistent_support_uv, linear_knots,
+    assign_ext11_support_uv_with_index, attach_completed_intersection_pcurves_with_budget,
+    complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
+    complete_support_uv_with_budget, invalidate_inconsistent_support_uv_with_budget, linear_knots,
     support_uv_budget_exhausted, validate_serialized_support_uv_with_index, MAX_SUPPORT_UV_SAMPLES,
 };
 use super::{report_untransferred_streams, Counts, Scan};
@@ -546,6 +546,7 @@ pub(crate) fn try_decode_geometry(
                         &charted.points,
                         charted.fit_tolerance,
                         &charted.support_uv,
+                        &adaptive_geometry_budget,
                     );
                     if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
                         &ir,
@@ -555,6 +556,7 @@ pub(crate) fn try_decode_geometry(
                         &charted.points,
                         charted.fit_tolerance,
                         &charted.ext_support_uv,
+                        &adaptive_geometry_budget,
                     ) {
                         for side in 0..2 {
                             if support_uv[side].is_none() {
@@ -804,8 +806,16 @@ pub(crate) fn try_decode_geometry(
             &transfer_budget,
             &adaptive_geometry_budget,
         );
-        invalidate_inconsistent_support_uv(&mut ir, &pending_ext11_support_uv);
-        complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
+        invalidate_inconsistent_support_uv_with_budget(
+            &mut ir,
+            &pending_ext11_support_uv,
+            &adaptive_geometry_budget,
+        );
+        complete_ext11_support_uv_with_budget(
+            &mut ir,
+            &pending_ext11_support_uv,
+            &adaptive_geometry_budget,
+        );
         complete_parameterization_equivalent_support_uv(&mut ir);
         complete_support_uv_with_budget(
             &mut ir,
@@ -813,12 +823,13 @@ pub(crate) fn try_decode_geometry(
             &support_budget,
             &adaptive_geometry_budget,
         );
-        attach_completed_intersection_pcurves(
+        attach_completed_intersection_pcurves_with_budget(
             &mut ir,
             graph,
             &format!("nx:s{si}"),
             source_stream,
             &mut annotations,
+            &adaptive_geometry_budget,
         );
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let mut unknown = unknown_stream(si, stream);

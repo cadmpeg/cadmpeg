@@ -79,9 +79,15 @@ pub(crate) use pcurves::{
     attach_tolerant_edge_intersections_with_budget, boundary_curve_affine_breaks,
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_supports_from_edge_incidence,
-    complete_tolerant_intersection_pcurves_from_serialized_branches, curve_is_cache_backed,
-    exact_analytic_isocurve_pcurve, exact_boundary_curve_breaks, ordered_parameter_range,
-    pcurve_matches_edge_range_with_index, pcurve_parameter_range, reverse_pcurve_over_range,
+    complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget,
+    curve_is_cache_backed, exact_analytic_isocurve_pcurve_with_budget, exact_boundary_curve_breaks,
+    ordered_parameter_range, pcurve_matches_edge_range_with_index_and_budget,
+    pcurve_parameter_range, reverse_pcurve_over_range,
+};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use pcurves::{
+    complete_tolerant_intersection_pcurves_from_serialized_branches, exact_analytic_isocurve_pcurve,
 };
 
 mod offset;
@@ -118,14 +124,20 @@ pub(crate) use build::{
 };
 
 mod support_uv;
+#[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use support_uv::{
     attach_completed_intersection_pcurves, complete_ext11_support_uv,
-    complete_parameterization_equivalent_support_uv, invalidate_inconsistent_support_uv,
-    linear_knots, missing_support_parameter, parameterization_equivalent_surfaces,
-    pcurve_control_point_seed, pcurve_requires_completion,
+    invalidate_inconsistent_support_uv,
+};
+#[allow(unused_imports)]
+pub(crate) use support_uv::{
+    attach_completed_intersection_pcurves_with_budget, complete_ext11_support_uv_with_budget,
+    complete_parameterization_equivalent_support_uv,
+    invalidate_inconsistent_support_uv_with_budget, linear_knots, missing_support_parameter,
+    parameterization_equivalent_surfaces, pcurve_control_point_seed, pcurve_requires_completion,
     pending_support_lanes_requiring_completion, procedural_surface_for_carrier,
-    support_uv_lane_matches_surface, PendingExt11SupportUv,
+    support_uv_lane_matches_surface_with_budget, PendingExt11SupportUv,
 };
 
 mod blend;
@@ -138,21 +150,22 @@ pub(crate) use blend::closest_spine_parameter;
 #[allow(unused_imports)]
 pub(crate) use blend::{
     add_bernstein_polynomials, analytic_surface_offset, bernstein_product, bezier_spans,
-    binomial_coefficient, blend_boundary_parameter_from_support_pcurve,
-    blend_boundary_point_with_index, blend_contact_offset_matches, blend_surface_definition,
-    blend_surface_offset, blend_surface_point_from_frame, blend_surface_point_inner_with_index,
-    blend_surface_u_derivative_with_index, canonical_periodic_parameter,
-    closest_blend_surface_grid_parameters, closest_parameter_candidates,
-    closest_periodic_analytic_curve_parameter, constant_surface_offset_between,
-    decoded_surface_point_inner, homogeneous_residual_distance, insert_homogeneous_curve_knot,
-    lift_periodic_parameters, polynomial_roots_in_unit_interval, polynomial_value,
-    rational_squared_distance_derivative, real_polynomial_roots, rodrigues_rotate,
-    scalar_bernstein_sign_variations, scalar_bezier_value, signed_angle,
-    spine_contact_direction_with_index, spine_contact_pcurve, spine_contact_point_with_index,
-    stationary_rational_distance_candidates, subdivide_scalar_bezier_span,
-    subtract_bernstein_polynomials, sum_bernstein_polynomials, surface_offset_lineage, BezierSpan,
-    BlendContactDerivativeContext, BlendParameterGrid, BlendSurfaceFrame, BoundaryInverseTarget,
-    HomogeneousCurveSpans, ScalarBezierRoots, ScalarBezierSpan,
+    binomial_coefficient, blend_boundary_parameter_from_support_pcurve_with_budget,
+    blend_boundary_point_with_index_and_budget, blend_contact_offset_matches,
+    blend_surface_definition, blend_surface_offset, blend_surface_point_from_frame,
+    blend_surface_point_inner_with_index_and_budget,
+    blend_surface_u_derivative_with_index_and_budget, closest_blend_surface_grid_parameters,
+    closest_parameter_candidates, closest_periodic_analytic_curve_parameter_with_budget,
+    constant_surface_offset_between, decoded_surface_point_inner_with_budget,
+    homogeneous_residual_distance, insert_homogeneous_curve_knot, lift_periodic_parameters,
+    polynomial_roots_in_unit_interval, polynomial_value, rational_squared_distance_derivative,
+    real_polynomial_roots, rodrigues_rotate, scalar_bernstein_sign_variations, scalar_bezier_value,
+    signed_angle, spine_contact_direction_with_index_and_budget, spine_contact_pcurve,
+    spine_contact_point_with_index_and_budget, stationary_rational_distance_candidates,
+    subdivide_scalar_bezier_span, subtract_bernstein_polynomials, sum_bernstein_polynomials,
+    surface_offset_lineage, BezierSpan, BlendContactDerivativeContext, BlendParameterGrid,
+    BlendSurfaceFrame, BoundaryInverseTarget, HomogeneousCurveSpans, ScalarBezierRoots,
+    ScalarBezierSpan,
 };
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -165,11 +178,14 @@ pub(crate) use blend::{
 };
 
 mod emit;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use emit::orient_edge_range;
 #[allow(unused_imports)]
 pub(crate) use emit::{
-    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, orient_edge_range,
-    retain_unresolved_topology_carriers, sense, source_meta, surface_tag,
-    synthesize_closed_edge_vertex, unknown_stream,
+    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance,
+    orient_edge_range_with_budget, retain_unresolved_topology_carriers, sense, source_meta,
+    surface_tag, synthesize_closed_edge_vertex_with_budget, unknown_stream,
 };
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;

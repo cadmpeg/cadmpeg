@@ -9,14 +9,15 @@ use super::pcurves::{
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_pcurves_from_opposite_charts_with_budget,
     complete_intersection_supports_from_edge_incidence,
-    complete_tolerant_intersection_pcurves_from_serialized_branches, ordered_parameter_range,
-    pcurve_matches_edge_range_with_index, pcurve_parameter_range, TransferBudget,
+    complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget,
+    ordered_parameter_range, pcurve_matches_edge_range_with_index_and_budget,
+    pcurve_parameter_range, TransferBudget,
 };
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::eval::curve_point_with_budget;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, ProceduralCurve,
     ProceduralCurveDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
@@ -293,7 +294,7 @@ pub(super) fn emit_topology(
                 && fin_fields.forward == fin.xmt
                 && fin_fields.backward == fin.xmt)
                 .then(|| {
-                    synthesize_closed_edge_vertex(
+                    synthesize_closed_edge_vertex_with_budget(
                         ir,
                         annotations,
                         &prefix,
@@ -302,6 +303,7 @@ pub(super) fn emit_topology(
                         param_range,
                         source_stream,
                         decoded_tolerance(fields.tolerance),
+                        adaptive_geometry_budget,
                     )
                 })
                 .flatten()
@@ -337,13 +339,14 @@ pub(super) fn emit_topology(
             annotations.derived(&id, "tolerance");
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
-            match orient_edge_range(
+            match orient_edge_range_with_budget(
                 ir,
                 carrier,
                 range,
                 &start,
                 &end,
                 decoded_tolerance(fields.tolerance),
+                adaptive_geometry_budget,
             ) {
                 Some((oriented, reverse_edge)) => {
                     param_range = Some(oriented);
@@ -496,14 +499,14 @@ pub(super) fn emit_topology(
                     .get(&fields.curve_xmt)
                     .copied()
                     .and_then(ordered_parameter_range);
-                pcurve_matches_edge_range_with_index(
-                    ir,
+                pcurve_matches_edge_range_with_index_and_budget(
                     &index,
                     edge,
                     support,
                     &carrier.geometry,
                     use_range.or(carrier.parameter_range),
                     carrier.fit_tolerance,
+                    adaptive_geometry_budget,
                 )
                 .then_some(*fin_xmt)
             })
@@ -532,14 +535,14 @@ pub(super) fn emit_topology(
                 let (geometry, parameter_range, fit_tolerance) = intersection_pcurves
                     .get(&(carrier, support.clone()))?
                     .clone();
-                pcurve_matches_edge_range_with_index(
-                    ir,
+                pcurve_matches_edge_range_with_index_and_budget(
                     &index,
                     edge,
                     &support,
                     &geometry,
                     None,
                     fit_tolerance,
+                    adaptive_geometry_budget,
                 )
                 .then_some((
                     *fin_xmt,
@@ -673,10 +676,11 @@ pub(super) fn emit_topology(
     );
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
-    complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
         ir,
         &serialized_branch_pcurves,
         annotations,
+        adaptive_geometry_budget,
     );
     complete_exact_boundary_intersection_pcurves_with_budget(
         ir,
@@ -822,7 +826,7 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn synthesize_closed_edge_vertex(
+pub(crate) fn synthesize_closed_edge_vertex_with_budget(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     prefix: &str,
@@ -831,6 +835,7 @@ pub(crate) fn synthesize_closed_edge_vertex(
     range: Option<[f64; 2]>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     tolerance: Option<f64>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<VertexId> {
     let geometry = &ir
         .model
@@ -845,7 +850,7 @@ pub(crate) fn synthesize_closed_edge_vertex(
         },
         |range| range[0],
     );
-    let position = curve_point(geometry, parameter)?;
+    let position = curve_point_with_budget(geometry, parameter, geometry_budget)?;
     let point = PointId(format!("{prefix}:point#closed-edge-{}", edge.xmt));
     let vertex = VertexId(format!("{prefix}:vertex#closed-edge-{}", edge.xmt));
     annotations
@@ -895,6 +900,7 @@ pub(crate) fn canonical_trim_range(ir: &CadIr, basis: &CurveId, raw: [f64; 2]) -
     }
 }
 
+#[cfg(test)]
 pub(crate) fn orient_edge_range(
     ir: &CadIr,
     curve: &CurveId,
@@ -902,6 +908,28 @@ pub(crate) fn orient_edge_range(
     start: &VertexId,
     end: &VertexId,
     edge_tolerance: Option<f64>,
+) -> Option<([f64; 2], bool)> {
+    let geometry_budget =
+        cadmpeg_core::decode::WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    orient_edge_range_with_budget(
+        ir,
+        curve,
+        range,
+        start,
+        end,
+        edge_tolerance,
+        &geometry_budget,
+    )
+}
+
+pub(crate) fn orient_edge_range_with_budget(
+    ir: &CadIr,
+    curve: &CurveId,
+    range: [f64; 2],
+    start: &VertexId,
+    end: &VertexId,
+    edge_tolerance: Option<f64>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<([f64; 2], bool)> {
     let geometry = &ir
         .model
@@ -926,8 +954,8 @@ pub(crate) fn orient_edge_range(
         _ => range,
     };
     let at = match (
-        curve_point(geometry, range[0]),
-        curve_point(geometry, range[1]),
+        curve_point_with_budget(geometry, range[0], geometry_budget),
+        curve_point_with_budget(geometry, range[1], geometry_budget),
     ) {
         (Some(start), Some(end)) => [start, end],
         _ if ir

@@ -2,14 +2,14 @@
 //! EXT11 support-UV assignment, completion, and equivalent-parameter transfer.
 
 use super::blend::{
-    blend_boundary_parameter_from_contact_pcurve_with_geometry,
+    blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget,
     blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
     blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_parameters_for_fit_with_source_continuation_and_budget,
     blend_surface_parameters_from_grid_for_fit_and_budget,
     blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget,
-    decoded_surface_point_with_geometry, decoded_surface_point_with_geometry_and_budget,
-    spine_contact_pcurve, BlendParameterGrid, BoundaryInverseTarget,
+    decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve, BlendParameterGrid,
+    BoundaryInverseTarget,
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
@@ -17,7 +17,7 @@ use super::offset::{
     offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
     surface_parameters,
 };
-use super::pcurves::pcurve_matches_edge_range_with_index;
+use super::pcurves::pcurve_matches_edge_range_with_index_and_budget;
 use super::MISSING_TOLERANCE;
 use crate::topology::Graph;
 use cadmpeg_core::decode::WorkBudget;
@@ -56,6 +56,9 @@ pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
     knots
 }
 
+// Keep the object-map, serialized lanes, and shared geometry budget explicit:
+// this function decides which native lane can be admitted to which support.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn assign_ext11_support_uv_with_index(
     ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
@@ -64,6 +67,7 @@ pub(crate) fn assign_ext11_support_uv_with_index(
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let surface_ids = supports.map(|support| surfaces_by_xmt.get(&support).cloned());
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
@@ -76,9 +80,13 @@ pub(crate) fn assign_ext11_support_uv_with_index(
         points,
         fit_tolerance,
         lanes,
+        geometry_budget,
     )
 }
 
+// Keep the object-map, serialized lanes, and shared geometry budget explicit:
+// validation must preserve the same support identity proof as assignment.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn validate_serialized_support_uv_with_index(
     ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
@@ -87,24 +95,34 @@ pub(crate) fn validate_serialized_support_uv_with_index(
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> [Option<Vec<[f64; 2]>>; 2] {
     std::array::from_fn(|side| {
         let surface = surfaces_by_xmt.get(&supports[side])?;
         let values = lanes[side].as_deref()?;
         let tolerance =
             blend_spine_cache_fit_tolerance_with_index(index, ir, surface, fit_tolerance);
-        support_uv_lane_matches_surface(ir, index, surface, points, tolerance, Some(values))
-            .then(|| values.to_vec())
+        support_uv_lane_matches_surface_with_budget(
+            ir,
+            index,
+            surface,
+            points,
+            tolerance,
+            Some(values),
+            geometry_budget,
+        )
+        .then(|| values.to_vec())
     })
 }
 
-pub(crate) fn support_uv_lane_matches_surface(
+pub(crate) fn support_uv_lane_matches_surface_with_budget(
     ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     points: &[Point3],
     fit_tolerance: f64,
     values: Option<&[[f64; 2]]>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> bool {
     let Some(values) = values.filter(|values| values.len() == points.len()) else {
         return false;
@@ -128,8 +146,16 @@ pub(crate) fn support_uv_lane_matches_surface(
         let Some(uv) = surface_parameters(geometry, *uv) else {
             return false;
         };
-        decoded_surface_point_with_geometry(index, surface, geometry, uv.u, uv.v, 0)
-            .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
+        decoded_surface_point_with_geometry_and_budget(
+            index,
+            surface,
+            geometry,
+            uv.u,
+            uv.v,
+            0,
+            geometry_budget,
+        )
+        .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
     })
 }
 
@@ -142,6 +168,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     lanes: &[Option<Vec<[f64; 2]>>; 2],
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     assign_ext11_support_uv_to_surfaces_with_index(
         ir,
         &index,
@@ -149,6 +176,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
         points,
         fit_tolerance,
         lanes,
+        &geometry_budget,
     )
 }
 
@@ -159,15 +187,17 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
-        support_uv_lane_matches_surface(
+        support_uv_lane_matches_surface_with_budget(
             ir,
             index,
             surface,
             points,
             fit_tolerance,
             lanes[lane].as_deref(),
+            geometry_budget,
         )
     };
     let matches = [
@@ -252,7 +282,17 @@ pub(crate) fn pcurve_control_point_seed(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget);
+}
+
+pub(crate) fn complete_ext11_support_uv_with_budget(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) {
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
@@ -290,6 +330,7 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
             points,
             *fit_tolerance,
             lanes,
+            geometry_budget,
         ) else {
             continue;
         };
@@ -376,9 +417,19 @@ pub(super) fn complete_support_uv_with_budget(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn invalidate_inconsistent_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
+) {
+    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    invalidate_inconsistent_support_uv_with_budget(ir, pending, &geometry_budget);
+}
+
+pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let invalid = {
         let index = cadmpeg_ir::index::ModelIndex::new(ir);
@@ -414,8 +465,14 @@ pub(crate) fn invalidate_inconsistent_support_uv(
                     .zip(points)
                     .filter_map(|(parameter, point)| {
                         let uv = pcurve_uv(pcurve, *parameter)?;
-                        decoded_surface_point_with_geometry(
-                            &index, surface, geometry, uv.u, uv.v, 0,
+                        decoded_surface_point_with_geometry_and_budget(
+                            &index,
+                            surface,
+                            geometry,
+                            uv.u,
+                            uv.v,
+                            0,
+                            geometry_budget,
                         )
                         .map(|actual| point_distance(actual, *point) > tolerance)
                     })
@@ -596,7 +653,7 @@ fn complete_support_uv_wave(
                                     contact_pcurve,
                                     boundary,
                                 )| {
-                                    blend_boundary_parameter_from_contact_pcurve_with_geometry(
+                                    blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
                                         &model_index,
                                         other_surface,
                                         other_geometry,
@@ -609,6 +666,7 @@ fn complete_support_uv_wave(
                                             seed,
                                             tolerance: effective_fit_tolerance,
                                         },
+                                        geometry_budget,
                                     )
                                 },
                             )
@@ -998,12 +1056,32 @@ pub(crate) fn procedural_surface_for_carrier<'a>(
     producers.next().is_none().then_some(producer)
 }
 
+#[cfg(test)]
 pub(crate) fn attach_completed_intersection_pcurves(
     ir: &mut CadIr,
     graph: &Graph,
     prefix: &str,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
+) {
+    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    attach_completed_intersection_pcurves_with_budget(
+        ir,
+        graph,
+        prefix,
+        source_stream,
+        annotations,
+        &geometry_budget,
+    );
+}
+
+pub(crate) fn attach_completed_intersection_pcurves_with_budget(
+    ir: &mut CadIr,
+    graph: &Graph,
+    prefix: &str,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let loop_faces = ir
         .model
@@ -1071,14 +1149,14 @@ pub(crate) fn attach_completed_intersection_pcurves(
                         .find(|edge| edge.id == coedge.edge)
                         .and_then(|edge| edge.tolerance)
                 });
-                pcurve_matches_edge_range_with_index(
-                    ir,
+                pcurve_matches_edge_range_with_index_and_budget(
                     &model_index,
                     &coedge.edge,
                     surface,
                     &candidate.0,
                     None,
                     fit_tolerance,
+                    geometry_budget,
                 )
                 .then(|| {
                     (
