@@ -13,7 +13,7 @@ use super::blend::{
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
-    continue_surface_intersection_parameters_with_seeds_and_budget,
+    continue_surface_intersection_parameters_with_index_and_seeds_and_budget,
     offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
     surface_parameters,
 };
@@ -882,8 +882,8 @@ fn complete_coupled_support_uv(
             .sides
             .each_ref()
             .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
-        let Some(lanes) = continue_surface_intersection_parameters_with_seeds_and_budget(
-            &*ir,
+        let Some(lanes) = continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
+            &model_index,
             surfaces,
             points,
             *fit_tolerance,

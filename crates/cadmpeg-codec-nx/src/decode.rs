@@ -100,9 +100,8 @@ pub(crate) use offset::{
     model_surface_derivative, normalize_pcurve_parameters, null_vector_3x4, nurbs_active_domain,
     parameter_derivative_step, point_distance, positive_weights, saved_offset_carriers, solve_4x4,
     solve_damped_least_squares_4x4, subdivide_offset_rectangle, surface_parameter_domain,
-    surface_parameter_periods, surface_parameter_periods_inner, surface_parameters,
-    translation_net_normal, HomogeneousControlBounds, HomogeneousSurfaceNet,
-    IntersectionParameterSpace,
+    surface_parameter_periods, surface_parameters, translation_net_normal,
+    HomogeneousControlBounds, HomogeneousSurfaceNet, IntersectionParameterSpace,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

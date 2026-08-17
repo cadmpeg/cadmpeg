@@ -821,27 +821,20 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     (!geometry_budget.exhausted()).then_some(())?;
-    let ir = index.ir();
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(surface.0.as_str())?;
     let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
         return None;
     };
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|candidate| &candidate.id == construction && &candidate.surface == surface)?;
+    let procedural = index
+        .procedural_surfaces(construction.0.as_str())
+        .filter(|candidate| &candidate.surface == surface)?;
     let ProceduralSurfaceDefinition::Offset {
         support, distance, ..
     } = &procedural.definition
     else {
         return None;
     };
-    let domain = surface_parameter_domain(ir, support);
+    let domain = surface_parameter_domain_with_index(index, support);
     // The target lies on the offset carrier, so its distance from the base
     // carrier may be the full offset distance even for an exact fit. Enlarge
     // only the base-surface seed search; the iterations and final caller-side
@@ -867,8 +860,8 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         }
     };
     add_start(seed);
-    add_start(initial_surface_parameters_with_budget(
-        ir,
+    add_start(initial_surface_parameters_with_index_and_budget(
+        index,
         support,
         point,
         None,
@@ -1005,19 +998,15 @@ pub(crate) fn coarse_model_surface_parameters(
     best
 }
 
-pub(crate) fn initial_surface_parameters_with_budget(
-    ir: &CadIr,
+pub(crate) fn initial_surface_parameters_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(surface.0.as_str())?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => fit_tolerance.map_or_else(
             || nurbs_surface_closest_parameter_with_budget(nurbs, point, seed, geometry_budget),
@@ -1032,10 +1021,9 @@ pub(crate) fn initial_surface_parameters_with_budget(
             },
         ),
         SurfaceGeometry::Procedural { construction } => {
-            let procedural =
-                ir.model.procedural_surfaces.iter().find(|candidate| {
-                    &candidate.id == construction && &candidate.surface == surface
-                })?;
+            let procedural = index
+                .procedural_surfaces(construction.0.as_str())
+                .filter(|candidate| &candidate.surface == surface)?;
             let ProceduralSurfaceDefinition::Offset {
                 support, distance, ..
             } = &procedural.definition
@@ -1046,8 +1034,8 @@ pub(crate) fn initial_surface_parameters_with_budget(
                 let tolerance = tolerance + distance.abs();
                 tolerance.is_finite().then_some(tolerance)
             });
-            initial_surface_parameters_with_budget(
-                ir,
+            initial_surface_parameters_with_index_and_budget(
+                index,
                 support,
                 point,
                 seed,
@@ -1063,11 +1051,15 @@ pub(crate) fn surface_parameter_domain(
     ir: &CadIr,
     surface: &SurfaceId,
 ) -> Option<([f64; 2], [f64; 2])> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    surface_parameter_domain_with_index(&index, surface)
+}
+
+pub(crate) fn surface_parameter_domain_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+) -> Option<([f64; 2], [f64; 2])> {
+    let carrier = index.surfaces(surface.0.as_str())?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => {
             let u_degree = usize::try_from(nurbs.u_degree).ok()?;
@@ -1080,14 +1072,13 @@ pub(crate) fn surface_parameter_domain(
             ))
         }
         SurfaceGeometry::Procedural { construction } => {
-            let procedural =
-                ir.model.procedural_surfaces.iter().find(|candidate| {
-                    &candidate.id == construction && &candidate.surface == surface
-                })?;
+            let procedural = index
+                .procedural_surfaces(construction.0.as_str())
+                .filter(|candidate| &candidate.surface == surface)?;
             let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
                 return None;
             };
-            surface_parameter_domain(ir, support)
+            surface_parameter_domain_with_index(index, support)
         }
         _ => None,
     }
@@ -1191,8 +1182,9 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds(
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-    continue_surface_intersection_parameters_with_seeds_and_budget(
-        ir,
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
+        &index,
         surfaces,
         chart,
         fit_tolerance,
@@ -1201,15 +1193,14 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds(
     )
 }
 
-pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
-    ir: &CadIr,
+pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[Vec<Point2>; 2]> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     if chart.len() < 2
         || surfaces[0] == surfaces[1]
         || !fit_tolerance.is_finite()
@@ -1218,12 +1209,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
         return None;
     }
     let fit_parameters = |surface: &SurfaceId, point: Point3, seed: Option<Point2>| {
-        let geometry = &ir
-            .model
-            .surfaces
-            .iter()
-            .find(|candidate| &candidate.id == surface)?
-            .geometry;
+        let geometry = &index.surfaces(surface.0.as_str())?.geometry;
         match geometry {
             SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
                 nurbs,
@@ -1234,7 +1220,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
             ),
             SurfaceGeometry::Procedural { .. } => {
                 offset_surface_parameters_with_tolerance_with_index_and_budget(
-                    &index,
+                    index,
                     surface,
                     point,
                     seed,
@@ -1243,7 +1229,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
                 )
                 .or_else(|| {
                     blend_surface_parameters_for_fit_with_grid_and_budget(
-                        &index,
+                        index,
                         surface,
                         point,
                         seed,
@@ -1261,8 +1247,8 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
         fit_parameters(surfaces[1], chart[0], seeds[1])?,
     ];
     let space = IntersectionParameterSpace {
-        domains: surfaces.map(|surface| surface_parameter_domain(ir, surface)),
-        periods: surfaces.map(|surface| surface_parameter_periods(ir, surface)),
+        domains: surfaces.map(|surface| surface_parameter_domain_with_index(index, surface)),
+        periods: surfaces.map(|surface| surface_parameter_periods_with_index(index, surface)),
     };
     let seed = [first[0].u, first[0].v, first[1].u, first[1].v];
     let first_chord = Vector3::new(
@@ -1270,16 +1256,10 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
         chart[1].y - chart[0].y,
         chart[1].z - chart[0].z,
     );
-    let seed_tangent = intersection_parameter_tangent(
-        &index,
-        surfaces,
-        seed,
-        space,
-        first_chord,
-        geometry_budget,
-    )?;
+    let seed_tangent =
+        intersection_parameter_tangent(index, surfaces, seed, space, first_chord, geometry_budget)?;
     let mut current = correct_intersection_parameters(
-        &index,
+        index,
         surfaces,
         seed,
         seed_tangent,
@@ -1289,7 +1269,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
         geometry_budget,
     )?;
     let first_point = model_surface_point_by_id_with_budget(
-        &index,
+        index,
         surfaces[0],
         current[0],
         current[1],
@@ -1305,14 +1285,14 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
 
     for chart_pair in chart.windows(2) {
         let jacobian =
-            intersection_parameter_jacobian(&index, surfaces, current, space, geometry_budget)?;
+            intersection_parameter_jacobian(index, surfaces, current, space, geometry_budget)?;
         let chord = Vector3::new(
             chart_pair[1].x - chart_pair[0].x,
             chart_pair[1].y - chart_pair[0].y,
             chart_pair[1].z - chart_pair[0].z,
         );
         let tangent = intersection_parameter_tangent(
-            &index,
+            index,
             surfaces,
             current,
             space,
@@ -1353,7 +1333,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
             return None;
         }
         let corrected = correct_intersection_parameters(
-            &index,
+            index,
             surfaces,
             predictor,
             tangent,
@@ -1363,7 +1343,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
             geometry_budget,
         )?;
         let point = model_surface_point_by_id_with_budget(
-            &index,
+            index,
             surfaces[0],
             corrected[0],
             corrected[1],
@@ -1385,23 +1365,26 @@ pub(crate) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -
 
 /// Return supported parameter periods while rejecting cyclic procedural support graphs.
 pub(crate) fn surface_parameter_periods(ir: &CadIr, surface: &SurfaceId) -> [Option<f64>; 2] {
-    surface_parameter_periods_inner(ir, surface, &mut BTreeSet::new())
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    surface_parameter_periods_with_index(&index, surface)
 }
 
-pub(crate) fn surface_parameter_periods_inner(
-    ir: &CadIr,
+pub(crate) fn surface_parameter_periods_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+) -> [Option<f64>; 2] {
+    surface_parameter_periods_inner(index, surface, &mut BTreeSet::new())
+}
+
+fn surface_parameter_periods_inner(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     visiting: &mut BTreeSet<SurfaceId>,
 ) -> [Option<f64>; 2] {
     if !visiting.insert(surface.clone()) {
         return [None, None];
     }
-    let Some(carrier) = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)
-    else {
+    let Some(carrier) = index.surfaces(surface.0.as_str()) else {
         visiting.remove(surface);
         return [None, None];
     };
@@ -1434,14 +1417,12 @@ pub(crate) fn surface_parameter_periods_inner(
                 ),
             ]
         }
-        SurfaceGeometry::Procedural { construction } => ir
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|candidate| &candidate.id == construction && &candidate.surface == surface)
+        SurfaceGeometry::Procedural { construction } => index
+            .procedural_surfaces(construction.0.as_str())
+            .filter(|candidate| &candidate.surface == surface)
             .and_then(|procedural| match &procedural.definition {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    Some(surface_parameter_periods_inner(ir, support, visiting))
+                    Some(surface_parameter_periods_inner(index, support, visiting))
                 }
                 _ => None,
             })
