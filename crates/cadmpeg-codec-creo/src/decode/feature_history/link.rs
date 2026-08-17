@@ -3,7 +3,7 @@
 
 use super::super::sketch_ids::{model_sketch_id, section_owner_feature_id};
 use super::super::uniqueness::{
-    unique_feature_definition_for_transform, unique_feature_section_transform,
+    exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
@@ -31,20 +31,23 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
                 unique_feature_definition_for_transform(&scan.features.definitions, transform)?;
             let sketch = model_sketch_id(scan, definition);
             let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch);
-            ir.model
-                .features
-                .iter()
-                .any(|feature| feature.id == sketch_feature)
-                .then_some((owner, sketch_feature))
+            exactly_one(
+                ir.model
+                    .features
+                    .iter()
+                    .filter(|feature| feature.id == sketch_feature),
+            )
+            .is_some()
+            .then_some((owner, sketch_feature))
         })
         .collect::<Vec<_>>();
     for (owner, sketch_feature) in links {
-        let Some(feature) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.id == owner)
-        else {
+        let Some(feature) = exactly_one(
+            ir.model
+                .features
+                .iter_mut()
+                .filter(|feature| feature.id == owner),
+        ) else {
             continue;
         };
         if !feature.dependencies.contains(&sketch_feature) {
@@ -242,3 +245,6 @@ pub(in super::super) fn profile_segment_ids(
         .map(|segment| segment.external_id)
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

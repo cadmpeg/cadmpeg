@@ -19,6 +19,7 @@ use super::super::sketch_ids::{
     feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
     sketch_identity_scope,
 };
+use super::super::uniqueness::exactly_one;
 
 pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
@@ -291,12 +292,12 @@ pub(in super::super) fn transfer_feature_dimensions(
             pmi: None,
             native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
         });
-        if let Some(feature) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.id == owner_id)
-        {
+        if let Some(feature) = exactly_one(
+            ir.model
+                .features
+                .iter_mut()
+                .filter(|feature| feature.id == owner_id),
+        ) {
             feature
                 .source_content
                 .push(FeatureSourceContent::Parameter(id));
@@ -304,3 +305,6 @@ pub(in super::super) fn transfer_feature_dimensions(
     }
     (transferred, relation_parameters)
 }
+
+#[cfg(test)]
+mod tests;
