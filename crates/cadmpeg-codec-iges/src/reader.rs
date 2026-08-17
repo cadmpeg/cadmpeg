@@ -40,6 +40,8 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     );
     if let Some(value) = global.units_name() {
         attributes.insert("native_units".into(), value);
+    } else if let Some(value) = global.units_name_bytes() {
+        attributes.insert("native_units_bytes_hex".into(), bytes_hex(value));
     }
     if let Some(value) = global.sender_product() {
         attributes.insert("sender_product".into(), value);
@@ -93,6 +95,13 @@ fn decode_with_occurrence_limits(
             "IGES Fixed ASCII version {} decode; target envelope is 5.1, 5.2, or 5.3",
             global.version()
         )));
+    }
+    if !options.container_only {
+        if let Some(field) = global.invalid_string_fields().next() {
+            return Err(crate::error::malformed(format!(
+                "IGES Global field {field} contains a non-ASCII or control byte"
+            )));
+        }
     }
     if !options.container_only && !global.has_supported_length_factor() {
         return Err(CodecError::NotImplemented(

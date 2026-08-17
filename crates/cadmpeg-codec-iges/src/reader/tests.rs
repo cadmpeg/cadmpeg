@@ -137,6 +137,37 @@ fn container_only_retains_unknown_flag_three_units_without_projection() {
 }
 
 #[test]
+fn container_only_retains_invalid_global_units_name_as_hex() {
+    let mut global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;".to_vec();
+    let name = global
+        .windows(5)
+        .position(|window| window == b"3HFOO")
+        .expect("Global units name");
+    global[name + 2] = 0xff;
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(fixed_ascii_with_global(&global)),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let attributes = &result.ir().source.as_ref().unwrap().attributes;
+    assert_eq!(attributes["native_units_bytes_hex"], "ff4f4f");
+    assert!(!attributes.contains_key("native_units"));
+
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(fixed_ascii_with_global(&global)),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+    assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
 fn type316_property_does_not_supply_a_global_flag_three_factor() {
     let mut bytes = units_data_file();
     let old = b",1.0,2,2HMG";

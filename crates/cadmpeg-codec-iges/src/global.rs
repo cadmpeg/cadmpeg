@@ -12,11 +12,20 @@ enum Value {
     Atom(Vec<u8>),
 }
 
+fn is_valid_string_bytes(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+}
+
 impl Value {
     fn string(&self) -> Option<String> {
         match self {
-            Self::String(bytes) => String::from_utf8(bytes.clone()).ok(),
+            Self::String(bytes) if is_valid_string_bytes(bytes) => {
+                String::from_utf8(bytes.clone()).ok()
+            }
             Self::Omitted | Self::Atom(_) => None,
+            Self::String(_) => None,
         }
     }
 
@@ -32,6 +41,10 @@ impl Value {
             Self::String(bytes) => Some(bytes),
             Self::Omitted | Self::Atom(_) => None,
         }
+    }
+
+    fn has_invalid_string_bytes(&self) -> bool {
+        matches!(self, Self::String(bytes) if !is_valid_string_bytes(bytes))
     }
 
     fn real(&self) -> Option<f64> {
@@ -362,6 +375,13 @@ impl Global {
         self.units_flag() != 3 || self.named_unit_factor_mm().is_some()
     }
 
+    pub(crate) fn invalid_string_fields(&self) -> impl Iterator<Item = usize> + '_ {
+        self.values
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| value.has_invalid_string_bytes().then_some(index + 1))
+    }
+
     pub(crate) fn length_factor_mm(&self) -> f64 {
         let unit = match self.units_flag() {
             1 => 25.4,
@@ -432,6 +452,10 @@ impl Global {
         self.values.get(14).and_then(Value::string)
     }
 
+    pub(crate) fn units_name_bytes(&self) -> Option<&[u8]> {
+        self.values.get(14).and_then(Value::string_bytes)
+    }
+
     pub(crate) fn version_flag(&self) -> i64 {
         self.integer_field(22, "version flag", Some(3))
             .expect("validated Global version flag")
@@ -454,6 +478,16 @@ impl Global {
         }
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
+        }
+        let invalid_fields = self
+            .invalid_string_fields()
+            .map(|field| field.to_string())
+            .collect::<Vec<_>>();
+        if !invalid_fields.is_empty() {
+            notes.push(format!(
+                "invalid_global_string_fields={}",
+                invalid_fields.join(",")
+            ));
         }
         notes.push(format!("iges_version={}", self.version()));
         notes

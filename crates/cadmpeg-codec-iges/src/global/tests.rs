@@ -38,7 +38,7 @@ fn global_with_units(units_flag: i64, units_name: &str) -> Vec<u8> {
 
 #[test]
 fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
-    let product = "p".repeat(70);
+    let product = format!("p^!,{}", "x".repeat(66));
     let global = format!(
         "1H^^1H!^70H{product}^8Hpart.igs^7Hcadmpeg^3H0.1^32^38^6^308^15^0H^1.0^2^2HMM^1^1.0^15H20260714.000000^0.001^1000.0^6Hauthor^3Horg^11^0^0H^0H!"
     );
@@ -56,6 +56,36 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     assert!(summary.notes.contains(&format!("sender_product={product}")));
     assert!(summary.notes.contains(&"iges_version=5.3".into()));
     assert!(summary.notes.contains(&"units=MM".into()));
+}
+
+#[test]
+fn global_strings_admit_printable_ascii_and_retain_invalid_bytes() {
+    for invalid in [0xff, 0x1f, 0x7f] {
+        let mut global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;".to_vec();
+        let product = global
+            .windows(3)
+            .position(|window| window == b"1Hp")
+            .expect("sender product");
+        global[product + 2] = invalid;
+
+        let bytes = fixed_ascii_with_global(&global);
+        let scan = crate::card::scan(&bytes).unwrap();
+        let parsed = crate::global::parse(&scan).unwrap();
+
+        assert_eq!(parsed.sender_product(), None);
+        assert_eq!(parsed.sender_product_bytes(), Some(&[invalid][..]));
+        assert_eq!(parsed.invalid_string_fields().collect::<Vec<_>>(), vec![3]);
+
+        let summary = IgesCodec
+            .inspect(
+                &mut Cursor::new(bytes),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap();
+        assert!(summary
+            .notes
+            .contains(&"invalid_global_string_fields=3".into()));
+    }
 }
 
 #[test]
@@ -218,13 +248,54 @@ fn non_utf8_global_identifiers_are_preserved_as_exact_hex_attributes() {
     bytes[file_name + 4] = 0xfe;
 
     let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
         .unwrap();
     let attributes = &result.ir().source.as_ref().unwrap().attributes;
     assert_eq!(attributes["sender_product_bytes_hex"], "70726fff756374");
     assert_eq!(attributes["native_file_name_bytes_hex"], "7061fe742e696773");
     assert!(!attributes.contains_key("sender_product"));
     assert!(!attributes.contains_key("native_file_name"));
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
+fn ascii_control_global_identifiers_are_retained_only_by_container_decode() {
+    for (invalid, expected) in [(0x1f, "70726f1f756374"), (0x7f, "70726f7f756374")] {
+        let mut bytes = point_file();
+        let product = bytes
+            .windows(9)
+            .position(|window| window == b"7Hproduct")
+            .expect("sender product");
+        bytes[product + 5] = invalid;
+
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.clone()),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap();
+        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        assert_eq!(attributes["sender_product_bytes_hex"], expected);
+        assert!(!attributes.contains_key("sender_product"));
+
+        let error = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_err();
+        assert!(matches!(error, CodecError::Malformed(_)));
+    }
 }
 
 #[test]
