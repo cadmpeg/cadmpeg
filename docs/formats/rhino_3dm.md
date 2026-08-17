@@ -2148,7 +2148,8 @@ minor >= 11: item 29 hatch-pattern index, item 30 scale, item 31 rotation
 minor >= 12: item 32 section fill rule
 minor >= 13: item 33 embedded linetype
 minor >= 14: item 34 visible in new details
-minor >= 15: item 35 embedded section style, item 36 obsolete clipping type
+minor >= 15: item 35 embedded section style, item 36 obsolete clipping type,
+              item 37 UTF-16 description
 ```
 
 The extension stream is item byte, payload, next item byte, terminated by item
@@ -2156,7 +2157,10 @@ zero. If a nonzero extension ID is outside the defined set, only that ID byte
 is known; typed parsing stops and the remaining bytes through the layer
 class-data boundary remain untyped. Bytes after item zero are bounded suffix
 bytes, not another extension item. Layer visibility and lock state are
-independent.
+independent. Item 37 contains a UTF-16 string using the standard string
+grammar. Its writer omits an empty description. Its reader trims leading and
+trailing Unicode space or control code points; an empty result is the source
+default.
 
 Item 35 contains a direct `ON_SectionStyle` anonymous child. The child uses
 version `1.1`, writes the binary-archive model-component attributes, and then
@@ -2181,10 +2185,12 @@ child at item 11 when a boundary linetype exists. A reader consumes known item
 values and stops at the child boundary when a later item is encountered. The
 current writer does not emit the compatibility items 28 through 33 or item 36;
 it emits item 34 when the per-viewport visibility default for new detail views
-is changed and item 35 when a custom section style exists. Item 28's
+is changed, item 35 when a custom section style exists, and item 37 when the
+layer description is nonempty. Item 28's
 `no-clipping-planes` value is followed by an `ON_UuidList`; item 29 through 32
 are the legacy section-hatch and section-fill values; item 33 is a direct
-linetype child; and item 36 is an obsolete clipping-type Boolean.
+linetype child; item 36 is an obsolete clipping-type Boolean; and item 37 is
+the UTF-16 description string.
 
 CADIR transfers a non-default IGES level as the optional `iges_level` field of
 the owning native layer record; the source default `-1` is omitted. Item 34 is
@@ -2195,7 +2201,9 @@ item 35 section-style child have no second neutral resource identity: the
 codec validates their bounded source grammar and retains the complete owning
 layer record through source fidelity without projecting them into a separate
 CADIR object. Item 28 is transferred as `clipping_planes_enabled` after
-inverting its source `no-clipping-planes` value.
+inverting its source `no-clipping-planes` value. Item 37 is transferred as the
+optional native layer `description` field after the source trim rule; an empty
+result is omitted.
 
 #### 8.3.1 Layer per-viewport userdata
 

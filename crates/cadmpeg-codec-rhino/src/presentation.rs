@@ -691,6 +691,8 @@ struct LayerPresentationRecord {
     parent_uuid: Option<String>,
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     iges_level: Option<i32>,
     visible: bool,
     locked: bool,
@@ -3672,6 +3674,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 .filter(|id| !id.is_nil())
                 .map(|id| id.to_string()),
             name: layer.name.clone(),
+            description: layer.description.clone(),
             iges_level: (layer.iges_level != -1).then_some(layer.iges_level),
             visible: layer.visible,
             locked: layer.locked,

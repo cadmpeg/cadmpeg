@@ -434,6 +434,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         render_material_index: -1,
         color: [10, 20, 30, 255],
         name: "Layer".to_string(),
+        description: None,
         visible: true,
         locked: false,
         id: Some(Uuid::from_wire([1; 16])),

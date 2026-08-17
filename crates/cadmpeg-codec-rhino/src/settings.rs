@@ -516,6 +516,8 @@ pub(crate) struct LayerRecord {
     pub(crate) color: [u8; 4],
     /// Layer name.
     pub(crate) name: String,
+    /// Source-normalized layer description, when item 37 is nonempty.
+    pub(crate) description: Option<String>,
     /// Visibility.
     pub(crate) visible: bool,
     /// Lock state.
@@ -2191,6 +2193,7 @@ fn parse_layer(
         render_material_index,
         color: layer_color,
         name,
+        description: None,
         visible,
         locked,
         id,
@@ -2233,7 +2236,7 @@ fn parse_layer(
                 32 => 12,
                 33 => 13,
                 34 => 14,
-                35..=36 => 15,
+                35..=37 => 15,
                 _ => {
                     // Extension items have no length prefix. The source reader
                     // consumes only this ID and lets the class-data boundary
@@ -2281,6 +2284,23 @@ fn parse_layer(
                         archive,
                         warnings,
                     )?);
+                }
+                37 => {
+                    let description = utf16(&mut reader)?;
+                    let description = description
+                        .trim_matches(|character: char| {
+                            character.is_whitespace()
+                                || character.is_control()
+                                || matches!(
+                                    character as u32,
+                                    0x200b
+                                        | 0x200e..=0x200f
+                                        | 0x2028..=0x202f
+                                        | 0x2066..=0x2069
+                                )
+                        })
+                        .to_owned();
+                    layer.description = (!description.is_empty()).then_some(description);
                 }
                 _ => {
                     return Err(FramingError::structural(

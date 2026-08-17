@@ -519,7 +519,15 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         &section_style,
         &[8..8 + model_attributes.len()],
     ));
-    payload.extend([36, 0, 0]);
+    payload.extend([36, 0, 37]);
+    payload.extend(12_u32.to_le_bytes());
+    payload.extend(
+        "layer notes"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .flat_map(u16::to_le_bytes),
+    );
+    payload.push(0);
     let obsolete_idef_layer_settings = Uuid::from_canonical([
         0x11, 0xee, 0x2c, 0x1f, 0xf9, 0x0d, 0x4c, 0x6a, 0xa7, 0xcd, 0xec, 0x85, 0x32, 0xe1, 0xe3,
         0x2d,
@@ -594,6 +602,10 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     assert_eq!(metadata.layers[0].render_material_index, -1);
     assert_eq!(metadata.layers[0].color, [10, 20, 30, 255]);
     assert_eq!(metadata.layers[0].name, "L");
+    assert_eq!(
+        metadata.layers[0].description.as_deref(),
+        Some("layer notes")
+    );
     assert!(metadata.layers[0].visible);
     assert!(!metadata.layers[0].locked);
     assert_eq!(metadata.layers[0].visible_in_new_details, Some(true));
@@ -639,7 +651,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let future =
         settings::parse_metadata(&future_data, archive, &[future_table], &mut future_warnings);
     assert_eq!(future.layers.len(), 1, "{future_warnings:?}");
-    assert_eq!(future.layers[0].extension_items, vec![33, 34, 35, 36]);
+    assert_eq!(future.layers[0].extension_items, vec![33, 34, 35, 36, 37]);
     assert!(future.opaque_records.is_empty());
 }
 
@@ -986,6 +998,7 @@ fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() 
         render_material_index: -1,
         color: [0, 0, 0, 255],
         name: String::new(),
+        description: None,
         visible: true,
         locked: false,
         id: None,
