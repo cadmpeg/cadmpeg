@@ -1401,6 +1401,7 @@ mod tests {
         body.extend([0; 16]);
         body.extend(anonymous_chunk(archive, 7, &page));
         body.push(1);
+        body.extend([0xa1, 0xb2, 0xc3]);
 
         let value = parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
         assert_eq!(value.view_type, 1);

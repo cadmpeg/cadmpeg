@@ -144,6 +144,10 @@ every archive, its reader gates the UUID, locks, target, camera-frame validity,
 and view scale at minors 1 through 5, and later bytes remain at the
 `TCODE_VIEW_VIEWPORT` child boundary. CADIR withholds typed fields for another
 major while retaining the enclosing view child.
+The view-attributes child is settled as packed version 1.9: its direct fields
+are gated at minors 1 through 9, its page-settings and clipping-plane children
+close independently, and later bytes remain at the
+`TCODE_VIEW_ATTRIBUTES` boundary.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -184,5 +188,8 @@ boundaries.
 The viewport subset is established by `ON_Viewport::Write`/`Read` in
 `opennurbs_viewport.cpp`; the view owner test exercises bytes after the minor-5
 view-scale prefix.
+The view-attributes subset is established by `ON_3dmView::Write`/`Read` and
+`ON_3dmPageSettings::Write`/`Read` in `opennurbs_3dm_settings.cpp`; the view
+owner tests exercise page, clipping, and outer attributes suffixes.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

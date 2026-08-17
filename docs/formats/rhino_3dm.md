@@ -5916,6 +5916,13 @@ before that child boundary. Unknown child chunks before the end marker are
 skipped as complete bounded chunks. `TCODE_ENDOFTABLE` terminates the typed
 view-child stream; later bytes remain bounded suffix data.
 
+The view-attributes writer emits packed version 1.9 whenever the child is
+written, which is for archive version 4 and later. Its reader consumes the
+known fields at the minor gates 1 through 9 and skips later bytes at the
+`TCODE_VIEW_ATTRIBUTES` boundary. The anonymous page-settings child and each
+anonymous clipping-plane child close before the next direct field; a suffix in
+one child cannot become a field of the enclosing attributes record.
+
 `TCODE_VIEW_TRACEIMAGE` contains packed version `1.3` below archive version 60
 and `1.4` at archive version 60 and later:
 
