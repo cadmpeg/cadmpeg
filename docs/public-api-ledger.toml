@@ -427,7 +427,7 @@ item = "cadmpeg_core::decode::View::utf16_le"
 reason = "sequential UTF-16LE reader paired with View::utf16le_at"
 
 [[change]]
-commit = "99291d20b655b9a5a4559ce2b11a4a7ce2103abc"
+commit = "f28431b6d260137fabd779930fdc2724cfae907a"
 crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::DecodeContext::refuse_codec_limit"
