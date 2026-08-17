@@ -7161,11 +7161,6 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for owner in &native.design_parameter_owners {
         let native_stream = design_stream(&owner.id);
         let unique_index = owner_indices.insert((native_stream, owner.record_index));
-        let unique_local_ordinal = owner_local_ordinals.insert((
-            native_stream,
-            owner.scope_record_index,
-            owner.local_ordinal,
-        ));
         let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index));
         let owner_first = owner.parameter_record_index == owner.record_index.saturating_add(1)
             && owner.companion_record_index == owner.record_index.saturating_add(2);
@@ -7173,7 +7168,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && owner.companion_record_index == owner.record_index.saturating_add(1);
         let companion_first = owner.companion_record_index == owner.record_index.saturating_add(1)
             && owner.parameter_record_index == owner.record_index.saturating_add(2);
-        let frame_layout = match (
+        let modern_frame_layout = match (
             owner.frame_length,
             owner.evaluated_value_offset.checked_sub(owner.byte_offset),
             owner.variant,
@@ -7184,12 +7179,35 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             | (108, Some(44), Some(variant)) => variant <= 1,
             _ => false,
         };
+        let legacy_68_frame = owner.frame_length == 68
+            && design::decode::parameters::is_legacy_parameter_owner_68_class(&owner.class_tag)
+            && owner.scope_record_index == 0
+            && owner.local_ordinal == 0
+            && parameter.is_some_and(|parameter| {
+                owner.evaluated_value_offset == parameter.evaluated_value_offset
+            });
+        let legacy_88_frame = owner.frame_length == 88
+            && design::decode::parameters::is_legacy_parameter_owner_88_class(&owner.class_tag)
+            && owner.scope_record_index != 0
+            && owner.local_ordinal == 0
+            && parameter.is_some_and(|parameter| {
+                owner.evaluated_value_offset == parameter.evaluated_value_offset
+            });
+        let frame_layout = modern_frame_layout || legacy_68_frame || legacy_88_frame;
+        let scope_resolves =
+            legacy_68_frame || record_indices.contains(&(native_stream, owner.scope_record_index));
+        let unique_local_ordinal = legacy_68_frame
+            || owner_local_ordinals.insert((
+                native_stream,
+                owner.scope_record_index,
+                owner.local_ordinal,
+            ));
         let valid = owner.class_tag.len() == 3
             && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && owner.evaluated_value.is_finite()
             && frame_layout
             && (owner_first || parameter_first || companion_first)
-            && record_indices.contains(&(native_stream, owner.scope_record_index))
+            && scope_resolves
             && record_indices.contains(&(native_stream, owner.parameter_record_index))
             && record_indices.contains(&(native_stream, owner.companion_record_index))
             && companions_by_index
@@ -7815,9 +7833,12 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let owner_shape_valid = match parameter.kind {
             records::DesignParameterKind::User => parameter.owner_record_index.is_none(),
             records::DesignParameterKind::Dimension | records::DesignParameterKind::Feature => {
-                parameter
-                    .owner_record_index
-                    .is_some_and(|owner| owners_by_index.contains_key(&(native_stream, owner)))
+                parameter.owner_record_index.is_some_and(|owner| {
+                    owners_by_index.contains_key(&(native_stream, owner))
+                        || design::decode::parameters::parameter_owner_may_be_absent(
+                            &parameter.class_tag,
+                        )
+                })
             }
         };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset

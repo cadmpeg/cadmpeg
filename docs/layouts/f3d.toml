@@ -258,11 +258,103 @@ anchor = "An LP-UTF16 archive-entry basename begins at offset 21"
 
 
 [[record]]
+name = "design_parameter_legacy_287_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Class tag `287` uses the compact-owned parameter prefix"
+size = 45
+note = "Offsets are relative to the class-287 parameter header through the compact expression length. The variable expression is followed by the exact five-byte trailer 00 00 00 00 00 or 00 00 00 01 00."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by fifteen zero bytes"
+
+[[record.field]]
+name = "zero_run_15"
+offset = 11
+type = "bytes[15]"
+source = "spec"
+anchor = "fifteen zero bytes"
+note = "The class-287 prefix uses the compact-owned fifteen-byte zero run."
+
+[[record.field]]
+name = "source_ordinal"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "`u32 source_ordinal` at offset 26"
+
+[[record.field]]
+name = "owner_marker"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "`u8 1 + u32 owner_record_index` at offsets 30 and 31"
+value = 1
+
+[[record.field]]
+name = "owner_record_index"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "`u8 1 + u32 owner_record_index` at offsets 30 and 31"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 35
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 35 through 40"
+
+[[record.field]]
+name = "expression_length"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "the expression at offset 41"
+
+[[record]]
+name = "design_parameter_legacy_287_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00`"
+size = 12
+note = "This tail is relative to the end of the variable LP-UTF16 name and evaluated scalar."
+
+[[record.field]]
+name = "tail_prefix"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00`"
+value = [0, 1]
+
+[[record.field]]
+name = "family_marker"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00`"
+value = 175
+
+[[record.field]]
+name = "zero_run_9"
+offset = 3
+type = "bytes[9]"
+source = "spec"
+anchor = "the twelve-byte tail `00 01 AF 00 00 00 00 00 00 00 00 00`"
+
+[[record]]
 name = "design_parameter_owner_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
 section = "3.1"
-anchor = "All owner forms share an eleven-byte indexed header, eight zero bytes, `01 + u32 1`, `01 + u32 scope_record_index`, six zero bytes, `u32 local_ordinal`, a scalar envelope"
+anchor = "All ordinary owner forms share an eleven-byte indexed header, eight zero bytes, `01 + u32 1`, `01 + u32 scope_record_index`, six zero bytes, `u32 local_ordinal`, a scalar envelope"
 size = 39
 note = "Offsets are relative to the parameter-owner primary header. The selected scalar envelope starts at offset 39."
 

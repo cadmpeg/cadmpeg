@@ -7,6 +7,8 @@ use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::ids::{self, native_stream};
+use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
+use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
 use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
@@ -81,6 +83,9 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         return None;
     }
     let record_index = View::u32_le_at(payload, 7)?;
+    if class_tag == "287" {
+        return parse_legacy_287_design_parameter(payload, class_tag, record_index);
+    }
     let compact_owned = payload.get(11..26) == Some(&[0; 15])
         && payload.get(30) == Some(&1)
         && payload.get(35..41) == Some(&[0; 6]);
@@ -205,6 +210,91 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     })
 }
 
+/// Parse the class-287 owned parameter family.
+///
+/// This family uses the compact-owned prefix and a class-specific `0xAF` tail.
+/// Its expression is followed by one of the two fixed five-byte trailers.
+fn parse_legacy_287_design_parameter(
+    payload: &[u8],
+    class_tag: String,
+    record_index: u32,
+) -> Option<DesignParameter> {
+    if payload.get(legacy_287::ZERO_RUN_15..legacy_287::SOURCE_ORDINAL) != Some(&[0; 15])
+        || payload.get(legacy_287::OWNER_MARKER) != Some(&legacy_287::OWNER_MARKER_VALUE)
+        || payload.get(legacy_287::ZERO_RUN_6..legacy_287::EXPRESSION_LENGTH) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let source_ordinal = View::u32_le_at(payload, legacy_287::SOURCE_ORDINAL)?;
+    let owner_record_index = View::u32_le_at(payload, legacy_287::OWNER_RECORD_INDEX)?;
+    let (expression, expression_end) =
+        lp_utf16_bounded(payload, legacy_287::EXPRESSION_LENGTH, 1..=256)?;
+    let expression_trailer_end = expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
+    let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
+    if !matches!(expression_trailer, [0, 0, 0, 0 | 1, 0]) {
+        return None;
+    }
+    let source_kind_at = expression_trailer_end;
+    let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
+    let (unit, unit_offset, name, name_at, name_end) =
+        if View::u32_le_at(payload, source_kind_end) == Some(0) {
+            let name_at = source_kind_end.checked_add(4)?;
+            let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+            (None, None, name, name_at, name_end)
+        } else {
+            let (unit, unit_end) = lp_utf16_bounded(payload, source_kind_end, 1..=64)?;
+            let (name, name_end) = lp_utf16_bounded(payload, unit_end, 1..=256)?;
+            let unit_offset = source_kind_end.checked_add(4)?;
+            (
+                Some(unit),
+                Some(u64::try_from(unit_offset).ok()?),
+                name,
+                unit_end,
+                name_end,
+            )
+        };
+    let evaluated_value = View::f64_le_at(payload, name_end)?;
+    let tail_start = name_end.checked_add(8)?;
+    let tail = payload.get(tail_start..)?;
+    if tail.len() != legacy_287_tail::LEN
+        || tail[..2] != legacy_287_tail::TAIL_PREFIX_VALUE
+        || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
+        || tail[legacy_287_tail::ZERO_RUN_9..]
+            .iter()
+            .any(|byte| *byte != 0)
+        || expression.is_empty()
+        || source_kind.is_empty()
+        || name.is_empty()
+        || !evaluated_value.is_finite()
+    {
+        return None;
+    }
+    let kind = design_parameter_kind(&source_kind);
+    Some(DesignParameter {
+        id: String::new(),
+        byte_offset: 0,
+        class_tag,
+        record_index,
+        family_discriminator: None,
+        family_discriminator_offset: None,
+        source_ordinal,
+        owner_record_index: Some(owner_record_index),
+        expression,
+        expression_offset: u64::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
+        source_kind,
+        source_kind_offset: u64::try_from(source_kind_at.checked_add(4)?).ok()?,
+        kind,
+        unit,
+        unit_offset,
+        name,
+        name_offset: u64::try_from(name_at.checked_add(4)?).ok()?,
+        evaluated_value,
+        evaluated_value_offset: u64::try_from(name_end).ok()?,
+    })
+}
+
+const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
+
 fn parse_legacy_design_parameter(
     payload: &[u8],
     class_tag: String,
@@ -240,13 +330,7 @@ fn parse_legacy_design_parameter(
     {
         return None;
     }
-    let kind = if source_kind == "User Parameter" {
-        DesignParameterKind::User
-    } else if source_kind.contains("Dimension") {
-        DesignParameterKind::Dimension
-    } else {
-        DesignParameterKind::Feature
-    };
+    let kind = design_parameter_kind(&source_kind);
     Some(DesignParameter {
         id: String::new(),
         byte_offset: 0,
@@ -270,6 +354,16 @@ fn parse_legacy_design_parameter(
     })
 }
 
+fn design_parameter_kind(source_kind: &str) -> DesignParameterKind {
+    if source_kind == "User Parameter" {
+        DesignParameterKind::User
+    } else if source_kind.contains("Dimension") {
+        DesignParameterKind::Dimension
+    } else {
+        DesignParameterKind::Feature
+    }
+}
+
 pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
     match source_kind {
         "ScaleFactor" => 5,
@@ -280,6 +374,24 @@ pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
 
 pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
     matches!(value, 0 | 3 | 4 | 5 | 6)
+}
+
+/// Whether a class tag admits the legacy owner grammar without scope or scalar
+/// lanes.
+pub(crate) fn is_legacy_parameter_owner_68_class(class_tag: &str) -> bool {
+    matches!(class_tag, "268" | "284" | "282" | "336" | "325" | "297")
+}
+
+/// Whether a class tag admits the legacy owner grammar with repeated scope
+/// references but without scalar or local-ordinal lanes.
+pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
+    matches!(class_tag, "284" | "282" | "336" | "325" | "297")
+}
+
+/// Whether a parameter family admits a retained owner reference without a
+/// primary owner frame.
+pub(crate) fn parameter_owner_may_be_absent(class_tag: &str) -> bool {
+    class_tag == "287"
 }
 
 fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, tail: u8) -> bool {
@@ -354,11 +466,19 @@ pub fn decode_parameter_owners(
         };
         let scope = native_stream(&parameter.id)
             .ok_or_else(|| malformed("has no Design stream identity"))?;
-        let header = headers_by_stream
+        let Some(header) = headers_by_stream
             .get(scope)
             .and_then(|headers| headers.get(&owner_index))
             .copied()
-            .ok_or_else(|| malformed("has no primary indexed header"))?;
+        else {
+            // A parameter can retain a source owner reference after Fusion has
+            // omitted that owner's primary frame. Keep the parameter native;
+            // projection reports the unresolved binding as a loss.
+            if parameter_owner_may_be_absent(&parameter.class_tag) {
+                continue;
+            }
+            return Err(malformed("has no primary indexed header"));
+        };
         let (entry, records) = streams
             .get(scope)
             .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
@@ -518,7 +638,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
     evaluated_value: f64,
 ) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if !matches!(class_tag.as_str(), "284" | "282" | "336" | "325" | "297")
+    if !is_legacy_parameter_owner_68_class(&class_tag)
         || frame.len() != legacy_owner_68::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER) != Some(&[0; 8])
@@ -569,7 +689,7 @@ pub(crate) fn parse_legacy_parameter_owner_88(
     evaluated_value: f64,
 ) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if !matches!(class_tag.as_str(), "284" | "282" | "336" | "325" | "297")
+    if !is_legacy_parameter_owner_88_class(&class_tag)
         || frame.len() != legacy_owner_88::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_88::ZERO_RUN_8..legacy_owner_88::FIRST_MARKER) != Some(&[0; 8])

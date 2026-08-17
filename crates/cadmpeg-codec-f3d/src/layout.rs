@@ -118,6 +118,56 @@ pub(crate) mod design_decal_image_name_prefix {
     pub(crate) const ASSET_NAME_CODE_UNIT_COUNT: usize = 21;
 }
 
+/// Byte offsets for the `design_parameter_legacy_287_prefix` record.
+///
+/// Spec §3.1. Record length 45 B.
+///
+/// ```text
+/// Offsets are relative to the class-287 parameter header through the compact expression length. The variable expression is followed by the exact five-byte trailer 00 00 00 00 00 or 00 00 00 01 00.
+/// ```
+pub(crate) mod design_parameter_legacy_287_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 45;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 11;
+    /// Offset of `source_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_ORDINAL: usize = 26;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 30;
+    /// Stated value of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
+    /// Offset of `owner_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_RECORD_INDEX: usize = 31;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 35;
+    /// Offset of `expression_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXPRESSION_LENGTH: usize = 41;
+}
+
+/// Byte offsets for the `design_parameter_legacy_287_tail` record.
+///
+/// Spec §3.1. Record length 12 B.
+///
+/// ```text
+/// This tail is relative to the end of the variable LP-UTF16 name and evaluated scalar.
+/// ```
+pub(crate) mod design_parameter_legacy_287_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 12;
+    /// Offset of `tail_prefix` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TAIL_PREFIX: usize = 0;
+    /// Stated value of `tail_prefix` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TAIL_PREFIX_VALUE: [u8; 2] = [0x00, 0x01];
+    /// Offset of `family_marker` (`u8`). Spec §3.1.
+    pub(crate) const FAMILY_MARKER: usize = 2;
+    /// Stated value of `family_marker` (`u8`). Spec §3.1.
+    pub(crate) const FAMILY_MARKER_VALUE: u8 = 175;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 3;
+}
+
 /// Byte offsets for the `design_parameter_owner_prefix` record.
 ///
 /// Spec §3.1. Record length 39 B.

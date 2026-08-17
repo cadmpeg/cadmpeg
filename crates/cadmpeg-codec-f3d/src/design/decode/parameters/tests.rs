@@ -51,6 +51,85 @@ fn compact_owned_parameter_record(
     out
 }
 
+fn class_287_parameter_record(source_kind: &str, name: &str) -> Vec<u8> {
+    class_287_parameter_record_with_expression_trailer(source_kind, name, [0; 5])
+}
+
+fn class_287_parameter_record_with_expression_trailer(
+    source_kind: &str,
+    name: &str,
+    expression_trailer: [u8; 5],
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"287");
+    out.extend_from_slice(&887u32.to_le_bytes());
+    out.extend_from_slice(&[0; 15]);
+    out.extend_from_slice(&20u32.to_le_bytes());
+    out.push(1);
+    out.extend_from_slice(&886u32.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut out, "0.4375 in");
+    out.extend_from_slice(&expression_trailer);
+    lp_utf16(&mut out, source_kind);
+    lp_utf16(&mut out, "in");
+    lp_utf16(&mut out, name);
+    out.extend_from_slice(&1.11125f64.to_le_bytes());
+    out.extend_from_slice(&[0, 1, 175, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    out
+}
+
+#[test]
+fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
+    let parameter = parse_design_parameter(&class_287_parameter_record("HoleDepth", "d20"))
+        .expect("class-287 parameter");
+    assert_eq!(parameter.class_tag, "287");
+    assert_eq!(parameter.record_index, 887);
+    assert_eq!(parameter.owner_record_index, Some(886));
+    assert_eq!(parameter.source_ordinal, 20);
+    assert_eq!(parameter.expression, "0.4375 in");
+    assert_eq!(parameter.expression_offset, 45);
+    assert_eq!(parameter.source_kind, "HoleDepth");
+    assert_eq!(parameter.unit.as_deref(), Some("in"));
+    assert_eq!(parameter.unit_offset, Some(94));
+    assert_eq!(parameter.name, "d20");
+    assert_eq!(parameter.evaluated_value_offset, 108);
+
+    let dimension =
+        parse_design_parameter(&class_287_parameter_record("Diameter Dimension-2", "d1"))
+            .expect("class-287 dimension parameter");
+    assert_eq!(dimension.source_kind, "Diameter Dimension-2");
+    assert_eq!(dimension.name, "d1");
+}
+
+#[test]
+fn class_287_parameter_accepts_the_marked_expression_trailer() {
+    let parameter = parse_design_parameter(&class_287_parameter_record_with_expression_trailer(
+        "OffsetX",
+        "d63",
+        [0, 0, 0, 1, 0],
+    ))
+    .expect("class-287 parameter with marked expression trailer");
+    assert_eq!(parameter.source_kind, "OffsetX");
+    assert_eq!(parameter.name, "d63");
+
+    let malformed =
+        class_287_parameter_record_with_expression_trailer("OffsetX", "d63", [0, 0, 0, 2, 0]);
+    assert!(parse_design_parameter(&malformed).is_none());
+}
+
+#[test]
+fn class_287_parameter_requires_its_marker_and_tail() {
+    let mut frame = class_287_parameter_record("HoleDepth", "d20");
+    frame[30] = 0;
+    assert!(parse_design_parameter(&frame).is_none());
+
+    let mut frame = class_287_parameter_record("HoleDepth", "d20");
+    let tail = frame.len() - 12;
+    frame[tail + 2] = 174;
+    assert!(parse_design_parameter(&frame).is_none());
+}
+
 #[test]
 fn compact_owned_design_parameter_has_no_family_discriminator() {
     let bytes =
@@ -523,7 +602,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     assert_eq!(parsed.owned_ordinal, 290);
     assert_eq!(parsed.evaluated_value, 0.0);
 
-    for class_tag in ["282", "336", "325", "297"] {
+    for class_tag in ["268", "282", "336", "325", "297"] {
         assert!(
             parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame(class_tag), 1.25)
                 .is_some()
@@ -727,6 +806,30 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     };
     assert_eq!(owner.frame_length, 104);
     assert_eq!(owner.evaluated_value_offset, 40);
+
+    let unresolved_parameter = crate::records::DesignParameter {
+        class_tag: "287".into(),
+        ..parameter.clone()
+    };
+    let unresolved = with_scan(&archive(stream, &[]), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&unresolved_parameter),
+            &[],
+        )
+    })
+    .expect("missing owner frame is retained as an unresolved binding");
+    assert!(unresolved.is_empty());
+
+    let error = with_scan(&archive(stream, &[]), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            &[],
+        )
+    })
+    .expect_err("an unadmitted parameter family must retain the missing-owner refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 
     let mut extended = owner_frame();
     extended.push(0);

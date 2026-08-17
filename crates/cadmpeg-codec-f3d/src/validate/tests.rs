@@ -518,6 +518,127 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
 }
 
 #[test]
+fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
+    use crate::records::{
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignRecordHeader,
+    };
+
+    const DESIGN_STREAM: &str = "Design/BulkStream.dat";
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let owned_parameter = DesignParameter {
+        id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
+        byte_offset: 1_068,
+        class_tag: "305".into(),
+        record_index: 101,
+        family_discriminator: None,
+        family_discriminator_offset: None,
+        source_ordinal: 0,
+        owner_record_index: Some(100),
+        expression: "6 cm".into(),
+        expression_offset: 1_080,
+        source_kind: "Feature Input".into(),
+        source_kind_offset: 1_100,
+        kind: DesignParameterKind::Feature,
+        unit: Some("cm".into()),
+        unit_offset: Some(1_120),
+        name: "Length".into(),
+        name_offset: 1_130,
+        evaluated_value: 6.0,
+        evaluated_value_offset: 1_140,
+    };
+    let owner = DesignParameterOwner {
+        id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
+        byte_offset: 1_000,
+        frame_length: 68,
+        class_tag: "268".into(),
+        record_index: 100,
+        scope_record_index: 0,
+        local_ordinal: 0,
+        evaluated_value: 6.0,
+        evaluated_value_offset: owned_parameter.evaluated_value_offset,
+        parameter_record_index: 101,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: 102,
+    };
+    let companion = DesignParameterCompanion {
+        id: crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
+        byte_offset: 1_200,
+        class_tag: "258".into(),
+        record_index: 102,
+        owner_record_index: 100,
+        timestamp_micros: 1,
+        timestamp_micros_offset: 1_242,
+        payload_byte_offset: 1_258,
+        payload_byte_length: 0,
+        owned_recipe_ids: Vec::new(),
+    };
+    let ownerless_parameter = DesignParameter {
+        id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),
+        byte_offset: 1_400,
+        class_tag: "287".into(),
+        record_index: 201,
+        family_discriminator: None,
+        family_discriminator_offset: None,
+        source_ordinal: 1,
+        owner_record_index: Some(200),
+        expression: "OffsetX".into(),
+        expression_offset: 1_440,
+        source_kind: "Feature Input".into(),
+        source_kind_offset: 1_470,
+        kind: DesignParameterKind::Feature,
+        unit: None,
+        unit_offset: None,
+        name: "OffsetX".into(),
+        name_offset: 1_490,
+        evaluated_value: 0.0,
+        evaluated_value_offset: 1_510,
+    };
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native
+            .design_parameters
+            .extend([owned_parameter, ownerless_parameter]);
+        native.design_parameter_owners.push(owner);
+        native.design_parameter_companions.push(companion);
+        native.design_record_headers.extend([
+            DesignRecordHeader {
+                id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 100),
+                record_index: 100,
+                class_tag: "268".into(),
+                byte_offset: 1_000,
+            },
+            DesignRecordHeader {
+                id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 101),
+                record_index: 101,
+                class_tag: "305".into(),
+                byte_offset: 1_068,
+            },
+            DesignRecordHeader {
+                id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 102),
+                record_index: 102,
+                class_tag: "258".into(),
+                byte_offset: 1_200,
+            },
+        ]);
+    }
+
+    let findings = crate::validate::validate_native(&ir);
+    assert!(
+        findings.iter().all(|finding| {
+            !finding
+                .message
+                .contains("Fusion Design parameter owner has an invalid frame")
+                && !finding
+                    .message
+                    .contains("Fusion Design parameter has an invalid frame")
+        }),
+        "{findings:#?}"
+    );
+}
+
+#[test]
 fn validation_accepts_grouped_and_direct_extrude_profiles() {
     use crate::records::{
         DesignConstructionOperandGroup, DesignExtrudeExtent, DesignExtrudeOperandRole,
