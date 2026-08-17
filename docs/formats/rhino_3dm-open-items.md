@@ -6,6 +6,27 @@ Settled format rules remain in
 
 ## Remaining items
 
+### PR-04. Current view-record checksum coverage
+
+**Question.** Which direct byte ranges does the CRC on each current
+`TCODE_VIEW_RECORD` cover when its body is an ordered child-chunk stream, and
+how does the codec report a mismatch without changing the view boundary?
+
+**Known.** `ON_3dmView::Write` emits the view body as complete CRC-bearing
+child chunks and terminates it with a short `TCODE_ENDOFTABLE`; the outer view
+record is also CRC-bearing. The view parser frames and decodes those chunks
+but does not verify the outer `TCODE_VIEW_RECORD` checksum. A source-shaped
+owner probe with one stored outer-CRC bit flipped still produces one typed
+view and no integrity loss.
+
+**Need.** Trace the writer and reader CRC lifecycle, state the direct checksum
+ranges for the outer view record, align the view owner with the recoverable
+checksum policy, and add an owner test. Keep nested child checksum rules
+separate until each child's direct-body or container boundary is traced.
+
+**Note.** This is a current checksum-boundary question. It does not change
+view field transfer or the CADIR identity of a view.
+
 ### FV-01. Future object-class payloads
 
 **Question.** What field grammar does each later built-in object-class major
