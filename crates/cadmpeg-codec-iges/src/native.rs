@@ -840,7 +840,7 @@ pub(crate) struct ProductOccurrenceExpansion {
 
 pub(crate) struct NativeStoreResult {
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
-    pub(crate) ambiguous_parameter_sequences: Vec<(u32, usize)>,
+    pub(crate) ambiguous_parameter_sequences: Vec<(u32, usize, bool)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1522,13 +1522,23 @@ pub(crate) fn store(
             }
         }
     }
-    let ambiguous_parameter_sequences = required_back_pointer_members
+    let ambiguous_parameter_sequences = by_directory
         .iter()
-        .filter_map(|sequence| {
-            let record = by_directory.get(sequence).copied()?;
+        .filter_map(|(sequence, record)| {
             let analysis = crate::parameter::analyze_trailing_pointer_groups(record, &entries);
-            (analysis.candidate_count > 1 && analysis.groups.is_none())
-                .then_some((*sequence, analysis.candidate_count))
+            let equally_valid = analysis.valid_candidate_count > 1;
+            let required_back_pointer_ambiguity = required_back_pointer_members.contains(sequence)
+                && analysis.candidate_count > 1
+                && analysis.groups.is_none();
+            (equally_valid || required_back_pointer_ambiguity).then_some((
+                *sequence,
+                if equally_valid {
+                    analysis.valid_candidate_count
+                } else {
+                    analysis.candidate_count
+                },
+                equally_valid,
+            ))
         })
         .collect::<Vec<_>>();
     charge_native_entities(ctx, directory.len() as u64)?;

@@ -214,11 +214,16 @@ fn decode_with_occurrence_limits(
             &directory,
         ));
     }
-    for (source_sequence, candidate_count) in ambiguous_parameter_sequences {
+    for (source_sequence, candidate_count, equally_valid) in ambiguous_parameter_sequences {
         losses.push(occurrence_loss(
             IgesLossCode::ParameterBoundaryAmbiguous,
             format!(
-                "IGES Parameter Data has {candidate_count} structural trailing pointer-group boundaries for a required back-pointer; primary parameters and pointer ownership were not guessed"
+                "IGES Parameter Data has {candidate_count} {} trailing pointer-group boundaries; primary parameters and pointer ownership were not guessed",
+                if equally_valid {
+                    "equally valid"
+                } else {
+                    "structural"
+                }
             ),
             source_sequence,
             &directory,

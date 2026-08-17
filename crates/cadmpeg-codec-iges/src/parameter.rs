@@ -54,6 +54,7 @@ pub(crate) struct TrailingPointerGroups {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrailingPointerAnalysis {
     pub(crate) candidate_count: usize,
+    pub(crate) valid_candidate_count: usize,
     pub(crate) groups: Option<TrailingPointerGroups>,
 }
 
@@ -262,18 +263,19 @@ pub(crate) fn analyze_trailing_pointer_groups(
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
     let candidates = structural_pointer_group_candidates(record);
-    let mut valid_groups = candidates
+    let valid_groups = candidates
         .iter()
         .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
         .filter(|groups| groups.fully_valid);
-    let first_valid = valid_groups.next();
-    let groups = match first_valid {
-        Some(groups) => Some(groups),
-        None if candidates.len() == 1 => groups_for_candidate(record, directory, candidates[0]),
-        None => None,
+    let valid_groups = valid_groups.collect::<Vec<_>>();
+    let groups = match valid_groups.as_slice() {
+        [groups] => Some(groups.clone()),
+        [] if candidates.len() == 1 => groups_for_candidate(record, directory, candidates[0]),
+        _ => None,
     };
     TrailingPointerAnalysis {
         candidate_count: candidates.len(),
+        valid_candidate_count: valid_groups.len(),
         groups,
     }
 }

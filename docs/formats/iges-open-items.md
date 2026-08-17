@@ -45,33 +45,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-03 — Generic trailing pointer boundary selection
-
-**Question.** When a Parameter Data record has more than one structurally valid
-trailing pointer-group boundary, what rule identifies the primary-parameter end?
-
-**Known.** `parameter.rs` enumerates structural candidates in token order and
-returns the first target-valid candidate. `native.rs` uses that boundary as the
-primary-parameter end. `ParameterBoundaryAmbiguous` is emitted only for a
-required back-pointer route when no candidate is selected. The test
-`earliest_valid_trailing_pointer_group_boundary_wins` requires the earliest
-valid candidate.
-
-**Need.** A variable-length primary list must not be cut at a pointer-shaped
-suffix merely because that suffix validates against the Directory. The decoder
-must have an entity-specific discriminator, or retain the alternatives and
-report ambiguity before assigning parameter and pointer ownership.
-
-**Conflict.** IGES 5.3 §2.2.4.5.2 places association and property groups after
-the primary parameters. It does not state that the earliest target-valid
-structural candidate is the universal boundary rule.
-
-**Note.** Commit `11321f89cdfb` closed this item by promoting the earliest-valid
-candidate to the specification. A variable-length entity can contain a valid
-pointer-shaped suffix before the actual trailing groups. The ordinary path then
-cuts the primary fields, assigns them to association or property groups, and
-emits no ambiguity loss. This is a partial closure.
-
 ## 2. Global metadata
 
 ## 3. Directory fields, the reference graph, and the native arenas

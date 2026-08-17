@@ -351,31 +351,112 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
 }
 
 #[test]
-fn earliest_valid_trailing_pointer_group_boundary_wins() {
-    let association = directory_target(1, 402);
-    let property = directory_target(9, 406);
-    let directory = BTreeMap::from([(1, &association), (9, &property)]);
+fn unique_valid_trailing_pointer_group_boundary_wins() {
+    let first_association = directory_target(1, 402);
+    let second_association = directory_target(3, 402);
+    let directory = BTreeMap::from([(1, &first_association), (3, &second_association)]);
     let record = ParameterRecord {
         directory_sequence: 1,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: [116, 1, 2, 3, 2, 1, 1, 1, 9]
+        tokens: [116, 0, 0, 2, 3, 1, 0]
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
             .collect(),
-        parameter_end: 9,
+        parameter_end: 7,
         comment: Vec::new(),
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 3);
-    let groups = analysis.groups.expect("earliest valid group");
-    assert_eq!(groups.token_start, 4);
-    assert_eq!(groups.associations, vec![1, 1]);
-    assert_eq!(groups.properties, vec![9]);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("unique valid group");
+    assert_eq!(groups.token_start, 3);
+    assert_eq!(groups.associations, vec![3, 1]);
+    assert!(groups.properties.is_empty());
     assert_eq!(groups.association_pointers.len(), 2);
     assert_eq!(trailing_pointer_groups(&record, &directory), Some(groups));
+}
+
+#[test]
+fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
+    let association = directory_target(1, 402);
+    let directory = BTreeMap::from([(1, &association)]);
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [116, 0, 0, 2, 1, 1, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 7,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 2);
+    assert_eq!(analysis.valid_candidate_count, 2);
+    assert!(analysis.groups.is_none());
+    assert!(trailing_pointer_groups(&record, &directory).is_none());
+}
+
+#[test]
+fn decode_reports_ambiguous_boundary_without_assigning_groups() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "AMBIG".into(),
+                    status: "00000000",
+                    parameters: "116,4,3,3,3,3,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 0,
+                    label: "ASSOC".into(),
+                    status: "00000000",
+                    parameters: "402;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let ambiguity_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(ambiguity_losses.len(), 1);
+    assert_eq!(
+        ambiguity_losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
+
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#1")
+        .unwrap();
+    assert!(source.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(source.fields()["property_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
