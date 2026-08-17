@@ -5,16 +5,17 @@ use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::{coincident_distance, Global};
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
+const MAX_FORM_63_VALIDATION_WORK: u64 = 20_000_000;
 
 pub(super) struct CopiousProjection {
     pub(super) handled: BTreeSet<u32>,
@@ -37,6 +38,195 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SimpleClosedPathError {
+    EndpointsDisagree,
+    ConsecutiveCoincidentPoints,
+    RepeatedPoint,
+    SelfIntersection,
+    ValidationBudget,
+}
+
+impl SimpleClosedPathError {
+    const fn message(self) -> &'static str {
+        match self {
+            Self::EndpointsDisagree => {
+                "simple closed path endpoints disagree beyond the minimum resolution"
+            }
+            Self::ConsecutiveCoincidentPoints => {
+                "simple closed path has coincident consecutive points"
+            }
+            Self::RepeatedPoint => {
+                "simple closed path has a repeated point outside its closure endpoints"
+            }
+            Self::SelfIntersection => {
+                "simple closed path intersects or overlaps itself outside its closure endpoint"
+            }
+            Self::ValidationBudget => "simple closed path validation exceeded its work budget",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SegmentIntersection {
+    None,
+    Point(Point2),
+    Overlap,
+}
+
+fn planar_distance(left: Point2, right: Point2) -> f64 {
+    let delta_u = left.u - right.u;
+    let delta_v = left.v - right.v;
+    delta_u.mul_add(delta_u, delta_v * delta_v).sqrt()
+}
+
+fn planar_difference(left: Point2, right: Point2) -> Point2 {
+    Point2::new(left.u - right.u, left.v - right.v)
+}
+
+fn planar_cross(left: Point2, right: Point2) -> f64 {
+    left.u * right.v - left.v * right.u
+}
+
+fn planar_point_on_segment(point: Point2, start: Point2, end: Point2) -> bool {
+    planar_cross(
+        planar_difference(end, start),
+        planar_difference(point, start),
+    ) == 0.0
+        && point.u >= start.u.min(end.u)
+        && point.u <= start.u.max(end.u)
+        && point.v >= start.v.min(end.v)
+        && point.v <= start.v.max(end.v)
+}
+
+fn segment_intersection(
+    first_start: Point2,
+    first_end: Point2,
+    second_start: Point2,
+    second_end: Point2,
+) -> SegmentIntersection {
+    let first_direction = planar_difference(first_end, first_start);
+    let second_direction = planar_difference(second_end, second_start);
+    let between_starts = planar_difference(second_start, first_start);
+    let determinant = planar_cross(first_direction, second_direction);
+    if determinant != 0.0 {
+        let first_parameter = planar_cross(between_starts, second_direction) / determinant;
+        let second_parameter = planar_cross(between_starts, first_direction) / determinant;
+        if !(0.0..=1.0).contains(&first_parameter) || !(0.0..=1.0).contains(&second_parameter) {
+            return SegmentIntersection::None;
+        }
+        let point = if first_parameter == 0.0 {
+            first_start
+        } else if first_parameter == 1.0 {
+            first_end
+        } else if second_parameter == 0.0 {
+            second_start
+        } else if second_parameter == 1.0 {
+            second_end
+        } else {
+            Point2::new(
+                first_start.u + first_parameter * first_direction.u,
+                first_start.v + first_parameter * first_direction.v,
+            )
+        };
+        return SegmentIntersection::Point(point);
+    }
+
+    if planar_cross(between_starts, first_direction) != 0.0 {
+        return SegmentIntersection::None;
+    }
+
+    let mut points = Vec::with_capacity(4);
+    for point in [first_start, first_end, second_start, second_end] {
+        if planar_point_on_segment(point, first_start, first_end)
+            && planar_point_on_segment(point, second_start, second_end)
+            && !points.contains(&point)
+        {
+            points.push(point);
+        }
+    }
+    match points.as_slice() {
+        [] => SegmentIntersection::None,
+        [point] => SegmentIntersection::Point(*point),
+        _ => SegmentIntersection::Overlap,
+    }
+}
+
+fn intersection_is_at(intersection: SegmentIntersection, expected: Point2) -> bool {
+    matches!(
+        intersection,
+        SegmentIntersection::Point(point) if point == expected
+    )
+}
+
+fn intersection_is_at_closure(
+    intersection: SegmentIntersection,
+    first: Point2,
+    last: Point2,
+) -> bool {
+    matches!(
+        intersection,
+        SegmentIntersection::Point(point) if point == first || point == last
+    )
+}
+
+fn simple_closed_path_error(
+    points: &[Point2],
+    resolution: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<SimpleClosedPathError> {
+    if budget.is_some_and(|budget| !budget.charge_by(points.len().saturating_mul(points.len()))) {
+        return Some(SimpleClosedPathError::ValidationBudget);
+    }
+    if points.len() < 2 {
+        return Some(SimpleClosedPathError::EndpointsDisagree);
+    }
+    let (Some(first), Some(last)) = (points.first(), points.last()) else {
+        return Some(SimpleClosedPathError::EndpointsDisagree);
+    };
+    if !coincident_distance(planar_distance(*first, *last), resolution) {
+        return Some(SimpleClosedPathError::EndpointsDisagree);
+    }
+    if points
+        .windows(2)
+        .any(|pair| coincident_distance(planar_distance(pair[0], pair[1]), resolution))
+    {
+        return Some(SimpleClosedPathError::ConsecutiveCoincidentPoints);
+    }
+    for (first_index, first_point) in points.iter().enumerate() {
+        for (second_index, second_point) in points.iter().enumerate().skip(first_index + 1) {
+            if first_index == 0 && second_index == points.len() - 1 {
+                continue;
+            }
+            if coincident_distance(planar_distance(*first_point, *second_point), resolution) {
+                return Some(SimpleClosedPathError::RepeatedPoint);
+            }
+        }
+    }
+    for (first_index, first_segment) in points.windows(2).enumerate() {
+        for (second_index, second_segment) in points.windows(2).enumerate().skip(first_index + 1) {
+            let intersection = segment_intersection(
+                first_segment[0],
+                first_segment[1],
+                second_segment[0],
+                second_segment[1],
+            );
+            let allowed = if second_index == first_index + 1 {
+                intersection_is_at(intersection, first_segment[1])
+            } else if first_index == 0 && second_index == points.len() - 2 {
+                matches!(intersection, SegmentIntersection::None)
+                    || intersection_is_at_closure(intersection, *first, *last)
+            } else {
+                matches!(intersection, SegmentIntersection::None)
+            };
+            if !allowed {
+                return Some(SimpleClosedPathError::SelfIntersection);
+            }
+        }
+    }
+    None
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -57,6 +247,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
     let mut free_vertices = Vec::new();
+    let form_63_work_budget = ctx.map(|ctx| ctx.work_budget(MAX_FORM_63_VALIDATION_WORK));
 
     for entry in directory
         .iter()
@@ -160,6 +351,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "tuple array is truncated or non-finite"));
             continue;
         };
+        let definition_points = (entry.form == 63).then(|| {
+            values
+                .chunks_exact(tuple_width)
+                .map(|tuple| Point2::new(tuple[0] * factor, tuple[1] * factor))
+                .collect::<Vec<_>>()
+        });
         let points = values
             .chunks_exact(tuple_width)
             .map(|tuple| {
@@ -205,25 +402,15 @@ pub(super) fn project(
             continue;
         }
         let resolution = global.minimum_resolution_mm();
-        if entry.form == 63
-            && !coincident_distance(points[0].distance(points[points.len() - 1]), resolution)
-        {
-            losses.push(entity_loss(
-                entry,
-                "simple closed path endpoints disagree beyond the minimum resolution",
-            ));
-            continue;
-        }
-        if entry.form == 63
-            && points
-                .windows(2)
-                .any(|pair| coincident_distance(pair[0].distance(pair[1]), resolution))
-        {
-            losses.push(entity_loss(
-                entry,
-                "simple closed path has coincident consecutive points",
-            ));
-            continue;
+        if let Some(definition_points) = definition_points.as_deref() {
+            if let Some(error) = simple_closed_path_error(
+                definition_points,
+                resolution,
+                form_63_work_budget.as_ref(),
+            ) {
+                losses.push(entity_loss(entry, error.message()));
+                continue;
+            }
         }
         let topology_tolerance = (entry.form == 63 && resolution > 0.0).then_some(resolution);
         let parameter_end = (points.len() - 1) as f64;

@@ -238,16 +238,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2731411c2` centralized domains and added self-authored coverage; it did not verify the mapping against the IGES specification or witness files.
 
-### GE-08. Type 106 duplicate points and closure
-
-**Question.** Which duplicate-point and closure patterns are valid in a Type 106 entity?
-
-**Known.** `geometry.rs` removes or accepts duplicate points and tests closure using the Global minimum resolution. The current form interpretation and tolerance are encoded in the decoder and fixtures.
-
-**Need.** We need the Type 106 form rules for duplicate points and closed paths, including the tolerance and whether source order must be retained.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `42b06aa54` made the path policy internally consistent, but consistency with generated fixtures is not verification.
-
 ### GE-09. Type 104 endpoints are not tested against the conic
 
 **Question.** Must Type 104 endpoint coordinates agree with the conic parameters, and what tolerance applies?
