@@ -612,6 +612,32 @@ pub(crate) fn units_data_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn units_data_scope_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "MEASURED".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,1,0,0,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 316,
+            form: 0,
+            label: "UNITS".into(),
+            status: "00000200",
+            parameters: "316,1,6HLENGTH,2HKN,1852;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "UNMEAS".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,2,0,0;".into(),
+        },
+    ])
+}
+
 pub(crate) fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

@@ -47,18 +47,6 @@ from a conformant file.
 
 ## 2. Global metadata
 
-### GL-02. The units-name comparison rule
-
-**Question.** How is the Global units name compared with the standard unit codes?
-
-**Known.** IGES 5.3 §§2.2.4.3.14–2.2.4.3.15 make field 14 authoritative except for flag `3`, list the ordinary flag-15 payloads, and delegate a flag-3 name to MIL-STD-12 or IEEE 260. Type 316 is a property-pointer attachment whose scale applies to the real data of its owning entity. The decoder accepts a nonempty flag-3 string, retains it for inspection, and refuses semantic projection when its length factor is unknown.
-
-**Need.** We need to establish whether the delegated flag-3 standards define a closed alias and factor contract, or whether the IGES contract ends at the delegated name.
-
-**Conflict.** The earlier exact-eleven-name rule conflicts with the flag-3 delegation and with Open CASCADE's documented user-defined flag-3 name. The codec must not silently rescale geometry without a proven factor.
-
-**Note.** This pass has settled field-14 precedence, the ordinary flag table, nonempty flag-3 storage, Type 316 scope, and the semantic refusal boundary. The external namespace and factor boundary remain under test.
-
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ## 4. Geometry carriers and tolerances

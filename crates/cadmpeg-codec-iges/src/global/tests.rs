@@ -338,7 +338,7 @@ fn real_significance_fields_are_required_and_positive() {
 
 #[test]
 fn flag_three_units_require_a_nonempty_name_but_allow_external_symbols() {
-    for units_name in ["2Hmm", "3HMM "] {
+    for units_name in ["2Hmm", "3Hnmi"] {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
         fields[14] = units_name.into();

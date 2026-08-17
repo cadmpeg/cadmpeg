@@ -1062,6 +1062,30 @@ fn decode_types_fundamental_units_and_property_owner() {
 }
 
 #[test]
+fn type316_scale_is_scoped_to_the_property_owner() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(units_data_scope_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let units = &native.arenas["units_data"][0];
+    assert_eq!(
+        units.fields()["owners"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    let unowned = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.fields()["directory_sequence"] == 5)
+        .unwrap();
+    assert!(unowned.fields()["property_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_preserves_ordered_solid_assembly_member_placements() {
     let result = IgesCodec
         .decode(
