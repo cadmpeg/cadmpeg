@@ -45,7 +45,31 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
+### PH-03. Selection of a trailing pointer boundary
+
+**Question.** Which rule selects the entity-specific Parameter Data end when more than one suffix is structurally closed and target-valid?
+
+**Known.** `parameter.rs:265-280` accepts one target-valid candidate and suppresses the boundary when more than one candidate is valid. `native.rs:1525-1541` reports multiple valid candidates and retains the complete token sequence. The Entity graph paragraph in `iges.md` records this unique-candidate CADIR policy, but the Parameter Data paragraph still states that the decoder selects the earliest target-valid boundary.
+
+**Need.** We need one boundary rule in the specification and the decoder. A different rule changes primary-field arity, association and property ownership, and native pointer links.
+
+**Conflict.** The Parameter Data and Entity graph paragraphs in `iges.md` give two different selection rules: earliest target-valid and unique target-valid. The current decoder implements the latter.
+
+**Note.** The unique-candidate policy is conservative, but the stale earliest-boundary sentence remains a live specification contradiction.
+
 ## 2. Global metadata
+
+### GL-02. Delegated Global flag-3 unit names
+
+**Question.** Which flag-3 unit symbols conform to the delegated standard, and which admitted symbol-to-millimetre factors may semantic projection use?
+
+**Known.** `global.rs:424-433` admits every nonempty flag-3 Hollerith string. `global.rs:501-519` then reuses the ordinary exact alias table to decide whether a flag-3 name has a known length factor. `reader.rs:113-116` refuses semantic decode only when that table has no factor. The Global units paragraphs in `iges.md` state that the delegated standard controls the symbol form and that the ordinary table is not used for flag 3.
+
+**Need.** We need the delegated symbol admission and factor table from [IGES 5.3 §§2.2.4.3.14–2.2.4.3.15](https://paulbourke.net/dataformats/iges/IGES.pdf), [MIL-STD-12D §4.7](https://www.expresscorp.com/wp-content/uploads/2023/02/MIL-STD-12D.pdf), and [IEEE 260-1978](https://standards.ieee.org/ieee/260/440). The decoder must either validate that contract or define an opaque-name boundary without treating ordinary aliases as delegated symbols.
+
+**Conflict.** The Global units specification says that flag-3 symbol form is delegated and is not compared with the ordinary table. The decoder admits arbitrary nonempty names, but recognizes flag-3 conversion factors by the ordinary table. The same source name can therefore be admitted as a delegated symbol while its conversion status depends on an unrelated alias list.
+
+**Note.** The current `2Hmm` and `nmi` witnesses establish retention and refusal behavior only. They do not establish delegated conformance or the factor boundary.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
