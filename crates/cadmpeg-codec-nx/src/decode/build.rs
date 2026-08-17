@@ -3,7 +3,8 @@
 
 use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
-    retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream,
+    retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta, surface_tag,
+    unknown_stream_metadata,
 };
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
@@ -125,6 +126,7 @@ pub(crate) fn try_decode_geometry(
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
+    let mut stream_unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
@@ -193,13 +195,15 @@ pub(crate) fn try_decode_geometry(
             .as_ref()
             .is_some_and(|(_, selected, _)| !selected.contains(&si))
         {
-            let unknown = unknown_stream(si, stream);
+            let unknown_index = unknowns.len();
+            let unknown = unknown_stream_metadata(si, stream);
             let container_stream = annotations.stream("nx:container");
             annotations
                 .note(&unknown.id, container_stream, stream.file_offset as u64)
                 .tag(stream.kind.label());
             annotations.exactness(&unknown.id, Exactness::Derived);
             unknowns.push(unknown);
+            stream_unknowns.push((si, unknown_index));
             continue;
         }
         let view = parsed.stream(si).view_for_geometry();
@@ -832,7 +836,8 @@ pub(crate) fn try_decode_geometry(
             &adaptive_geometry_budget,
         );
         // Preserve the whole inflated stream verbatim so nothing is dropped.
-        let mut unknown = unknown_stream(si, stream);
+        let unknown_index = unknowns.len();
+        let mut unknown = unknown_stream_metadata(si, stream);
         unknown.links.extend(
             ir.model.surfaces[first_surface..]
                 .iter()
@@ -849,6 +854,7 @@ pub(crate) fn try_decode_geometry(
             .tag(stream.kind.label());
         annotations.exactness(&unknown.id, Exactness::Derived);
         unknowns.push(unknown);
+        stream_unknowns.push((si, unknown_index));
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
@@ -888,6 +894,9 @@ pub(crate) fn try_decode_geometry(
         .is_err()
     {
         return Ok(None);
+    }
+    for (si, unknown_index) in stream_unknowns {
+        retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
     prune_unreferenced_unknown_carriers(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);

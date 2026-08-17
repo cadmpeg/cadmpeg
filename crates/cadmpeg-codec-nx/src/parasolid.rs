@@ -807,7 +807,12 @@ fn inflate_stream<'a>(
     let Ok(consumed) = u64::try_from(consumed) else {
         return Ok(None);
     };
-    Ok(Some((view.window().to_vec(), consumed)))
+    let inflated = ctx.copy_retained(
+        view.window(),
+        "retain NX inflated stream",
+        Some(source.location()),
+    )?;
+    Ok(Some((inflated, consumed)))
 }
 
 /// A zlib header has compression method 8 and a 16-bit header divisible by

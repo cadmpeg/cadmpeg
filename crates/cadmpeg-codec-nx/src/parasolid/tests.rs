@@ -467,6 +467,24 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
 }
 
 #[test]
+fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
+    let file = prt_with_partition(&partition_stream());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&file, &arena, &policy)
+        .expect("bounded test input");
+    let container = container::scan_bytes(file.clone()).expect("test SPLMSSTR container");
+
+    assert!(matches!(
+        parasolid::extract_streams(&ctx, root, &container),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.context.operation == "retain NX inflated stream"
+    ));
+}
+
+#[test]
 fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     let decoy = zlib_compress(
         b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed payload with more than sixty-four inflated bytes........",

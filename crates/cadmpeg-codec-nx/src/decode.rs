@@ -231,7 +231,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
         ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
-        let (ir, annotations, unknowns) = build_container_only_ir(&scan);
+        let (ir, annotations, unknowns) = build_container_only_ir(ctx, &scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report, false);
         return decode_result(
@@ -274,15 +274,16 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 }
 
 fn build_container_only_ir(
+    ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
-) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
-            let unknown = unknown_stream(si, stream);
+            let unknown = unknown_stream(ctx, si, stream)?;
             let source_stream = annotations.stream("nx:container");
             annotations
                 .note(&unknown.id, source_stream, stream.file_offset as u64)
@@ -292,7 +293,7 @@ fn build_container_only_ir(
         }
     }
     crate::native::attach_container_layer(&mut ir, scan, &mut annotations, &mut unknowns, false);
-    (ir, annotations.build(), unknowns)
+    Ok((ir, annotations.build(), unknowns))
 }
 
 fn decode_result(
@@ -412,7 +413,7 @@ fn build_metadata_ir(
     ir.source = Some(source_meta(scan));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
-            let unknown = unknown_stream(si, stream);
+            let unknown = unknown_stream(ctx, si, stream)?;
             let source_stream = annotations.stream("nx:container");
             annotations
                 .note(&unknown.id, source_stream, stream.file_offset as u64)

@@ -16,6 +16,8 @@ use super::pcurves::{
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point_with_budget;
 use cadmpeg_ir::geometry::{
@@ -1008,13 +1010,38 @@ pub(crate) fn sense(byte: Option<u8>) -> Sense {
     }
 }
 
-pub(crate) fn unknown_stream(si: usize, stream: &Stream) -> UnknownRecord {
+pub(crate) fn unknown_stream(
+    ctx: &DecodeContext<'_>,
+    si: usize,
+    stream: &Stream,
+) -> Result<UnknownRecord, CodecError> {
+    let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream", None)?;
+    Ok(unknown_stream_record(si, stream, Some(data)))
+}
+
+pub(crate) fn unknown_stream_metadata(si: usize, stream: &Stream) -> UnknownRecord {
+    unknown_stream_record(si, stream, None)
+}
+
+pub(crate) fn retain_unknown_stream_data(
+    ctx: &DecodeContext<'_>,
+    stream: &Stream,
+    unknown: &mut UnknownRecord,
+) -> Result<(), CodecError> {
+    if unknown.data.is_none() {
+        unknown.data =
+            Some(ctx.copy_retained(&stream.inflated, "retain NX unknown stream", None)?);
+    }
+    Ok(())
+}
+
+fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> UnknownRecord {
     UnknownRecord {
         id: UnknownId(format!("nx:container:parasolid#{si}")),
         offset: stream.file_offset as u64,
         byte_len: stream.inflated.len() as u64,
         sha256: sha256_hex(&stream.inflated),
-        data: Some(stream.inflated.clone()),
+        data,
         links: Vec::new(),
     }
 }
@@ -1194,5 +1221,33 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     SourceMeta {
         format: "nx".to_string(),
         attributes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_stream_copy_refuses_when_retained_budget_is_exhausted() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("bounded test input");
+        let stream = Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: vec![1, 2, 3],
+            kind: StreamKind::Partition,
+            schema: None,
+        };
+
+        assert!(matches!(
+            unknown_stream(&ctx, 0, &stream),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.context.operation == "retain NX unknown stream"
+        ));
     }
 }

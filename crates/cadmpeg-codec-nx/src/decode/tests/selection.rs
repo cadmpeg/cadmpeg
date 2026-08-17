@@ -643,6 +643,22 @@ fn decode_assembly_reports_external_dependency() {
 }
 
 #[test]
+fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
+    let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
+    stream.resize(64, b'.');
+    let file = prt_with_partition(&stream);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = (stream.len() * 2) as u64;
+
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect("live stream and final metadata copy fit the retained budget");
+
+    assert!(!result.report().geometry_transferred);
+    assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
+}
+
+#[test]
 fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
