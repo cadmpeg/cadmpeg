@@ -157,6 +157,7 @@ fn slot_count(schema: &str, disc: u16, flo: u8) -> Option<usize> {
         (_, 1) => Some(6),
         (_, 2) => Some(7),
         (_, 4) => Some(9),
+        (_, 5) => Some(10),
         _ => None,
     }
 }
@@ -775,6 +776,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     if out.is_empty() {
         out.extend(
             disc20_disc1c_disc1a_disc16_disc14_disc12_disc10_disc04_face_root_body(&by_attr),
+        );
+    }
+    if out.is_empty() {
+        out.extend(
+            disc20_disc1c_disc1a_disc18_disc16_disc14_disc12_disc10_disc0e_face_root_body(&by_attr),
         );
     }
     if out.is_empty() {
@@ -5632,6 +5638,35 @@ fn disc20_disc1c_disc1a_disc16_disc14_disc12_disc10_disc04_face_root_body(
     )
 }
 
+fn disc20_disc1c_disc1a_disc18_disc16_disc14_disc12_disc10_disc0e_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001c, 5),
+            (0x001a, 2),
+            (0x0018, 2),
+            (0x0016, 1),
+            (0x0014, 2),
+            (0x0012, 2),
+            (0x0010, 2),
+            (0x000e, 2),
+        ],
+        0x0004,
+        0x001e,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        false,
+    )
+}
+
 fn disc20_disc1c_disc1a_disc16_disc12_disc10_disc0e_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -8356,6 +8391,7 @@ mod tests {
     mod disc20_disc1a_disc18;
     mod disc20_disc1c_disc1a_disc16_disc12_disc10_disc0e;
     mod disc20_disc1c_disc1a_disc16_disc14_disc12_disc10_disc04;
+    mod disc20_disc1c_disc1a_disc18_disc16_disc14_disc12_disc10_disc0e;
     mod disc20_disc1e_disc1c;
     mod disc20_disc1e_disc1c_disc14_disc12_disc10_disc04;
     mod disc20_disc1e_disc1c_disc16_disc14_disc10_disc04;
@@ -10289,22 +10325,30 @@ mod tests {
         let seven = bare_entity_slots(700, 1, 0x16, 2, &[2, 3, 4, 5, 6, 7, 8]);
         let nine = bare_entity_slots(701, 2, 0x1a, 4, &[9, 10, 11, 12, 13, 14, 15, 16, 17]);
         let terminal = bare_entity_slots(702, 3, 0x06, 2, &[18, 19, 1, 1, 1, 1, 1]);
+        let ten = bare_entity_slots(703, 4, 0x1c, 5, &[20, 21, 22, 1, 1, 23, 1, 1, 1, 1]);
         let mut bytes = seven.clone();
         bytes.extend_from_slice(&nine);
         bytes.extend_from_slice(&terminal);
+        bytes.extend_from_slice(&ten);
         bytes.extend([0; 16]);
 
         let records = scan_entities(&bytes, "SCH_2400201_20000_13006", false);
-        assert_eq!(records.len(), 3);
+        assert_eq!(records.len(), 4);
         assert_eq!(records[0].refs.len(), 7);
         assert_eq!(records[0].end, seven.len());
         assert_eq!(records[1].refs.len(), 9);
         assert_eq!(records[1].end, seven.len() + nine.len());
         assert_eq!(records[2].refs, [18, 19, 1, 1, 1, 1, 1]);
         assert_eq!(records[2].end, seven.len() + nine.len() + terminal.len());
+        assert_eq!(records[3].refs, [20, 21, 22, 1, 1, 23, 1, 1, 1, 1]);
+        assert_eq!(
+            records[3].end,
+            seven.len() + nine.len() + terminal.len() + ten.len()
+        );
         assert!(scan_entities(&bytes, "SCH_UNKNOWN_99999_13006", false).is_empty());
         assert_eq!(slot_count(TEST_SCHEMA, 0x26, 3), Some(6));
         assert_eq!(slot_count(TEST_SCHEMA, 0x06, 2), Some(7));
+        assert_eq!(slot_count(TEST_SCHEMA, 0x1c, 5), Some(10));
     }
 
     #[test]
