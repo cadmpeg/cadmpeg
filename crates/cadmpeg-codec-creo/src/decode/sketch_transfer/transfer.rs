@@ -3,8 +3,8 @@
 
 use super::super::coverage::SketchSegmentTransferCoverage;
 use super::super::feature_history::{
-    owned_section_feature_id, section_entity_is_generated_profile,
-    section_generated_profile_surface_kinds,
+    owned_section_feature_id, planned_feature_dimension_parameter_ids,
+    section_entity_is_generated_profile, section_generated_profile_surface_kinds,
 };
 use super::super::native::annotate;
 use super::super::sketch::{
@@ -24,9 +24,10 @@ use super::entities::transfer_section_entities;
 use super::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
     native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
-    reconcile_constraint_entity_references, reconcile_section_dimension_constraint,
-    resolved_profile_chains, section_degenerate_axis_line, section_dimension_constraints,
-    section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
+    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
+    reconcile_section_dimension_constraint, resolved_profile_chains, section_degenerate_axis_line,
+    section_dimension_constraints, section_equation_axis_distance_constraints,
+    section_equation_equal_distance_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
     section_equation_function_six_distance_constraints,
     section_equation_function_thirty_one_point_coordinate_constraints,
@@ -54,6 +55,13 @@ pub(in super::super) fn transfer_sketches(
     annotations: &mut AnnotationBuilder,
 ) -> SketchSegmentTransferCoverage {
     let mut coverage = SketchSegmentTransferCoverage::default();
+    let mut available_parameter_ids = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<BTreeSet<_>>();
+    available_parameter_ids.extend(planned_feature_dimension_parameter_ids(scan));
     for definition in scan
         .features
         .definitions
@@ -617,6 +625,7 @@ pub(in super::super) fn transfer_sketches(
                 &sketch_id,
                 relation,
                 &emitted_entity_ids,
+                &available_parameter_ids,
             ) {
                 continue;
             }
@@ -634,6 +643,7 @@ pub(in super::super) fn transfer_sketches(
             definition,
             &sketch_id,
             &emitted_entity_ids,
+            &available_parameter_ids,
         ) {
             annotate(
                 annotations,
@@ -687,10 +697,15 @@ pub(in super::super) fn transfer_sketches(
         let mut rejected_equation_offsets = BTreeSet::new();
         let mut reconciled_equation_constraints = Vec::new();
         for (mut constraint, offset) in equation_constraints {
-            if !reconcile_constraint_entity_references(
+            let entity_reconciled = reconcile_constraint_entity_references(
                 &mut constraint.definition,
                 &emitted_entity_ids,
-            ) {
+            );
+            let parameter_reconciled = reconcile_constraint_parameter_reference(
+                &mut constraint.definition,
+                &available_parameter_ids,
+            );
+            if !entity_reconciled || !parameter_reconciled {
                 rejected_equation_offsets.insert(offset);
                 continue;
             }

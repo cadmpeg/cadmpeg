@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition};
+use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition, ParameterId};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
-use super::super::transfer_feature_dimensions;
+use super::super::{planned_feature_dimension_parameter_ids, transfer_feature_dimensions};
 
 #[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
@@ -57,6 +57,11 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
             saved_section: None,
             offset: 8,
         });
+
+    assert_eq!(
+        planned_feature_dimension_parameter_ids(&scan),
+        BTreeSet::from([ParameterId("creo:featdefs:parameter#917:3".to_string())])
+    );
 
     let mut ir = CadIr::empty(Units::default());
     for ordinal in 0..2 {

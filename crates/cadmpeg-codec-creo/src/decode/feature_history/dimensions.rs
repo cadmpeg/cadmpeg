@@ -69,6 +69,26 @@ pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
         })
 }
 
+pub(in super::super) fn planned_feature_dimension_parameter_ids(
+    scan: &ContainerScan,
+) -> BTreeSet<ParameterId> {
+    let mut ids = BTreeSet::new();
+    for definition in &scan.features.definitions {
+        let Some(table) = &definition.dimensions else {
+            continue;
+        };
+        let sketch = model_sketch_id(scan, definition);
+        for (ordinal, _) in table.rows.iter().enumerate() {
+            if let Some((_, parameter)) =
+                resolved_feature_dimension_parameter(&sketch, table, ordinal)
+            {
+                ids.insert(parameter);
+            }
+        }
+    }
+    ids
+}
+
 pub(in super::super) fn feature_dimension_table_complete(
     table: &crate::feature::FeatureDimensionTable,
 ) -> bool {

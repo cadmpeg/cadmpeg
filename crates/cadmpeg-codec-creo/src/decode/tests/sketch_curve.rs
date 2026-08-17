@@ -305,8 +305,12 @@ fn dimension_identity_includes_its_feature_definition() {
             parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
         }
     );
-    let retained_without_circle =
-        section_segment_radius_constraints_for_emitted(&definition, &sketch_917, &BTreeSet::new());
+    let retained_without_circle = section_segment_radius_constraints_for_emitted(
+        &definition,
+        &sketch_917,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    );
     assert_eq!(retained_without_circle.len(), 1);
     let SketchConstraintDefinition::Native {
         native_kind,
@@ -325,6 +329,21 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(operands[0].object_index, 42);
     assert_eq!(operands[1].native_field.as_deref(), Some("radius"));
     assert_eq!(operands[1].object_index, 0);
+    let circle_entity = SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string());
+    let retained_without_parameter = section_segment_radius_constraints_for_emitted(
+        &definition,
+        &sketch_917,
+        &BTreeSet::from([circle_entity.clone()]),
+        &BTreeSet::new(),
+    );
+    assert!(matches!(
+        &retained_without_parameter[0].0.definition,
+        SketchConstraintDefinition::Native {
+            native_kind,
+            entities,
+            ..
+        } if native_kind == "creo:segtab:radius" && entities == &[circle_entity]
+    ));
     definition
         .dimensions
         .as_mut()

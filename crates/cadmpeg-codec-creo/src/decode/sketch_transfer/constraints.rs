@@ -633,21 +633,19 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<SketchEntityId>,
+    available_parameters: &BTreeSet<ParameterId>,
 ) -> Vec<(SketchConstraint, usize)> {
     let bindings = section_segment_radius_bindings(definition, sketch);
     section_segment_radius_constraints(definition, sketch)
         .into_iter()
         .zip(bindings)
         .filter_map(|((mut constraint, offset), binding)| {
-            let entity = sketch_entity_id(sketch, &binding.suffix);
             reconcile_section_segment_radius_constraint(
                 &mut constraint.definition,
                 sketch,
-                entity,
-                binding.external_id,
-                binding.field,
-                binding.ordinal,
+                &binding,
                 emitted,
+                available_parameters,
             )
             .then_some((constraint, offset))
         })
@@ -657,23 +655,25 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
 fn reconcile_section_segment_radius_constraint(
     constraint_definition: &mut SketchConstraintDefinition,
     sketch: &SketchId,
-    entity: SketchEntityId,
-    external_id: u32,
-    field: &str,
-    dimension_ordinal: u32,
+    binding: &SectionSegmentRadiusBinding,
     emitted: &BTreeSet<SketchEntityId>,
+    available_parameters: &BTreeSet<ParameterId>,
 ) -> bool {
-    if reconcile_constraint_entity_references(constraint_definition, emitted) {
+    let entity_reconciled = reconcile_constraint_entity_references(constraint_definition, emitted);
+    let parameter_reconciled =
+        reconcile_constraint_parameter_reference(constraint_definition, available_parameters);
+    if entity_reconciled && parameter_reconciled {
         return true;
     }
     *constraint_definition = native_section_segment_radius_definition(
         sketch,
-        entity,
-        external_id,
-        field,
-        dimension_ordinal,
+        sketch_entity_id(sketch, &binding.suffix),
+        binding.external_id,
+        binding.field,
+        binding.ordinal,
     );
     reconcile_constraint_entity_references(constraint_definition, emitted)
+        && reconcile_constraint_parameter_reference(constraint_definition, available_parameters)
 }
 
 pub(in super::super) fn section_equation_radius_dimension_constraints(
@@ -1606,13 +1606,18 @@ pub(in super::super) fn reconcile_section_dimension_constraint(
     sketch: &SketchId,
     relation: &crate::feature::FeatureRelation,
     emitted: &BTreeSet<SketchEntityId>,
+    available_parameters: &BTreeSet<ParameterId>,
 ) -> bool {
-    if reconcile_constraint_entity_references(constraint_definition, emitted) {
+    let entity_reconciled = reconcile_constraint_entity_references(constraint_definition, emitted);
+    let parameter_reconciled =
+        reconcile_constraint_parameter_reference(constraint_definition, available_parameters);
+    if entity_reconciled && parameter_reconciled {
         return true;
     }
     *constraint_definition =
         native_section_dimension_constraint_definition(definition, sketch, relation);
     reconcile_constraint_entity_references(constraint_definition, emitted)
+        && reconcile_constraint_parameter_reference(constraint_definition, available_parameters)
 }
 
 pub(in super::super) fn section_dimension_constraints(
@@ -1935,7 +1940,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn typed_dimension_relation_falls_back_to_native_when_entity_is_not_emitted() {
+    fn typed_dimension_relation_falls_back_to_native_when_references_are_not_emitted() {
         let relation = crate::feature::FeatureRelation {
             relation_id: 7,
             used: 1,
@@ -1986,6 +1991,7 @@ mod tests {
             &sketch,
             &relation,
             &BTreeSet::new(),
+            &BTreeSet::new(),
         ));
         assert!(matches!(
             constraint,
@@ -1994,6 +2000,27 @@ mod tests {
                 entities,
                 ..
             } if native_kind == "creo:relation:0" && entities.is_empty()
+        ));
+
+        let emitted_entity = SketchEntityId("synthetic:test:dimension-relation#emitted".into());
+        let mut missing_parameter = SketchConstraintDefinition::Distance {
+            entities: vec![emitted_entity.clone()],
+            parameter: ParameterId("synthetic:test:dimension-parameter".into()),
+        };
+        assert!(reconcile_section_dimension_constraint(
+            &mut missing_parameter,
+            &definition,
+            &sketch,
+            &relation,
+            &BTreeSet::from([emitted_entity]),
+            &BTreeSet::new(),
+        ));
+        assert!(matches!(
+            missing_parameter,
+            SketchConstraintDefinition::Native {
+                native_kind,
+                ..
+            } if native_kind == "creo:relation:0"
         ));
     }
 }
