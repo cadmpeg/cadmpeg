@@ -18,16 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-04. Resource cache identity
-
-**Question.** Which URI components and resource metadata identify one cached external resource?
-
-**Known.** Part 21 supplies a URI, an optional last-visited timestamp, and an optional message digest, but does not define URI normalization, cache keys, validators, content negotiation, or representation equivalence (`step.md` §6 "In a `SCHEMA_POPULATION` triple"). The codec has no external-resource cache (`step.md` §7 "CADIR decision: the STEP codec has no external-resource cache").
-
-**Need.** Define the caller cache key, freshness rule, digest rule, and representation-equivalence result, with references that vary URI spelling and freshness metadata.
-
-**Conflict.** A cache-free codec does not settle cache identity for a caller that resolves the dependency.
-
 ## 3. Containers and other encodings
 
 ### CE-02. ZIP resource composition

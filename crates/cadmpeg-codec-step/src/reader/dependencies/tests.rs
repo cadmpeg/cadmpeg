@@ -205,6 +205,57 @@ fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
 }
 
 #[test]
+fn signed_resource_digest_and_timestamp_are_retained_without_cache_identity() {
+    let bytes = include_bytes!("tests/data/er04_cache_identity_signed.p21");
+    let signed_resource = include_bytes!("../../signature/tests/data/sg04_openssl_detached.p21");
+    let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse signed cache witness");
+    assert!(diagnostics.is_empty());
+    let signed_exchange = crate::parse::parse(signed_resource)
+        .expect("parse signed resource")
+        .0;
+    assert_eq!(signed_exchange.signature_sections.len(), 1);
+
+    let population = exchange
+        .header
+        .iter()
+        .find(|record| record.name == "SCHEMA_POPULATION")
+        .expect("signed schema population header");
+    let crate::parse::Value::List(entries) = &population.parameters[0] else {
+        panic!("signed schema population entries");
+    };
+    assert_eq!(entries.len(), 2);
+    for (entry, (address, timestamp)) in entries.iter().zip([
+        ("signature/sg04_openssl_detached.p21", "2026-08-16T00:00:00"),
+        (
+            "signature/./sg04_openssl_detached.p21",
+            "2026-08-17T00:00:00",
+        ),
+    ]) {
+        assert_eq!(
+            entry,
+            &crate::parse::Value::List(vec![
+                crate::parse::Value::String(address.as_bytes().to_vec()),
+                crate::parse::Value::String(timestamp.as_bytes().to_vec()),
+                crate::parse::Value::String(
+                    b"PVXS8diN1zTOTu9AEL6T+aJH7u5ckF7wVCROqLXlIDA=".to_vec(),
+                ),
+            ])
+        );
+    }
+
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode signed cache witness without resource access");
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert!(!source.attributes.keys().any(|key| key.contains("cache")));
+    assert!(result
+        .report()
+        .notes
+        .iter()
+        .all(|note| !note.starts_with("external resource")));
+}
+
+#[test]
 fn complex_document_dependency_records_use_inherited_fields() {
     let result = decode_inline(
         "#1=DOCUMENT_TYPE('digital');

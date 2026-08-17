@@ -683,14 +683,23 @@ cross-resource composition step. A missing, refused, or unverified target
 remains an external dependency.
 
 CADIR decision: the STEP codec has no external-resource cache and does not
-canonicalize URI spellings. For a caller cache, the retrieved representation
-key is the exact URI before its `#` fragment plus the caller's representation
-and request policy; the fragment selects an anchor after retrieval and is part
-of the composed target identity, not the fetched-byte key. A validated
-message digest may identify reusable bytes across resource bindings. A
-timestamp alone does not establish byte identity. Different validated
-digests for one URI are a conflict, not a merge. No cached bytes or cache
-equivalence result enters the decoded STEP graph implicitly.
+canonicalize URI spellings. A caller cache key is
+`(exact-uri-before-fragment, representation-policy, request-policy)`. The
+exact URI includes its scheme, authority, path, query, and spelling; the
+fragment selects an anchor after retrieval and is part of the composed target
+identity, not the fetched-byte key. A caller evaluates the schema-population
+timestamp as `freshness-asserted` only when it is later than the referenced
+exchange's `FILE_NAME` timestamp; otherwise it is `freshness-unknown`, not a
+claim that the bytes changed. A digest is `integrity-verified` only when the
+referenced exchange has a signature and the supplied digest matches the bytes
+using the first signature's hash algorithm. Missing or unchecked evidence is
+`integrity-unknown`; a mismatch is `integrity-conflict` and refuses the
+binding. A validated digest may permit byte reuse across cache keys, but the
+caller retains each URI binding and target identity. URI normalization,
+timestamp equality, content negotiation, or byte equality without a validated
+digest does not establish representation equivalence. Different validated
+digests for one cache key are a conflict, not a merge. No cache result or
+retrieved bytes enter the decoded STEP graph implicitly.
 
 ISO 10303-21:2016 §14.1 in the [Part 21 edition-3
 text](https://www.steptools.com/stds/step/IS_final_p21e3.html) defines each
