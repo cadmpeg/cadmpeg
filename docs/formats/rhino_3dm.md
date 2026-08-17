@@ -6377,6 +6377,12 @@ containing record remains retained, and the codec does not apply a known-major
 prefix to a later major. A future major can enter typed decoding only after its
 field grammar and neutral admission rule are added to this specification.
 
+CADIR decision: a minor suffix not defined by this specification remains
+bounded source bytes in its containing payload and receives no typed field or
+neutral value. The complete containing record remains retained. A later minor
+can enter typed decoding only after a producer-defined field order and neutral
+admission rule are added to this specification.
+
 CADIR decision: the archive container grammar is admitted only for the archive
 versions listed in section 1. A syntactically valid positive archive version
 outside that list is header-only: inspection reports the header and decoding is
