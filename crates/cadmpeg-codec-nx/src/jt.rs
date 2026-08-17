@@ -64,13 +64,25 @@ pub(crate) enum Predictor {
     Null,
 }
 
+fn try_vec<T>(capacity: usize) -> Option<Vec<T>> {
+    let mut values = Vec::new();
+    values.try_reserve_exact(capacity).ok()?;
+    Some(values)
+}
+
 /// Reconstruct JT primal integers from predictor residuals.
 pub(crate) fn unpack_predictor_residuals(residuals: &[i32], predictor: Predictor) -> Vec<i32> {
     if predictor == Predictor::Null {
-        return residuals.to_vec();
+        let Some(mut values) = try_vec(residuals.len()) else {
+            return Vec::new();
+        };
+        values.extend_from_slice(residuals);
+        return values;
     }
 
-    let mut values = Vec::with_capacity(residuals.len());
+    let Some(mut values) = try_vec(residuals.len()) else {
+        return Vec::new();
+    };
     for (index, &residual) in residuals.iter().enumerate() {
         if index < 4 {
             values.push(residual);
@@ -108,16 +120,17 @@ fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option
     if exponents.len() != mantissae.len() {
         return None;
     }
-    exponents
-        .iter()
-        .zip(mantissae)
-        .map(|(&exponent, &mantissa)| {
-            let exponent = exponent as u32 & 0x1ff;
-            let mantissa = mantissa as u32 & 0x7f_ffff;
-            let value = f32::from_bits((exponent << 23) | mantissa);
-            value.is_finite().then_some(value)
-        })
-        .collect()
+    let mut values = try_vec(exponents.len())?;
+    for (&exponent, &mantissa) in exponents.iter().zip(mantissae) {
+        let exponent = exponent as u32 & 0x1ff;
+        let mantissa = mantissa as u32 & 0x7f_ffff;
+        let value = f32::from_bits((exponent << 23) | mantissa);
+        if !value.is_finite() {
+            return None;
+        }
+        values.push(value);
+    }
+    Some(values)
 }
 
 pub(crate) fn deering_normal(
@@ -183,7 +196,7 @@ pub(crate) fn decode_vertex_normals(
     }
     let mut cursor = 6usize;
     let normals = if expected_bits == 0 {
-        let mut components = Vec::with_capacity(3);
+        let mut components = try_vec(3)?;
         for _ in 0..3 {
             let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(exponent_len)?;
@@ -194,17 +207,13 @@ pub(crate) fn decode_vertex_normals(
             }
             components.push(lossless_coordinate_component(&exponents, &mantissae)?);
         }
-        (0..count)
-            .map(|index| {
-                [
-                    components[0][index],
-                    components[1][index],
-                    components[2][index],
-                ]
-            })
-            .collect::<Vec<_>>()
+        let mut normals = try_vec(count)?;
+        for ((x, y), z) in components[0].iter().zip(&components[1]).zip(&components[2]) {
+            normals.push([*x, *y, *z]);
+        }
+        normals
     } else {
-        let mut codes = Vec::with_capacity(4);
+        let mut codes = try_vec(4)?;
         for _ in 0..4 {
             let (values, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(byte_len)?;
@@ -213,17 +222,19 @@ pub(crate) fn decode_vertex_normals(
             }
             codes.push(values);
         }
-        (0..count)
-            .map(|index| {
-                deering_normal(
-                    codes[0][index],
-                    codes[1][index],
-                    codes[2][index],
-                    codes[3][index],
-                    expected_bits,
-                )
-            })
-            .collect::<Option<Vec<_>>>()?
+        let mut normals = try_vec(count)?;
+        for (((sextant, octant), theta), psi) in
+            codes[0].iter().zip(&codes[1]).zip(&codes[2]).zip(&codes[3])
+        {
+            normals.push(deering_normal(
+                *sextant,
+                *octant,
+                *theta,
+                *psi,
+                expected_bits,
+            )?);
+        }
+        normals
     };
     let hash = read_u32(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
@@ -246,7 +257,7 @@ pub(crate) fn decode_vertex_texture_coordinates(
         return None;
     }
     let mut cursor = 6usize;
-    let mut components = Vec::with_capacity(component_count);
+    let mut components = try_vec(component_count)?;
     if expected_bits == 0 {
         for _ in 0..component_count {
             let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
@@ -259,7 +270,7 @@ pub(crate) fn decode_vertex_texture_coordinates(
             components.push(lossless_coordinate_component(&exponents, &mantissae)?);
         }
     } else {
-        let mut ranges = Vec::with_capacity(component_count);
+        let mut ranges = try_vec(component_count)?;
         for _ in 0..component_count {
             let minimum = View::f32_le_at(bytes, cursor)?;
             let maximum = View::f32_le_at(bytes, cursor + 4)?;
@@ -280,23 +291,23 @@ pub(crate) fn decode_vertex_texture_coordinates(
             if residuals.len() != count {
                 return None;
             }
-            components.push(
-                unpack_predictor_residuals(&residuals, Predictor::Lag1)
-                    .into_iter()
-                    .map(|code| dequantize_uniform(code, range, expected_bits))
-                    .collect::<Option<Vec<_>>>()?,
-            );
+            let mut component = try_vec(count)?;
+            for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
+                component.push(dequantize_uniform(code, range, expected_bits)?);
+            }
+            components.push(component);
         }
     }
     let hash = read_u32(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
-    let values = (0..count)
-        .map(|index| {
-            (0..component_count)
-                .map(|component| components.get(component)?.get(index).copied())
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut values = try_vec(count)?;
+    for index in 0..count {
+        let mut value = try_vec(component_count)?;
+        for component in 0..component_count {
+            value.push(components.get(component)?.get(index).copied()?);
+        }
+        values.push(value);
+    }
     Some((values, hash, cursor))
 }
 
@@ -317,7 +328,7 @@ pub(crate) fn decode_vertex_colors(
     }
     let mut cursor = 6usize;
     let colors = if expected_bits == 0 {
-        let mut components = Vec::with_capacity(component_count);
+        let mut components = try_vec(component_count)?;
         for _ in 0..component_count {
             let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(exponent_len)?;
@@ -330,20 +341,20 @@ pub(crate) fn decode_vertex_colors(
             let mantissae = unpack_predictor_residuals(&mantissae, Predictor::Lag1);
             components.push(lossless_coordinate_component(&exponents, &mantissae)?);
         }
-        (0..count)
-            .map(|index| {
-                Some([
-                    *components.first()?.get(index)?,
-                    *components.get(1)?.get(index)?,
-                    *components.get(2)?.get(index)?,
-                    components
-                        .get(3)
-                        .and_then(|component| component.get(index))
-                        .copied()
-                        .unwrap_or(1.0),
-                ])
-            })
-            .collect::<Option<Vec<_>>>()?
+        let mut colors = try_vec(count)?;
+        for index in 0..count {
+            colors.push([
+                *components.first()?.get(index)?,
+                *components.get(1)?.get(index)?,
+                *components.get(2)?.get(index)?,
+                components
+                    .get(3)
+                    .and_then(|component| component.get(index))
+                    .copied()
+                    .unwrap_or(1.0),
+            ]);
+        }
+        colors
     } else {
         let hsv = match *bytes.get(cursor)? {
             0 => false,
@@ -351,8 +362,8 @@ pub(crate) fn decode_vertex_colors(
             _ => return None,
         };
         cursor = cursor.checked_add(1)?;
-        let mut ranges = Vec::with_capacity(4);
-        let mut component_bits = Vec::with_capacity(4);
+        let mut ranges = try_vec(4)?;
+        let mut component_bits = try_vec(4)?;
         if hsv {
             for range in [[0.0, 6.0], [0.0, 1.0], [0.0, 1.0], [0.0, 1.0]] {
                 let bits = *bytes.get(cursor)?;
@@ -381,36 +392,37 @@ pub(crate) fn decode_vertex_colors(
                 cursor = cursor.checked_add(9)?;
             }
         }
-        let mut components = Vec::with_capacity(4);
+        let mut components = try_vec(4)?;
         for component in 0..4 {
             let (residuals, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(byte_len)?;
             if residuals.len() != count {
                 return None;
             }
-            components.push(
-                unpack_predictor_residuals(&residuals, Predictor::Lag1)
-                    .into_iter()
-                    .map(|code| {
-                        dequantize_uniform(code, ranges[component], component_bits[component])
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-            );
+            let mut values = try_vec(count)?;
+            for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
+                values.push(dequantize_uniform(
+                    code,
+                    *ranges.get(component)?,
+                    *component_bits.get(component)?,
+                )?);
+            }
+            components.push(values);
         }
-        (0..count)
-            .map(|index| {
-                let first = components[0][index];
-                let second = components[1][index];
-                let third = components[2][index];
-                let alpha = components[3][index];
-                if hsv {
-                    let [red, green, blue] = hsv_to_rgb(first, second, third)?;
-                    Some([red, green, blue, alpha])
-                } else {
-                    Some([first, second, third, alpha])
-                }
-            })
-            .collect::<Option<Vec<_>>>()?
+        let mut colors = try_vec(count)?;
+        for index in 0..count {
+            let first = *components.first()?.get(index)?;
+            let second = *components.get(1)?.get(index)?;
+            let third = *components.get(2)?.get(index)?;
+            let alpha = *components.get(3)?.get(index)?;
+            if hsv {
+                let [red, green, blue] = hsv_to_rgb(first, second, third)?;
+                colors.push([red, green, blue, alpha]);
+            } else {
+                colors.push([first, second, third, alpha]);
+            }
+        }
+        colors
     };
     let hash = read_u32(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
@@ -454,11 +466,11 @@ pub(crate) fn decode_vertex_flags(
     if values.len() != count {
         return None;
     }
-    let values = values
-        .into_iter()
-        .map(|value| u32::try_from(value).ok().filter(|value| *value <= 1))
-        .collect::<Option<Vec<_>>>()?;
-    Some((values, 4usize.checked_add(byte_len)?))
+    let mut flags = try_vec(count)?;
+    for value in values {
+        flags.push(u32::try_from(value).ok().filter(|value| *value <= 1)?);
+    }
+    Some((flags, 4usize.checked_add(byte_len)?))
 }
 
 pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option<f32> {
@@ -492,7 +504,7 @@ pub(crate) fn decode_vertex_coordinates(
     quantization_bits: [u8; 3],
 ) -> Option<(Vec<[f32; 3]>, u32, usize)> {
     let mut cursor = 0usize;
-    let mut components = Vec::with_capacity(3);
+    let mut components = try_vec(3)?;
     for component in 0..3 {
         if quantization_bits[component] == 0 {
             let (exponent_residuals, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
@@ -513,27 +525,27 @@ pub(crate) fn decode_vertex_coordinates(
             if residuals.len() != vertex_count {
                 return None;
             }
-            components.push(
-                unpack_predictor_residuals(&residuals, Predictor::Lag1)
-                    .into_iter()
-                    .map(|code| {
-                        dequantize_uniform(code, ranges[component], quantization_bits[component])
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-            );
+            let mut values = try_vec(vertex_count)?;
+            for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
+                values.push(dequantize_uniform(
+                    code,
+                    ranges[component],
+                    quantization_bits[component],
+                )?);
+            }
+            components.push(values);
         }
     }
     let coordinate_hash = read_u32(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
-    let points = (0..vertex_count)
-        .map(|index| {
-            [
-                components[0][index],
-                components[1][index],
-                components[2][index],
-            ]
-        })
-        .collect();
+    let mut points = try_vec(vertex_count)?;
+    for index in 0..vertex_count {
+        points.push([
+            *components.first()?.get(index)?,
+            *components.get(1)?.get(index)?,
+            *components.get(2)?.get(index)?,
+        ]);
+    }
     Some((points, coordinate_hash, cursor))
 }
 
@@ -543,6 +555,9 @@ pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usiz
         return None;
     }
     let value_count = read_u32(bytes, 0)?;
+    if usize::try_from(value_count).ok()? > MAX_ARITHMETIC_VALUES {
+        return None;
+    }
     if value_count == 0 {
         return Some((0, 0, 4));
     }
@@ -604,7 +619,7 @@ fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<ProbabilityEntry>, usi
     if symbol_bits > 32 || occurrence_bits > 32 || value_bits > 32 {
         return None;
     }
-    let mut entries = Vec::with_capacity(entry_count);
+    let mut entries = try_vec(entry_count)?;
     for _ in 0..entry_count {
         let symbol = bits.read(symbol_bits)? as i32 - 2;
         let occurrence_count = bits.read(occurrence_bits)?;
@@ -662,6 +677,8 @@ impl CodeBits<'_> {
 
 /// Upper bound on values a single arithmetic-coded lane may declare.
 const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
+/// Upper bound on arithmetic decoder table lookups for one lane.
+const MAX_ARITHMETIC_WORK: usize = 64_000_000;
 
 fn decode_arithmetic(
     code_words: &[u8],
@@ -672,7 +689,12 @@ fn decode_arithmetic(
     // Arithmetic symbols can consume zero code bits, so the stream length puts
     // no floor under `value_count`; an absolute cap bounds the allocation and
     // the per-value decode work instead.
-    if value_count > MAX_ARITHMETIC_VALUES {
+    if value_count > MAX_ARITHMETIC_VALUES
+        || entries
+            .len()
+            .checked_mul(value_count)
+            .is_none_or(|work| work > MAX_ARITHMETIC_WORK)
+    {
         return None;
     }
     let total: u32 = entries
@@ -692,7 +714,7 @@ fn decode_arithmetic(
     }
     let mut low = 0u16;
     let mut high = u16::MAX;
-    let mut values = Vec::with_capacity(value_count);
+    let mut values = try_vec(value_count)?;
     for _ in 0..value_count {
         let range = u32::from(high.wrapping_sub(low)) + 1;
         let scaled = ((u32::from(code.wrapping_sub(low)) + 1) * total - 1) / range;
@@ -742,7 +764,7 @@ fn decode_bitlength(
     };
     let value_count =
         cadmpeg_core::decode::bounded_len(value_count as u64, 1, MAX_ARITHMETIC_VALUES)?;
-    let mut values = Vec::with_capacity(value_count);
+    let mut values = try_vec(value_count)?;
     if bits.read(1)? == 0 {
         let minimum_bits = u8::try_from(bits.read(6)?).ok()?;
         let maximum_bits = u8::try_from(bits.read(6)?).ok()?;
@@ -807,6 +829,9 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
         return None;
     }
     let value_count = usize::try_from(read_u32(bytes, 0)?).ok()?;
+    if value_count > MAX_ARITHMETIC_VALUES {
+        return None;
+    }
     if value_count == 0 {
         return Some((Vec::new(), 4));
     }
@@ -839,11 +864,10 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
         {
             return None;
         }
-        let values = msb
-            .into_iter()
-            .zip(lsb)
-            .map(|(high, low)| (low | high.wrapping_shl(u32::from(shift))).wrapping_add(bias))
-            .collect();
+        let mut values = try_vec(value_count)?;
+        for (high, low) in msb.into_iter().zip(lsb) {
+            values.push((low | high.wrapping_shl(u32::from(shift))).wrapping_add(bias));
+        }
         return Some((values, 11 + msb_len + lsb_len));
     }
     if !matches!(codec, 1 | 3) {
@@ -868,10 +892,10 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
     }
     cursor += oob_len;
     let mut out_of_band = out_of_band.into_iter();
-    let values = symbols
-        .into_iter()
-        .map(|value| value.or_else(|| out_of_band.next()))
-        .collect::<Option<Vec<_>>>()?;
+    let mut values = try_vec(value_count)?;
+    for value in symbols {
+        values.push(value.or_else(|| out_of_band.next())?);
+    }
     Some((values, cursor))
 }
 

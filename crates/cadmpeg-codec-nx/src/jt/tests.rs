@@ -140,6 +140,27 @@ fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
 }
 
 #[test]
+fn jt_int32_cdp2_rejects_an_oversized_declared_count_before_allocation() {
+    let mut packet = u32::MAX.to_le_bytes().to_vec();
+    packet.extend_from_slice(&[1, 0, 0, 0, 0]);
+    assert!(super::decode_int32_cdp2(&packet, 0).is_none());
+    assert!(super::frame_int32_cdp2(&packet, 0).is_none());
+}
+
+#[test]
+fn jt_arithmetic_decode_bounds_table_lookup_work() {
+    let entries = vec![
+        super::ProbabilityEntry {
+            symbol: 0,
+            occurrence_count: 1,
+            value: 0,
+        };
+        65
+    ];
+    assert!(super::decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries,).is_none());
+}
+
+#[test]
 fn jt_predictors_reconstruct_primal_integers() {
     use super::{unpack_predictor_residuals, Predictor};
 
