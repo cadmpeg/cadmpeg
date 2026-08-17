@@ -53,7 +53,7 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
 
     for forced in [false, true] {
         let mut command = Command::cargo_bin("cadmpeg").unwrap();
-        command.args(["decode", input.to_str().unwrap(), "--container-only"]);
+        command.args(["dump", input.to_str().unwrap(), "--container-only"]);
         if forced {
             command.args(["--input-format", "fcstd"]);
         }
@@ -242,7 +242,7 @@ fn convert_stdout_contains_only_json_artifact() {
         .unwrap();
     assert!(output.status.success());
     serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
-    assert!(String::from_utf8_lossy(&output.stderr).contains("validation: OK"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
 }
 
 #[test]
@@ -266,7 +266,7 @@ fn step_artifact_starts_with_step_header() {
     assert!(output.stdout.starts_with(b"ISO-10303-21"));
     assert!(String::from_utf8_lossy(&output.stdout)
         .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("validation:"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("check:"));
 }
 
 #[test]
@@ -314,7 +314,7 @@ fn source_less_ir_exports_to_decodable_rhino() {
             input.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
-            "--allow-invalid",
+            "--allow-errors",
         ])
         .assert()
         .success();
@@ -350,9 +350,9 @@ fn rhino_output_version_is_selected_explicitly() {
             input.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
-            "--rhino-version",
+            "--rhino-target",
             "60",
-            "--allow-invalid",
+            "--allow-errors",
         ])
         .assert()
         .success();
@@ -365,9 +365,9 @@ fn rhino_output_version_is_selected_explicitly() {
             input.to_str().unwrap(),
             "-f",
             "cadir",
-            "--rhino-version",
+            "--rhino-target",
             "60",
-            "--allow-invalid",
+            "--allow-errors",
         ])
         .assert()
         .failure()
@@ -375,7 +375,7 @@ fn rhino_output_version_is_selected_explicitly() {
 }
 
 #[test]
-fn validation_blocks_conversion_unless_overridden() {
+fn check_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube();
     invalid.model.faces[0].surface.0 = "missing".into();
@@ -383,7 +383,7 @@ fn validation_blocks_conversion_unless_overridden() {
     let output = dir.path().join("blocked.step");
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["validate", input.to_str().unwrap()])
+        .args(["check", input.to_str().unwrap()])
         .assert()
         .code(1);
     Command::cargo_bin("cadmpeg")
@@ -409,7 +409,7 @@ fn validation_blocks_conversion_unless_overridden() {
             "step",
             "-o",
             output.to_str().unwrap(),
-            "--allow-invalid",
+            "--allow-errors",
         ])
         .assert()
         .success();
@@ -457,7 +457,7 @@ fn format_is_required_when_stdout_has_no_extension() {
     let input = fixture(dir.path(), "cube.json", &unit_cube());
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", input.to_str().unwrap()])
+        .args(["convert", input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("cannot infer format; pass -f"));
@@ -634,7 +634,7 @@ fn garbage_reports_supported_formats() {
     fs::write(&input, b"not a CAD file").unwrap();
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["validate", input.to_str().unwrap()])
+        .args(["check", input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
@@ -702,7 +702,7 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
         let output = Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "decode",
+                "dump",
                 input.to_str().unwrap(),
                 "--input-format",
                 input_format,
@@ -723,7 +723,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
         for extra in [None, Some("--container-only")] {
             let mut command = Command::cargo_bin("cadmpeg").unwrap();
-            command.args(["decode", input.to_str().unwrap()]);
+            command.args(["dump", input.to_str().unwrap()]);
             if let Some(argument) = extra {
                 command.arg(argument);
             }
@@ -765,7 +765,7 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
 
     let decoded = Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["decode", input.to_str().unwrap()])
+        .args(["dump", input.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(decoded.status.success());
@@ -782,10 +782,10 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["validate", input.to_str().unwrap()])
+        .args(["check", input.to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("validation: OK"));
+        .stdout(predicate::str::contains("check: OK"));
 }
 
 #[test]
@@ -795,7 +795,7 @@ fn rhino_v1_to_v4_decode_metadata_but_legacy_v5_is_header_only() {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
         let output = Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args(["decode", input.to_str().unwrap()])
+            .args(["dump", input.to_str().unwrap()])
             .output()
             .unwrap();
         assert!(output.status.success());
@@ -819,7 +819,7 @@ fn rhino_v1_to_v4_decode_metadata_but_legacy_v5_is_header_only() {
         );
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["decode", input.to_str().unwrap()])
+        .args(["dump", input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
@@ -847,7 +847,7 @@ fn rhino_cli_rejects_truncated_and_malformed_archives_with_context() {
     fs::write(&malformed, bytes).unwrap();
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["decode", malformed.to_str().unwrap()])
+        .args(["dump", malformed.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(
@@ -877,12 +877,7 @@ fn cadir_override_bypasses_native_detection() {
     let input = fixture(dir.path(), "no-extension", &unit_cube());
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args([
-            "validate",
-            input.to_str().unwrap(),
-            "--input-format",
-            "cadir",
-        ])
+        .args(["check", input.to_str().unwrap(), "--input-format", "cadir"])
         .assert()
         .success();
 }
@@ -926,7 +921,7 @@ fn existing_output_requires_force() {
 }
 
 #[test]
-fn input_named_tmp_survives_export_and_temp_names_do_not_collide() {
+fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "part.tmp", &unit_cube());
     let original = fs::read(&input).unwrap();
@@ -937,7 +932,7 @@ fn input_named_tmp_survives_export_and_temp_names_do_not_collide() {
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 input.to_str().unwrap(),
                 "-f",
                 format,
@@ -968,7 +963,7 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
     fs::write(&garbage, b"garbage").unwrap();
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["decode", garbage.to_str().unwrap()])
+        .args(["dump", garbage.to_str().unwrap()])
         .assert()
         .code(2);
     Command::cargo_bin("cadmpeg")
@@ -982,7 +977,7 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
     let invalid = fixture(dir.path(), "invalid.json", &invalid);
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["validate", invalid.to_str().unwrap()])
+        .args(["check", invalid.to_str().unwrap()])
         .assert()
         .code(1);
 }
@@ -995,7 +990,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             lossy.to_str().unwrap(),
             "-f",
             "step",
@@ -1028,7 +1023,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             lossy.to_str().unwrap(),
             "-f",
             "step",
@@ -1063,13 +1058,13 @@ fn convert_rejects_empty_native_geometry_unless_allowed() {
 }
 
 #[test]
-fn export_rejects_container_only_geometry_unless_allowed() {
+fn convert_rejects_container_only_geometry_unless_allowed() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             input.to_str().unwrap(),
             "-f",
             "step",
@@ -1082,7 +1077,7 @@ fn export_rejects_container_only_geometry_unless_allowed() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             input.to_str().unwrap(),
             "-f",
             "step",
@@ -1118,7 +1113,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert_eq!(value["status"], "ok");
     assert!(value["refusal"].is_null());
     assert!(value["decode_report"].is_null());
-    assert!(value["validation_report"].is_object());
+    assert!(value["check_report"].is_object());
     assert_eq!(value["export"]["format"], "step");
     assert_eq!(value["export"]["census"]["basis"], "target_records");
     assert!(value["export"]["census"]["counts"].is_object());
@@ -1152,7 +1147,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .unwrap()
         .contains("geometry"));
     assert!(value["decode_report"].is_object());
-    assert!(value["validation_report"].is_object());
+    assert!(value["check_report"].is_object());
     assert!(value["export"].is_null());
 }
 
@@ -1206,7 +1201,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             cube.to_str().unwrap(),
             "-o",
             inferred.to_str().unwrap(),
@@ -1218,7 +1213,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     let native = geometryless_creo(dir.path(), "empty.prt");
     let stdout = Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["decode", native.to_str().unwrap()])
+        .args(["dump", native.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(stdout.status.success());
@@ -1228,7 +1223,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "decode",
+            "dump",
             native.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
@@ -1248,7 +1243,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             cube.to_str().unwrap(),
             "-o",
             inferred.to_str().unwrap(),
@@ -1273,7 +1268,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 cube.to_str().unwrap(),
                 "-o",
                 native.to_str().unwrap(),
@@ -1285,7 +1280,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "decode",
+                "dump",
                 native.to_str().unwrap(),
                 "-o",
                 persisted.to_str().unwrap(),
@@ -1299,7 +1294,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 persisted.to_str().unwrap(),
                 "-o",
                 replay.to_str().unwrap(),
@@ -1313,7 +1308,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
-                "export",
+                "convert",
                 persisted.to_str().unwrap(),
                 "-o",
                 refused.to_str().unwrap(),
@@ -1335,12 +1330,12 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
     let input = fixture(dir.path(), "cube.json", &unit_cube());
     let validate = Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["validate", input.to_str().unwrap(), "--json"])
+        .args(["check", input.to_str().unwrap(), "--json"])
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
     assert_eq!(value["schema_version"], 6);
-    assert_eq!(value["command"], "validate");
+    assert_eq!(value["command"], "check");
 
     let diff = Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -1381,7 +1376,7 @@ fn cadir_format_name_and_json_alias_both_work() {
     for format in ["cadir", "json"] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args(["export", input.to_str().unwrap(), "-f", format])
+            .args(["convert", input.to_str().unwrap(), "-f", format])
             .assert()
             .success()
             .stdout(predicate::str::starts_with("{"));
@@ -1396,7 +1391,7 @@ fn explicit_format_warns_when_known_extension_disagrees() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "export",
+            "convert",
             input.to_str().unwrap(),
             "-f",
             "step",
@@ -1441,19 +1436,19 @@ fn validate_report_writes_versioned_result_to_file() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "validate",
+            "check",
             input.to_str().unwrap(),
             "--report",
             report.to_str().unwrap(),
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("validation: OK"));
+        .stdout(predicate::str::contains("check: OK"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["schema_version"], 6);
-    assert_eq!(value["command"], "validate");
+    assert_eq!(value["command"], "check");
     assert!(value["decode_report"].is_null());
-    assert!(value["validation_report"].is_object());
+    assert!(value["check_report"].is_object());
 }
 
 #[test]
@@ -1463,8 +1458,8 @@ fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
     let report = dir.path().join("report.json");
 
     for (command, path_flag) in [
-        (vec!["validate"], "-o"),
-        (vec!["validate"], "--output"),
+        (vec!["check"], "-o"),
+        (vec!["check"], "--output"),
         (vec!["diff"], "-o"),
     ] {
         fs::write(&report, b"keep").unwrap();
@@ -1496,7 +1491,7 @@ fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
 
 #[test]
 fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
-    // findings under `.validation_report.findings` in the written report.
+    // findings under `.check_report.findings` in the written report.
     let dir = tempdir().unwrap();
     let mut ir = unit_cube();
     let absent = format!("{}-absent", ir.model.faces[0].surface);
@@ -1507,7 +1502,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "validate",
+            "check",
             input.to_str().unwrap(),
             "-o",
             report.to_str().unwrap(),
@@ -1518,7 +1513,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
     let printed = String::from_utf8(output.stdout).unwrap();
     let summary = printed
         .lines()
-        .find(|line| line.starts_with("validation: FAILED"))
+        .find(|line| line.starts_with("check: FAILED"))
         .unwrap_or_else(|| panic!("{printed}"));
     let printed_errors: usize = summary
         .split_once('(')
@@ -1526,7 +1521,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
         .map_or_else(|| panic!("{summary}"), |(count, _)| count.parse().unwrap());
 
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    let findings = value["validation_report"]["findings"].as_array().unwrap();
+    let findings = value["check_report"]["findings"].as_array().unwrap();
     let reported_errors = findings
         .iter()
         .filter(|finding| finding["severity"] == "error" || finding["severity"] == "blocking")
@@ -1609,7 +1604,7 @@ fn report_to_an_unwritable_path_is_an_operational_error() {
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
-            "validate",
+            "check",
             input.to_str().unwrap(),
             "--report",
             report.to_str().unwrap(),
@@ -1628,9 +1623,8 @@ fn input_flag_reaches_every_single_input_command() {
 
     // Byte-identical stdout under either input spelling.
     for args in [
-        vec!["decode", "--input-format", "cadir"],
-        vec!["validate"],
-        vec!["export", "-f", "step"],
+        vec!["dump", "--input-format", "cadir"],
+        vec!["check"],
         vec!["convert", "-f", "step"],
     ] {
         let positional = Command::cargo_bin("cadmpeg")
@@ -1654,7 +1648,7 @@ fn input_flag_reaches_every_single_input_command() {
     // Both spellings at once are a clap conflict.
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["validate", path, "--input", path])
+        .args(["check", path, "--input", path])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("cannot be used with"));
@@ -1669,45 +1663,41 @@ fn json_on_artifact_commands_is_a_teaching_error() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["decode", path, "--json"])
+        .args(["dump", path, "--json"])
         .assert()
         .code(2)
         .stderr(
             predicate::str::contains("already JSON").and(predicate::str::contains("cadmpeg query")),
         );
 
-    for command in ["export", "convert"] {
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([command, path, "--json"])
-            .assert()
-            .code(2)
-            .stderr(
-                predicate::str::contains("not an output selector")
-                    .and(predicate::str::contains("--report")),
-            );
-    }
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "--json"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("not an output selector")
+                .and(predicate::str::contains("--report")),
+        );
 }
 
 #[test]
-fn export_and_convert_refuse_binary_output_to_stdout() {
+fn convert_refuses_binary_output_to_stdout() {
     let dir = tempdir().unwrap();
     let ir = unit_cube();
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
     let path = model.to_str().unwrap();
 
-    for command in ["convert", "export"] {
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([command, path, "--format", "sldprt"])
-            .assert()
-            .code(2)
-            .stderr(
-                predicate::str::contains("refusing to write binary sldprt")
-                    .and(predicate::str::contains("--input-format sldprt"))
-                    .and(predicate::str::contains("--binary-stdout")),
-            );
-    }
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "--format", "sldprt"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("refusing to write binary sldprt")
+                .and(predicate::str::contains("--input-format sldprt"))
+                .and(predicate::str::contains("--binary-stdout")),
+        );
 
     // With -o the write succeeds (Rhino is the binary writer that accepts a
     // source-less IR; the guard question is the destination, not the codec).
@@ -1728,7 +1718,7 @@ fn export_and_convert_refuse_binary_output_to_stdout() {
             "rhino",
             "-o",
             out.to_str().unwrap(),
-            "--allow-invalid",
+            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1742,7 +1732,7 @@ fn export_and_convert_refuse_binary_output_to_stdout() {
             point.to_str().unwrap(),
             "--format",
             "rhino",
-            "--allow-invalid",
+            "--allow-errors",
             "--binary-stdout",
         ])
         .output()
@@ -1753,7 +1743,7 @@ fn export_and_convert_refuse_binary_output_to_stdout() {
     // Text formats to stdout stay untouched by the guard.
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", path, "--format", "step"])
+        .args(["convert", path, "--format", "step"])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ISO-10303-21;"));
@@ -1797,7 +1787,7 @@ fn wrong_target_flags_refuse_before_reading_input() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", path, "-f", "step", "--iges-target", "5.3"])
+        .args(["convert", path, "-f", "step", "--iges-target", "5.3"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
@@ -1815,7 +1805,7 @@ fn wrong_target_flags_refuse_before_reading_input() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["export", path, "-f", "iges", "--reject-step-losses"])
+        .args(["convert", path, "-f", "iges", "--reject-step-losses"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
@@ -1824,10 +1814,51 @@ fn wrong_target_flags_refuse_before_reading_input() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["convert", path, "-f", "step", "--rhino-version", "80"])
+        .args(["convert", path, "-f", "step", "--rhino-target", "80"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "--rhino-version requires Rhino output",
+            "--rhino-target requires Rhino output",
         ));
+}
+
+#[cfg(unix)]
+#[test]
+fn closed_stdout_pipe_exits_on_sigpipe_without_panic() {
+    use std::io::Read;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{Command as ProcessCommand, Stdio};
+
+    // Hex of 64 KiB exceeds the typical pipe buffer, so the writer is still
+    // printing when the reader closes.
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("zeros.bin");
+    fs::write(&input, vec![0u8; 64 * 1024]).unwrap();
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin("cadmpeg"))
+        .args(["inspect", "hex", input.to_str().unwrap(), "--len", "65536"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stdout = child.stdout.take().unwrap();
+    let mut first = [0u8; 1];
+    stdout.read_exact(&mut first).unwrap();
+    drop(stdout);
+
+    let mut stderr = child.stderr.take().unwrap();
+    let status = child.wait().unwrap();
+    let mut err = String::new();
+    stderr.read_to_string(&mut err).unwrap();
+
+    assert!(
+        !err.contains("panicked"),
+        "closed stdout pipe panicked:\n{err}"
+    );
+    assert_eq!(
+        status.signal(),
+        Some(13),
+        "expected SIGPIPE, got {status:?}; stderr={err}"
+    );
 }

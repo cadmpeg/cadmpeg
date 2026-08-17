@@ -2,10 +2,11 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
-//! Support level: L1 for archive versions 2, 3, 4, 50, 60, 70, 80, and 90;
-//! L0 for V1 and archive version 5 on the cadmpeg support ladder. The codec
-//! provides bounded 3DM container inspection, partial typed decoding, and
-//! explicitly versioned semantic native writing.
+//! Support level: [L0](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+//! Archive 2/3/4/50/60/70/80/90 and V2–V4 open at L1 and show as extras.
+//! V1 and archive version 5 remain L0. The codec provides bounded 3DM
+//! container inspection, partial typed decoding, and explicitly versioned
+//! semantic native writing.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};

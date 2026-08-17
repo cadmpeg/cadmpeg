@@ -29,7 +29,7 @@ The committed transfer floors are:
 
 The supported count is a per-version minimum. It is not a monotonicity claim
 and it is not complete object coverage. The test fails when `example_read`
-refuses a file, validation reports an error, a source-object total changes, or
+refuses a file, `cadmpeg check` reports an error, a source-object total changes, or
 a supported-object count falls below its floor.
 
 Archive version 1 is a reader-only L0 boundary. Archive version 5 has header
