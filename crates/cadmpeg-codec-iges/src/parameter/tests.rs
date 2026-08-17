@@ -412,6 +412,40 @@ fn type123_entity_table_boundary_precedes_a_valid_generic_alternative() {
 }
 
 #[test]
+fn type110_entity_table_boundary_precedes_valid_generic_alternatives() {
+    let first_association = directory_target(1, 402);
+    let second_association = directory_target(3, 402);
+    let line = directory_target(5, 110);
+    let directory = BTreeMap::from([
+        (1, &first_association),
+        (3, &second_association),
+        (5, &line),
+    ]);
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [110, 7, 3, 3, 1, 3, 3, 1, 3, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 10,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 110 table boundary");
+    assert_eq!(groups.token_start, 7);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
 fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
     let association = directory_target(1, 402);
     let directory = BTreeMap::from([(1, &association)]);
@@ -529,5 +563,51 @@ fn decode_uses_type123_entity_boundary_for_form7_association() {
     assert_eq!(
         source.fields()["association_links"].as_array().unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
+    );
+}
+
+#[test]
+fn decode_uses_type110_entity_boundary_for_form7_association() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUPA".into(),
+                    status: "00000000",
+                    parameters: "402,1,5;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUPB".into(),
+                    status: "00000000",
+                    parameters: "402,1,5;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "LINE".into(),
+                    status: "00010000",
+                    parameters: "110,7,3,3,1,3,3,1,3,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#3")]
     );
 }

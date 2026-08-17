@@ -295,16 +295,17 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Return `NV + 1`, the token index at which the trailing pointer groups
 /// start, for an entity layout established in the supported format tables.
 ///
-/// The entity type token is index zero. Type 123 §4.20 has exactly three
-/// primary values, so its additional-pointer groups start at token four.
-/// Unknown layouts retain the generic candidate recovery below until their
-/// entity table is proven and added here.
+/// The entity type token is index zero. Type 110 §4.13 has six primary
+/// coordinates in Forms 0–2, so its additional-pointer groups start at token
+/// seven. Type 123 §4.20 has three primary values, so its groups start at
+/// token four. Layouts not represented here use generic CADIR recovery.
 fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
+        (110, 0..=2) => Some(7),
         (123, 0) => Some(4),
         _ => None,
     }
