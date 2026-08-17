@@ -301,6 +301,58 @@ fn resolves_reference_flip_from_selected_positional_row() {
 }
 
 #[test]
+fn rejects_duplicate_selected_positional_reference_rows() {
+    let mut definition = blank_definition();
+    definition.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(2),
+        sketch_plane_flip: Some(BinaryFlag::Clear),
+        reference_plane_entity_ids: vec![3, 4],
+        reference_plane_rows: vec![
+            FeatureSectionReferencePlane {
+                plane_entity_id: 4,
+                reference_type: Some(5),
+                external_reference_id: None,
+                segment_id: Some(4),
+                sub_index: None,
+                reference_flip: Some(BinaryFlag::Clear),
+            },
+            FeatureSectionReferencePlane {
+                plane_entity_id: 4,
+                reference_type: Some(5),
+                external_reference_id: None,
+                segment_id: Some(5),
+                sub_index: None,
+                reference_flip: Some(BinaryFlag::Set),
+            },
+        ],
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 100,
+    });
+
+    assert!(resolve(
+        &[definition],
+        &PlacementSources {
+            datums: &[
+                datum(2, [1.0, 0.0, 0.0], 2.0),
+                datum(3, [1.0, 0.0, 0.0], 1.0),
+                datum(4, [0.0, 0.0, 1.0], 3.0),
+            ],
+            surface_rows: &[],
+            model_planes: &[],
+            outline_planes: &[],
+            plane_envelopes: &[],
+            surface_parameters: &[],
+            geometry_tables: &[],
+            affected_ids: &[],
+        },
+        &[],
+    )
+    .is_empty());
+}
+
+#[test]
 fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
     let mut definition = blank_definition();
     definition.parameter_frames = vec![FeatureParameterFrame {

@@ -31,7 +31,7 @@ mod sketch_ids;
 mod sketch_transfer;
 mod surfaces;
 mod sweep;
-mod uniqueness;
+pub(crate) mod uniqueness;
 
 use build::{build_container_ir, build_ir, build_report, BuiltIr};
 

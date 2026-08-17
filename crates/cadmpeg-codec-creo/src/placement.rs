@@ -2,6 +2,7 @@
 //! Model-space frames resolved from feature-section datum references.
 
 use crate::datum::DatumPlane;
+use crate::decode::uniqueness::exactly_one;
 use crate::feature::{
     placement_instructions, AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition,
     FeatureEntityTable, FeatureGeometryTable, FeatureGeometryTableKind, FeatureParameterFrameKind,
@@ -451,11 +452,13 @@ fn reference_flip_for_reference(
         return section.orientation.reference_flip;
     }
     let reference_id = reference_id?;
-    section
-        .reference_plane_rows
-        .iter()
-        .find(|row| row.plane_entity_id == reference_id)
-        .and_then(|row| row.reference_flip)
+    exactly_one(
+        section
+            .reference_plane_rows
+            .iter()
+            .filter(|row| row.plane_entity_id == reference_id),
+    )
+    .and_then(|row| row.reference_flip)
 }
 
 fn definition_local_frame_transform(
@@ -1017,6 +1020,15 @@ pub(crate) fn resolve(
         if section.orientation.section_flip == Some(BinaryFlag::Set) {
             sketch_normal = scale(sketch_normal, -1.0);
             sketch_offset = -sketch_offset;
+        }
+        if !section.reference_plane_rows.is_empty() {
+            let reference_rows = section
+                .reference_plane_rows
+                .iter()
+                .filter(|row| row.plane_entity_id == candidate.reference_id);
+            if exactly_one(reference_rows).is_none() {
+                continue;
+            }
         }
         if reference_flip_for_reference(section, Some(candidate.reference_id))
             == Some(BinaryFlag::Set)

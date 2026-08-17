@@ -3660,6 +3660,9 @@ section `u` axis, and the intersection of the two plane equations defines the
 section origin. Parallel support planes and non-plane references do not define
 the section axis. The selected reference row supplies its own `ref_type`,
 `seg_id`, and `flip_flag`; fields from another row do not orient the section.
+A positional reference-plane selection requires exactly one row with the
+selected `plane_id`; a duplicate or missing row leaves the section placement
+unresolved.
 
 A linear section frame is also complete when at least two distinct solved arc
 centers bind through same-feature class-200 entries to complete positional
