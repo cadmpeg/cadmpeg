@@ -378,6 +378,9 @@ fixtures, scores above L1 remain blocked.
 - A unique ordinary arc row with complete center and endpoint coordinates adds
   its consistent radius to radius solving despite an incomplete segment table;
   active complete equal-radius incidences use that row's radius reference.
+- A unique ordinary point row supplies its sense-zero solver point identity from
+an incomplete segment table; duplicate ordinary or cross-family identifiers
+remain unresolved.
 - Positional `entity(line)` rows require exactly one six-scalar endpoint suffix
   start that consumes the complete row body; competing starts withhold the
   line.

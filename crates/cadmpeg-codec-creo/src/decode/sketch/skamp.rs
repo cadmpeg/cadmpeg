@@ -336,7 +336,7 @@ pub(crate) fn section_skamp_point_entity_id(
     if let Some(point) = unique_point_segment(definition, item.entity_id) {
         return (item.sense == 0).then_some(point.point_id);
     }
-    let segment = unique_section_skamp_segment(definition, item.entity_id)?;
+    let segment = unique_decoded_section_segment(definition, item.entity_id)?;
     (item.sense == 0 && segment.kind == crate::feature::FeatureSegmentKind::Point)
         .then_some(segment.point_ids[0])
 }
@@ -438,4 +438,117 @@ pub(crate) fn saved_section_point(
         return None;
     };
     (u.is_finite() && v.is_finite()).then_some([u, v])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::section_skamp_point_entity_id;
+
+    fn point_definition(
+        declared_count: u32,
+        rows: Vec<crate::feature::FeatureSegment>,
+        point_rows: Vec<crate::feature::FeaturePointSegment>,
+    ) -> crate::feature::FeatureDefinition {
+        crate::feature::FeatureDefinition {
+            id: 1,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows,
+                circle_rows: Vec::new(),
+                point_rows,
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        }
+    }
+
+    fn ordinary_point(
+        external_id: u32,
+        point_id: u32,
+        offset: usize,
+    ) -> crate::feature::FeatureSegment {
+        crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Point,
+            directions: [None; 3],
+            point_ids: [point_id; 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset,
+        }
+    }
+
+    #[test]
+    fn unique_ordinary_point_rows_supply_sense_zero_ids_in_incomplete_tables() {
+        let incomplete = point_definition(2, vec![ordinary_point(7, 42, 1)], Vec::new());
+        assert_eq!(
+            section_skamp_point_entity_id(
+                &incomplete,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 0,
+                },
+            ),
+            Some(42)
+        );
+
+        let duplicate = point_definition(
+            2,
+            vec![ordinary_point(7, 42, 1), ordinary_point(7, 43, 2)],
+            Vec::new(),
+        );
+        assert_eq!(
+            section_skamp_point_entity_id(
+                &duplicate,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 0,
+                },
+            ),
+            None
+        );
+
+        let cross_family_duplicate = point_definition(
+            1,
+            vec![ordinary_point(7, 42, 1)],
+            vec![crate::feature::FeaturePointSegment {
+                point_id: 44,
+                external_id: 7,
+                offset: 2,
+            }],
+        );
+        assert_eq!(
+            section_skamp_point_entity_id(
+                &cross_family_duplicate,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 0,
+                },
+            ),
+            None
+        );
+    }
 }
