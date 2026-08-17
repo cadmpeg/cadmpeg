@@ -68,12 +68,17 @@ payload writers remain the audited carriers and do not define a later
 user-data major or an untyped class-specific payload grammar beyond them.
 Section 20.6 settles the CADIR half: an unknown class or later major remains a
 complete opaque userdata-bearing record, and the generic header never supplies
-typed fields for the class-owned payload.
+typed fields for the class-owned payload. The light-table attributes owner is
+also proven to retain the complete record when the registered
+`ON_UserStringList` payload has an unsupported anonymous major; independent
+light fields remain typed and the user-string fields are omitted.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
 same change must state the field-specific loss or neutral mapping required by
-the section-20.6 admission rule.
+the section-20.6 admission rule. The remaining CADIR audit must cover the other
+class-owned userdata carriers and their object, table, settings, and embedded
+geometry owners.
 
 **Note.** No current later producer is evidence that future class-specific
 payload semantics are settled. Opaque retention and refusal are settled CADIR

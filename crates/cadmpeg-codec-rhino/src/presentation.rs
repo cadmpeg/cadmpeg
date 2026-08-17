@@ -794,6 +794,8 @@ struct LightAttributesRecord {
     source_offset: u64,
     #[serde(flatten)]
     attributes: ObjectAttributesPresentation,
+    #[serde(skip)]
+    userdata_requires_opaque: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1444,6 +1446,22 @@ fn parse_light_record_attributes(
         .as_ref()
         .map(|range| parse_attribute_userdata(data, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
+    let userdata_requires_opaque = attributes_userdata.iter().any(|descriptor| {
+        if !descriptor.known {
+            return true;
+        }
+        let is_user_string = descriptor.class_uuid == Some(USER_STRING_LIST)
+            && descriptor.item_uuid == Some(USER_STRING_LIST);
+        if !is_user_string {
+            return false;
+        }
+        descriptor
+            .payload_range
+            .as_ref()
+            .is_none_or(|payload_range| {
+                parse_user_string_list(data, payload_range.clone(), archive).is_err()
+            })
+    });
     if attributes.is_none() && !attributes_userdata.is_empty() {
         return Err(FramingError::structural(
             record.range.start,
@@ -1498,6 +1516,7 @@ fn parse_light_record_attributes(
             .as_ref()
             .map_or(record.range.start, |chunk| chunk.header_start) as u64,
         attributes: presentation,
+        userdata_requires_opaque,
     }))
 }
 
@@ -3823,13 +3842,29 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                             scan.metadata.properties.writer_version,
                             &mut losses,
                         ) {
-                            Ok(attributes) => light.attributes = attributes,
-                            Err(error) => losses.push(RhinoLossCode::ObjectAttributesDegraded.note(
-                                format!(
-                                    "light attributes at offset {} could not be transferred: {error}",
-                                    record.range.start
-                                ),
-                            )),
+                            Ok(attributes) => {
+                                if let Some(value) = attributes {
+                                    if value.userdata_requires_opaque {
+                                        opaque_records.push(OpaqueRecord {
+                                            table_typecode: table.typecode,
+                                            record: record.clone(),
+                                        });
+                                    }
+                                    light.attributes = Some(value);
+                                }
+                            }
+                            Err(error) => {
+                                losses.push(RhinoLossCode::ObjectAttributesDegraded.note(
+                                    format!(
+                                        "light attributes at offset {} could not be transferred: {error}",
+                                        record.range.start
+                                    ),
+                                ));
+                                opaque_records.push(OpaqueRecord {
+                                    table_typecode: table.typecode,
+                                    record: record.clone(),
+                                });
+                            }
                         }
                         push_light(&mut lights, &mut light_indexes, light);
                         parsed = true;

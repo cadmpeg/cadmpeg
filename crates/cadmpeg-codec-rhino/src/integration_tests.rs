@@ -353,6 +353,145 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
 }
 
 #[test]
+fn registered_userdata_future_payload_is_retained_by_table_owner() {
+    let archive = ArchiveVersion::V5;
+    let light_class = crate::wire::Uuid::from_canonical([
+        0x85, 0xa0, 0x85, 0x13, 0xf3, 0x83, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
+    ])
+    .to_wire();
+    let mut light_payload = vec![0x1f];
+    light_payload.extend(1_i32.to_le_bytes());
+    light_payload.extend(4_i32.to_le_bytes());
+    light_payload.extend(0.5_f64.to_le_bytes());
+    light_payload.extend(20.0_f64.to_le_bytes());
+    light_payload.extend([1, 2, 3, 4]);
+    light_payload.extend([5, 6, 7, 8]);
+    light_payload.extend([9, 10, 11, 12]);
+    for value in [0.0_f64, 0.0, -1.0, 1.0, 2.0, 3.0] {
+        light_payload.extend(value.to_le_bytes());
+    }
+    light_payload.extend(0.25_f64.to_le_bytes());
+    light_payload.extend(16.0_f64.to_le_bytes());
+    for value in [1.0_f64, 0.0, 0.0] {
+        light_payload.extend(value.to_le_bytes());
+    }
+    light_payload.extend(0.75_f64.to_le_bytes());
+    light_payload.extend(3_i32.to_le_bytes());
+    light_payload.extend([0x55; 16]);
+    light_payload.extend(crate::test_support::test_dump::utf16_bytes("key"));
+    for value in [4.0_f64, 0.0, 0.0, 0.0, 5.0, 0.0] {
+        light_payload.extend(value.to_le_bytes());
+    }
+    light_payload.extend(0.8_f64.to_le_bytes());
+    light_payload.extend([0xaa, 0xbb]);
+
+    let mut light_body =
+        crate::test_support::test_dump::class_wrapper(archive, light_class, &light_payload);
+    let mut attributes = vec![0x20];
+    attributes.extend([0; 16]);
+    attributes.extend(7_i32.to_le_bytes());
+    attributes.push(1);
+    attributes.extend(crate::test_support::test_dump::utf16_bytes("table light"));
+    attributes.extend([11, 0, 0]);
+    light_body.extend(crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x0200_8061,
+        &attributes,
+    ));
+
+    let future_list_payload = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[
+            2_i32.to_le_bytes().as_slice(),
+            0_i32.to_le_bytes().as_slice(),
+        ]
+        .concat(),
+    );
+    let userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::objects::USER_STRING_LIST.to_wire(),
+        crate::wire::Uuid::from_canonical([
+            0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe,
+            0x52, 0x0d,
+        ])
+        .to_wire(),
+        50,
+        0,
+        &future_list_payload,
+    );
+    let attribute_userdata = [
+        userdata,
+        crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0),
+    ]
+    .concat();
+    light_body.extend(crate::test_support::test_dump::long_chunk(
+        archive,
+        0x0200_0062,
+        &attribute_userdata,
+    ));
+    light_body.extend(crate::test_support::test_dump::short_chunk(
+        archive,
+        0x8200_006f,
+        0,
+    ));
+    let light_record =
+        crate::test_support::test_dump::nested_crc_chunk(archive, 0x2000_8060, &light_body);
+    let valid_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let mut units_body = 100_i32.to_le_bytes().to_vec();
+    units_body.extend(2_i32.to_le_bytes());
+    units_body.extend(0.01_f64.to_le_bytes());
+    units_body.extend(0.1_f64.to_le_bytes());
+    units_body.extend(0.001_f64.to_le_bytes());
+    let units = crate::test_support::test_dump::crc_chunk(archive, 0x2000_8031, &units_body);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[units]),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0012,
+                std::slice::from_ref(&light_record),
+            ),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[valid_point]),
+        ],
+    );
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let lights = &result.ir().native.namespace("rhino").unwrap().arenas["lights"];
+    assert_eq!(lights.len(), 1);
+    assert_eq!(
+        lights[0]
+            .field("name")
+            .and_then(|value| value.as_str().map(str::to_owned)),
+        Some("key".to_owned())
+    );
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| {
+            record
+                .id
+                .starts_with("rhino:opaque:record#10000012-20008060-")
+        })
+        .expect("future userdata table record is retained");
+    assert_eq!(retained.data.as_deref(), Some(light_record.as_slice()));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("user-string") && loss.message.contains("unsupported")
+    }));
+    assert_valid(&result);
+}
+
+#[test]
 fn future_settings_payload_is_retained_without_known_prefix() {
     let archive = ArchiveVersion::V5;
     let future_annotation =

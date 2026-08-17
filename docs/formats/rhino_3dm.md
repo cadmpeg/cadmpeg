@@ -818,6 +818,13 @@ their own anonymous boundaries. The count is nonnegative and every entry is
 bounded by its child chunk. The writer emits major 1, minor 0 for the list and
 each entry.
 
+CADIR typed-admission decision: a class-owned list payload with an anonymous
+major other than 1 supplies no typed user-string fields. An owner may retain
+independent fields that have their own admitted grammar, but the complete
+containing record is also retained in source fidelity. The light-table
+attributes owner applies this rule to its `ON_UserStringList` item and emits a
+decode loss for the omitted user strings.
+
 `ON_Object::SetUserString` rejects an empty key. A nonempty value updates the
 first existing key using case-insensitive ordinal comparison and preserves
 that entry's key and position. A null or empty value removes the first
@@ -6837,7 +6844,7 @@ fields written by the selected class. An unregistered class UUID has no typed
 payload contract because no class reader supplies its field grammar. Its
 complete object record is opaque, and the class UUID identifies the class
 payload within that record. A class-userdata item with an unregistered class
-UUID, item UUID, or plug-in UUID remains part of the complete containing object
+UUID, item UUID, or plug-in UUID remains part of the complete containing
 record. A dictionary inside that item remains part of the same bounded userdata
 payload.
 
