@@ -656,6 +656,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(keyed_disc14_disc12_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(keyed_disc1a_disc18_disc14_disc12_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc14_bodies(&by_attr));
     }
     if out.is_empty() {
@@ -4020,6 +4023,31 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(
     )
 }
 
+fn keyed_disc1a_disc18_disc14_disc12_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x001a, 2),
+            (0x0018, 2),
+            (0x0014, 2),
+            (0x0012, 1),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x0016,
+        0x001c,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 2,
+            require_exact_use_population: false,
+        },
+        true,
+    )
+}
+
 fn disc22_disc20_disc1e_disc1a_disc18_disc12_disc10_disc04_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7049,6 +7077,7 @@ fn reachable_refs(by_attr: &HashMap<u16, &EntityRecord>, root: &EntityRecord) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod disc1a_disc18_disc14_disc12;
     mod disc1a_linked;
     mod disc1c_disc14_linked;
     mod disc1c_disc16_disc0e;
@@ -7117,7 +7146,6 @@ mod tests {
             end: usize::from(attr) + 26,
         }
     }
-
     #[test]
     fn schema_33103_tied_component_overlap_remains_unassigned() {
         let mut head = record(20, 0x13, [7, 1, 1, 1, 1, 1]);
