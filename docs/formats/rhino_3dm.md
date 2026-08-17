@@ -2462,6 +2462,7 @@ Item payloads:
 |  39 | embedded section-style object                |
 |  40 | clipping-plane label style `u8`              |
 |  41 | obsolete selective-clipping-list type `bool` |
+|  42 | detail-background-visible `bool`             |
 
 Introduction gates:
 
@@ -2479,22 +2480,28 @@ minor 9: item 37
 minor 10: item 38
 minor 11: item 39
 minor 12: item 40
-minor 13: item 41
+minor 13: items 41..42
 ```
 
-The packed minor is a four-bit value. A minor greater than 13 is a future
-minor. Its known prefix uses the item grammars above. When a future minor
-contains an item ID outside 1 through 41, the reader consumes that one-byte ID,
-stops typed parsing, and leaves the value and all following bytes untyped until
-the containing `TCODE_OBJECT_RECORD_ATTRIBUTES` boundary. The zero item still
-terminates the stream; bytes after that terminator are bounded suffix bytes and
-are not another tagged item stream.
+Item 42 is a Boolean. Detail backgrounds are transparent by default; true
+requests the detail's display-mode background settings. The writer emits item
+42 only when the value is true. The packed minor is a four-bit value. A minor
+greater than 13 is a future minor. Its known prefix uses the item grammars
+above. When a future minor contains an item ID outside 1 through 42, the reader
+consumes that one-byte ID, stops typed parsing, and leaves the value and all
+following bytes untyped until the containing
+`TCODE_OBJECT_RECORD_ATTRIBUTES` boundary. The zero item still terminates the
+stream; bytes after that terminator are bounded suffix bytes and are not
+another tagged item stream.
 
 Default values are empty strings, unset indexes, default rendering attributes,
 unset colors, plot weight 0.0, decoration none, wire density 1, visible true,
 normal mode, layer selectors, empty groups, model space, nil viewport, empty
 display-material list, display order 0, linetype scale 1.0, hatch boundary
-hidden, and default frame/label style.
+hidden, detail background transparent, and default frame/label style. CADIR
+stores a true item-42 value as the optional `detail_background_visible` field
+of the owning `object_presentation` record and omits false, which is the source
+default.
 
 Present tagged items occur in ascending item-ID order. The terminator follows
 the last item.

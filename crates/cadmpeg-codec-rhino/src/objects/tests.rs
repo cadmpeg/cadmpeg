@@ -195,6 +195,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         (39, direct_section_style),
         (40, vec![2]),
         (41, vec![1]),
+        (42, vec![1]),
     ]);
     for (item, payload) in &items {
         let gate = match item {
@@ -210,8 +211,8 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             38 => 10,
             39 => 11,
             40 => 12,
-            41 => 13,
-            _ => unreachable!("items are limited to 1 through 41"),
+            41 | 42 => 13,
+            _ => unreachable!("items are limited to 1 through 42"),
         };
         let minimum = tagged_attributes(&[(*item, payload.clone())], gate);
         let mut decoded_at_gate = crate::objects::parse_attributes(
@@ -274,6 +275,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
     assert!(parsed.embedded_section_style.is_some());
     assert_eq!(parsed.clipping_plane_label_style, 2);
     assert!(parsed.selective_clipping_list);
+    assert!(parsed.detail_background_visible);
 }
 
 #[test]
@@ -333,7 +335,7 @@ fn object_rendering_attributes_consume_mapping_reference_and_channel() {
 
 #[test]
 fn tagged_attributes_reject_bad_gates_and_missing_terminator() {
-    for (minor, item) in [(0, 22), (1, 23), (2, 27), (8, 36), (12, 41)] {
+    for (minor, item) in [(0, 22), (1, 23), (2, 27), (8, 36), (12, 41), (12, 42)] {
         let bytes = tagged_attributes(&[(item, vec![0])], minor);
         assert!(
             crate::objects::parse_attributes(
@@ -373,7 +375,7 @@ fn tagged_attributes_reject_bad_gates_and_missing_terminator() {
 
 #[test]
 fn future_tagged_attributes_stop_at_unknown_item_and_preserve_suffix() {
-    let mut bytes = tagged_attributes(&[(42, vec![0xaa, 0xbb])], 14);
+    let mut bytes = tagged_attributes(&[(43, vec![0xaa, 0xbb])], 14);
     bytes.extend([0xde, 0xad]);
     let parsed = crate::objects::parse_attributes(
         &bytes,

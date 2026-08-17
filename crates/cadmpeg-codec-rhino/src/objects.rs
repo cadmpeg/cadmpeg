@@ -171,6 +171,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) hatch_background: [u8; 4],
     /// Whether hatch boundaries are visible.
     pub(crate) hatch_boundary_visible: bool,
+    /// Whether a detail requests its display-mode background.
+    pub(crate) detail_background_visible: bool,
     /// Object frame transform.
     pub(crate) object_frame: Option<Xform>,
     /// Section-fill rule.
@@ -824,6 +826,7 @@ pub(crate) fn parse_attributes(
             linetype_pattern_scale: 1.0,
             hatch_background: [0; 4],
             hatch_boundary_visible: false,
+            detail_background_visible: false,
             object_frame: None,
             section_fill_rule: 0,
             line_cap_source: 0,
@@ -889,6 +892,7 @@ pub(crate) fn parse_attributes(
         linetype_pattern_scale: 1.0,
         hatch_background: [0; 4],
         hatch_boundary_visible: false,
+        detail_background_visible: false,
         object_frame: None,
         section_fill_rule: 0,
         line_cap_source: 0,
@@ -921,7 +925,7 @@ pub(crate) fn parse_attributes(
             38 => 10,
             39 => 11,
             40 => 12,
-            41 => 13,
+            41 | 42 => 13,
             _ if version.1 > 13 => {
                 // A future item has no length prefix. The source reader consumes
                 // only its ID and lets the enclosing chunk boundary discard the
@@ -1021,6 +1025,10 @@ pub(crate) fn parse_attributes(
             }
             35 => {
                 attributes.hatch_boundary_visible =
+                    reader.bool_with_writer_version(writer_version)?;
+            }
+            42 => {
+                attributes.detail_background_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
             36 => attributes.object_frame = Some(settings::xform(&mut reader)?),

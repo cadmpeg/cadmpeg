@@ -345,12 +345,17 @@ the known prefix of each built-in payload?
 **Known.** Source-defined later-minor readers consume known prefixes and skip
 bounded suffixes. The specification does not assign names or meanings to
 future bytes that no audited producer writes.
-The current OpenNURBS writers emit only the known minor gates and writer bands
-listed by the family sections. No current writer assigns a later suffix field
-grammar beyond those gates.
+The current OpenNURBS writer adds object-attributes item 42 at packed minor
+2.13. `ON_3dmObjectAttributes::Write` emits a Boolean only when
+`DetailBackgroundVisible()` is true; its reader consumes the same item and
+`opennurbs_3dm_attributes.h` defines transparent detail backgrounds as the
+default and true as a request for the detail's display-mode background. The
+decoder transfers that value to the optional `object_presentation` field
+`detail_background_visible`. Other later suffix field grammars remain
+unassigned.
 
 **Need.** A future producer writer/reader or an independent witness for each
 future suffix, with its field order, boundary, and typed admission rule.
 
-**Note.** Narrowed 2026-08-16. Suffix preservation is settled; future suffix
-field semantics remain open.
+**Note.** Partly settled 2026-08-17. Item 42 is specified and typed. Suffix
+preservation is settled; other future suffix field semantics remain open.

@@ -744,6 +744,8 @@ struct ObjectPresentationRecord {
     linetype_pattern_scale: f64,
     hatch_background: [u8; 4],
     hatch_boundary_visible: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail_background_visible: Option<bool>,
     section_fill_rule: u8,
     clipping_plane_label_style: u8,
     rendering_materials: Vec<RenderingMaterialReference>,
@@ -3602,6 +3604,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 linetype_pattern_scale: attributes.linetype_pattern_scale,
                 hatch_background: attributes.hatch_background,
                 hatch_boundary_visible: attributes.hatch_boundary_visible,
+                detail_background_visible: attributes.detail_background_visible.then_some(true),
                 section_fill_rule: attributes.section_fill_rule,
                 clipping_plane_label_style: attributes.clipping_plane_label_style,
                 rendering_materials: rendering.materials,
