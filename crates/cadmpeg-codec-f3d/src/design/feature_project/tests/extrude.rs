@@ -1212,6 +1212,45 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if id == &face_group.id
     ));
 
+    let mut omitted_zero_offset_scope = scope.clone();
+    omitted_zero_offset_scope.class_tag = "330".into();
+    omitted_zero_offset_scope.paired_class_tag = "258".into();
+    omitted_zero_offset_scope.frame_length = 476;
+    let omitted_zero_offset = project_extrude(
+        &omitted_zero_offset_scope,
+        &[(0, &taper)],
+        &[body_group.clone(), face_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .expect("class-330 face-target Extrude admits omitted zero offset");
+    assert!(matches!(
+        omitted_zero_offset,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(ref id),
+                        offset: None,
+                    },
+                    ..
+                },
+            },
+            ..
+        } if id == &face_group.id
+    ));
+    omitted_zero_offset_scope.class_tag = "331".into();
+    assert!(project_extrude(
+        &omitted_zero_offset_scope,
+        &[(0, &taper)],
+        &[body_group.clone(), face_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .is_none());
+
     set_extrude_direction_reversed(&mut scope, false);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedToFaces);
     let mut second_face_group = face_group.clone();

@@ -7,11 +7,32 @@ use crate::design::feature_project::design_angle_unit;
 use crate::ids::{self, native_stream, neutral_feature_id};
 use crate::records::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
-    DesignExtrudeFaceRole, DesignFaceOperand, DesignParameter, DesignParameterScope,
-    DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudePrologue, DesignFaceOperand,
+    DesignParameter, DesignParameterScope, DesignSketchPlacement, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
+
+/// Admit the legacy reference-aware face-target frame that omits its zero
+/// `Side1Offset` owner and parameter.
+pub(crate) fn extrude_omits_zero_side_one_offset(
+    scope: &DesignParameterScope,
+    prologue: &DesignExtrudePrologue,
+    side_one_offset_count: usize,
+) -> bool {
+    side_one_offset_count == 0
+        && scope.class_tag == "330"
+        && scope.paired_class_tag == "258"
+        && scope.frame_length == 476
+        && matches!(
+            prologue,
+            DesignExtrudePrologue::ReferenceAware {
+                extent: DesignExtrudeExtent::OneSidedToFace,
+                ..
+            }
+        )
+}
 
 pub(crate) fn resolved_face_group(
     group: &DesignConstructionOperandGroup,

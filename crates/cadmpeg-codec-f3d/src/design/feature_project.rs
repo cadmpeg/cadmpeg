@@ -12,10 +12,11 @@ use crate::design::edge_resolve::{
     resolved_edge_treatment_group,
 };
 use crate::design::face_resolve::{
-    design_angle, extrude_profile_group_roots, resolved_body_recipe_shape,
-    resolved_direct_face_selection, resolved_extrude_profile_face_group, resolved_face_group,
-    resolved_historical_face_group, resolved_historical_split_face_target_group,
-    resolved_loft_edge_profile_group, resolved_profile_face_group, valid_chamfer_spec,
+    design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
+    resolved_body_recipe_shape, resolved_direct_face_selection,
+    resolved_extrude_profile_face_group, resolved_face_group, resolved_historical_face_group,
+    resolved_historical_split_face_target_group, resolved_loft_edge_profile_group,
+    resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -6279,6 +6280,7 @@ pub(crate) fn project_extrude(
         })
         .collect::<Vec<_>>();
     let profile_groups = extrude_profile_group_roots(scope, construction_groups)?;
+    let prologue = scope.extrude_prologue?;
     let profile_ref = match scope.extrude_profile.as_ref() {
         Some(profile) => {
             let placement = placements.iter().find(|placement| {
@@ -6406,6 +6408,14 @@ pub(crate) fn project_extrude(
         Some(parameter) => Some(design_length(parameter)?),
         None => None,
     };
+    let side_one_offset_count = parameters
+        .iter()
+        .filter(|(_, parameter)| parameter.source_kind == "Side1Offset")
+        .count();
+    let omitted_zero_side_one_offset = side_one_offset.is_none()
+        && extrude_omits_zero_side_one_offset(scope, &prologue, side_one_offset_count);
+    let face_side_one_offset =
+        side_one_offset.or_else(|| omitted_zero_side_one_offset.then_some(Length(0.0)));
     let effective_side_one_offset = side_one_offset.filter(|offset| offset.0 != 0.0);
     let side_two_offset = match unique("Side2Offset")? {
         Some(parameter) => Some(design_length(parameter)?),
@@ -6438,7 +6448,6 @@ pub(crate) fn project_extrude(
         .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination))
         .copied()
         .collect::<Vec<_>>();
-    let prologue = scope.extrude_prologue?;
     let first_side_target_ordinal = match prologue {
         DesignExtrudePrologue::ReferenceAware {
             first_side_target_ordinal,
@@ -6613,7 +6622,7 @@ pub(crate) fn project_extrude(
                 target_shape_groups.as_slice(),
             ) {
                 ([termination], []) => {
-                    let offset = side_one_offset?;
+                    let offset = face_side_one_offset?;
                     (
                         ExtentShape::OneSided(Termination::ToFace {
                             face: resolved_historical_face_group(scope, termination, face_operands)

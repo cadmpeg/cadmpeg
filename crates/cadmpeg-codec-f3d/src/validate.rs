@@ -4848,6 +4848,12 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let against_count = parameter_kind_count("AgainstDistance");
             let profile_offset_count = parameter_kind_count("ProfileOffset");
             let side_one_offset_count = parameter_kind_count("Side1Offset");
+            let omitted_zero_side_one_offset =
+                crate::design::face_resolve::extrude_omits_zero_side_one_offset(
+                    scope,
+                    &prologue,
+                    side_one_offset_count,
+                );
             let side_one_offsets = parameter_kind_values("Side1Offset");
             let side_one_offset_is_absent = side_one_offsets.is_empty()
                 || matches!(side_one_offsets.as_slice(), [offset] if *offset == 0.0);
@@ -4882,7 +4888,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && if target_shape_group_count == 1 {
                             side_one_offset_is_absent
                         } else {
-                            side_one_offset_count == 1
+                            side_one_offset_count == 1 || omitted_zero_side_one_offset
                         }
                 }
                 records::DesignExtrudeExtent::TwoSidedToFaces => {
