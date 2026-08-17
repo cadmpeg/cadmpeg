@@ -543,7 +543,6 @@ pub(crate) fn try_decode_geometry(
                 .filter_map(|construction| {
                     let charted = charted_intersections.get(&construction.xmt)?;
                     let mut support_uv = validate_serialized_support_uv_with_index(
-                        &ir,
                         &model_index,
                         &surfaces_by_xmt,
                         charted.supports,
@@ -553,7 +552,6 @@ pub(crate) fn try_decode_geometry(
                         &adaptive_geometry_budget,
                     );
                     if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
-                        &ir,
                         &model_index,
                         &surfaces_by_xmt,
                         charted.supports,

@@ -60,7 +60,6 @@ pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
 // this function decides which native lane can be admitted to which support.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assign_ext11_support_uv_with_index(
-    ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [u32; 2],
@@ -74,7 +73,6 @@ pub(crate) fn assign_ext11_support_uv_with_index(
         return None;
     };
     assign_ext11_support_uv_to_surfaces_with_index(
-        ir,
         index,
         [&first_surface, &second_surface],
         points,
@@ -88,7 +86,6 @@ pub(crate) fn assign_ext11_support_uv_with_index(
 // validation must preserve the same support identity proof as assignment.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn validate_serialized_support_uv_with_index(
-    ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [u32; 2],
@@ -100,10 +97,8 @@ pub(crate) fn validate_serialized_support_uv_with_index(
     std::array::from_fn(|side| {
         let surface = surfaces_by_xmt.get(&supports[side])?;
         let values = lanes[side].as_deref()?;
-        let tolerance =
-            blend_spine_cache_fit_tolerance_with_index(index, ir, surface, fit_tolerance);
+        let tolerance = blend_spine_cache_fit_tolerance_with_index(index, surface, fit_tolerance);
         support_uv_lane_matches_surface_with_budget(
-            ir,
             index,
             surface,
             points,
@@ -116,7 +111,6 @@ pub(crate) fn validate_serialized_support_uv_with_index(
 }
 
 pub(crate) fn support_uv_lane_matches_surface_with_budget(
-    ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     points: &[Point3],
@@ -130,11 +124,8 @@ pub(crate) fn support_uv_lane_matches_surface_with_budget(
     if values.len() > MAX_SUPPORT_UV_SAMPLES {
         return false;
     }
-    let Some(geometry) = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)
+    let Some(geometry) = index
+        .surfaces(surface.0.as_str())
         .map(|surface| &surface.geometry)
     else {
         return false;
@@ -181,7 +172,6 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     assign_ext11_support_uv_to_surfaces_with_index(
-        ir,
         &index,
         surfaces,
         points,
@@ -192,7 +182,6 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
 }
 
 pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
-    ir: &CadIr,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
@@ -202,7 +191,6 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         support_uv_lane_matches_surface_with_budget(
-            ir,
             index,
             surface,
             points,
@@ -307,15 +295,10 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
-        let Some(procedural_index) = ir
-            .model
-            .procedural_curves
-            .iter()
-            .position(|procedural| &procedural.id == procedural_id)
-        else {
+        let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
-        let (surfaces, missing) = match &ir.model.procedural_curves[procedural_index].definition {
+        let (surfaces, missing) = match &procedural.definition {
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 let [Some(first), Some(second)] = &context.sides.clone().map(|side| side.surface)
                 else {
@@ -335,7 +318,6 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
             continue;
         }
         let Some(assigned) = assign_ext11_support_uv_to_surfaces_with_index(
-            ir,
             &model_index,
             [&surfaces[0], &surfaces[1]],
             points,
@@ -349,11 +331,8 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
             if !missing[side] {
                 return None;
             }
-            let surface_geometry = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == surfaces[side])
+            let surface_geometry = model_index
+                .surfaces(surfaces[side].0.as_str())
                 .map(|surface| &surface.geometry)?;
             let values = assigned[side].as_ref()?;
             if values
@@ -377,14 +356,21 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
         });
         for (side, replacement) in side_replacements.into_iter().enumerate() {
             if let Some(replacement) = replacement {
-                replacements.push((procedural_index, side, replacement));
+                replacements.push((procedural_id.clone(), side, replacement));
             }
         }
     }
     drop(model_index);
-    for (procedural_index, side, replacement) in replacements {
-        let ProceduralCurveDefinition::Intersection { context, .. } =
-            &mut ir.model.procedural_curves[procedural_index].definition
+    for (procedural_id, side, replacement) in replacements {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
         else {
             unreachable!("definition checked above");
         };
@@ -451,16 +437,10 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                 break;
             }
-            let Some(procedural_index) = ir
-                .model
-                .procedural_curves
-                .iter()
-                .position(|procedural| &procedural.id == procedural_id)
-            else {
+            let Some(procedural) = index.procedural_curves(procedural_id.0.as_str()) else {
                 continue;
             };
-            let ProceduralCurveDefinition::Intersection { context, .. } =
-                &ir.model.procedural_curves[procedural_index].definition
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
             else {
                 continue;
             };
@@ -478,7 +458,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
                     continue;
                 };
                 let tolerance =
-                    blend_spine_cache_fit_tolerance_with_index(&index, ir, surface, *fit_tolerance);
+                    blend_spine_cache_fit_tolerance_with_index(&index, surface, *fit_tolerance);
                 let mut inconsistent = false;
                 for (parameter, point) in parameters.iter().zip(points) {
                     if geometry_budget.exhausted() || !support_budget.charge() {
@@ -504,15 +484,22 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
                     }
                 }
                 if inconsistent {
-                    invalid.push((procedural_index, side));
+                    invalid.push((procedural_id.clone(), side));
                 }
             }
         }
         invalid
     };
-    for (procedural_index, side) in invalid {
-        let ProceduralCurveDefinition::Intersection { context, .. } =
-            &mut ir.model.procedural_curves[procedural_index].definition
+    for (procedural_id, side) in invalid {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
         else {
             unreachable!("definition selected above");
         };
@@ -524,14 +511,10 @@ pub(crate) fn pending_support_lanes_requiring_completion(
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> usize {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     pending
         .iter()
-        .filter_map(|(procedural_id, ..)| {
-            ir.model
-                .procedural_curves
-                .iter()
-                .find(|procedural| &procedural.id == procedural_id)
-        })
+        .filter_map(|(procedural_id, ..)| index.procedural_curves(procedural_id.0.as_str()))
         .filter_map(|procedural| {
             let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
             else {
@@ -562,12 +545,7 @@ fn complete_support_uv_wave(
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
-        let Some(procedural) = ir
-            .model
-            .procedural_curves
-            .iter()
-            .find(|procedural| &procedural.id == procedural_id)
-        else {
+        let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
@@ -598,7 +576,6 @@ fn complete_support_uv_wave(
                 source_pcurve.is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)));
             let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
                 &model_index,
-                ir,
                 surface_id,
                 *fit_tolerance,
             );
@@ -841,21 +818,19 @@ pub(super) fn blend_spine_cache_fit_tolerance(
     fit_tolerance: f64,
 ) -> f64 {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    blend_spine_cache_fit_tolerance_with_index(&index, ir, surface, fit_tolerance)
+    blend_spine_cache_fit_tolerance_with_index(&index, surface, fit_tolerance)
 }
 
 pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     surface: &SurfaceId,
     fit_tolerance: f64,
 ) -> f64 {
     blend_surface_definition_with_index(index, surface)
         .and_then(|(_, spine, _, _)| {
-            ir.model
-                .procedural_curves
-                .iter()
-                .find(|procedural| procedural.curve == spine)
+            index
+                .procedural_curves_for_curve(spine.0.as_str())
+                .and_then(|procedurals| procedurals.first().copied())
                 .and_then(|procedural| procedural.cache_fit_tolerance)
         })
         .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
@@ -1279,7 +1254,6 @@ mod tests {
         let geometry_budget = WorkBudget::new(1);
 
         assert!(!support_uv_lane_matches_surface_with_budget(
-            &ir,
             &index,
             &surface_id,
             &points,

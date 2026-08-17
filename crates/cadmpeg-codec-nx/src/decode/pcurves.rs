@@ -960,12 +960,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             let tolerance = procedural
                 .cache_fit_tolerance
                 .or_else(|| edge_tolerances.get(&procedural.curve).copied())?;
-            let tolerance = blend_spine_cache_fit_tolerance_with_index(
-                &model_index,
-                ir,
-                target_surface,
-                tolerance,
-            );
+            let tolerance =
+                blend_spine_cache_fit_tolerance_with_index(&model_index, target_surface, tolerance);
             let blend_contact = blend_contacts
                 .entry((source_surface.clone(), target_surface.clone()))
                 .or_insert_with(|| {
