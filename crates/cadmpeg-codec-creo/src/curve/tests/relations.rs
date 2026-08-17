@@ -136,6 +136,9 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
         assert!((actual - expected).abs() < 1e-12, "{expression}");
     }
     assert_eq!(evaluate_expression("sqrt(-1)", &values), None);
+    assert_eq!(evaluate_expression("tan(90)", &values), None);
+    assert_eq!(evaluate_expression("tan(-90)", &values), None);
+    assert_eq!(evaluate_expression("atan2(0,0)", &values), None);
     assert_eq!(evaluate_expression("sinh(86)", &values), None);
     assert_eq!(evaluate_expression("bound(1,2,1)", &values), None);
     assert_eq!(evaluate_expression("sin()", &values), None);

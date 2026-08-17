@@ -4156,11 +4156,15 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
     let value = match (name, arguments) {
         (CreoMathFunction::Sin, [x]) => x.to_radians().sin(),
         (CreoMathFunction::Cos, [x]) => x.to_radians().cos(),
-        (CreoMathFunction::Tan, [x]) => x.to_radians().tan(),
+        (CreoMathFunction::Tan, [x]) => {
+            let principal_degrees = x.rem_euclid(180.0);
+            (principal_degrees != 90.0).then_some(())?;
+            x.to_radians().tan()
+        }
         (CreoMathFunction::Asin, [x]) => x.asin().to_degrees(),
         (CreoMathFunction::Acos, [x]) => x.acos().to_degrees(),
         (CreoMathFunction::Atan, [x]) => x.atan().to_degrees(),
-        (CreoMathFunction::Atan2, [y, x]) => y.atan2(*x).to_degrees(),
+        (CreoMathFunction::Atan2, [y, x]) if *x != 0.0 || *y != 0.0 => y.atan2(*x).to_degrees(),
         (CreoMathFunction::Sinh, [x]) if x.abs() <= 85.0 => x.sinh(),
         (CreoMathFunction::Cosh, [x]) if x.abs() <= 85.0 => x.cosh(),
         (CreoMathFunction::Tanh, [x]) if x.abs() <= 85.0 => x.tanh(),
