@@ -402,6 +402,32 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
 }
 
 #[test]
+fn round_envelope_rejects_an_extra_reference_circle() {
+    let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
+        entity_id,
+        center: [0.0; 3],
+        center_stored: true,
+        radius: 2.0,
+        axis,
+        start,
+        end,
+        offset: 0,
+    };
+    let envelope = crate::surface::Type24RoundEnvelope {
+        diameter: 2.0,
+        extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],
+    };
+    let first = circle(367, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
+    let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
+    let duplicate_first = circle(369, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
+
+    assert!(
+        super::reference_cap_bound_round_frame(envelope, &[&first, &second, &duplicate_first],)
+            .is_none()
+    );
+}
+
+#[test]
 fn split_outline_rejects_conflicting_model_plane_carrier() {
     let scan = split_outline_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());

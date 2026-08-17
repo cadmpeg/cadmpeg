@@ -547,6 +547,9 @@ pub(in super::super) fn reference_cap_bound_round_frame(
     envelope: crate::surface::Type24RoundEnvelope,
     circles: &[&crate::reference::ReferenceCircle],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
+    let [_, _] = circles else {
+        return None;
+    };
     let [first, second] = envelope.extent_endpoints;
     let scale = first
         .iter()
