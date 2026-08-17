@@ -241,5 +241,18 @@ The instance-reference payload is established by `ON_InstanceRef::Write`/
 requires major 1 without a minor gate, and the UUID, transform, and bounding
 box prefix ends at the enclosing class-data boundary. The owner witness uses
 packed minor 15 and a bounded suffix.
+Instance-definition records are also settled: packed V5 1.6 is the
+archive-through-50 writer form, packed 1.7 is the legacy archive-60 admission
+form, and anonymous V6 1.0 is the archive-60-and-later writer form. The
+linked-type, file-reference, unit-detail, content-hash, SHA-1, and
+referenced-component-settings children close independently; the packed 1.7
+obsolete linked-layer Boolean and later bytes remain abandoned at the
+class-data boundary.
+The instance-definition boundary is established by
+`ON_InstanceDefinition::Write`/`Read`, `Internal_WriteV5`/`Internal_ReadV5`,
+`Internal_WriteV6`/`Internal_ReadV6`, and
+`ON_ReferencedComponentSettingsImpl::WriteImpl`/`ReadImpl` in
+`opennurbs_instance.cpp`; the instance-definition owner tests exercise packed
+1.6/1.7, anonymous V6, linked-type, file-reference, and bounded-suffix paths.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

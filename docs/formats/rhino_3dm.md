@@ -3850,8 +3850,10 @@ continuity, and closure.
 
 ## 18. Instance definitions and references
 
-Instance-definition records are in the instance-definition table. V5 payloads
-use packed major version 1 with writer minor 6 or later. Their order is:
+Instance-definition records are in the instance-definition table. Archive
+versions through 50 use packed major version 1, minor 6. An archive-60 legacy
+record may use packed minor 7; archive versions 60 and later otherwise use an
+anonymous major-1 V6 payload. The packed field order is:
 
 ```
 definition UUID
@@ -4788,8 +4790,8 @@ least three directed uses, valid edge pointers, and endpoint continuity.
 ### 19.6 Instance-definition exact tables
 
 The instance-definition table record contains the class payload. Archive 50
-uses packed version 1.6. Archive 60 may use packed version 1.7 or the
-anonymous V6 form; archives 70 and 80 use the anonymous V6 form.
+uses packed version 1.6. Archive 60 accepts the legacy packed version 1.7
+form and the anonymous V6 form; archives 70 and 80 use the anonymous V6 form.
 
 V5 packed field order:
 
@@ -4829,9 +4831,10 @@ Boolean is false and the relative-path slot when it is true. The optional
 class-userdata carrier can fill the other slot without replacing a nonempty
 slot.
 
-The anonymous V6 reader requires major version 1 and consumes the fixed prefix
-above without a minor gate. The linked-type child has the same major-version
-rule and bounded suffix behavior. Model-component attributes, unit-system
+The anonymous V6 writer emits outer and linked-type chunks at minor 0. Their
+readers require major version 1 and consume the fixed prefix without a minor
+gate. The linked-type child has the same major-version rule and bounded suffix
+behavior. Model-component attributes, unit-system
 detail, file-reference, content-hash, SHA-1, and referenced-component-settings
 children are each bounded anonymous major-1 chunks. Model-component attributes
 consume status bytes for model serials, UUID, component type, index, and name;
