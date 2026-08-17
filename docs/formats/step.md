@@ -86,8 +86,15 @@ not infer an AP schema or edition from an XML prefix, filename, UOS-local name,
 namespace, `schema` attribute, or `xsi:schemaLocation`; it does not implement a
 generic schema-driven XML adapter or join XML data to a Part 21 file by
 filename or identifier. A caller that needs Part 28 must provide the exact
-Part 28 configuration, generated AP XML Schema, EXPRESS schema edition, and a
-separate graph-binding policy.
+Part 28 binding edition, configuration, governing EXPRESS schema edition,
+derived AP XML Schema, and schema-validation result. The CADIR admission
+operand is `(XML resource, Part 28 binding edition, configuration, governing
+EXPRESS schema edition, derived AP XML Schema, validation result)`. A Part 28
+UOS is admitted only when its data conforms to the governing EXPRESS schema
+and its XML infoset validates against that configuration's derived XML Schema.
+The STEP codec consumes none of these caller inputs: it classifies the
+alternate encoding and returns the stated `NotImplemented` error before XML
+schema validation or graph construction.
 
 ISO/TS 10303-26:2011 defines a binary representation of EXPRESS-driven data
 using HDF5 version 5. The [ISO/TS 10303-26 standard

@@ -365,6 +365,9 @@ fn decode_zip(
 }
 
 fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
+    // CE-03: Part 28 marker detection is not UOS conformance validation. The
+    // caller owns the governing EXPRESS schema, configuration, derived XML
+    // Schema, and validation result; this codec has no Part 28 adapter.
     if is_part26_hdf5(bytes) {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),

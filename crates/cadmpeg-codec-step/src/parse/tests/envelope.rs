@@ -459,6 +459,79 @@ fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
 }
 
 #[test]
+fn part28_configuration_witnesses_are_refused_before_schema_admission() {
+    const CONFIGURATION_NAMESPACE: &str = "urn:oid:1.0.10303.28.2.1.2";
+    const AP238_NAMESPACE: &str = "urn:oid:1.0.10303.238.2.0.1";
+    const UOS_NAME: &str = "iso_10303_28_terse";
+    const EXPRESS_SCHEMA: &str = "integrated_cnc_schema";
+
+    // The configuration and the positive exchange are the published AP238
+    // Part 28 binding. The negative exchange changes only the AP-required
+    // schema value, so both inputs remain well-formed XML candidates.
+    let configuration =
+        roxmltree::Document::parse(include_str!("data/ce03_part28_ap238_configuration.xml"))
+            .expect("parse AP238 Part 28 configuration");
+    let configuration_root = configuration.root_element();
+    assert_eq!(
+        configuration_root.tag_name().namespace(),
+        Some(CONFIGURATION_NAMESPACE)
+    );
+    let schema = configuration_root
+        .children()
+        .find(|node| node.has_tag_name((CONFIGURATION_NAMESPACE, "schema")))
+        .expect("AP238 schema configuration");
+    assert_eq!(schema.attribute("targetNamespace"), Some(AP238_NAMESPACE));
+    let option = configuration_root
+        .children()
+        .find(|node| node.has_tag_name((CONFIGURATION_NAMESPACE, "option")))
+        .expect("AP238 mapping options");
+    assert_eq!(option.attribute("exp-attribute"), Some("attribute-content"));
+    assert_eq!(option.attribute("tagless"), Some("true"));
+    let uos_element = configuration_root
+        .children()
+        .find(|node| node.has_tag_name((CONFIGURATION_NAMESPACE, "uosElement")))
+        .expect("AP238 UOS configuration");
+    assert_eq!(uos_element.attribute("name"), Some(UOS_NAME));
+    let schema_attribute = uos_element
+        .children()
+        .find(|node| node.has_tag_name((CONFIGURATION_NAMESPACE, "add_attribute")))
+        .expect("AP238 schema attribute configuration");
+    assert_eq!(schema_attribute.attribute("name"), Some("schema"));
+    assert_eq!(schema_attribute.attribute("usage"), Some("required"));
+
+    let cases = [
+        (
+            include_bytes!("data/ce03_part28_ap238_e2.xml").as_slice(),
+            true,
+        ),
+        (
+            include_bytes!("data/ce03_part28_ap238_invalid_schema.xml").as_slice(),
+            false,
+        ),
+    ];
+    let codec = StepCodec::default();
+    for (bytes, schema_matches_ap238) in cases {
+        let document = roxmltree::Document::parse(
+            std::str::from_utf8(bytes).expect("Part 28 witness is UTF-8"),
+        )
+        .expect("Part 28 witness is well-formed XML");
+        let root = document.root_element();
+        assert_eq!(root.tag_name().namespace(), Some(AP238_NAMESPACE));
+        assert_eq!(root.tag_name().name(), UOS_NAME);
+        assert_eq!(
+            root.attribute("schema") == Some(EXPRESS_SCHEMA),
+            schema_matches_ap238
+        );
+        assert_eq!(codec.detect(bytes), Confidence::Medium);
+        assert!(matches!(
+            codec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
+            Err(cadmpeg_core::CodecError::NotImplemented(message))
+                if message == "STEP Part 28 XML encoding"
+        ));
+    }
+}
+
+#[test]
 fn codec_refuses_out_of_envelope_encodings_by_name() {
     let codec = StepCodec::default();
     let cases: &[(&[u8], &str)] = &[

@@ -20,18 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-03. Part 28 grammar admission
-
-**Question.** Which Part 28 XML grammar and configuration admit an exchange for decoding?
-
-**Known.** Part 28 requires an AP XML Schema derived from a selected EXPRESS schema edition. The marker identifies an alternate encoding but does not validate XML or select a schema.
-
-**Need.** Define the grammar, AP schema edition, configuration, and validation result that admit a Part 28 exchange.
-
-**Conflict.** The decoder detects a Part 28 marker and refuses it. That refusal does not answer which grammar and configuration form a valid Part 28 exchange.
-
-**Note.** `crates/cadmpeg-codec-step/src/codec.rs:403-425` performs bounded marker detection, and `crates/cadmpeg-codec-step/src/codec.rs:371-374` returns `NotImplemented` before XML parsing. `step.md` §1 "CADIR decision: the STEP codec admits Part 21 clear text and its ZIP container" states that a caller must provide the exact configuration and generated schema. No current valid or invalid grammar witness reaches admission.
-
 ### CE-04. Part 28 schema mapping
 
 **Question.** How do Part 28 XML elements and values map to EXPRESS entities, attributes, and references?

@@ -360,6 +360,7 @@ dependencies = [
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "encoding_rs",
+ "roxmltree",
  "serde_json",
  "thiserror",
  "zip",
