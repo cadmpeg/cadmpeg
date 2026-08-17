@@ -565,9 +565,11 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
             locus_compatible(point) && geometry.contains_key(entity)
         }
         SketchConstraintDefinition::PointCoordinateValues { point, .. } => locus_compatible(point),
-        SketchConstraintDefinition::Symmetric { first, second, .. } => {
-            locus_compatible(first) && locus_compatible(second)
-        }
+        SketchConstraintDefinition::Symmetric {
+            first,
+            second,
+            axis,
+        } => locus_compatible(first) && locus_compatible(second) && geometry.contains_key(axis),
         SketchConstraintDefinition::PointSymmetric {
             first,
             second,
@@ -576,8 +578,103 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         SketchConstraintDefinition::SnellsLaw {
             incident,
             refracted,
+            interface,
             ..
-        } => locus_compatible(incident) && locus_compatible(refracted),
+        } => {
+            locus_compatible(incident)
+                && locus_compatible(refracted)
+                && geometry.contains_key(interface)
+        }
+        SketchConstraintDefinition::Concentric { first, second }
+        | SketchConstraintDefinition::Coradial { first, second }
+        | SketchConstraintDefinition::Collinear { first, second }
+        | SketchConstraintDefinition::ProjectedCopy {
+            source: first,
+            result: second,
+        }
+        | SketchConstraintDefinition::Parallel { first, second }
+        | SketchConstraintDefinition::Perpendicular { first, second }
+        | SketchConstraintDefinition::Tangent { first, second }
+        | SketchConstraintDefinition::Equal { first, second }
+        | SketchConstraintDefinition::Angle { first, second, .. } => {
+            geometry.contains_key(first) && geometry.contains_key(second)
+        }
+        SketchConstraintDefinition::Horizontal { entity }
+        | SketchConstraintDefinition::Vertical { entity }
+        | SketchConstraintDefinition::Fixed { entity }
+        | SketchConstraintDefinition::Radius { entity, .. }
+        | SketchConstraintDefinition::Diameter { entity, .. }
+        | SketchConstraintDefinition::ArcAngle { entity, .. }
+        | SketchConstraintDefinition::EllipseAngle { entity, .. } => geometry.contains_key(entity),
+        SketchConstraintDefinition::AtIntersection {
+            point,
+            first,
+            second,
+        } => {
+            locus_compatible(point) && geometry.contains_key(first) && geometry.contains_key(second)
+        }
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sketch_constraint_loci_compatible_with_policy;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+    };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn typed_entity_relations_require_every_entity_in_the_emitted_geometry() {
+        let first = SketchEntityId("synthetic:test:relation#first".into());
+        let second = SketchEntityId("synthetic:test:relation#second".into());
+        let axis = SketchEntityId("synthetic:test:relation#axis".into());
+        let geometry = BTreeMap::from([
+            (
+                first.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            ),
+            (
+                second.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(1.0, 0.0),
+                },
+            ),
+        ]);
+        let symmetry = SketchConstraintDefinition::Symmetric {
+            first: SketchLocus::Entity(first.clone()),
+            second: SketchLocus::Entity(second.clone()),
+            axis: axis.clone(),
+        };
+        assert!(!sketch_constraint_loci_compatible_with_policy(
+            &symmetry, &geometry, false,
+        ));
+
+        let projected = SketchConstraintDefinition::ProjectedCopy {
+            source: first.clone(),
+            result: axis.clone(),
+        };
+        assert!(!sketch_constraint_loci_compatible_with_policy(
+            &projected, &geometry, false,
+        ));
+
+        let mut complete = geometry;
+        complete.insert(
+            axis.clone(),
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            },
+        );
+        assert!(sketch_constraint_loci_compatible_with_policy(
+            &symmetry, &complete, false,
+        ));
+        assert!(sketch_constraint_loci_compatible_with_policy(
+            &projected, &complete, false,
+        ));
     }
 }
