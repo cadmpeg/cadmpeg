@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::equations::PlaneEquation;
+use super::super::equations::{CarrierEquation, PlaneEquation};
 use super::{existing_plane_agrees_with_topology, placed_carriers, transfer_topology_bound_planes};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
@@ -149,6 +149,30 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
             },
         ),
     ]);
+
+    assert!(!placed_carriers(&scan, &ir).contains_key(&7));
+}
+
+#[test]
+fn placed_carriers_admits_unique_rowless_model_surface() {
+    let scan = crate::container::scan_bytes(Vec::new());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(cylinder_surface(7, 2.0));
+
+    let carriers = placed_carriers(&scan, &ir);
+    assert!(matches!(
+        carriers.get(&7),
+        Some(CarrierEquation::Cylinder(cylinder)) if cylinder.radius == 2.0
+    ));
+}
+
+#[test]
+fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
+    let scan = crate::container::scan_bytes(Vec::new());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model
+        .surfaces
+        .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
     assert!(!placed_carriers(&scan, &ir).contains_key(&7));
 }

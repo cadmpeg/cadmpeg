@@ -247,6 +247,12 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
         .into_iter()
         .map(|(id, plane)| (id, CarrierEquation::Plane(plane)))
         .collect::<BTreeMap<_, _>>();
+    let row_ids = scan
+        .surfaces
+        .rows
+        .iter()
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
     for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
         let model_surfaces = ir
@@ -278,80 +284,96 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
             } else {
                 carriers.remove(&row.id);
             }
-        } else if let SurfaceGeometry::Cylinder {
+        } else if let Some(carrier) = surface_carrier(&surface.geometry) {
+            carriers.insert(row.id, carrier);
+        }
+    }
+    let mut model_surfaces_by_id = BTreeMap::<u32, Vec<&Surface>>::new();
+    for surface in &ir.model.surfaces {
+        let Some(id) = surface
+            .id
+            .0
+            .strip_prefix("creo:visibgeom:surface#")
+            .and_then(|id| id.parse().ok())
+        else {
+            continue;
+        };
+        model_surfaces_by_id.entry(id).or_default().push(surface);
+    }
+    for (id, model_surfaces) in model_surfaces_by_id {
+        if row_ids.contains(&id) {
+            continue;
+        }
+        let Some(surface) = exactly_one(model_surfaces.into_iter()) else {
+            carriers.remove(&id);
+            continue;
+        };
+        if let Some(carrier) = surface_carrier(&surface.geometry) {
+            carriers.insert(id, carrier);
+        }
+    }
+    carriers
+}
+
+fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
+    match geometry {
+        SurfaceGeometry::Plane { origin, normal, .. } => {
+            Some(CarrierEquation::Plane(PlaneEquation {
+                origin: [origin.x, origin.y, origin.z],
+                normal: [normal.x, normal.y, normal.z],
+            }))
+        }
+        SurfaceGeometry::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
-        } = &surface.geometry
-        {
-            carriers.insert(
-                row.id,
-                CarrierEquation::Cylinder(CylinderEquation {
-                    origin: [origin.x, origin.y, origin.z],
-                    axis: [axis.x, axis.y, axis.z],
-                    ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    radius: *radius,
-                }),
-            );
-        } else if let SurfaceGeometry::Sphere {
+        } => Some(CarrierEquation::Cylinder(CylinderEquation {
+            origin: [origin.x, origin.y, origin.z],
+            axis: [axis.x, axis.y, axis.z],
+            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+            radius: *radius,
+        })),
+        SurfaceGeometry::Sphere {
             center,
             axis: _,
             ref_direction,
             radius,
-        } = &surface.geometry
-        {
-            carriers.insert(
-                row.id,
-                CarrierEquation::Sphere(SphereEquation {
-                    center: [center.x, center.y, center.z],
-                    ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    radius: *radius,
-                }),
-            );
-        } else if let SurfaceGeometry::Cone {
+        } => Some(CarrierEquation::Sphere(SphereEquation {
+            center: [center.x, center.y, center.z],
+            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+            radius: *radius,
+        })),
+        SurfaceGeometry::Cone {
             origin,
             axis,
             ref_direction,
             radius,
             ratio,
             half_angle,
-        } = &surface.geometry
-        {
-            if ratio.is_finite() && *ratio > 0.0 {
-                carriers.insert(
-                    row.id,
-                    CarrierEquation::Cone(ConeEquation {
-                        origin: [origin.x, origin.y, origin.z],
-                        axis: [axis.x, axis.y, axis.z],
-                        ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                        radius: *radius,
-                        ratio: *ratio,
-                        half_angle: *half_angle,
-                    }),
-                );
-            }
-        } else if let SurfaceGeometry::Torus {
+        } if ratio.is_finite() && *ratio > 0.0 => Some(CarrierEquation::Cone(ConeEquation {
+            origin: [origin.x, origin.y, origin.z],
+            axis: [axis.x, axis.y, axis.z],
+            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+            radius: *radius,
+            ratio: *ratio,
+            half_angle: *half_angle,
+        })),
+        SurfaceGeometry::Torus {
             center,
             axis,
             ref_direction,
             major_radius,
             minor_radius,
-        } = &surface.geometry
-        {
-            carriers.insert(
-                row.id,
-                CarrierEquation::Torus(TorusEquation {
-                    center: [center.x, center.y, center.z],
-                    axis: [axis.x, axis.y, axis.z],
-                    ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    major_radius: *major_radius,
-                    minor_radius: *minor_radius,
-                }),
-            );
-        }
+        } => Some(CarrierEquation::Torus(TorusEquation {
+            center: [center.x, center.y, center.z],
+            axis: [axis.x, axis.y, axis.z],
+            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        })),
+        _ => None,
     }
-    carriers
 }
 
 pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<UnknownId> {
