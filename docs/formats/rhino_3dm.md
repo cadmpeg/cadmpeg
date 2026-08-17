@@ -2825,6 +2825,18 @@ check also requires every child to be valid and of the same dimension, rejects
 a closed child in a multi-child polycurve, and rejects gaps between adjacent
 children.
 
+`ON_PolyCurve::Read` consumes this layout without testing the packed major or
+minor; its source writer emits version 1.0. This reader behavior is specific to
+`ON_PolyCurve` and does not establish a future-major field contract. `ON_Brep`
+legacy C2 and C3 arrays call the same reader for their direct polycurve
+payloads.
+
+CADIR typed admission is limited to source-defined major 1 polycurve payloads
+for both top-level and legacy C2/C3 decoding. A payload with another major is
+not assigned the current layout by CADIR; its containing object remains a
+retained native record with an unsupported-version loss. This is an admission
+decision, not a claim that the OpenNURBS reader rejects the bytes.
+
 CADIR emits one compound procedural-curve record for the polycurve and one
 neutral carrier curve for each child. Child geometry is converted to
 millimetres; child and polycurve parameters, the reserved values, and the
@@ -4327,7 +4339,7 @@ built-in payload families.
 | `ON_LineCurve`     | packed byte | 1.0             | major 1; minor ignored                                     | finite distinct endpoints; increasing domain; dimension 2 or 3                            |
 | `ON_ArcCurve`      | packed byte | 1.0             | major 1; minor ignored                                     | positive radius; finite plane; increasing angle and curve domains                         |
 | `ON_PolylineCurve` | packed byte | 1.0             | major 1; minor ignored                                     | at least two points; parameter count equals point count; strict parameter increase        |
-| `ON_PolyCurve`     | packed byte | 1.0             | version byte does not alter the bounded layout             | positive segment count; parameter count is segment count plus one; every child is a curve |
+| `ON_PolyCurve`     | packed byte | 1.0             | source reader fixed layout; CADIR admits major 1            | positive segment count; parameter count is segment count plus one; every child is a curve |
 
 `ON_LineCurve` and `ON_PolylineCurve` serialize their `i32 dimension` without
 normalizing invalid values. `ON_ArcCurve` normalizes a dimension other than 2

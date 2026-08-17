@@ -554,6 +554,23 @@ rejected. The Rust morph parser now mirrors this gate and its owner tests cover
 a major-2 future-minor suffix and a rejected major 3. The producer-shaped
 version witness is recorded in the notebook.
 
+The remaining direct geometry version paths are source-defined. The writers
+and readers for `ON_Point`, `ON_PointCloud`, `ON_LineCurve`, `ON_ArcCurve`,
+`ON_PolylineCurve`, `ON_PolyCurve`, `ON_NurbsCurve`, `ON_NurbsSurface`,
+`ON_PlaneSurface`, `ON_RevSurface`, `ON_SumSurface`, `ON_Extrusion`,
+`ON_Mesh`, and `ON_SubD` are traced in the corresponding OpenNURBS source
+files. Their class-data or child chunks provide the bounded end; the Brep
+legacy reader uses the same direct polycurve and NURBS-surface paths. The
+simple-curve, surface, extrusion, mesh, Brep, SubD, and morph witnesses in the
+notebook cover the writer bands and version gates. `ON_Mesh::Write` emits
+major 3 minor 5 for archive 50 and major 3 minor 8 for archive 60 and later;
+`ON_Mesh::Read` admits major 1 and 3, applies the monotonic minor gates, and
+leaves later bytes to the containing class-data boundary. `ON_PolyCurve::Read`
+is the one source reader in this set that does not test its packed major or
+minor; the source writer still emits 1.0, and the CADIR major-1 admission rule
+is now explicit in section 12.6. The top-level and legacy C2 parser tests gate
+that distinction.
+
 **Need.** Producer writer/reader evidence for each remaining reader, or an
 independent witness that distinguishes an appendable suffix from a changed
 layout. Remove only rejection not required by that evidence.

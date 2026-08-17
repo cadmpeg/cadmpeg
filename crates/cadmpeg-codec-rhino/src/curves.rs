@@ -1779,10 +1779,21 @@ mod tests {
     }
 
     #[test]
-    fn future_polycurve_version_is_structured_as_unsupported() {
+    fn cadir_rejects_future_polycurve_major_for_typed_admission() {
         let bytes = [0x20];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
         let result = read_polycurve(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0);
+        assert!(matches!(
+            result,
+            Err(GeometryError::UnsupportedVersion { .. })
+        ));
+    }
+
+    #[test]
+    fn cadir_rejects_future_c2_polycurve_major_for_typed_admission() {
+        let bytes = [0x20];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+        let result = read_polycurve_2d(&bytes, &mut reader, ArchiveVersion::V5, 0);
         assert!(matches!(
             result,
             Err(GeometryError::UnsupportedVersion { .. })
