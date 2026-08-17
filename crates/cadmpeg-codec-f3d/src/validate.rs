@@ -3188,27 +3188,36 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         ..
                     }),
                 ) => {
-                    scope.frame_length == 538
-                        && scope.paired_byte_offset == scope.byte_offset.saturating_add(538)
-                        && scope.reference_count_offset == scope.byte_offset.saturating_add(292)
-                        && scope.reference_members.len() == 13
-                        && operation_offset == scope.byte_offset.saturating_add(27)
-                        && direction_face_extend_values == [2, 1]
-                        && side_extent_discriminators == [2, 0]
-                        && extent == records::DesignExtrudeExtent::TwoSidedToFaces
-                        && side_extent_discriminator_offsets
-                            == [
-                                scope.byte_offset.saturating_add(116),
-                                scope.reference_count_offset.saturating_sub(4),
-                            ]
-                        && direction_face_extend_offsets
-                            == [
-                                scope.byte_offset.saturating_add(31),
-                                scope.byte_offset.saturating_add(35),
-                            ]
-                        && direction_reversed_offset == scope.byte_offset.saturating_add(39)
-                        && solid_operation_offset == scope.byte_offset.saturating_add(40)
-                        && start_offset == scope.byte_offset.saturating_add(41)
+                    let expected_layout =
+                        match (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) {
+                            ("357", "258") | ("275" | "361", "262") => Some((538_u64, 13_usize)),
+                            ("323", "263") => Some((516_u64, 11_usize)),
+                            _ => None,
+                        };
+                    expected_layout.is_some_and(|(frame_length, reference_member_count)| {
+                        scope.frame_length == frame_length
+                            && scope.paired_byte_offset
+                                == scope.byte_offset.saturating_add(frame_length)
+                            && scope.reference_count_offset == scope.byte_offset.saturating_add(292)
+                            && scope.reference_members.len() == reference_member_count
+                            && operation_offset == scope.byte_offset.saturating_add(27)
+                            && direction_face_extend_values == [2, 1]
+                            && side_extent_discriminators == [2, 0]
+                            && extent == records::DesignExtrudeExtent::TwoSidedToFaces
+                            && side_extent_discriminator_offsets
+                                == [
+                                    scope.byte_offset.saturating_add(116),
+                                    scope.reference_count_offset.saturating_sub(4),
+                                ]
+                            && direction_face_extend_offsets
+                                == [
+                                    scope.byte_offset.saturating_add(31),
+                                    scope.byte_offset.saturating_add(35),
+                                ]
+                            && direction_reversed_offset == scope.byte_offset.saturating_add(39)
+                            && solid_operation_offset == scope.byte_offset.saturating_add(40)
+                            && start_offset == scope.byte_offset.saturating_add(41)
+                    })
                 }
                 (
                     true,

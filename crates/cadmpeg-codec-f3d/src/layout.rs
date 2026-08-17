@@ -2531,7 +2531,7 @@ pub(crate) mod shifted_extrude_prologue {
 /// Spec §3.1. Record length 296 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the 13-entry ordered reference table and the scope tail follow it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane.
+/// Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the ordered reference table has 13 entries for the 538-byte class pairs and 11 entries for class pair 323/263, and the scope tail follows it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane.
 /// ```
 pub(crate) mod shifted_reference_aware_extrude_scope_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -2614,8 +2614,32 @@ pub(crate) mod shifted_reference_aware_extrude_scope_prefix {
     pub(crate) const SECOND_SIDE_EXTENT_VALUE: u32 = 0x0000_0000;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 292;
-    /// Stated value of `reference_count` (`u32`). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_000d;
+}
+
+/// Byte offsets for the `shifted_reference_aware_extrude_class_323_tail` record.
+///
+/// Spec §3.1. Record length 288 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The class-specific tail moves the trailing-reference count and marked reference to +190 and +194, leaves zero padding at +205..+212, and keeps the 36-code-unit GUID prefix at +213.
+/// ```
+pub(crate) mod shifted_reference_aware_extrude_class_323_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 288;
+    /// Offset of `profile_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_COUNT: usize = 175;
+    /// Offset of `profile_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_REFERENCE: usize = 179;
+    /// Offset of `trailing_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TRAILING_REFERENCE_COUNT: usize = 190;
+    /// Stated value of `trailing_reference_count` (`u32`). Spec §3.1.
+    pub(crate) const TRAILING_REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `trailing_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRAILING_REFERENCE: usize = 194;
+    /// Offset of `trailing_reference_padding` (`bytes[8]`). Spec §3.1.
+    pub(crate) const TRAILING_REFERENCE_PADDING: usize = 205;
+    /// Offset of `guid_prefix` (`bytes[75]`). Spec §3.1.
+    pub(crate) const GUID_PREFIX: usize = 213;
 }
 
 /// Byte offsets for the `compact_shifted_extrude_prologue` record.

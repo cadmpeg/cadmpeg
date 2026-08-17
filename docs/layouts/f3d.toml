@@ -5990,9 +5990,9 @@ name = "shifted_reference_aware_extrude_scope_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The shifted reference-aware two-sided face-target `Extrude` form has a 538-byte frame"
+anchor = "The shifted reference-aware two-sided face-target `Extrude` form uses class-keyed frame lengths"
 size = 296
-note = "Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the 13-entry ordered reference table and the scope tail follow it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane."
+note = "Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the ordered reference table has 13 entries for the 538-byte class pairs and 11 entries for class pair 323/263, and the scope tail follows it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane."
 
 [[record.gap]]
 offset = 0
@@ -6173,14 +6173,14 @@ name = "profile_group_padding"
 offset = 190
 type = "bytes[8]"
 source = "spec"
-anchor = "`+190..+197`"
+anchor = "zero for the 538-byte class pairs"
 
 [[record.field]]
 name = "body_group_count"
 offset = 198
 type = "u32"
 source = "spec"
-anchor = "`+198`"
+anchor = "body construction-group count `1` for the 538-byte class pairs"
 value = 1
 
 [[record.field]]
@@ -6188,7 +6188,7 @@ name = "body_group_reference"
 offset = 202
 type = "bytes[11]"
 source = "spec"
-anchor = "body construction-group reference"
+anchor = "body construction-group reference for the 538-byte class pairs"
 
 [[record.field]]
 name = "body_group_guid_prefix"
@@ -6211,7 +6211,63 @@ offset = 292
 type = "u32"
 source = "spec"
 anchor = "`+292`"
-value = 13
+
+[[record]]
+name = "shifted_reference_aware_extrude_class_323_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The `323 / 263` class pair uses a shifted tail"
+size = 288
+note = "Offsets are relative to the primary indexed header. The class-specific tail moves the trailing-reference count and marked reference to +190 and +194, leaves zero padding at +205..+212, and keeps the 36-code-unit GUID prefix at +213."
+
+[[record.gap]]
+offset = 0
+size = 175
+note = "The indexed header and the shared class-specific prefix precede this tail."
+
+[[record.field]]
+name = "profile_group_count"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "`+175`"
+
+[[record.field]]
+name = "profile_group_reference"
+offset = 179
+type = "bytes[11]"
+source = "spec"
+anchor = "profile construction-group reference"
+
+[[record.field]]
+name = "trailing_reference_count"
+offset = 190
+type = "u32"
+source = "spec"
+anchor = "trailing-reference count `+190`"
+value = 1
+
+[[record.field]]
+name = "trailing_reference"
+offset = 194
+type = "bytes[11]"
+source = "spec"
+anchor = "unlisted trailing reference `+194`"
+
+[[record.field]]
+name = "trailing_reference_padding"
+offset = 205
+type = "bytes[8]"
+source = "spec"
+anchor = "zero padding `+205..+212`"
+
+[[record.field]]
+name = "guid_prefix"
+offset = 213
+type = "bytes[75]"
+source = "spec"
+anchor = "GUID prefix remains at `+213`"
 
 [[record]]
 name = "compact_shifted_extrude_prologue"

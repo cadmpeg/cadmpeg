@@ -68,6 +68,7 @@ use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
 use crate::layout::shifted_extrude_prologue as shifted_extrude;
+use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
@@ -8192,13 +8193,63 @@ fn exact_shifted_reference_aware_extrude_prologue(
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
-    const FRAME_LENGTH: usize = 538;
     const CLASS_TAG_OFFSET: usize = 4;
     const CLASS_TAG_LENGTH: usize = 3;
-    const REFERENCE_MEMBER_COUNT: usize = 13;
+
+    let primary_class = bytes.get(
+        start.checked_add(CLASS_TAG_OFFSET)?
+            ..start.checked_add(CLASS_TAG_OFFSET + CLASS_TAG_LENGTH)?,
+    )?;
+    let (
+        frame_length,
+        reference_member_count,
+        expected_paired_class,
+        trailing_reference_count_offset,
+        trailing_reference_offset,
+        trailing_reference_padding_offset,
+        trailing_reference_is_ordered,
+    ) = match primary_class {
+        b"357" => (
+            538,
+            13,
+            &b"258"[..],
+            shifted_reference_aware::BODY_GROUP_COUNT,
+            shifted_reference_aware::BODY_GROUP_REFERENCE,
+            shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+            true,
+        ),
+        b"275" => (
+            538,
+            13,
+            &b"262"[..],
+            shifted_reference_aware::BODY_GROUP_COUNT,
+            shifted_reference_aware::BODY_GROUP_REFERENCE,
+            shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+            true,
+        ),
+        b"361" => (
+            538,
+            13,
+            &b"262"[..],
+            shifted_reference_aware::BODY_GROUP_COUNT,
+            shifted_reference_aware::BODY_GROUP_REFERENCE,
+            shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+            true,
+        ),
+        b"323" => (
+            516,
+            11,
+            &b"263"[..],
+            shifted_reference_aware_323_tail::TRAILING_REFERENCE_COUNT,
+            shifted_reference_aware_323_tail::TRAILING_REFERENCE,
+            shifted_reference_aware_323_tail::TRAILING_REFERENCE_PADDING,
+            false,
+        ),
+        _ => return None,
+    };
 
     if reference_count_at.checked_sub(start)? != shifted_reference_aware::REFERENCE_COUNT
-        || reference_members.len() != REFERENCE_MEMBER_COUNT
+        || reference_members.len() != reference_member_count
         || View::u32_le_at(
             bytes,
             start.checked_add(shifted_reference_aware::PREFIX_CONSTANT)?,
@@ -8214,19 +8265,12 @@ fn exact_shifted_reference_aware_extrude_prologue(
     {
         return None;
     }
-    let primary_class = bytes.get(
-        start.checked_add(CLASS_TAG_OFFSET)?
-            ..start.checked_add(CLASS_TAG_OFFSET + CLASS_TAG_LENGTH)?,
-    )?;
-    let paired_start = start.checked_add(FRAME_LENGTH)?;
+    let paired_start = start.checked_add(frame_length)?;
     let paired_class = bytes.get(
         paired_start.checked_add(CLASS_TAG_OFFSET)?
             ..paired_start.checked_add(CLASS_TAG_OFFSET + CLASS_TAG_LENGTH)?,
     )?;
-    if !((primary_class == b"357" && paired_class == b"258")
-        || (primary_class == b"275" && paired_class == b"262")
-        || (primary_class == b"361" && paired_class == b"262"))
-    {
+    if paired_class != expected_paired_class {
         return None;
     }
     let operation_offset = start.checked_add(shifted_reference_aware::OPERATION)?;
@@ -8315,7 +8359,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if side_extent_discriminators != [2, 0] {
         return None;
     }
-    let tail_references = [
+    let ordered_tail_references = [
         marked_record_reference(
             bytes,
             start.checked_add(shifted_reference_aware::FIRST_SIDE_OWNER_REFERENCE)?,
@@ -8332,14 +8376,22 @@ fn exact_shifted_reference_aware_extrude_prologue(
             bytes,
             start.checked_add(shifted_reference_aware::PROFILE_GROUP_REFERENCE)?,
         )?,
-        marked_record_reference(
-            bytes,
-            start.checked_add(shifted_reference_aware::BODY_GROUP_REFERENCE)?,
-        )?,
     ];
-    let tail_references_valid = tail_references
+    let trailing_reference =
+        marked_record_reference(bytes, start.checked_add(trailing_reference_offset)?)?;
+    let ordered_tail_references_valid = ordered_tail_references
         .iter()
         .all(|record_index| reference_members.contains(record_index));
+    let trailing_reference_valid = if trailing_reference_is_ordered {
+        reference_members.contains(&trailing_reference)
+    } else {
+        trailing_reference != 0 && !reference_members.contains(&trailing_reference)
+    };
+    let zero_range = |range_start: usize, range_end: usize| {
+        bytes
+            .get(start + range_start..start + range_end)
+            .is_some_and(|value| value.iter().all(|byte| *byte == 0))
+    };
     let tail_fixed_valid = bytes
         .get(
             start + shifted_reference_aware::FIRST_SIDE_PADDING
@@ -8365,14 +8417,16 @@ fn exact_shifted_reference_aware_extrude_prologue(
             )
             .is_some_and(|value| value == [0; 5])
         && View::u32_le_at(bytes, start + shifted_reference_aware::PROFILE_GROUP_COUNT) == Some(1)
-        && bytes
-            .get(
-                start + shifted_reference_aware::PROFILE_GROUP_PADDING
-                    ..start + shifted_reference_aware::BODY_GROUP_COUNT,
-            )
-            .is_some_and(|value| value == [0; 8])
-        && View::u32_le_at(bytes, start + shifted_reference_aware::BODY_GROUP_COUNT) == Some(1);
-    if !tail_references_valid || !tail_fixed_valid {
+        && zero_range(
+            shifted_reference_aware::PROFILE_GROUP_PADDING,
+            trailing_reference_count_offset,
+        )
+        && View::u32_le_at(bytes, start + trailing_reference_count_offset) == Some(1)
+        && zero_range(
+            trailing_reference_padding_offset,
+            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+        );
+    if !ordered_tail_references_valid || !trailing_reference_valid || !tail_fixed_valid {
         return None;
     }
     let (guid, guid_end) = lp_utf16_bounded(

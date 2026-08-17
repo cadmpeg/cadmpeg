@@ -1859,7 +1859,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 296 B
 
-Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the 13-entry ordered reference table and the scope tail follow it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane.
+Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the ordered reference table has 13 entries for the 538-byte class pairs and 11 entries for class pair 323/263, and the scope tail follows it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -1889,16 +1889,38 @@ Parsed by:
 | 170 | 5 | `second_side_taper_padding` | `bytes[5]` | little | spec | `+170..+174` |
 | 175 | 4 | `profile_group_count` | `u32` | little | spec | `+175` · value `1` |
 | 179 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | profile construction-group reference |
-| 190 | 8 | `profile_group_padding` | `bytes[8]` | little | spec | `+190..+197` |
-| 198 | 4 | `body_group_count` | `u32` | little | spec | `+198` · value `1` |
-| 202 | 11 | `body_group_reference` | `bytes[11]` | little | spec | body construction-group reference |
+| 190 | 8 | `profile_group_padding` | `bytes[8]` | little | spec | zero for the 538-byte class pairs |
+| 198 | 4 | `body_group_count` | `u32` | little | spec | body construction-group count `1` for the 538-byte class pairs · value `1` |
+| 202 | 11 | `body_group_reference` | `bytes[11]` | little | spec | body construction-group reference for the 538-byte class pairs |
 | 213 | 75 | `body_group_guid_prefix` | `bytes[75]` | little | spec | UTF-16 code-unit count `36` |
 | 288 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `0` · value `0` |
-| 292 | 4 | `reference_count` | `u32` | little | spec | `+292` · value `13` |
+| 292 | 4 | `reference_count` | `u32` | little | spec | `+292` |
 
 Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding scope envelope are outside this fixed prefix.
+
+## `shifted_reference_aware_extrude_class_323_tail`
+
+Spec §3.1 · layout: byte offsets · size: 288 B
+
+Offsets are relative to the primary indexed header. The class-specific tail moves the trailing-reference count and marked reference to +190 and +194, leaves zero padding at +205..+212, and keeps the 36-code-unit GUID prefix at +213.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 175 | 4 | `profile_group_count` | `u32` | little | spec | `+175` |
+| 179 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | profile construction-group reference |
+| 190 | 4 | `trailing_reference_count` | `u32` | little | spec | trailing-reference count `+190` · value `1` |
+| 194 | 11 | `trailing_reference` | `bytes[11]` | little | spec | unlisted trailing reference `+194` |
+| 205 | 8 | `trailing_reference_padding` | `bytes[8]` | little | spec | zero padding `+205..+212` |
+| 213 | 75 | `guid_prefix` | `bytes[75]` | little | spec | GUID prefix remains at `+213` |
+
+Unstated regions:
+
+- `0..175` (175 B): The indexed header and the shared class-specific prefix precede this tail.
 
 ## `compact_shifted_extrude_prologue`
 
