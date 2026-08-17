@@ -286,6 +286,64 @@ fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
 }
 
 #[test]
+fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
+    let root = include_bytes!("tests/data/ce02_root_forwarded_unparsed.p21");
+    let subsidiary = include_bytes!("tests/data/ce02_subsidiary_unparsed.p21");
+    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
+    assert!(root_diagnostics.is_empty());
+    assert_eq!(
+        root_exchange.anchors[0].value,
+        crate::parse::Value::Resource("parts/ce02_subsidiary_unparsed.p21#remote_item".into())
+    );
+    assert_eq!(root_exchange.references[0].uri, "#target");
+
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/ce02_subsidiary_unparsed.p21",
+            subsidiary,
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect root without parsing subsidiary");
+    assert_eq!(summary.entries.len(), 2);
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note
+            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item"));
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root without parsing subsidiary");
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert_eq!(source.attributes["archive_root"], ROOT_NAME);
+    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena")
+            .len(),
+        1
+    );
+    assert!(result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note == "external reference #10 -> #target"));
+    assert!(result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note
+            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item"));
+}
+
+#[test]
 fn codec_keeps_external_reference_graph_resource_local() {
     let root = include_bytes!("tests/data/er03_root.p21");
     let subsidiary = include_bytes!("tests/data/er03_subsidiary.p21");

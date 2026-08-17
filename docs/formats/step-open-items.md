@@ -20,16 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-02. ZIP resource composition
-
-**Question.** How do references between exchange resources in an edition-3 ZIP container resolve into one graph?
-
-**Known.** Annex A.4 defines archive-relative addressing and root-anchor forwarding (`step.md` §7 "For a ZIP container"). The archive code checks the addressed member (`crates/cadmpeg-codec-step/src/archive.rs:122-152`), while ZIP decode passes only the root member to the STEP reader (`crates/cadmpeg-codec-step/src/codec.rs:323-362`).
-
-**Need.** Define the resource-qualified graph model and anchor substitution for a multi-member archive, with a witness that verifies the forwarded target is composed into the local graph.
-
-**Conflict.** Checking a subsidiary member and retaining an external dependency does not compose that member's entities or values into CADIR.
-
 ### CE-03. Part 28 XML grammar
 
 **Question.** Which Part 28 configuration and generated schema define each supported AP203, AP214, or AP242 XML grammar?

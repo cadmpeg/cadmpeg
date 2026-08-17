@@ -628,12 +628,13 @@ resolver supplies it; the codec does not open a local path or normalize that
 URI against the host filesystem. Application document-reference source fields
 are schema strings and remain source metadata, not Part 21 resource tokens.
 
-For a ZIP container, the root exchange has the archive member
-`ISO-10303.p21` as its base directory entry. Part 21:2016 Annex A.4 requires
-this root member and permits other members as subsidiaries. Only the root is
-addressed from outside the archive; a root `ANCHOR` forwards an external
-reference to an entity or value in a subsidiary. Relative addresses are
-interpreted against the directory of the referencing member and cannot leave
+For a ZIP container, Annex A.4 of the [Part 21 edition-3
+text](https://www.steptools.com/stds/step/IS_final_p21e3.html) requires the
+archive to contain the root member `ISO-10303.p21` and permits other members as
+subsidiaries. Only the root is addressed from outside the archive; a root
+`ANCHOR` forwards an external reference to an entity or value in a subsidiary.
+Relative addresses are interpreted against the directory of the referencing
+member and cannot leave
 the archive root. The codec normalizes `.` components, processes `..` only
 while a parent member remains, rejects an absolute path, an empty path
 component, or traversal above the root, and treats a URI scheme or network-path
