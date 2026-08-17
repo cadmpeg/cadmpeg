@@ -654,7 +654,9 @@ pub(crate) fn resolved_hem_edge_slot(
 /// chain. A member with deleted boundaries must also share at least one edge
 /// with the chain. When any member has changed or deleted boundary evidence,
 /// every edge in the exact chain must occur in the group's combined recipe
-/// boundary set.
+/// boundary set. The set includes the selected reference contexts because a
+/// structured recipe can carry the operation edge on a reference face that is
+/// not the operand's primary candidate face.
 fn transition_chain_is_supported_by_recipe<'a>(
     chain: &[i64],
     member_count: usize,
@@ -685,6 +687,12 @@ fn transition_chain_is_supported_by_recipe<'a>(
                 .changed_boundary_edge_slots
                 .iter()
                 .chain(&operand.deleted_boundary_edge_slots)
+                .copied(),
+        );
+        all_recipe_edges.extend(
+            edge_operand_reference_edge_sets(operand)
+                .into_iter()
+                .flatten()
                 .copied(),
         );
     }

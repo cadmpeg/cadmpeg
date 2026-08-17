@@ -372,11 +372,94 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
         [&first, &second],
     ));
 
+    let context = |changed_reference_edge_slots| {
+        serde_json::from_value(serde_json::json!({
+            "reference_ordinal": 0,
+            "result_faces": [],
+            "result_shared_edge_slots": [],
+            "preceding_faces": [],
+            "shared_edge_slots": [],
+            "changed_shared_edge_slots": [],
+            "changed_reference_edge_slots": changed_reference_edge_slots,
+        }))
+        .expect("historical edge recipe reference context")
+    };
+    let mut first = recipe_edge_operand(10, &[], &[17]);
+    first.local_topology_references = Some(vec![
+        std::num::NonZeroU32::new(1).expect("nonzero reference ordinal")
+    ]);
+    first.recipe_reference_contexts = vec![context(vec![18])];
+    let mut second = recipe_edge_operand(11, &[], &[]);
+    second.local_topology_references = Some(vec![
+        std::num::NonZeroU32::new(1).expect("nonzero reference ordinal")
+    ]);
+    second.recipe_reference_contexts = vec![context(vec![17, 18])];
+    assert!(transition_chain_is_supported_by_recipe(
+        &[17, 18],
+        2,
+        [&first, &second],
+    ));
+
     let first = recipe_edge_operand(10, &[17, 18], &[17]);
     assert!(transition_chain_is_supported_by_recipe(
         &[17, 18],
         2,
         [&first, &second],
+    ));
+}
+
+#[test]
+fn compact_identity_group_uses_selected_recipe_context_boundaries() {
+    let mut selection_group = group(2, 10);
+    selection_group.members = vec![10, 11];
+    selection_group.member_offsets = vec![0, 0];
+    let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
+    let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
+    second_identity.group_member_ordinal = 1;
+    let context = |changed_reference_edge_slots| {
+        serde_json::from_value(serde_json::json!({
+            "reference_ordinal": 0,
+            "result_faces": [],
+            "result_shared_edge_slots": [],
+            "preceding_faces": [],
+            "shared_edge_slots": [],
+            "changed_shared_edge_slots": [],
+            "changed_reference_edge_slots": changed_reference_edge_slots,
+        }))
+        .expect("historical edge recipe reference context")
+    };
+    let mut first = recipe_edge_operand(10, &[], &[17]);
+    first.local_topology_references = Some(vec![
+        std::num::NonZeroU32::new(1).expect("nonzero reference ordinal")
+    ]);
+    first.recipe_reference_contexts = vec![context(vec![18])];
+    let mut second = recipe_edge_operand(11, &[], &[]);
+    second.local_topology_references = Some(vec![
+        std::num::NonZeroU32::new(1).expect("nonzero reference ordinal")
+    ]);
+    second.recipe_reference_contexts = vec![context(vec![17, 18])];
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#chamfer".into());
+
+    let selection = resolved_edge_treatment_group(
+        &selection_group,
+        std::slice::from_ref(&selection_group),
+        &[first, second],
+        &[first_identity, second_identity],
+        Some(7),
+        &feature_id,
+        None,
+    );
+    assert!(matches!(
+        selection,
+        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+            if edges == [
+                cadmpeg_ir::ids::HistoricalEdgeId(
+                    "f3d:history-input:edge#7:chamfer:7:17".into()
+                ),
+                cadmpeg_ir::ids::HistoricalEdgeId(
+                    "f3d:history-input:edge#7:chamfer:7:18".into()
+                ),
+            ]
     ));
 }
 
