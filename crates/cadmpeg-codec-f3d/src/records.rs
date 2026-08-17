@@ -2048,6 +2048,11 @@ pub enum DesignWorkPointInputCarrier {
         /// Exact selection envelope and resolved `WorkPlane` scope.
         selection: DesignWorkPointPlaneSelection,
     },
+    /// Direct persistent selection of one sketch point.
+    SketchPoint {
+        /// Exact selection envelope and resolved native sketch-point record.
+        selection: DesignWorkPointSketchPointSelection,
+    },
 }
 
 /// Exact persistent `vertex_recipe_data` envelope.
@@ -2132,6 +2137,40 @@ pub struct DesignWorkPointPlaneSelection {
     pub primary_identity_offset: u64,
     /// Selected `WorkPlane` scope record index.
     pub work_plane_scope_record_index: u32,
+    /// Identity of the indexed record closing the selection envelope.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record closing the selection envelope.
+    pub next_byte_offset: u64,
+}
+
+/// Exact persistent entity selection naming one sketch point.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignWorkPointSketchPointSelection {
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: String,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: String,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Nested indexed record carrying the persistent identity.
+    pub identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    pub identity_record_offset: u64,
+    /// Record identity of the owning Sketch entity.
+    pub sketch_record_index: u32,
+    /// Byte offset of the Sketch entity identity.
+    pub sketch_record_index_offset: u64,
+    /// Persistent identity of the selected sketch point.
+    pub point_persistent_id: u64,
+    /// Byte offset of the sketch-point identity.
+    pub point_persistent_id_offset: u64,
+    /// Native id of the decoded sketch-point record selected by this frame.
+    pub point_native_id: String,
     /// Identity of the indexed record closing the selection envelope.
     pub next_record_index: u32,
     /// Byte offset of the indexed record closing the selection envelope.
@@ -2254,7 +2293,11 @@ impl DesignWorkPointRule {
         };
         let is_vertex = |input: &DesignWorkPointInput| {
             input.carrier.as_deref().is_none_or(|carrier| {
-                matches!(carrier, DesignWorkPointInputCarrier::VertexRecipe { .. })
+                matches!(
+                    carrier,
+                    DesignWorkPointInputCarrier::VertexRecipe { .. }
+                        | DesignWorkPointInputCarrier::SketchPoint { .. }
+                )
             })
         };
         let is_plane = |input: &DesignWorkPointInput| {

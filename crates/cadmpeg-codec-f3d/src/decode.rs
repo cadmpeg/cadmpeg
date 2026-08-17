@@ -319,7 +319,7 @@ fn datum_plane_reference_is_resolved(
 fn datum_point_construction_is_resolved(
     construction: &cadmpeg_ir::features::DatumPointConstruction,
 ) -> bool {
-    use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
+    use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection, VertexSelection};
 
     match construction {
         DatumPointConstruction::CircleCenter { edge } => edge_selection_is_resolved(edge),
@@ -332,6 +332,10 @@ fn datum_point_construction_is_resolved(
         DatumPointConstruction::Vertex { vertex } => matches!(
             vertex,
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
+        ),
+        DatumPointConstruction::SketchPoint { point } => matches!(
+            point,
+            SketchPointSelection::Planar { .. } | SketchPointSelection::Spatial { .. }
         ),
         DatumPointConstruction::EdgePlaneIntersection { edge, plane } => {
             edge_selection_is_resolved(edge) && datum_plane_reference_is_resolved(plane)
@@ -1609,7 +1613,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     DatumPointConstruction::ThreePlaneIntersection { planes } => {
                         planes.iter().for_each(&mut plane);
                     }
-                    DatumPointConstruction::Vertex { .. } => {}
+                    DatumPointConstruction::Vertex { .. }
+                    | DatumPointConstruction::SketchPoint { .. } => {}
                     DatumPointConstruction::EdgePlaneIntersection {
                         edge,
                         plane: reference,
@@ -2268,6 +2273,14 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_surfaces,
             &mut self.native.sketch_relations,
         )?;
+        crate::design::decode::operands::bind_work_point_input_carriers(
+            scan,
+            &mut self.native.design_parameter_scopes,
+            &self.native.design_record_headers,
+            &self.native.construction_recipes,
+            &self.native.design_edge_operands,
+            &self.native.sketch_points,
+        )?;
         crate::design::decode::operands::bind_extrude_selection_geometry(
             &mut self.native.design_extrude_selection_members,
             &self.native.design_extrude_selection_groups,
@@ -2470,6 +2483,12 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_surfaces,
             &self.native.sketch_relations,
             self.ir.tolerances.linear,
+        );
+        crate::design::feature_project::bind_work_point_sketch_point_constructions(
+            &mut self.ir.model.features,
+            &self.native.design_parameter_scopes,
+            &self.ir.model.sketch_entities,
+            &self.ir.model.spatial_sketch_entities,
         );
         let arrangement_budget =
             ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
@@ -4332,13 +4351,6 @@ fn extend_related_design_records(
         &native.asm_histories,
         &scope_histories,
     );
-    crate::design::decode::operands::bind_work_point_input_carriers(
-        scan,
-        &mut native.design_parameter_scopes,
-        &native.design_record_headers,
-        &native.construction_recipes,
-        &native.design_edge_operands,
-    )?;
     crate::design::decode::operands::bind_work_plane_constructions(
         scan,
         &mut native.design_parameter_scopes,

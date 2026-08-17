@@ -4351,6 +4351,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         crate::features::DatumPointConstruction::Vertex { vertex } => {
                             vertex_selections.push((vertex, "datum-point"));
                         }
+                        crate::features::DatumPointConstruction::SketchPoint { .. } => {}
                         crate::features::DatumPointConstruction::EdgePlaneIntersection {
                             edge,
                             plane,
@@ -5721,7 +5722,7 @@ fn check_feature_sketch_references(
     sketches: &HashSet<&str>,
     findings: &mut Vec<Finding>,
 ) {
-    use crate::features::{FeatureDefinition, PathRef, ProfileRef};
+    use crate::features::{FeatureDefinition, PathRef, ProfileRef, SketchPointSelection};
 
     let spatial_sketches = ir
         .model
@@ -5763,6 +5764,88 @@ fn check_feature_sketch_references(
                 message: format!("sketch `{sketch}` has multiple owning features"),
                 entity: Some(feature.id.0.clone()),
             });
+        }
+    }
+
+    for feature in &ir.model.features {
+        let FeatureDefinition::DatumPoint {
+            construction: Some(construction),
+            ..
+        } = &feature.definition
+        else {
+            continue;
+        };
+        let crate::features::DatumPointConstruction::SketchPoint { point } = construction.as_ref()
+        else {
+            continue;
+        };
+        let valid = match point {
+            SketchPointSelection::Planar {
+                sketch,
+                point,
+                native,
+            } => {
+                !native.trim().is_empty()
+                    && sketches.contains(sketch.0.as_str())
+                    && sketch_entity_owners
+                        .get(point.0.as_str())
+                        .is_some_and(|owner| *owner == sketch.0.as_str())
+                    && ir.model.sketch_entities.iter().any(|entity| {
+                        entity.id == *point
+                            && entity.sketch == *sketch
+                            && matches!(
+                                &entity.geometry,
+                                crate::sketches::SketchGeometry::Point { .. }
+                            )
+                    })
+            }
+            SketchPointSelection::Spatial {
+                sketch,
+                point,
+                native,
+            } => {
+                !native.trim().is_empty()
+                    && spatial_sketches.contains(sketch.0.as_str())
+                    && spatial_sketch_entity_owners
+                        .get(point.0.as_str())
+                        .is_some_and(|owner| *owner == sketch.0.as_str())
+                    && ir.model.spatial_sketch_entities.iter().any(|entity| {
+                        entity.id == *point
+                            && entity.sketch == *sketch
+                            && matches!(
+                                &entity.geometry,
+                                crate::sketches::SpatialSketchGeometry::Point { .. }
+                            )
+                    })
+            }
+            SketchPointSelection::Native(native) => !native.trim().is_empty(),
+            SketchPointSelection::Unresolved => true,
+        };
+        if !valid {
+            feature_geometry_error(
+                findings,
+                feature,
+                "datum-point sketch-point selection is invalid",
+            );
+        }
+        let sketch_id = match point {
+            SketchPointSelection::Planar { sketch, .. } => Some(sketch.0.as_str()),
+            SketchPointSelection::Spatial { sketch, .. } => Some(sketch.0.as_str()),
+            SketchPointSelection::Native(_) | SketchPointSelection::Unresolved => None,
+        };
+        if let Some(sketch_id) = sketch_id {
+            if let Some((owner, ordinal)) = owners.get(sketch_id) {
+                if *ordinal >= feature.ordinal {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "sketch owner `{owner}` does not precede its datum-point consumer"
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+            }
         }
     }
 

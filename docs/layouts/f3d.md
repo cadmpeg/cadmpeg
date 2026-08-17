@@ -1448,6 +1448,26 @@ Unstated regions:
 - `11..21` (10 B): The persistent prefix stores zero bytes at offsets 11 through 20.
 - `26..32` (6 B): The persistent prefix stores zero bytes at offsets 26 through 31.
 
+## `work_point_sketch_point_identity`
+
+Spec §3.1 · layout: byte offsets · size: 41 B
+
+Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 41.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `presence` | `u8` | little | spec | offset 20 is the presence byte `01` |
+| 25 | 4 | `sketch_record_index` | `u32` | little | spec | offsets 25 through 28 are the owning Sketch entity record index |
+| 33 | 4 | `point_persistent_id` | `u32` | little | spec | offsets 33 through 36 are the sketch-point persistent id |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed identity header occupies the first 11 bytes.
+- `11..20` (9 B): The direct sketch-point identity stores zero bytes at offsets 11 through 19.
+- `21..25` (4 B): The first marked identity slot is zero in this selection form.
+- `29..33` (4 B): The second marked identity slot is zero in this selection form.
+- `37..41` (4 B): The identity record stores zero bytes at offsets 37 through 40.
+
 ## `coil_modern_selection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 41 B

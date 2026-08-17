@@ -554,6 +554,36 @@ pub enum DatumPlaneReference {
     },
 }
 
+/// Sketch point operand resolved by a datum-point construction or retained in
+/// native form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SketchPointSelection {
+    /// Selection exists semantically but its sketch entity is not resolved.
+    Unresolved,
+    /// Point in a planar sketch.
+    Planar {
+        /// Owning planar sketch.
+        sketch: crate::sketches::SketchId,
+        /// Selected point entity.
+        point: crate::sketches::SketchEntityId,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Point in a model-space sketch.
+    Spatial {
+        /// Owning model-space sketch.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Selected point entity.
+        point: crate::sketches::SpatialSketchEntityId,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Format-native selection reference.
+    Native(String),
+}
+
 /// Construction rule used to derive one datum point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -578,6 +608,11 @@ pub enum DatumPointConstruction {
     Vertex {
         /// Selected vertex.
         vertex: VertexSelection,
+    },
+    /// One selected point from a planar or model-space sketch.
+    SketchPoint {
+        /// Selected sketch point.
+        point: SketchPointSelection,
     },
     /// Intersection of one selected edge and one selected plane.
     EdgePlaneIntersection {
@@ -625,6 +660,7 @@ impl DatumPointConstruction {
             Self::CircleCenter { .. }
             | Self::TwoEdgeIntersection { .. }
             | Self::Vertex { .. }
+            | Self::SketchPoint { .. }
             | Self::EdgePlaneIntersection { .. }
             | Self::DistanceOnEdge { .. } => Vec::new(),
         }

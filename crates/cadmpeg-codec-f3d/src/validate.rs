@@ -14,6 +14,7 @@ use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::{design, history, ids, native, records};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{Check, Finding, Severity};
@@ -3834,6 +3835,43 @@ fn valid_work_point_construction(
                             design_stream(&plane.id) == native_stream
                                 && plane.kind == "WorkPlane"
                                 && plane.record_index == selection.work_plane_scope_record_index
+                        })
+                }
+                Some(records::DesignWorkPointInputCarrier::SketchPoint { selection }) => {
+                    valid_design_guid(&selection.asset_id)
+                        && valid_design_guid(&selection.context_id)
+                        && selection.class_tag.len() == 3
+                        && selection
+                            .class_tag
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit())
+                        && header.is_some_and(|header| {
+                            header.class_tag == selection.class_tag
+                                && selection.asset_id_offset > header.byte_offset
+                        })
+                        && selection.context_id_offset > selection.asset_id_offset
+                        && selection.identity_record_offset > selection.context_id_offset
+                        && selection.identity_record_index == input.record_index.saturating_add(3)
+                        && selection.sketch_record_index_offset
+                            == selection
+                                .identity_record_offset
+                                .saturating_add(sketch_point_identity::SKETCH_RECORD_INDEX as u64)
+                        && selection.point_persistent_id_offset
+                            == selection
+                                .identity_record_offset
+                                .saturating_add(sketch_point_identity::POINT_PERSISTENT_ID as u64)
+                        && selection.next_record_index == input.record_index.saturating_add(4)
+                        && selection.next_byte_offset
+                            == selection
+                                .identity_record_offset
+                                .saturating_add(sketch_point_identity::LEN as u64)
+                        && u32::try_from(selection.point_persistent_id).is_ok()
+                        && !selection.point_native_id.trim().is_empty()
+                        && native.sketch_points.iter().any(|point| {
+                            point.id == selection.point_native_id
+                                && design_stream(&point.id) == native_stream
+                                && point.owner_reference == Some(selection.sketch_record_index)
+                                && point.persistent_id == Some(selection.point_persistent_id)
                         })
                 }
             }

@@ -4809,6 +4809,60 @@ source = "spec"
 anchor = "the asset UUID's UTF-16 code-unit count at offset 36"
 
 [[record]]
+name = "work_point_sketch_point_identity"
+kind = "byte"
+section = "3.1"
+anchor = "offset 20 is the presence byte `01`"
+size = 41
+note = "Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 41."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed identity header occupies the first 11 bytes."
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "The direct sketch-point identity stores zero bytes at offsets 11 through 19."
+
+[[record.field]]
+name = "presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "offset 20 is the presence byte `01`"
+
+[[record.gap]]
+offset = 21
+size = 4
+note = "The first marked identity slot is zero in this selection form."
+
+[[record.field]]
+name = "sketch_record_index"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "offsets 25 through 28 are the owning Sketch entity record index"
+
+[[record.gap]]
+offset = 29
+size = 4
+note = "The second marked identity slot is zero in this selection form."
+
+[[record.field]]
+name = "point_persistent_id"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "offsets 33 through 36 are the sketch-point persistent id"
+
+[[record.gap]]
+offset = 37
+size = 4
+note = "The identity record stores zero bytes at offsets 37 through 40."
+
+[[record]]
 name = "coil_modern_selection_prefix"
 kind = "byte"
 section = "3.1"

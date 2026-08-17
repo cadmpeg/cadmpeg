@@ -1664,7 +1664,8 @@ pub(crate) fn work_point_input_history_state_id(
         crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
             recipe.resolved_vertex_slot.and(recipe.recipe_state_id)
         }
-        crate::records::DesignWorkPointInputCarrier::WorkPlane { .. } => None,
+        crate::records::DesignWorkPointInputCarrier::WorkPlane { .. }
+        | crate::records::DesignWorkPointInputCarrier::SketchPoint { .. } => None,
     }
 }
 
@@ -2326,7 +2327,10 @@ pub fn bind_sketch_feature_geometry(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, LoftSection, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{
+        DatumPointConstruction, FeatureDefinition, LoftSection, PathRef, ProfileRef,
+        SketchPointSelection,
+    };
 
     for feature in features.iter_mut() {
         if !matches!(
@@ -2470,6 +2474,13 @@ pub fn bind_sketch_feature_geometry(
         }
         _ => None,
     };
+    let sketch_point_dependency = |point: &SketchPointSelection| match point {
+        SketchPointSelection::Planar { sketch, .. } => sketch_features.get(sketch).cloned(),
+        SketchPointSelection::Spatial { sketch, .. } => {
+            spatial_sketch_features.get(sketch).cloned()
+        }
+        SketchPointSelection::Unresolved | SketchPointSelection::Native(_) => None,
+    };
     for feature in features.iter_mut() {
         let mut dependencies = Vec::new();
         match &feature.definition {
@@ -2521,12 +2532,96 @@ pub fn bind_sketch_feature_geometry(
                 dependencies.extend(guides.iter().filter_map(path_dependency));
                 dependencies.extend(centerline.as_ref().and_then(path_dependency));
             }
+            FeatureDefinition::DatumPoint {
+                construction: Some(construction),
+                ..
+            } => {
+                if let DatumPointConstruction::SketchPoint { point } = construction.as_ref() {
+                    dependencies.extend(sketch_point_dependency(point));
+                }
+            }
             _ => {}
         }
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
                 feature.dependencies.push(dependency);
             }
+        }
+    }
+}
+
+/// Bind `WorkPoint` inputs that select a sketch point after the sketch arenas
+/// have been projected. The Design selection identifies a native point record;
+/// the neutral point identity depends on whether that record belongs to a
+/// planar or model-space sketch.
+pub fn bind_work_point_sketch_point_constructions(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[DesignParameterScope],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    spatial_sketch_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+) {
+    use cadmpeg_ir::features::{DatumPointConstruction, FeatureDefinition, SketchPointSelection};
+
+    for feature in features.iter_mut() {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+        else {
+            continue;
+        };
+        let FeatureDefinition::DatumPoint { construction, .. } = &mut feature.definition else {
+            continue;
+        };
+        if construction.is_some() {
+            continue;
+        }
+        let Some(crate::records::DesignWorkPointConstruction {
+            rule:
+                crate::records::DesignWorkPointRule::Vertex {
+                    input:
+                        crate::records::DesignWorkPointInput {
+                            carrier: Some(carrier),
+                            record_index,
+                            ..
+                        },
+                },
+            ..
+        }) = scope.work_point_construction.as_ref()
+        else {
+            continue;
+        };
+        let crate::records::DesignWorkPointInputCarrier::SketchPoint { selection } =
+            carrier.as_ref()
+        else {
+            continue;
+        };
+        let native = format!(
+            "{}:design-record#{record_index}",
+            native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM)
+        );
+        if let Some(entity) = sketch_entities
+            .iter()
+            .find(|entity| entity.native_ref.as_deref() == Some(selection.point_native_id.as_str()))
+        {
+            *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
+                point: SketchPointSelection::Planar {
+                    sketch: entity.sketch.clone(),
+                    point: entity.id.clone(),
+                    native,
+                },
+            }));
+        } else if let Some(entity) = spatial_sketch_entities
+            .iter()
+            .find(|entity| entity.native_ref.as_deref() == Some(selection.point_native_id.as_str()))
+        {
+            *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
+                point: SketchPointSelection::Spatial {
+                    sketch: entity.sketch.clone(),
+                    point: entity.id.clone(),
+                    native,
+                },
+            }));
         }
     }
 }

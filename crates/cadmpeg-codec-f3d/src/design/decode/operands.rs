@@ -21,6 +21,7 @@ use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
     DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
@@ -34,8 +35,9 @@ use crate::records::{
     DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
     DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
-    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection, LostEdgeReference,
-    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
+    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
+    DesignWorkPointSketchPointSelection, LostEdgeReference, PersistentSubentityTag,
+    SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -170,6 +172,7 @@ pub fn bind_work_point_input_carriers(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
     edge_operands: &[DesignEdgeOperand],
+    sketch_points: &[SketchPoint],
 ) -> Result<(), CodecError> {
     let headers = headers
         .iter()
@@ -232,6 +235,42 @@ pub fn bind_work_point_input_carriers(
                 input.carrier = Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                     recipe,
                 }));
+                continue;
+            }
+            if let Some(selection) = parse_work_point_sketch_point_frame(
+                bytes,
+                input.record_index,
+                header.byte_offset,
+                &header.class_tag,
+            ) {
+                let point_matches = sketch_points
+                    .iter()
+                    .filter(|point| {
+                        native_stream(&point.id) == Some(stream.as_str())
+                            && point.owner_reference == Some(selection.sketch_record_index)
+                            && point.persistent_id == Some(selection.point_persistent_id)
+                    })
+                    .collect::<Vec<_>>();
+                if let [point] = point_matches.as_slice() {
+                    input.carrier = Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
+                        selection: DesignWorkPointSketchPointSelection {
+                            class_tag: selection.class_tag,
+                            asset_id: selection.asset_id,
+                            asset_id_offset: selection.asset_id_offset,
+                            context_id: selection.context_id,
+                            context_id_offset: selection.context_id_offset,
+                            identity_record_index: selection.identity_record_index,
+                            identity_record_offset: selection.identity_record_offset,
+                            sketch_record_index: selection.sketch_record_index,
+                            sketch_record_index_offset: selection.sketch_record_index_offset,
+                            point_persistent_id: selection.point_persistent_id,
+                            point_persistent_id_offset: selection.point_persistent_id_offset,
+                            point_native_id: point.id.clone(),
+                            next_record_index: selection.next_record_index,
+                            next_byte_offset: selection.next_byte_offset,
+                        },
+                    }));
+                }
                 continue;
             }
             let Some(selection) = parse_entity_selection_frame(
@@ -2399,6 +2438,105 @@ pub(crate) fn entity_selection_matches_curve(
         && operand
             .curve_secondary_identity
             .is_none_or(|secondary| curve.secondary_id == secondary)
+}
+
+/// Direct sketch-point identity carried by a `WorkPoint` input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkPointSketchPointFrame {
+    class_tag: String,
+    asset_id: String,
+    asset_id_offset: u64,
+    context_id: String,
+    context_id_offset: u64,
+    identity_record_index: u32,
+    identity_record_offset: u64,
+    sketch_record_index: u32,
+    sketch_record_index_offset: u64,
+    point_persistent_id: u64,
+    point_persistent_id_offset: u64,
+    next_record_index: u32,
+    next_byte_offset: u64,
+}
+
+/// Parse the direct sketch-point identity variant of a `WorkPoint` input.
+///
+/// The outer prefix is shared with persistent entity selections. Its identity
+/// record is a separate four-record envelope: nine zero bytes, a one-byte
+/// presence marker, two marked `u32` slots separated by zero `u32` values,
+/// and the following point-data record.
+fn parse_work_point_sketch_point_frame(
+    bytes: &[u8],
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: &str,
+) -> Option<WorkPointSketchPointFrame> {
+    let start = usize::try_from(byte_offset).ok()?;
+    let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
+    let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
+    let nested_one_at = next_indexed_record_offset(bytes, paired_at + indexed_header::LEN)?;
+    let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + indexed_header::LEN)?;
+    let identity_at = next_indexed_record_offset(bytes, nested_two_at + indexed_header::LEN)?;
+    let next_at = next_indexed_record_offset(bytes, identity_at + indexed_header::LEN)?;
+    let expected = [
+        record_index,
+        record_index.checked_add(1)?,
+        record_index.checked_add(2)?,
+        record_index.checked_add(3)?,
+    ];
+    for (offset, expected) in [paired_at, nested_one_at, nested_two_at, identity_at]
+        .into_iter()
+        .zip(expected)
+    {
+        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
+        if View::u32_le_at(bytes, after_tag)? != expected {
+            return None;
+        }
+    }
+    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+    let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
+    if next_record_index != record_index.checked_add(4)?
+        || bytes
+            .get(identity_at + indexed_header::LEN..identity_at + sketch_point_identity::PRESENCE)?
+            != [0; 9]
+        || bytes.get(identity_at + sketch_point_identity::PRESENCE) != Some(&1)
+        || View::u32_le_at(bytes, identity_at + sketch_point_identity::PRESENCE + 1)? != 0
+        || View::u32_le_at(
+            bytes,
+            identity_at + sketch_point_identity::SKETCH_RECORD_INDEX + 4,
+        )? != 0
+        || identity_at.checked_add(sketch_point_identity::LEN)? != next_at
+    {
+        return None;
+    }
+    let sketch_record_index = View::u32_le_at(
+        bytes,
+        identity_at + sketch_point_identity::SKETCH_RECORD_INDEX,
+    )?;
+    let point_persistent_id = u64::from(View::u32_le_at(
+        bytes,
+        identity_at + sketch_point_identity::POINT_PERSISTENT_ID,
+    )?);
+    Some(WorkPointSketchPointFrame {
+        class_tag: class_tag.to_owned(),
+        asset_id: prefix.asset_id,
+        asset_id_offset: prefix.asset_id_offset,
+        context_id: prefix.context_id,
+        context_id_offset: prefix.context_id_offset,
+        identity_record_index: record_index.checked_add(3)?,
+        identity_record_offset: u64::try_from(identity_at).ok()?,
+        sketch_record_index,
+        sketch_record_index_offset: u64::try_from(
+            identity_at.checked_add(sketch_point_identity::SKETCH_RECORD_INDEX)?,
+        )
+        .ok()?,
+        point_persistent_id,
+        point_persistent_id_offset: u64::try_from(
+            identity_at.checked_add(sketch_point_identity::POINT_PERSISTENT_ID)?,
+        )
+        .ok()?,
+        next_record_index,
+        next_byte_offset: u64::try_from(next_at).ok()?,
+    })
 }
 
 /// Parse the nested persistent-entity frame without assigning group ownership.

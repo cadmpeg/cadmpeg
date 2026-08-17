@@ -2084,6 +2084,24 @@ pub(crate) mod coil_compact_persistent_selection_prefix {
     pub(crate) const ASSET_UUID_LENGTH: usize = 36;
 }
 
+/// Byte offsets for the `work_point_sketch_point_identity` record.
+///
+/// Spec §3.1. Record length 41 B.
+///
+/// ```text
+/// Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 41.
+/// ```
+pub(crate) mod work_point_sketch_point_identity {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 41;
+    /// Offset of `presence` (`u8`). Spec §3.1.
+    pub(crate) const PRESENCE: usize = 20;
+    /// Offset of `sketch_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SKETCH_RECORD_INDEX: usize = 25;
+    /// Offset of `point_persistent_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const POINT_PERSISTENT_ID: usize = 33;
+}
+
 /// Byte offsets for the `coil_modern_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 41 B.
