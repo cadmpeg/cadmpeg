@@ -45,6 +45,28 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
+### PH-03. Entity-specific boundary for trailing pointer groups
+
+**Question.** Which entity-specific rule supplies `NV`, the last primary Parameter Data index, when a generic scan finds multiple structurally closed and target-valid suffixes?
+
+**Known.** IGES 5.3 §2.2.4.5.2 places the two trailing pointer groups after all specified or defaulted entity parameters and defines `NV` as the last parameter number. The entity tables define the primary indexes; Type 116 §4.16, for example, lists indexes 1 through 4 before the additional pointer groups. `parameter.rs:261-283` scans every token position and accepts a suffix only when one candidate is fully target-valid. `native.rs:1497-1502` uses that result for `primary_end`; `native.rs:1525-1541` records a loss and leaves all tokens primary when several candidates are valid. The code-built ambiguity witness in `parameter/tests.rs:385-463` checks that refusal and raw-token retention.
+
+**Need.** We need an entity-specific `NV` rule, or an explicit fallback boundary for entity forms without a usable layout. Without it, a valid pointer group can become primary data, or a valid relationship can remain unassigned, when the candidate scan finds more than one target-valid suffix.
+
+**Conflict.** The Parameter Data, counted-parameter, and Entity graph sections in `iges.md` state that the entity-specific boundary precedes the trailing groups and record unique-candidate recovery as the rule, but the generic decoder does not consult the entity type and form layouts or an `NV` table. The source defines `NV` after the entity layout is known; the current closure treats the absence of a generic tie-breaker as the format answer.
+
+**Note.** The ambiguity witness proves that the conservative fallback is observable. It does not prove that a conformant entity lacks the entity-specific `NV` boundary.
+
+### PH-08. Pre-Terminate unsequenced physical records
+
+**Question.** Must a Fixed ASCII physical line that is unsequenced because its section marker is absent or invalid be rejected before the Terminate Section?
+
+**Known.** IGES 5.3 §2.2 states that the file consists of 80-column lines with a section code in column 73 and an ascending sequence in columns 74 through 80, and that unsequenced lines shall not appear before Terminate. `card.rs:178-183` maps an unrecognized section marker to `None`; a recognized marker with a bad sequence is checked separately. `card.rs:215-225` skips every line with no section while validating order, and `card.rs:326-329` then accepts the scan. Global, Directory, and Parameter readers filter by recognized sections (`global.rs:166-170`, `directory.rs:154-168`, and `parameter.rs:568-573`). The Physical representation section in `iges.md` allows unsequenced lines only after Terminate.
+
+**Need.** We need the decoder to reject a pre-Terminate unsequenced line, or to state and account for a defined recovery that preserves its semantics. Section counts, sequence validation, and semantic projection must not ignore a physical record that the format forbids.
+
+**Conflict.** A blank 80-byte line or a line with an unrecognized marker inserted between valid pre-Terminate cards is accepted by `validate_card_order`; it is omitted from every parsed section and has no loss note. `card.rs:412-432` reports it only in the inspection summary as an opaque noncanonical record, while decode retains it only as an unclassified native card. The decoder therefore admits a file that the IGES physical framing rule forbids and silently excludes the line from section data.
+
 ## 2. Global metadata
 
 ## 3. Directory fields, the reference graph, and the native arenas
