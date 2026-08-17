@@ -114,26 +114,3 @@ changed layout. Record the field gate, containing boundary, and admission rule.
 
 **Note.** The closure removed this item while its own known evidence still
 listed the direct-reader, writer-band, and tagged-stream residue.
-
-### SW-12. Layer description normalization
-
-**Question.** Does layer extension item 37 apply the exact source normalization
-rule before transferring the native description?
-
-**Known.** The source writer emits item 37 as a standard UTF-16 string and the
-source reader calls `ON_Layer::SetDescription`. That setter calls
-`ON_wString::TrimLeftAndRight`, which uses
-`ON_IsUnicodeSpaceOrControlCodePoint`.
-
-**Conflict.** `settings.rs:2288-2303` trims with Rust
-`char::is_whitespace` and `char::is_control`, plus explicit format-code-point
-ranges. Rust classifies U+205F and U+3000 as whitespace; the source helper
-does not. A valid item-37 description with either code point at an edge is
-kept by the source setter but loses it in the decoder's native field.
-
-**Need.** Add source-shaped item-37 byte cases for U+205F and U+3000, compare
-source readback with the decoded native value, and define the exact admitted
-trim set before closing the finding.
-
-**Note.** The ASCII witness and ordinary-space test do not exercise the
-conflicting code points.

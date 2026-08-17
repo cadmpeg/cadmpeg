@@ -655,6 +655,82 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     assert!(future.opaque_records.is_empty());
 }
 
+fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {
+    let archive = ArchiveVersion::V8;
+    let mut payload = vec![0x1f];
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend(7_i32.to_le_bytes());
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend([0, 0, 0, 255]);
+    payload.extend(0_i16.to_le_bytes());
+    payload.extend(0_i16.to_le_bytes());
+    payload.extend(0.0_f64.to_le_bytes());
+    payload.extend(1.0_f64.to_le_bytes());
+    payload.extend(utf16_bytes("L"));
+    payload.push(1);
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend([0, 0, 0, 255]);
+    payload.extend(0.0_f64.to_le_bytes());
+    payload.push(0);
+    payload.extend([0; 16]);
+    payload.extend(crc_chunk(
+        archive,
+        0x4000_8000,
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ));
+    payload.extend([0; 16]);
+    payload.push(37);
+    payload.extend(utf16_bytes(description));
+    payload.push(0);
+
+    let class_uuid = [
+        0x13, 0x98, 0x80, 0x95, 0x85, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
+    ];
+    let mut uuid_body = class_uuid.to_vec();
+    uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
+    let class = long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[
+            long_chunk(archive, 0x0002_fffb, &uuid_body),
+            crc_chunk(archive, 0x0002_fffc, &payload),
+            short_chunk(archive, 0x8002_7fff, 0),
+        ]
+        .concat(),
+    );
+    let (data, record) = metadata_record(0x2000_8050, class);
+    let table = crate::container::Table {
+        typecode: 0x1000_0011,
+        range: 0..data.len(),
+        body: 0..data.len(),
+        records: vec![record],
+        record_count: 1,
+        object_typecodes: std::collections::BTreeMap::new(),
+    };
+    let mut warnings = Vec::new();
+    let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    metadata
+}
+
+#[test]
+fn layer_description_uses_opennurbs_trim_set() {
+    for (description, expected) in [
+        ("\u{1680}description\u{1680}", "\u{1680}description\u{1680}"),
+        ("\u{205f}description\u{205f}", "\u{205f}description\u{205f}"),
+        ("\u{3000}description\u{3000}", "\u{3000}description\u{3000}"),
+        (" description ", "description"),
+    ] {
+        let metadata = layer_metadata_with_description(description);
+        assert_eq!(metadata.layers.len(), 1);
+        assert_eq!(metadata.layers[0].description.as_deref(), Some(expected));
+        assert_eq!(metadata.layers[0].extension_items, vec![37]);
+    }
+}
+
 #[test]
 fn rendering_attributes_accept_layer_future_minor_suffix() {
     let bytes = crc_chunk(

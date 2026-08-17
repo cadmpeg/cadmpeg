@@ -2158,9 +2158,11 @@ is known; typed parsing stops and the remaining bytes through the layer
 class-data boundary remain untyped. Bytes after item zero are bounded suffix
 bytes, not another extension item. Layer visibility and lock state are
 independent. Item 37 contains a UTF-16 string using the standard string
-grammar. Its writer omits an empty description. Its reader trims leading and
-trailing Unicode space or control code points; an empty result is the source
-default.
+grammar. The layer description is normalized by trimming leading and trailing
+code points in these ranges: U+0001–U+0020, U+007F–U+00A0, U+2000–U+200B,
+U+200E–U+200F, U+2028–U+202F, and U+2066–U+2069. U+1680, U+205F, and U+3000
+are retained. The writer omits an empty normalized description. The reader
+applies the same normalization; an empty result is the default.
 
 Item 35 contains a direct `ON_SectionStyle` anonymous child. The child uses
 version `1.1`, writes the binary-archive model-component attributes, and then
@@ -2202,7 +2204,7 @@ codec validates their bounded source grammar and retains the complete owning
 layer record through source fidelity without projecting them into a separate
 CADIR object. Item 28 is transferred as `clipping_planes_enabled` after
 inverting its source `no-clipping-planes` value. Item 37 is transferred as the
-optional native layer `description` field after the source trim rule; an empty
+optional native layer `description` field after this normalization; an empty
 result is omitted.
 
 #### 8.3.1 Layer per-viewport userdata

@@ -2289,15 +2289,17 @@ fn parse_layer(
                     let description = utf16(&mut reader)?;
                     let description = description
                         .trim_matches(|character: char| {
-                            character.is_whitespace()
-                                || character.is_control()
-                                || matches!(
-                                    character as u32,
-                                    0x200b
-                                        | 0x200e..=0x200f
-                                        | 0x2028..=0x202f
-                                        | 0x2066..=0x2069
-                                )
+                            matches!(
+                                character as u32,
+                                0x0001..=0x0020
+                                    | 0x007f
+                                    | 0x0080..=0x009f
+                                    | 0x00a0
+                                    | 0x2000..=0x200b
+                                    | 0x200e..=0x200f
+                                    | 0x2028..=0x202f
+                                    | 0x2066..=0x2069
+                            )
                         })
                         .to_owned();
                     layer.description = (!description.is_empty()).then_some(description);
