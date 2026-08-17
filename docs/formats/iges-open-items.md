@@ -133,25 +133,3 @@ storage order changes the emitted topology. This is a partial closure.
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path
-
-### WR-01 — Type 143 representation across unclassified loops
-
-**Question.** How does the writer select and validate the single Type 143
-representation flag when an unclassified bounded face has several loops?
-
-**Known.** `writer.rs` derives the Type 143 representation from the first loop's
-first coedge and emits a Type 141 for every loop. Its validation checks p-curve
-count consistency within each loop, but resets the comparison for the next
-loop. The Type 143 reader validates every boundary against the one record-level
-representation flag.
-
-**Need.** All emitted Type 141 loops must agree with the Type 143 flag, or the
-writer must reject the face or apply a documented normalization rule.
-
-**Conflict.** The writer accepts a first model-only loop followed by a loop with
-p-curves, emits representation `0`, and produces a second boundary that the
-reader rejects as inconsistent. Reversing loop order changes the result.
-
-**Note.** Commit `1b024e5af` fixed the outer/inner role marker for unclassified
-BRep loops. It did not close the cross-loop Type 143 representation invariant.
-This is a partial closure.

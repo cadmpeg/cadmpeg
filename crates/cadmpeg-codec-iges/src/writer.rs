@@ -2197,6 +2197,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
             )));
         }
         let trimmed = has_explicit_loop;
+        let mut bounded_representation = None;
         for loop_ in loops {
             if !used_loops.insert(loop_.id.as_str().to_owned()) {
                 return Err(CodecError::Malformed(format!(
@@ -2223,6 +2224,16 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     loop_.id
                 )));
             };
+            if !trimmed {
+                let loop_has_pcurves = first_pcurve_count != 0;
+                if bounded_representation.is_some_and(|expected| expected != loop_has_pcurves) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES Type 143 requires one representation type for every boundary loop ({})",
+                        face.id
+                    )));
+                }
+                bounded_representation = Some(loop_has_pcurves);
+            }
             for (index, coedge_id) in loop_.coedges.iter().enumerate() {
                 let coedge = ir
                     .model

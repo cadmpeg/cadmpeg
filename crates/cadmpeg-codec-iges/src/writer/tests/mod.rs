@@ -10,12 +10,64 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::io::Cursor;
 
-use crate::test_support::{parametrically_bounded_plane_file, trimmed_plane_file};
+use crate::test_support::{
+    parametrically_bounded_plane_file, trimmed_plane_file, trimmed_plane_with_inner_loop_file,
+};
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 mod encode;
 mod roundtrip;
+
+#[test]
+fn rejects_mixed_unclassified_bounded_surface_representation() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("synthetic mixed-loop fixture decodes");
+    let model_only_loop_id = decoded.ir().model.faces[0].loops[0].clone();
+    {
+        let mut ir = decoded.ir_mut();
+        for loop_ in &mut ir.model.loops {
+            loop_.boundary_role = LoopBoundaryRole::Unspecified;
+        }
+        let coedge_ids = ir
+            .model
+            .loops
+            .iter()
+            .find(|loop_| loop_.id == model_only_loop_id)
+            .expect("the first face loop resolves")
+            .coedges
+            .clone();
+        for coedge_id in coedge_ids {
+            ir.model
+                .coedges
+                .iter_mut()
+                .find(|coedge| coedge.id == coedge_id)
+                .expect("the loop coedge resolves")
+                .pcurves
+                .clear();
+        }
+        let used_pcurves = ir
+            .model
+            .coedges
+            .iter()
+            .flat_map(|coedge| coedge.pcurves.iter())
+            .map(|pcurve| pcurve.pcurve.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        ir.model
+            .pcurves
+            .retain(|pcurve| used_pcurves.contains(&pcurve.id));
+    }
+
+    let result = IgesEncoder::default().plan(EncodeInput {
+        ir: decoded.ir(),
+        fidelity: None,
+    });
+    assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+}
 
 #[test]
 fn type_508_requires_an_explicit_isoparametric_flag() {
