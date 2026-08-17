@@ -574,40 +574,27 @@ fn xml_attribute_value(
 }
 
 fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
-    let lower = bytes
-        .iter()
-        .take(4096)
-        .map(u8::to_ascii_lowercase)
-        .collect::<Vec<_>>();
-    let without_bom = lower
-        .strip_prefix(b"\xef\xbb\xbf")
-        .unwrap_or(lower.as_slice());
-    let starts_xml = without_bom
-        .iter()
-        .position(|byte| !byte.is_ascii_whitespace())
-        .is_some_and(|at| without_bom[at] == b'<');
-    if !starts_xml {
+    let bytes = &bytes[..bytes.len().min(4096)];
+    let Some((name, attributes)) = xml_root_start_tag(bytes) else {
         return false;
-    }
-    // BM-01: the published AP242 BO namespace identifies the alternate
-    // encoding. A filename or the local name `Uos` does not identify it.
-    ([
-        b"http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model".as_slice(),
-        b"http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model".as_slice(),
-    ]
-    .iter()
-    .any(|namespace| {
-        lower
-            .windows(namespace.len())
-            .any(|window| window == *namespace)
-    })) || (lower.starts_with(b"<?xml")
-        && (lower
-            .windows(b"business_object_model".len())
-            .any(|window| window == b"business_object_model")
-            || lower
-                .windows(b"ap242_bo_model".len())
-                .any(|window| window == b"ap242_bo_model")))
+    };
+    let local_name = name
+        .iter()
+        .rposition(|byte| *byte == b':')
+        .map_or(name, |separator| &name[separator + 1..]);
+    // BM-03: the published namespace must be bound on the Uos document
+    // element. Text, comments, schemaLocation values, and local names do not
+    // identify the alternate encoding.
+    local_name == b"Uos"
+        && BO_MODEL_NAMESPACES
+            .iter()
+            .any(|namespace| has_namespace_value(attributes, namespace))
 }
+
+const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
+    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model",
+    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model",
+];
 
 #[cfg(test)]
 mod tests {

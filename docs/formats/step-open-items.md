@@ -138,18 +138,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 8. Product structure and placement
 
-### BM-03. BO-Model fallback detection
-
-**Question.** What structural evidence must an AP242 BO-Model XML fallback marker provide before alternate-encoding detection can classify the input?
-
-**Known.** A published BO-Model namespace identifies the alternate encoding. The fallback detector also checks raw marker text in an XML prefix.
-
-**Need.** Require an XML token or namespace boundary for every fallback marker, and add negative ordinary-XML witnesses for comments, text, and attribute values.
-
-**Conflict.** The fallback path treats raw text as encoding identity even when the XML root has no BO-Model namespace.
-
-**Note.** `crates/cadmpeg-codec-step/src/codec.rs:51-60` uses the detector for medium-confidence selection and `crates/cadmpeg-codec-step/src/codec.rs:365-380` refuses the same result. `crates/cadmpeg-codec-step/src/codec.rs:574-607` scans a 4096-byte window and accepts `business_object_model` or `ap242_bo_model` anywhere after `<?xml`. An ordinary XML document such as `<?xml version="1.0"?><note>business_object_model</note>` is therefore classified and refused as a BO-Model sidecar.
-
 ### PS-10. Direct context-representation binding
 
 **Question.** Must a context-dependent placement relation bind its endpoints directly to the child and parent definition representations?

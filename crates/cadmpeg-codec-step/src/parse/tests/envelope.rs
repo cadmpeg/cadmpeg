@@ -483,10 +483,6 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             "STEP Part 28 XML encoding",
         ),
         (
-            b"<?xml version='1.0'?><business_object_model/>",
-            "AP242 BO-Model XML sidecar",
-        ),
-        (
             include_bytes!("data/bm01_ap242_bo_model_ed2.stpx").as_slice(),
             "AP242 BO-Model XML sidecar",
         ),
@@ -550,6 +546,29 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
         Err(cadmpeg_core::CodecError::WrongFormat(_))
     ));
+}
+
+#[test]
+fn bo_model_detection_requires_root_namespace_binding() {
+    let codec = StepCodec::default();
+    assert_eq!(
+        codec.detect(include_bytes!("data/bm01_ap242_bo_model_ed2.stpx")),
+        Confidence::Medium
+    );
+
+    let false_positives: &[&[u8]] = &[
+        b"<?xml version='1.0'?><note>business_object_model</note>",
+        b"<?xml version='1.0'?><!-- ap242_bo_model --><note/>",
+        b"<?xml version='1.0'?><note marker='http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model'/>",
+        b"<?xml version='1.0'?><note><child xmlns:n0='http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model'/></note>",
+    ];
+    for xml in false_positives {
+        assert_eq!(codec.detect(xml), Confidence::No);
+        assert!(matches!(
+            codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
+            Err(cadmpeg_core::CodecError::WrongFormat(_))
+        ));
+    }
 }
 
 #[test]

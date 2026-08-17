@@ -217,6 +217,15 @@ grammar tokens. The [edition-2 BO-Model schema](https://standards.iso.org/iso/ts
 and [common schema](https://standards.iso.org/iso/ts/10303/-3000/-ed-2/tech/xml-schema/common/common.xsd)
 are the governing declarations.
 
+CADIR decision: alternate-encoding detection accepts a BO-Model marker only
+when the XML document element has local name `Uos` and its root start tag
+binds one of the published BO-Model namespace URIs with an `xmlns` attribute.
+The namespace URI is compared as an exact value. A prefix spelling,
+`xsi:schemaLocation`, filename, XML declaration, text, comment, attribute
+value, or namespace declaration on a child element does not identify a
+BO-Model exchange. XML validation and schema selection remain outside this
+bounded marker check.
+
 The BO-Model XML identity system is local to each XML document. In the common
 schema, `uid` has XML Schema type `ID` and `uidRef` has type `IDREF`; they
 identify XML elements and references in that document. `Id.id` and
