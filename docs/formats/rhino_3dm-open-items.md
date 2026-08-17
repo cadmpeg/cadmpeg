@@ -29,11 +29,12 @@ layout. Opaque retention is not typed compatibility.
 **Question.** Which later table-record versions retain typed decoding, and what
 fields do changed versions add or change?
 
-**Known.** Current producer-defined additions include dimension-style minor-10
-and minor-11 fields, the archive-90 hatch-pattern tail, and layer extension
-item 37. These individual branches do not define later table-record layouts in
-general. Unknown table records remain bounded source records without typed
-fields from their typecode alone.
+**Known.** Current producer-defined additions include the direct V2/V3
+material major-1 minor-1 grammar, dimension-style minor-10 and minor-11
+fields, the archive-90 hatch-pattern tail, and layer extension item 37. These
+individual branches do not define later table-record layouts in general.
+Unknown table records remain bounded source records without typed fields from
+their typecode alone.
 
 **Need.** Producer source or an independent witness for each later table-record
 major or changed layout that is to be admitted as typed data, including field

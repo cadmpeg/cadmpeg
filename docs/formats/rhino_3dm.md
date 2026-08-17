@@ -4959,6 +4959,74 @@ contains no local member geometry.
 
 ### 20.2 Materials, textures, and mappings
 
+Archives 2 and 3 store material class data as a direct packed major-1
+payload. The material writer emits minor 1. The direct payload is:
+
+```
+packed version 1.minor
+ON_Color ambient
+ON_Color diffuse
+ON_Color emission
+ON_Color specular
+f64 shine
+f64 transparency
+4 × u8 obsolete shadow and wire flags
+ON_Color obsolete wire color
+i16 obsolete line-style pattern
+i16 obsolete pattern index
+f64 obsolete thickness
+f64 obsolete scale
+UTF-16 bitmap path
+i32 bitmap mode
+i32 obsolete bitmap index
+UTF-16 bump path
+i32 bump mode
+i32 obsolete bump index
+f64 bump scale
+UTF-16 environment-map path
+i32 environment-map mode
+i32 obsolete environment-map index
+i32 material archive index
+UUID material plug-in
+UTF-16 obsolete Flamingo library
+UTF-16 material name
+minor >= 1: UUID material ID
+minor >= 1: ON_Color reflection
+minor >= 1: ON_Color transparent
+minor >= 1: f64 index of refraction
+```
+
+The direct version has major 1. Minor 0 ends after the material name; minor 1
+adds the material ID, reflection color, transparent color, and index of
+refraction. A minor at least 1 reads the same known prefix. Bytes after the
+known prefix remain at the containing class-data boundary. When the minor is
+0, the source material defaults the two omitted colors to `ON_Color::White`
+and the index of refraction to `1.0`. CADIR does not fabricate the source
+material ID: the source UUID is absent and the material record key uses the
+owning table-record offset.
+
+The three path groups are direct fields, not an anonymous texture array. An
+empty path creates no texture. A nonempty path creates one texture with type
+`1` for bitmap, `2` for bump, or `86` for environment map. Mode `2` is
+`decal_texture`; every other stored mode is `modulate_texture`. The three
+obsolete indices are consumed and have no typed meaning. The bump texture
+uses the interval `[0, bump scale]`; the other two texture types use
+`[0,1]`.
+
+CADIR decision: a V2/V3 path texture has no serialized texture UUID, child
+boundary, file reference, or linear-workflow flag. Its native texture record
+therefore has no source UUID, uses the owning material record offset as its
+source offset, and uses these `ON_Texture::Default` values for absent fields:
+mapping channel `1`, enabled `true`, linear minification and magnification
+filters (`1`), repeat U/V/W wraps (`0`), identity UVW transform,
+`ON_UNSET_COLOR` border and transparent colors, no transparency-texture UUID,
+alpha blend `[1,1,1,0,0]`, black RGB blend constant, RGB blend
+`[1,1,0,0]`, blend order `0`, and no file reference or linear-workflow value.
+The direct material does not serialize reflectivity, shareability, lighting,
+Fresnel, glossiness, RDK, or diffuse-alpha fields; CADIR transfers source
+defaults for the booleans and reflectivity and leaves the optional fields
+absent.
+
 A modern material is an anonymous major-1, nonnegative-minor chunk followed by
 model-component attributes. An early archive-60 component-attribute child uses
 anonymous type

@@ -1406,6 +1406,140 @@ fn texture_array(
     Ok(textures)
 }
 
+fn parse_v2_v3_texture(
+    reader: &mut BoundedReader<'_>,
+    source_offset: usize,
+    texture_type: u32,
+    is_bump: bool,
+) -> Result<Option<TextureRecord>, FramingError> {
+    let legacy_file_path = utf16(reader)?;
+    let mode = reader.i32()?;
+    let _obsolete_index = reader.i32()?;
+    let bump_scale = if is_bump {
+        [0.0, read_finite(reader, "legacy bump scale")?]
+    } else {
+        [0.0, 1.0]
+    };
+    if legacy_file_path.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(TextureRecord {
+        source_offset: source_offset as u64,
+        source_uuid: None,
+        mapping_channel_id: 1,
+        legacy_file_path,
+        enabled: true,
+        texture_type,
+        mode: if mode == 2 { 2 } else { 1 },
+        minification_filter: 1,
+        magnification_filter: 1,
+        wrap: [0, 0, 0],
+        uvw_transform: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        border_color: [255, 255, 255, 255],
+        transparent_color: [255, 255, 255, 255],
+        transparency_texture_uuid: None,
+        bump_scale,
+        alpha_blend: [1.0, 1.0, 1.0, 0.0, 0.0],
+        rgb_blend_constant: [0, 0, 0, 0],
+        rgb_blend: [1.0, 1.0, 0.0, 0.0],
+        blend_order: 0,
+        file_reference: None,
+        treat_as_linear: None,
+    }))
+}
+
+fn parse_v2_v3_material(
+    data: &[u8],
+    range: Range<usize>,
+    source_offset: usize,
+    physically_based: Option<PhysicallyBasedMaterialRecord>,
+) -> Result<MaterialRecord, FramingError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    let packed_version = reader.u8()?;
+    if packed_version >> 4 != 1 {
+        return Err(FramingError::structural(
+            range.start,
+            "V2/V3 material version is unsupported",
+        ));
+    }
+    let minor = i32::from(packed_version & 0x0f);
+    let ambient = reader.array()?;
+    let diffuse = reader.array()?;
+    let emission = reader.array()?;
+    let specular = reader.array()?;
+    let shine = read_finite(&mut reader, "shine")?;
+    let transparency = read_finite(&mut reader, "transparency")?;
+    reader.skip(4)?;
+    let _obsolete_wire_color = reader.array::<4>()?;
+    reader.skip(20)?;
+
+    let mut textures = Vec::with_capacity(3);
+    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 1, false)? {
+        textures.push(texture);
+    }
+    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 2, true)? {
+        textures.push(texture);
+    }
+    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 86, false)? {
+        textures.push(texture);
+    }
+
+    let archive_index = reader.i32()?;
+    let plugin = uuid(&mut reader)?;
+    let _obsolete_library = utf16(&mut reader)?;
+    let name = utf16(&mut reader)?;
+    let (id, reflection, transparent, index_of_refraction) = if minor >= 1 {
+        (
+            uuid(&mut reader)?,
+            reader.array()?,
+            reader.array()?,
+            read_finite(&mut reader, "index of refraction")?,
+        )
+    } else {
+        (Uuid::nil(), [255, 255, 255, 0], [255, 255, 255, 0], 1.0)
+    };
+    reader.skip_remaining()?;
+    let key = if id.is_nil() {
+        format!("record-{source_offset}")
+    } else {
+        id.to_string()
+    };
+    Ok(MaterialRecord {
+        id: format!("rhino:presentation:material#{key}"),
+        source_offset: source_offset as u64,
+        archive_index: Some(archive_index),
+        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        name,
+        plugin_uuid: plugin.to_string(),
+        ambient,
+        diffuse,
+        emission,
+        specular,
+        reflection,
+        transparent,
+        index_of_refraction,
+        reflectivity: 0.0,
+        shine,
+        transparency,
+        texture_count: textures.len(),
+        textures,
+        shareable: false,
+        disable_lighting: false,
+        fresnel_reflections: false,
+        reflection_glossiness: None,
+        refraction_glossiness: None,
+        fresnel_index_of_refraction: None,
+        rdk_instance_uuid: None,
+        diffuse_texture_alpha_transparency: None,
+        physically_based,
+    })
+}
+
 fn parse_material(
     data: &[u8],
     range: Range<usize>,
@@ -1414,6 +1548,9 @@ fn parse_material(
     source_offset: usize,
     physically_based: Option<PhysicallyBasedMaterialRecord>,
 ) -> Result<MaterialRecord, FramingError> {
+    if matches!(archive, ArchiveVersion::V2 | ArchiveVersion::V3) {
+        return parse_v2_v3_material(data, range, source_offset, physically_based);
+    }
     let framed = data.get(range.start).copied() == Some(0);
     let (mut reader, component, minor, modern) = if framed {
         let (mut reader, version) = anonymous(data, range, archive)?;
@@ -4858,6 +4995,103 @@ mod tests {
         assert_eq!(material.index_of_refraction, 1.5);
         assert!(material.shareable);
         assert!(!material.disable_lighting);
+    }
+
+    fn v2_v3_material_payload(minor: u8) -> Vec<u8> {
+        let mut bytes = vec![0x10 | minor];
+        for color in [
+            [1, 2, 3, 4],
+            [5, 6, 7, 8],
+            [9, 10, 11, 12],
+            [13, 14, 15, 16],
+        ] {
+            bytes.extend(color);
+        }
+        for value in [64.0_f64, 0.25] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend([21, 22, 23, 24]);
+        bytes.extend([25, 26, 27, 28]);
+        bytes.extend(3_i16.to_le_bytes());
+        bytes.extend(4_i16.to_le_bytes());
+        bytes.extend(0.5_f64.to_le_bytes());
+        bytes.extend(1.5_f64.to_le_bytes());
+
+        bytes.extend(utf16("bitmap.png"));
+        bytes.extend(2_i32.to_le_bytes());
+        bytes.extend(31_i32.to_le_bytes());
+        bytes.extend(utf16("bump.png"));
+        bytes.extend(1_i32.to_le_bytes());
+        bytes.extend(32_i32.to_le_bytes());
+        bytes.extend(2.5_f64.to_le_bytes());
+        bytes.extend(utf16("environment.png"));
+        bytes.extend(9_i32.to_le_bytes());
+        bytes.extend(33_i32.to_le_bytes());
+
+        bytes.extend(7_i32.to_le_bytes());
+        bytes.extend([0x44; 16]);
+        bytes.extend(utf16("obsolete library"));
+        bytes.extend(utf16("old steel"));
+        if minor >= 1 {
+            bytes.extend([0x55; 16]);
+            bytes.extend([41, 42, 43, 44]);
+            bytes.extend([45, 46, 47, 48]);
+            bytes.extend(1.45_f64.to_le_bytes());
+        }
+        bytes.extend([0xaa, 0xbb]);
+        bytes
+    }
+
+    #[test]
+    fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
+        for archive in [ArchiveVersion::V2, ArchiveVersion::V3] {
+            let bytes = v2_v3_material_payload(1);
+            let material = parse_material(&bytes, 0..bytes.len(), archive, None, 77, None)
+                .expect("V2/V3 material payload");
+            assert_eq!(material.archive_index, Some(7));
+            assert_eq!(material.name, "old steel");
+            assert_eq!(
+                material.plugin_uuid,
+                Uuid::from_wire([0x44; 16]).to_string()
+            );
+            assert_eq!(material.ambient, [1, 2, 3, 4]);
+            assert_eq!(material.diffuse, [5, 6, 7, 8]);
+            assert_eq!(material.shine, 64.0);
+            assert_eq!(material.transparency, 0.25);
+            assert_eq!(material.reflection, [41, 42, 43, 44]);
+            assert_eq!(material.transparent, [45, 46, 47, 48]);
+            assert_eq!(material.index_of_refraction, 1.45);
+            assert_eq!(
+                material.source_uuid,
+                Some(Uuid::from_wire([0x55; 16]).to_string())
+            );
+            assert_eq!(material.texture_count, 3);
+            assert_eq!(material.textures[0].legacy_file_path, "bitmap.png");
+            assert_eq!(material.textures[0].texture_type, 1);
+            assert_eq!(material.textures[0].mode, 2);
+            assert_eq!(material.textures[1].legacy_file_path, "bump.png");
+            assert_eq!(material.textures[1].texture_type, 2);
+            assert_eq!(material.textures[1].mode, 1);
+            assert_eq!(material.textures[1].bump_scale, [0.0, 2.5]);
+            assert_eq!(material.textures[2].legacy_file_path, "environment.png");
+            assert_eq!(material.textures[2].texture_type, 86);
+            assert_eq!(material.textures[2].mode, 1);
+            assert_eq!(material.textures[0].source_offset, 77);
+            assert_eq!(material.textures[0].wrap, [0, 0, 0]);
+            assert_eq!(material.textures[0].uvw_transform[0], [1.0, 0.0, 0.0, 0.0]);
+        }
+    }
+
+    #[test]
+    fn v2_v3_material_minor_zero_uses_source_defaults_without_fabricating_identity() {
+        let bytes = v2_v3_material_payload(0);
+        let material = parse_material(&bytes, 0..bytes.len(), ArchiveVersion::V2, None, 77, None)
+            .expect("V2 minor-zero material payload");
+        assert_eq!(material.id, "rhino:presentation:material#record-77");
+        assert_eq!(material.source_uuid, None);
+        assert_eq!(material.reflection, [255, 255, 255, 0]);
+        assert_eq!(material.transparent, [255, 255, 255, 0]);
+        assert_eq!(material.index_of_refraction, 1.0);
     }
 
     #[test]
