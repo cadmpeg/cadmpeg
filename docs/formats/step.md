@@ -1074,6 +1074,12 @@ definition values use that parametric context, and surface-chart conversion
 uses the support surface's parameterization. ISO 10303-41
 defines `GLOBAL_UNIT_ASSIGNED_CONTEXT` as a `representation_context`; its
 `units` apply in that context, and each unit in its SET is a different kind.
+ISO 10303-41 defines `SHAPE_DEFINITION_REPRESENTATION` as the association of a
+shape representation with a `PRODUCT_DEFINITION_SHAPE`. Its
+`SHAPE_REPRESENTATION_RELATIONSHIP` is a shape-qualified subtype of
+`REPRESENTATION_RELATIONSHIP`; its endpoints identify the two related
+representations. A plain `REPRESENTATION_RELATIONSHIP` does not make one
+representation part of the other.
 ISO 10303-42 requires every `geometric_representation_item` to be founded in
 a `geometric_representation_context` and assigns length and plane-angle units
 globally within that context. ISO 10303-43 requires a
@@ -1772,13 +1778,21 @@ Exact and tessellated representations of one product remain linked when their
 source item has one exact body owner. A tessellated solid, shell, or shape
 representation may list a supported triangulated item directly or through a
 tessellated geometric set. A product-linked shape representation supplies a
-declaration. An exact body link or representation relationship supplies the
+declaration. CADIR seeds the product-linked representation set from
+`SHAPE_DEFINITION_REPRESENTATION` whose definition is a
+`PRODUCT_DEFINITION_SHAPE`, then follows the undirected endpoint graph of
+`SHAPE_REPRESENTATION_RELATIONSHIP` records. A plain
+`REPRESENTATION_RELATIONSHIP` does not extend this set. This remains true when
+its endpoints are shape representations, because the generic relationship
+does not assign product ownership. A complex typed instance uses the endpoint
+parameters inherited from its `REPRESENTATION_RELATIONSHIP` partial.
+An exact body link or typed shape-representation relationship supplies the
 body owner to every supported leaf in the item graph. An isolated shape
 representation is also admitted when its supported item identities are listed
 by a product-linked shape representation. A shape representation without a
-product link, shared product-linked items, or an exact representation link
-remains a detached source association. A missing or ambiguous owner detaches
-the tessellation, retains its source item association, and records a
+product link, shared product-linked items, or a typed shape-representation
+link remains a detached source association. A missing or ambiguous owner
+detaches the tessellation, retains its source item association, and records a
 `ReferenceGraphNotClosed` loss.
 `TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS` uses the inherited
 representation name, item set, and context for the same ownership rules. Its

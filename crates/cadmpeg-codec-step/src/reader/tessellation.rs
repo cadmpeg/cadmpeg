@@ -610,17 +610,35 @@ fn product_linked_representations(exchange: &Exchange) -> BTreeSet<u64> {
     }
     let mut relationships = BTreeMap::<u64, BTreeSet<u64>>::new();
     for record in exchange.records.values() {
-        let Some(partial) = record.partials.iter().find(|partial| {
-            matches!(
-                partial.name.as_str(),
-                "REPRESENTATION_RELATIONSHIP" | "SHAPE_REPRESENTATION_RELATIONSHIP"
-            )
-        }) else {
+        let Some(shape_relationship) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "SHAPE_REPRESENTATION_RELATIONSHIP")
+        else {
             continue;
         };
-        let mut references = partial.parameters.iter().filter_map(ValueExt::reference);
-        let (Some(left), Some(right)) = (references.next(), references.next()) else {
-            continue;
+        let (left, right) = {
+            let mut references = shape_relationship
+                .parameters
+                .iter()
+                .filter_map(ValueExt::reference);
+            match (references.next(), references.next()) {
+                (Some(left), Some(right)) => (left, right),
+                _ => {
+                    let Some(base) = record
+                        .partials
+                        .iter()
+                        .find(|partial| partial.name == "REPRESENTATION_RELATIONSHIP")
+                    else {
+                        continue;
+                    };
+                    let mut references = base.parameters.iter().filter_map(ValueExt::reference);
+                    let (Some(left), Some(right)) = (references.next(), references.next()) else {
+                        continue;
+                    };
+                    (left, right)
+                }
+            }
         };
         relationships.entry(left).or_default().insert(right);
         relationships.entry(right).or_default().insert(left);

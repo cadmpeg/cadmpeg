@@ -88,41 +88,6 @@ Closure `490e0d38f55033a07534a42d3a854e0967574841` removed first-candidate
 selection and tested multiple direct text-placement references. It did not
 test an unrelated placement-bearing record in the reachable graph.
 
-### TS-02. Tessellation product-link admission
-
-**Question.** Which representation relation admits a tessellated shape
-representation as a product-linked representation?
-
-**Known.** A product-linked representation is seeded by
-`SHAPE_DEFINITION_REPRESENTATION`. `crates/cadmpeg-codec-step/src/reader/tessellation.rs:584-637`
-then expands that set through both `REPRESENTATION_RELATIONSHIP` and
-`SHAPE_REPRESENTATION_RELATIONSHIP`. The tessellation admission at
-`crates/cadmpeg-codec-step/src/reader/tessellation.rs:90-119` transfers a
-bodyless mesh when this expanded set contains its representation.
-`crates/cadmpeg-codec-step/src/reader/topology.rs:143-176` uses only the
-typed shape relationship for body ownership. The specification states that a
-generic `REPRESENTATION_RELATIONSHIP` relates representations but does not
-make one part of the other (`step.md` §8 "ISO 10303-43 defines uncertainty at
-three scopes.").
-
-**Need.** Define the direct relation that admits a product-linked
-tessellation. Add a negative fixture with a product-linked exact
-representation, an unrelated tessellated representation, and only a generic
-`REPRESENTATION_RELATIONSHIP` between them. The unrelated mesh must remain a
-detached source association. Add the positive typed
-`SHAPE_REPRESENTATION_RELATIONSHIP` case separately.
-
-**Conflict.** Generic representation reachability currently admits a
-tessellated representation, although the specification excludes that generic
-relation from part ownership and the body-owner index does not use it as a
-typed shape relation.
-
-**Note.** This is a new item from the hostile sweep of commit
-`b28d82721c4ee1f48a389a5a100f9fb167885276`. Existing tessellation tests cover
-direct typed shape relationships at
-`crates/cadmpeg-codec-step/src/reader/tessellation/tests.rs:452-602`; they do
-not cover a generic-relation bridge.
-
 ## 8. Product structure and placement
 
 ### PS-04. Product-definition view order

@@ -241,6 +241,82 @@ fn product_linked_bodyless_tessellated_representation_declares_mesh() {
 }
 
 #[test]
+fn generic_representation_relationship_does_not_admit_product_tessellation() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#39=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#38),#2);",
+        "#39=SHAPE_REPRESENTATION('carrier',(#10),#2);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=PRODUCT_DEFINITION_SHAPE('', '', #81);\n#81=PRODUCT_DEFINITION('', '', '', #82);\n#82=PRODUCT_DEFINITION_FORMATION('', '', #83);\n#83=PRODUCT('', '', '', ());\n#84=SHAPE_DEFINITION_REPRESENTATION(#80,#39);\n#90=REPRESENTATION_RELATIONSHIP('generic bridge','',#39,#8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode generic representation relationship witness");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("generic bridge tessellation");
+    assert!(mesh.body.is_none());
+    assert_eq!(
+        mesh.source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#7")
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn shape_representation_relationship_admits_product_tessellation() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#39=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#38),#2);",
+        "#39=SHAPE_REPRESENTATION('carrier',(#10),#2);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=PRODUCT_DEFINITION_SHAPE('', '', #81);\n#81=PRODUCT_DEFINITION('', '', '', #82);\n#82=PRODUCT_DEFINITION_FORMATION('', '', #83);\n#83=PRODUCT('', '', '', ());\n#84=SHAPE_DEFINITION_REPRESENTATION(#80,#39);\n#90=(REPRESENTATION_RELATIONSHIP('typed shape bridge','',#39,#8) SHAPE_REPRESENTATION_RELATIONSHIP());\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode typed shape representation relationship witness");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("typed bridge tessellation");
+    assert!(mesh.body.is_none());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
 fn accuracy_parameter_representation_uses_inherited_items_and_context() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
