@@ -698,6 +698,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1c_disc16_disc0e_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1c_disc16_disc0e_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(direct_shell_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4456,28 +4459,58 @@ fn disc1c_disc0c_terminal_face_root_body(
 }
 
 fn disc1c_disc16_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    keyed_disc1c_disc16_face_root_body(
+        by_attr,
+        &[
+            (0x001c, 2),
+            (0x0018, 2),
+            (0x0016, 2),
+            (0x0012, 1),
+            (0x0010, 2),
+            (0x000e, 2),
+        ],
+        0x0004,
+    )
+}
+
+fn disc1c_disc16_disc0e_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_disc1c_disc16_face_root_body(
+        by_attr,
+        &[
+            (0x001c, 2),
+            (0x0018, 2),
+            (0x0016, 2),
+            (0x0012, 1),
+            (0x0010, 2),
+            (0x000e, 2),
+            (0x0004, 2),
+        ],
+        0x000c,
+    )
+}
+
+fn keyed_disc1c_disc16_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+) -> Vec<BodyRecord> {
     let matching_chains = keyed_forward_chain_candidates(by_attr)
         .into_iter()
         .filter(|chain| {
-            chain.len() == 6
-                && matches!(
-                    chain.as_slice(),
-                    [root, disc_18, shell, disc_12, disc_10, terminal]
-                        if root.disc == 0x001c
-                            && root.flo() == 2
-                            && root.refs.get(1) == Some(&1)
-                            && disc_18.disc == 0x0018
-                            && disc_18.flo() == 2
-                            && shell.disc == 0x0016
-                            && shell.flo() == 2
-                            && disc_12.disc == 0x0012
-                            && disc_12.flo() == 1
-                            && disc_10.disc == 0x0010
-                            && disc_10.flo() == 2
-                            && terminal.disc == 0x000e
-                            && terminal.flo() == 2
-                            && terminal.refs.get(2) == Some(&1)
-                )
+            chain.len() == chain_shape.len()
+                && chain
+                    .first()
+                    .is_some_and(|root| root.refs.get(1) == Some(&1))
+                && chain
+                    .last()
+                    .is_some_and(|terminal| terminal.refs.get(2) == Some(&1))
+                && chain_shape
+                    .iter()
+                    .copied()
+                    .zip(chain.iter())
+                    .all(|((disc, flo), record)| record.disc == disc && record.flo() == flo)
         })
         .collect::<Vec<_>>();
     let [chain] = matching_chains.as_slice() else {
@@ -4486,12 +4519,12 @@ fn disc1c_disc16_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
     let canonical_faces = by_attr
         .values()
         .copied()
-        .filter(|record| record.disc == 0x0004 && record.flo() == 1)
+        .filter(|record| record.disc == canonical_disc && record.flo() == 1)
         .collect::<Vec<_>>();
     if canonical_faces.is_empty() {
         return Vec::new();
     }
-    let companion = |face: &EntityRecord| {
+    let companion_of = |face: &EntityRecord| {
         let companion = face
             .refs
             .get(1)
@@ -4505,7 +4538,7 @@ fn disc1c_disc16_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
     let mut companions = HashSet::new();
     let mut use_nodes = HashSet::new();
     for face in canonical_faces.iter().copied() {
-        let Some(companion) = companion(face) else {
+        let Some(companion) = companion_of(face) else {
             return Vec::new();
         };
         let Some(use_node) = companion
