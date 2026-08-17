@@ -60,6 +60,8 @@ pub enum StepLossCode {
     EdgeNoSurfaceOrCurveForPcurve,
     /// A single optional pcurve is not endpoint-continuous with the edge.
     PcurveEndpointsDiscontinuous,
+    /// A single endpoint-continuous pcurve fails the bounded model-space locus witness.
+    PcurveLocusDiscontinuous,
     /// Several pcurves associate with a surface and none selects uniquely.
     PcurveAssociationAmbiguous,
     /// Pcurve candidates exist but the source surface or curve is unresolved.
@@ -311,6 +313,7 @@ impl StepLossCode {
         Self::SeamEdgePcurveUnresolved,
         Self::EdgeNoSurfaceOrCurveForPcurve,
         Self::PcurveEndpointsDiscontinuous,
+        Self::PcurveLocusDiscontinuous,
         Self::PcurveAssociationAmbiguous,
         Self::PcurveCandidatesCarrierUnresolved,
         Self::FaceMultipleOuterBounds,
@@ -449,6 +452,7 @@ impl StepLossCode {
             Self::SeamEdgePcurveUnresolved => "topology.seam-edge-pcurve-unresolved",
             Self::EdgeNoSurfaceOrCurveForPcurve => "topology.edge-no-surface-or-curve-for-pcurve",
             Self::PcurveEndpointsDiscontinuous => "topology.pcurve-endpoints-discontinuous",
+            Self::PcurveLocusDiscontinuous => "topology.pcurve-locus-discontinuous",
             Self::PcurveAssociationAmbiguous => "topology.pcurve-association-ambiguous",
             Self::PcurveCandidatesCarrierUnresolved => {
                 "topology.pcurve-candidates-carrier-unresolved"
@@ -594,6 +598,7 @@ impl StepLossCode {
             | Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
             | Self::PcurveEndpointsDiscontinuous
+            | Self::PcurveLocusDiscontinuous
             | Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
@@ -736,6 +741,7 @@ impl StepLossCode {
             | Self::TessellationPlacementUnresolved
             | Self::TessellationPlacementAmbiguous => LossTaxonomy::ReferenceGraphNotClosed,
             Self::PcurveEndpointsDiscontinuous
+            | Self::PcurveLocusDiscontinuous
             | Self::PcurveCarrierUnwritable
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
@@ -837,6 +843,7 @@ mod tests {
                 "topology.seam-edge-pcurve-unresolved",
                 "topology.edge-no-surface-or-curve-for-pcurve",
                 "topology.pcurve-endpoints-discontinuous",
+                "topology.pcurve-locus-discontinuous",
                 "topology.pcurve-association-ambiguous",
                 "topology.pcurve-candidates-carrier-unresolved",
                 "topology.face-multiple-outer-bounds",

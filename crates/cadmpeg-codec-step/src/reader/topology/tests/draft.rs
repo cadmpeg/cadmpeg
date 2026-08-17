@@ -174,6 +174,38 @@ fn stale_trim_recovery_is_retained_above_step_tolerance() {
 }
 
 #[test]
+fn divergent_interior_pcurve_is_omitted_from_coedge() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp09_divergent_interior.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode divergent-interior pcurve witness");
+
+    let edge_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#19")
+        .expect("divergent pcurve edge use");
+    assert!(edge_use.pcurves.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveLocusDiscontinuous.kind()
+            && loss.message.contains("bounded model-space locus")
+    }));
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#56"));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn competing_same_surface_pcurves_remain_detached() {
     let decoded = crate::StepCodec::default()
         .decode(

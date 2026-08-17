@@ -618,6 +618,10 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         .replace(
             "#4=CARTESIAN_POINT('',(10.,0.,0.));",
             "#4=CARTESIAN_POINT('',(0.7071067811865476,0.7071067811865476,0.));",
+        )
+        .replace(
+            "#16=LINE('',#3,#13);",
+            "#74=DIRECTION('',(0.7071067811865476,0.7071067811865476,0.));\n#75=VECTOR('',#74,1.);\n#16=LINE('',#3,#75);",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())

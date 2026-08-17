@@ -96,18 +96,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Topology and pcurve decisions
 
-### TP-09. Global pcurve association
-
-**Question.** Is a finite endpoint witness sufficient to select a non-seam pcurve and admit its edge relation?
-
-**Known.** A non-seam edge with one same-surface candidate has no source selector. The reader evaluates declared endpoints or performs a bounded search and admits the relation when the returned endpoint residual is within tolerance.
-
-**Need.** Define whether endpoint coincidence is the complete admission invariant or whether the selected pcurve must also prove global model-space locus equivalence and orientation.
-
-**Conflict.** The implementation admits a relation from a finite witness, while a finite search cannot prove a global minimum or complete locus equivalence.
-
-**Note.** `crates/cadmpeg-codec-step/src/reader/topology.rs:3061-3175` uses one candidate, 64 grid divisions, bounded Newton steps, and endpoint residuals; the comments state that the result is not a global minimum. `step.md` §8 "CADIR decision: a typed `SEAM_EDGE` uses its explicit pcurve only when" records the same limitation as an existential witness. A hostile curve with a second lower-residual basin or a divergent interior locus can pass its endpoints. Reopen the admission invariant.
-
 ## 6. Units and measures
 
 ## 7. Annotation, presentation, and tessellation

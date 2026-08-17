@@ -424,6 +424,10 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
                 "#4=CARTESIAN_POINT('',(10.,0.,0.));",
                 "#4=CARTESIAN_POINT('',(3.,2.,0.));",
             )
+            .replace(
+                "#16=LINE('',#3,#13);",
+                "#70=CARTESIAN_POINT('',(1.,2.,0.));\n#16=B_SPLINE_CURVE_WITH_KNOTS('',1,(#3,#70,#4),.UNSPECIFIED.,.F.,.F.,(2,1,2),(0.,1.,2.),.PIECEWISE_BEZIER_KNOTS.);",
+            )
             .replace("#53=VECTOR('',#52,1.);", "#53=CARTESIAN_POINT('',(3.,2.));")
             .replace("#54=LINE('',#51,#53);", "#54=POLYLINE('',(#51,#52,#53));");
     let decoded = StepCodec::default()

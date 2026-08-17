@@ -7,6 +7,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
+    model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
     pcurve_tangent, pcurve_uv,
 };
@@ -2325,9 +2326,10 @@ fn build_one(
                                 .map(|pcurve| (pcurve, None))
                                 .collect(),
                             candidates => {
-                                let selected = surface_step.and_then(|surface| {
+                                let selection = surface_step.map(|surface| {
                                     select_associated_pcurve(
                                         ir,
+                                        exchange,
                                         surface,
                                         edge,
                                         vdefs,
@@ -2335,27 +2337,45 @@ fn build_one(
                                         candidates,
                                     )
                                 });
-                                if let Some(selected) = selected {
-                                    vec![(selected.id, selected.parameter_range)]
-                                } else {
-                                    let n = candidates.len();
-                                    let note = match (edge.curve, surface_step, n) {
-                                            (Some(curve), Some(surface), 1) => {
-                                                StepLossCode::PcurveEndpointsDiscontinuous.note(format!(
-                                                    "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
-                                                ))
-                                            }
-                                            (Some(curve), Some(surface), _) => {
-                                                StepLossCode::PcurveAssociationAmbiguous.note(format!(
-                                                    "curve #{curve} associates {n} pcurves with surface #{surface}; Part 42 provides no non-seam selector, so the coedge has no pcurve"
-                                                ))
-                                            }
-                                            _ => StepLossCode::PcurveCandidatesCarrierUnresolved.note(format!(
-                                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
-                                                )),
+                                match selection {
+                                    Some(Ok(selected)) => {
+                                        vec![(selected.id, selected.parameter_range)]
+                                    }
+                                    Some(Err(PcurveSelectionFailure::Locus)) => {
+                                        let (Some(curve), Some(surface)) =
+                                            (edge.curve, surface_step)
+                                        else {
+                                            unreachable!(
+                                                "a locus failure has one curve and surface"
+                                            )
                                         };
-                                    losses.push(note);
-                                    Vec::new()
+                                        losses.push(StepLossCode::PcurveLocusDiscontinuous.note(
+                                            format!(
+                                                "curve #{curve} has one endpoint-continuous pcurve on surface #{surface} whose bounded model-space locus or direction witness fails; the pcurve is omitted"
+                                            ),
+                                        ));
+                                        Vec::new()
+                                    }
+                                    Some(Err(_)) | None => {
+                                        let n = candidates.len();
+                                        let note = match (edge.curve, surface_step, n) {
+                                                (Some(curve), Some(surface), 1) => {
+                                                    StepLossCode::PcurveEndpointsDiscontinuous.note(format!(
+                                                        "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
+                                                    ))
+                                                }
+                                                (Some(curve), Some(surface), _) => {
+                                                    StepLossCode::PcurveAssociationAmbiguous.note(format!(
+                                                        "curve #{curve} associates {n} pcurves with surface #{surface}; Part 42 provides no non-seam selector, so the coedge has no pcurve"
+                                                    ))
+                                                }
+                                                _ => StepLossCode::PcurveCandidatesCarrierUnresolved.note(format!(
+                                                        "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                                    )),
+                                            };
+                                        losses.push(note);
+                                        Vec::new()
+                                    }
                                 }
                             }
                         }
@@ -3058,14 +3078,21 @@ fn associated_pcurves(
         .collect()
 }
 
-/// Select the only non-seam pcurve candidate with an endpoint witness. Part 42
-/// supplies no selector for competing same-surface pcurves; the CADIR policy
-/// leaves that set detached. A sole candidate uses its declared trim or a
-/// bounded search when no usable finite trim is declared. The search result is
-/// admitted only as an evaluated endpoint witness. It is not a global minimum.
+/// Select the only non-seam pcurve candidate with endpoint and locus witnesses.
+/// Part 42 supplies no selector for competing same-surface pcurves; the CADIR
+/// policy leaves that set detached. A sole candidate uses its declared trim or
+/// a bounded search when no usable finite trim is declared. The model-space
+/// samples are an admission witness, not a global equality proof.
 struct SelectedPcurve {
     id: PcurveId,
     parameter_range: Option<[f64; 2]>,
+}
+
+enum PcurveSelectionFailure {
+    NotUnique,
+    Carrier,
+    Endpoint,
+    Locus,
 }
 
 const PCURVE_ENDPOINT_GRID_DIVISIONS: usize = 64;
@@ -3083,14 +3110,15 @@ struct PcurveEndpointFit {
 #[allow(clippy::too_many_arguments)]
 fn select_associated_pcurve(
     ir: &mut CadIr,
+    exchange: &Exchange,
     surface_step: u64,
     edge: &EdgeDef,
     vdefs: &BTreeMap<u64, VertexDef>,
     point_positions: &CarrierIndex,
     candidates: &[PcurveId],
-) -> Option<SelectedPcurve> {
+) -> Result<SelectedPcurve, PcurveSelectionFailure> {
     if candidates.len() != 1 {
-        return None;
+        return Err(PcurveSelectionFailure::NotUnique);
     }
     let surface_identity = StepIdentity::data("surface", surface_step);
     let surface = ir
@@ -3098,40 +3126,202 @@ fn select_associated_pcurve(
         .surfaces
         .iter()
         .find(|surface| surface.id.0 == surface_identity)
-        .map(|surface| surface.geometry.clone())?;
+        .map(|surface| surface.geometry.clone())
+        .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId(surface_identity);
     let index = ModelIndex::new(ir);
-    let candidate = candidates.first()?.clone();
+    let candidate = candidates
+        .first()
+        .cloned()
+        .ok_or(PcurveSelectionFailure::Carrier)?;
     let pcurve = ir
         .model
         .pcurves
         .iter()
-        .find(|pcurve| pcurve.id == candidate)?;
+        .find(|pcurve| pcurve.id == candidate)
+        .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
     let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear);
     let start = vdefs
         .get(&edge.start)
         .and_then(|vertex| point_positions.get(vertex.point))
-        .copied()?;
+        .copied()
+        .ok_or(PcurveSelectionFailure::Carrier)?;
     let end = vdefs
         .get(&edge.end)
         .and_then(|vertex| point_positions.get(vertex.point))
-        .copied()?;
-    let endpoint = pcurve_endpoint_fit(&index, &surface_id, geometry, &surface, start, end)?;
+        .copied()
+        .ok_or(PcurveSelectionFailure::Carrier)?;
+    let (curve_start, curve_end) = if edge.same {
+        (start, end)
+    } else {
+        (end, start)
+    };
+    let endpoint = pcurve_endpoint_fit(
+        &index,
+        &surface_id,
+        geometry,
+        &surface,
+        curve_start,
+        curve_end,
+    )
+    .ok_or(PcurveSelectionFailure::Endpoint)?;
     if !endpoint.max_residual.is_finite() || !bound.is_finite() || endpoint.max_residual > bound {
-        return None;
+        return Err(PcurveSelectionFailure::Endpoint);
+    }
+    if !pcurve_locus_witness(
+        &index,
+        exchange,
+        edge,
+        &surface_id,
+        geometry,
+        endpoint,
+        curve_start,
+        curve_end,
+        bound,
+    ) {
+        return Err(PcurveSelectionFailure::Locus);
     }
     let parameter_range = pcurve_declared_parameter_range(geometry).and_then(|range| {
-        let declared =
-            pcurve_declared_endpoint_fit(&index, &surface_id, geometry, range, start, end)?;
+        let declared = pcurve_declared_endpoint_fit_directed(
+            &index,
+            &surface_id,
+            geometry,
+            range,
+            curve_start,
+            curve_end,
+        )?;
         (declared.is_finite() && declared > COINCIDENCE_TOLERANCE)
             .then_some([endpoint.start_parameter, endpoint.end_parameter])
     });
     drop(index);
-    Some(SelectedPcurve {
+    Ok(SelectedPcurve {
         id: candidate,
         parameter_range,
     })
+}
+
+const PCURVE_LOCUS_SAMPLE_COUNT: usize = 23;
+
+// Keep the witness inputs explicit: each one names a separate source or
+// admission value in the Part 42 association check.
+#[allow(clippy::too_many_arguments)]
+fn pcurve_locus_witness(
+    index: &ModelIndex<'_>,
+    exchange: &Exchange,
+    edge: &EdgeDef,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    endpoint: PcurveEndpointFit,
+    curve_start: Point3,
+    curve_end: Point3,
+    bound: f64,
+) -> bool {
+    let Some(curve_step) = edge
+        .curve
+        .and_then(|curve| curve_carrier_step(curve, exchange))
+    else {
+        return false;
+    };
+    let curve_id = CurveId(StepIdentity::data("curve", curve_step));
+    let curve_seeds = curve_selection_parameter_domain(index, &curve_id).map_or(
+        [
+            0.0,
+            1.0,
+            -1.0,
+            std::f64::consts::PI,
+            -std::f64::consts::PI,
+            0.5,
+        ],
+        |domain| {
+            [
+                domain[0],
+                domain[1],
+                (domain[0] + domain[1]) * 0.5,
+                0.0,
+                1.0,
+                -1.0,
+            ]
+        },
+    );
+    let Some(curve_start_parameter) =
+        curve_parameter_near_point(index, &curve_id, curve_start, &curve_seeds, bound)
+    else {
+        return false;
+    };
+    let Some(curve_end_parameter) =
+        curve_parameter_near_point(index, &curve_id, curve_end, &curve_seeds, bound)
+    else {
+        return false;
+    };
+    let mut fractions = (0..PCURVE_LOCUS_SAMPLE_COUNT)
+        .map(|step| step as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64)
+        .collect::<Vec<_>>();
+    let mut break_fractions = Vec::new();
+    pcurve_parameter_break_fractions(
+        geometry,
+        [endpoint.start_parameter, endpoint.end_parameter],
+        &mut break_fractions,
+    );
+    fractions.extend(break_fractions);
+    fractions.sort_by(f64::total_cmp);
+    fractions.dedup_by(|left, right| *left == *right);
+    let parameter_span = endpoint.end_parameter - endpoint.start_parameter;
+    let curve_parameter_span = curve_end_parameter - curve_start_parameter;
+    if !parameter_span.is_finite() || !curve_parameter_span.is_finite() {
+        return false;
+    }
+    for fraction in fractions {
+        let pcurve_parameter = endpoint
+            .start_parameter
+            .mul_add(1.0 - fraction, endpoint.end_parameter * fraction);
+        let Some(uv) = pcurve_uv(geometry, pcurve_parameter) else {
+            return false;
+        };
+        let Some(mapped) = surface_selection_point(index, surface_id, uv.u, uv.v) else {
+            return false;
+        };
+        let curve_seed =
+            curve_start_parameter.mul_add(1.0 - fraction, curve_end_parameter * fraction);
+        let mut seeds = curve_seeds.to_vec();
+        seeds.push(curve_seed);
+        let Some(curve_parameter) =
+            curve_parameter_near_point(index, &curve_id, mapped, &seeds, bound)
+        else {
+            return false;
+        };
+        let Some(curve_point) = model_curve_point_by_id(index, &curve_id, curve_parameter) else {
+            return false;
+        };
+        if !curve_point.distance(mapped).is_finite()
+            || curve_point.distance(mapped) > bound
+            || !fraction.is_finite()
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn curve_parameter_near_point(
+    index: &ModelIndex<'_>,
+    curve_id: &CurveId,
+    point: Point3,
+    seeds: &[f64],
+    tolerance: f64,
+) -> Option<f64> {
+    seeds
+        .iter()
+        .copied()
+        .filter(|seed| seed.is_finite())
+        .filter_map(|seed| {
+            model_curve_parameter_near_point_in_index_with_tolerance(
+                index, curve_id, point, seed, tolerance,
+            )
+            .map(|parameter| ((parameter - seed).abs(), parameter))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, parameter)| parameter)
 }
 
 fn pcurve_endpoint_fit(
@@ -3143,8 +3333,14 @@ fn pcurve_endpoint_fit(
     end: Point3,
 ) -> Option<PcurveEndpointFit> {
     if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
-        let declared_score =
-            pcurve_declared_endpoint_fit(index, surface_id, geometry, parameter_range, start, end)?;
+        let declared_score = pcurve_declared_endpoint_fit_directed(
+            index,
+            surface_id,
+            geometry,
+            parameter_range,
+            start,
+            end,
+        )?;
         if declared_score <= COINCIDENCE_TOLERANCE {
             return Some(PcurveEndpointFit {
                 start_parameter: parameter_range[0],
@@ -3237,6 +3433,7 @@ fn surface_selection_point(
     model_surface_point_by_id(index, surface_id, u, v)
 }
 
+#[cfg(test)]
 fn pcurve_declared_endpoint_fit(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
@@ -3252,6 +3449,21 @@ fn pcurve_declared_endpoint_fit(
     let forward = first.distance(start).max(last.distance(end));
     let reversed = first.distance(end).max(last.distance(start));
     Some(forward.min(reversed))
+}
+
+fn pcurve_declared_endpoint_fit_directed(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    start: Point3,
+    end: Point3,
+) -> Option<f64> {
+    let first_uv = pcurve_uv(geometry, range[0])?;
+    let last_uv = pcurve_uv(geometry, range[1])?;
+    let first = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)?;
+    let last = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)?;
+    Some(first.distance(start).max(last.distance(end)))
 }
 
 fn pcurve_surface_closest(

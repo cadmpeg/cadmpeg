@@ -270,6 +270,28 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
 }
 
 #[test]
+fn indexed_curve_inverse_uses_the_caller_tolerance() {
+    let id = CurveId("test:inverse-tolerance".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = Point3::new(0.5, 0.005, 0.0);
+    assert!(super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5).is_none());
+    let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
+        &index, &id, point, 0.5, 0.01,
+    )
+    .expect("caller tolerance admits the bounded residual");
+    assert!((inverse - 0.5).abs() < 1.0e-12);
+}
+
+#[test]
 fn transformed_curve_inverse_uses_the_basis_parameterization() {
     let basis = CurveGeometry::Circle {
         center: Point3::new(1.0, 2.0, 3.0),

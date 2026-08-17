@@ -33,29 +33,168 @@ use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
 
+fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeometry> {
+    let point = |point: Point2| Point3::new(point.u, point.v, 0.0);
+    let vector = |vector: Point2| Vector3::new(vector.u, vector.v, 0.0);
+    let line = |origin: Point2, direction: Point2| {
+        let length = direction.u.hypot(direction.v);
+        (length.is_finite() && length > 0.0).then(|| CurveGeometry::Line {
+            origin: point(origin),
+            direction: vector(Point2::new(direction.u / length, direction.v / length)),
+        })
+    };
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => line(*origin, *direction),
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            radius,
+            ..
+        } => Some(CurveGeometry::Circle {
+            center: point(*center),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: vector(*x_axis),
+            radius: *radius,
+        }),
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(CurveGeometry::Ellipse {
+            center: point(*center),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: vector(*x_axis),
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        }),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            focal_distance,
+            ..
+        } => Some(CurveGeometry::Parabola {
+            vertex: point(*vertex),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: vector(*x_axis),
+            focal_distance: *focal_distance,
+        }),
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(CurveGeometry::Hyperbola {
+            center: point(*center),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: vector(*x_axis),
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        }),
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => Some(CurveGeometry::Nurbs(NurbsCurve {
+            degree: *degree,
+            knots: knots.clone(),
+            control_points: control_points.iter().copied().map(point).collect(),
+            weights: weights.clone(),
+            periodic: *periodic,
+        })),
+        PcurveGeometry::Transformed { basis, transform } => {
+            let CurveGeometry::Line { origin, direction } = curve_geometry_for_sheet_pcurve(basis)?
+            else {
+                return None;
+            };
+            let transform = Transform {
+                rows: [
+                    [
+                        transform.rows[0][0],
+                        transform.rows[0][1],
+                        0.0,
+                        transform.rows[0][2],
+                    ],
+                    [
+                        transform.rows[1][0],
+                        transform.rows[1][1],
+                        0.0,
+                        transform.rows[1][2],
+                    ],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            };
+            let direction = transform.apply_vector(direction);
+            let length = direction.norm();
+            (length.is_finite() && length > 0.0).then(|| CurveGeometry::Line {
+                origin: transform.apply_point(origin),
+                direction: direction.scale(1.0 / length),
+            })
+        }
+        PcurveGeometry::Trimmed { basis, .. } => curve_geometry_for_sheet_pcurve(basis),
+        PcurveGeometry::Offset { distance, basis } => {
+            let (origin, direction) = basis.line_parameters()?;
+            let length = direction.u.hypot(direction.v);
+            if !length.is_finite() || length == 0.0 {
+                return None;
+            }
+            line(
+                Point2::new(
+                    origin.u - distance * direction.v / length,
+                    origin.v + distance * direction.u / length,
+                ),
+                Point2::new(direction.u / length, direction.v / length),
+            )
+        }
+        PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Hyperbolic { .. } => None,
+    }
+}
+
 fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
     let pcurve_id = ir.model.pcurves[0].id.clone();
-    let edge_id = ir
-        .model
-        .coedges
-        .iter()
-        .find(|coedge| {
-            coedge
-                .pcurves
-                .iter()
-                .any(|pcurve| pcurve.pcurve == pcurve_id)
-        })
-        .expect("sheet pcurve coedge")
-        .edge
-        .clone();
-    let edge = ir
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.id == edge_id)
-        .expect("sheet pcurve edge");
-    let vertex_ids = [edge.start.clone(), edge.end.clone()];
-    let point_ids = vertex_ids.map(|vertex_id| {
+    let (curve_id, point_ids) = {
+        let edge_id = ir
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| {
+                coedge
+                    .pcurves
+                    .iter()
+                    .any(|pcurve| pcurve.pcurve == pcurve_id)
+            })
+            .expect("sheet pcurve coedge")
+            .edge
+            .clone();
+        let edge = ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == edge_id)
+            .expect("sheet pcurve edge");
+        (
+            edge.curve.clone().expect("sheet pcurve edge curve"),
+            [edge.start.clone(), edge.end.clone()],
+        )
+    };
+    if let Some(curve_geometry) = curve_geometry_for_sheet_pcurve(geometry) {
+        ir.model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == curve_id)
+            .expect("sheet pcurve curve")
+            .geometry = curve_geometry;
+    }
+    let point_ids = point_ids.map(|vertex_id| {
         ir.model
             .vertices
             .iter()
