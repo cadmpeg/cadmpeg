@@ -1841,6 +1841,21 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
             [1, 0, 1, 0],
         ),
         (
+            "periodic-open",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: true,
+            },
+            [1, 0, 1, 1],
+        ),
+        (
             "nonplanar-open",
             NurbsCurve {
                 degree: 2,
@@ -1866,6 +1881,39 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(0.0, 0.0, 0.0),
                 ],
+                weights: None,
+                periodic: false,
+            },
+            [1, 1, 1, 0],
+        ),
+        (
+            "equal-weight-rational",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                weights: Some(vec![2.0, 2.0]),
+                periodic: false,
+            },
+            [1, 0, 1, 0],
+        ),
+        (
+            "serialized-equal-weights",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                weights: Some(vec![1.0, 1.0 + 1.0e-13]),
+                periodic: false,
+            },
+            [1, 0, 1, 0],
+        ),
+        (
+            "resolution-closed",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.005, 0.0, 0.0)],
                 weights: None,
                 periodic: false,
             },
@@ -1907,16 +1955,19 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 index + 1
             );
         }
-        if expected[0] == 1 {
-            let normal = parameters
-                .get(parameters.len().saturating_sub(3)..)
-                .unwrap_or_default()
-                .iter()
-                .map(|parameter| parameter["value"]["value"].as_f64())
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_else(|| panic!("{name}: missing Type 126 plane normal"));
-            assert_eq!(normal, vec![0.0, 0.0, 1.0], "{name}: Type 126 plane normal");
-        }
+        let normal = parameters
+            .get(parameters.len().saturating_sub(3)..)
+            .unwrap_or_default()
+            .iter()
+            .map(|parameter| parameter["value"]["value"].as_f64())
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_else(|| panic!("{name}: missing Type 126 plane normal"));
+        let expected_normal = if expected[0] == 1 {
+            vec![0.0, 0.0, 1.0]
+        } else {
+            vec![0.0, 0.0, 0.0]
+        };
+        assert_eq!(normal, expected_normal, "{name}: Type 126 plane normal");
         assert!(
             decoded.report().losses.is_empty(),
             "{name}: {:?}",

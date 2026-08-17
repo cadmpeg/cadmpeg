@@ -120,7 +120,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
 }
 
 #[test]
-fn decode_preserves_a_rational_declaration_with_equal_weights() {
+fn decode_rejects_a_rational_declaration_with_equal_weights() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(equal_weight_rational_nurbs_curve_file()),
@@ -128,11 +128,26 @@ fn decode_preserves_a_rational_declaration_with_equal_weights() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
-    else {
-        panic!("expected a NURBS carrier");
-    };
-    assert_eq!(nurbs.weights, Some(vec![1.0, 1.0, 1.0]));
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        result.report().losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
+}
+
+#[test]
+fn decode_accepts_a_declared_plane_for_a_degenerate_curve() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(polynomial_nurbs_curve_file(
+                b"126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert!(result.report().losses.is_empty());
 }
 
@@ -177,7 +192,7 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
         ("1.,0.99", false),
         ("1.D0,0.9999999D0", false),
     ] {
-        let parameters = format!("126,1,1,1,0,1,0,0,0,1,1,{weights},0,0,0,2,0,0,0,1,0,0,1;");
+        let parameters = format!("126,1,1,0,0,1,0,0,0,1,1,{weights},0,0,0,2,0,0,0,1,0,0,0;");
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),
@@ -210,7 +225,7 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
 fn decode_clamps_bspline_parameter_range_within_declared_real_significance() {
     for (range_start, decoded) in [("0.12345695", true), ("0.12", false)] {
         let parameters =
-            format!("126,1,1,1,0,1,0,0.123457,0.123457,1,1,1,1,0,0,0,2,0,0,{range_start},1,0,0,1;");
+            format!("126,1,1,0,0,1,0,0.123457,0.123457,1,1,1,1,0,0,0,2,0,0,{range_start},1,0,0,0;");
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),

@@ -37,6 +37,10 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "transformations",
 ];
 const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
+const NURBS_CLOSEDNESS_TOLERANCE: f64 = 1.0e-10;
+const NURBS_PLANE_DISTANCE_TOLERANCE: f64 = 1.0e-10;
+const NURBS_PLANE_NORMAL_TOLERANCE: f64 = 1.0e-12;
+const NURBS_COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
@@ -192,11 +196,12 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     validate_analytic_surface_context(ir)?;
     let mut losses = procedural_reduction_losses(ir)?;
     losses.extend(reject_unsupported_native(ir)?);
+    let minimum_resolution = generated_minimum_resolution(ir);
 
     let mut entities = if has_brep_topology(ir) {
-        brep_entities(ir)?
+        brep_entities(ir, minimum_resolution)?
     } else if has_trimmed_sheet_topology(ir) {
-        topology_entities(ir)?
+        topology_entities(ir, minimum_resolution)?
     } else {
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
@@ -228,7 +233,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 })?;
             let geometry = flatten_curve(&curve.geometry)?;
             let span = edge_span(ir, edge, &geometry)?;
-            entities.push(curve_entity(&geometry, Some(&span))?);
+            entities.push(curve_entity(&geometry, Some(&span), minimum_resolution)?);
             consumed_curves.insert(curve_id.clone());
             consumed_points.insert(vertex_point_id(ir, &edge.start)?);
             consumed_points.insert(vertex_point_id(ir, &edge.end)?);
@@ -241,7 +246,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 continue;
             }
             let geometry = flatten_curve(&curve.geometry)?;
-            entities.push(curve_entity(&geometry, None)?);
+            entities.push(curve_entity(&geometry, None, minimum_resolution)?);
         }
 
         let mut points = ir.model.points.iter().collect::<Vec<_>>();
@@ -265,7 +270,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
 
     let counts = entity_counts(&entities);
     Ok(Synthesis {
-        bytes: encode_file(&entities, version, generated_minimum_resolution(ir))?,
+        bytes: encode_file(&entities, version, minimum_resolution)?,
         counts,
         losses,
     })
@@ -436,7 +441,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
     ))])
 }
 
-fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
+fn validate_brep_topology(ir: &CadIr, minimum_resolution: f64) -> Result<(), CodecError> {
     let bodies = ir
         .model
         .bodies
@@ -705,8 +710,13 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             coedge.sense,
                             topology_edge_explicit_tolerance(ir, edge),
                             coedge.id.as_str(),
+                            minimum_resolution,
                         );
-                        validate_brep_pcurve_uses(&orientation, &coedge.pcurves)?;
+                        validate_brep_pcurve_uses(
+                            &orientation,
+                            &coedge.pcurves,
+                            minimum_resolution,
+                        )?;
                     }
                     for vertex_use in &loop_.vertex_uses {
                         if !loop_.coedges.is_empty() && vertex_use.after.is_none() {
@@ -746,8 +756,13 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             Sense::Forward,
                             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
                             loop_.id.as_str(),
+                            minimum_resolution,
                         );
-                        validate_brep_pcurve_uses(&orientation, &vertex_use.pcurves)?;
+                        validate_brep_pcurve_uses(
+                            &orientation,
+                            &vertex_use.pcurves,
+                            minimum_resolution,
+                        )?;
                     }
                 }
             }
@@ -877,8 +892,8 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
-    validate_brep_topology(ir)?;
+fn brep_entities(ir: &CadIr, minimum_resolution: f64) -> Result<Vec<Entity>, CodecError> {
+    validate_brep_topology(ir, minimum_resolution)?;
     let ignored_carriers = ignored_carrier_geometry(ir);
     let mut topology_point_ids = std::collections::BTreeSet::new();
     for coedge in &ir.model.coedges {
@@ -959,7 +974,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         let geometry = flatten_curve(&curve.geometry)?;
         let span = edge_span(ir, edge, &geometry)?;
         let index = entities.len();
-        entities.push(curve_entity(&geometry, Some(&span))?);
+        entities.push(curve_entity(&geometry, Some(&span), minimum_resolution)?);
         edge_curve_indices.insert(edge.id.as_str().to_owned(), index);
     }
 
@@ -979,7 +994,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             continue;
         }
         let geometry = flatten_curve(&curve.geometry)?;
-        entities.push(curve_entity(&geometry, None)?);
+        entities.push(curve_entity(&geometry, None, minimum_resolution)?);
     }
 
     let used_pcurve_ids = used_brep_pcurve_ids(ir);
@@ -996,7 +1011,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 ))
             })?;
         let index = entities.len();
-        entities.push(pcurve_entity(pcurve)?);
+        entities.push(pcurve_entity(pcurve, minimum_resolution)?);
         pcurve_indices.insert(pcurve_id, index);
     }
 
@@ -1274,6 +1289,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     coedge.sense,
                     topology_edge_explicit_tolerance(ir, edge),
                     coedge.id.as_str(),
+                    minimum_resolution,
                 )
                 .oriented_entities(
                     &coedge.pcurves,
@@ -1678,8 +1694,8 @@ fn same_float(left: f64, right: f64) -> bool {
     (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
 }
 
-fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
-    validate_trimmed_sheet_topology(ir)?;
+fn topology_entities(ir: &CadIr, minimum_resolution: f64) -> Result<Vec<Entity>, CodecError> {
+    validate_trimmed_sheet_topology(ir, minimum_resolution)?;
     let ignored_carriers = ignored_carrier_geometry(ir);
     let topology_edge_ids = ir
         .model
@@ -1725,7 +1741,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         let geometry = flatten_curve(&curve.geometry)?;
         let span = edge_span(ir, edge, &geometry)?;
         let index = entities.len();
-        let mut entity = curve_entity(&geometry, Some(&span))?;
+        let mut entity = curve_entity(&geometry, Some(&span), minimum_resolution)?;
         entity.status = "00010000";
         entities.push(entity);
         edge_indices.insert(edge.id.as_str().to_owned(), index);
@@ -1743,7 +1759,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             continue;
         }
         let geometry = flatten_curve(&curve.geometry)?;
-        entities.push(curve_entity(&geometry, None)?);
+        entities.push(curve_entity(&geometry, None, minimum_resolution)?);
     }
 
     let mut pcurve_ids = std::collections::BTreeSet::new();
@@ -1780,7 +1796,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             .find(|candidate| candidate.id.as_str() == pcurve_id)
             .expect("validated pcurve reference");
         let index = entities.len();
-        entities.push(pcurve_entity(pcurve)?);
+        entities.push(pcurve_entity(pcurve, minimum_resolution)?);
         pcurve_indices.insert(pcurve_id, index);
     }
 
@@ -1812,6 +1828,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     &edge_indices,
                     &pcurve_indices,
                     &mut entities,
+                    minimum_resolution,
                 )?;
                 let index = entities.len();
                 entities.push(boundary);
@@ -1825,6 +1842,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     &edge_indices,
                     &pcurve_indices,
                     &mut entities,
+                    minimum_resolution,
                 )?;
                 let index = entities.len();
                 entities.push(curve_on_surface);
@@ -1913,7 +1931,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
     Ok(entities)
 }
 
-fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
+fn validate_trimmed_sheet_topology(ir: &CadIr, minimum_resolution: f64) -> Result<(), CodecError> {
     if ir.model.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires at least one face for topology output".into(),
@@ -2271,7 +2289,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                             pcurve_use.pcurve
                         )));
                     }
-                    pcurve_entity(pcurve)?;
+                    pcurve_entity(pcurve, minimum_resolution)?;
                     used_pcurves.insert(pcurve.id.as_str().to_owned());
                 }
                 let orientation = pcurve_orientation_context(
@@ -2282,6 +2300,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     coedge.sense,
                     topology_edge_explicit_tolerance(ir, edge),
                     coedge.id.as_str(),
+                    minimum_resolution,
                 );
                 orientation.validate(&coedge.pcurves)?;
             }
@@ -2355,6 +2374,7 @@ fn face_outer_loop<'a>(loops: &'a [&Loop]) -> Option<&'a Loop> {
         .filter(|loop_| loop_.boundary_role != LoopBoundaryRole::Inner)
 }
 
+#[allow(clippy::too_many_arguments)] // serialized Global resolution is passed to nested Type 126 writers
 fn boundary_entity(
     ir: &CadIr,
     loop_: &Loop,
@@ -2363,6 +2383,7 @@ fn boundary_entity(
     edge_indices: &BTreeMap<String, usize>,
     pcurve_indices: &BTreeMap<String, usize>,
     entities: &mut Vec<Entity>,
+    minimum_resolution: f64,
 ) -> Result<Entity, CodecError> {
     let coedges = loop_
         .coedges
@@ -2447,6 +2468,7 @@ fn boundary_entity(
                 coedge.sense,
                 topology_edge_explicit_tolerance(ir, edge),
                 coedge.id.as_str(),
+                minimum_resolution,
             )
             .oriented_entities(&coedge.pcurves, pcurve_indices, entities)?
         };
@@ -2466,6 +2488,7 @@ fn boundary_entity(
     })
 }
 
+#[allow(clippy::too_many_arguments)] // serialized Global resolution is passed to nested Type 126 writers
 fn curve_on_surface_entity(
     ir: &CadIr,
     loop_: &Loop,
@@ -2474,6 +2497,7 @@ fn curve_on_surface_entity(
     edge_indices: &BTreeMap<String, usize>,
     pcurve_indices: &BTreeMap<String, usize>,
     entities: &mut Vec<Entity>,
+    minimum_resolution: f64,
 ) -> Result<Entity, CodecError> {
     let mut model_children = Vec::with_capacity(loop_.coedges.len());
     let mut pcurve_children = Vec::new();
@@ -2528,7 +2552,12 @@ fn curve_on_surface_entity(
             })?
         } else {
             let index = entities.len();
-            entities.push(oriented_curve_entity(&geometry, &span, coedge.sense)?);
+            entities.push(oriented_curve_entity(
+                &geometry,
+                &span,
+                coedge.sense,
+                minimum_resolution,
+            )?);
             index
         };
         model_children.push(model_index);
@@ -2541,6 +2570,7 @@ fn curve_on_surface_entity(
                 coedge.sense,
                 topology_edge_explicit_tolerance(ir, edge),
                 coedge.id.as_str(),
+                minimum_resolution,
             )
             .oriented_entities(&coedge.pcurves, pcurve_indices, entities)?
             .into_iter()
@@ -2612,9 +2642,10 @@ fn oriented_curve_entity(
     geometry: &CurveGeometry,
     span: &CurveSpan,
     sense: Sense,
+    minimum_resolution: f64,
 ) -> Result<Entity, CodecError> {
     if sense == Sense::Forward {
-        let mut entity = curve_entity(geometry, Some(span))?;
+        let mut entity = curve_entity(geometry, Some(span), minimum_resolution)?;
         entity.status = "00010000";
         return Ok(entity);
     }
@@ -2624,14 +2655,20 @@ fn oriented_curve_entity(
         end: span.start,
     };
     let mut entity = match geometry {
-        CurveGeometry::Line { .. } => curve_entity(geometry, Some(&reversed_span))?,
+        CurveGeometry::Line { .. } => {
+            curve_entity(geometry, Some(&reversed_span), minimum_resolution)?
+        }
         CurveGeometry::Nurbs(nurbs) => {
             let (reversed, range) = reverse_nurbs(nurbs, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                minimum_resolution,
+            )?
         }
         CurveGeometry::Circle {
             center,
@@ -2656,7 +2693,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                minimum_resolution,
+            )?
         }
         CurveGeometry::Ellipse {
             center,
@@ -2683,7 +2724,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                minimum_resolution,
+            )?
         }
         CurveGeometry::Parabola {
             vertex,
@@ -2708,7 +2753,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                minimum_resolution,
+            )?
         }
         CurveGeometry::Polyline {
             points, parameters, ..
@@ -2726,7 +2775,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                minimum_resolution,
+            )?
         }
         CurveGeometry::Hyperbola {
             center,
@@ -2757,7 +2810,7 @@ fn oriented_curve_entity(
                 start: span.end,
                 end: span.start,
             };
-            curve_entity(&reversed_geometry, Some(&reversed_span))?
+            curve_entity(&reversed_geometry, Some(&reversed_span), minimum_resolution)?
         }
         _ => {
             return Err(CodecError::NotImplemented(format!(
@@ -2769,7 +2822,7 @@ fn oriented_curve_entity(
     Ok(entity)
 }
 
-fn oriented_pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
+fn oriented_pcurve_entity(pcurve: &Pcurve, minimum_resolution: f64) -> Result<Entity, CodecError> {
     let range = pcurve.parameter_range.ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
@@ -2800,7 +2853,7 @@ fn oriented_pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
         periodic: *periodic,
     };
     let (reversed, range) = reverse_nurbs(&nurbs, range)?;
-    encode_nurbs(&reversed, range, "PCURVE")
+    encode_nurbs(&reversed, range, "PCURVE", minimum_resolution)
 }
 
 fn reverse_nurbs(
@@ -2856,7 +2909,7 @@ fn reverse_nurbs(
     ))
 }
 
-fn pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
+fn pcurve_entity(pcurve: &Pcurve, minimum_resolution: f64) -> Result<Entity, CodecError> {
     let range = pcurve.parameter_range.ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
@@ -2890,6 +2943,7 @@ fn pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
         },
         range,
         "PCURVE",
+        minimum_resolution,
     )
 }
 
@@ -2961,6 +3015,7 @@ fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
 fn validate_brep_pcurve_uses(
     orientation: &PcurveOrientationContext<'_>,
     uses: &[PcurveUse],
+    minimum_resolution: f64,
 ) -> Result<(), CodecError> {
     for pcurve_use in uses {
         let pcurve = orientation
@@ -2996,7 +3051,7 @@ fn validate_brep_pcurve_uses(
                 orientation.owner, pcurve.id
             )));
         }
-        pcurve_entity(pcurve)?;
+        pcurve_entity(pcurve, minimum_resolution)?;
     }
     orientation.validate(uses)
 }
@@ -3015,6 +3070,7 @@ struct PcurveOrientationContext<'a> {
     sense: Sense,
     tolerance: f64,
     owner: &'a str,
+    minimum_resolution: f64,
 }
 
 impl PcurveOrientationContext<'_> {
@@ -3142,7 +3198,7 @@ impl PcurveOrientationContext<'_> {
                     })?;
                 let index = if reverse {
                     let index = entities.len();
-                    entities.push(oriented_pcurve_entity(pcurve)?);
+                    entities.push(oriented_pcurve_entity(pcurve, self.minimum_resolution)?);
                     index
                 } else {
                     *pcurve_indices.get(pcurve.id.as_str()).ok_or_else(|| {
@@ -3158,6 +3214,7 @@ impl PcurveOrientationContext<'_> {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // context keeps topology, orientation, and serialized-resolution inputs explicit
 fn pcurve_orientation_context<'a>(
     ir: &'a CadIr,
     surface: &'a SurfaceGeometry,
@@ -3166,6 +3223,7 @@ fn pcurve_orientation_context<'a>(
     sense: Sense,
     tolerance: f64,
     owner: &'a str,
+    minimum_resolution: f64,
 ) -> PcurveOrientationContext<'a> {
     PcurveOrientationContext {
         ir,
@@ -3175,6 +3233,7 @@ fn pcurve_orientation_context<'a>(
         sense,
         tolerance,
         owner,
+        minimum_resolution,
     }
 }
 
@@ -4121,7 +4180,11 @@ fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
     }
 }
 
-fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<Entity, CodecError> {
+fn curve_entity(
+    geometry: &CurveGeometry,
+    span: Option<&CurveSpan>,
+    minimum_resolution: f64,
+) -> Result<Entity, CodecError> {
     let range = span.map_or_else(|| default_range(geometry), |span| Ok(span.range))?;
     if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
         return Err(CodecError::Malformed(
@@ -4303,7 +4366,7 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
                 transform: Some(placement(*center, major, y_axis, axis)?),
             })
         }
-        CurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
+        CurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS", minimum_resolution),
         CurveGeometry::Polyline {
             points, parameters, ..
         } => {
@@ -4315,7 +4378,7 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
                 weights: None,
                 periodic: false,
             };
-            encode_nurbs(&nurbs, range, "POLYLINE")
+            encode_nurbs(&nurbs, range, "POLYLINE", minimum_resolution)
         }
         CurveGeometry::Degenerate { .. }
         | CurveGeometry::Composite { .. }
@@ -4331,6 +4394,7 @@ fn encode_nurbs(
     nurbs: &NurbsCurve,
     range: [f64; 2],
     label: &'static str,
+    minimum_resolution: f64,
 ) -> Result<Entity, CodecError> {
     let control_count = nurbs.control_points.len();
     let degree = usize::try_from(nurbs.degree)
@@ -4382,10 +4446,16 @@ fn encode_nurbs(
         }
         None => vec![1.0; control_count],
     };
-    let polynomial = nurbs.weights.is_none();
-    let plane_normal = nurbs_plane_normal(&nurbs.control_points);
+    let weight_numbers = weights
+        .iter()
+        .map(|weight| number(*weight))
+        .collect::<Vec<_>>();
+    let polynomial = weight_numbers
+        .first()
+        .is_some_and(|first| weight_numbers.iter().all(|weight| weight == first));
+    let plane_normal = nurbs_plane_normal(&nurbs.control_points, minimum_resolution);
     let planar = plane_normal.is_some();
-    let closed = nurbs_is_closed(nurbs, &weights, domain);
+    let closed = nurbs_is_closed(nurbs, &weights, range, minimum_resolution);
     let k = control_count - 1;
     let mut parameters = format!(
         "126,{k},{},{},{},{},{}",
@@ -4399,9 +4469,9 @@ fn encode_nurbs(
         parameters.push(',');
         parameters.push_str(&number(*value));
     }
-    for weight in weights {
+    for weight in weight_numbers {
         parameters.push(',');
-        parameters.push_str(&number(weight));
+        parameters.push_str(&weight);
     }
     for point in &nurbs.control_points {
         for value in [point.x, point.y, point.z] {
@@ -4413,11 +4483,10 @@ fn encode_nurbs(
     parameters.push_str(&number(range[0]));
     parameters.push(',');
     parameters.push_str(&number(range[1]));
-    if let Some(normal) = plane_normal {
-        for value in [normal.x, normal.y, normal.z] {
-            parameters.push(',');
-            parameters.push_str(&number(value));
-        }
+    let normal = plane_normal.unwrap_or(Vector3::new(0.0, 0.0, 0.0));
+    for value in [normal.x, normal.y, normal.z] {
+        parameters.push(',');
+        parameters.push_str(&unit_normal_number(value));
     }
     parameters.push(';');
     let status = if label == "PCURVE" {
@@ -4435,7 +4504,7 @@ fn encode_nurbs(
     })
 }
 
-fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
+fn nurbs_plane_normal(points: &[Point3], minimum_resolution: f64) -> Option<Vector3> {
     let Some(origin) = points.first().copied() else {
         return Some(Vector3::new(0.0, 0.0, 1.0));
     };
@@ -4447,7 +4516,9 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
         return None;
     }
     let scale = distances.into_iter().fold(1.0, f64::max);
-    let tolerance = 1.0e-10 * scale;
+    let tolerance = minimum_resolution
+        .max(NURBS_PLANE_DISTANCE_TOLERANCE * scale)
+        .max(scale * NURBS_COMPUTATION_TOLERANCE);
     let mut first_direction = None;
     for point in points.iter().skip(1) {
         let direction = point.vector_from(origin);
@@ -4463,7 +4534,7 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
     let Some(first_direction) = first_direction else {
         return Some(Vector3::new(0.0, 0.0, 1.0));
     };
-    let normal_threshold = 1.0e-12 * scale * first_direction.norm();
+    let normal_threshold = NURBS_PLANE_NORMAL_TOLERANCE * scale * first_direction.norm();
     let mut normal = None;
     for point in points.iter().skip(1) {
         let candidate = first_direction.cross(point.vector_from(origin));
@@ -4503,10 +4574,12 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
         .then_some(unit_normal)
 }
 
-fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {
-    if nurbs.periodic {
-        return true;
-    }
+fn nurbs_is_closed(
+    nurbs: &NurbsCurve,
+    weights: &[f64],
+    domain: [f64; 2],
+    minimum_resolution: f64,
+) -> bool {
     let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree,
         &nurbs.knots,
@@ -4531,7 +4604,10 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
         .map(|point| point.distance(start))
         .filter(|distance| distance.is_finite())
         .fold(1.0, f64::max);
-    start.distance(end) <= 1.0e-10 * scale
+    let tolerance = minimum_resolution
+        .max(NURBS_CLOSEDNESS_TOLERANCE)
+        .max(scale * NURBS_COMPUTATION_TOLERANCE);
+    start.distance(end) == 0.0 || start.distance(end) < tolerance
 }
 
 fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
@@ -5087,6 +5163,14 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> 
 
 fn number(value: f64) -> String {
     let value = stabilize_real(value);
+    if value == 0.0 {
+        "0".into()
+    } else {
+        format!("{value:.16e}").replace('e', "D")
+    }
+}
+
+fn unit_normal_number(value: f64) -> String {
     if value == 0.0 {
         "0".into()
     } else {

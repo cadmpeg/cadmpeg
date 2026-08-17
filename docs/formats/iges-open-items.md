@@ -228,16 +228,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
 
-### GE-12. Type 126 property flags against the values
-
-**Question.** Which Type 126 representation flags are authoritative when they disagree with the values?
-
-**Known.** `splines.rs` and `geometry.rs` use Type 126 flags to select domains and representation behavior, with range clamping and loss paths for unsupported combinations. The current policy is covered by project fixtures.
-
-**Need.** We need the precedence of flags, values, and derived ranges for every Type 126 form, plus the required behavior for inconsistent records.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `fa5bddc17` improved numeric consistency checks, but it did not establish which fields are authoritative in a conformant file.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

@@ -448,8 +448,8 @@ pub(crate) fn mixed_degree_composite_pcurve_file() -> Vec<u8> {
             form: 0,
             label: "CUBIC".into(),
             status: "00010000",
-            parameters: "126,3,3,1,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1;"
-                .into(),
+            parameters:
+                "126,3,3,1,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1,0,0,1;".into(),
         },
         OwnedTestEntity {
             entity_type: 110,
@@ -1087,7 +1087,7 @@ pub(crate) fn ellipse_surface_of_revolution_file() -> Vec<u8> {
 pub(crate) fn trimmed_surface_of_revolution_file() -> Vec<u8> {
     let angle = 0.3_f64;
     let pcurve = format!(
-        "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,{angle},0,0.5,{},0,0,1;",
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,{angle},0,0.5,{},0,0,1,0,0,1;",
         angle + std::f64::consts::TAU
     );
     owned_test_file(&[
