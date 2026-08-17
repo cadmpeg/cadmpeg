@@ -74,6 +74,12 @@ struct SurfaceSupport<'a> {
     factor: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceEdgeSelectionError {
+    NoMatch,
+    Ambiguous,
+}
+
 fn compose_sense(left: Sense, right: Sense) -> Sense {
     if left == right {
         Sense::Forward
@@ -131,19 +137,28 @@ fn source_edge_for_vertices<'a>(
     natural_start: Point3,
     natural_end: Point3,
     tolerance: f64,
-) -> Option<&'a Edge> {
-    ir.model
+) -> Result<&'a Edge, SourceEdgeSelectionError> {
+    let mut matching = None;
+    for edge in ir
+        .model
         .edges
         .iter()
         .filter(|edge| edge.curve.as_ref() == Some(curve_id))
-        .find(|edge| {
-            edge.param_range.is_some_and(|range| {
-                evaluation::curve(curve_geometry, range[0])
-                    .is_some_and(|point| evaluation::distance(point, natural_start) <= tolerance)
-                    && evaluation::curve(curve_geometry, range[1])
-                        .is_some_and(|point| evaluation::distance(point, natural_end) <= tolerance)
-            })
-        })
+    {
+        let endpoints_agree = edge.param_range.is_some_and(|range| {
+            evaluation::curve(curve_geometry, range[0])
+                .is_some_and(|point| evaluation::distance(point, natural_start) <= tolerance)
+                && evaluation::curve(curve_geometry, range[1])
+                    .is_some_and(|point| evaluation::distance(point, natural_end) <= tolerance)
+        });
+        if endpoints_agree {
+            if matching.is_some() {
+                return Err(SourceEdgeSelectionError::Ambiguous);
+            }
+            matching = Some(edge);
+        }
+    }
+    matching.ok_or(SourceEdgeSelectionError::NoMatch)
 }
 
 #[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
@@ -907,20 +922,31 @@ pub(super) fn project(
                                 valid = false;
                                 break;
                             };
-                            let Some(source_edge) = source_edge_for_vertices(
+                            let source_edge = match source_edge_for_vertices(
                                 ir,
                                 &curve_id,
                                 &curve.geometry,
                                 natural_start,
                                 natural_end,
                                 tolerance,
-                            ) else {
-                                losses.push(entity_loss(
-                                    entry,
-                                    "edge curve endpoints disagree with the vertex-list points",
-                                ));
-                                valid = false;
-                                break;
+                            ) {
+                                Ok(source_edge) => source_edge,
+                                Err(SourceEdgeSelectionError::NoMatch) => {
+                                    losses.push(entity_loss(
+                                        entry,
+                                        "edge curve endpoints disagree with the vertex-list points",
+                                    ));
+                                    valid = false;
+                                    break;
+                                }
+                                Err(SourceEdgeSelectionError::Ambiguous) => {
+                                    losses.push(entity_loss(
+                                        entry,
+                                        "edge curve maps to multiple ambiguous edge occurrences",
+                                    ));
+                                    valid = false;
+                                    break;
+                                }
                             };
                             let id = EdgeId(format!(
                                 "iges:model:edge#{stem}:D{}:{}",

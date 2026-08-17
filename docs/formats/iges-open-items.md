@@ -106,30 +106,6 @@ closure.
 
 ## 5. Surfaces and topology
 
-### TP-09 — Repeated BRep curve occurrence selection
-
-**Question.** When several neutral edge occurrences use one curve carrier,
-which occurrence may supply the Type 508 source-edge range?
-
-**Known.** `entities/brep.rs` filters edge occurrences by curve identity and
-endpoint agreement, then uses `.find(...)` to select the first match.
-Type 508 projection copies that occurrence's parameter range into the emitted
-edge. `iges.md` states that a candidate is selected only when exactly one
-validated occurrence exists and that edge-list order is not a selection rule.
-
-**Need.** Count all validated occurrences. Select one only when the match is
-unique; otherwise preserve the ambiguity and refuse or classify the affected
-projection without choosing by storage order.
-
-**Conflict.** The implementation uses the first matching edge, while the
-settled Type 508 rule requires exactly one validated occurrence.
-
-**Note.** Commit `5acb47b1` and the later helper change in `091b7d121a` fixed
-wrong-range filtering but did not add a uniqueness check. The existing test
-covers one wrong range followed by one matching range, not two matching ranges.
-A periodic or self-intersecting carrier can make both candidates pass, so edge
-storage order changes the emitted topology. This is a partial closure.
-
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path

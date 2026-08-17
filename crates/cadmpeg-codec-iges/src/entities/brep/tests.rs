@@ -75,6 +75,53 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
 }
 
 #[test]
+fn source_edge_selection_rejects_multiple_matching_occurrences() {
+    let curve_id = CurveId("curve".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        },
+        source_object: None,
+    });
+    ir.model.edges.extend([
+        Edge {
+            id: EdgeId("first-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("first-start".into()),
+            end: VertexId("first-end".into()),
+            param_range: Some([0.0, std::f64::consts::TAU]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("second-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("second-start".into()),
+            end: VertexId("second-end".into()),
+            param_range: Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
+            tolerance: None,
+        },
+    ]);
+
+    let result = super::source_edge_for_vertices(
+        &ir,
+        &curve_id,
+        &ir.model.curves[0].geometry,
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        EPS_EDGE_ENDPOINT_MATCH,
+    );
+    assert!(matches!(
+        result,
+        Err(super::SourceEdgeSelectionError::Ambiguous)
+    ));
+}
+
+#[test]
 fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
     for (end_x, decoded) in [("1.000999", true), ("1.001001", false)] {
         let edge = format!("110,0,0,0,{end_x},0,0;");
