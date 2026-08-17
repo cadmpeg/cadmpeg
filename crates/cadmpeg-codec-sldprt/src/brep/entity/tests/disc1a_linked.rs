@@ -4,8 +4,8 @@ use super::super::{
     disc16_disc14_disc04_face_root_body, disc18_disc14_disc12_disc04_face_root_body,
     disc1a_disc12_disc04_face_root_body, disc1a_disc14_disc04_face_root_body,
     disc1a_disc14_disc0c_face_root_body, disc1a_disc14_disc12_face_root_body,
-    disc1e_disc1c_disc16_disc14_face_root_body, disc20_disc1a_disc14_disc04_face_root_body,
-    BodyRecord, EntityRecord,
+    disc1e_disc1c_disc16_disc14_disc0e_face_root_body, disc1e_disc1c_disc16_disc14_face_root_body,
+    disc20_disc1a_disc14_disc04_face_root_body, BodyRecord, EntityRecord,
 };
 use super::{flo2, flo4, index_records, record};
 
@@ -219,6 +219,32 @@ fn disc1e_disc1c_disc16_disc14_chain_owns_disc0e_faces() {
     };
     assert_eq!(body.attr, 10);
     assert_eq!(body.regions[0].shells[0].attr, 12);
+    assert!(body.refs.contains(&20) && body.refs.contains(&21));
+}
+
+#[test]
+fn disc1e_disc1c_disc16_disc14_disc0e_chain_owns_disc04_faces() {
+    let records = lattice_with_use(
+        &[
+            (0x1e, 2),
+            (0x1c, 2),
+            (0x1a, 2),
+            (0x16, 2),
+            (0x14, 1),
+            (0x12, 2),
+            (0x10, 2),
+            (0x0e, 2),
+        ],
+        0x04,
+        0x18,
+        0x20,
+    );
+    let bodies = disc1e_disc1c_disc16_disc14_disc0e_face_root_body(&index_records(&records));
+    let [body] = bodies.as_slice() else {
+        panic!("one disc1e-disc1c-disc16-disc14-disc0e body");
+    };
+    assert_eq!(body.attr, 10);
+    assert_eq!(body.regions[0].shells[0].attr, 13);
     assert!(body.refs.contains(&20) && body.refs.contains(&21));
 }
 
