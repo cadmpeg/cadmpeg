@@ -2,6 +2,7 @@
 //! Borrowed identity index over a complete CAD model.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -35,12 +36,14 @@ macro_rules! define_model_index {
             procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_surface_for_carrier: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_curves_by_curve: HashMap<&'a str, Vec<&'a ProceduralCurve>>,
-            identities: HashSet<&'a str>,
-            native_identities: HashSet<&'a str>,
+            identities: OnceLock<HashSet<String>>,
+            native_identities: OnceLock<HashSet<String>>,
+            include_native: bool,
+            additional_native_identities: Vec<&'a str>,
         }
 
         impl<'a> ModelIndex<'a> {
-            /// Builds every typed lookup and the global identity universe once.
+            /// Builds every typed lookup and lazily materializes the identity universe.
             pub fn new(ir: &'a CadIr) -> Self {
                 Self::with_identity_sources(ir, true, std::iter::empty())
             }
@@ -68,25 +71,10 @@ macro_rules! define_model_index {
                 include_native: bool,
                 additional: impl IntoIterator<Item = &'a str>,
             ) -> Self {
-                let mut identities = HashSet::with_capacity(ir.model.entity_count());
                 $(let $field = ir.model.$field.iter().map(|entity| {
                     let identity = entity.identity();
-                    identities.insert(identity);
                     (identity, entity)
                 }).collect();)*
-                let mut native_identities = include_native
-                    .then(|| {
-                        ir.native
-                            .0
-                            .values()
-                            .flat_map(|namespace| {
-                                namespace.arenas.values().flatten().map(|record| record.id())
-                            })
-                            .collect::<HashSet<_>>()
-                    })
-                    .unwrap_or_default();
-                native_identities.extend(additional);
-                identities.extend(native_identities.iter().copied());
                 let mut procedural_surface_by_surface =
                     HashMap::with_capacity(ir.model.procedural_surfaces.len());
                 for procedural in &ir.model.procedural_surfaces {
@@ -150,9 +138,72 @@ macro_rules! define_model_index {
                     procedural_surface_by_surface,
                     procedural_surface_for_carrier,
                     procedural_curves_by_curve,
-                    identities,
-                    native_identities,
+                    identities: OnceLock::new(),
+                    native_identities: OnceLock::new(),
+                    include_native,
+                    additional_native_identities: additional.into_iter().collect(),
                 }
+            }
+
+            fn model_identity_set(&self) -> HashSet<String> {
+                let mut identities = HashSet::with_capacity(self.ir.model.entity_count());
+                $(identities.extend(self.$field.keys().map(|identity| (*identity).to_owned()));)*
+                identities
+            }
+
+            fn native_identity_set(&self) -> &HashSet<String> {
+                self.native_identities.get_or_init(|| {
+                    if !self.include_native {
+                        return HashSet::new();
+                    }
+                    let mut identities = self
+                        .ir
+                        .native
+                        .0
+                        .values()
+                        .flat_map(|namespace| {
+                            namespace
+                                .arenas
+                                .values()
+                                .flatten()
+                                .map(|record| record.id().to_owned())
+                        })
+                        .collect::<HashSet<_>>();
+                    identities.extend(
+                        self.additional_native_identities
+                            .iter()
+                            .map(|identity| (*identity).to_owned()),
+                    );
+                    identities
+                })
+            }
+
+            fn identity_set(&self) -> &HashSet<String> {
+                self.identities.get_or_init(|| {
+                    let mut identities = self.model_identity_set();
+                    if self.include_native {
+                        identities.extend(self.native_identity_set().iter().cloned());
+                    }
+                    identities
+                })
+            }
+
+            fn borrowed_identity_set(&self) -> HashSet<&'a str> {
+                let mut identities = HashSet::with_capacity(self.ir.model.entity_count());
+                $(identities.extend(self.$field.keys().copied());)*
+                if self.include_native {
+                    identities.extend(
+                        self.ir
+                            .native
+                            .0
+                            .values()
+                            .flat_map(|namespace| {
+                                namespace.arenas.values().flatten().map(|record| record.id())
+                            }),
+                    );
+                    identities.extend(self.additional_native_identities.iter().copied());
+                }
+                identities
             }
 
             /// Returns the indexed document.
@@ -162,17 +213,17 @@ macro_rules! define_model_index {
 
             /// Returns whether any neutral or native entity owns `identity`.
             pub fn contains(&self, identity: &str) -> bool {
-                self.identities.contains(identity)
+                self.identity_set().contains(identity)
             }
 
             /// Returns whether a native entity owns `identity`.
             pub fn contains_native(&self, identity: &str) -> bool {
-                self.native_identities.contains(identity)
+                self.native_identity_set().contains(identity)
             }
 
             /// Iterates every neutral and native identity.
             pub fn identities(&self) -> impl Iterator<Item = &'a str> + '_ {
-                self.identities.iter().copied()
+                self.borrowed_identity_set().into_iter()
             }
 
             /// Looks up the procedural construction that owns a surface.
