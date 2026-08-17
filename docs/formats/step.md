@@ -858,6 +858,13 @@ recipient; RFC 5280 §6 makes the trust anchor, validation time, and revocation
 inputs caller inputs. The absence of a caller verifier or required policy is
 therefore `indeterminate`, never `valid`.
 
+The verification result is caller-owned metadata keyed by the retained
+`step:file:signature#n` identity. It is not a neutral CADIR field and the STEP
+codec does not invent or select it. The caller retains the result with the
+policy and evidence that produced it; the codec retains the complete source
+signature and decoded CMS for every result, including `invalid` and
+`indeterminate`.
+
 A CMS `SignedData` may contain several `SignerInfo` values. CADIR decision: the
 signature policy must name the required signer set. A policy that requires all
 listed signers returns `invalid` when any required signer fails and

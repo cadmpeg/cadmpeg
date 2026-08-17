@@ -232,6 +232,10 @@ fn real_detached_cms_witness_remains_structural_after_source_tampering() {
     assert!(tampered_diagnostics.is_empty());
     assert_eq!(original.signature_sections[0].cms.len(), 1324);
     assert_eq!(
+        super::validate_detached_cms(&original.signature_sections[0].cms),
+        Ok(())
+    );
+    assert_eq!(
         original.signature_sections[0].cms,
         tampered.signature_sections[0].cms
     );

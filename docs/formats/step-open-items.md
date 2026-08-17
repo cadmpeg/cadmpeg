@@ -94,18 +94,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 4. Signatures
 
-### SG-04. Signature verification result
-
-**Question.** How does a verifier produce the required `valid`, `invalid`, or `indeterminate` result for a Part 21 signature?
-
-**Known.** A signature contains detached CMS `SignedData` and authenticates the Table 1 alphabet projection of its signed source range. Verification needs the CMS bytes, detached content, and caller trust policy.
-
-**Need.** Define the verification execution, signer selection, cryptographic failure behavior, missing-evidence behavior, and result retention.
-
-**Conflict.** The parser structurally admits CMS and retains it, but no codec verifier computes the digest, checks signed attributes, verifies the signature, or applies trust policy.
-
-**Note.** `crates/cadmpeg-codec-step/src/signature.rs:227-281` validates only the CMS envelope and detached form. `crates/cadmpeg-codec-step/src/parse.rs:124-151` labels the retained value as non-cryptographic, and `crates/cadmpeg-codec-step/src/reader/tests.rs:229-245` asserts opaque retention without a verification result. `step.md` §7 "At the CADIR boundary, one verifier input is the tuple" defines the verifier tuple and result but supplies no valid, invalid, or indeterminate execution witness. Reopen this item.
-
 ## 5. Topology and pcurve decisions
 
 ### TP-09. Global pcurve association
