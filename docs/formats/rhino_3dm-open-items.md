@@ -6,27 +6,6 @@ Settled format rules remain in
 
 ## Remaining items
 
-### PR-03. Current render-settings userdata checksum coverage
-
-**Question.** Which bytes does the CRC on the current
-`TCODE_SETTINGS_RENDER_USERDATA` record cover when its body contains the
-class-userdata stream and class-end marker?
-
-**Known.** The current writer places the record after a successful render
-settings record, writes nested class-userdata chunks, and appends a short
-class-end marker. The generic scanner checks the outer body contiguously. The
-headless OpenNURBS witness reports a stored outer CRC of zero and the scanner
-reports a nonzero contiguous CRC.
-
-**Need.** Trace the nested writer and reader CRC lifecycle, inspect the
-headless witness bytes, state the direct checksum ranges in the specification,
-and align the scanner and owner test without changing the userdata field
-transfer.
-
-**Note.** This is a current checksum-boundary question. The class-userdata
-payload remains class-owned; this item concerns only the containing record's
-CRC coverage.
-
 ### FV-01. Future object-class payloads
 
 **Question.** What field grammar does each later built-in object-class major

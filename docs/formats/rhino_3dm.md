@@ -6553,6 +6553,11 @@ are skipped. The class-end marker stops the stream, and any remaining bytes
 through the containing record boundary are a suffix. The anonymous payload is
 owned by the userdata class and has no common field grammar.
 
+The outer CRC excludes every complete child chunk through and including the
+class-end marker. Bytes after the class-end marker are direct suffix bytes and
+are included in the outer CRC. The current writer emits no direct bytes in
+this record, so its outer CRC is the CRC of an empty byte sequence.
+
 The current-selector settings records have fixed direct prefixes. The current
 layer, wire-density, font, and dimstyle records are short chunks whose value
 uses the archive's short-value width. The reader admits current-layer, font,

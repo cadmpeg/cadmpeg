@@ -576,6 +576,58 @@ fn plugin_list_crc_excludes_plugin_reference_chunks() {
 }
 
 #[test]
+fn render_userdata_crc_excludes_userdata_and_class_end_chunks() {
+    let archive = ArchiveVersion::V8;
+    let class_uuid = [1_u8; 16];
+    let item_uuid = [2_u8; 16];
+    let application_uuid = [3_u8; 16];
+    let mut transform = Vec::new();
+    for index in 0..16 {
+        let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
+        transform.extend(value.to_le_bytes());
+    }
+    let header_body = [
+        class_uuid.to_vec(),
+        item_uuid.to_vec(),
+        0_i32.to_le_bytes().to_vec(),
+        transform,
+        application_uuid.to_vec(),
+        vec![0],
+        60_i32.to_le_bytes().to_vec(),
+        202_400_i32.to_le_bytes().to_vec(),
+    ]
+    .concat();
+    let header = crc_chunk(archive, 0x0002_fff9, &header_body);
+    let payload = anonymous_chunk(archive, 0, &[0x51, 0x52]);
+    let userdata = long_chunk(
+        archive,
+        0x0002_7ffd,
+        &[vec![0x22], header, payload].concat(),
+    );
+    let class_end = short_chunk(archive, 0x8002_7fff, 0);
+    let mut body = Vec::new();
+    let userdata_start = body.len();
+    body.extend(userdata);
+    let userdata_range = userdata_start..body.len();
+    let class_end_start = body.len();
+    body.extend(class_end);
+    let class_end_range = class_end_start..body.len();
+    body.extend([0xbe, 0xef]);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8136,
+        &body,
+        &[userdata_range, class_end_range],
+    );
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8136, 0, record.len(), archive)
+            .expect("render-settings userdata checksum framing"),
+        None
+    );
+}
+
+#[test]
 fn user_table_uuid_crc_excludes_record_header() {
     let archive = ArchiveVersion::V5;
     let mut body = vec![0; 16];
