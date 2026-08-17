@@ -757,6 +757,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc20_disc18_disc12_face_root_body(&by_attr, entities));
     }
     if out.is_empty() {
+        out.extend(disc20_disc18_disc14_face_root_body(&by_attr, entities));
+    }
+    if out.is_empty() {
         out.extend(shifted_disc16_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -3742,6 +3745,21 @@ fn disc20_disc18_disc12_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
     entities: &[EntityRecord],
 ) -> Vec<BodyRecord> {
+    disc20_disc18_terminal_face_root_body(by_attr, entities, 0x0012)
+}
+
+fn disc20_disc18_disc14_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    entities: &[EntityRecord],
+) -> Vec<BodyRecord> {
+    disc20_disc18_terminal_face_root_body(by_attr, entities, 0x0014)
+}
+
+fn disc20_disc18_terminal_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    entities: &[EntityRecord],
+    terminal_disc: u16,
+) -> Vec<BodyRecord> {
     let roots = by_attr
         .values()
         .copied()
@@ -3770,13 +3788,31 @@ fn disc20_disc18_disc12_face_root_body(
     let Some(shell) = follows(disc_1c, 0x0018, 2) else {
         return Vec::new();
     };
-    let Some(disc_12) = follows(shell, 0x0012, 1) else {
+    let Some(face_chain) = follows(shell, terminal_disc, 1) else {
         return Vec::new();
     };
-    let Some(disc_10) = follows(disc_12, 0x0010, 2) else {
+    let Some(suffix) = face_chain
+        .refs
+        .get(2)
+        .and_then(|attr| by_attr.get(attr))
+        .copied()
+    else {
         return Vec::new();
     };
-    let Some(terminal) = follows(disc_10, 0x0004, 2) else {
+    let terminal = if suffix.disc == 0x0004 && suffix.flo() == 2 {
+        suffix
+    } else if matches!(suffix.disc, 0x0010 | 0x0012) && suffix.flo() == 2 {
+        let Some(terminal) = suffix
+            .refs
+            .get(2)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|record| record.disc == 0x0004 && record.flo() == 2)
+        else {
+            return Vec::new();
+        };
+        terminal
+    } else {
         return Vec::new();
     };
     if terminal.refs.get(2).is_some_and(|attr| *attr > 1) {
@@ -6591,6 +6627,7 @@ mod tests {
     mod disc1a_linked;
     mod disc1c_disc14_linked;
     mod disc1c_disc16_disc0e;
+    mod disc20_disc18;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
@@ -7280,8 +7317,7 @@ mod tests {
                 flo4(40 + index, 0x22, [1; 6]),
             ]);
         }
-        // A later record reuses a face attribute. Framed population counts
-        // must still see both canonical face records.
+        // A later record reuses a face attribute; framed counts still see both records.
         records.push(record(20, 0x0f, [1; 6]));
         let by_attr = records
             .iter()
