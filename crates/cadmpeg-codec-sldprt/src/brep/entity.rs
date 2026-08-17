@@ -722,6 +722,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1a_disc14_disc12_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1a_disc18_disc14_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc16_disc14_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4803,6 +4806,30 @@ fn disc1a_disc14_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x000e,
         0x0014,
         0x0018,
+        KeyedFaceRootOptions {
+            face_use_shape: None,
+            shell_index: 1,
+            require_exact_use_population: true,
+        },
+    )
+}
+
+fn disc1a_disc18_disc14_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body(
+        by_attr,
+        &[
+            (0x001a, 2),
+            (0x0018, 2),
+            (0x0014, 1),
+            (0x0012, 2),
+            (0x0010, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x0016,
+        0x001c,
         KeyedFaceRootOptions {
             face_use_shape: None,
             shell_index: 1,
