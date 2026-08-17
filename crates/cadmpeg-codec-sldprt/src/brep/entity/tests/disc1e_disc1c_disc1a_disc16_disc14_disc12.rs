@@ -1,4 +1,7 @@
-use super::super::disc1e_disc1c_disc1a_disc16_disc14_disc12_face_root_body;
+use super::super::{
+    disc1e_disc16_disc1c_disc1a_disc14_face_root_body,
+    disc1e_disc1c_disc1a_disc16_disc14_disc12_face_root_body,
+};
 use super::{flo2, flo4, index_records, record};
 
 fn lattice() -> Vec<super::super::EntityRecord> {
@@ -64,4 +67,73 @@ fn keyed_lattice_rejects_a_companion_with_a_different_key() {
         disc1e_disc1c_disc1a_disc16_disc14_disc12_face_root_body(&index_records(&records))
             .is_empty()
     );
+}
+
+fn reordered_lattice() -> Vec<super::super::EntityRecord> {
+    vec![
+        flo2(10, 0x1e, [3, 1, 11, 1, 1, 1]),
+        flo2(11, 0x16, [3, 10, 12, 1, 1, 1]),
+        flo2(12, 0x1c, [3, 11, 13, 1, 1, 1]),
+        flo2(13, 0x1a, [3, 12, 14, 1, 1, 1]),
+        record(14, 0x14, [3, 13, 1, 1, 1, 1]),
+        record(20, 0x0c, [100, 30, 1, 1, 1, 1]),
+        record(21, 0x0c, [101, 31, 1, 1, 1, 1]),
+        record(30, 0x18, [100, 40, 20, 1, 1, 1]),
+        record(31, 0x18, [101, 41, 21, 1, 1, 1]),
+        record(32, 0x18, [102, 1, 1, 1, 1, 1]),
+        flo4(40, 0x20, [100, 1, 1, 1, 1, 1]),
+        flo4(41, 0x20, [101, 1, 31, 1, 1, 1]),
+    ]
+}
+
+#[test]
+fn reordered_lattice_owns_forward_keyed_use_links_and_unselected_companions() {
+    let records = reordered_lattice();
+    let bodies = disc1e_disc16_disc1c_disc1a_disc14_face_root_body(&index_records(&records));
+    let [body] = bodies.as_slice() else {
+        panic!("one disc1e-disc16-disc1c-disc1a-disc14 body");
+    };
+    assert_eq!(body.attr, 10);
+    assert_eq!(body.regions[0].shells[0].attr, 11);
+    assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    assert!(body.refs.contains(&30) && body.refs.contains(&31) && body.refs.contains(&32));
+    assert!(body.refs.contains(&40) && body.refs.contains(&41));
+}
+
+#[test]
+fn reordered_lattice_accepts_stale_reverse_face_and_use_links_by_key() {
+    let mut records = reordered_lattice();
+    records
+        .iter_mut()
+        .find(|record| record.attr == 30)
+        .expect("first companion")
+        .refs[2] = 1;
+    records
+        .iter_mut()
+        .find(|record| record.attr == 40)
+        .expect("first use node")
+        .refs[2] = 1;
+
+    let bodies = disc1e_disc16_disc1c_disc1a_disc14_face_root_body(&index_records(&records));
+    assert_eq!(bodies.len(), 1);
+}
+
+#[test]
+fn reordered_lattice_rejects_an_extra_use_node() {
+    let mut records = reordered_lattice();
+    records.push(flo4(52, 0x20, [102, 1, 1, 1, 1, 1]));
+
+    assert!(disc1e_disc16_disc1c_disc1a_disc14_face_root_body(&index_records(&records)).is_empty());
+}
+
+#[test]
+fn reordered_lattice_rejects_a_companion_with_a_different_key() {
+    let mut records = reordered_lattice();
+    records
+        .iter_mut()
+        .find(|record| record.attr == 31)
+        .expect("second companion")
+        .refs[0] = 102;
+
+    assert!(disc1e_disc16_disc1c_disc1a_disc14_face_root_body(&index_records(&records)).is_empty());
 }
