@@ -8761,7 +8761,9 @@ mod tests {
     mod disc1c_disc14_linked;
     mod disc1c_disc16_disc0e;
     mod disc1e_disc04;
+    mod disc1e_disc12_disc1a_disc18_disc10_direct_face_use;
     mod disc1e_disc1a_disc16_disc14_disc12_disc10_disc0c;
+    mod disc1e_disc1a_disc18_disc14_disc12_disc10_direct_face_use;
     mod disc1e_disc1a_disc18_disc16_disc14_disc12_disc04;
     mod disc1e_disc1c_disc1a_disc16_disc14_disc12;
     mod disc20_disc12_disc1e_disc1c_disc18;
