@@ -8,7 +8,7 @@ use super::super::sketch::{normalized, section_point_in_model};
 use super::super::sketch_ids::model_sketch_id;
 use super::super::sketch_transfer::feature_is_first_material_operation;
 use super::super::uniqueness::{
-    unique_feature_definition_for_transform, unique_feature_section_transform,
+    exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::extent::resolved_feature_extrusion_span;
 use super::nurbs::{
@@ -122,12 +122,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         let length = span.upper - span.lower;
-        let Some(sketch) = ir
-            .model
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == sketch_id)
-        else {
+        let Some(sketch) = exactly_one(
+            ir.model
+                .sketches
+                .iter()
+                .filter(|sketch| sketch.id == sketch_id),
+        ) else {
             continue;
         };
         if !sketch_profiles_cover_generated_extrusion_sides(scan, definition, feature_id, sketch) {

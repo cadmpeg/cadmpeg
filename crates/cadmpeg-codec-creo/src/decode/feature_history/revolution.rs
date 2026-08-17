@@ -83,12 +83,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
-        if let Some(sketch) = ir
-            .model
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == sketch_id)
-        {
+        if let Some(sketch) = exactly_one(
+            ir.model
+                .sketches
+                .iter()
+                .filter(|sketch| sketch.id == sketch_id),
+        ) {
             let segments = complete_section_segment_rows(definition).to_vec();
             generating_ids.extend(profile_segment_ids(
                 definition.id,

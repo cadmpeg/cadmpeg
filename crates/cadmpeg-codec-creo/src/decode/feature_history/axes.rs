@@ -3,7 +3,7 @@
 
 use super::super::analytic::{cross, dot};
 use super::super::sketch::{normalized, resolved_section_points, section_point_in_model};
-use super::super::uniqueness::unique_feature_profile_definition;
+use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -206,12 +206,12 @@ pub(in super::super) fn feature_revolution_axis_for_transfer(
 
 pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
     let sketch_id = SketchId(native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1));
-    let Some(sketch) = ir
-        .model
-        .sketches
-        .iter()
-        .find(|sketch| sketch.id == sketch_id)
-    else {
+    let Some(sketch) = exactly_one(
+        ir.model
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == sketch_id),
+    ) else {
         return ProfileRef::Native(native_ref);
     };
     if sketch.profiles.is_empty() {

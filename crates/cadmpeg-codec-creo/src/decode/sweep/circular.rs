@@ -8,7 +8,7 @@ use super::super::sketch::{normalized, section_point_in_model};
 use super::super::sketch_ids::model_sketch_id;
 use super::super::sketch_transfer::feature_is_first_material_operation;
 use super::super::uniqueness::{
-    unique_feature_definition_for_transform, unique_feature_section_transform,
+    exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::extent::resolved_feature_extrusion_span;
 use super::pcurves::add_extrusion_pcurve;
@@ -312,19 +312,18 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
     feature_id: u32,
     sketch_id: &SketchId,
 ) -> Option<([f64; 2], f64)> {
-    if let Some(sketch) = ir
-        .model
-        .sketches
-        .iter()
-        .find(|sketch| sketch.id == *sketch_id)
-    {
+    if let Some(sketch) = exactly_one(
+        ir.model
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == *sketch_id),
+    ) {
         if let [profile] = sketch.profiles.as_slice() {
             if let [entity_use] = profile.as_slice() {
-                if let Some(SketchGeometry::Circle { center, radius }) = ir
-                    .model
-                    .sketch_entities
-                    .iter()
-                    .find(|entity| entity.id == entity_use.entity && entity.sketch == *sketch_id)
+                if let Some(SketchGeometry::Circle { center, radius }) =
+                    exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+                        entity.id == entity_use.entity && entity.sketch == *sketch_id
+                    }))
                     .map(|entity| &entity.geometry)
                 {
                     return Some(([center.u, center.v], radius.0));
