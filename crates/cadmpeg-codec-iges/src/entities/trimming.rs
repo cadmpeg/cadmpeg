@@ -5,7 +5,7 @@ use super::composite::bounded_nurbs_for_curve_with_tolerance;
 use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{coincident_distance, Global};
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
@@ -54,7 +54,7 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 }
 
 fn close(left: Point3, right: Point3, tolerance: f64) -> bool {
-    tolerance.is_finite() && tolerance >= 0.0 && left.distance(right) <= tolerance
+    coincident_distance(left.distance(right), tolerance)
 }
 
 fn topology_sewing_tolerance(global: &Global, points: impl Iterator<Item = Point3>) -> f64 {

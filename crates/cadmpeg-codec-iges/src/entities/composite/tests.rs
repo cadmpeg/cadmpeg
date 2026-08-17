@@ -382,12 +382,18 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 }
 
 #[test]
-fn composite_join_at_global_resolution_uses_inclusive_cadir_boundary() {
+fn composite_join_at_positive_global_resolution_boundary_is_not_coincident() {
+    let mut bytes = composite_curve_with_join_gap(0.5);
+    let declared_resolution = b",0.001,1000.0";
+    let exact_boundary_resolution = b",0.500,1000.0";
+    let offset = bytes
+        .windows(declared_resolution.len())
+        .position(|window| window == declared_resolution)
+        .expect("synthetic Global field 19");
+    bytes[offset..offset + declared_resolution.len()].copy_from_slice(exact_boundary_resolution);
+
     let result = IgesCodec
-        .decode(
-            &mut Cursor::new(composite_curve_with_join_gap(0.001)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let curve = result
         .ir()
@@ -396,11 +402,17 @@ fn composite_join_at_global_resolution_uses_inclusive_cadir_boundary() {
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .expect("Type 102 curve at the Global resolution boundary");
-    assert!(matches!(
-        curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
-    ));
-    assert!(result.report().losses.is_empty());
+    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &curve.geometry else {
+        panic!("expected retained native Type 102 carrier")
+    };
+    assert_eq!(
+        segments[1].transition,
+        cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::CompositeCarrierDegraded.kind()
+            && loss.message.contains("Global minimum resolution")
+    }));
 }
 
 #[test]

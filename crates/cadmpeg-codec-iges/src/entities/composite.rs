@@ -547,7 +547,7 @@ fn close_with_tolerance(left: Point3, right: Point3, tolerance: Option<f64>) -> 
         .filter(|tolerance| tolerance.is_finite() && *tolerance >= 0.0)
         .map_or_else(
             || close(left, right),
-            |tolerance| left.distance(right) <= tolerance,
+            |tolerance| crate::global::coincident_distance(left.distance(right), tolerance),
         )
 }
 

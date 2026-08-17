@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{coincident_distance, Global};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
@@ -205,7 +205,9 @@ pub(super) fn project(
             continue;
         }
         let resolution = global.minimum_resolution_mm();
-        if entry.form == 63 && points[0].distance(points[points.len() - 1]) > resolution {
+        if entry.form == 63
+            && !coincident_distance(points[0].distance(points[points.len() - 1]), resolution)
+        {
             losses.push(entity_loss(
                 entry,
                 "simple closed path endpoints disagree beyond the minimum resolution",
@@ -215,7 +217,7 @@ pub(super) fn project(
         if entry.form == 63
             && points
                 .windows(2)
-                .any(|pair| pair[0].distance(pair[1]) <= resolution)
+                .any(|pair| coincident_distance(pair[0].distance(pair[1]), resolution))
         {
             losses.push(entity_loss(
                 entry,

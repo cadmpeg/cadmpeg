@@ -5,7 +5,7 @@ use super::evaluation;
 use super::geometry::{entity_loss, resolve_transform};
 use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{coincident_distance, Global};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
@@ -194,11 +194,14 @@ fn pcurves_agree(
     let Some(mapped) = mapped else {
         return false;
     };
-    evaluation::distance(mapped[0].0, expected_start) <= tolerance
-        && evaluation::distance(mapped[mapped.len() - 1].1, expected_end) <= tolerance
+    coincident_distance(evaluation::distance(mapped[0].0, expected_start), tolerance)
+        && coincident_distance(
+            evaluation::distance(mapped[mapped.len() - 1].1, expected_end),
+            tolerance,
+        )
         && mapped
             .windows(2)
-            .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance)
+            .all(|pair| coincident_distance(evaluation::distance(pair[0].1, pair[1].0), tolerance))
 }
 
 pub(super) struct BrepProjection {
@@ -886,9 +889,15 @@ pub(super) fn project(
                                         let evaluated_end =
                                             evaluation::curve(&curve.geometry, range[1]);
                                         evaluated_start.is_some_and(|point| {
-                                            evaluation::distance(point, natural_start) <= tolerance
+                                            coincident_distance(
+                                                evaluation::distance(point, natural_start),
+                                                tolerance,
+                                            )
                                         }) && evaluated_end.is_some_and(|point| {
-                                            evaluation::distance(point, natural_end) <= tolerance
+                                            coincident_distance(
+                                                evaluation::distance(point, natural_end),
+                                                tolerance,
+                                            )
                                         })
                                     })
                             });

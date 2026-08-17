@@ -4,7 +4,7 @@
 use super::curve_conversion::angularly_equal;
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{coincident_distance, Global};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry};
@@ -383,14 +383,14 @@ pub(super) fn project(
             continue;
         };
         let resolution = global.minimum_resolution_mm();
-        if start.distance(evaluated_start) > resolution {
+        if !coincident_distance(start.distance(evaluated_start), resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic start point disagrees with the evaluated carrier beyond the minimum resolution",
             ));
             continue;
         }
-        if end.distance(evaluated_end) > resolution {
+        if !coincident_distance(end.distance(evaluated_end), resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic terminate point disagrees with the evaluated carrier beyond the minimum resolution",

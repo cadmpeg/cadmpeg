@@ -234,6 +234,23 @@ fn minimum_resolution_is_required_and_cannot_be_negative() {
 }
 
 #[test]
+fn minimum_resolution_uses_a_strict_positive_boundary_and_exact_zero() {
+    assert!(crate::global::coincident_distance(0.0, 0.0));
+    assert!(!crate::global::coincident_distance(f64::EPSILON, 0.0));
+    assert!(crate::global::coincident_distance(
+        0.125 - f64::EPSILON,
+        0.125
+    ));
+    assert!(!crate::global::coincident_distance(0.125, 0.125));
+    assert!(!crate::global::coincident_distance(
+        0.125 + f64::EPSILON,
+        0.125
+    ));
+    assert!(!crate::global::coincident_distance(f64::NAN, 0.125));
+    assert!(!crate::global::coincident_distance(0.0, -0.125));
+}
+
+#[test]
 fn non_utf8_global_identifiers_are_preserved_as_exact_hex_attributes() {
     let mut bytes = point_file();
     let product = bytes

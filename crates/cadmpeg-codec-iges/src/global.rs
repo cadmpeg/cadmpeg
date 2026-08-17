@@ -494,5 +494,16 @@ impl Global {
     }
 }
 
+pub(crate) fn coincident_distance(distance: f64, resolution: f64) -> bool {
+    if !distance.is_finite() || !resolution.is_finite() || distance < 0.0 || resolution < 0.0 {
+        return false;
+    }
+    if resolution == 0.0 {
+        distance == 0.0
+    } else {
+        distance < resolution
+    }
+}
+
 #[cfg(test)]
 mod tests;
