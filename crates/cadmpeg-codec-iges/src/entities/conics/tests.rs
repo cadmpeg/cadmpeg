@@ -164,6 +164,39 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
 }
 
 #[test]
+fn decode_preserves_declared_conic_endpoints_as_neutral_vertices() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(conic_arc_file(
+                1,
+                b"104,0.25,0,1,0,0,-1,0,2.0005,0,0,1.0005;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.is_empty());
+    assert_eq!(result.ir().model.points.len(), 2);
+    let positions = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .map(|point| point.position)
+        .collect::<Vec<_>>();
+    assert!(positions.iter().any(|position| {
+        (position.x - 2.0005).abs() < EPS_PARAMETER_DOMAIN
+            && position.y.abs() < EPS_PARAMETER_DOMAIN
+            && position.z.abs() < EPS_PARAMETER_DOMAIN
+    }));
+    assert!(positions.iter().any(|position| {
+        position.x.abs() < EPS_PARAMETER_DOMAIN
+            && (position.y - 1.0005).abs() < EPS_PARAMETER_DOMAIN
+            && position.z.abs() < EPS_PARAMETER_DOMAIN
+    }));
+}
+
+#[test]
 fn decode_canonicalizes_ellipse_arc_seam_noise() {
     let result = IgesCodec
         .decode(

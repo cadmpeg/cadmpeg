@@ -228,16 +228,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
 
-### GE-09. Type 104 endpoints are not tested against the conic
-
-**Question.** Must Type 104 endpoint coordinates agree with the conic parameters, and what tolerance applies?
-
-**Known.** `geometry.rs` uses the endpoint values and accepts agreement within the Global minimum resolution. The current tests use matching or project-bracketed values.
-
-**Need.** We need the source authority between the analytic coefficients and endpoint fields, and the tolerance for disagreement.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `2ac641864` added endpoint validation, but did not establish the authority or the tolerance from the specification or a witness file.
-
 ### GE-10. Angular equality constants
 
 **Question.** What angular tolerance applies when the codec compares directions and spans?
