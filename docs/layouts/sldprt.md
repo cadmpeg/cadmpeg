@@ -1593,6 +1593,44 @@ Parsed by:
 | 0 | 12 | `marker` | `bytes[12]` | little | spec | `00 00 00 00 00 00 30 40 00 00 00 00` · value `[0, 0, 0, 0, 0, 0, 48, 64, 0, 0, 0, 0]` |
 | 12 | 4 | `source_id` | `u32` | little | spec | nonzero u32 LE source identifier |
 
+## `display_lists_inline_visual_properties_prefix`
+
+Spec §8 · layout: byte offsets · size: 22 B
+
+The variable-length UTF-16LE material name begins at the end of this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/appearance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `marker` | `bytes[2]` | little | spec | begins with `33 80` · value `[51, 128]` |
+| 2 | 4 | `packed_color` | `u32` | little | spec | packed `0x00BBGGRR` colour is u32 LE at `+2` |
+| 6 | 12 | `uninterpreted` | `bytes[12]` | little | derived | The bytes are retained without assigned semantics. |
+| 18 | 3 | `name_marker` | `bytes[3]` | little | spec | Bytes `ff fe ff` at `+18` · value `[255, 254, 255]` |
+| 21 | 1 | `name_length` | `u8` | little | spec | u8 UTF-16 code-unit count at `+21` |
+
+## `visual_states_feature_appearance_prefix`
+
+Spec §8 · layout: byte offsets · size: 36 B
+
+The prefix ends after the packed colour. The remaining visual-property payload is outside this fixed layout.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/appearance.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `version` | `u32` | little | spec | begins with u32 LE version `17000` · value `17000` |
+| 4 | 4 | `feature_source_id` | `u32` | little | spec | the feature source ID |
+| 8 | 4 | `feature_timestamp` | `u32` | little | spec | the feature timestamp |
+| 12 | 4 | `selector_one_a` | `u32` | little | spec | u32 LE values `1`, `1`, and `2` · value `1` |
+| 16 | 4 | `selector_one_b` | `u32` | little | spec | u32 LE values `1`, `1`, and `2` · value `1` |
+| 20 | 4 | `selector_two` | `u32` | little | spec | u32 LE values `1`, `1`, and `2` · value `2` |
+| 24 | 6 | `instance_prefix` | `bytes[6]` | little | spec | bytes `07 80 01 00 00 00` · value `[7, 128, 1, 0, 0, 0]` |
+| 30 | 2 | `marker` | `bytes[2]` | little | spec | marker `09 80` · value `[9, 128]` |
+| 32 | 4 | `packed_color` | `u32` | little | spec | packed `0x00BBGGRR` colour follows the marker |
+
 ## `transformed_reference_plane_metadata`
 
 Spec §8 · layout: byte offsets · size: 80 B

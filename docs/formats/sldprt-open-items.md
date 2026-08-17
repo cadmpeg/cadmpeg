@@ -102,7 +102,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the carrier grammar and field semantics to construct the exact offset surface and preserve its orientation.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/offset.rs:22-85` accepts the `00 3c` shape, discriminator bytes `V`, `I`, or `U`, a flag, a support attribute, and a finite distance. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1615` evaluates it as the same signed normal offset and uses it before blend and sweep fallbacks. The parser and nested-offset tests use synthetic records in `src/tests.rs:357-371`, `8549-8592`, and `8691-8715`; the closure cited no corpus specimen. Identical offset semantics for the `V`, `I`, and `U` discriminators and each flag value is not verified against corpus records. Probe batches that vary the offset discriminator and flag, and corpus `00 3c` records read with `cadmpeg inspect`, settle the semantics. A valid carrier with another meaning would be silently decoded as the same offset surface.
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/offset.rs:22-85` accepts the `00 3c` shape, discriminator bytes `V`, `I`, or `U`, a flag, a support attribute, and a finite distance. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1615` evaluates it as the same signed normal offset and uses it before blend and sweep fallbacks. The parser and nested-offset tests use synthetic records in `src/tests.rs:357-371`, `8549-8592`, and `8691-8715`; identical offset semantics for all discriminators and flags have not been verified against corpus records. A valid carrier with another meaning would be silently decoded as the same offset surface.
 
 ### GC-05. Variable-radius blend carriers
 
@@ -214,7 +214,7 @@ The attribute scanner accepts only the exact supported family names followed imm
 
 **Need.** We must know the gap to write the record back without moving or inventing undecoded bytes.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/metadata.rs:43-89` still validates the f64 block by finite-value and extent checks after the fixed prefix. Commit `058e16cbf` changed the scan from the first plausible offset to the `ff` prefix and added the synthetic rejection test `src/tests.rs:22953-22972`; the generated fixture supplies the observed bytes. The closure cited no corpus specimen and no complete record framing, so the prefix-plus-nine-values rule is not verified against corpus records. Corpus `moTransRefPlaneData_c` occurrences, found and read with `cadmpeg inspect`, give the gap length and the record framing. Another token occurrence with the same prefix and bounded numbers can be emitted as a plane, while a valid revision with a different gap is skipped.
+**Note.** `crates/cadmpeg-codec-sldprt/src/metadata.rs:43-89` still validates the f64 block by finite-value and extent checks after the fixed prefix. Commit `058e16cbf` changed the scan from the first plausible offset to the `ff` prefix and added the synthetic rejection test `src/tests.rs:22953-22972`; the generated fixture supplies the observed bytes. The prefix-and-nine-values rule has not been verified against corpus records or against complete record framing. Another token occurrence with the same prefix and bounded numbers can be emitted as a plane, while a valid revision with a different gap is skipped.
 
 ### CM-09. Active body stream selection
 
@@ -271,6 +271,14 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Need.** We must know the polyline identity to bind the helix to the correct input geometry.
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/parasolid.rs:183-243` scans every `00 22` array, retains finite XYZ candidates, sorts by scalar count, and selects the largest; equal-size candidates are rejected. If a feature-input payload contains a mesh array and an unrelated finite point array, the largest array is selected even when no native field binds it to the helix. The finite/count shape gate and tie rejection are counter-evidence against arbitrary byte acceptance, but they do not establish the largest-array rule.
+
+### AL-05. Appearance ownership beyond DisplayLists
+
+**Question.** Which records bind appearances to a part, configuration, display state, or B-rep-only feature output?
+
+**Known.** `sldprt.md` §8 defines DisplayLists body defaults, feature assignments through framed persistent surface references, face-local assignments, and their precedence. A `moVisualProperties_c` definition alone does not establish ownership. The opaque six-value `ATOM_ID_2001` layout does not establish a DisplayLists feature binding.
+
+**Need.** Part ownership, configuration and display-state selection, missing or conflicting persistent surface references, and feature appearance propagation to B-rep-only geometry remain unresolved.
 
 ## 5. Design intent
 

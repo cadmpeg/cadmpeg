@@ -2085,6 +2085,74 @@ pub(crate) mod display_lists_scene_source_binding {
     pub(crate) const SOURCE_ID: usize = 12;
 }
 
+/// Byte offsets for the `display_lists_inline_visual_properties_prefix` record.
+///
+/// Spec §8. Record length 22 B.
+///
+/// ```text
+/// The variable-length UTF-16LE material name begins at the end of this prefix.
+/// ```
+pub(crate) mod display_lists_inline_visual_properties_prefix {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 22;
+    /// Offset of `marker` (`bytes[2]`). Spec §8.
+    pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`bytes[2]`). Spec §8.
+    pub(crate) const MARKER_VALUE: [u8; 2] = [0x33, 0x80];
+    /// Offset of `packed_color` (`u32`, little-endian). Spec §8.
+    pub(crate) const PACKED_COLOR: usize = 2;
+    /// Offset of `uninterpreted` (`bytes[12]`). Spec §8.
+    pub(crate) const UNINTERPRETED: usize = 6;
+    /// Offset of `name_marker` (`bytes[3]`). Spec §8.
+    pub(crate) const NAME_MARKER: usize = 18;
+    /// Stated value of `name_marker` (`bytes[3]`). Spec §8.
+    pub(crate) const NAME_MARKER_VALUE: [u8; 3] = [0xff, 0xfe, 0xff];
+    /// Offset of `name_length` (`u8`). Spec §8.
+    pub(crate) const NAME_LENGTH: usize = 21;
+}
+
+/// Byte offsets for the `visual_states_feature_appearance_prefix` record.
+///
+/// Spec §8. Record length 36 B.
+///
+/// ```text
+/// The prefix ends after the packed colour. The remaining visual-property payload is outside this fixed layout.
+/// ```
+pub(crate) mod visual_states_feature_appearance_prefix {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 36;
+    /// Offset of `version` (`u32`, little-endian). Spec §8.
+    pub(crate) const VERSION: usize = 0;
+    /// Stated value of `version` (`u32`). Spec §8.
+    pub(crate) const VERSION_VALUE: u32 = 0x0000_4268;
+    /// Offset of `feature_source_id` (`u32`, little-endian). Spec §8.
+    pub(crate) const FEATURE_SOURCE_ID: usize = 4;
+    /// Offset of `feature_timestamp` (`u32`, little-endian). Spec §8.
+    pub(crate) const FEATURE_TIMESTAMP: usize = 8;
+    /// Offset of `selector_one_a` (`u32`, little-endian). Spec §8.
+    pub(crate) const SELECTOR_ONE_A: usize = 12;
+    /// Stated value of `selector_one_a` (`u32`). Spec §8.
+    pub(crate) const SELECTOR_ONE_A_VALUE: u32 = 0x0000_0001;
+    /// Offset of `selector_one_b` (`u32`, little-endian). Spec §8.
+    pub(crate) const SELECTOR_ONE_B: usize = 16;
+    /// Stated value of `selector_one_b` (`u32`). Spec §8.
+    pub(crate) const SELECTOR_ONE_B_VALUE: u32 = 0x0000_0001;
+    /// Offset of `selector_two` (`u32`, little-endian). Spec §8.
+    pub(crate) const SELECTOR_TWO: usize = 20;
+    /// Stated value of `selector_two` (`u32`). Spec §8.
+    pub(crate) const SELECTOR_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `instance_prefix` (`bytes[6]`). Spec §8.
+    pub(crate) const INSTANCE_PREFIX: usize = 24;
+    /// Stated value of `instance_prefix` (`bytes[6]`). Spec §8.
+    pub(crate) const INSTANCE_PREFIX_VALUE: [u8; 6] = [0x07, 0x80, 0x01, 0x00, 0x00, 0x00];
+    /// Offset of `marker` (`bytes[2]`). Spec §8.
+    pub(crate) const MARKER: usize = 30;
+    /// Stated value of `marker` (`bytes[2]`). Spec §8.
+    pub(crate) const MARKER_VALUE: [u8; 2] = [0x09, 0x80];
+    /// Offset of `packed_color` (`u32`, little-endian). Spec §8.
+    pub(crate) const PACKED_COLOR: usize = 32;
+}
+
 /// Byte offsets for the `transformed_reference_plane_metadata` record.
 ///
 /// Spec §8. Record length 80 B.

@@ -81,6 +81,8 @@ pub enum SldprtLossCode {
     GeometryPcurveAmbiguous,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
+    /// Appearance assignments have no unambiguous `DisplayLists` target.
+    AppearanceAssignmentUnresolved,
     /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
     TessellationFaceOwnershipUnresolved,
     /// No body record was available; a body hierarchy was derived.
@@ -136,6 +138,7 @@ impl SldprtLossCode {
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPcurveAmbiguous,
         Self::AppearanceFaceColorUnresolved,
+        Self::AppearanceAssignmentUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyBodyAssignmentAmbiguous,
@@ -182,6 +185,7 @@ impl SldprtLossCode {
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
+            Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
@@ -220,7 +224,9 @@ impl SldprtLossCode {
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryParasolidNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous => LossTaxonomy::PcurveOmitted,
-            Self::AppearanceFaceColorUnresolved => LossTaxonomy::MaterialNotTransferred,
+            Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {
+                LossTaxonomy::MaterialNotTransferred
+            }
             Self::TessellationFaceOwnershipUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
             _ => LossTaxonomy::FeatureHistoryRetained,
@@ -301,6 +307,7 @@ mod tests {
                 "geometry.edge-support-curve-untyped",
                 "geometry.pcurve-ambiguous",
                 "appearance.face-color-unresolved",
+                "appearance.assignment-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "topology.body-hierarchy-derived",
                 "topology.body-assignment-ambiguous",

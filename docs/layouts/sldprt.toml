@@ -5939,6 +5939,134 @@ source = "spec"
 anchor = "nonzero u32 LE source identifier"
 
 
+[[record]]
+name = "display_lists_inline_visual_properties_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/appearance.rs"
+kind = "byte"
+section = "8"
+anchor = "A direct DisplayLists visual-property instance begins with `33 80`"
+size = 22
+endianness = "little"
+note = "The variable-length UTF-16LE material name begins at the end of this prefix."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "begins with `33 80`"
+value = [0x33, 0x80]
+
+[[record.field]]
+name = "packed_color"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "packed `0x00BBGGRR` colour is u32 LE at `+2`"
+
+[[record.field]]
+name = "uninterpreted"
+offset = 6
+type = "bytes[12]"
+source = "derived"
+anchor = "packed `0x00BBGGRR` colour is u32 LE at `+2`. Bytes `ff fe ff` at `+18`"
+note = "The bytes are retained without assigned semantics."
+
+[[record.field]]
+name = "name_marker"
+offset = 18
+type = "bytes[3]"
+source = "spec"
+anchor = "Bytes `ff fe ff` at `+18`"
+value = [0xff, 0xfe, 0xff]
+
+[[record.field]]
+name = "name_length"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "u8 UTF-16 code-unit count at `+21`"
+
+[[record]]
+name = "visual_states_feature_appearance_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/appearance.rs"
+kind = "byte"
+section = "8"
+anchor = "A `ThirdPtyStore/VisualStates` feature-appearance instance in an `moCompFeature_c` interval begins with u32 LE version `17000`"
+size = 36
+endianness = "little"
+note = "The prefix ends after the packed colour. The remaining visual-property payload is outside this fixed layout."
+
+[[record.field]]
+name = "version"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "begins with u32 LE version `17000`"
+value = 17000
+
+[[record.field]]
+name = "feature_source_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the feature source ID"
+
+[[record.field]]
+name = "feature_timestamp"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the feature timestamp"
+
+[[record.field]]
+name = "selector_one_a"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "u32 LE values `1`, `1`, and `2`"
+value = 1
+
+[[record.field]]
+name = "selector_one_b"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "u32 LE values `1`, `1`, and `2`"
+value = 1
+
+[[record.field]]
+name = "selector_two"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 LE values `1`, `1`, and `2`"
+value = 2
+
+[[record.field]]
+name = "instance_prefix"
+offset = 24
+type = "bytes[6]"
+source = "spec"
+anchor = "bytes `07 80 01 00 00 00`"
+value = [0x07, 0x80, 0x01, 0x00, 0x00, 0x00]
+
+[[record.field]]
+name = "marker"
+offset = 30
+type = "bytes[2]"
+source = "spec"
+anchor = "marker `09 80`"
+value = [0x09, 0x80]
+
+[[record.field]]
+name = "packed_color"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "packed `0x00BBGGRR` colour follows the marker"
+
+
 
 [[record]]
 name = "transformed_reference_plane_metadata"
