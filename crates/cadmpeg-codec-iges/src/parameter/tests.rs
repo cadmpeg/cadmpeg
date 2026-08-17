@@ -531,6 +531,102 @@ fn type102_malformed_count_does_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type402_group_entity_table_boundary_precedes_valid_generic_alternatives() {
+    for form in [1_i64, 7, 14, 15] {
+        let mut group = directory_target(1, 402);
+        group.form = form;
+        let member = directory_target(3, 116);
+        let second_member = directory_target(5, 402);
+        let trailing_association = directory_target(7, 402);
+        let directory = BTreeMap::from([
+            (1, &group),
+            (3, &member),
+            (5, &second_member),
+            (7, &trailing_association),
+        ]);
+        let record = ParameterRecord {
+            directory_sequence: 1,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: [402, 2, 3, 5, 1, 7, 0]
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: 7,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis.groups.expect("Type 402 table boundary");
+        assert_eq!(groups.token_start, 4, "Form {form}");
+        assert_eq!(groups.associations, vec![7], "Form {form}");
+        assert!(groups.properties.is_empty(), "Form {form}");
+    }
+}
+
+#[test]
+fn type402_malformed_member_count_does_not_enable_generic_recovery() {
+    let mut group = directory_target(1, 402);
+    group.form = 7;
+    let member = directory_target(3, 116);
+    let second_member = directory_target(5, 402);
+    let trailing_association = directory_target(7, 402);
+    let directory = BTreeMap::from([
+        (1, &group),
+        (3, &member),
+        (5, &second_member),
+        (7, &trailing_association),
+    ]);
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: vec![
+            Token {
+                value: TokenValue::Integer(402),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Omitted,
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(3),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(5),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(1),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(7),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(0),
+                span: 0..0,
+            },
+        ],
+        parameter_end: 7,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
 fn type106_entity_table_boundary_uses_interpretation_width() {
     let cases = [
         (1_i64, 1_i64, 2_usize, 2_usize),
@@ -982,4 +1078,77 @@ fn decode_uses_type110_entity_boundary_for_form7_association() {
         source.fields()["association_links"].as_array().unwrap(),
         &[serde_json::json!("iges:entity:directory#3")]
     );
+}
+
+#[test]
+fn decode_uses_type402_entity_boundary_for_group_forms() {
+    for form in [1_i64, 7, 14, 15] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[
+                    OwnedTestEntity {
+                        entity_type: 402,
+                        form,
+                        label: "GROUP".into(),
+                        status: "00000000",
+                        parameters: "402,2,3,5,1,7,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 116,
+                        form: 0,
+                        label: "MEMBER1".into(),
+                        status: "00000000",
+                        parameters: "116,0,0,0,0,1,1,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 402,
+                        form: 7,
+                        label: "MEMBER2".into(),
+                        status: "00000000",
+                        parameters: "402,1,3,1,1,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 402,
+                        form: 7,
+                        label: "ASSOC".into(),
+                        status: "00000000",
+                        parameters: "402,1,5;".into(),
+                    },
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(
+            result.report().losses.is_empty(),
+            "Form {form}: {:#?}",
+            result.report().losses
+        );
+        let native = result.ir().native.namespace("iges").unwrap();
+        let source = native.arenas["entities"]
+            .iter()
+            .find(|record| record.id() == "iges:entity:directory#1")
+            .unwrap();
+        assert_eq!(
+            source.fields()["association_links"].as_array().unwrap(),
+            &[serde_json::json!("iges:entity:directory#7")]
+        );
+        let group = native.arenas["groups"]
+            .iter()
+            .find(|record| record.fields()["source_entity"] == "iges:entity:directory#1")
+            .unwrap();
+        assert_eq!(group.fields()["declared_member_count"], 2);
+        assert_eq!(
+            group.fields()["members"].as_array().unwrap(),
+            &[
+                serde_json::json!("iges:entity:directory#3"),
+                serde_json::json!("iges:entity:directory#5"),
+            ]
+        );
+        assert_eq!(group.fields()["ordered"], matches!(form, 14 | 15));
+        assert_eq!(
+            group.fields()["back_pointers_required"],
+            matches!(form, 1 | 14)
+        );
+    }
 }

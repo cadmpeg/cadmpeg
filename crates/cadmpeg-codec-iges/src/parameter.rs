@@ -304,6 +304,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// seven. Type 116 §4.16 has three coordinates and a display pointer, so its
 /// groups start at token five even when that pointer is zero or defaulted.
 /// Type 123 §4.20 has three primary values, so its groups start at token four.
+/// Type 402 Forms 1, 7, 14, and 15 use `N` plus `N` member pointers, so their
+/// groups start at token `N + 2`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
 /// layout returns the record end as a sentinel and never enables generic
 /// recovery.
@@ -313,14 +315,7 @@ pub(crate) fn entity_primary_end(
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
-        (102, 0) => Some(
-            record
-                .integer(1)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0)
-                .and_then(|count| count.checked_add(2))
-                .unwrap_or(record.tokens.len()),
-        ),
+        (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }
@@ -329,6 +324,15 @@ pub(crate) fn entity_primary_end(
         (123, 0) => Some(4),
         _ => None,
     }
+}
+
+fn counted_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_add(2))
+        .unwrap_or(record.tokens.len())
 }
 
 fn copious_expected_interpretation(form: i64) -> Option<i64> {
