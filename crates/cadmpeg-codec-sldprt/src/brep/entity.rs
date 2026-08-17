@@ -8591,6 +8591,7 @@ mod tests {
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc20_disc1e_disc1c_disc18_disc16_disc12;
     mod disc21_disc1f_disc1b_disc19_disc15_disc13_disc11_disc04;
+    mod disc22_disc1a_disc20_disc1e_disc16;
     mod disc22_disc1e_disc1c_disc1a_disc18_disc10;
     mod disc22_disc20_disc1e_disc1a;
     mod disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06;
