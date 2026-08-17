@@ -260,3 +260,96 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
 
     assert_eq!(super::round_placed_cylinder_radius(&ir, &row), None);
 }
+
+#[test]
+fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.framing.layout = crate::container::Layout::Nd;
+    scan.framing.sections.push(crate::container::Section {
+        name: "first".to_string(),
+        raw_name: "first".to_string(),
+        offset: 0,
+        length: 20,
+        expanded_length: None,
+        role: crate::container::role::GEOMETRY,
+    });
+
+    let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
+        name: name.to_string(),
+        value: crate::surface::SurfaceNamedValue::ScalarSequence(vec![value]),
+        body: Vec::new(),
+        offset: 0,
+        value_offset: 0,
+    };
+    let prototype = |offset| crate::surface::SurfacePrototypeRecord {
+        declared_family: "torus".to_string(),
+        family: crate::surface::SurfacePrototypeFamily::Torus,
+        parameters: vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
+        offset,
+    };
+    let row = |id, offset| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::TorusOrSphere.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::TorusOrSphere,
+        feature_id: 913,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset,
+    };
+    let parameter = |surface_id, offset| {
+        let token = crate::surface::SurfaceParameterScalar {
+            value: Some(0.5),
+            raw: vec![0],
+            offset: 0,
+            length: 1,
+        };
+        crate::surface::SurfaceParameterRecord {
+            surface_id,
+            body: vec![0],
+            scalar_values: vec![0.5],
+            scalar_tokens: vec![token.clone()],
+            opaque_spans: Vec::new(),
+            scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: vec![token.clone()],
+            }],
+            terminal_scalar_frame: Some(crate::surface::SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: vec![token],
+            }),
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset,
+            body_offset: offset + 1,
+        }
+    };
+
+    scan.surfaces.prototype_records.push(prototype(5));
+    scan.surfaces.rows.push(row(1, 6));
+    scan.surfaces.parameters.push(parameter(1, 6));
+    let first_row = &scan.surfaces.rows[0];
+    assert_eq!(
+        super::prototype_round_radius(&scan, &[first_row]),
+        Some(0.5)
+    );
+
+    scan.framing.sections.push(crate::container::Section {
+        name: "second".to_string(),
+        raw_name: "second".to_string(),
+        offset: 20,
+        length: 20,
+        expanded_length: None,
+        role: crate::container::role::GEOMETRY,
+    });
+    scan.surfaces.prototype_records.push(prototype(25));
+    scan.surfaces.rows.push(row(2, 26));
+    scan.surfaces.parameters.push(parameter(2, 26));
+    let rows = scan.surfaces.rows.iter().collect::<Vec<_>>();
+
+    assert_eq!(super::prototype_round_radius(&scan, &rows), None);
+}

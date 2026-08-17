@@ -308,31 +308,22 @@ pub(in super::super) fn prototype_round_radius(
 ) -> Option<f64> {
     (scan.framing.layout == crate::container::Layout::Nd).then_some(())?;
     let feature_id = rows.first()?.feature_id;
-    let prototype_radii = unique_surface_prototype_associations(scan)
-        .into_iter()
-        .filter(|(record, row, _)| {
-            record.family == crate::surface::SurfacePrototypeFamily::Torus
-                && row.feature_id == feature_id
-                && rows.iter().any(|candidate| candidate.offset == row.offset)
-        })
-        .filter_map(|(record, _, _)| {
-            Some((
-                prototype_scalar(record, "radius1")?,
-                prototype_scalar(record, "radius2")?,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let &(radius1, radius2) = prototype_radii.first()?;
-    let scale = radius1.abs().max(radius2.abs()).max(1.0);
-    (radius1.is_finite()
-        && radius1 >= 0.0
-        && radius2.is_finite()
-        && radius2 > 0.0
-        && prototype_radii.iter().all(|candidate| {
-            (candidate.0 - radius1).abs() <= 1e-9 * scale
-                && (candidate.1 - radius2).abs() <= 1e-9 * scale
-        }))
-    .then_some(())?;
+    let (radius1, radius2) = exactly_one(
+        unique_surface_prototype_associations(scan)
+            .into_iter()
+            .filter(|(record, row, _)| {
+                record.family == crate::surface::SurfacePrototypeFamily::Torus
+                    && row.feature_id == feature_id
+                    && rows.iter().any(|candidate| candidate.offset == row.offset)
+            })
+            .filter_map(|(record, _, _)| {
+                Some((
+                    prototype_scalar(record, "radius1")?,
+                    prototype_scalar(record, "radius2")?,
+                ))
+            }),
+    )?;
+    (radius1.is_finite() && radius1 >= 0.0 && radius2.is_finite() && radius2 > 0.0).then_some(())?;
     rows.iter()
         .all(|row| {
             let Some(record) = unique_surface_parameter_record(scan, row) else {
