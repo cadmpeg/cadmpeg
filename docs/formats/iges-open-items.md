@@ -228,16 +228,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
 
-### GE-10. Angular equality constants
-
-**Question.** What angular tolerance applies when the codec compares directions and spans?
-
-**Known.** `curve_conversion.rs:24-27` defines one `ANGULAR_TOLERANCE` as `TAU * 1e-12`. The current tests pin the same project constant.
-
-**Need.** We need specification or witness evidence for angular equality, or a project-policy classification that does not present this value as an IGES rule.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `6173d018b` changed a magic number into a named constant, but naming a threshold is not evidence for it.
-
 ### GE-11. Undeclared resource limits
 
 **Question.** Which limits may the decoder impose on projection and recovery work?

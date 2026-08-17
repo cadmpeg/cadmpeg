@@ -180,6 +180,27 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
 }
 
 #[test]
+fn conic_writer_uses_the_shared_angular_tolerance_for_one_revolution() {
+    let geometry = CurveGeometry::Circle {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 2.0,
+    };
+    let span = |extra| {
+        let range = [0.0, TAU + extra];
+        CurveSpan {
+            range,
+            start: curve_point(&geometry, range[0]).expect("start evaluates"),
+            end: curve_point(&geometry, range[1]).expect("end evaluates"),
+        }
+    };
+
+    assert!(curve_entity(&geometry, Some(&span(ANGULAR_TOLERANCE * 0.5))).is_ok());
+    assert!(curve_entity(&geometry, Some(&span(ANGULAR_TOLERANCE * 1.01))).is_err());
+}
+
+#[test]
 fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
