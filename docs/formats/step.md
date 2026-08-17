@@ -143,10 +143,14 @@ A Part 26 file conforms when it is an HDF5 file, is based on a valid EXPRESS
 schema, and represents the EXPRESS data by this mapping. The mapping does not
 represent EXPRESS `RULE` declarations, entity and type domain rules, `UNIQUE`
 rules, `SUPERTYPE` declarations, `FUNCTION` declarations, `PROCEDURE`
-declarations, ordinary `CONSTANT` declarations, derived attributes, inverse
-attributes, or EXPRESS interface specifications. It does not represent the
-constraints or application programming interface of an EXPRESS schema. The
-governing EXPRESS schema is required to evaluate those constraints.
+declarations, ordinary `CONSTANT` declarations, or EXPRESS interface
+specifications. It defines no required compound member for a derived or
+inverse attribute. An implementation may store derived or inverse values, or
+the EXPRESS expression that computes a derived value, but that storage is
+outside this mapping and does not replace evaluation by the governing schema.
+The mapping does not represent the constraints or application programming
+interface of an EXPRESS schema. The governing EXPRESS schema is required to
+evaluate those constraints.
 
 The HDF5 signature is `89 48 44 46 0d 0a 1a 0a`. The [HDF5 file-format
 specification](https://support.hdfgroup.org/documentation/hdf5/latest/_f_m_t11.html)
@@ -185,16 +189,20 @@ attributes, is a compound member. Attribute member names are uppercase
 EXPRESS names. A redeclared inherited attribute uses the Part 26 qualified
 member name. Derived and inverse attributes are not compound members.
 
-The simple type mapping is fixed as follows. `INTEGER` uses an 8-, 16-, 32-,
-or 64-bit signed HDF5 integer in either byte order. `REAL` and `NUMBER` use
-32- or 64-bit IEEE HDF5 floating point in either byte order. `BOOLEAN` and
-`LOGICAL` use HDF5 enumerations; `LOGICAL` has true, false, and unknown
-values. `STRING` uses variable-length HDF5 string. `BINARY` uses fixed or
-variable-length HDF5 opaque data according to its declaration. `ENUMERATION`
-uses an HDF5 enumeration whose symbolic names contain the schema group,
-enumeration, and literal names. A population may select a permitted primitive
-encoding through the corresponding `iso_10303_26_<data_type>_encoding`
-attribute; the EXPRESS schema and the HDF5 type remain the type authority.
+The simple type mapping permits the following encodings. `INTEGER` uses an
+8-, 16-, 32-, or 64-bit signed HDF5 integer in either byte order. `REAL` and
+`NUMBER` use 32- or 64-bit IEEE HDF5 floating point in either byte order.
+`BOOLEAN` and `LOGICAL` use HDF5 enumerations; `LOGICAL` has true, false, and
+unknown values. `STRING` uses variable-length HDF5 string. `BINARY` uses fixed
+or variable-length HDF5 opaque data according to its declaration.
+`ENUMERATION` uses an HDF5 enumeration whose symbolic names contain the schema
+group, enumeration, and literal names. A population may select a permitted
+primitive encoding through the corresponding
+`iso_10303_26_<data_type>_encoding` attribute; the EXPRESS schema and the HDF5
+type remain the type authority. The default encoding is 32-bit signed
+little-endian HDF5 integer for `INTEGER`, 64-bit little-endian IEEE floating
+point for `REAL` and `NUMBER`, and integer values 1, 2, and 3 for enumeration
+literals.
 
 An entity population uses the group `<entity_id>_objects` and the dataset
 `<entity_id>_objects/<entity_id>_instances`. The dataset uses the entity's
@@ -233,9 +241,28 @@ selection it refuses the input with
 `NotImplemented("STEP Part 26 binary/HDF5 encoding")` before Part 21 parsing.
 It does not validate HDF5, infer an AP schema or Part 26 edition, read schema
 groups, populations, named types, datasets, row identifiers, aggregates, or
-reference handles, or compose a Part 26 graph with a Part 21 file. A caller
-that needs Part 26 must provide the exact EXPRESS schema, mapping edition,
-HDF5 validation result, and graph-binding policy.
+reference handles, or compose a Part 26 graph with a Part 21 file.
+
+The Part 26 caller validates the HDF5 file structure, selects the exact Part
+26 mapping edition and governing EXPRESS schema, and then validates the
+mapping. Mapping validation checks the schema-group and population attributes,
+the schema-defined named HDF5 types, the dataset-name table, one-dimensional
+entity instance datasets, compound member order and presence bitmap, row
+identifier uniqueness, primitive and aggregate types, SELECT choice state,
+aggregate dataset descriptors, and reference bounds and target type. It
+resolves an instance reference by using its dataset index in the population's
+dataset-name table and its instance index in the resolved target dataset. The
+mapping result retains the resource-local identity `(resource, population,
+entity dataset, row)` and resource-local reference edges; these are not Part
+21 numeric `#` identifiers. An HDF5 parse error, a mapping metadata or type
+error, an out-of-range reference, or an invalid aggregate is rejected without
+salvaging a partial graph. A missing or mismatched schema or mapping edition
+is unbound and is not admitted as Part 26. EXPRESS rules and schema
+constraints remain caller validation because Part 26 does not encode them.
+The caller operand is `(HDF5 resource, mapping edition, governing EXPRESS
+schema and edition, HDF5 validation result, Part 26 mapping validation result,
+resource-local population and reference graph)`. Composition with a Part 21
+resource is a separate CADIR decision.
 
 An AP242 BO-Model XML exchange uses the XML Schema for its selected AP242 BO
 Model edition. AP242 Edition 1 (2014) uses the ISO/TS 10303-3001 edition-1

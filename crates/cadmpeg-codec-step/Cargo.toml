@@ -30,6 +30,7 @@ cadmpeg-ir = { workspace = true, features = ["examples"] }
 cadmpeg-test-support = { workspace = true }
 serde_json.workspace = true
 roxmltree.workspace = true
+hdf5-reader.workspace = true
 zip.workspace = true
 
 [lints]

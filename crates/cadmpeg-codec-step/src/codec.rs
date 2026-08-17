@@ -369,6 +369,10 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
     // mapping. The caller owns the exact binding, governing EXPRESS schema,
     // derived XML Schema, identity/reference checks, and validation result;
     // this codec has no Part 28 adapter and builds no partial graph.
+    // CE-05: HDF5 signature detection is not HDF5 validation or Part 26
+    // mapping. The caller owns the mapping edition, governing EXPRESS schema,
+    // HDF5 and Part 26 validation, resource-local row/reference mapping, and
+    // malformed-input result; this codec builds no partial graph.
     if is_part26_hdf5(bytes) {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),

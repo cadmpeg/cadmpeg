@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use std::io::Cursor;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::{DecodeMode, InspectOptions, View};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::eval::{
     model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
@@ -807,6 +807,116 @@ fn codec_refuses_schema_marked_part26_hdf5_population() {
         Err(cadmpeg_core::CodecError::NotImplemented(message))
             if message == "STEP Part 26 binary/HDF5 encoding"
     ));
+}
+
+#[test]
+fn part26_mapping_witness_decodes_hdf5_schema_population_and_references() {
+    let encoded = include_bytes!("data/ce05_part26_population.h5.b64")
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    let bytes = STANDARD.decode(encoded).expect("Part 26 HDF5 witness");
+    let file = hdf5_reader::Hdf5File::from_vec(bytes).expect("valid HDF5 witness");
+
+    let root = file.root_group().expect("HDF5 root group");
+    let mut root_groups = root
+        .groups()
+        .expect("HDF5 root groups")
+        .into_iter()
+        .map(|group| group.name().to_owned())
+        .collect::<Vec<_>>();
+    root_groups.sort_unstable();
+    assert_eq!(root_groups, ["Geometry_encoding", "Geometry_population"]);
+
+    let schema = file
+        .group("/Geometry_encoding")
+        .expect("Part 26 schema group");
+    assert_eq!(
+        schema
+            .attribute("iso_10303_26_schema")
+            .expect("schema identifier")
+            .read_string()
+            .expect("schema identifier string"),
+        "Geometry_schema"
+    );
+
+    let population = file
+        .group("/Geometry_population")
+        .expect("Part 26 population group");
+    assert_eq!(
+        population
+            .attribute("iso_10303-26_data")
+            .expect("population schema identifier")
+            .read_string()
+            .expect("population schema identifier string"),
+        "Geometry_schema"
+    );
+    assert_eq!(
+        population
+            .attribute("iso_10303_26_data_set_names")
+            .expect("population dataset-name table")
+            .read_strings()
+            .expect("population dataset-name strings"),
+        ["Point", "Line", "Land_survey"]
+    );
+
+    let point = file
+        .dataset("/Geometry_population/Point_objects/Point_instances")
+        .expect("Point instance dataset");
+    assert_eq!(point.shape(), [4]);
+    let point_bytes = point.read_raw_bytes().expect("Point rows");
+    assert_eq!(point_bytes.len(), 4 * 24);
+    for (row, (id, x, y)) in [
+        (0, 0.0, 0.0),
+        (1, 100.0, 0.0),
+        (2, 100.0, 100.0),
+        (3, 0.0, 100.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let offset = row * 24;
+        assert_eq!(View::i32_le_at(&point_bytes, offset), Some(7));
+        assert_eq!(View::i32_le_at(&point_bytes, offset + 4), Some(id));
+        assert_eq!(View::f64_le_at(&point_bytes, offset + 8), Some(x));
+        assert_eq!(View::f64_le_at(&point_bytes, offset + 16), Some(y));
+    }
+
+    let line = file
+        .dataset("/Geometry_population/Line_objects/Line_instances")
+        .expect("Line instance dataset");
+    assert_eq!(line.shape(), [4]);
+    let line_bytes = line.read_raw_bytes().expect("Line rows");
+    assert_eq!(line_bytes.len(), 4 * 46);
+    for (row, (id, start, end, select, colour)) in [
+        (4, (0, 0), (0, 1), 2, 1),
+        (5, (0, 1), (0, 2), 2, 3),
+        (6, (0, 2), (0, 3), 1, 0),
+        (7, (0, 3), (0, 0), 1, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let offset = row * 46;
+        assert_eq!(View::i32_le_at(&line_bytes, offset), Some(7));
+        assert_eq!(View::i32_le_at(&line_bytes, offset + 4), Some(id));
+        assert_eq!(View::i32_le_at(&line_bytes, offset + 8), Some(start.0));
+        assert_eq!(View::i32_le_at(&line_bytes, offset + 12), Some(start.1));
+        assert_eq!(View::i32_le_at(&line_bytes, offset + 16), Some(end.0));
+        assert_eq!(View::i32_le_at(&line_bytes, offset + 20), Some(end.1));
+        assert_eq!(View::i32_le_at(&line_bytes, offset + 24), Some(select));
+        assert_eq!(View::i16_le_at(&line_bytes, offset + 44), Some(colour));
+    }
+
+    let survey = file
+        .dataset("/Geometry_population/Land_survey_objects/Land_survey_instances")
+        .expect("Land_survey instance dataset");
+    assert_eq!(survey.shape(), [1]);
+    let survey_bytes = survey.read_raw_bytes().expect("Land_survey rows");
+    assert_eq!(survey_bytes.len(), 24);
+    assert_eq!(View::i32_le_at(&survey_bytes, 0), Some(15));
+    assert_eq!(View::i32_le_at(&survey_bytes, 4), Some(25));
 }
 
 #[test]

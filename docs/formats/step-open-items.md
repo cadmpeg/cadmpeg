@@ -20,18 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-05. Part 26 HDF5 mapping
-
-**Question.** How does the Part 26 HDF5 representation map to EXPRESS schema data?
-
-**Known.** Part 26 uses HDF5 and an EXPRESS schema. The mapping covers schema groups, populations, named types, datasets, row identifiers, aggregates, and reference handles, subject to the Part 26 rules.
-
-**Need.** Define HDF5 validation, schema selection, dataset decoding, reference resolution, and malformed-data behavior.
-
-**Conflict.** The decoder detects an HDF5 signature and refuses the input before reading HDF5 groups or EXPRESS data. A signature refusal does not define the mapping.
-
-**Note.** `crates/cadmpeg-codec-step/src/codec.rs:384-400` checks signatures at bounded offsets, and `crates/cadmpeg-codec-step/src/codec.rs:365-370` returns `NotImplemented`. `step.md` §1 "CADIR decision: the STEP codec classifies an HDF5 signature at an allowed" lists the required caller inputs but provides no executable Part 26 decode witness. Reopen this item.
-
 ### CE-06. Part 26 graph binding
 
 **Question.** How does Part 26 data bind to a Part 21 graph when both resources describe one exchange?
