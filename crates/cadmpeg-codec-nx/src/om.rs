@@ -1213,6 +1213,113 @@ pub struct Section<'a> {
     cached_operation_labels: Arc<[OperationLabel<'a>]>,
 }
 
+/// Cached byte layout for one size-framed object-model section.
+///
+/// The layout contains offsets and validated declaration metadata only. It
+/// does not borrow the container image, so a container that owns its input can
+/// reuse the layout without reparsing the section on every extractor call.
+#[derive(Debug, Clone)]
+pub(crate) struct SectionLayout {
+    offset: usize,
+    byte_len: usize,
+    types: Vec<IndexedDefinitionLayout>,
+    fields: Vec<IndexedDefinitionLayout>,
+    record_area_offset: Option<usize>,
+    record_area: Option<IndexedByteRange>,
+    operation_labels: Vec<OperationLabelLayout>,
+}
+
+impl SectionLayout {
+    pub(crate) fn from_section(section: &Section<'_>) -> Self {
+        let record_area = section.record_area.map(|bytes| {
+            let start = section
+                .record_area_offset
+                .expect("record area has an absolute offset");
+            IndexedByteRange {
+                start,
+                end: start + bytes.len(),
+            }
+        });
+        Self {
+            offset: section.offset,
+            byte_len: section.byte_len,
+            types: type_definition_layouts(&section.types),
+            fields: field_definition_layouts(&section.fields),
+            record_area_offset: section.record_area_offset,
+            record_area,
+            operation_labels: operation_label_layouts(&section.cached_operation_labels),
+        }
+    }
+
+    pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> Section<'a> {
+        let record_area = self.record_area.map(|range| {
+            bytes
+                .get(range.start..range.end)
+                .expect("cached section record area remains in source")
+        });
+        let cached_operation_labels = match (record_area, self.record_area_offset) {
+            (Some(record_area), Some(record_area_offset)) => materialize_operation_labels(
+                record_area,
+                record_area_offset,
+                &self.operation_labels,
+            )
+            .into(),
+            _ => Arc::from([]),
+        };
+        Section {
+            offset: self.offset,
+            byte_len: self.byte_len,
+            types: self
+                .types
+                .iter()
+                .map(|layout| materialize_type_definition(bytes, layout))
+                .collect::<Vec<_>>()
+                .into(),
+            fields: self
+                .fields
+                .iter()
+                .map(|layout| materialize_field_definition(bytes, layout))
+                .collect::<Vec<_>>()
+                .into(),
+            record_area_offset: self.record_area_offset,
+            record_area,
+            cached_operation_labels,
+        }
+    }
+}
+
+fn type_definition_layouts(definitions: &[TypeDefinition<'_>]) -> Vec<IndexedDefinitionLayout> {
+    definitions
+        .iter()
+        .enumerate()
+        .map(|(index, definition)| IndexedDefinitionLayout {
+            offset: definition.offset,
+            name_len: definition.name.len(),
+            trailing_code: definition.trailing_code,
+            registry_suffix: (index + 1 < definitions.len()).then(|| IndexedByteRange {
+                start: definition.offset + definition.name.len() + 2,
+                end: definitions[index + 1].offset,
+            }),
+        })
+        .collect()
+}
+
+fn field_definition_layouts(definitions: &[FieldDefinition<'_>]) -> Vec<IndexedDefinitionLayout> {
+    definitions
+        .iter()
+        .enumerate()
+        .map(|(index, definition)| IndexedDefinitionLayout {
+            offset: definition.offset,
+            name_len: definition.name.len(),
+            trailing_code: definition.trailing_code,
+            registry_suffix: (index + 1 < definitions.len()).then(|| IndexedByteRange {
+                start: definition.offset + definition.name.len() + 2,
+                end: definitions[index + 1].offset,
+            }),
+        })
+        .collect()
+}
+
 /// A feature operation name in a size-framed feature-history record area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationLabel<'a> {

@@ -93,6 +93,40 @@ fn container_cached_operation_labels_preserve_section_materialization() {
 }
 
 #[test]
+fn container_caches_owned_section_layouts() {
+    let payload = size_framed_om_section_with_repeated_operations(2);
+    let payload_len = payload.len() as u64;
+    let mut file = vec![0xaa; 17];
+    file.extend_from_slice(&payload);
+    let container = Container {
+        data: file.into(),
+        version: 0,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count: 1,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        entries: vec![DirEntry {
+            name: "/Root/om".into(),
+            region: Region::Header,
+            file_span: Some((17, payload_len)),
+        }],
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_operation_label_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    let first = container.om_sections();
+    let second = container.om_sections();
+    assert_eq!(first.len(), 1);
+    assert_eq!(second, first);
+    assert_eq!(first[0].1, crate::om::sections(&container.data[17..])[0]);
+    assert!(container
+        .om_section_cache
+        .get()
+        .is_some_and(|cache| cache.sections.is_none() && cache.layouts.len() == 1));
+}
+
+#[test]
 fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let file = prt_with_indexed_om_section();
     let container = container::scan_bytes(file.as_slice()).unwrap();
