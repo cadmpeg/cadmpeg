@@ -33,11 +33,26 @@ fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> 
     matches.next().is_none().then_some(surface)
 }
 
+#[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,
     faces: [u32; 2],
     endpoint_sets: [[[f64; 2]; 2]; 2],
 ) -> Option<[[f64; 3]; 2]> {
+    mapped_pcurve_endpoint_evidence(ir, faces, endpoint_sets).map(|evidence| evidence.points)
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PcurveEndpointEvidence {
+    pub points: [[f64; 3]; 2],
+    pub complete: bool,
+}
+
+fn mapped_pcurve_endpoint_evidence(
+    ir: &CadIr,
+    faces: [u32; 2],
+    endpoint_sets: [[[f64; 2]; 2]; 2],
+) -> Option<PcurveEndpointEvidence> {
     let mapped = faces
         .into_iter()
         .zip(endpoint_sets)
@@ -56,11 +71,17 @@ pub fn mapped_pcurve_endpoints(
         .all(|candidate| {
             model_points_agree(first[0], candidate[0]) && model_points_agree(first[1], candidate[1])
         })
-        .then_some(first)
+        .then_some(PcurveEndpointEvidence {
+            points: first,
+            complete: mapped.len() == 2,
+        })
 }
 
-pub fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {
-    let mut candidates = BTreeMap::<u32, Vec<[[f64; 3]; 2]>>::new();
+pub fn pcurve_edge_endpoint_evidence(
+    scan: &ContainerScan,
+    ir: &CadIr,
+) -> BTreeMap<u32, PcurveEndpointEvidence> {
+    let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     for (curve_id, faces, first, second) in scan
         .curves
         .pcurves
@@ -82,8 +103,8 @@ pub fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, 
             )
         }))
     {
-        if let Some(points) = mapped_pcurve_endpoints(ir, faces, [first, second]) {
-            candidates.entry(curve_id).or_default().push(points);
+        if let Some(evidence) = mapped_pcurve_endpoint_evidence(ir, faces, [first, second]) {
+            candidates.entry(curve_id).or_default().push(evidence);
         }
     }
     candidates
@@ -93,11 +114,24 @@ pub fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, 
             candidates
                 .iter()
                 .all(|candidate| {
-                    model_points_agree(first[0], candidate[0])
-                        && model_points_agree(first[1], candidate[1])
+                    model_points_agree(first.points[0], candidate.points[0])
+                        && model_points_agree(first.points[1], candidate.points[1])
                 })
-                .then_some((curve_id, first))
+                .then_some((
+                    curve_id,
+                    PcurveEndpointEvidence {
+                        points: first.points,
+                        complete: candidates.iter().any(|candidate| candidate.complete),
+                    },
+                ))
         })
+        .collect()
+}
+
+pub fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {
+    pcurve_edge_endpoint_evidence(scan, ir)
+        .into_iter()
+        .map(|(curve_id, evidence)| (curve_id, evidence.points))
         .collect()
 }
 

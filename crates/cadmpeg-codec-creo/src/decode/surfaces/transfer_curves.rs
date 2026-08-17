@@ -13,7 +13,10 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{placed_carriers, solved_topological_vertices, PlaneEquation};
+use super::super::analytic::{
+    pcurve_edge_endpoint_evidence, placed_carriers, solved_topological_vertices, CarrierEquation,
+    PlaneEquation,
+};
 use super::super::native::annotate;
 use super::super::uniqueness::exactly_one;
 
@@ -58,6 +61,24 @@ pub(in super::super) fn analytic_curve_branches(
     branches
 }
 
+fn resolve_carrier_intersection_curve(
+    first: CarrierEquation,
+    second: CarrierEquation,
+    points: Option<[[f64; 3]; 2]>,
+    allow_unresolved_endpoint_witness: bool,
+) -> Option<(CurveGeometry, &'static str)> {
+    let (geometry, tag) = carrier_intersection_curve(first, second)?;
+    let candidates = analytic_curve_branches(&geometry, tag);
+    resolve_curve_candidates(candidates.clone(), points).or_else(|| {
+        // A one-sided pcurve on an unresolved adjacent face supplies only a
+        // finite-edge witness. It does not veto the exact infinite plane line.
+        (tag == "plane_intersection_line"
+            && (points.is_none() || allow_unresolved_endpoint_witness))
+            .then(|| resolve_curve_candidates(candidates, None))
+            .flatten()
+    })
+}
+
 pub(in super::super) fn transfer_carrier_intersection_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -68,6 +89,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let carriers = placed_carriers(scan, ir);
     let solved_vertices =
         solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
+    let endpoint_evidence = pcurve_edge_endpoint_evidence(scan, ir);
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
@@ -85,31 +107,30 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             ];
             Some(points)
         })();
-        let resolved = carrier_intersection_curve(first, second)
-            .and_then(|(geometry, tag)| {
-                let candidates = analytic_curve_branches(&geometry, tag);
-                resolve_curve_candidates(candidates.clone(), points).or_else(|| {
-                    // A nonparallel plane pair has one exact infinite carrier line.
-                    // Its endpoint domain is only a finite-edge witness and can be
-                    // supplied by a one-sided pcurve on an unresolved adjacent face.
-                    (tag == "plane_intersection_line")
-                        .then(|| resolve_curve_candidates(candidates, None))
-                        .flatten()
-                })
-            })
-            .or_else(|| {
-                let candidates = multi_component_intersection_candidates(first, second);
-                if points.is_some() {
-                    resolve_curve_candidates(candidates, points)
-                } else {
-                    let held = fc14_held_coordinate(&scan.curves.fc_coordinates, row.id)?;
-                    select_fc14_axis_coordinate_candidate(candidates, held)
-                }
-            });
+        let curve_id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let allow_unresolved_endpoint_witness = endpoint_evidence
+            .get(&row.id)
+            .is_some_and(|evidence| !evidence.complete)
+            && !nurbs_endpoint_witnesses.contains(&curve_id);
+        let resolved = resolve_carrier_intersection_curve(
+            first,
+            second,
+            points,
+            allow_unresolved_endpoint_witness,
+        )
+        .or_else(|| {
+            let candidates = multi_component_intersection_candidates(first, second);
+            if points.is_some() {
+                resolve_curve_candidates(candidates, points)
+            } else {
+                let held = fc14_held_coordinate(&scan.curves.fc_coordinates, row.id)?;
+                select_fc14_axis_coordinate_candidate(candidates, held)
+            }
+        });
         let Some((geometry, tag)) = resolved else {
             continue;
         };
-        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let id = curve_id;
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -282,10 +303,32 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
-    use super::transfer_carrier_intersection_curves;
     use super::transfer_nurbs_boundary_curves;
+    use super::{resolve_carrier_intersection_curve, transfer_carrier_intersection_curves};
+    use crate::decode::analytic::{CarrierEquation, PlaneEquation};
     use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
     use crate::{container, curve, surface};
+
+    #[test]
+    fn carrier_intersection_rejects_solved_endpoints_off_candidate() {
+        let first = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        });
+        let second = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        });
+        let off_candidate = [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]];
+
+        assert!(
+            resolve_carrier_intersection_curve(first, second, Some(off_candidate), false).is_none()
+        );
+        assert!(
+            resolve_carrier_intersection_curve(first, second, Some(off_candidate), true).is_some()
+        );
+        assert!(resolve_carrier_intersection_curve(first, second, None, false).is_some());
+    }
 
     #[test]
     fn plane_intersection_survives_inconsistent_endpoint_witness() {

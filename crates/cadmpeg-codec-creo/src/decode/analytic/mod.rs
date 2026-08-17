@@ -49,9 +49,9 @@ pub(super) use pcurve_geometry::{
 pub(super) use pcurves::{
     directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints, native_pcurve_midpoint,
     oriented_native_pcurve_endpoints, pcurve_backed_periodic_conic_parameter_range,
-    pcurve_edge_endpoints, planar_curve_pcurve, solve_pcurve_vertex_domains,
-    transfer_analytic_pcurve_carriers, unique_oriented_native_pcurve, NativePcurveCandidates,
-    PcurveVertexConstraint,
+    pcurve_edge_endpoint_evidence, pcurve_edge_endpoints, planar_curve_pcurve,
+    solve_pcurve_vertex_domains, transfer_analytic_pcurve_carriers, unique_oriented_native_pcurve,
+    NativePcurveCandidates, PcurveEndpointEvidence, PcurveVertexConstraint,
 };
 #[allow(unused_imports)]
 pub(super) use planes::{
