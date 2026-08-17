@@ -747,6 +747,10 @@ The header has the checksum selected by its typecode. An anonymous child
 contains the userdata payload. Older userdata without archive-version fields
 uses the containing archive version below 50 and archive version 5 with
 four-byte chunk lengths at 50 and later. The anonymous child is always bounded.
+The generic userdata header is version `2.2`. Its version 2.1 prefix adds the
+application UUID, and version 2.2 adds the last-saved-as-goo flag, userdata
+archive version, and userdata writer version. The reader admits only major 1
+and major 2; another major has no header grammar.
 The userdata-header reader consumes the fields defined by its minor version and
 skips a later bounded suffix. The userdata payload is owned by the userdata
 class and is skipped at its anonymous-child boundary when no typed reader owns

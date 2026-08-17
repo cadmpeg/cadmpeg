@@ -51,8 +51,9 @@ which fields remain admissible?
 **Known.** The generic user-data headers and the audited class-owned payloads
 have bounded children and source-defined minor gates. Unknown classes can be
 retained, but the generic header does not define their payload fields. The
-current producer paths do not define a later user-data major or an untyped
-class-specific payload grammar beyond the audited carriers.
+current OpenNURBS writer emits generic header version 2.2; its class-owned
+payload writers remain the audited carriers and do not define a later
+user-data major or an untyped class-specific payload grammar beyond them.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields, boundaries, and
