@@ -61,6 +61,7 @@ use crate::layout::edge_flange_to_object_fixed_operation_section as flange_to_ob
 use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
+use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
@@ -6871,7 +6872,15 @@ pub(crate) fn parse_parameter_scope(
         // The generic scope envelope is independently self-delimiting. An
         // unrecognized Extrude prologue therefore withholds only the typed
         // fields, not the scope and its ordered reference table.
-        exact_extrude_prologue(bytes, start, *reference_count_at, reference_members)
+        exact_extrude_prologue(
+            bytes,
+            start,
+            paired_at,
+            &header.class_tag,
+            &paired_class_tag,
+            *reference_count_at,
+            reference_members,
+        )
     } else {
         None
     };
@@ -7713,39 +7722,82 @@ fn bind_coil_extent_from_parameters(
     scope.coil_extent = extent;
 }
 
+pub(crate) fn is_legacy_class_415_symmetric_distance_layout(
+    class_tag: &str,
+    paired_class_tag: &str,
+    frame_length: u64,
+    reference_count_delta: u64,
+    reference_member_count: usize,
+) -> bool {
+    class_tag == "415"
+        && paired_class_tag == "265"
+        && reference_count_delta == class_415::REFERENCE_COUNT as u64
+        && matches!((frame_length, reference_member_count), (447, 5) | (469, 7))
+}
+
 fn exact_extrude_prologue(
     bytes: &[u8],
     start: usize,
+    paired_at: usize,
+    class_tag: &str,
+    paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    exact_current_extrude_prologue(bytes, start, reference_count_at, reference_members)
-        .or_else(|| {
-            exact_shifted_reference_aware_extrude_prologue(
-                bytes,
-                start,
-                reference_count_at,
-                reference_members,
-            )
+    let legacy_class_415 = paired_at
+        .checked_sub(start)
+        .zip(reference_count_at.checked_sub(start))
+        .and_then(|(frame_length, reference_count_delta)| {
+            Some(is_legacy_class_415_symmetric_distance_layout(
+                class_tag,
+                paired_class_tag,
+                u64::try_from(frame_length).ok()?,
+                u64::try_from(reference_count_delta).ok()?,
+                reference_members.len(),
+            ))
         })
-        .or_else(|| {
-            exact_legacy_shifted_extrude_prologue(
-                bytes,
-                start,
-                reference_count_at,
-                reference_members,
-            )
-        })
-        .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at))
-        .or_else(|| {
-            exact_compact_shifted_extrude_mixed_prologue(
-                bytes,
-                start,
-                reference_count_at,
-                reference_members,
-            )
-        })
-        .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
+        .unwrap_or(false);
+    if class_tag == "415" && paired_class_tag == "265" {
+        return legacy_class_415
+            .then(|| {
+                exact_current_extrude_prologue(
+                    bytes,
+                    start,
+                    reference_count_at,
+                    reference_members,
+                    true,
+                )
+            })
+            .flatten();
+    }
+    exact_current_extrude_prologue(
+        bytes,
+        start,
+        reference_count_at,
+        reference_members,
+        legacy_class_415,
+    )
+    .or_else(|| {
+        exact_shifted_reference_aware_extrude_prologue(
+            bytes,
+            start,
+            reference_count_at,
+            reference_members,
+        )
+    })
+    .or_else(|| {
+        exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
+    })
+    .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at))
+    .or_else(|| {
+        exact_compact_shifted_extrude_mixed_prologue(
+            bytes,
+            start,
+            reference_count_at,
+            reference_members,
+        )
+    })
+    .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
 }
 
 fn exact_compact_shifted_extrude_prologue(
@@ -7996,7 +8048,20 @@ fn exact_current_extrude_prologue(
     start: usize,
     reference_count_at: usize,
     reference_members: &[u32],
+    legacy_class_415_symmetric_distance: bool,
 ) -> Option<DesignExtrudePrologue> {
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+
+    if legacy_class_415_symmetric_distance
+        && (View::u32_le_at(bytes, start.checked_add(class_415::PREFIX_CONSTANT)?)? != 1
+            || bytes.get(
+                start.checked_add(class_415::ZERO_RUN_3)?
+                    ..start.checked_add(class_415::OPERATION_PREFIX_MARKER)?,
+            )? != [0; 3]
+            || bytes.get(start.checked_add(class_415::OPERATION_PREFIX_MARKER)?) != Some(&1))
+    {
+        return None;
+    }
     let direct_offset = start.checked_add(28)?;
     let reference = if bytes.get(start.checked_add(25)?) == Some(&1) {
         let reference_record_index_offset = start.checked_add(26)?;
@@ -8079,7 +8144,7 @@ fn exact_current_extrude_prologue(
         _ => return None,
     };
     let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
-    let start = match bytes.get(start_offset)? {
+    let start_support = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
@@ -8100,16 +8165,18 @@ fn exact_current_extrude_prologue(
     if profile_normal
         .iter()
         .any(|component| !component.is_finite())
-        || (profile_normal_squared - 1.0).abs() > 1.0e-12
+        || (profile_normal_squared - 1.0).abs() > PROFILE_NORMAL_UNIT_EPS
     {
         return None;
     }
     let mut extent_cursor = profile_normal_offset.checked_add(24)?;
     let mut final_slot_reference = None;
-    for slot_ordinal in 0..7 {
+    let mut slot_presence = [false; 7];
+    for (slot_ordinal, slot_present) in slot_presence.iter_mut().enumerate() {
         match bytes.get(extent_cursor)? {
             0 => extent_cursor = extent_cursor.checked_add(1)?,
             1 => {
+                *slot_present = true;
                 let record_index = marked_record_reference(bytes, extent_cursor)?;
                 if !reference_members.contains(&record_index) {
                     return None;
@@ -8121,6 +8188,11 @@ fn exact_current_extrude_prologue(
             }
             _ => return None,
         }
+    }
+    if legacy_class_415_symmetric_distance
+        && slot_presence != [false, true, true, true, false, true, false]
+    {
+        return None;
     }
     let first_side_target_ordinal = final_slot_reference.and_then(|record_index| {
         let scope_reference_ordinal = View::u32_le_at(bytes, extent_cursor)?;
@@ -8164,7 +8236,23 @@ fn exact_current_extrude_prologue(
         first_side_extent,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
-    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
+    if legacy_class_415_symmetric_distance
+        && (extent_cursor != start.checked_add(class_415::FIRST_SIDE_EXTENT)?
+            || first_side_extent_offset != start.checked_add(class_415::FIRST_SIDE_EXTENT)?
+            || second_side_extent_offset != start.checked_add(class_415::SECOND_SIDE_EXTENT)?
+            || reference_count_at != start.checked_add(class_415::REFERENCE_COUNT)?
+            || direction_face_extend_values != [3, 2]
+            || side_extent_discriminators != [1, 1])
+    {
+        return None;
+    }
+    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
+        .or_else(|| {
+            (legacy_class_415_symmetric_distance
+                && direction_face_extend_values == [3, 2]
+                && side_extent_discriminators == [1, 1])
+            .then_some(DesignExtrudeExtent::SymmetricDistance)
+        })?;
     Some(DesignExtrudePrologue::ReferenceAware {
         reference,
         operation,
@@ -8182,7 +8270,7 @@ fn exact_current_extrude_prologue(
         direction_reversed_offset: direction_reversed_offset as u64,
         solid_operation,
         solid_operation_offset: solid_operation_offset as u64,
-        start,
+        start: start_support,
         start_offset: start_offset as u64,
     })
 }

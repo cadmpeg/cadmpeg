@@ -2038,6 +2038,39 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
 
+## `legacy_class_415_symmetric_extrude_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 292 B
+
+Offsets are relative to the class-415 primary indexed header. The primary/paired frame lengths are 447 B with five ordered references and 469 B with seven; the fixed prefix ends at the ordered reference-count field at offset 288.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | stores u32 `1` · value `1` |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 24 through 26 |
+| 27 | 1 | `operation_prefix_marker` | `u8` | little | spec | operation prefix marker `1` · value `1` |
+| 28 | 4 | `operation` | `u32` | little | spec | result operation |
+| 32 | 4 | `direction` | `u32` | little | spec | travel direction `3` (symmetric) · value `3` |
+| 36 | 4 | `face_extend` | `u32` | little | spec | face-extend value `2` · value `2` |
+| 40 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal |
+| 41 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind |
+| 42 | 1 | `start_support` | `u8` | little | spec | start support |
+| 43 | 3 | `zero_run_3_after_start` | `bytes[3]` | little | spec | `+43..+45` |
+| 46 | 24 | `profile_normal` | `f64[3]` | little | spec | finite unit profile normal |
+| 70 | 47 | `reference_slots` | `bytes[47]` | little | spec | seven nullable slots in order: absent, present, present, present, absent, present, absent |
+| 117 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent `1` (distance) · value `1` |
+| 121 | 9 | `zero_run_9` | `bytes[9]` | little | spec | `+121..+129` |
+| 130 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `1` (distance) · value `1` |
+| 288 | 4 | `reference_count` | `u32` | little | spec | ordered reference count: `5` or `7` according to frame length |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
+- `134..288` (154 B): Intervening scope bytes carry no extent discriminator and precede the ordered reference-count field.
+
 ## `shifted_extrude_offset_profile_extent_lane`
 
 Spec §3.1 · layout: byte offsets · size: 134 B

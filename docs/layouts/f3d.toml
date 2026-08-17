@@ -6613,6 +6613,143 @@ source = "spec"
 anchor = "start support at offset 42"
 
 [[record]]
+name = "legacy_class_415_symmetric_extrude_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The class-keyed `415 / 265` reference-aware form is a symmetric-distance Extrude variant."
+size = 292
+note = "Offsets are relative to the class-415 primary indexed header. The primary/paired frame lengths are 447 B with five ordered references and 469 B with seven; the fixed prefix ends at the ordered reference-count field at offset 288."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and preceding scope envelope are outside this fixed prefix."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "stores u32 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_3"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offsets 24 through 26"
+
+[[record.field]]
+name = "operation_prefix_marker"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "operation prefix marker `1`"
+value = 1
+
+[[record.field]]
+name = "operation"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "result operation"
+
+[[record.field]]
+name = "direction"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "travel direction `3` (symmetric)"
+value = 3
+
+[[record.field]]
+name = "face_extend"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "face-extend value `2`"
+value = 2
+
+[[record.field]]
+name = "direction_reversed"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "direction reversal"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "geometry kind"
+
+[[record.field]]
+name = "start_support"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "start support"
+
+[[record.field]]
+name = "zero_run_3_after_start"
+offset = 43
+type = "bytes[3]"
+source = "spec"
+anchor = "`+43..+45`"
+
+[[record.field]]
+name = "profile_normal"
+offset = 46
+type = "f64[3]"
+source = "spec"
+anchor = "finite unit profile normal"
+
+[[record.field]]
+name = "reference_slots"
+offset = 70
+type = "bytes[47]"
+source = "spec"
+anchor = "seven nullable slots in order: absent, present, present, present, absent, present, absent"
+
+[[record.field]]
+name = "first_side_extent"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "first-side extent `1` (distance)"
+value = 1
+
+[[record.field]]
+name = "zero_run_9"
+offset = 121
+type = "bytes[9]"
+source = "spec"
+anchor = "`+121..+129`"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 130
+type = "u32"
+source = "spec"
+anchor = "second-side extent `1` (distance)"
+value = 1
+
+[[record.gap]]
+offset = 134
+size = 154
+note = "Intervening scope bytes carry no extent discriminator and precede the ordered reference-count field."
+
+[[record.field]]
+name = "reference_count"
+offset = 288
+type = "u32"
+source = "spec"
+anchor = "ordered reference count: `5` or `7` according to frame length"
+
+[[record]]
 name = "shifted_extrude_offset_profile_extent_lane"
 kind = "byte"
 section = "3.1"

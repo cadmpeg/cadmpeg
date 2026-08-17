@@ -2786,6 +2786,62 @@ pub(crate) mod marked_shifted_extrude_prologue {
     pub(crate) const START_SUPPORT: usize = 42;
 }
 
+/// Byte offsets for the `legacy_class_415_symmetric_extrude_prefix` record.
+///
+/// Spec §3.1. Record length 292 B.
+///
+/// ```text
+/// Offsets are relative to the class-415 primary indexed header. The primary/paired frame lengths are 447 B with five ordered references and 469 B with seven; the fixed prefix ends at the ordered reference-count field at offset 288.
+/// ```
+pub(crate) mod legacy_class_415_symmetric_extrude_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 292;
+    /// Offset of `prefix_constant` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT: usize = 20;
+    /// Stated value of `prefix_constant` (`u32`). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 24;
+    /// Offset of `operation_prefix_marker` (`u8`). Spec §3.1.
+    pub(crate) const OPERATION_PREFIX_MARKER: usize = 27;
+    /// Stated value of `operation_prefix_marker` (`u8`). Spec §3.1.
+    pub(crate) const OPERATION_PREFIX_MARKER_VALUE: u8 = 1;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 28;
+    /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 32;
+    /// Stated value of `direction` (`u32`). Spec §3.1.
+    pub(crate) const DIRECTION_VALUE: u32 = 0x0000_0003;
+    /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACE_EXTEND: usize = 36;
+    /// Stated value of `face_extend` (`u32`). Spec §3.1.
+    pub(crate) const FACE_EXTEND_VALUE: u32 = 0x0000_0002;
+    /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_REVERSED: usize = 40;
+    /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    pub(crate) const GEOMETRY_KIND: usize = 41;
+    /// Offset of `start_support` (`u8`). Spec §3.1.
+    pub(crate) const START_SUPPORT: usize = 42;
+    /// Offset of `zero_run_3_after_start` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3_AFTER_START: usize = 43;
+    /// Offset of `profile_normal` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_NORMAL: usize = 46;
+    /// Offset of `reference_slots` (`bytes[47]`). Spec §3.1.
+    pub(crate) const REFERENCE_SLOTS: usize = 70;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 117;
+    /// Stated value of `first_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 121;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 130;
+    /// Stated value of `second_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 288;
+}
+
 /// Byte offsets for the `shifted_extrude_offset_profile_extent_lane` record.
 ///
 /// Spec §3.1. Record length 134 B.

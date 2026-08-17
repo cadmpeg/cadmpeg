@@ -9,8 +9,10 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
+use crate::design::decode::scopes::is_legacy_class_415_symmetric_distance_layout;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
+use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::{design, history, ids, native, records};
 use cadmpeg_ir::document::CadIr;
@@ -3336,6 +3338,56 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     } else {
                         0
                     };
+                    let legacy_class_415_layout = scope
+                        .reference_count_offset
+                        .checked_sub(scope.byte_offset)
+                        .is_some_and(|reference_count_delta| {
+                            is_legacy_class_415_symmetric_distance_layout(
+                                &scope.class_tag,
+                                &scope.paired_class_tag,
+                                scope.frame_length,
+                                reference_count_delta,
+                                scope.reference_members.len(),
+                            )
+                        });
+                    let legacy_class_415_extent = legacy_class_415_layout
+                        && operation_offset
+                            == scope
+                                .byte_offset
+                                .saturating_add(class_415::OPERATION as u64)
+                        && direction_face_extend_values == [3, 2]
+                        && side_extent_discriminators == [1, 1]
+                        && extent == records::DesignExtrudeExtent::SymmetricDistance
+                        && side_extent_discriminator_offsets
+                            == [
+                                scope
+                                    .byte_offset
+                                    .saturating_add(class_415::FIRST_SIDE_EXTENT as u64),
+                                scope
+                                    .byte_offset
+                                    .saturating_add(class_415::SECOND_SIDE_EXTENT as u64),
+                            ]
+                        && direction_face_extend_offsets
+                            == [
+                                scope
+                                    .byte_offset
+                                    .saturating_add(class_415::DIRECTION as u64),
+                                scope
+                                    .byte_offset
+                                    .saturating_add(class_415::FACE_EXTEND as u64),
+                            ]
+                        && direction_reversed_offset
+                            == scope
+                                .byte_offset
+                                .saturating_add(class_415::DIRECTION_REVERSED as u64)
+                        && solid_operation_offset
+                            == scope
+                                .byte_offset
+                                .saturating_add(class_415::GEOMETRY_KIND as u64)
+                        && start_offset
+                            == scope
+                                .byte_offset
+                                .saturating_add(class_415::START_SUPPORT as u64);
                     let first_side_offset_valid = side_extent_discriminator_offsets[0]
                         .checked_sub(
                             operation_offset
@@ -3351,23 +3403,24 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         } else {
                             side_extent_discriminator_offsets[0].saturating_add(13)
                         };
+                    let standard_extent = matches!(
+                        (
+                            direction_face_extend_values[0],
+                            side_extent_discriminators,
+                            extent,
+                        ),
+                        (1, [1, 0], records::DesignExtrudeExtent::OneSidedDistance)
+                            | (1, [2, 0], records::DesignExtrudeExtent::OneSidedToFace)
+                            | (1, [3, 0], records::DesignExtrudeExtent::OneSidedThroughNext)
+                            | (1, [4, 0], records::DesignExtrudeExtent::OneSidedThroughAll)
+                            | (2, [2, 0], records::DesignExtrudeExtent::TwoSidedToFaces)
+                            | (2, [1, 1], records::DesignExtrudeExtent::TwoSidedDistance)
+                            | (3, [1, 0], records::DesignExtrudeExtent::SymmetricDistance)
+                            | (3, [4, 4], records::DesignExtrudeExtent::SymmetricThroughAll)
+                    );
                     prefix_valid
                         && matches!(direction_face_extend_values[0], 1..=3)
-                        && matches!(
-                            (
-                                direction_face_extend_values[0],
-                                side_extent_discriminators,
-                                extent,
-                            ),
-                            (1, [1, 0], records::DesignExtrudeExtent::OneSidedDistance)
-                                | (1, [2, 0], records::DesignExtrudeExtent::OneSidedToFace)
-                                | (1, [3, 0], records::DesignExtrudeExtent::OneSidedThroughNext)
-                                | (1, [4, 0], records::DesignExtrudeExtent::OneSidedThroughAll)
-                                | (2, [2, 0], records::DesignExtrudeExtent::TwoSidedToFaces)
-                                | (2, [1, 1], records::DesignExtrudeExtent::TwoSidedDistance)
-                                | (3, [1, 0], records::DesignExtrudeExtent::SymmetricDistance)
-                                | (3, [4, 4], records::DesignExtrudeExtent::SymmetricThroughAll)
-                        )
+                        && (standard_extent || legacy_class_415_extent)
                         && first_side_target_ordinal
                             .is_none_or(|_| side_extent_discriminators[0] == 2)
                         && target_ordinal_valid
