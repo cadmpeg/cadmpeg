@@ -15,6 +15,7 @@ use crate::container::ContainerScan;
 
 use super::super::analytic::{placed_carriers, solved_topological_vertices, PlaneEquation};
 use super::super::native::annotate;
+use super::super::uniqueness::exactly_one;
 
 use super::intersection_resolve::{
     fc14_held_coordinate, multi_component_intersection_candidates, resolve_curve_candidates,
@@ -177,10 +178,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         };
         let geometry = |surface_id| {
             let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-            ir.model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == id)
+            exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))
                 .map(|surface| &surface.geometry)
         };
         let Some(first_geometry) = geometry(first.id) else {
@@ -276,14 +274,16 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
 mod tests {
     use std::collections::BTreeSet;
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::{CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
     use super::transfer_carrier_intersection_curves;
+    use super::transfer_nurbs_boundary_curves;
     use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
     use crate::{container, curve, surface};
 
@@ -423,5 +423,86 @@ mod tests {
                     && direction.y == 0.0
                     && direction.z == 0.0
         ));
+    }
+
+    #[test]
+    fn nurbs_boundary_rejects_duplicate_model_surface_ids() {
+        let mut scan = container::scan_bytes(Vec::new());
+        scan.surfaces.rows = vec![
+            surface::SurfaceRow {
+                id: 1,
+                type_byte: surface::SurfaceKind::Extrusion.canonical_type_byte(),
+                kind: surface::SurfaceKind::Extrusion,
+                feature_id: 0,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 0,
+            },
+            surface::SurfaceRow {
+                id: 2,
+                type_byte: surface::SurfaceKind::Plane.canonical_type_byte(),
+                kind: surface::SurfaceKind::Plane,
+                feature_id: 0,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 0,
+            },
+        ];
+        scan.curves.topology_rows = vec![curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 0,
+            feature_id: 0,
+            directions: [0; 2],
+            faces: [1, 2],
+            next_edges: [10, 10],
+            offset: 0,
+        }];
+
+        let extrusion = Surface {
+            id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 1,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 2,
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(1.0, 0.0, 1.0),
+                    Point3::new(1.0, 1.0, 1.0),
+                ],
+                weights: None,
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            source_object: None,
+        };
+        let plane = Surface {
+            id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .surfaces
+            .extend([extrusion.clone(), extrusion, plane]);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
+            .expect("test decode context");
+
+        let result =
+            transfer_nurbs_boundary_curves(&ctx, &scan, &mut ir, &mut AnnotationBuilder::new())
+                .expect("transfer should not fail");
+
+        assert!(result.ids.is_empty());
+        assert!(ir.model.curves.is_empty());
     }
 }
