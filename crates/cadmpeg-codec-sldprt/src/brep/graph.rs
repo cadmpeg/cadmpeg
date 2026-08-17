@@ -784,6 +784,8 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         })
         .collect::<Vec<_>>();
     let final_state_refs = entity::scan_final_bridge_selector(&entity_streams);
+    let combined_body_facts =
+        (entity_streams.len() > 1).then(|| entity::scan_combined_bodies(&entity_streams));
     for (stream_order, (payload, header)) in ordered.into_iter().enumerate() {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
@@ -846,6 +848,14 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             facts.entity_count += scanned_facts.entity_count;
             facts.ambiguous_body_assignments += scanned_facts.ambiguous_body_assignments;
             facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
+        }
+    }
+    if facts.bodies.is_empty() {
+        if let Some((bodies, ambiguous_body_assignments)) = combined_body_facts {
+            if !bodies.is_empty() {
+                facts.bodies = bodies;
+                facts.ambiguous_body_assignments = ambiguous_body_assignments;
+            }
         }
     }
     decode_graph(&carriers, &tables, facts, stream)
