@@ -1174,6 +1174,41 @@ fn all_parameters(record: &RawRecord) -> impl Iterator<Item = &Value> {
         .flat_map(|partial| partial.parameters.iter())
 }
 
+fn collect_typed_placement_candidates(
+    record: &RawRecord,
+    geometry: &GeometryData,
+    candidates: &mut BTreeMap<u64, Transform>,
+) {
+    let has_annotation_text = record.partials.iter().any(|partial| {
+        partial.name == "ANNOTATION_TEXT"
+            || partial.name == "ANNOTATION_TEXT_CHARACTER"
+            || partial.name.starts_with("ANNOTATION_TEXT_WITH_")
+    });
+    for partial in &record.partials {
+        let is_carrier = match partial.name.as_str() {
+            "DEFINED_CHARACTER_GLYPH"
+            | "SYMBOL_TARGET"
+            | "TEXT_LITERAL"
+            | "DRAUGHTING_TEXT_LITERAL_WITH_DELINEATION" => true,
+            name if name.starts_with("TEXT_LITERAL_WITH_") => true,
+            "MAPPED_ITEM" | "ANNOTATION_TEXT" | "ANNOTATION_TEXT_CHARACTER" => has_annotation_text,
+            name if has_annotation_text && name.starts_with("ANNOTATION_TEXT_WITH_") => true,
+            _ => false,
+        };
+        if !is_carrier {
+            continue;
+        }
+        for reference in partial.parameters.iter().flat_map(references) {
+            if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&reference) {
+                candidates.insert(
+                    reference,
+                    super::geometry::placement_transform((origin, z_axis, x_axis)),
+                );
+            }
+        }
+    }
+}
+
 fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
@@ -1254,11 +1289,8 @@ fn collect_placement_candidates(
         return;
     }
     visited.insert(id, depth);
-    if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&id) {
-        candidates.insert(
-            id,
-            super::geometry::placement_transform((origin, z_axis, x_axis)),
-        );
+    if let Some(record) = exchange.records.get(&id) {
+        collect_typed_placement_candidates(record, geometry, candidates);
     }
     let Some(record) = exchange.records.get(&id) else {
         return;

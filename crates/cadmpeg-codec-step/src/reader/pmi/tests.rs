@@ -797,6 +797,44 @@ fn composite_presentation_placement_does_not_depend_on_set_order() {
 }
 
 #[test]
+fn associated_curve_placement_does_not_create_presentation_ambiguity() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    const EPS_PLACEMENT_COORDINATE: f64 = 1e-12;
+
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ap12_associated_curve_placement.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode associated-curve placement witness");
+    let PmiDefinition::Presentation {
+        ref text,
+        ref placement,
+        ..
+    } = result.ir().model.pmi[0].definition
+    else {
+        panic!("associated-curve annotation has the wrong definition")
+    };
+    assert_eq!(text.as_deref(), Some("note"));
+    let transform = placement.as_ref().expect("text placement");
+    assert!((transform.rows[0][3] - 10.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows[1][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows[2][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PresentationAnnotationPlacementAmbiguous.kind()
+    }));
+    assert!(result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#9"));
+}
+
+#[test]
 fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
 

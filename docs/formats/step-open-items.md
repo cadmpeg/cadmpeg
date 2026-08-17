@@ -59,35 +59,6 @@ that a passing finite witness preserves the source point set.
 
 ## 7. Annotation, presentation, and tessellation
 
-### AP-12. Presentation PMI placement arbitration
-
-**Question.** Which source attributes can supply the placement of a
-presentation annotation?
-
-**Known.** ISO 10303-46 names `ANNOTATION_TEXT.mapping_target`,
-`DEFINED_CHARACTER_GLYPH.placement`, and `TEXT_LITERAL.placement` as
-placement attributes. `crates/cadmpeg-codec-step/src/reader/pmi.rs:565-607`
-collects placement candidates from the annotation graph, and
-`crates/cadmpeg-codec-step/src/reader/pmi.rs:1239-1276` treats every reachable
-record present in `geometry.placements` as a candidate. One candidate is
-transferred; multiple candidates cause omission and an ambiguity loss.
-
-**Need.** Traverse the typed placement-carrier attributes, or state and prove
-a source rule that every reachable placement-bearing record is a carrier. Add
-a graph with one valid annotation placement and one unrelated referenced
-auxiliary record that contains an `AXIS2_PLACEMENT_3D`; the valid placement
-must remain transferable and the auxiliary record must remain opaque.
-
-**Conflict.** The specification names typed placement fields, but the decoder
-uses reachability alone. An unrelated placement can therefore create a false
-ambiguity and omit a valid placement, or become the only transferred
-placement.
-
-**Note.** QA audit of commit `b28d82721c4ee1f48a389a5a100f9fb167885276`.
-Closure `490e0d38f55033a07534a42d3a854e0967574841` removed first-candidate
-selection and tested multiple direct text-placement references. It did not
-test an unrelated placement-bearing record in the reachable graph.
-
 ## 8. Product structure and placement
 
 ### PS-04. Product-definition view order
