@@ -4205,6 +4205,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         }
                         Some(records::DesignExtrudeOperandRole::Faces) => {
                             (group.role == 0x0000_0011_0000_0000
+                                || group.role == 0x0000_0012_0000_0000
+                                    && scope
+                                        .extrude_prologue
+                                        .and_then(records::DesignExtrudePrologue::extent)
+                                        == Some(records::DesignExtrudeExtent::OneSidedToFace)
                                 || group.role == 0x0000_0005_0000_0000
                                     && scope
                                         .extrude_prologue

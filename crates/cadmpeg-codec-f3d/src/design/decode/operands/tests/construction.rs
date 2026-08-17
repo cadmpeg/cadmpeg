@@ -230,6 +230,37 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         Some(DesignExtrudeOperandRole::Faces)
     );
 
+    let mut to_face_scope = from_face_scope.clone();
+    to_face_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+        reference: None,
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: 1028,
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [1077, 1090],
+        first_side_target_ordinal: None,
+        extent: DesignExtrudeExtent::OneSidedToFace,
+        direction_face_extend_offsets: [1032, 1036],
+        direction_reversed: false,
+        direction_reversed_offset: 1040,
+        solid_operation: true,
+        solid_operation_offset: 1041,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 1042,
+    });
+    let mut to_face_bytes = bytes.clone();
+    to_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+        .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
+    let legacy_to_face =
+        parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record)
+            .complete()
+            .expect("counted Extrude legacy to-face group");
+    assert_eq!(legacy_to_face.role, 0x0000_0012_0000_0000);
+    assert_eq!(
+        legacy_to_face.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces)
+    );
+
     let tail_at = 11 + 10 + 4 + 2 * 11;
     let mut flagless = bytes[..tail_at + 62].to_vec();
     flagless.extend_from_slice(&[0; 2]);

@@ -27,7 +27,7 @@ use crate::records::{
     DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
     DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignParameter,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
@@ -1228,6 +1228,40 @@ impl ConstructionOperandGroupParse {
     }
 }
 
+/// Interpret the role of a counted group owned by an Extrude scope.
+///
+/// The `0x12` face-group role is a legacy spelling of the one-sided-to-face
+/// termination group. It is also a valid Thicken role, so the extent gate is
+/// part of this admission rule rather than a global role alias.
+fn extrude_operand_role(
+    scope: &DesignParameterScope,
+    role: u64,
+) -> Option<DesignExtrudeOperandRole> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude) {
+        return None;
+    }
+    match role {
+        0x0000_0004_0000_0000 | 0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
+        0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
+        0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+        0x0000_0005_0000_0000
+            if scope.extrude_prologue.map(DesignExtrudePrologue::start)
+                == Some(DesignExtrudeStart::FromFace) =>
+        {
+            Some(DesignExtrudeOperandRole::Faces)
+        }
+        0x0000_0012_0000_0000
+            if scope
+                .extrude_prologue
+                .and_then(DesignExtrudePrologue::extent)
+                == Some(DesignExtrudeExtent::OneSidedToFace) =>
+        {
+            Some(DesignExtrudeOperandRole::Faces)
+        }
+        _ => None,
+    }
+}
+
 /// Read the construction-operand group at `header`.
 ///
 /// The record's members are a leading-block presence byte, the property block
@@ -1416,22 +1450,7 @@ pub(crate) fn parse_construction_operand_group(
         return Unclosed;
     };
 
-    let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
-        match role {
-            0x0000_0004_0000_0000 | 0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
-            0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
-            0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
-            0x0000_0005_0000_0000
-                if scope.extrude_prologue.map(DesignExtrudePrologue::start)
-                    == Some(DesignExtrudeStart::FromFace) =>
-            {
-                Some(DesignExtrudeOperandRole::Faces)
-            }
-            _ => None,
-        }
-    } else {
-        None
-    };
+    let extrude_role = extrude_operand_role(scope, role);
     let (Ok(member_count_offset), Ok(role_offset), Ok(opaque_index_offset), Ok(paired_byte_offset)) = (
         u64::try_from(member_count_at),
         u64::try_from(role_at),
