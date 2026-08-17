@@ -120,6 +120,9 @@ readers are likewise settled: the first three use direct settings-record
 prefixes, while render settings use the source-selected legacy direct body or
 the modern anonymous child; each remaining suffix is bounded by its enclosing
 settings record or anonymous child.
+The font/text-style compatibility pair is settled: the V5 packed branch and
+the modern anonymous branch have separate known prefixes and boundaries, and a
+modern font suffix cannot consume the enclosing text-style identity fields.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -138,5 +141,8 @@ the V1 units helper, `ON_3dmAnnotationSettings::Write`/`Read`,
 `ON_3dmRenderSettings::UseV5ReadWrite`, `Write`/`Read`, and
 `WriteV5`/`ReadV5`; the document-settings owner tests exercise every known
 gate and bounded suffix.
+The font/text-style subset is established by `ON_TextStyle::Write`/`Read` and
+`ON_Font::Write`/`Read` with `WriteV5`/`ReadV5`; the owner tests exercise the
+modern nested boundary, future suffixes, and the legacy packed fields.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

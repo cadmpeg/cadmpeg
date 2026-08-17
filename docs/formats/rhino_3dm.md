@@ -5297,6 +5297,9 @@ UTF-16 text-style name
 The text-style reader accepts minor values greater than 1 by consuming this
 prefix and leaving the remaining bytes to the text-style chunk boundary. Minor
 0 omits the ID and name.
+The modern font child is consumed to its own anonymous boundary before the
+text-style reader consumes the text-style ID and name; a font suffix cannot
+consume those outer fields.
 
 The modern font child is an anonymous major-1 record. The current writer uses
 minor 6; each field added at a later minor is present when the font minor is at
