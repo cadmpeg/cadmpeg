@@ -19,7 +19,7 @@ use super::{detect, print_json, read_input, Artifact};
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
 pub struct ItemArgs {
-    /// Artifact file, or `-` for standard input.
+    /// JSON file, or `-` for standard input.
     pub file: std::path::PathBuf,
     /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
@@ -73,7 +73,7 @@ impl ArenaTarget {
         }
     }
 
-    fn dotted(&self) -> String {
+    pub(crate) fn dotted(&self) -> String {
         match self {
             Self::Model { arena } => format!("model.{arena}"),
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
@@ -107,8 +107,8 @@ struct Capture {
     kept: Vec<Box<RawValue>>,
     /// Every JSON-string `id` observed in the target arena (ID mode).
     all_ids: Vec<String>,
-    /// Dotted names of every addressable (JSON-array) arena in the document.
-    addressable: Vec<String>,
+    /// Dotted names of every addressable (JSON-array) arena, with entry counts.
+    addressable: Vec<(String, u64)>,
 }
 
 /// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
@@ -136,12 +136,12 @@ pub fn run(args: &ItemArgs) -> Result<()> {
         Artifact::Report(_) => bail!(
             "{} is a command report; reports have no arenas. Use \
              `cadmpeg query findings` / `cadmpeg query losses` on the report, or \
-             `cadmpeg decode SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
+             `cadmpeg dump SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
             args.file.display()
         ),
         Artifact::Sidecar(_) => bail!(
             "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
-             arenas. Run `cadmpeg decode SOURCE -o doc.json && cadmpeg query item \
+             arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query item \
              doc.json ARENA ID`",
             args.file.display()
         ),
@@ -193,6 +193,30 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
                 .with_context(|| "parsing a retained arena record as JSON")
         })
         .collect()
+}
+
+/// Every record in `target`, plus entry counts for every array arena.
+pub(crate) struct ArenaSnapshot {
+    pub found_array: bool,
+    pub entry_count: u64,
+    pub records: Vec<serde_json::Value>,
+    pub addressable: Vec<(String, u64)>,
+}
+
+/// Streams the CADIR document and keeps every record in `target`.
+pub(crate) fn snapshot_arena(text: &str, target: &ArenaTarget) -> Result<ArenaSnapshot> {
+    let capture = CaptureSeed {
+        target,
+        mode: &KeepMode::Head(usize::MAX),
+    }
+    .deserialize(&mut serde_json::Deserializer::from_str(text))
+    .context("parsing the CADIR document")?;
+    Ok(ArenaSnapshot {
+        found_array: capture.found_array,
+        entry_count: capture.entry_count,
+        records: parse_kept(&capture.kept)?,
+        addressable: capture.addressable,
+    })
 }
 
 fn resolve_ids(
@@ -298,11 +322,15 @@ fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
     Ok(())
 }
 
-fn unknown_arena_message(target: &ArenaTarget, addressable: &[String]) -> String {
+fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
     let list = if addressable.is_empty() {
         "(none — this document has no array arenas)".to_owned()
     } else {
-        addressable.join(", ")
+        addressable
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     };
     format!(
         "unknown arena {}; addressable arenas in this document: {}; run \
@@ -363,6 +391,11 @@ fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) ->
             "field path {path:?} was empty in every projected row{key_note}"
         ));
     }
+    parts.push(
+        "list fields with `cadmpeg query schema FILE ARENA` (native records) or \
+         `cadmpeg query schema model.<arena>` (IR types)"
+            .to_owned(),
+    );
     parts.join("\n")
 }
 
@@ -438,7 +471,7 @@ fn navigate<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_js
     Some(cur)
 }
 
-fn field_cell(value: &serde_json::Value) -> String {
+pub(crate) fn field_cell(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => String::new(),
         serde_json::Value::Bool(b) => b.to_string(),
@@ -732,9 +765,12 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
-        self.capture.addressable.push(self.dotted);
         if !self.is_target {
-            while seq.next_element::<IgnoredAny>()?.is_some() {}
+            let mut n = 0u64;
+            while seq.next_element::<IgnoredAny>()?.is_some() {
+                n += 1;
+            }
+            self.capture.addressable.push((self.dotted, n));
             return Ok(());
         }
         self.capture.found_array = true;
@@ -760,6 +796,9 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
                 }
             }
         }
+        self.capture
+            .addressable
+            .push((self.dotted, self.capture.entry_count));
         Ok(())
     }
 

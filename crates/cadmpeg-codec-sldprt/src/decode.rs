@@ -2077,6 +2077,46 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
 }
 
+fn ensure_display_appearance(
+    ir: &mut CadIr,
+    definition: &crate::appearance::AppearanceDefinition,
+    section_ordinal: usize,
+    annotations: &mut Annotations,
+) -> AppearanceId {
+    if let Some(existing) = ir.model.appearances.iter().find(|appearance| {
+        appearance.name.as_deref() == Some(definition.name.as_str())
+            && appearance.base_color == Some(definition.color)
+    }) {
+        return existing.id.clone();
+    }
+    let id = AppearanceId(format!(
+        "sldprt:appearance:displaylist#{section_ordinal}:{}",
+        definition.record_offset
+    ));
+    crate::annotations::note(
+        annotations,
+        id.0.clone(),
+        definition.source_name.clone(),
+        definition.record_offset as u64,
+        "displaylist_visual_properties",
+        Exactness::ByteExact,
+    );
+    ir.model.appearances.push(Appearance {
+        id: id.clone(),
+        name: Some(definition.name.clone()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: Some("moVisualProperties_c".into()),
+        category: None,
+        base_color: Some(definition.color),
+        properties: BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    id
+}
+
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -2094,16 +2134,7 @@ fn build_geometry_ir(
     CodecError,
 > {
     let mut ir = CadIr::empty(Units::default());
-    let materials = crate::appearance::materials(scan);
-    let unique_material = materials.len() == 1;
-    if let [material] = materials.as_slice() {
-        for body in &mut brep.bodies {
-            body.color = Some(material.color);
-            if body.name.is_none() {
-                body.name = Some(material.name.clone());
-            }
-        }
-    }
+    let appearance_definitions = crate::appearance::definitions(scan);
     ir.source = Some(source_meta(scan, header));
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
@@ -2572,62 +2603,106 @@ fn build_geometry_ir(
             }
         }
     }
-    for (index, material) in materials.into_iter().enumerate() {
+    for (index, definition) in appearance_definitions.into_iter().enumerate() {
         let id = AppearanceId(format!("sldprt:appearance:material#{index}"));
-        let material_stream = material.source_name;
         crate::annotations::note(
             &mut annotations,
             id.0.clone(),
-            material_stream.clone(),
-            material.record_offset as u64,
+            definition.source_name,
+            definition.record_offset as u64,
             "moVisualProperties_c",
             Exactness::ByteExact,
         );
         ir.model.appearances.push(Appearance {
-            id: id.clone(),
-            name: Some(material.name),
+            id,
+            name: Some(definition.name),
             asset_guid: None,
             library_id: None,
             visual_guid: None,
             physical_token: None,
             schema: Some("moVisualProperties_c".to_string()),
             category: None,
-            base_color: Some(material.color),
+            base_color: Some(definition.color),
             textures: Vec::new(),
             properties: BTreeMap::new(),
         });
-        if unique_material {
-            for (body_index, body) in ir.model.bodies.iter().enumerate() {
-                ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: format!("sldprt:appearance:binding#body:{body_index}:{index}"),
-                    target: AppearanceTarget::Body(body.id.clone()),
-                    appearance: id.clone(),
-                    source_entity_id: None,
-                    object_type: Some("Body".to_string()),
-                    visible: None,
-                    channels: BTreeMap::new(),
-                });
+    }
+    let feature_appearance_sources = crate::appearance::feature_assignments(scan)
+        .into_iter()
+        .map(|assignment| assignment.feature_source_id)
+        .collect::<BTreeSet<_>>();
+    let mut matched_feature_sources = BTreeSet::new();
+    let mut conflicting_display_references = Vec::new();
+    for display in scan.sections() {
+        let display_faces = crate::tessellation::section_display_faces(display);
+        if display_faces.is_empty() {
+            continue;
+        }
+        for face in &display_faces {
+            let candidates = face
+                .surface_references
+                .iter()
+                .map(|reference| reference.feature_source_id)
+                .collect::<BTreeSet<_>>();
+            if candidates.len() > 1 {
+                conflicting_display_references.push(format!(
+                    "{}::DisplayFace[{}] ({})",
+                    display.display_name(),
+                    face.table_index,
+                    candidates
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
             }
         }
-    }
-    for display in scan
-        .sections()
-        .filter(|section| crate::tessellation::section_summary(*section).is_some())
-    {
-        for (index, mesh) in crate::tessellation::section_meshes(display)
-            .into_iter()
-            .enumerate()
-        {
-            let id = format!("sldprt:displaylist:record#{}:{index}", display.ordinal());
+        let resolved =
+            crate::appearance::resolve_display_appearances(scan, display, &display_faces);
+        matched_feature_sources.extend(resolved.matched_feature_sources);
+        let mut display_links = Vec::with_capacity(display_faces.len());
+        for display_face in display_faces {
+            let id = format!(
+                "sldprt:displaylist:record#{}:{}",
+                display.ordinal(),
+                display_face.table_index
+            );
             let display_stream = display.display_name();
             crate::annotations::note(
                 &mut annotations,
                 id.clone(),
                 display_stream,
-                0,
+                display_face.table.start as u64,
                 "displaylist_tessellation",
                 Exactness::ByteExact,
             );
+            display_links.push(id.clone());
+            if let Some(definition) = resolved.by_face.get(&display_face.table_index) {
+                let appearance = ensure_display_appearance(
+                    &mut ir,
+                    definition,
+                    display.ordinal(),
+                    &mut annotations,
+                );
+                ir.model.appearance_bindings.push(AppearanceBinding {
+                    id: format!(
+                        "sldprt:appearance:binding#display:{}:{}",
+                        display.ordinal(),
+                        display_face.table_index
+                    ),
+                    target: AppearanceTarget::Tessellation(id.clone()),
+                    appearance,
+                    source_entity_id: Some(format!(
+                        "{}::DisplayFace[{}]",
+                        display.display_name(),
+                        display_face.table_index
+                    )),
+                    object_type: Some("DisplayFace".into()),
+                    visible: None,
+                    channels: BTreeMap::new(),
+                });
+            }
+            let mesh = display_face.mesh;
             ir.model
                 .tessellations
                 .push(cadmpeg_ir::tessellation::Tessellation {
@@ -2662,8 +2737,35 @@ fn build_geometry_ir(
             byte_len: display.payload().len() as u64,
             sha256: sha256_hex(display.payload()),
             data: Some(display.payload().to_vec()),
-            links: Vec::new(),
+            links: display_links,
         });
+    }
+    let unmatched_feature_sources = feature_appearance_sources
+        .difference(&matched_feature_sources)
+        .copied()
+        .collect::<Vec<_>>();
+    if !unmatched_feature_sources.is_empty() || !conflicting_display_references.is_empty() {
+        let mut reasons = Vec::new();
+        if !unmatched_feature_sources.is_empty() {
+            reasons.push(format!(
+                "feature source ID(s) {} have no agreeing DisplayFace persistent reference",
+                unmatched_feature_sources
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if !conflicting_display_references.is_empty() {
+            reasons.push(format!(
+                "conflicting references rejected for {}",
+                conflicting_display_references.join("; ")
+            ));
+        }
+        pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(format!(
+            "VisualStates feature appearance assignment unresolved: {}.",
+            reasons.join("; ")
+        )));
     }
     for id in crate::tessellation::assign_unique_analytic_owners(&mut ir.model) {
         let note = annotations.exactness.entry(id).or_default();

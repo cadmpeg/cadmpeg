@@ -16,18 +16,6 @@ use crate::application::{
 use crate::loader::{self, LoadNotice};
 use crate::Format;
 
-/// Whether a conversion validates the neutral model before export.
-#[derive(Debug, Clone, Copy)]
-pub enum ValidationMode {
-    /// Validate and optionally permit invalid output.
-    Required {
-        /// Continue despite validation errors.
-        allow_invalid: bool,
-    },
-    /// Skip neutral validation.
-    Skipped,
-}
-
 /// Input path and decode options for one conversion.
 pub struct SourceRequest<'a> {
     /// Path to the CADIR or native CAD file.
@@ -54,8 +42,8 @@ pub struct ConversionPolicy {
     pub force: bool,
     /// Stream a binary output format to standard output instead of refusing.
     pub binary_stdout: bool,
-    /// Neutral validation policy.
-    pub validation: ValidationMode,
+    /// Write even if the check finds errors.
+    pub allow_errors: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
     /// Refuse to export when decode or export planning reported any loss.
@@ -70,7 +58,7 @@ pub struct PreparedConversion {
     pub document: LoadedDocument,
     /// Notices for the presentation layer.
     pub notices: Vec<LoadNotice>,
-    /// Validation report when validation ran.
+    /// Validation report.
     pub validation: Option<ValidationReport>,
     format: Format,
     encoder: Box<dyn Encoder>,
@@ -131,28 +119,25 @@ impl<'a> Transcoder<'a> {
             return Err(refusal.into());
         }
 
-        let validation = match policy.validation {
-            ValidationMode::Required { allow_invalid } => {
-                let validation = validate_ir(
-                    self.validators,
-                    &loaded.ir,
-                    loaded.fidelity(),
-                    losses(decode_report.as_ref()),
-                );
-                if !validation.is_ok() && !allow_invalid {
-                    return Err(ConversionRefusal::ValidationFailed {
-                        message: format!(
-                            "validation found {} error(s); refusing to export (use --allow-invalid to override)",
-                            validation.error_count()
-                        ),
-                        decode_report,
-                        validation,
-                    }
-                    .into());
+        let validation = {
+            let validation = validate_ir(
+                self.validators,
+                &loaded.ir,
+                loaded.fidelity(),
+                losses(decode_report.as_ref()),
+            );
+            if !validation.is_ok() && !policy.allow_errors {
+                return Err(ConversionRefusal::CheckFailed {
+                    message: format!(
+                        "check found {} error(s); refusing to export (use --allow-errors to override)",
+                        validation.error_count()
+                    ),
+                    decode_report,
+                    validation,
                 }
-                Some(validation)
+                .into());
             }
-            ValidationMode::Skipped => None,
+            Some(validation)
         };
 
         if format.is_geometry_export()
@@ -338,7 +323,7 @@ pub fn export_target(
     #[cfg(feature = "rhino")]
     if rhino_version.is_some() && format != Format::Rhino {
         return Err(ConversionRefusal::UnsupportedTarget {
-            message: "--rhino-version requires Rhino output".into(),
+            message: "--rhino-target requires Rhino output".into(),
         });
     }
     #[cfg(feature = "iges")]

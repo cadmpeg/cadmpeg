@@ -102,7 +102,7 @@ fn compact_face_tessellation_header_places_table_at_plus_8() {
     payload.extend(1_u32.to_le_bytes());
     payload.extend(table());
     assert_eq!(descriptor_table_offset(&payload, 0), 8);
-    assert!(parse_table_sequence(&payload, 8).is_some());
+    assert!(parse_table_sequence(&payload, 8, payload.len()).is_some());
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn extended_face_tessellation_header_places_table_at_plus_40() {
     }
     payload.extend(table());
     assert_eq!(descriptor_table_offset(&payload, 0), 40);
-    assert!(parse_table_sequence(&payload, 40).is_some());
+    assert!(parse_table_sequence(&payload, 40, payload.len()).is_some());
 }
 
 #[test]
