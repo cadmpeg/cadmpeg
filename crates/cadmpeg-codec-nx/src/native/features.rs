@@ -5882,19 +5882,20 @@ pub(crate) fn join_data_block_bytes(
     ids: &[String],
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Option<JoinedDataBlockBytes> {
-    let source_blocks = ids
-        .iter()
-        .map(|id| blocks.get(id).copied())
-        .collect::<Option<Vec<_>>>()?;
-    let byte_len = source_blocks
-        .iter()
-        .map(|(bytes, _)| bytes.len())
-        .sum::<usize>();
-    let mut payload = Vec::with_capacity(byte_len);
-    let mut block_payload_offsets = Vec::with_capacity(source_blocks.len());
-    let mut block_byte_lengths = Vec::with_capacity(source_blocks.len());
-    let mut block_source_offsets = Vec::with_capacity(source_blocks.len());
-    for (bytes, source_offset) in source_blocks {
+    let byte_len = ids.iter().try_fold(0usize, |total, id| {
+        let (bytes, _) = blocks.get(id).copied()?;
+        total.checked_add(bytes.len())
+    })?;
+    let mut payload = Vec::new();
+    payload.try_reserve_exact(byte_len).ok()?;
+    let mut block_payload_offsets = Vec::new();
+    block_payload_offsets.try_reserve_exact(ids.len()).ok()?;
+    let mut block_byte_lengths = Vec::new();
+    block_byte_lengths.try_reserve_exact(ids.len()).ok()?;
+    let mut block_source_offsets = Vec::new();
+    block_source_offsets.try_reserve_exact(ids.len()).ok()?;
+    for id in ids {
+        let (bytes, source_offset) = blocks.get(id).copied()?;
         block_payload_offsets.push(payload.len() as u64);
         block_byte_lengths.push(bytes.len() as u64);
         block_source_offsets.push(source_offset);
