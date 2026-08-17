@@ -262,7 +262,7 @@ fn ps02_item_defined_transform_items_follow_relationship_endpoint_contexts() {
 }
 
 #[test]
-fn occurrence_transform_resolves_through_placed_shape_representation() {
+fn occurrence_transform_requires_direct_definition_representation_endpoints() {
     let source = String::from_utf8(include_bytes!(
         "../../../tests/fixtures/ap242_assembly.p21"
     )
@@ -278,7 +278,7 @@ fn occurrence_transform_resolves_through_placed_shape_representation() {
     );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode placed shape representation");
+        .expect("decode bridge-only shape representation");
 
     let child = result
         .ir()
@@ -286,13 +286,13 @@ fn occurrence_transform_resolves_through_placed_shape_representation() {
         .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
-        .expect("placed child occurrence");
-    assert_eq!(child.transform.rows[0][3], 25.0);
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+        .expect("unresolved child occurrence remains represented");
+    assert_eq!(child.transform, Transform::identity());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("NAUO #12")
+    }));
 }
 
 #[test]

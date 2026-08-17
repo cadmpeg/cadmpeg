@@ -872,7 +872,6 @@ fn occurrence_placements(
                 .insert(definition);
         }
     }
-    let representation_links = representation_links(exchange);
     let mut result = BTreeMap::new();
     let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
     for (record_id, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
@@ -883,7 +882,6 @@ fn occurrence_placements(
             &pds,
             usages,
             &definition_representations,
-            &representation_links,
         ) {
             if usages.contains_key(&usage) {
                 context_candidates.entry(usage).or_default().push(record_id);
@@ -1090,7 +1088,6 @@ fn occurrence_placement(
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-    representation_links: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Option<(u64, Transform)> {
     let relation = exchange.records.get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
@@ -1114,24 +1111,10 @@ fn occurrence_placement(
         .and_then(ValueExt::reference)?;
     let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
         .and_then(ValueExt::reference)?;
-    let child_to_parent = representation_matches(
-        relation_representations.0,
-        child_representations,
-        representation_links,
-    ) && representation_matches(
-        relation_representations.1,
-        parent_representations,
-        representation_links,
-    );
-    let parent_to_child = representation_matches(
-        relation_representations.0,
-        parent_representations,
-        representation_links,
-    ) && representation_matches(
-        relation_representations.1,
-        child_representations,
-        representation_links,
-    );
+    let child_to_parent = child_representations.contains(&relation_representations.0)
+        && parent_representations.contains(&relation_representations.1);
+    let parent_to_child = parent_representations.contains(&relation_representations.0)
+        && child_representations.contains(&relation_representations.1);
     let (from_id, to_id) = match (child_to_parent, parent_to_child) {
         (true, false) => (item_one, item_two),
         (false, true) => (item_two, item_one),
@@ -1149,47 +1132,6 @@ fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
         .copied()
         .map(super::geometry::placement_transform)
         .or_else(|| geometry.transformation_operators.get(&id).copied())
-}
-
-fn representation_links(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64>> {
-    let mut links = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for record in exchange.records.values() {
-        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
-            continue;
-        };
-        if relationship.parameters.is_empty() {
-            continue;
-        }
-        let Some((left, right)) = representation_relationship_endpoints(record) else {
-            continue;
-        };
-        links.entry(left).or_default().insert(right);
-        links.entry(right).or_default().insert(left);
-    }
-    links
-}
-
-fn representation_matches(
-    candidate: u64,
-    definitions: &BTreeSet<u64>,
-    links: &BTreeMap<u64, BTreeSet<u64>>,
-) -> bool {
-    if definitions.contains(&candidate) {
-        return true;
-    }
-    let mut pending = VecDeque::from([candidate]);
-    let mut visited = BTreeSet::from([candidate]);
-    while let Some(current) = pending.pop_front() {
-        for &linked in links.get(&current).into_iter().flatten() {
-            if definitions.contains(&linked) {
-                return true;
-            }
-            if visited.insert(linked) {
-                pending.push_back(linked);
-            }
-        }
-    }
-    false
 }
 
 fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {

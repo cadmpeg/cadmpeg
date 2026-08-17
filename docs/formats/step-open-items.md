@@ -125,15 +125,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 ## 7. Annotation, presentation, and tessellation
 
 ## 8. Product structure and placement
-
-### PS-10. Direct context-representation binding
-
-**Question.** Must a context-dependent placement relation bind its endpoints directly to the child and parent definition representations?
-
-**Known.** The context-dependent pattern uses the child representation as `rep_1` and the parent representation as `rep_2`. A generic representation relationship does not by itself make one representation part of another.
-
-**Need.** Define whether an endpoint may reach a definition representation through other relationship records, and retain or reject a placement when the direct endpoints do not match.
-
-**Conflict.** The reader accepts a transitive path through an undirected graph of `SHAPE_REPRESENTATION_RELATIONSHIP` records. This can turn unrelated intermediary representations into a qualifying child or parent endpoint.
-
-**Note.** `crates/cadmpeg-codec-step/src/reader/product.rs:1086-1143` admits the placement when `representation_matches` succeeds, while `crates/cadmpeg-codec-step/src/reader/product.rs:1154-1192` builds an undirected graph and traverses it transitively. A context relation with unrelated intermediary endpoints can pass after bridge relationships connect those endpoints to the real child and parent representations, even though the direct relation operands do not identify those representations. This can admit a wrong transform or make orientation depend on an unrelated bridge graph.
