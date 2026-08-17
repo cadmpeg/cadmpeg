@@ -19,6 +19,27 @@ use super::super::sketch::{approximately_equal, normalized};
 use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
 
+fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGeometry>> {
+    let mut geometries = BTreeMap::new();
+    for surface in &ir.model.surfaces {
+        let Some(surface_id) = surface
+            .id
+            .0
+            .strip_prefix("creo:visibgeom:surface#")
+            .and_then(|id| id.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if geometries
+            .insert(surface_id, surface.geometry.clone())
+            .is_some()
+        {
+            return None;
+        }
+    }
+    Some(geometries)
+}
+
 pub fn counterbore_dimensions(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -38,19 +59,12 @@ pub fn counterbore_dimensions(
             )
         })
         .collect::<BTreeSet<_>>();
-    let generated_radii = ir
-        .model
-        .surfaces
-        .iter()
-        .filter_map(|surface| {
-            let surface_id = surface
-                .id
-                .0
-                .strip_prefix("creo:visibgeom:surface#")?
-                .parse::<u32>()
-                .ok()?;
+    let existing_geometries = unique_model_surface_geometries(ir)?;
+    let generated_radii = existing_geometries
+        .into_iter()
+        .filter_map(|(surface_id, geometry)| {
             generated_cylinders.contains(&surface_id).then_some(())?;
-            let SurfaceGeometry::Cylinder { radius, .. } = surface.geometry else {
+            let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
                 return None;
             };
             Some(radius)
@@ -303,20 +317,7 @@ pub fn counterbore_patch_geometries(
 ) -> Option<Vec<(u32, SurfaceGeometry)>> {
     let (bore_diameter, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
     let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
-    let existing_geometries = ir
-        .model
-        .surfaces
-        .iter()
-        .filter_map(|surface| {
-            let id = surface
-                .id
-                .0
-                .strip_prefix("creo:visibgeom:surface#")?
-                .parse::<u32>()
-                .ok()?;
-            Some((id, surface.geometry.clone()))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let existing_geometries = unique_model_surface_geometries(ir)?;
     counterbore_source_patch_geometries(
         &cylinder_sources,
         &existing_geometries,
@@ -392,20 +393,7 @@ pub fn counterbore_axis_placement(
     let cylinder_axis =
         counterbore_dimensions(scan, ir, feature_id).and_then(|(_, counterbore_diameter, _)| {
             let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
-            let existing_geometries = ir
-                .model
-                .surfaces
-                .iter()
-                .filter_map(|surface| {
-                    let id = surface
-                        .id
-                        .0
-                        .strip_prefix("creo:visibgeom:surface#")?
-                        .parse::<u32>()
-                        .ok()?;
-                    Some((id, surface.geometry.clone()))
-                })
-                .collect::<BTreeMap<_, _>>();
+            let existing_geometries = unique_model_surface_geometries(ir)?;
             counterbore_axis_placement_from_sources(
                 &cylinder_sources,
                 &existing_geometries,

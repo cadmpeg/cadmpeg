@@ -77,6 +77,16 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
 }
 
 #[test]
+fn model_surface_geometry_lookup_rejects_duplicate_native_ids() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
+    assert!(super::unique_model_surface_geometries(&ir).is_some());
+
+    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
+    assert!(super::unique_model_surface_geometries(&ir).is_none());
+}
+
+#[test]
 fn boundary_circle_uses_native_plane_carrier_when_model_plane_is_absent() {
     let scan = boundary_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
