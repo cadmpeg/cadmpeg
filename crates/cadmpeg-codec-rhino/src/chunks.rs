@@ -21,6 +21,10 @@ const TCODE_V1_OPENNURBS_CLASS_UUID: u32 = 0x0002_fffd;
 pub(crate) const TCODE_SHORT: u32 = token::TCODE_SHORT;
 /// The bit marking a CRC-bearing chunk.
 pub(crate) const TCODE_CRC: u32 = token::TCODE_CRC;
+/// The short marker that terminates an `OpenNURBS` class child stream.
+pub(crate) const TCODE_CLASS_END: u32 = 0x8002_7fff;
+
+const CHECKSUM_CHILD_CAP: usize = 1 << 20;
 
 // The first strict boolean reader version in the encoded openNURBS version
 // form: 6.0.2017-08-24. Older files also store this value as YYYYMMDDn.
@@ -697,6 +701,50 @@ pub(crate) fn direct_checksum_ranges(
         direct.push(cursor..body.end);
     }
     Ok(direct)
+}
+
+/// Frames complete nested chunks through a short zero class-end marker.
+pub(crate) fn checksum_children_through_class_end(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    context: &str,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut children = Vec::new();
+    loop {
+        if reader.position() == reader.end() {
+            return Err(FramingError::structural(
+                reader.end(),
+                format!("{context} is missing its class end"),
+            ));
+        }
+        let start = reader.position();
+        let child = chunk_at(data, start, reader.end(), archive, false)?;
+        if child.next_offset <= start {
+            return Err(FramingError::structural(
+                start,
+                format!("{context} child did not advance"),
+            ));
+        }
+        if children.len() >= CHECKSUM_CHILD_CAP {
+            return Err(FramingError::InvalidLength {
+                offset: start,
+                value: children.len() as i128,
+            });
+        }
+        children.push(child.range());
+        reader.skip(child.next_offset - start)?;
+        if child.typecode == TCODE_CLASS_END {
+            if !child.short || child.value != 0 {
+                return Err(FramingError::structural(
+                    start,
+                    format!("{context} class end must be a short zero chunk"),
+                ));
+            }
+            return Ok(children);
+        }
+    }
 }
 
 /// Decodes a packed one-byte payload version.

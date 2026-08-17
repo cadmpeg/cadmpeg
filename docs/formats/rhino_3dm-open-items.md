@@ -6,35 +6,6 @@ Settled format rules remain in
 
 ## Remaining items
 
-### PR-05. Current nested view-child checksum coverage
-
-**Question.** Which direct byte ranges does the CRC on the current container
-children `TCODE_VIEW_ATTRIBUTES` and `TCODE_VIEW_VIEWPORT_USERDATA` cover, and
-how does the codec report a mismatch without changing the enclosing view
-boundary?
-
-**Known.** The direct-body long children `TCODE_VIEW_VIEWPORT`,
-`TCODE_VIEW_CPLANE`, `TCODE_VIEW_TARGET`, `TCODE_VIEW_POSITION`,
-`TCODE_VIEW_NAME`, `TCODE_VIEW_TRACEIMAGE`, `TCODE_VIEW_WALLPAPER`, and
-`TCODE_VIEW_WALLPAPER_V3` are CRC-bearing leaves whose CRC covers their body.
-The owner now verifies those leaves and preserves the typed view on mismatch;
-a public V5 mutation reports `container.integrity-failure` at the child offset.
-`TCODE_VIEW_ATTRIBUTES` and `TCODE_VIEW_VIEWPORT_USERDATA` remain CRC-bearing
-containers with nested child streams, and their outer child checksums are not
-yet verified.
-
-**Need.** Trace the producer and reader CRC lifecycle for the anonymous
-page-settings and clipping-plane children inside `TCODE_VIEW_ATTRIBUTES`, and
-for the class-userdata children through the fake class-end marker inside
-`TCODE_VIEW_VIEWPORT_USERDATA`. State each direct range, align the view owner
-with the recoverable checksum policy, and add source-shaped owner tests. Keep
-this child coverage separate from the already settled outer
-`TCODE_VIEW_RECORD` checksum.
-
-**Note.** The direct-leaf subset is settled in the specification and codec.
-This remaining item does not change view field transfer or the CADIR identity
-of a view.
-
 ### FV-01. Future object-class payloads
 
 **Question.** What field grammar does each later built-in object-class major

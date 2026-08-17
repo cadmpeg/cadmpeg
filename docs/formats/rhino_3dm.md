@@ -6153,11 +6153,28 @@ short framing fails that list read.
 
 The direct-body long children `TCODE_VIEW_VIEWPORT`, `TCODE_VIEW_CPLANE`,
 `TCODE_VIEW_TARGET`, `TCODE_VIEW_POSITION`, `TCODE_VIEW_NAME`,
-`TCODE_VIEW_TRACEIMAGE`, `TCODE_VIEW_WALLPAPER`, and
-`TCODE_VIEW_WALLPAPER_V3` are CRC-bearing leaves. Each leaf CRC covers its
-complete body, including any direct suffix bytes. `TCODE_VIEW_ATTRIBUTES` and
-`TCODE_VIEW_VIEWPORT_USERDATA` are CRC-bearing containers with nested child
+and `TCODE_VIEW_WALLPAPER` are CRC-bearing leaves. Each leaf CRC covers its
+complete body, including any direct suffix bytes. `TCODE_VIEW_TRACEIMAGE` and
+`TCODE_VIEW_WALLPAPER_V3` are CRC-bearing containers when their current writer
+version includes an anonymous file-reference child. `TCODE_VIEW_ATTRIBUTES`
+and `TCODE_VIEW_VIEWPORT_USERDATA` are CRC-bearing containers with nested child
 streams.
+
+The `TCODE_VIEW_ATTRIBUTES` CRC covers every byte in its body that is not part
+of a complete anonymous page-settings or clipping-plane child. This includes
+all direct versioned fields, the clipping-plane count, and any direct suffix.
+The `TCODE_VIEW_VIEWPORT_USERDATA` CRC excludes every complete child from the
+viewport-userdata stream through and including its short zero-valued
+`TCODE_OPENNURBS_CLASS_END` marker. Direct bytes after that marker remain in
+the CRC input. The current view writer emits no direct viewport-userdata bytes,
+so that CRC is the CRC of an empty byte sequence.
+
+At `TCODE_VIEW_TRACEIMAGE` minor 4 and `TCODE_VIEW_WALLPAPER_V3` minor 2, the
+complete anonymous file-reference child, including its nested content-hash
+children, is excluded from the enclosing image-child CRC. Direct image fields
+before and after that child remain in the CRC input. The current archive-60
+and later writers place the file-reference child after those direct fields and
+emit no direct suffix.
 
 Each `TCODE_VIEW_RECORD` child is also CRC-bearing. Its CRC excludes every
 complete view child chunk through and including the short end marker. Bytes

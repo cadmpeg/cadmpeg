@@ -6,8 +6,8 @@ use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
 use crate::chunks::{
-    chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError, TCODE_ENDOFTABLE,
+    checksum_children_through_class_end, chunk_at, direct_checksum_ranges, verify_checksum_ranges,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_ENDOFTABLE,
 };
 use crate::container::{Record, Scan};
 use crate::settings::{plane, utf16, Plane};
@@ -250,14 +250,18 @@ fn image_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-) -> Result<ImageReference, FramingError> {
+) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
     let value = crate::instances::file_reference(data, reader, archive, &mut Vec::new())?;
-    Ok(ImageReference {
-        full_path: value.full_path,
-        relative_path: value.relative_path,
-        content_sha1: hex(&value.content_hash.content_sha1),
-        embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
-    })
+    let source_range = value.source_range.clone();
+    Ok((
+        ImageReference {
+            full_path: value.full_path,
+            relative_path: value.relative_path,
+            content_sha1: hex(&value.content_hash.content_sha1),
+            embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
+        },
+        source_range,
+    ))
 }
 
 fn parse_trace_image(
@@ -265,7 +269,7 @@ fn parse_trace_image(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: f64,
-) -> Result<TraceImage, FramingError> {
+) -> Result<(TraceImage, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
@@ -285,31 +289,35 @@ fn parse_trace_image(
     let grayscale = minor < 1 || reader.bool()?;
     let hidden = minor >= 2 && reader.bool()?;
     let filtered = minor >= 3 && reader.bool()?;
-    let file_reference = if minor >= 4 {
-        Some(image_reference(data, &mut reader, archive)?)
+    let (file_reference, file_reference_range) = if minor >= 4 {
+        let (value, range) = image_reference(data, &mut reader, archive)?;
+        (Some(value), Some(range))
     } else {
-        None
+        (None, None)
     };
     reader.skip_remaining()?;
-    Ok(TraceImage {
-        legacy_file_path,
-        width_mm,
-        height_mm,
-        plane_origin_mm: plane.origin.0,
-        plane_x_axis: plane.xaxis.0,
-        plane_y_axis: plane.yaxis.0,
-        grayscale,
-        hidden,
-        filtered,
-        file_reference,
-    })
+    Ok((
+        TraceImage {
+            legacy_file_path,
+            width_mm,
+            height_mm,
+            plane_origin_mm: plane.origin.0,
+            plane_x_axis: plane.xaxis.0,
+            plane_y_axis: plane.yaxis.0,
+            grayscale,
+            hidden,
+            filtered,
+            file_reference,
+        },
+        file_reference_range,
+    ))
 }
 
 fn parse_wallpaper(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
-) -> Result<Wallpaper, FramingError> {
+) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
@@ -322,18 +330,22 @@ fn parse_wallpaper(
     let legacy_file_path = utf16(&mut reader)?;
     let grayscale = reader.bool()?;
     let hidden = minor >= 1 && reader.bool()?;
-    let file_reference = if minor >= 2 {
-        Some(image_reference(data, &mut reader, archive)?)
+    let (file_reference, file_reference_range) = if minor >= 2 {
+        let (value, range) = image_reference(data, &mut reader, archive)?;
+        (Some(value), Some(range))
     } else {
-        None
+        (None, None)
     };
     reader.skip_remaining()?;
-    Ok(Wallpaper {
-        legacy_file_path,
-        grayscale,
-        hidden,
-        file_reference,
-    })
+    Ok((
+        Wallpaper {
+            legacy_file_path,
+            grayscale,
+            hidden,
+            file_reference,
+        },
+        file_reference_range,
+    ))
 }
 
 fn parse_cplane(
@@ -563,8 +575,9 @@ fn parse_attributes(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: f64,
-) -> Result<ViewAttributes, FramingError> {
+) -> Result<(ViewAttributes, Vec<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut checksum_children = Vec::new();
     let packed = reader.u8()?;
     let version = [packed >> 4, packed & 0x0f];
     if version[0] != 1 || version[1] < 1 {
@@ -648,6 +661,7 @@ fn parse_attributes(
         }
         let printer_name = utf16(&mut page)?;
         page.skip_remaining()?;
+        checksum_children.push(chunk.range());
         reader.skip(chunk.next_offset - reader.position())?;
         result.page_settings = Some(PageSettings {
             page_number,
@@ -724,6 +738,7 @@ fn parse_attributes(
                 depth_mm: depth,
                 depth_enabled,
             });
+            checksum_children.push(chunk.range());
             reader.skip(chunk.next_offset - reader.position())?;
         }
     }
@@ -751,20 +766,37 @@ fn parse_attributes(
         result.section_behavior = Some(reader.u8()?);
     }
     reader.skip_remaining()?;
-    Ok(result)
+    Ok((result, checksum_children))
 }
 
-fn direct_view_child_checksum_warning(
+fn view_child_checksum_warning(
     data: &[u8],
     child: &crate::chunks::Chunk,
+    direct_ranges: &[std::ops::Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    match verify_checksum(data, child)? {
+    match verify_checksum_ranges(data, child, direct_ranges)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             child.header_start, child.typecode
         ))),
         _ => Ok(None),
     }
+}
+
+fn direct_view_child_checksum_warning(
+    data: &[u8],
+    child: &crate::chunks::Chunk,
+) -> Result<Option<String>, FramingError> {
+    view_child_checksum_warning(data, child, std::slice::from_ref(&child.body))
+}
+
+fn view_child_checksum_warning_excluding(
+    data: &[u8],
+    child: &crate::chunks::Chunk,
+    nested_children: &[std::ops::Range<usize>],
+) -> Result<Option<String>, FramingError> {
+    let direct = direct_checksum_ranges(&child.body, nested_children)?;
+    view_child_checksum_warning(data, child, &direct)
 }
 
 fn parse_view(
@@ -803,14 +835,7 @@ fn parse_view(
         checksum_children.push(child.range());
         if matches!(
             child.typecode,
-            VIEW_VIEWPORT
-                | VIEW_CPLANE
-                | VIEW_TARGET
-                | VIEW_POSITION
-                | VIEW_NAME
-                | VIEW_TRACE_IMAGE
-                | VIEW_WALLPAPER
-                | VIEW_WALLPAPER_V3
+            VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
             if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
                 checksum_warnings.push(warning);
@@ -834,7 +859,15 @@ fn parse_view(
                 }
             }
             VIEW_TRACE_IMAGE if !child.short => {
-                trace_image = Some(parse_trace_image(data, child.body.clone(), archive, scale)?);
+                let (value, file_reference_range) =
+                    parse_trace_image(data, child.body.clone(), archive, scale)?;
+                let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
+                if let Some(warning) =
+                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                {
+                    checksum_warnings.push(warning);
+                }
+                trace_image = Some(value);
             }
             VIEW_WALLPAPER if !child.short => {
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
@@ -848,7 +881,15 @@ fn parse_view(
                 });
             }
             VIEW_WALLPAPER_V3 if !child.short => {
-                wallpaper = Some(parse_wallpaper(data, child.body.clone(), archive)?);
+                let (value, file_reference_range) =
+                    parse_wallpaper(data, child.body.clone(), archive)?;
+                let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
+                if let Some(warning) =
+                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                {
+                    checksum_warnings.push(warning);
+                }
+                wallpaper = Some(value);
             }
             VIEW_NAME if !child.short => {
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
@@ -877,13 +918,32 @@ fn parse_view(
             VIEW_SHOW_WORLD_AXES if child.short => show_world_axes = child.value != 0,
             VIEW_V3_DISPLAY_MODE if child.short => legacy_display_mode = Some(child.value),
             VIEW_ATTRIBUTES if !child.short => {
-                let attributes = parse_attributes(data, child.body.clone(), archive, scale)?;
+                let (attributes, nested_children) =
+                    parse_attributes(data, child.body.clone(), archive, scale)?;
+                if let Some(warning) =
+                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                {
+                    checksum_warnings.push(warning);
+                }
                 view_type = Some(attributes.view_type);
                 page_width = Some(attributes.width);
                 page_height = Some(attributes.height);
                 display_mode_uuid.clone_from(&attributes.display);
                 attributes_version = Some(attributes.version);
                 attributes_detail = Some(attributes);
+            }
+            VIEW_VIEWPORT_USERDATA if !child.short => {
+                let nested_children = checksum_children_through_class_end(
+                    data,
+                    child.body.clone(),
+                    archive,
+                    "view viewport userdata",
+                )?;
+                if let Some(warning) =
+                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                {
+                    checksum_warnings.push(warning);
+                }
             }
             TCODE_ENDOFTABLE => {
                 if !child.short || child.value != 0 {
@@ -1146,7 +1206,8 @@ mod tests {
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
     use crate::test_support::test_dump::{
-        anonymous_chunk, crc_chunk, crc_chunk_excluding, long_chunk, short_chunk, utf16_bytes,
+        anonymous_chunk, crc_chunk, crc_chunk_excluding, file_reference, long_chunk, short_chunk,
+        utf16_bytes,
     };
 
     fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
@@ -1307,7 +1368,8 @@ mod tests {
         serialized_plane(&mut trace);
         trace.extend([0, 1, 1]);
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
-        let trace = parse_trace_image(&trace, 0..trace.len(), archive, 1.0).expect("trace image");
+        let (trace, _) =
+            parse_trace_image(&trace, 0..trace.len(), archive, 1.0).expect("trace image");
         assert_eq!(trace.legacy_file_path, "trace-witness.png");
         assert_eq!([trace.width_mm, trace.height_mm], [42.0, 24.0]);
         assert!(!trace.grayscale);
@@ -1318,7 +1380,7 @@ mod tests {
         wallpaper.extend(utf16_bytes("wallpaper-witness.png"));
         wallpaper.extend([0, 1]);
         wallpaper.extend([0xca, 0xfe]);
-        let wallpaper =
+        let (wallpaper, _) =
             parse_wallpaper(&wallpaper, 0..wallpaper.len(), archive).expect("wallpaper");
         assert_eq!(wallpaper.legacy_file_path, "wallpaper-witness.png");
         assert!(!wallpaper.grayscale && wallpaper.hidden);
@@ -1502,7 +1564,8 @@ mod tests {
         body.extend(1_i32.to_le_bytes());
         body.extend(anonymous_chunk(archive, 4, &clipping_plane));
 
-        let value = parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
+        let (value, _) =
+            parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
         assert_eq!(value.clipping_planes.len(), 1);
         assert_eq!(value.clipping_planes[0].depth_mm, Some(3.0));
         assert!(value.clipping_planes[0].depth_enabled);
@@ -1532,7 +1595,8 @@ mod tests {
         body.push(1);
         body.extend([0xa1, 0xb2, 0xc3]);
 
-        let value = parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
+        let (value, _) =
+            parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
         assert_eq!(value.view_type, 1);
         assert!(value.projection_locked);
         let page = value.page_settings.expect("page settings");
@@ -1541,5 +1605,229 @@ mod tests {
         assert_eq!(page.height_mm, 297.0);
         assert_eq!(page.margins_mm, [10.0, 11.0, 12.0, 13.0]);
         assert_eq!(page.printer_name, "witness-printer");
+    }
+
+    #[test]
+    fn view_attributes_crc_excludes_nested_children_and_reports_mismatch() {
+        let archive = ArchiveVersion::V5;
+        let mut page = Vec::new();
+        page.extend(7_i32.to_le_bytes());
+        for value in [210.0_f64, 297.0, 10.0, 11.0, 12.0, 13.0] {
+            page.extend(value.to_le_bytes());
+        }
+        page.extend(utf16_bytes("attributes-witness"));
+
+        let mut attributes_body = vec![0x12];
+        attributes_body.extend(1_i32.to_le_bytes());
+        attributes_body.extend(210.0_f64.to_le_bytes());
+        attributes_body.extend(297.0_f64.to_le_bytes());
+        attributes_body.extend([0; 16]);
+        for _ in 0..6 {
+            attributes_body.extend(0.0_f64.to_le_bytes());
+        }
+        attributes_body.extend([0; 16]);
+        let page_start = attributes_body.len();
+        attributes_body.extend(anonymous_chunk(archive, 0, &page));
+        let page_range = page_start..attributes_body.len();
+        attributes_body.extend([0xaa, 0xbb]);
+        let attributes = crc_chunk_excluding(
+            archive,
+            super::VIEW_ATTRIBUTES,
+            &attributes_body,
+            std::slice::from_ref(&page_range),
+        );
+
+        let make_view = |attributes: &[u8]| {
+            let end_marker = short_chunk(archive, super::TCODE_ENDOFTABLE, 0);
+            let mut view_body = attributes.to_vec();
+            view_body.extend(end_marker);
+            let view_body_range = 0..view_body.len();
+            crc_chunk_excluding(
+                archive,
+                super::VIEW_RECORD,
+                &view_body,
+                std::slice::from_ref(&view_body_range),
+            )
+        };
+
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(make_view(&attributes));
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        assert_eq!(views.len(), 1);
+        assert!(losses.is_empty());
+
+        let mut corrupted_attributes = attributes;
+        let crc_offset = corrupted_attributes.len() - 1;
+        corrupted_attributes[crc_offset] ^= 1;
+        let mut corrupted_body = 1_i32.to_le_bytes().to_vec();
+        corrupted_body.extend(make_view(&corrupted_attributes));
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..corrupted_body.len(),
+            body: 0..corrupted_body.len(),
+            short: false,
+            value: 0,
+        };
+        let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
+        assert_eq!(views.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("0x20008c3b"));
+    }
+
+    #[test]
+    fn view_image_child_crc_excludes_file_reference_and_reports_mismatch() {
+        let archive = ArchiveVersion::V6;
+        let mut trace_body = vec![0x14];
+        trace_body.extend(utf16_bytes("trace-witness.png"));
+        trace_body.extend(42.0_f64.to_le_bytes());
+        trace_body.extend(24.0_f64.to_le_bytes());
+        serialized_plane(&mut trace_body);
+        trace_body.extend([0, 1, 1]);
+        let trace_reference_start = trace_body.len();
+        trace_body.extend(file_reference(archive, "/trace/source.png", "source.png"));
+        let trace_reference_range = trace_reference_start..trace_body.len();
+        let trace = crc_chunk_excluding(
+            archive,
+            super::VIEW_TRACE_IMAGE,
+            &trace_body,
+            std::slice::from_ref(&trace_reference_range),
+        );
+
+        let mut wallpaper_body = vec![0x12];
+        wallpaper_body.extend(utf16_bytes("wallpaper-witness.png"));
+        wallpaper_body.extend([1, 0]);
+        let wallpaper_reference_start = wallpaper_body.len();
+        wallpaper_body.extend(file_reference(
+            archive,
+            "/wallpaper/source.png",
+            "source.png",
+        ));
+        let wallpaper_reference_range = wallpaper_reference_start..wallpaper_body.len();
+        let wallpaper = crc_chunk_excluding(
+            archive,
+            super::VIEW_WALLPAPER_V3,
+            &wallpaper_body,
+            std::slice::from_ref(&wallpaper_reference_range),
+        );
+
+        let make_view = |trace: &[u8], wallpaper: &[u8]| {
+            let mut view_body = trace.to_vec();
+            let wallpaper_start = view_body.len();
+            view_body.extend(wallpaper);
+            let wallpaper_range = wallpaper_start..view_body.len();
+            let end_start = view_body.len();
+            view_body.extend(short_chunk(archive, super::TCODE_ENDOFTABLE, 0));
+            let end_range = end_start..view_body.len();
+            crc_chunk_excluding(
+                archive,
+                super::VIEW_RECORD,
+                &view_body,
+                &[0..trace.len(), wallpaper_range, end_range],
+            )
+        };
+        let parse = |view: Vec<u8>| {
+            let mut body = 1_i32.to_le_bytes().to_vec();
+            body.extend(view);
+            let record = Record {
+                typecode: super::NAMED_VIEWS,
+                range: 0..body.len(),
+                body: 0..body.len(),
+                short: false,
+                value: 0,
+            };
+            parse_list(&body, &record, archive, 1.0, "named")
+        };
+
+        let (views, losses) = parse(make_view(&trace, &wallpaper));
+        assert_eq!(views.len(), 1);
+        assert!(losses.is_empty());
+
+        let mut corrupted_trace = trace.clone();
+        let trace_crc_offset = corrupted_trace.len() - 1;
+        corrupted_trace[trace_crc_offset] ^= 1;
+        let (views, losses) = parse(make_view(&corrupted_trace, &wallpaper));
+        assert_eq!(views.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::RhinoLossCode::IntegrityFailure.kind()
+        );
+        assert!(losses[0].message.contains("0x2000863b"));
+
+        let mut corrupted_wallpaper = wallpaper.clone();
+        let wallpaper_crc_offset = corrupted_wallpaper.len() - 1;
+        corrupted_wallpaper[wallpaper_crc_offset] ^= 1;
+        let (views, losses) = parse(make_view(&trace, &corrupted_wallpaper));
+        assert_eq!(views.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("0x2000874b"));
+    }
+
+    #[test]
+    fn viewport_userdata_crc_excludes_class_children_and_reports_mismatch() {
+        let archive = ArchiveVersion::V5;
+        let userdata = long_chunk(archive, 0x0002_7ffd, &[0x22, 0x00]);
+        let userdata_range = 0..userdata.len();
+        let class_end = short_chunk(archive, 0x8002_7fff, 0);
+        let class_end_range = userdata.len()..userdata.len() + class_end.len();
+        let mut userdata_body = userdata;
+        userdata_body.extend(class_end);
+        userdata_body.extend([0xde, 0xad]);
+        let viewport_userdata = crc_chunk_excluding(
+            archive,
+            super::VIEW_VIEWPORT_USERDATA,
+            &userdata_body,
+            &[userdata_range, class_end_range],
+        );
+
+        let make_view = |viewport_userdata: &[u8]| {
+            let end_marker = short_chunk(archive, super::TCODE_ENDOFTABLE, 0);
+            let mut view_body = viewport_userdata.to_vec();
+            view_body.extend(end_marker);
+            let view_body_range = 0..view_body.len();
+            crc_chunk_excluding(
+                archive,
+                super::VIEW_RECORD,
+                &view_body,
+                std::slice::from_ref(&view_body_range),
+            )
+        };
+
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(make_view(&viewport_userdata));
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        assert_eq!(views.len(), 1);
+        assert!(losses.is_empty());
+
+        let mut corrupted_userdata = viewport_userdata;
+        let crc_offset = corrupted_userdata.len() - 1;
+        corrupted_userdata[crc_offset] ^= 1;
+        let mut corrupted_body = 1_i32.to_le_bytes().to_vec();
+        corrupted_body.extend(make_view(&corrupted_userdata));
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..corrupted_body.len(),
+            body: 0..corrupted_body.len(),
+            short: false,
+            value: 0,
+        };
+        let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
+        assert_eq!(views.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("0x20008d3b"));
     }
 }

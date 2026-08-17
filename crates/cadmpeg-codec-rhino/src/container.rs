@@ -10,9 +10,9 @@ use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
-    checked_count_bytes, chunk_at, direct_checksum_ranges, parse_eof, parse_header,
-    verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader, ChecksumStatus,
-    FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
+    parse_eof, parse_header, verify_checksum, verify_checksum_ranges, ArchiveVersion,
+    BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -87,7 +87,6 @@ const TCODE_PLUGIN_LIST: u32 = 0x2000_8135;
 const TCODE_RENDER_USERDATA: u32 = 0x2000_8136;
 const TCODE_HISTORICAL_UNUSED_SETTINGS: u32 = 0x2000_803e;
 const TCODE_ANONYMOUS: u32 = 0x4000_8000;
-const TCODE_CLASS_END: u32 = 0x8002_7fff;
 
 /// A bounded record descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,7 +245,12 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
-        let Ok(children) = render_userdata_checksum_children(data, &chunk, archive) else {
+        let Ok(children) = checksum_children_through_class_end(
+            data,
+            chunk.body.clone(),
+            archive,
+            "render-settings userdata",
+        ) else {
             return Ok(None);
         };
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
@@ -667,52 +671,6 @@ fn plugin_list_checksum_children(
         reader.skip(child.next_offset - start)?;
     }
     Ok(children)
-}
-
-/// Returns the complete nested chunks in a render-settings userdata stream.
-///
-/// The outer record CRC excludes all children through the class-end marker.
-/// Bytes after that marker are direct suffix bytes and remain covered.
-fn render_userdata_checksum_children(
-    data: &[u8],
-    chunk: &crate::chunks::Chunk,
-    archive: ArchiveVersion,
-) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    let mut children = Vec::new();
-    loop {
-        if reader.position() == reader.end() {
-            return Err(FramingError::structural(
-                reader.end(),
-                "render-settings userdata is missing its class end",
-            ));
-        }
-        let start = reader.position();
-        let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.next_offset <= start {
-            return Err(FramingError::structural(
-                start,
-                "render-settings userdata child did not advance",
-            ));
-        }
-        if children.len() >= TABLE_RECORD_CAP {
-            return Err(FramingError::InvalidLength {
-                offset: start,
-                value: children.len() as i128,
-            });
-        }
-        children.push(child.range());
-        reader.skip(child.next_offset - start)?;
-        if child.typecode == TCODE_CLASS_END {
-            if !child.short || child.value != 0 {
-                return Err(FramingError::structural(
-                    start,
-                    "render-settings userdata class end must be a short zero chunk",
-                ));
-            }
-            return Ok(children);
-        }
-    }
 }
 
 fn parse_record(
