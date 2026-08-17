@@ -228,16 +228,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
 
-### GE-05. Type 102 carrier concatenation uses a private tolerance and degrades silently
-
-**Question.** What tolerance and failure behavior apply when Type 102 component curves do not join?
-
-**Known.** `composite.rs` compares adjacent endpoints with a project-selected tolerance and the native path records a loss when it cannot concatenate. The current documentation describes this policy as a format rule.
-
-**Need.** We need the source join rule and evidence for whether a non-joining Type 102 must be rejected, preserved as separate components, or projected with a loss.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `611362a96` improved diagnostics and tests but did not establish the threshold or the required semantic result.
-
 ### GE-07. The curve parameter-domain convention
 
 **Question.** Which parameter domain does each supported curve entity provide?

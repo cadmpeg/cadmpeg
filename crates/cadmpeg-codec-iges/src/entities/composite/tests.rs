@@ -382,6 +382,28 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 }
 
 #[test]
+fn composite_join_at_global_resolution_uses_inclusive_cadir_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.001)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .expect("Type 102 curve at the Global resolution boundary");
+    assert!(matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+    ));
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
 fn composite_zero_global_resolution_requires_exact_join() {
     let mut bytes = composite_curve_with_join_gap(f64::EPSILON * 1024.0);
     let declared_resolution = b",0.001,1000.0";
