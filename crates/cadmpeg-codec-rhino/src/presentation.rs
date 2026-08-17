@@ -2932,6 +2932,45 @@ fn parse_texture_mapping(
     })
 }
 
+fn parse_rendering_mapping_channel(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    archive: ArchiveVersion,
+) -> Result<(RenderingMappingChannel, usize), FramingError> {
+    let chunk = chunk_at(data, start, end, archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(FramingError::structural(
+            start,
+            "rendering mapping channel is not an anonymous long chunk",
+        ));
+    }
+    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    if value.i32()? != 1 {
+        return Err(FramingError::structural(
+            value.position() - 4,
+            "rendering mapping channel version is unsupported",
+        ));
+    }
+    let minor = value.i32()?;
+    let mapping_channel_id = value.i32()?;
+    let mapping_uuid = uuid(&mut value)?.to_string();
+    let object_transform = if minor >= 1 {
+        Some(xform(&mut value)?)
+    } else {
+        None
+    };
+    value.skip_remaining()?;
+    Ok((
+        RenderingMappingChannel {
+            mapping_channel_id,
+            mapping_uuid,
+            object_transform,
+        },
+        chunk.next_offset,
+    ))
+}
+
 fn rendering_attributes(
     data: &[u8],
     range: Option<Range<usize>>,
@@ -2973,12 +3012,21 @@ fn rendering_attributes(
                 let minor = value.i32()?;
                 let plugin_uuid = uuid(&mut value)?.to_string();
                 let front_material_uuid = uuid(&mut value)?.to_string();
-                let mapping_count = value.i32()?;
-                if mapping_count != 0 {
-                    return Err(FramingError::structural(
-                        value.position() - 4,
-                        "obsolete rendering mappings are nonempty",
-                    ));
+                let obsolete_mapping_count = checked_count_bytes(
+                    value.i32()?,
+                    1,
+                    value.remaining(),
+                    1 << 16,
+                    value.position() - 4,
+                )?;
+                for _ in 0..obsolete_mapping_count {
+                    let (_, next_offset) = parse_rendering_mapping_channel(
+                        data,
+                        value.position(),
+                        value.end(),
+                        archive,
+                    )?;
+                    value.skip(next_offset - value.position())?;
                 }
                 let (back_material_uuid, material_source) = if minor >= 1 {
                     let id = uuid(&mut value)?;
@@ -3027,30 +3075,14 @@ fn rendering_attributes(
                 )?;
                 let mut channels = Vec::with_capacity(channel_count);
                 for _ in 0..channel_count {
-                    let channel = chunk_at(data, value.position(), value.end(), archive, false)?;
-                    let mut channel_value =
-                        BoundedReader::new(data, channel.body.start, channel.body.end)?;
-                    if channel_value.i32()? != 1 {
-                        return Err(FramingError::structural(
-                            channel_value.position() - 4,
-                            "rendering mapping channel version is unsupported",
-                        ));
-                    }
-                    let channel_minor = channel_value.i32()?;
-                    let mapping_channel_id = channel_value.i32()?;
-                    let mapping_uuid = uuid(&mut channel_value)?.to_string();
-                    let object_transform = if channel_minor >= 1 {
-                        Some(xform(&mut channel_value)?)
-                    } else {
-                        None
-                    };
-                    channel_value.skip_remaining()?;
-                    channels.push(RenderingMappingChannel {
-                        mapping_channel_id,
-                        mapping_uuid,
-                        object_transform,
-                    });
-                    value.skip(channel.next_offset - value.position())?;
+                    let (channel, next_offset) = parse_rendering_mapping_channel(
+                        data,
+                        value.position(),
+                        value.end(),
+                        archive,
+                    )?;
+                    channels.push(channel);
+                    value.skip(next_offset - value.position())?;
                 }
                 value.skip_remaining()?;
                 presentation.mappings.push(RenderingMappingReference {
@@ -4719,6 +4751,45 @@ mod tests {
         bytes
     }
 
+    fn texture_payload(minor: i32, suffix: &[u8]) -> Vec<u8> {
+        let mut body = vec![0x11; 16];
+        body.extend(7_u32.to_le_bytes());
+        body.extend(utf16("texture.png"));
+        body.push(1);
+        for value in 1..=7_u32 {
+            body.extend(value.to_le_bytes());
+        }
+        for index in 0..16 {
+            body.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
+        }
+        body.extend([1, 2, 3, 4]);
+        body.extend([5, 6, 7, 8]);
+        body.extend([0x22; 16]);
+        for value in [0.25_f64, 1.25] {
+            body.extend(value.to_le_bytes());
+        }
+        for value in [0.1_f64, 0.2, 0.3, 0.4, 0.5] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend([9, 10, 11, 12]);
+        for value in [0.6_f64, 0.7, 0.8, 0.9] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend(4_i32.to_le_bytes());
+        if minor >= 1 {
+            body.extend(crate::test_support::test_dump::file_reference(
+                ArchiveVersion::V8,
+                "/full/source.3dm",
+                "source.3dm",
+            ));
+        }
+        if minor >= 2 {
+            body.push(1);
+        }
+        body.extend(suffix);
+        anonymous(minor, &body)
+    }
+
     #[test]
     fn light_scales_spatial_values_but_not_direction_or_angles() {
         let bytes = light_payload(0x1f, 0.8);
@@ -4894,15 +4965,18 @@ mod tests {
         let mut channel_body = 7_i32.to_le_bytes().to_vec();
         channel_body.extend([0x11; 16]);
         channel_body.extend((0..16).flat_map(|value| f64::from(value).to_le_bytes()));
+        channel_body.extend([0xaa, 0xbb]);
         let channel = anonymous(1, &channel_body);
         let mut mapping_body = vec![0x22; 16];
         mapping_body.extend(1_i32.to_le_bytes());
         mapping_body.extend(channel);
+        mapping_body.extend([0xcc, 0xdd]);
         let mapping = anonymous(0, &mapping_body);
         let mut rendering_body = 0_i32.to_le_bytes().to_vec();
         rendering_body.extend(1_i32.to_le_bytes());
         rendering_body.extend(mapping);
         rendering_body.extend([0, 0, 1]);
+        rendering_body.extend([0xee, 0xff]);
         let bytes = anonymous(3, &rendering_body);
 
         let value = rendering_attributes(
@@ -4935,6 +5009,85 @@ mod tests {
     }
 
     #[test]
+    fn rendering_material_reference_consumes_obsolete_mapping_channels() {
+        let mut obsolete_channel_body = 7_i32.to_le_bytes().to_vec();
+        obsolete_channel_body.extend([0x33; 16]);
+        obsolete_channel_body.extend((0..16).flat_map(|value| f64::from(value).to_le_bytes()));
+        let obsolete_channel = anonymous(1, &obsolete_channel_body);
+
+        let mut material_body = vec![0x11; 16];
+        material_body.extend([0x22; 16]);
+        material_body.extend(1_i32.to_le_bytes());
+        material_body.extend(obsolete_channel);
+        material_body.extend([0x44; 16]);
+        material_body.extend([3, 0, 0, 0]);
+        material_body.extend([0xaa, 0xbb]);
+        let material = anonymous(1, &material_body);
+
+        let mut rendering_body = 1_i32.to_le_bytes().to_vec();
+        rendering_body.extend(material);
+        rendering_body.extend(0_i32.to_le_bytes());
+        rendering_body.extend([1, 1, 0]);
+        let bytes = anonymous(3, &rendering_body);
+
+        let value = rendering_attributes(
+            &bytes,
+            Some(0..bytes.len()),
+            ArchiveVersion::V8,
+            settings::RenderingAttributesKind::Object,
+        )
+        .expect("obsolete material-reference mapping array");
+        assert_eq!(value.materials.len(), 1);
+        assert_eq!(
+            value.materials[0].front_material_uuid,
+            Uuid::from_wire([0x22; 16]).to_string()
+        );
+        assert_eq!(
+            value.materials[0].back_material_uuid,
+            Some(Uuid::from_wire([0x44; 16]).to_string())
+        );
+        assert_eq!(value.materials[0].material_source, Some(3));
+    }
+
+    #[test]
+    fn texture_reads_minor_gates_before_future_suffix() {
+        let bytes = texture_payload(2, &[0xaa, 0xbb]);
+        let value = parse_texture(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
+            .expect("texture minor gates and suffix");
+        assert_eq!(value.mapping_channel_id, 7);
+        assert_eq!(value.legacy_file_path, "texture.png");
+        assert_eq!(
+            value
+                .file_reference
+                .as_ref()
+                .map(|reference| reference.full_path.as_str()),
+            Some("/full/source.3dm")
+        );
+        assert_eq!(value.treat_as_linear, Some(true));
+        assert_eq!(value.source_offset, 42);
+    }
+
+    #[test]
+    fn texture_array_closes_after_class_items_and_future_suffix() {
+        let texture = crate::test_support::test_dump::class_wrapper(
+            ArchiveVersion::V8,
+            TEXTURE.to_wire(),
+            &texture_payload(0, &[]),
+        );
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(texture);
+        body.extend([0xcc, 0xdd]);
+        let bytes = anonymous(4, &body);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("texture array bounds");
+        let values = texture_array(&bytes, &mut reader, ArchiveVersion::V8)
+            .expect("texture array child and suffix");
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].legacy_file_path, "texture.png");
+        assert_eq!(values[0].mapping_channel_id, 7);
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
     fn texture_mapping_reads_nested_primitive_class_wrapper() {
         let mut body = crate::test_support::MESH_CLASS.to_vec();
         body.extend(6_u32.to_le_bytes());
@@ -4953,6 +5106,7 @@ mod tests {
         ));
         body.extend(0_u32.to_le_bytes());
         body.push(0);
+        body.extend([0xaa, 0xbb]);
         let bytes = anonymous(1, &body);
 
         let mapping = parse_texture_mapping(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)

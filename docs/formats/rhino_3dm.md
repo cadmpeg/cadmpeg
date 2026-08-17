@@ -2331,6 +2331,11 @@ bytes are a bounded suffix after the fields selected by the minor. The
 material count and nested chunk boundaries cannot exceed the containing
 rendering-attributes chunk.
 
+The obsolete mapping-channel array contains anonymous major-1 mapping-channel
+chunks. The reader consumes each complete child and discards the obsolete
+array; a valid non-empty array does not prevent the material reference from
+being admitted. Each child has its own boundary before the back-face fields.
+
 An object mapping reference is a long anonymous chunk with this payload:
 
 ```text
@@ -4990,6 +4995,30 @@ primitive object; the `MappingCRCCache` and mesh-correspondence cache payloads
 are defined in sections 7.2.19 and 7.2.20.
 Material channels bind a UUID to an integer channel.
 
+The texture writer emits anonymous minor 0 for archives below version 60,
+minor 1 for versions 60 through 69, and minor 2 for version 70 and later. The
+texture reader requires major 1, adds the file-reference child at minor 1 and
+the linear-treatment Boolean at minor 2, and closes the texture child before
+the texture-array reader resumes.
+
+The texture-mapping payload is an anonymous major-1 chunk. The writer emits
+minor 1:
+
+```text
+UUID mapping ID
+u32 mapping type
+u32 projection
+16 × f64 primitive transform
+16 × f64 UVW transform
+UTF-16 mapping name
+ON_Object primitive class wrapper
+minor >= 1: u32 texture space, bool capped
+```
+
+The primitive class wrapper ends before the texture-space and capped fields.
+The mapping reader requires major 1, reads those fields at minor 1 and later,
+and leaves later bytes at the mapping-child boundary.
+
 ### 20.3 Drafting resources and annotations
 
 Linetypes store model-component identity, ordered length/type segments, cap and
@@ -5173,6 +5202,10 @@ the hotspot interface. For minor 0 and 1, the file has no hotspot field: the
 reader derives `clamp(1 - exponent / 128, 0, 1)` and clears the stored
 exponent. The native light record preserves the raw angle, exponent, and
 hotspot fields, including the sentinel.
+
+The light reader requires major 1 and leaves bytes after the known
+minor-gated prefix at the `OPENNURBS_CLASS_DATA` boundary. The class-data
+boundary ends before class userdata and the class-end marker.
 
 The same class-data payload is used when `ON_Light` appears in an object
 record; the object record then uses the common object-attributes and

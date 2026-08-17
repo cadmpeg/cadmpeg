@@ -123,6 +123,16 @@ settings record or anonymous child.
 The font/text-style compatibility pair is settled: the V5 packed branch and
 the modern anonymous branch have separate known prefixes and boundaries, and a
 modern font suffix cannot consume the enclosing text-style identity fields.
+The group and light class-data readers are also settled: group 1.1 and light
+1.2 are packed major-1 prefixes, with group UUID, light length/width, and light
+hotspot admitted only at their documented minor gates; later bytes remain at
+the `OPENNURBS_CLASS_DATA` boundary. The material, texture, texture-array,
+texture-mapping, material-reference, mapping-reference, and mapping-channel
+readers now have the same child-by-child inventory. Their anonymous and class
+children close independently, source writer bands select the known texture
+minors, and later bytes remain at the child that contains them. A material
+reference consumes and drops its obsolete mapping-channel array before its
+minor-gated back-face fields.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -144,5 +154,16 @@ gate and bounded suffix.
 The font/text-style subset is established by `ON_TextStyle::Write`/`Read` and
 `ON_Font::Write`/`Read` with `WriteV5`/`ReadV5`; the owner tests exercise the
 modern nested boundary, future suffixes, and the legacy packed fields.
+The group/light subset is established by `ON_Group::Internal_WriteV5`/
+`Internal_ReadV5` and `ON_Light::Write`/`Read`; the group and light owner tests
+exercise their class-data bounds and minor-gated fields. The material/mapping
+subset is established by `ON_Material::Write`/`Read`, `ON_Texture::Write`/`Read`,
+`ON_TextureMapping::Internal_WriteV5`/`Internal_ReadV5`,
+`ON_MaterialRef::Write`/`Read`, `ON_MappingRef::Write`/`Read`,
+`ON_MappingChannel::Write`/`Read`, and
+`ON_ObjectRenderingAttributes::Write`/`Read` in the OpenNURBS 9.x source;
+the owner tests exercise non-empty obsolete material-reference arrays and
+future suffixes at texture, texture-array, mapping, mapping-reference, and
+mapping-channel boundaries.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.
