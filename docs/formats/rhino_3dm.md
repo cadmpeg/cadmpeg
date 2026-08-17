@@ -561,8 +561,9 @@ checksums.
 
 Each `TCODE_HISTORYRECORD_RECORD` contains one class wrapper for class UUID
 `ECD0FD2F-2088-49DC-9641-9CF7A28FFA6B`. Its class-data payload is an anonymous
-chunk with major version 1. Minor version 1 adds the record type; minor version
-2 adds the copy-on-replace flag:
+chunk with major version 1. The writer emits minor 1 before archive 60 and
+minor 2 from archive 60. Minor version 1 adds the record type; minor version 2
+adds the copy-on-replace flag:
 
 ```text
 anonymous version 1.minor
@@ -588,7 +589,9 @@ selector for an antecedent. Multiple records can therefore produce the same
 descendant UUID without a unique history dependency in the bytes.
 `record_type` is 0 for update history parameters and 1 for feature parameters.
 
-Each history value is an anonymous major-1 chunk:
+The values wrapper and every history value are independent anonymous chunks.
+The writer emits version 1.0 for both. Each history value is an anonymous
+major-1 chunk:
 
 ```text
 i32 value_type

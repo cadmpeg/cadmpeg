@@ -169,6 +169,16 @@ The view construction-plane and window-position children are settled:
 construction planes write 1.1 with the depth flag at minor 1; window positions
 write 1.0 below archive 5 and 1.1 from archive 5 with the floating byte at
 minor 1. Both readers close at their enclosing view-child boundaries.
+The detail-view reader is settled: `ON_DetailView` writes outer packed version
+1.1, wraps view state and boundary geometry in independent packed 1.0
+anonymous children, and appends the page-per-model ratio at outer minor 1.
+Minor 0 defaults the ratio to zero; each child and the outer detail record
+retain later bytes only within its own bounded end.
+History records are settled at their outer and value boundaries: the writer
+uses anonymous outer minor 1 before archive 60 and minor 2 from archive 60;
+record type and copy-on-replace are gated at minors 1 and 2. The values
+wrapper and each value are independent anonymous version-1.0 children, and
+later bytes remain at the child or enclosing history boundary.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -254,5 +264,10 @@ The instance-definition boundary is established by
 `ON_ReferencedComponentSettingsImpl::WriteImpl`/`ReadImpl` in
 `opennurbs_instance.cpp`; the instance-definition owner tests exercise packed
 1.6/1.7, anonymous V6, linked-type, file-reference, and bounded-suffix paths.
+The history-record boundary is settled: `ON_HistoryRecord::Write` emits outer
+minor 1 before archive 60 and minor 2 from archive 60; its values wrapper and
+each value child are independent version-1.0 anonymous chunks. The history
+owner tests cover both outer writer bands and suffixes in the values and outer
+records.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

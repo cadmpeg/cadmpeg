@@ -42,6 +42,31 @@ fn record(record_id: u8, command: u8, antecedents: &[u8], descendants: &[u8]) ->
     }
 }
 
+fn source_band_history_record(archive: ArchiveVersion, minor: i32) -> Vec<u8> {
+    let mut values_body = 0_i32.to_le_bytes().to_vec();
+    values_body.extend([0xcc, 0xdd]);
+    let values = anonymous_chunk(archive, 0, &values_body);
+    let empty_list = anonymous_chunk(archive, 0, &0_i32.to_le_bytes());
+
+    let mut body = id(1).to_wire().to_vec();
+    body.extend(42_i32.to_le_bytes());
+    body.extend(id(2).to_wire());
+    body.extend(&empty_list);
+    body.extend(&empty_list);
+    body.extend(values);
+    if minor >= 1 {
+        body.extend(1_i32.to_le_bytes());
+    }
+    if minor >= 2 {
+        body.push(1);
+    }
+    body.extend([0xaa, 0xbb]);
+
+    let payload = anonymous_chunk(archive, minor, &body);
+    let class = class_wrapper(archive, HISTORY_CLASS.to_wire(), &payload);
+    crc_chunk(archive, 0x2000_807b, &class)
+}
+
 #[test]
 fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
@@ -120,6 +145,32 @@ fn history_value_accepts_a_future_minor_and_skips_its_suffix() {
         .expect("future history minor is bounded");
     assert_eq!(next, bytes.len());
     assert!(matches!(parsed.value, Value::Integers(values) if values == [42]));
+}
+
+#[test]
+fn history_record_writer_bands_follow_archive_version() {
+    for (version, archive, minor, copy_on_replace) in [
+        ("50", ArchiveVersion::V5, 1, false),
+        ("60", ArchiveVersion::V6, 2, true),
+    ] {
+        let history_record = source_band_history_record(archive, minor);
+        let bytes = minimal_document(
+            version,
+            &[
+                crc_table(archive, 0x1000_0014, &[]),
+                crc_table(archive, 0x1000_0015, &[]),
+                crc_table(archive, 0x1000_0013, &[]),
+                crc_table(archive, 0x1000_0026, &[history_record]),
+            ],
+        );
+
+        let scan = crate::container::scan_owned(bytes).expect("source-shaped history record");
+        assert_eq!(scan.history.len(), 1);
+        let history = &scan.history[0];
+        assert_eq!(history.values.len(), 0);
+        assert_eq!(history.record_type, RecordType::FeatureParameters);
+        assert_eq!(history.copy_on_replace, copy_on_replace);
+    }
 }
 
 #[test]
