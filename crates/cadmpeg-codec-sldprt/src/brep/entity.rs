@@ -768,6 +768,16 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc20_disc1a_disc18_disc16_disc14_disc12_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(
+            disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc0e_face_root_body(&by_attr),
+        );
+    }
+    if out.is_empty() {
+        out.extend(
+            disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc04_face_root_body(&by_attr),
+        );
+    }
+    if out.is_empty() {
         out.extend(shifted_disc16_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -3919,6 +3929,60 @@ fn disc20_disc1a_disc18_disc16_disc14_disc12_disc04_face_root_body(
     )
 }
 
+fn disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc0e_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0018, 2),
+            (0x0016, 1),
+            (0x0014, 2),
+            (0x0012, 2),
+            (0x000e, 2),
+        ],
+        0x0004,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+    )
+}
+
+fn disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0018, 2),
+            (0x0016, 1),
+            (0x0014, 2),
+            (0x0012, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+    )
+}
+
 fn direct_shell_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let regions = by_attr
         .values()
@@ -5295,6 +5359,58 @@ struct KeyedFaceRootOptions {
     face_use_shape: Option<KeyedFaceUse>,
     shell_index: usize,
     require_exact_use_population: bool,
+}
+
+fn keyed_face_root_body_with_keyed_face_links(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    options: KeyedFaceRootOptions,
+) -> Vec<BodyRecord> {
+    let bodies = keyed_face_root_body(
+        by_attr,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        options,
+    );
+    if bodies.is_empty() {
+        return bodies;
+    }
+    let keyed_links = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == canonical_disc && record.flo() == 1)
+        .all(|face| {
+            let Some(companion) = face
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .copied()
+                .filter(|record| record.disc == companion_disc && record.flo() == 1)
+            else {
+                return false;
+            };
+            let Some(use_node) = companion
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .copied()
+                .filter(|record| record.disc == use_disc && record.flo() == 4)
+            else {
+                return false;
+            };
+            face.refs.first() == companion.refs.first()
+                && companion.refs.first() == use_node.refs.first()
+        });
+    if keyed_links {
+        bodies
+    } else {
+        Vec::new()
+    }
 }
 
 fn keyed_face_root_body(
@@ -6805,6 +6921,7 @@ mod tests {
     mod disc1e_disc04;
     mod disc20_disc18;
     mod disc20_disc1a_disc18;
+    mod disc20_disc1e_disc1c;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
@@ -6842,7 +6959,6 @@ mod tests {
         bytes.push(0);
         bytes
     }
-
     fn color(attr: u16, rgb: [f64; 3], prefixed: bool) -> Vec<u8> {
         let mut bytes = vec![0, 0x53];
         if prefixed {
