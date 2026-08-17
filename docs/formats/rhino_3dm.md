@@ -6151,6 +6151,12 @@ chunk. Each child has its own CRC and bounded body. The readers require
 the defined child typecode for every counted child; an unexpected typecode or
 short framing fails that list read.
 
+Each `TCODE_VIEW_RECORD` child is also CRC-bearing. Its CRC excludes every
+complete view child chunk through and including the short end marker. Bytes
+after that marker are direct suffix bytes and are included. The current view
+writer emits no direct bytes in this body, so its CRC is the CRC of an empty
+byte sequence.
+
 CADIR rejects a negative count or a count above 65536 before it frames any
 child. This is a CADIR admission bound, not a change to the on-disk `i32`
 count field.
