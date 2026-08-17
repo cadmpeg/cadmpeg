@@ -221,3 +221,42 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     }
     assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
 }
+
+#[test]
+fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
+    let row = crate::surface::SurfaceRow {
+        id: 7,
+        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 913,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.extend([
+        cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#7".to_string()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#7".to_string()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius: 3.0,
+            },
+            source_object: None,
+        },
+    ]);
+
+    assert_eq!(super::round_placed_cylinder_radius(&ir, &row), None);
+}

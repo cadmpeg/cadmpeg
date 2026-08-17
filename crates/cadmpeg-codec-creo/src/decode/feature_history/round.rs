@@ -541,14 +541,12 @@ pub(in super::super) fn round_placed_cylinder_radius(
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-    ir.model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == id)
-        .and_then(|surface| match surface.geometry {
+    exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
+        match surface.geometry {
             SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
             _ => None,
-        })
+        }
+    })
 }
 
 pub(in super::super) fn round_direct_radii(
