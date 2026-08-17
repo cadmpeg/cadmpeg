@@ -18,18 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-03. Cross-resource composition
-
-**Question.** How does a decoded root bind an addressed entity in a subsidiary or external STEP resource?
-
-**Known.** A Part 21 ZIP root reference can address an anchor in a subsidiary member. An external reference retains its URI and fragment. The codec keeps subsidiary and external resources outside the root graph.
-
-**Need.** Define the resource-qualified identity and validation needed before an addressed entity can enter CADIR. A numeric instance identifier from another resource must not become a root identity.
-
-**Conflict.** The format supplies a resource and anchor target, but the decoder only checks internal member existence and records a note. The current policy requires caller composition without providing an executable composition operand.
-
-**Note.** `crates/cadmpeg-codec-step/src/archive.rs:122-152` parses root references and checks `archive.entry`, while `crates/cadmpeg-codec-step/src/codec.rs:323-362` decodes only `root_view`. `step.md` §7 "For a ZIP container, Annex A.4 of the" and `step.md` §7 "For an edition-3 ZIP, the root exchange has" keep subsidiary bytes outside the root graph and assign composition to the caller. No current witness parses a subsidiary, resolves its anchor, validates schema, units, and coordinate context, and binds the target. Reopen for a composition witness or a further settled boundary.
-
 ## 3. Containers and other encodings
 
 ### CE-02. ZIP subsidiary composition

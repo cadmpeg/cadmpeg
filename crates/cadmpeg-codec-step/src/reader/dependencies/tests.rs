@@ -145,6 +145,185 @@ fn decode_does_not_invoke_the_external_resource_resolver() {
     );
 }
 
+#[derive(Debug, PartialEq)]
+struct CallerEntityBinding {
+    local_occurrence: u64,
+    resource_uri: String,
+    anchor_name: String,
+    target_id: u64,
+}
+
+fn bind_entity_reference(
+    root: &crate::parse::Exchange,
+    target: &crate::parse::Exchange,
+) -> Result<CallerEntityBinding, &'static str> {
+    let reference = root
+        .references
+        .iter()
+        .find(|reference| reference.name == "#10")
+        .ok_or("missing root reference")?;
+    let (resource_uri, anchor_name) = reference
+        .uri
+        .split_once('#')
+        .ok_or("reference has no anchor fragment")?;
+    if resource_uri.is_empty() || anchor_name.is_empty() {
+        return Err("reference has an incomplete resource identity");
+    }
+    if crate::reader::schema_identifiers(root) != crate::reader::schema_identifiers(target) {
+        return Err("resource schemas differ");
+    }
+    let root_units = unit_signatures(root);
+    let target_units = unit_signatures(target);
+    if root_units != target_units {
+        return Err("resource units differ");
+    }
+    let root_context = context_signature(root).ok_or("root has no coordinate context")?;
+    let target_context = context_signature(target).ok_or("target has no coordinate context")?;
+    if root_context != target_context {
+        return Err("resource coordinate contexts differ");
+    }
+    let anchor = target
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == anchor_name)
+        .ok_or("target anchor is missing")?;
+    let crate::parse::Value::Reference(target_id) = anchor.value else {
+        return Err("target anchor is not an entity instance");
+    };
+    let target_record = target
+        .records
+        .get(&target_id)
+        .ok_or("target entity instance is missing")?;
+    if !target_record
+        .partials
+        .iter()
+        .any(|partial| partial.name == "CARTESIAN_POINT")
+    {
+        return Err("target entity is not the admitted AP242 anchor type");
+    }
+    Ok(CallerEntityBinding {
+        local_occurrence: 10,
+        resource_uri: resource_uri.to_owned(),
+        anchor_name: anchor_name.to_owned(),
+        target_id,
+    })
+}
+
+fn unit_signatures(exchange: &crate::parse::Exchange) -> Vec<Vec<crate::parse::PartialRecord>> {
+    exchange
+        .records
+        .values()
+        .filter(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "LENGTH_UNIT" || partial.name == "PLANE_ANGLE_UNIT")
+        })
+        .map(|record| record.partials.clone())
+        .collect()
+}
+
+fn context_signature(
+    exchange: &crate::parse::Exchange,
+) -> Option<Vec<crate::parse::PartialRecord>> {
+    exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "GEOMETRIC_REPRESENTATION_CONTEXT")
+        })
+        .map(|record| record.partials.clone())
+}
+
+#[test]
+fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
+    let root_bytes = include_bytes!("tests/data/er05_distributed_root.p21");
+    let target_bytes = include_bytes!("tests/data/er05_distributed_subsidiary.p21");
+    let (root, root_diagnostics) = crate::parse::parse(root_bytes).expect("parse distributed root");
+    let (target, target_diagnostics) =
+        crate::parse::parse(target_bytes).expect("parse distributed subsidiary");
+    assert!(root_diagnostics.is_empty());
+    assert!(target_diagnostics.is_empty());
+
+    let binding = bind_entity_reference(&root, &target).expect("admit external entity binding");
+    assert_eq!(
+        binding,
+        CallerEntityBinding {
+            local_occurrence: 10,
+            resource_uri: "https://example.invalid/er05/subsidiary.p21".into(),
+            anchor_name: "remote_point".into(),
+            target_id: 12,
+        }
+    );
+    assert_eq!(
+        root.records[&5].partials[0].parameters,
+        vec![crate::parse::Value::Reference(10)]
+    );
+    assert_eq!(target.anchors[0].value, crate::parse::Value::Reference(12));
+    assert_eq!(
+        target.records[&11].partials[0].parameters,
+        vec![crate::parse::Value::Reference(20)]
+    );
+
+    let root_result = StepCodec::default()
+        .decode(&mut Cursor::new(root_bytes), &DecodeOptions::default())
+        .expect("decode root without importing target");
+    let target_result = StepCodec::default()
+        .decode(&mut Cursor::new(target_bytes), &DecodeOptions::default())
+        .expect("decode target independently");
+    assert_eq!(root_result.ir().units, target_result.ir().units);
+    assert!(root_result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#4"));
+    assert!(target_result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#12"));
+    assert!(!root_result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#12"));
+    assert_eq!(
+        root_result.ir().source.as_ref().unwrap().attributes["entity_instances"],
+        "6"
+    );
+    assert_eq!(
+        target_result.ir().source.as_ref().unwrap().attributes["entity_instances"],
+        "6"
+    );
+
+    let mismatched_units = String::from_utf8(target_bytes.to_vec())
+        .unwrap()
+        .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)");
+    let (mismatched_units, _) =
+        crate::parse::parse(mismatched_units.as_bytes()).expect("parse mismatched-unit target");
+    assert_eq!(
+        bind_entity_reference(&root, &mismatched_units),
+        Err("resource units differ")
+    );
+
+    let mismatched_context = String::from_utf8(target_bytes.to_vec()).unwrap().replace(
+        "REPRESENTATION_CONTEXT('model','3D')",
+        "REPRESENTATION_CONTEXT('other','3D')",
+    );
+    let (mismatched_context, _) = crate::parse::parse(mismatched_context.as_bytes())
+        .expect("parse mismatched-context target");
+    assert_eq!(
+        bind_entity_reference(&root, &mismatched_context),
+        Err("resource coordinate contexts differ")
+    );
+}
+
 #[test]
 fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
     let bytes = include_bytes!("tests/data/er04_cache_identity.p21");

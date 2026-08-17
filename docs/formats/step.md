@@ -688,6 +688,15 @@ entity or value, or that cannot be resolved, has the format result `$`. The
 §§10.2.5–10.2.7 and Annex J define this single-target substitution across
 distributed exchange structures.
 
+The Part 21 distributed-exchange example uses one root `REFERENCE` occurrence
+for an entity anchored in a subsidiary and allows the subsidiary to reference
+an anchor in the root. The two occurrences keep their local DATA numbers; the
+resource URI and anchor name carry the cross-resource identity. A composition
+operation therefore resolves the URI, follows URI-valued anchors, checks the
+entity or value kind, and checks that the target belongs to the selected
+schema. It does not replace a target's resource-local number with the root
+occurrence number.
+
 CADIR decision: a composition graph uses three identities. A local DATA node
 is `(root-resource, occurrence-kind, numeric-id)`. An external target is
 `(resource-binding, occurrence-kind, anchor-name)`, where `resource-binding`
@@ -740,6 +749,18 @@ policy checks pass. `unresolved` means that lookup or UUID service discovery
 did not produce bytes. `refused` means that the caller policy rejected the
 request or the supplied bytes. Both failure results retain the external
 dependency and supply no bytes to composition.
+
+CADIR decision: the caller composition operand is
+`(local-occurrence, exact-resource-binding, occurrence-kind, anchor-name,
+target-exchange, target-schema, target-units, target-coordinate-context)`.
+The caller admits the operand only after the resolver returns the exact target
+resource, the target anchor resolves to the required entity or value, the
+selected schema accepts that target, and the target units and coordinate
+context either match the local context or have an explicit recorded
+conversion. A missing anchor, wrong occurrence kind, schema mismatch, unit or
+coordinate conflict without a conversion, failed trust or integrity check, or
+unresolved target leaves the local occurrence external. The operand never
+renumbers or imports the target exchange's DATA namespace.
 
 The codec performs no network, filesystem, archive-download, or registry
 request for an `http`, `https`, `file`, `urn`, or UUID-only URI. It retains the
