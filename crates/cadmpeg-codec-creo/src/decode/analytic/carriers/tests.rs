@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::equations::PlaneEquation;
-use super::{existing_plane_agrees_with_topology, placed_carriers};
+use super::{existing_plane_agrees_with_topology, placed_carriers, transfer_topology_bound_planes};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::Units;
 
@@ -151,4 +151,54 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
     ]);
 
     assert!(!placed_carriers(&scan, &ir).contains_key(&7));
+}
+
+#[test]
+fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces
+        .rows
+        .push(carrier_row(5, crate::surface::SurfaceKind::Plane));
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 11,
+            type_byte: 0,
+            feature_id: 1,
+            directions: [0; 2],
+            faces: [5, 0],
+            next_edges: [11, 0],
+            offset: 20,
+        });
+    scan.topology.loops.push(crate::topology::Loop {
+        face_id: 5,
+        half_edges: vec![crate::topology::HalfEdgeId {
+            curve_id: 11,
+            side: 0,
+        }],
+    });
+
+    let curve = Curve {
+        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        geometry: CurveGeometry::Circle {
+            center: Point3::new(2.0, 3.0, 4.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        },
+        source_object: None,
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.extend([curve.clone(), curve]);
+
+    assert_eq!(
+        transfer_topology_bound_planes(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &std::collections::BTreeSet::new(),
+        ),
+        0
+    );
+    assert!(ir.model.surfaces.is_empty());
 }

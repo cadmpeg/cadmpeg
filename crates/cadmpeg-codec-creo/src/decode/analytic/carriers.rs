@@ -15,6 +15,7 @@ use crate::topology::HalfEdgeId;
 use super::super::native::annotate;
 use super::super::surfaces::rowless_round_cylinder_pairs;
 
+use super::super::uniqueness::exactly_one;
 use super::equations::{
     CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
@@ -89,7 +90,7 @@ pub fn transfer_topology_bound_planes(
                     .contains(&half_edge.curve_id)
                     .then_some(())?;
                 let id = CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
-                let curve = ir.model.curves.iter().find(|curve| curve.id == id)?;
+                let curve = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))?;
                 Some(&curve.geometry)
             })
             .collect::<Vec<_>>();
