@@ -348,6 +348,42 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
 }
 
 #[test]
+fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
+    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id: 23,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(23),
+        table_class_id: 80,
+        entry_ids: vec![10, 11, 12, 13],
+        entries: Vec::new(),
+        surface_ids: vec![10, 11, 13],
+        non_surface_entity_ids: vec![12],
+        offset: 47,
+    };
+    let rows = vec![
+        row(10, crate::surface::SurfaceKind::Plane),
+        row(11, crate::surface::SurfaceKind::Plane),
+        row(13, crate::surface::SurfaceKind::Cylinder),
+        row(13, crate::surface::SurfaceKind::Cylinder),
+    ];
+
+    assert!(super::rowless_round_cylinder_pairs(
+        &std::collections::BTreeSet::from([23]),
+        &[table],
+        &rows,
+    )
+    .is_empty());
+}
+
+#[test]
 fn split_outline_rejects_conflicting_model_plane_carrier() {
     let scan = split_outline_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());

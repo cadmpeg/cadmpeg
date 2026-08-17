@@ -40,13 +40,16 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
             let [first, second, rowless, cylinder] = table.entry_ids.as_slice() else {
                 return None;
             };
-            rows.iter().any(|row| row.id == *first).then_some(())?;
-            rows.iter().any(|row| row.id == *second).then_some(())?;
+            crate::surface::unique_surface_row(rows, *first)
+                .is_some()
+                .then_some(())?;
+            crate::surface::unique_surface_row(rows, *second)
+                .is_some()
+                .then_some(())?;
             (!rows.iter().any(|row| row.id == *rowless)).then_some(())?;
-            rows.iter()
-                .any(|row| {
-                    row.id == *cylinder
-                        && row.feature_id == feature_id
+            crate::surface::unique_surface_row(rows, *cylinder)
+                .is_some_and(|row| {
+                    row.feature_id == feature_id
                         && row.kind == crate::surface::SurfaceKind::Cylinder
                 })
                 .then_some(())?;
