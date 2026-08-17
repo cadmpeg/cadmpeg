@@ -792,7 +792,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     offset_surface_parameters_with_tolerance_with_index(&index, surface, point, seed, fit_tolerance)
 }
 
@@ -1054,7 +1054,7 @@ pub(crate) fn surface_parameter_domain(
     ir: &CadIr,
     surface: &SurfaceId,
 ) -> Option<([f64; 2], [f64; 2])> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     surface_parameter_domain_with_index(&index, surface)
 }
 
@@ -1185,7 +1185,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds(
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
         &index,
         surfaces,
@@ -1403,7 +1403,7 @@ pub(crate) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -
 
 /// Return supported parameter periods while rejecting cyclic procedural support graphs.
 pub(crate) fn surface_parameter_periods(ir: &CadIr, surface: &SurfaceId) -> [Option<f64>; 2] {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     surface_parameter_periods_with_index(&index, surface)
 }
 

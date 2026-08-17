@@ -145,7 +145,7 @@ pub(crate) fn blend_surface_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_parameters_inner(
         &index,
@@ -168,7 +168,7 @@ pub(crate) fn blend_surface_parameters_for_fit(
     seed: Option<Point2>,
     fit_tolerance: f64,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     blend_surface_parameters_for_fit_with_grid(
         &index,
         surface,
@@ -464,7 +464,7 @@ pub(crate) fn coarse_blend_surface_parameters(
     point: Point3,
     depth: usize,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     coarse_blend_surface_parameters_with_index_and_budget(
         &index,
@@ -636,7 +636,7 @@ pub(crate) fn refine_blend_surface_parameters(
     parameters: Point2,
     depth: usize,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     refine_blend_surface_parameters_with_section_domain_and_budget(
         &index,
@@ -813,7 +813,7 @@ pub(crate) fn blend_surface_point_inner(
     v: f64,
     depth: usize,
 ) -> Option<Point3> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_point_inner_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
@@ -895,7 +895,7 @@ pub(crate) fn blend_surface_u_derivative(
     v: f64,
     depth: usize,
 ) -> Option<Vector3> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_u_derivative_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
@@ -2407,7 +2407,7 @@ pub(crate) fn surface_contact_direction(
     radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     surface_contact_direction_with_index(&index, surface, center, radius, depth)
 }
 
@@ -2586,7 +2586,7 @@ pub(crate) fn closest_spine_parameter(
     point: Point3,
     seed: Option<f64>,
 ) -> Option<f64> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_spine_parameter_with_index_and_budget(&index, curve, point, seed, &geometry_budget)
 }

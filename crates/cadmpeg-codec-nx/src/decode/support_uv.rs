@@ -194,7 +194,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     assign_ext11_support_uv_to_surfaces_with_index(
         &index,
@@ -317,7 +317,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
-    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
@@ -468,7 +468,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let invalid = {
-        let index = cadmpeg_ir::index::ModelIndex::new(ir);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut invalid = Vec::new();
         for (procedural_id, points, parameters, fit_tolerance, _) in pending {
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
@@ -548,7 +548,7 @@ pub(crate) fn pending_support_lanes_requiring_completion(
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> usize {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     pending
         .iter()
         .filter_map(|(procedural_id, ..)| index.procedural_curves(procedural_id.0.as_str()))
@@ -585,7 +585,7 @@ fn complete_support_uv_wave(
     }
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
-    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         if support_uv_budget_exhausted(support_budget) {
             break;
@@ -859,7 +859,7 @@ pub(super) fn blend_spine_cache_fit_tolerance(
     surface: &SurfaceId,
     fit_tolerance: f64,
 ) -> f64 {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     blend_spine_cache_fit_tolerance_with_index(&index, surface, fit_tolerance)
 }
 
@@ -890,7 +890,7 @@ fn complete_coupled_support_uv(
     }
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
-    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
@@ -1246,7 +1246,7 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
     }
 
     let replacements = {
-        let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         coedge_candidates
             .into_iter()
             .filter_map(|(coedge_id, edge_id, curve, surface, edge_tolerance)| {
@@ -1328,7 +1328,7 @@ mod tests {
             },
             source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
         let values = vec![[0.0, 0.0]; MAX_SUPPORT_UV_SAMPLES + 1];
         let geometry_budget = WorkBudget::new(1);

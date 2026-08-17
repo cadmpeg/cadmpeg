@@ -39,12 +39,30 @@ macro_rules! define_model_index {
         impl<'a> ModelIndex<'a> {
             /// Builds every typed lookup and the global identity universe once.
             pub fn new(ir: &'a CadIr) -> Self {
-                Self::with_additional_native_identities(ir, std::iter::empty())
+                Self::with_identity_sources(ir, true, std::iter::empty())
+            }
+
+            /// Builds typed model lookups without indexing the native namespaces.
+            ///
+            /// Codec decode phases use this constructor when they resolve only
+            /// neutral model identities. Indexing native records in those phases
+            /// adds work without changing any lookup result and is especially
+            /// costly for codecs that retain a large native namespace.
+            pub fn new_model_only(ir: &'a CadIr) -> Self {
+                Self::with_identity_sources(ir, false, std::iter::empty())
             }
 
             /// Builds the index with native identities staged outside the document.
             pub fn with_additional_native_identities(
                 ir: &'a CadIr,
+                additional: impl IntoIterator<Item = &'a str>,
+            ) -> Self {
+                Self::with_identity_sources(ir, true, additional)
+            }
+
+            fn with_identity_sources(
+                ir: &'a CadIr,
+                include_native: bool,
                 additional: impl IntoIterator<Item = &'a str>,
             ) -> Self {
                 let mut identities = HashSet::with_capacity(ir.model.entity_count());
@@ -53,9 +71,17 @@ macro_rules! define_model_index {
                     identities.insert(identity);
                     (identity, entity)
                 }).collect();)*
-                let mut native_identities = ir.native.0.values().flat_map(|namespace| {
-                    namespace.arenas.values().flatten().map(|record| record.id())
-                }).collect::<HashSet<_>>();
+                let mut native_identities = include_native
+                    .then(|| {
+                        ir.native
+                            .0
+                            .values()
+                            .flat_map(|namespace| {
+                                namespace.arenas.values().flatten().map(|record| record.id())
+                            })
+                            .collect::<HashSet<_>>()
+                    })
+                    .unwrap_or_default();
                 native_identities.extend(additional);
                 identities.extend(native_identities.iter().copied());
                 let mut procedural_surface_by_surface =
@@ -139,6 +165,8 @@ mod tests {
     use crate::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
     use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use crate::units::Units;
+    use crate::{NativeNamespace, NativeRecord};
+    use serde_json::Map;
 
     #[test]
     fn procedural_surface_owner_index_preserves_arena_precedence() {
@@ -188,5 +216,48 @@ mod tests {
                 .map(|procedural| procedural.id.0.as_str()),
             Some("test:procedural-curve#first")
         );
+    }
+
+    #[test]
+    fn model_only_index_excludes_native_identity_universe() {
+        let mut ir = CadIr::empty(Units::default());
+        let native_id = "test:native#0";
+        ir.native.0.insert(
+            "test".into(),
+            NativeNamespace {
+                version: 1,
+                arenas: [(
+                    "records".into(),
+                    vec![NativeRecord::new(native_id, Map::new())],
+                )]
+                .into_iter()
+                .collect(),
+            },
+        );
+        let model_id = "test:model#0";
+        ir.model.parameters.push(crate::features::DesignParameter {
+            id: crate::features::ParameterId(model_id.into()),
+            owner: None,
+            ordinal: 0,
+            name: "p1".into(),
+            expression: "1".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+
+        let full = ModelIndex::new(&ir);
+        let model_only = ModelIndex::new_model_only(&ir);
+
+        assert!(full.contains_native(native_id));
+        assert!(full.contains(model_id));
+        assert!(!model_only.contains_native(native_id));
+        assert!(model_only.contains(model_id));
+        assert!(!model_only
+            .identities()
+            .any(|identity| identity == native_id));
     }
 }

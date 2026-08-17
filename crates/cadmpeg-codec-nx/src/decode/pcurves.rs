@@ -277,7 +277,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
         })
         .collect::<BTreeMap<_, _>>();
     let replacements = {
-        let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut replacements = Vec::new();
         for procedural in &ir.model.procedural_curves {
             let ProceduralCurveDefinition::TolerantIntersection {
@@ -446,7 +446,7 @@ pub(crate) fn orient_tolerant_intersection_pcurve(
     endpoints: [Point3; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     orient_tolerant_intersection_pcurve_with_index_and_budget(
         &index,
@@ -893,7 +893,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 values
             },
         );
-    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut blend_contacts = BTreeMap::new();
     let mut candidates = ir
         .model
@@ -1084,7 +1084,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
-    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let vertex_points = ir
         .model
         .vertices
@@ -1335,7 +1335,7 @@ pub(crate) fn exact_boundary_pcurve(
     range: [f64; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     exact_boundary_pcurve_with_index(
         &index,
@@ -1803,7 +1803,7 @@ pub(crate) fn coincident_pcurve_pair(
     range: [f64; 2],
     tolerance: f64,
 ) -> bool {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     coincident_pcurve_pair_with_index(
         &index,
@@ -2475,7 +2475,7 @@ pub(crate) fn blend_boundary_parameter_from_support_spine(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     blend_boundary_parameter_from_support_spine_with_index(
         &index, blend, support, point, seed, tolerance,
     )
@@ -2826,7 +2826,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let candidates = {
-        let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut candidates = Vec::new();
         for (&xmt, edge_id) in edges {
             let Some(edge_fields) = graph.get(16, xmt).and_then(Node::edge_fields) else {
@@ -3001,7 +3001,7 @@ pub(crate) fn pcurve_matches_edge_range(
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
 ) -> bool {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     pcurve_matches_edge_range_with_index_and_budget(
         &index,

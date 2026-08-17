@@ -573,7 +573,7 @@ pub(crate) fn try_decode_geometry(
             .map(|curve| (curve.xmt, curve))
             .collect();
         let intersection_support_uv = {
-            let model_index = cadmpeg_ir::index::ModelIndex::new(&ir);
+            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             intersection_constructions
                 .iter()
                 .filter_map(|construction| {

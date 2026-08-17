@@ -483,7 +483,7 @@ pub(super) fn emit_topology(
         .flatten()
         .collect();
     let (valid_pcurve_fins, fallback_pcurves) = {
-        let index = cadmpeg_ir::index::ModelIndex::new(ir);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let valid_pcurve_fins = fin_ids
             .keys()
             .filter_map(|fin_xmt| {
