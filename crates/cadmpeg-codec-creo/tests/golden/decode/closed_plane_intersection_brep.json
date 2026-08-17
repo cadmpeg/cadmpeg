@@ -730,6 +730,10 @@
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "creo",
+            "object_id": "topology:vertex#1"
           }
         },
         {
@@ -738,6 +742,10 @@
             "x": 0.0,
             "y": 2.5366340893923816e-18,
             "z": 0.5
+          },
+          "source_object": {
+            "format": "creo",
+            "object_id": "topology:vertex#2"
           }
         },
         {
@@ -746,6 +754,10 @@
             "x": 0.0,
             "y": 0.5,
             "z": 2.5366340893923816e-18
+          },
+          "source_object": {
+            "format": "creo",
+            "object_id": "topology:vertex#3"
           }
         },
         {
@@ -754,6 +766,10 @@
             "x": 1.0,
             "y": 0.0,
             "z": -3.112280323415352e-17
+          },
+          "source_object": {
+            "format": "creo",
+            "object_id": "topology:vertex#4"
           }
         }
       ],

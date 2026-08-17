@@ -450,7 +450,15 @@ pub(in super::super) fn transfer_native_brep(
         ir.model.points.push(Point {
             id: point_id,
             position: Point3::new(position[0], position[1], position[2]),
-            source_object: None,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("topology:vertex#{vertex_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
         });
     }
     if selected_body_count != Some(body_components.len())
