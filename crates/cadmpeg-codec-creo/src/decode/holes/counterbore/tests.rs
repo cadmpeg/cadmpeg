@@ -114,3 +114,17 @@ fn boundary_circle_rejects_conflicting_model_plane_carrier() {
         None
     );
 }
+
+#[test]
+fn boundary_circle_rejects_duplicate_model_curves() {
+    let scan = boundary_scan();
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model
+        .curves
+        .extend([boundary_circle(), boundary_circle()]);
+
+    assert_eq!(
+        super::counterbore_source_boundary_circle(&scan, &ir, 42, &[2], 1.0),
+        None
+    );
+}

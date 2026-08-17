@@ -16,6 +16,7 @@ use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
 use super::super::sketch::{approximately_equal, normalized};
+use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
 
 pub fn counterbore_dimensions(
@@ -763,9 +764,9 @@ pub fn counterbore_source_boundary_circle(
                 };
                 let plane = rows.get(&other)?;
                 (plane.kind == crate::surface::SurfaceKind::Plane).then_some(())?;
-                let curve = ir.model.curves.iter().find(|curve| {
+                let curve = exactly_one(ir.model.curves.iter().filter(|curve| {
                     curve.id == CurveId(format!("creo:visibgeom:curve#{}", edge.id))
-                })?;
+                }))?;
                 let CurveGeometry::Circle {
                     center,
                     axis,
