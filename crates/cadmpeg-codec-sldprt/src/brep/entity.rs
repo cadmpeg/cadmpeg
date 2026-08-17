@@ -794,6 +794,14 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc20_disc1e_disc1c_disc18_disc16_disc12_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc20_disc1e_disc1c_disc16_disc14_disc10_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
+        out.extend(
+            disc20_disc1e_disc1c_disc16_disc14_disc12_disc10_disc04_face_root_body(&by_attr),
+        );
+    }
+    if out.is_empty() {
         out.extend(disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4076,6 +4084,69 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc12_disc04_face_root_body(
     )
 }
 
+fn disc20_disc1e_disc1c_disc16_disc14_disc10_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_and_companion_use_bridge(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0016, 1),
+            (0x0014, 2),
+            (0x0010, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 3,
+            require_exact_use_population: false,
+        },
+        Some(KeyedFaceBridge {
+            disc: 0x0018,
+            flo: 2,
+        }),
+        true,
+    )
+}
+
+fn disc20_disc1e_disc1c_disc16_disc14_disc12_disc10_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_and_companion_use_bridge(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0016, 1),
+            (0x0014, 2),
+            (0x0012, 2),
+            (0x0010, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 3,
+            require_exact_use_population: false,
+        },
+        Some(KeyedFaceBridge {
+            disc: 0x0018,
+            flo: 2,
+        }),
+        true,
+    )
+}
+
 fn disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7303,7 +7374,9 @@ mod tests {
     mod disc20_disc1a_disc18;
     mod disc20_disc1e_disc1c;
     mod disc20_disc1e_disc1c_disc14_disc12_disc10_disc04;
+    mod disc20_disc1e_disc1c_disc16_disc14_disc10_disc04;
     mod disc20_disc1e_disc1c_disc16_disc14_disc12;
+    mod disc20_disc1e_disc1c_disc16_disc14_disc12_disc10_disc04;
     mod disc20_disc1e_disc1c_disc18_disc16;
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc20_disc1e_disc1c_disc18_disc16_disc12;
@@ -7394,7 +7467,6 @@ mod tests {
                 }],
             }],
         }];
-
         assert_eq!(bind_schema_33103_faces(&entities, &mut bodies), 1);
         assert_eq!(bodies[0].refs, [10]);
         assert_eq!(bodies[0].regions[0].shells[0].refs, [10]);
@@ -7461,7 +7533,6 @@ mod tests {
         assert_eq!(body.regions[0].shells[0].attr, 13);
         assert!(by_attr.keys().all(|attr| body.refs.contains(attr)));
     }
-
     #[test]
     fn schema_36001_extended_root_lattice_owns_the_site() {
         let records = vec![
