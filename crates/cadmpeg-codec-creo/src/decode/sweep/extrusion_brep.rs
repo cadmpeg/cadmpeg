@@ -54,12 +54,9 @@ pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
         })
         .filter_map(|entry| {
             let external_id = entry.source_entity_id?;
-            scan.surfaces
-                .rows
-                .iter()
-                .any(|row| {
-                    row.id == entry.entity_id
-                        && row.feature_id == feature_id
+            crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
+                .is_some_and(|row| {
+                    row.feature_id == feature_id
                         && matches!(
                             row.kind,
                             crate::surface::SurfaceKind::Plane
@@ -628,3 +625,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     }
     transferred
 }
+
+#[cfg(test)]
+mod tests;
