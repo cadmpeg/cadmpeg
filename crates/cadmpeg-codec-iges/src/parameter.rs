@@ -295,18 +295,29 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Return `NV + 1`, the token index at which the trailing pointer groups
 /// start, for an entity layout established in the supported format tables.
 ///
-/// The entity type token is index zero. Type 110 §4.13 has six primary
-/// coordinates in Forms 0–2, so its additional-pointer groups start at token
-/// seven. Type 116 §4.16 has three coordinates and a display pointer, so its
-/// groups start at token five even when that pointer is zero or defaulted.
-/// Type 123 §4.20 has three primary values, so its groups start at token four.
-/// Layouts not represented here use generic CADIR recovery.
+/// The entity type token is index zero. Type 102 §4.4 has `N` at index 1 and
+/// `N` constituent pointers at indexes 2 through `N + 1`, so its groups start
+/// at token `N + 2`. Type 110 §4.13 has six primary coordinates in Forms 0–2,
+/// so its additional-pointer groups start at token seven. Type 116 §4.16 has
+/// three coordinates and a display pointer, so its groups start at token five
+/// even when that pointer is zero or defaulted. Type 123 §4.20 has three
+/// primary values, so its groups start at token four. Layouts not represented
+/// here use generic CADIR recovery. A malformed Type 102 count returns the
+/// record end as a known-layout sentinel and never enables generic recovery.
 fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
+        (102, 0) => Some(
+            record
+                .integer(1)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0)
+                .and_then(|count| count.checked_add(2))
+                .unwrap_or(record.tokens.len()),
+        ),
         (110, 0..=2) => Some(7),
         (116, 0) => Some(5),
         (123, 0) => Some(4),

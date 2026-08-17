@@ -446,6 +446,91 @@ fn type110_entity_table_boundary_precedes_valid_generic_alternatives() {
 }
 
 #[test]
+fn type102_entity_table_boundary_follows_declared_child_count() {
+    let association = directory_target(1, 402);
+    let first_child = directory_target(3, 110);
+    let second_child = directory_target(5, 110);
+    let composite = directory_target(7, 102);
+    let directory = BTreeMap::from([
+        (1, &association),
+        (3, &first_child),
+        (5, &second_child),
+        (7, &composite),
+    ]);
+    let record = ParameterRecord {
+        directory_sequence: 7,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [102, 2, 3, 5, 1, 1, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 7,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 102 table boundary");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![1]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type102_malformed_count_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 402);
+    let composite = directory_target(3, 102);
+    let directory = BTreeMap::from([(1, &association), (3, &composite)]);
+    let record = ParameterRecord {
+        directory_sequence: 3,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: vec![
+            Token {
+                value: TokenValue::Integer(102),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Omitted,
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(1),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(1),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(1),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(1),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(0),
+                span: 0..0,
+            },
+        ],
+        parameter_end: 7,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
 fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
     let association = directory_target(1, 402);
     let point = directory_target(3, 116);
@@ -601,6 +686,59 @@ fn decode_uses_type116_entity_boundary_for_explicit_and_omitted_display_pointer(
             &[serde_json::json!("iges:entity:directory#1")]
         );
     }
+}
+
+#[test]
+fn decode_uses_type102_entity_boundary_for_form7_association() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,7;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "LINEA".into(),
+                    status: "00010000",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "LINEB".into(),
+                    status: "00010000",
+                    parameters: "110,1,0,0,2,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 102,
+                    form: 0,
+                    label: "COMPOS".into(),
+                    status: "00000000",
+                    parameters: "102,2,3,5,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#7")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#1")]
+    );
 }
 
 #[test]
