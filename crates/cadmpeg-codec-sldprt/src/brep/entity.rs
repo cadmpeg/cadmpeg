@@ -707,6 +707,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1c_disc16_disc12_disc0e_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1c_disc16_disc14_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc1a_disc14_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4608,7 +4611,7 @@ fn disc1c_disc0c_terminal_face_root_body(
 }
 
 fn disc1c_disc16_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
-    keyed_disc1c_disc16_face_root_body(
+    keyed_disc1c_face_root_body(
         by_attr,
         &[
             (0x001c, 2),
@@ -4619,13 +4622,15 @@ fn disc1c_disc16_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
             (0x000e, 2),
         ],
         0x0004,
+        0x0014,
+        0x001a,
     )
 }
 
 fn disc1c_disc16_disc0e_disc04_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
-    keyed_disc1c_disc16_face_root_body(
+    keyed_disc1c_face_root_body(
         by_attr,
         &[
             (0x001c, 2),
@@ -4637,13 +4642,15 @@ fn disc1c_disc16_disc0e_disc04_face_root_body(
             (0x0004, 2),
         ],
         0x000c,
+        0x0014,
+        0x001a,
     )
 }
 
 fn disc1c_disc16_disc12_disc0e_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
-    keyed_disc1c_disc16_face_root_body(
+    keyed_disc1c_face_root_body(
         by_attr,
         &[
             (0x001c, 2),
@@ -4654,6 +4661,28 @@ fn disc1c_disc16_disc12_disc0e_face_root_body(
             (0x000e, 2),
         ],
         0x0004,
+        0x0014,
+        0x001a,
+    )
+}
+
+fn disc1c_disc16_disc14_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_disc1c_face_root_body(
+        by_attr,
+        &[
+            (0x001c, 2),
+            (0x0018, 2),
+            (0x0016, 2),
+            (0x0014, 2),
+            (0x0010, 1),
+            (0x000e, 2),
+            (0x0004, 2),
+        ],
+        0x000c,
+        0x0012,
+        0x001a,
     )
 }
 
@@ -4809,10 +4838,12 @@ fn keyed_disc1a_face_root_body(
     }]
 }
 
-fn keyed_disc1c_disc16_face_root_body(
+fn keyed_disc1c_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
     chain_shape: &[(u16, u8)],
     canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
 ) -> Vec<BodyRecord> {
     let matching_chains = keyed_forward_chain_candidates(by_attr)
         .into_iter()
@@ -4848,7 +4879,7 @@ fn keyed_disc1c_disc16_face_root_body(
             .get(1)
             .and_then(|attr| by_attr.get(attr))
             .copied()?;
-        (companion.disc == 0x0014
+        (companion.disc == companion_disc
             && companion.flo() == 1
             && companion.refs.get(2) == Some(&face.attr))
         .then_some(companion)
@@ -4865,7 +4896,7 @@ fn keyed_disc1c_disc16_face_root_body(
             .and_then(|attr| by_attr.get(attr))
             .copied()
             .filter(|record| {
-                record.disc == 0x001a
+                record.disc == use_disc
                     && record.flo() == 4
                     && record.refs.get(2) == Some(&companion.attr)
             })
@@ -4878,11 +4909,11 @@ fn keyed_disc1c_disc16_face_root_body(
     }
     let companion_count = by_attr
         .values()
-        .filter(|record| record.disc == 0x0014 && record.flo() == 1)
+        .filter(|record| record.disc == companion_disc && record.flo() == 1)
         .count();
     let use_node_count = by_attr
         .values()
-        .filter(|record| record.disc == 0x001a && record.flo() == 4)
+        .filter(|record| record.disc == use_disc && record.flo() == 4)
         .count();
     if companions.len() != companion_count || use_nodes.len() != use_node_count {
         return Vec::new();
