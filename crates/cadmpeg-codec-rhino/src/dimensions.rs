@@ -493,13 +493,9 @@ fn decode_legacy(
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
-    let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive)?;
-    if next != range.end {
-        return Err(FramingError::structural(
-            range.start,
-            "unsupported legacy dimension version",
-        ));
-    }
+    // The class reader closes the family child and the enclosing class-data
+    // reader owns any direct suffix after that child.
+    let (mut outer, _next, minor) = anonymous(data, range.start, range.end, archive)?;
     let annotation = if class == V5_ORDINATE {
         let (mut wrapper, wrapper_next, _wrapper_minor) =
             anonymous(data, outer.position(), outer.end(), archive)?;
@@ -694,13 +690,10 @@ pub(crate) fn decode(
     if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
         return decode_legacy(data, class, range, scale, archive);
     }
-    let (mut outer, outer_next, _outer_version) = anonymous(data, range.start, range.end, archive)?;
-    if outer_next != range.end {
-        return Err(FramingError::structural(
-            range.start,
-            "unsupported dimension family version",
-        ));
-    }
+    // The class reader closes the family child and the enclosing class-data
+    // reader owns any direct suffix after that child.
+    let (mut outer, _outer_next, _outer_version) =
+        anonymous(data, range.start, range.end, archive)?;
     let (mut common, common_next, common_version) =
         anonymous(data, outer.position(), outer.end(), archive)?;
     let mut annotation = annotation(data, &mut common, archive)?;
@@ -927,18 +920,12 @@ pub(crate) fn apply_userdata(
         if let Some(extra) = userdata.iter().find(|userdata| {
             userdata.class_uuid == V5_ANGULAR_EXTRA && userdata.item_uuid == V5_ANGULAR_EXTRA
         }) {
-            let (mut reader, next, _minor) = anonymous(
+            let (mut reader, _next, _minor) = anonymous(
                 data,
                 extra.payload_range.start,
                 extra.payload_range.end,
                 archive,
             )?;
-            if next != extra.payload_range.end {
-                return Err(FramingError::structural(
-                    extra.payload_range.start,
-                    "invalid V5 angular dimension extension boundary",
-                ));
-            }
             *first_extension_offset = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
                 FramingError::structural(
                     reader.position() - 8,
@@ -961,18 +948,12 @@ pub(crate) fn apply_userdata(
     else {
         return Ok(());
     };
-    let (mut reader, next, minor) = anonymous(
+    let (mut reader, _next, minor) = anonymous(
         data,
         extra.payload_range.start,
         extra.payload_range.end,
         archive,
     )?;
-    if next != extra.payload_range.end {
-        return Err(FramingError::structural(
-            extra.payload_range.start,
-            "unsupported V5 dimension extension version",
-        ));
-    }
     uuid(&mut reader)?;
     let arrow_position = reader.i32()?;
     if !(-1..=1).contains(&arrow_position) {
@@ -1609,6 +1590,31 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn dimension_family_readers_leave_class_data_suffixes_bounded() {
+        let archive = ArchiveVersion::V8;
+        let family = [3.0_f64, 4.0, 8.0, 9.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+
+        let mut modern = payload(1, &family);
+        modern.extend([0xa5, 0x5a]);
+        let modern_dimension = decode(&modern, LINEAR, 0..modern.len(), 1.0, archive)
+            .expect("modern class-data suffix is bounded");
+        assert_eq!(modern_dimension.measurement, 6.0);
+
+        let mut legacy = legacy_payload(
+            1,
+            &[[0.0, 0.0], [0.0, 5.0], [3.0, 0.0], [3.0, 5.0], [1.0, 5.0]],
+            &[],
+        );
+        legacy.extend([0x3c, 0xc3]);
+        let legacy_dimension = decode(&legacy, V5_LINEAR, 0..legacy.len(), 1.0, archive)
+            .expect("legacy class-data suffix is bounded");
+        assert_eq!(legacy_dimension.measurement, 3.0);
+    }
+
+    #[test]
     fn decodes_legacy_dimension_families_into_common_semantics() {
         let archive = ArchiveVersion::V8;
         let linear_bytes = legacy_payload(
@@ -1736,7 +1742,8 @@ pub(crate) mod tests {
         extension.extend(2.0_f64.to_le_bytes());
         extension.extend([0_u8; 15]);
         extension.push(42);
-        let extension = anonymous(2, &extension);
+        let mut extension = anonymous(2, &extension);
+        extension.extend([0x4d, 0xd4]);
         let descriptor = UserdataDescriptor {
             range: 0..extension.len(),
             version: (1, 0),
@@ -1762,8 +1769,9 @@ pub(crate) mod tests {
             "00000000-0000-0000-0000-00000000002a"
         );
 
-        let angular_extension =
+        let mut angular_extension =
             anonymous(0, &[2.5_f64.to_le_bytes(), 4.0_f64.to_le_bytes()].concat());
+        angular_extension.extend([0x6e, 0xe6]);
         let angular_descriptor = UserdataDescriptor {
             range: 0..angular_extension.len(),
             version: (1, 0),

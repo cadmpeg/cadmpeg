@@ -3980,6 +3980,13 @@ text string, obsolete plane, rectangle width `f64`, rotation `f64`, horizontal
 alignment `i32`, vertical alignment `i32`, obsolete text height `f64`, and
 wrap `bool`, in that order.
 
+The text-content, annotation, common-dimension, and family chunks are
+independent boundaries. Each reader consumes its known prefix and ends its
+own anonymous child. Bytes after a known prefix remain bounded by that child;
+bytes after the family chunk remain direct bytes in the enclosing
+`TCODE_OPENNURBS_CLASS_DATA` chunk. They are not fields of the next dimension
+family.
+
 Linear family fields are definition point and dimension-line point as two
 `ON_2dPoint` values. Annotation types 1 and 5 select linear dimensions. The
 measurement is `abs(definition_point.x) * distance_scale`.
@@ -4109,6 +4116,13 @@ view; nil means that the dimension does not measure detail model space. Minor 0
 omits distance scale and detail measured, whose defaults are `1.0` and nil.
 The model-space base point stored by the V5 extension object is runtime-only and
 has no serialized field.
+
+The V5 dimension-extension reader ends its class-owned anonymous version-1
+child. Bytes after that child remain in the enclosing anonymous
+`TCODE_OPENNURBS_CLASS_USERDATA` payload. The angular extension uses the same
+boundary rule: its class-owned anonymous version-1.0 child contains the two
+extension-line origin offsets, and later bytes remain at the enclosing userdata
+boundary.
 
 Saving a V6 annotation to archive versions 3 through 50 converts it to a V5
 linear, radial, or ordinate annotation and serializes this carrier. Saving a
@@ -5610,9 +5624,14 @@ Tagged object-attribute and layer streams retain their one-byte item grammar;
 an unknown item has no generic value width. Writer-band ceilings and explicit
 terminators remain part of those grammars.
 
-Modern text and leader objects contain the common annotation structure and an
-ordered leader point array. V5 text and leader classes contain outer anonymous
-version 1.0 and the common V5 annotation chunk described in section 18.
+Modern `ON_Text` class data is an anonymous version-1.0 child containing the
+common annotation structure. Modern `ON_Leader` class data is an anonymous
+version-1.1 child containing that structure followed by an archive array of
+leader `ON_2dPoint` values. The annotation and text-content children close
+independently; later bytes remain at their child boundaries, and bytes after
+the text or leader child remain at the enclosing `TCODE_OPENNURBS_CLASS_DATA`
+boundary. V5 text and leader classes contain outer anonymous version 1.0 and
+the common V5 annotation chunk described in section 18.
 
 The text-dot class UUID is
 `74198302-CDF4-4F95-9609-6D684F22AB37`. Its class-data payload is direct

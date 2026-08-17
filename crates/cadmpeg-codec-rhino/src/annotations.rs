@@ -445,7 +445,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_dot, decode_legacy_annotation, parse_v5_text_extra, ANONYMOUS, V5_TEXT_EXTRA,
+        decode_annotation, decode_dot, decode_legacy_annotation, parse_v5_text_extra, ANONYMOUS,
+        V5_TEXT_EXTRA,
     };
     use crate::chunks::ArchiveVersion;
     use crate::objects::UserdataDescriptor;
@@ -479,6 +480,38 @@ mod tests {
         .into_iter()
         .flat_map(f64::to_le_bytes)
         .collect()
+    }
+
+    fn modern_annotation(leader: bool) -> Vec<u8> {
+        let mut text = utf16("rich");
+        text.extend(plane());
+        text.extend(1.0_f64.to_le_bytes());
+        text.extend(0.25_f64.to_le_bytes());
+        text.extend(0_i32.to_le_bytes());
+        text.extend(1_i32.to_le_bytes());
+        text.extend(2.0_f64.to_le_bytes());
+        text.push(1);
+
+        let mut annotation = anonymous(0, &text);
+        annotation.extend([0; 16]);
+        annotation.extend(plane());
+        annotation.extend(9_i32.to_le_bytes());
+        annotation.extend(anonymous(1, &[0]));
+        annotation.extend(1.0_f64.to_le_bytes());
+        annotation.extend(0.0_f64.to_le_bytes());
+        annotation.push(1);
+
+        let mut outer_body = anonymous(4, &annotation);
+        if leader {
+            outer_body.extend(2_i32.to_le_bytes());
+            for point in [[1.0_f64, 2.0], [3.0, 4.0]] {
+                outer_body.extend(point[0].to_le_bytes());
+                outer_body.extend(point[1].to_le_bytes());
+            }
+        }
+        let mut outer = anonymous(i32::from(leader), &outer_body);
+        outer.extend([0xfa, 0xce]);
+        outer
     }
 
     #[test]
@@ -517,6 +550,23 @@ mod tests {
         assert_eq!(dot.secondary_text, "");
         assert_eq!(dot.font_face, "Courier New");
         assert!(!dot.always_on_top && !dot.transparent && !dot.bold && !dot.italic);
+    }
+
+    #[test]
+    fn modern_text_and_leader_readers_leave_class_data_suffixes_bounded() {
+        let text = modern_annotation(false);
+        let (text, points) =
+            decode_annotation(&text, 0..text.len(), ArchiveVersion::V8, 1.0, false)
+                .expect("modern text class-data suffix is bounded");
+        assert_eq!(text.rich_text, "rich");
+        assert!(points.is_empty());
+
+        let leader = modern_annotation(true);
+        let (leader, points) =
+            decode_annotation(&leader, 0..leader.len(), ArchiveVersion::V8, 1.0, true)
+                .expect("modern leader class-data suffix is bounded");
+        assert_eq!(leader.rich_text, "rich");
+        assert_eq!(points, [[1.0, 2.0], [3.0, 4.0]]);
     }
 
     #[test]

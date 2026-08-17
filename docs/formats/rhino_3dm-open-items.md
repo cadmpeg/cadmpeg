@@ -189,6 +189,16 @@ equal ID, a known ID before its gate, or an unknown ID consumes only the ID
 and leaves its value and the rest of the stream at the containing
 `TCODE_OBJECT_RECORD_ATTRIBUTES` boundary.
 
+The modern text, leader, and dimension readers are also settled at their
+anonymous-child boundaries. OpenNURBS writes text as outer 1.0, leader as
+outer 1.1, and the dimension families as outer 1.0 with common 1.1,
+annotation 1.4, and text-content 1.0 children. The V5 annotation child is
+minor 3, the V5 dimension extension is minor 2, and the angular extension is
+minor 0. Each reader closes its own child; a suffix after a family child stays
+at `TCODE_OPENNURBS_CLASS_DATA`, and a suffix after a V5 extension child stays
+at the enclosing class-userdata boundary. The Rust parsers follow these
+source boundaries.
+
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
 rule.
@@ -285,5 +295,15 @@ cutoff is `200712190`, the fixed payload is packed 1.8, and the modern tagged
 payload is packed 2.13. The object owner tests cover the pre-cutoff V5 direct
 branch, gate-inadmissible IDs, and out-of-order IDs at the bounded attributes
 boundary.
-The earlier aggregate closure did not provide this reader-level trace. The
-remaining direct-reader and writer-band inventory remains open.
+The annotation and dimension boundary is established by
+`ON_Text::Write`/`Read`, `ON_Leader::Write`/`Read`,
+`ON_Annotation::Internal_WriteAnnotation`/`Internal_ReadAnnotation`,
+`ON_TextContent::Write`/`Read`, `ON_Dimension::Internal_WriteDimension`/
+`Internal_ReadDimension`, the `ON_Dim*` and `ON_Centermark` readers in
+`opennurbs_dimension.cpp`, and
+`ON_OBSOLETE_V5_Annotation::Write`/`Read`,
+`ON_OBSOLETE_V5_DimExtra::Write`/`Read`, and
+`ON_AngularDimension2Extra::Write`/`Read` in
+`opennurbs_internal_V2_annotation.cpp`. Owner tests cover modern and legacy
+class-data suffixes and both V5 extension-child suffixes. The remaining
+direct-reader and writer-band inventory remains open.
