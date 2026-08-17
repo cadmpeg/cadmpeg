@@ -152,3 +152,40 @@ fn boundary_circle_rejects_duplicate_surface_rows() {
         None
     );
 }
+
+#[test]
+fn radius_anchored_counterbore_accepts_signed_depth() {
+    let table = crate::feature::FeatureDimensionTable {
+        declared_count: 4,
+        entity_ref: Some(88),
+        rows: [
+            (2, 0.098, 0),
+            (2, 0.463_628_944_932_919_5, 1),
+            (1, -0.15, 2),
+            (2, 0.3125, 3),
+        ]
+        .into_iter()
+        .map(
+            |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+                dimension_type,
+                value: Some(value),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit: crate::feature::DimensionUnit::Millimeters,
+                direction_byte: 0,
+                auxiliary_value: Some(0.0),
+                auxiliary_body: Vec::new(),
+                external_id,
+                references: None,
+                offset: 0,
+            },
+        )
+        .collect(),
+        offset: 0,
+    };
+
+    assert_eq!(
+        super::counterbore_dimension_values(std::iter::once(&table), &[0.3125]),
+        Some((0.196, 0.625, 0.15))
+    );
+}

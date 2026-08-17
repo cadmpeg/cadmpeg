@@ -19,6 +19,8 @@ use super::super::sketch::{approximately_equal, normalized};
 use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
 
+const EPS_COUNTERBORE_RADIUS_MATCH: f64 = 1e-9;
+
 fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGeometry>> {
     let mut geometries = BTreeMap::new();
     for surface in &ir.model.surfaces {
@@ -125,23 +127,25 @@ pub fn counterbore_dimension_values<'a>(
             let [row] = rows.as_slice() else {
                 return None;
             };
-            row.value.filter(|value| value.is_finite() && *value > 0.0)
+            row.value.filter(|value| value.is_finite())
         };
-        let (Some(bore_radius), Some(placement_distance), Some(depth), Some(counterbore_radius)) =
+        let (Some(bore_radius), Some(_placement_distance), Some(depth), Some(counterbore_radius)) =
             (value(0, 2), value(1, 2), value(2, 1), value(3, 2))
         else {
             continue;
         };
-        if bore_radius >= counterbore_radius
-            || placement_distance <= 0.0
+        if bore_radius <= 0.0
+            || depth == 0.0
+            || counterbore_radius <= bore_radius
             || !generated_radii.iter().any(|radius| {
                 (*radius - counterbore_radius).abs()
-                    <= 1e-9 * radius.abs().max(counterbore_radius.abs()).max(1.0)
+                    <= EPS_COUNTERBORE_RADIUS_MATCH
+                        * radius.abs().max(counterbore_radius.abs()).max(1.0)
             })
         {
             continue;
         }
-        candidates.push((2.0 * bore_radius, 2.0 * counterbore_radius, depth));
+        candidates.push((2.0 * bore_radius, 2.0 * counterbore_radius, depth.abs()));
     }
     let first = *candidates.first()?;
     candidates
