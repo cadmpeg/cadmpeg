@@ -778,6 +778,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(
+            disc22_disc20_disc1e_disc1a_disc18_disc12_disc10_disc04_face_root_body(&by_attr),
+        );
+    }
+    if out.is_empty() {
         out.extend(shifted_disc16_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -3953,6 +3958,7 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc0e_face_root_body(
             shell_index: 4,
             require_exact_use_population: false,
         },
+        false,
     )
 }
 
@@ -3980,6 +3986,35 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc04_face_root_body(
             shell_index: 4,
             require_exact_use_population: false,
         },
+        false,
+    )
+}
+
+fn disc22_disc20_disc1e_disc1a_disc18_disc12_disc10_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links(
+        by_attr,
+        &[
+            (0x0022, 2),
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001a, 1),
+            (0x0018, 2),
+            (0x0012, 2),
+            (0x0010, 2),
+            (0x0004, 2),
+        ],
+        0x000e,
+        0x001c,
+        0x0024,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 3,
+            require_exact_use_population: false,
+        },
+        true,
     )
 }
 
@@ -5361,6 +5396,28 @@ struct KeyedFaceRootOptions {
     require_exact_use_population: bool,
 }
 
+fn keyed_companion_by_key<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+    face: &EntityRecord,
+    companion_disc: u16,
+) -> Option<&'a EntityRecord> {
+    let key = face.refs.first().copied().filter(|key| *key > 1)?;
+    let candidates = by_attr
+        .values()
+        .copied()
+        .filter(|record| {
+            record.disc == companion_disc
+                && record.flo() == 1
+                && record.refs.first() == Some(&key)
+                && record.refs.get(1).is_some_and(|attr| *attr > 1)
+        })
+        .collect::<Vec<_>>();
+    let [companion] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*companion)
+}
+
 fn keyed_face_root_body_with_keyed_face_links(
     by_attr: &HashMap<u16, &EntityRecord>,
     chain_shape: &[(u16, u8)],
@@ -5368,14 +5425,17 @@ fn keyed_face_root_body_with_keyed_face_links(
     companion_disc: u16,
     use_disc: u16,
     options: KeyedFaceRootOptions,
+    allow_keyed_companion_fallback: bool,
 ) -> Vec<BodyRecord> {
-    let bodies = keyed_face_root_body(
+    let bodies = keyed_face_root_body_with_companion_use_bridge_and_fallback(
         by_attr,
         chain_shape,
         canonical_disc,
         companion_disc,
         use_disc,
         options,
+        None,
+        allow_keyed_companion_fallback,
     );
     if bodies.is_empty() {
         return bodies;
@@ -5390,7 +5450,17 @@ fn keyed_face_root_body_with_keyed_face_links(
                 .get(1)
                 .and_then(|attr| by_attr.get(attr))
                 .copied()
-                .filter(|record| record.disc == companion_disc && record.flo() == 1)
+                .filter(|record| {
+                    record.disc == companion_disc
+                        && record.flo() == 1
+                        && record.refs.get(2) == Some(&face.attr)
+                })
+                .or_else(|| {
+                    if !allow_keyed_companion_fallback {
+                        return None;
+                    }
+                    keyed_companion_by_key(by_attr, face, companion_disc)
+                })
             else {
                 return false;
             };
@@ -5399,7 +5469,11 @@ fn keyed_face_root_body_with_keyed_face_links(
                 .get(1)
                 .and_then(|attr| by_attr.get(attr))
                 .copied()
-                .filter(|record| record.disc == use_disc && record.flo() == 4)
+                .filter(|record| {
+                    record.disc == use_disc
+                        && record.flo() == 4
+                        && record.refs.get(2) == Some(&companion.attr)
+                })
             else {
                 return false;
             };
@@ -5440,6 +5514,29 @@ fn keyed_face_root_body_with_companion_use_bridge(
     use_disc: u16,
     options: KeyedFaceRootOptions,
     companion_use_bridge: Option<KeyedFaceBridge>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_companion_use_bridge_and_fallback(
+        by_attr,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        options,
+        companion_use_bridge,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Each argument identifies an independent layout role or link policy.
+fn keyed_face_root_body_with_companion_use_bridge_and_fallback(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    options: KeyedFaceRootOptions,
+    companion_use_bridge: Option<KeyedFaceBridge>,
+    allow_keyed_companion_fallback: bool,
 ) -> Vec<BodyRecord> {
     let matching_chains = keyed_forward_chain_candidates(by_attr)
         .into_iter()
@@ -5504,10 +5601,17 @@ fn keyed_face_root_body_with_companion_use_bridge(
                 })?;
             Some((companion, Some(bridge)))
         });
-        match (direct, bridged) {
-            (Some(_), Some(_)) => None,
-            (Some(selected), None) | (None, Some(selected)) => Some(selected),
-            (None, None) => None,
+        let keyed = if direct.is_none() && bridged.is_none() && allow_keyed_companion_fallback {
+            keyed_companion_by_key(by_attr, face, companion_disc).map(|companion| (companion, None))
+        } else {
+            None
+        };
+        match (direct, bridged, keyed) {
+            (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) => None,
+            (Some(selected), None, None)
+            | (None, Some(selected), None)
+            | (None, None, Some(selected)) => Some(selected),
+            (None, None, None) => None,
         }
     };
     let mut companions = HashSet::new();
@@ -6922,6 +7026,7 @@ mod tests {
     mod disc20_disc18;
     mod disc20_disc1a_disc18;
     mod disc20_disc1e_disc1c;
+    mod disc22_disc20_disc1e_disc1a;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
@@ -6971,7 +7076,6 @@ mod tests {
         }
         bytes
     }
-
     fn record(attr: u16, disc: u16, refs: [u16; 6]) -> EntityRecord {
         EntityRecord {
             attr,
