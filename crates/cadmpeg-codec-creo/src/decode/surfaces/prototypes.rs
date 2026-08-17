@@ -142,6 +142,35 @@ pub(in super::super) fn first_instance_surface_row(
         .min_by_key(|row| row.offset)
 }
 
+pub(in super::super) fn surface_prototype_frame_bounds(
+    scan: &ContainerScan<'_>,
+    section: &crate::container::Section,
+    prototype_offset: usize,
+) -> Option<(usize, usize)> {
+    if scan.framing.data.is_empty() {
+        return Some((
+            section.offset,
+            section.offset.saturating_add(section.length),
+        ));
+    }
+    let section_end = section
+        .offset
+        .saturating_add(section.length)
+        .min(scan.framing.data.len());
+    let payload = scan.framing.data.get(section.offset..section_end)?;
+    let relative_prototype_offset = prototype_offset.checked_sub(section.offset)?;
+    let mut matches = crate::surface::complete_surface_array_bounds(payload)
+        .into_iter()
+        .filter(|(start, end)| {
+            relative_prototype_offset >= *start && relative_prototype_offset < *end
+        });
+    let (start, end) = matches.next()?;
+    matches.next().is_none().then_some((
+        section.offset.saturating_add(start),
+        section.offset.saturating_add(end),
+    ))
+}
+
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Vec<(
@@ -169,28 +198,10 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         }) else {
             continue;
         };
-        let section_limit = section.offset.saturating_add(section.length);
-        let frame_bounds = if section.offset < scan.framing.data.len() {
-            let section_end = section_limit.min(scan.framing.data.len());
-            crate::surface::complete_surface_array_bounds(
-                &scan.framing.data[section.offset..section_end],
-            )
-        } else {
-            Vec::new()
-        };
-        let (adjacent_start, adjacent_end) = if frame_bounds.is_empty() {
-            if !scan.framing.data.is_empty() {
-                continue;
-            }
-            (section.offset, section_limit)
-        } else {
-            let relative_record_offset = record.offset.saturating_sub(section.offset);
-            let Some((start, end)) = frame_bounds.into_iter().find(|(start, end)| {
-                relative_record_offset >= *start && relative_record_offset < *end
-            }) else {
-                continue;
-            };
-            (section.offset + start, section.offset + end)
+        let Some((adjacent_start, adjacent_end)) =
+            surface_prototype_frame_bounds(scan, section, record.offset)
+        else {
+            continue;
         };
         let Some(row) = first_instance_surface_row(
             &scan.surfaces.rows,

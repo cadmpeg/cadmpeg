@@ -22,7 +22,9 @@ use super::super::sketch::normalized;
 use super::super::sweep::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
 use super::super::uniqueness::exactly_one;
 
-use super::prototypes::{prototype_scalar, unique_surface_prototype_associations};
+use super::prototypes::{
+    prototype_scalar, surface_prototype_frame_bounds, unique_surface_prototype_associations,
+};
 
 pub(in super::super) fn transfer_paired_envelope_spheres(
     scan: &ContainerScan,
@@ -44,12 +46,19 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         else {
             continue;
         };
+        let Some((frame_start, frame_end)) =
+            surface_prototype_frame_bounds(scan, section, prototype.offset)
+        else {
+            continue;
+        };
         let rows = scan
             .surfaces
             .rows
             .iter()
             .filter(|row| {
-                row.feature_id == associated_row.feature_id
+                row.offset >= frame_start
+                    && row.offset < frame_end
+                    && row.feature_id == associated_row.feature_id
                     && row.kind == crate::surface::SurfaceKind::TorusOrSphere
             })
             .collect::<Vec<_>>();
@@ -104,6 +113,9 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     }
     transferred
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(in super::super) fn transfer_positional_tori(
     scan: &ContainerScan,
