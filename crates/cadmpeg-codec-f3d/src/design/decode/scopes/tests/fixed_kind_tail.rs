@@ -1718,7 +1718,7 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
         [u8; 4],
         [[f64; 4]; 4],
     );
-    let cases: [WorkPlaneFrameCase; 3] = [
+    let cases: [WorkPlaneFrameCase; 4] = [
         (
             b"290",
             b"262",
@@ -1755,6 +1755,7 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
                 [0.0, 0.0, 0.0, 1.0],
             ],
         ),
+        (b"364", b"263", 76u32, [0, 0, 0, 0], identity_matrix()),
     ];
 
     for (class_tag, paired_class_tag, record_index, prefix_marker, transform) in cases {

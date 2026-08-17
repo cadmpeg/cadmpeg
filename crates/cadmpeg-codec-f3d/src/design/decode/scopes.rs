@@ -5359,6 +5359,7 @@ pub(crate) fn exact_work_plane_frame(
                         (Some(b"320"), Some(b"258"))
                             | (Some(b"380"), Some(b"262"))
                             | (Some(b"308" | b"431"), Some(b"257"))
+                            | (Some(b"364"), Some(b"263"))
                     ) && bytes.get(start + 11..start + work_plane_325::MATRIX)
                         == Some(&[0u8; work_plane_325::MATRIX - 11][..]) =>
                 {

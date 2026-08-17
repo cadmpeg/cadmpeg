@@ -2267,7 +2267,7 @@ pub(crate) mod work_plane_legacy_class_290_matrix_frame {
 /// Spec §3.1. Record length 325 B.
 ///
 /// ```text
-/// Offsets are relative to any of the class-308, class-320, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 258, 262, and 257 respectively.
+/// Offsets are relative to any of the class-308, class-320, class-364, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 258, 263, 262, and 257 respectively.
 /// ```
 pub(crate) mod work_plane_legacy_325_matrix_frame {
     /// Record length in bytes. Spec §3.1.

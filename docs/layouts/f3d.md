@@ -1622,11 +1622,11 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 325 B
 
-Offsets are relative to any of the class-308, class-320, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 258, 262, and 257 respectively.
+Offsets are relative to any of the class-308, class-320, class-364, class-380, or class-431 primary indexed placement headers. Their paired classes are 257, 258, 263, 262, and 257 respectively.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 49 | 128 | `matrix` | `f64[16]` | little | spec | The class-308/257, class-320/258, class-380/262, and class-431/257 placement frames use a second 325-byte layout |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | The class-308/257, class-320/258, class-364/263, class-380/262, and class-431/257 placement frames use a second 325-byte layout |
 
 Unstated regions:
 
