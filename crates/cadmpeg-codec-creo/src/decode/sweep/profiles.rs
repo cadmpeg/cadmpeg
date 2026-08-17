@@ -3,12 +3,12 @@
 
 use super::super::analytic::nurbs_intrinsic_parameter_range;
 use super::super::holes::ExtrusionSpan;
+use super::super::uniqueness::exactly_one;
 use super::nurbs::{oriented_sketch_nurbs_curve, sketch_nurbs_curve, sketch_nurbs_pcurve};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
-use std::collections::BTreeMap;
 
 pub(in super::super) fn sketch_geometry_endpoints(
     geometry: &SketchGeometry,
@@ -59,21 +59,14 @@ pub(in super::super) fn connected_sketch_profile_vertices(
     ir: &CadIr,
     sketch_id: &SketchId,
 ) -> Vec<(usize, Vec<[f64; 2]>)> {
-    let Some(sketch) = ir
-        .model
-        .sketches
-        .iter()
-        .find(|sketch| sketch.id == *sketch_id)
-    else {
+    let Some(sketch) = exactly_one(
+        ir.model
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == *sketch_id),
+    ) else {
         return Vec::new();
     };
-    let entities = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch_id)
-        .map(|entity| (entity.id.clone(), &entity.geometry))
-        .collect::<BTreeMap<_, _>>();
     sketch
         .profiles
         .iter()
@@ -83,7 +76,10 @@ pub(in super::super) fn connected_sketch_profile_vertices(
             let uses = profile
                 .iter()
                 .map(|entity_use| {
-                    let geometry = entities.get(&entity_use.entity)?;
+                    let geometry = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+                        entity.sketch == *sketch_id && entity.id == entity_use.entity
+                    }))
+                    .map(|entity| &entity.geometry)?;
                     let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
                     if entity_use.reversed {
                         std::mem::swap(&mut start, &mut end);
@@ -331,24 +327,21 @@ pub(in super::super) fn resolved_sketch_profiles(
     sketch_id: &SketchId,
     minimum_entity_count: usize,
 ) -> Option<Vec<ExtrusionProfile>> {
-    let sketch = ir
-        .model
-        .sketches
-        .iter()
-        .find(|sketch| sketch.id == *sketch_id)?;
+    let sketch = exactly_one(
+        ir.model
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == *sketch_id),
+    )?;
     (!sketch.profiles.is_empty()).then_some(())?;
-    let entities = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch_id)
-        .map(|entity| (entity.id.clone(), entity))
-        .collect::<BTreeMap<_, _>>();
     let mut profiles = Vec::new();
     for profile in &sketch.profiles {
         let mut geometries = Vec::new();
         for entity_use in profile {
-            let entity = entities.get(&entity_use.entity)?;
+            let entity =
+                exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+                    entity.sketch == *sketch_id && entity.id == entity_use.entity
+                }))?;
             let (mut start, mut end) = sketch_geometry_endpoints(&entity.geometry)?;
             if entity_use.reversed {
                 std::mem::swap(&mut start, &mut end);
@@ -373,6 +366,9 @@ pub(in super::super) fn resolved_sketch_profiles(
     }
     Some(profiles)
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(in super::super) fn profile_arc(
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
