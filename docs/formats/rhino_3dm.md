@@ -6309,6 +6309,14 @@ UUID, item UUID, or plug-in UUID remains part of the complete containing object
 record. A dictionary inside that item remains part of the same bounded userdata
 payload.
 
+CADIR typed-admission decision: the Rhino codec's typed class registry contains
+only the built-in class UUIDs defined by this specification. It admits no
+third-party class-data payload, plug-in dictionary ID, or direct plug-in user
+record as typed data. An application or plug-in UUID carried by a recognized
+built-in userdata carrier does not change that carrier's class ownership. All
+unregistered class wrappers, non-standard dictionaries, and direct plug-in
+records remain complete opaque records with their source identity and bytes.
+
 `ON_ArchivableDictionary` has dictionary UUID
 `21EE7933-1E2D-4047-869E-6BDBF986EA11`. Its structure is:
 
