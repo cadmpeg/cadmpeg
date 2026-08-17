@@ -27,9 +27,43 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const BLEND_SECTION_DOMAIN: [f64; 2] = [0.0, 1.0];
+const BLEND_SECTION_BOUNDARY_EPSILON: f64 = 1.0e-12;
 
 fn blend_section_parameter_in_domain(parameter: f64) -> bool {
     (BLEND_SECTION_DOMAIN[0]..=BLEND_SECTION_DOMAIN[1]).contains(&parameter)
+}
+
+fn blend_section_parameter_clamped(parameter: f64) -> Option<f64> {
+    (BLEND_SECTION_DOMAIN[0] - BLEND_SECTION_BOUNDARY_EPSILON
+        ..=BLEND_SECTION_DOMAIN[1] + BLEND_SECTION_BOUNDARY_EPSILON)
+        .contains(&parameter)
+        .then(|| parameter.clamp(BLEND_SECTION_DOMAIN[0], BLEND_SECTION_DOMAIN[1]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{blend_section_parameter_clamped, BLEND_SECTION_BOUNDARY_EPSILON};
+
+    #[test]
+    fn blend_section_boundary_clamps_only_nearby_roundoff() {
+        assert_eq!(
+            blend_section_parameter_clamped(-0.5 * BLEND_SECTION_BOUNDARY_EPSILON),
+            Some(0.0)
+        );
+        assert_eq!(
+            blend_section_parameter_clamped(1.0 + 0.5 * BLEND_SECTION_BOUNDARY_EPSILON),
+            Some(1.0)
+        );
+        assert_eq!(blend_section_parameter_clamped(0.25), Some(0.25));
+        assert_eq!(
+            blend_section_parameter_clamped(-2.0 * BLEND_SECTION_BOUNDARY_EPSILON),
+            None
+        );
+        assert_eq!(
+            blend_section_parameter_clamped(1.0 + 2.0 * BLEND_SECTION_BOUNDARY_EPSILON),
+            None
+        );
+    }
 }
 
 pub(crate) fn decoded_surface_point_inner(
@@ -211,7 +245,7 @@ pub(crate) fn blend_surface_parameters_inner(
         (-2..=2)
             .filter_map(|turn| {
                 let v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
-                blend_section_parameter_in_domain(v).then_some(())?;
+                let v = blend_section_parameter_clamped(v)?;
                 let candidate = blend_surface_point_inner_with_index_and_budget(
                     index,
                     surface,
