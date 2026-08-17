@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed identity index over a complete CAD model.
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
 use crate::appearance::{Appearance, AppearanceBinding};
@@ -27,12 +29,75 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 
+/// Collision-safe, allocation-free identity slots for one typed arena.
+///
+/// The index stores arena positions rather than borrowed keys. This keeps a
+/// lazy index covariant over the document lifetime and avoids copying every
+/// identity into each phase-local lookup map. Hash collisions and duplicate
+/// identities are retained in insertion order and checked against the source
+/// entity before a result is returned.
+#[derive(Debug)]
+enum IdentityEntry {
+    One(usize),
+    Many(Vec<usize>),
+}
+
+type IdentityIndex = HashMap<u64, IdentityEntry>;
+
+fn identity_hash(identity: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    identity.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex {
+    let mut index = HashMap::with_capacity(entities.len());
+    for (slot, entity) in entities.iter().enumerate() {
+        match index.entry(identity_hash(entity.identity())) {
+            Entry::Vacant(entry) => {
+                entry.insert(IdentityEntry::One(slot));
+            }
+            Entry::Occupied(entry) => {
+                let value = entry.into_mut();
+                match value {
+                    IdentityEntry::One(previous) => {
+                        let previous = *previous;
+                        *value = IdentityEntry::Many(vec![previous, slot]);
+                    }
+                    IdentityEntry::Many(slots) => slots.push(slot),
+                }
+            }
+        }
+    }
+    index
+}
+
+fn lookup_identity<'a, T: EntitySchema>(
+    entities: &'a [T],
+    index: &OnceLock<IdentityIndex>,
+    identity: &str,
+) -> Option<&'a T> {
+    let entry = index
+        .get_or_init(|| build_identity_index(entities))
+        .get(&identity_hash(identity))?;
+    match entry {
+        IdentityEntry::One(slot) => entities
+            .get(*slot)
+            .filter(|entity| entity.identity() == identity),
+        IdentityEntry::Many(slots) => slots.iter().rev().find_map(|slot| {
+            entities
+                .get(*slot)
+                .filter(|entity| entity.identity() == identity)
+        }),
+    }
+}
+
 macro_rules! define_model_index {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         /// One-pass borrowed lookup index for neutral and native identities.
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
-            $($field: HashMap<&'a str, &'a $element>,)*
+            $($field: OnceLock<IdentityIndex>,)*
             procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_surface_for_carrier: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_curves_by_curve: HashMap<&'a str, Vec<&'a ProceduralCurve>>,
@@ -43,7 +108,7 @@ macro_rules! define_model_index {
         }
 
         impl<'a> ModelIndex<'a> {
-            /// Builds every typed lookup and lazily materializes the identity universe.
+            /// Builds lazy typed lookups and lazily materializes the identity universe.
             pub fn new(ir: &'a CadIr) -> Self {
                 Self::with_identity_sources(ir, true, std::iter::empty())
             }
@@ -71,10 +136,6 @@ macro_rules! define_model_index {
                 include_native: bool,
                 additional: impl IntoIterator<Item = &'a str>,
             ) -> Self {
-                $(let $field = ir.model.$field.iter().map(|entity| {
-                    let identity = entity.identity();
-                    (identity, entity)
-                }).collect();)*
                 let mut procedural_surface_by_surface =
                     HashMap::with_capacity(ir.model.procedural_surfaces.len());
                 for procedural in &ir.model.procedural_surfaces {
@@ -134,7 +195,7 @@ macro_rules! define_model_index {
                 }
                 Self {
                     ir,
-                    $($field,)*
+                    $($field: OnceLock::new(),)*
                     procedural_surface_by_surface,
                     procedural_surface_for_carrier,
                     procedural_curves_by_curve,
@@ -147,7 +208,7 @@ macro_rules! define_model_index {
 
             fn model_identity_set(&self) -> HashSet<String> {
                 let mut identities = HashSet::with_capacity(self.ir.model.entity_count());
-                $(identities.extend(self.$field.keys().map(|identity| (*identity).to_owned()));)*
+                $(identities.extend(self.ir.model.$field.iter().map(|entity| entity.identity().to_owned()));)*
                 identities
             }
 
@@ -190,7 +251,7 @@ macro_rules! define_model_index {
 
             fn borrowed_identity_set(&self) -> HashSet<&'a str> {
                 let mut identities = HashSet::with_capacity(self.ir.model.entity_count());
-                $(identities.extend(self.$field.keys().copied());)*
+                $(identities.extend(self.ir.model.$field.iter().map(EntitySchema::identity));)*
                 if self.include_native {
                     identities.extend(
                         self.ir
@@ -257,7 +318,7 @@ macro_rules! define_model_index {
             $(
                 #[doc = concat!("Looks up an entity in the `", stringify!($field), "` arena.")]
                 pub fn $field(&self, identity: &str) -> Option<&'a $element> {
-                    self.$field.get(identity).copied()
+                    lookup_identity(&self.ir.model.$field, &self.$field, identity)
                 }
             )*
         }
@@ -366,6 +427,39 @@ mod tests {
         assert!(!model_only
             .identities()
             .any(|identity| identity == native_id));
+    }
+
+    #[test]
+    fn typed_lookup_indexes_are_lazy_and_preserve_last_duplicate() {
+        let mut ir = CadIr::empty(Units::default());
+        let parameter_id = crate::features::ParameterId("test:parameter#0".into());
+        for (ordinal, expression) in [(0, "first"), (1, "last")] {
+            ir.model.parameters.push(crate::features::DesignParameter {
+                id: parameter_id.clone(),
+                owner: None,
+                ordinal,
+                name: format!("p{ordinal}"),
+                expression: expression.into(),
+                display: None,
+                value: None,
+                dependencies: Vec::new(),
+                properties: std::collections::BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
+        }
+
+        let index = ModelIndex::new_model_only(&ir);
+        assert!(index.parameters.get().is_none());
+        assert!(index.bodies.get().is_none());
+        assert_eq!(
+            index
+                .parameters(parameter_id.0.as_str())
+                .map(|parameter| parameter.expression.as_str()),
+            Some("last")
+        );
+        assert!(index.parameters.get().is_some());
+        assert!(index.bodies.get().is_none());
     }
 
     #[test]
