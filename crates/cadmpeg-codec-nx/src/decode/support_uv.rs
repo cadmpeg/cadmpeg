@@ -5,9 +5,11 @@ use super::blend::{
     blend_boundary_parameter_from_contact_pcurve_with_geometry,
     blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
     blend_surface_parameters_for_fit_with_grid_and_budget,
-    blend_surface_parameters_from_grid_for_fit_and_budget, decoded_surface_point_with_geometry,
-    decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve, BlendParameterGrid,
-    BoundaryInverseTarget,
+    blend_surface_parameters_for_fit_with_source_continuation_and_budget,
+    blend_surface_parameters_from_grid_for_fit_and_budget,
+    blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget,
+    decoded_surface_point_with_geometry, decoded_surface_point_with_geometry_and_budget,
+    spine_contact_pcurve, BlendParameterGrid, BoundaryInverseTarget,
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
@@ -509,6 +511,8 @@ fn complete_support_uv_wave(
             let Some(surface) = model_index.surfaces(surface_id.0.as_str()) else {
                 continue;
             };
+            let source_chart_available =
+                source_pcurve.is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)));
             let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
                 &model_index,
                 ir,
@@ -569,72 +573,84 @@ fn complete_support_uv_wave(
                         seed,
                         effective_fit_tolerance,
                     ),
-                    SurfaceGeometry::Procedural { .. } => other_contact
-                        .and_then(
-                            |(
-                                other_surface,
-                                other_pcurve,
-                                other_geometry,
-                                contact_pcurve,
-                                boundary,
-                            )| {
-                                blend_boundary_parameter_from_contact_pcurve_with_geometry(
-                                    &model_index,
+                    SurfaceGeometry::Procedural { .. } => {
+                        let solve_blend_parameters = if source_chart_available {
+                            blend_surface_parameters_for_fit_with_source_continuation_and_budget
+                        } else {
+                            blend_surface_parameters_for_fit_with_grid_and_budget
+                        };
+                        let solve_grid_parameters = if source_chart_available {
+                            blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
+                        } else {
+                            blend_surface_parameters_from_grid_for_fit_and_budget
+                        };
+                        other_contact
+                            .and_then(
+                                |(
                                     other_surface,
+                                    other_pcurve,
                                     other_geometry,
                                     contact_pcurve,
                                     boundary,
-                                    other_pcurve,
-                                    parameters[point_index],
-                                    BoundaryInverseTarget {
-                                        point: *point,
-                                        seed,
-                                        tolerance: effective_fit_tolerance,
-                                    },
-                                )
-                            },
-                        )
-                        .or_else(|| {
-                            offset_surface_parameters_with_tolerance_with_index_and_budget(
-                                &model_index,
-                                surface_id,
-                                *point,
-                                seed,
-                                Some(effective_fit_tolerance),
-                                geometry_budget,
-                            )
-                        })
-                        .or_else(|| {
-                            blend_surface_parameters_for_fit_with_grid_and_budget(
-                                &model_index,
-                                surface_id,
-                                *point,
-                                seed,
-                                effective_fit_tolerance,
-                                BlendParameterGrid::Disabled,
-                                geometry_budget,
-                            )
-                        })
-                        .or_else(|| {
-                            let blend_grid = blend_parameter_grids
-                                .entry(surface_id.clone())
-                                .or_insert_with(|| {
-                                    blend_surface_parameter_grid_with_index_and_budget(
+                                )| {
+                                    blend_boundary_parameter_from_contact_pcurve_with_geometry(
                                         &model_index,
-                                        surface_id,
-                                        0,
-                                        geometry_budget,
+                                        other_surface,
+                                        other_geometry,
+                                        contact_pcurve,
+                                        boundary,
+                                        other_pcurve,
+                                        parameters[point_index],
+                                        BoundaryInverseTarget {
+                                            point: *point,
+                                            seed,
+                                            tolerance: effective_fit_tolerance,
+                                        },
                                     )
-                                });
-                            blend_surface_parameters_from_grid_for_fit_and_budget(
-                                &model_index,
-                                surface_id,
-                                *point,
-                                effective_fit_tolerance,
-                                blend_grid.as_deref()?,
-                                geometry_budget,
+                                },
                             )
-                        }),
+                            .or_else(|| {
+                                offset_surface_parameters_with_tolerance_with_index_and_budget(
+                                    &model_index,
+                                    surface_id,
+                                    *point,
+                                    seed,
+                                    Some(effective_fit_tolerance),
+                                    geometry_budget,
+                                )
+                            })
+                            .or_else(|| {
+                                solve_blend_parameters(
+                                    &model_index,
+                                    surface_id,
+                                    *point,
+                                    seed,
+                                    effective_fit_tolerance,
+                                    BlendParameterGrid::Disabled,
+                                    geometry_budget,
+                                )
+                            })
+                            .or_else(|| {
+                                let blend_grid = blend_parameter_grids
+                                    .entry(surface_id.clone())
+                                    .or_insert_with(|| {
+                                        blend_surface_parameter_grid_with_index_and_budget(
+                                            &model_index,
+                                            surface_id,
+                                            0,
+                                            geometry_budget,
+                                        )
+                                    });
+                                solve_grid_parameters(
+                                    &model_index,
+                                    surface_id,
+                                    *point,
+                                    effective_fit_tolerance,
+                                    blend_grid.as_deref()?,
+                                    geometry_budget,
+                                )
+                            })
+                    }
                     geometry => analytic_surface_parameters(geometry, *point),
                 };
                 let Some(parameters) = parameters else {

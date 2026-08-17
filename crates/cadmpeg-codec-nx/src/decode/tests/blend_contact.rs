@@ -1047,6 +1047,20 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let outside_parameters =
         crate::decode::blend_surface_parameters(&ir, &surface, outside_boundary_point, None);
     assert!(outside_parameters.is_none());
+    let geometry_budget = WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let continuation_parameters =
+        crate::decode::blend::blend_surface_parameters_for_fit_with_source_continuation_and_budget(
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            &surface,
+            outside_boundary_point,
+            None,
+            1.0e-8,
+            crate::decode::BlendParameterGrid::Disabled,
+            &geometry_budget,
+        )
+        .expect("bounded source continuation admits the certified section point");
+    assert!((continuation_parameters.u - expected.u).abs() < 1.0e-8);
+    assert!((continuation_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs() < 1.0e-8);
 
     let continued = crate::decode::blend_surface_parameters_for_fit(
         &ir,

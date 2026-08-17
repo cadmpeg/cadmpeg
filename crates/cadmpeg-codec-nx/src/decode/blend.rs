@@ -26,41 +26,68 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-const BLEND_SECTION_DOMAIN: [f64; 2] = [0.0, 1.0];
+const BLEND_SECTION_CANONICAL_DOMAIN: [f64; 2] = [0.0, 1.0];
+// A source intersection chart can continue across either finite blend rail.
+// Admit one additional section on each side, then require point reproduction
+// before transferring the continuation back into the chart.
+const BLEND_SECTION_SOURCE_CONTINUATION_DOMAIN: [f64; 2] = [-1.0, 2.0];
 const BLEND_SECTION_BOUNDARY_EPSILON: f64 = 1.0e-12;
 
-fn blend_section_parameter_in_domain(parameter: f64) -> bool {
-    (BLEND_SECTION_DOMAIN[0]..=BLEND_SECTION_DOMAIN[1]).contains(&parameter)
+#[derive(Clone, Copy)]
+enum BlendSectionDomain {
+    Canonical,
+    SourceContinuation,
 }
 
-fn blend_section_parameter_clamped(parameter: f64) -> Option<f64> {
-    (BLEND_SECTION_DOMAIN[0] - BLEND_SECTION_BOUNDARY_EPSILON
-        ..=BLEND_SECTION_DOMAIN[1] + BLEND_SECTION_BOUNDARY_EPSILON)
-        .contains(&parameter)
-        .then(|| parameter.clamp(BLEND_SECTION_DOMAIN[0], BLEND_SECTION_DOMAIN[1]))
+impl BlendSectionDomain {
+    fn bounds(self) -> [f64; 2] {
+        match self {
+            Self::Canonical => BLEND_SECTION_CANONICAL_DOMAIN,
+            Self::SourceContinuation => BLEND_SECTION_SOURCE_CONTINUATION_DOMAIN,
+        }
+    }
+
+    fn contains(self, parameter: f64) -> bool {
+        let [lower, upper] = self.bounds();
+        (lower..=upper).contains(&parameter)
+    }
+
+    fn clamp_near_boundary(self, parameter: f64) -> Option<f64> {
+        let [lower, upper] = self.bounds();
+        (lower - BLEND_SECTION_BOUNDARY_EPSILON..=upper + BLEND_SECTION_BOUNDARY_EPSILON)
+            .contains(&parameter)
+            .then(|| parameter.clamp(lower, upper))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{blend_section_parameter_clamped, BLEND_SECTION_BOUNDARY_EPSILON};
+    use super::{BlendSectionDomain, BLEND_SECTION_BOUNDARY_EPSILON};
 
     #[test]
     fn blend_section_boundary_clamps_only_nearby_roundoff() {
         assert_eq!(
-            blend_section_parameter_clamped(-0.5 * BLEND_SECTION_BOUNDARY_EPSILON),
+            BlendSectionDomain::Canonical
+                .clamp_near_boundary(-0.5 * BLEND_SECTION_BOUNDARY_EPSILON),
             Some(0.0)
         );
         assert_eq!(
-            blend_section_parameter_clamped(1.0 + 0.5 * BLEND_SECTION_BOUNDARY_EPSILON),
+            BlendSectionDomain::Canonical
+                .clamp_near_boundary(1.0 + 0.5 * BLEND_SECTION_BOUNDARY_EPSILON),
             Some(1.0)
         );
-        assert_eq!(blend_section_parameter_clamped(0.25), Some(0.25));
         assert_eq!(
-            blend_section_parameter_clamped(-2.0 * BLEND_SECTION_BOUNDARY_EPSILON),
+            BlendSectionDomain::Canonical.clamp_near_boundary(0.25),
+            Some(0.25)
+        );
+        assert_eq!(
+            BlendSectionDomain::Canonical
+                .clamp_near_boundary(-2.0 * BLEND_SECTION_BOUNDARY_EPSILON),
             None
         );
         assert_eq!(
-            blend_section_parameter_clamped(1.0 + 2.0 * BLEND_SECTION_BOUNDARY_EPSILON),
+            BlendSectionDomain::Canonical
+                .clamp_near_boundary(1.0 + 2.0 * BLEND_SECTION_BOUNDARY_EPSILON),
             None
         );
     }
@@ -130,6 +157,7 @@ pub(crate) fn blend_surface_parameters(
         seed,
         None,
         BlendParameterGrid::Build,
+        BlendSectionDomain::Canonical,
         0,
         &geometry_budget,
     )
@@ -190,6 +218,52 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid_and_budget(
     grid: BlendParameterGrid,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
+    blend_surface_parameters_for_fit_with_section_domain_and_budget(
+        index,
+        surface,
+        point,
+        seed,
+        fit_tolerance,
+        grid,
+        BlendSectionDomain::Canonical,
+        geometry_budget,
+    )
+}
+
+pub(crate) fn blend_surface_parameters_for_fit_with_source_continuation_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: f64,
+    grid: BlendParameterGrid,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    blend_surface_parameters_for_fit_with_section_domain_and_budget(
+        index,
+        surface,
+        point,
+        seed,
+        fit_tolerance,
+        grid,
+        BlendSectionDomain::SourceContinuation,
+        geometry_budget,
+    )
+}
+
+// The explicit search inputs keep canonical and source-continuation policies
+// visible at every recursive boundary instead of hiding them in mutable state.
+#[allow(clippy::too_many_arguments)]
+fn blend_surface_parameters_for_fit_with_section_domain_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: f64,
+    grid: BlendParameterGrid,
+    section_domain: BlendSectionDomain,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
     blend_surface_parameters_inner(
         index,
         surface,
@@ -197,6 +271,7 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid_and_budget(
         seed,
         Some(fit_tolerance),
         grid,
+        section_domain,
         0,
         geometry_budget,
     )
@@ -205,29 +280,31 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid_and_budget(
 // The search state is explicit so every recursive evaluation shares the
 // caller's model-wide work slice.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blend_surface_parameters_inner(
+fn blend_surface_parameters_inner(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
     grid: BlendParameterGrid,
+    section_domain: BlendSectionDomain,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
-        if let Some(parameters) = refine_blend_surface_parameters_with_index_and_budget(
+        if let Some(parameters) = refine_blend_surface_parameters_with_section_domain_and_budget(
             index,
             surface,
             point,
             seed,
             depth + 1,
+            section_domain,
             geometry_budget,
         )
         .filter(|parameters| {
-            blend_section_parameter_in_domain(parameters.v)
+            section_domain.contains(parameters.v)
                 && blend_surface_point_inner_with_index_and_budget(
                     index,
                     surface,
@@ -268,8 +345,8 @@ pub(crate) fn blend_surface_parameters_inner(
         let theta = signed_angle(first, radial, tangent);
         (-2..=2)
             .filter_map(|turn| {
-                let v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
-                let v = blend_section_parameter_clamped(v)?;
+                let raw_v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
+                let v = section_domain.clamp_near_boundary(raw_v)?;
                 let candidate = blend_surface_point_inner_with_index_and_budget(
                     index,
                     surface,
@@ -295,16 +372,17 @@ pub(crate) fn blend_surface_parameters_inner(
             .map(|(parameters, _, _)| parameters)
     });
     if let Some(initial) = angular {
-        let parameters = refine_blend_surface_parameters_with_index_and_budget(
+        let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
             index,
             surface,
             point,
             initial,
             depth + 1,
+            section_domain,
             geometry_budget,
         )
         .unwrap_or(initial);
-        if blend_section_parameter_in_domain(parameters.v) {
+        if section_domain.contains(parameters.v) {
             if let Some(candidate) = blend_surface_point_inner_with_index_and_budget(
                 index,
                 surface,
@@ -331,16 +409,17 @@ pub(crate) fn blend_surface_parameters_inner(
         BlendParameterGrid::Disabled => None,
     };
     if let Some(initial) = initial {
-        let parameters = refine_blend_surface_parameters_with_index_and_budget(
+        let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
             index,
             surface,
             point,
             initial,
             depth + 1,
+            section_domain,
             geometry_budget,
         )
         .unwrap_or(initial);
-        if blend_section_parameter_in_domain(parameters.v) {
+        if section_domain.contains(parameters.v) {
             let candidate = blend_surface_point_inner_with_index_and_budget(
                 index,
                 surface,
@@ -472,17 +551,59 @@ pub(crate) fn blend_surface_parameters_from_grid_for_fit_and_budget(
     grid: &[(Point2, Point3)],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
+    blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
+        index,
+        surface,
+        point,
+        fit_tolerance,
+        grid,
+        BlendSectionDomain::Canonical,
+        geometry_budget,
+    )
+}
+
+pub(crate) fn blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    fit_tolerance: f64,
+    grid: &[(Point2, Point3)],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
+        index,
+        surface,
+        point,
+        fit_tolerance,
+        grid,
+        BlendSectionDomain::SourceContinuation,
+        geometry_budget,
+    )
+}
+
+fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    fit_tolerance: f64,
+    grid: &[(Point2, Point3)],
+    section_domain: BlendSectionDomain,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
     let initial = closest_blend_surface_grid_parameters(grid, point)?;
-    let parameters = refine_blend_surface_parameters_with_index_and_budget(
+    let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
         index,
         surface,
         point,
         initial,
         0,
+        section_domain,
         geometry_budget,
     )
     .unwrap_or(initial);
-    blend_section_parameter_in_domain(parameters.v).then_some(())?;
+    if !section_domain.contains(parameters.v) {
+        return None;
+    }
     let candidate = blend_surface_point_inner_with_index_and_budget(
         index,
         surface,
@@ -504,22 +625,24 @@ pub(crate) fn refine_blend_surface_parameters(
 ) -> Option<Point2> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-    refine_blend_surface_parameters_with_index_and_budget(
+    refine_blend_surface_parameters_with_section_domain_and_budget(
         &index,
         surface,
         point,
         parameters,
         depth,
+        BlendSectionDomain::Canonical,
         &geometry_budget,
     )
 }
 
-pub(crate) fn refine_blend_surface_parameters_with_index_and_budget(
+fn refine_blend_surface_parameters_with_section_domain_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     mut parameters: Point2,
     depth: usize,
+    section_domain: BlendSectionDomain,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
@@ -537,9 +660,8 @@ pub(crate) fn refine_blend_surface_parameters_with_index_and_budget(
     if let Some(domain) = u_domain {
         parameters.u = parameters.u.clamp(domain[0], domain[1]);
     }
-    parameters.v = parameters
-        .v
-        .clamp(BLEND_SECTION_DOMAIN[0], BLEND_SECTION_DOMAIN[1]);
+    let [section_lower, section_upper] = section_domain.bounds();
+    parameters.v = parameters.v.clamp(section_lower, section_upper);
     let squared_distance = |candidate: Point3| {
         (candidate.x - point.x).powi(2)
             + (candidate.y - point.y).powi(2)
@@ -630,9 +752,7 @@ pub(crate) fn refine_blend_surface_parameters_with_index_and_budget(
             if let Some(domain) = u_domain {
                 candidate.u = candidate.u.clamp(domain[0], domain[1]);
             }
-            candidate.v = candidate
-                .v
-                .clamp(BLEND_SECTION_DOMAIN[0], BLEND_SECTION_DOMAIN[1]);
+            candidate.v = candidate.v.clamp(section_lower, section_upper);
             if let Some(position) = blend_surface_point_inner_with_index_and_budget(
                 index,
                 surface,
@@ -2368,6 +2488,7 @@ pub(crate) fn surface_contact_direction_with_index_and_budget(
                     None,
                     None,
                     BlendParameterGrid::Disabled,
+                    BlendSectionDomain::Canonical,
                     depth + 1,
                     geometry_budget,
                 )
@@ -2413,7 +2534,7 @@ pub(crate) fn blend_surface_contact_direction_with_budget(
     let angle = signed_angle(frame.2, radial, frame.1);
     let candidate = (-2..=2)
         .map(|turn| (angle + f64::from(turn) * std::f64::consts::TAU) / sweep)
-        .filter(|v| blend_section_parameter_in_domain(*v))
+        .filter(|v| BlendSectionDomain::Canonical.contains(*v))
         .map(|v| blend_surface_point_from_frame(frame, v))
         .chain([
             blend_surface_point_from_frame(frame, 0.0),
