@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use super::super::equations::{CarrierEquation, PlaneEquation};
 use super::{existing_plane_agrees_with_topology, placed_carriers, transfer_topology_bound_planes};
 use cadmpeg_ir::document::CadIr;
@@ -175,6 +177,71 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
     assert!(!placed_carriers(&scan, &ir).contains_key(&7));
+}
+
+#[test]
+fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
+    let outer = crate::topology::Loop {
+        face_id: 5,
+        half_edges: (0..8)
+            .map(|index| crate::topology::HalfEdgeId {
+                curve_id: 10 + index,
+                side: 0,
+            })
+            .collect(),
+    };
+    let inner = crate::topology::Loop {
+        face_id: 5,
+        half_edges: (0..3)
+            .map(|index| crate::topology::HalfEdgeId {
+                curve_id: 20 + index,
+                side: 0,
+            })
+            .collect(),
+    };
+    let vertices = [
+        (1, [0.0, 0.0, 0.0]),
+        (2, [6.0, 0.0, 0.0]),
+        (3, [6.0, 1.0, 0.0]),
+        (4, [2.0, 1.0, 0.0]),
+        (5, [2.0, 5.0, 0.0]),
+        (6, [6.0, 5.0, 0.0]),
+        (7, [6.0, 6.0, 0.0]),
+        (8, [0.0, 6.0, 0.0]),
+        (9, [1.0, 0.5, 0.0]),
+        (10, [5.0, 0.5, 0.0]),
+        (11, [5.0, 5.5, 0.0]),
+    ];
+    let bindings = outer
+        .half_edges
+        .iter()
+        .copied()
+        .zip(1..=8)
+        .chain(inner.half_edges.iter().copied().zip(9..=11))
+        .map(
+            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id,
+                end_vertex_id: None,
+            },
+        )
+        .collect::<Vec<_>>();
+    let incidence = bindings
+        .iter()
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
+    let solved_vertices = vertices.into_iter().collect::<BTreeMap<_, _>>();
+
+    assert!(super::ordered_planar_face_loops(
+        vec![&outer, &inner],
+        PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        },
+        &incidence,
+        &solved_vertices,
+    )
+    .is_none());
 }
 
 #[test]

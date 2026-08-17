@@ -459,6 +459,60 @@ pub fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool 
     inside
 }
 
+fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> bool {
+    let orientation = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
+        let edge = [b[0] - a[0], b[1] - a[1]];
+        let relative = [c[0] - a[0], c[1] - a[1]];
+        edge[0].mul_add(relative[1], -(edge[1] * relative[0]))
+    };
+    let points = [first[0], first[1], second[0], second[1]];
+    let scale = (0..points.len())
+        .flat_map(|first| {
+            (first + 1..points.len()).map(move |second| {
+                (0..2)
+                    .map(|axis| (points[first][axis] - points[second][axis]).abs())
+                    .fold(0.0, f64::max)
+            })
+        })
+        .fold(1.0, f64::max);
+    let tolerance = EPS_AGREE * scale * scale;
+    let orientations = [
+        orientation(first[0], first[1], second[0]),
+        orientation(first[0], first[1], second[1]),
+        orientation(second[0], second[1], first[0]),
+        orientation(second[0], second[1], first[1]),
+    ];
+    let on_segment = |a: [f64; 2], b: [f64; 2], point: [f64; 2]| {
+        orientation(a, b, point).abs() <= tolerance
+            && point[0] >= a[0].min(b[0]) - EPS_AGREE * scale
+            && point[0] <= a[0].max(b[0]) + EPS_AGREE * scale
+            && point[1] >= a[1].min(b[1]) - EPS_AGREE * scale
+            && point[1] <= a[1].max(b[1]) + EPS_AGREE * scale
+    };
+    orientations[0].abs() <= tolerance && on_segment(first[0], first[1], second[0])
+        || orientations[1].abs() <= tolerance && on_segment(first[0], first[1], second[1])
+        || orientations[2].abs() <= tolerance && on_segment(second[0], second[1], first[0])
+        || orientations[3].abs() <= tolerance && on_segment(second[0], second[1], first[1])
+        || ((orientations[0] > tolerance && orientations[1] < -tolerance)
+            || (orientations[0] < -tolerance && orientations[1] > tolerance))
+            && ((orientations[2] > tolerance && orientations[3] < -tolerance)
+                || (orientations[2] < -tolerance && orientations[3] > tolerance))
+}
+
+fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> bool {
+    inner
+        .iter()
+        .copied()
+        .all(|point| polygon_strictly_contains(outer, point))
+        && (0..inner.len()).all(|index| {
+            let inner_edge = [inner[index], inner[(index + 1) % inner.len()]];
+            (0..outer.len()).all(|outer_index| {
+                let outer_edge = [outer[outer_index], outer[(outer_index + 1) % outer.len()]];
+                !segments_intersect(inner_edge, outer_edge)
+            })
+        })
+}
+
 pub fn ordered_planar_face_loops<'a>(
     loops: Vec<&'a crate::topology::Loop>,
     plane: PlaneEquation,
@@ -477,10 +531,7 @@ pub fn ordered_planar_face_loops<'a>(
         .enumerate()
         .filter(|(candidate, polygon)| {
             polygons.iter().enumerate().all(|(index, inner)| {
-                index == *candidate
-                    || inner
-                        .iter()
-                        .all(|point| polygon_strictly_contains(polygon, *point))
+                index == *candidate || polygon_strictly_contains_polygon(polygon, inner)
             })
         })
         .map(|(index, _)| index)
