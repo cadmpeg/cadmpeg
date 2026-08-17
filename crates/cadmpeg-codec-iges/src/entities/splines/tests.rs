@@ -30,6 +30,52 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
+fn decode_refuses_a_parametric_spline_segment_count_over_its_projection_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                b"112,3,1,3,100001;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_spline_segments")
+                && limit.limit == 100_000
+                && limit.used == 100_000
+                && limit.additional == 1
+    ));
+}
+
+#[test]
+fn decode_refuses_a_parametric_spline_surface_over_its_pole_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 114,
+                form: 0,
+                label: "SPLSURF".into(),
+                status: "00000000",
+                parameters: "114,3,1,1000,1000;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_spline_surface_poles")
+                && limit.limit == 1_000_000
+                && limit.used == 1_000_000
+                && limit.additional == 8_006_001
+    ));
+}
+
+#[test]
 fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
     let result = IgesCodec
         .decode(

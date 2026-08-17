@@ -425,3 +425,10 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::View::utf16_le"
 reason = "sequential UTF-16LE reader paired with View::utf16le_at"
+
+[[change]]
+commit = "99291d20b655b9a5a4559ce2b11a4a7ce2103abc"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::DecodeContext::refuse_codec_limit"
+reason = "structured refusal API for codec-local resource ceilings that must fuse the decode session"

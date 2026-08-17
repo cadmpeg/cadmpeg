@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at 99291d20b
 pub mod cadmpeg_core
 pub mod cadmpeg_core::container
 pub struct cadmpeg_core::container::ContainerEntry
@@ -318,6 +318,7 @@ pub fn cadmpeg_core::decode::DecodeContext<'a>::policy(&self) -> &cadmpeg_core::
 pub fn cadmpeg_core::decode::DecodeContext<'a>::read_root(&mut dyn cadmpeg_core::io::ReadSeek, &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice_as<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange, impl core::convert::Into<alloc::string::String>) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::refuse_codec_limit(&self, &'static str, u64, u64, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::decode::DecodeContext<'a>::reserve_scoped(&self, u64, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<cadmpeg_core::decode::ScopedReservation<'_>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::resolve_location(&self, cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
 pub fn cadmpeg_core::decode::DecodeContext<'a>::set_container_only(&mut self, bool)

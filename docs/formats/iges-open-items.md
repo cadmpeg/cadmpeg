@@ -228,16 +228,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
 
-### GE-11. Undeclared resource limits
-
-**Question.** Which limits may the decoder impose on projection and recovery work?
-
-**Known.** `840e27489` added fixed limits for projection and geometry-recovery work and documents those limits as settled behavior. The IGES file does not declare them, and the current P0 resource item remains open.
-
-**Need.** We need a resource policy with bounded, classified errors and evidence that each limit preserves the declared decode envelope. The limits must remain implementation policy, not an invented IGES rule.
-
-**Note.** Closure audit 2026-08-10: reopened. The commit made resource behavior observable but did not establish the limits or close the P0 termination gate.
-
 ### GE-12. Type 126 property flags against the values
 
 **Question.** Which Type 126 representation flags are authoritative when they disagree with the values?

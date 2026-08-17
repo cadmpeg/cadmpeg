@@ -5,7 +5,8 @@ use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, sour
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
     NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
@@ -243,7 +244,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &Global,
     ctx: Option<&DecodeContext<'_>>,
-) -> SurfaceProjection {
+) -> Result<SurfaceProjection, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -689,15 +690,20 @@ pub(super) fn project(
             .len()
             .checked_mul(angular_controls.len())
         else {
-            losses.push(entity_loss(entry, "revolution pole count overflows"));
-            continue;
+            return Err(refuse_local_limit(
+                "iges_revolution_poles",
+                MAX_SURFACE_POLES as u64,
+                u64::MAX,
+                None,
+            ));
         };
         if surface_pole_count > MAX_SURFACE_POLES {
-            losses.push(entity_loss(
-                entry,
-                format!("revolution exceeds the {MAX_SURFACE_POLES}-pole limit"),
+            return Err(refuse_local_limit(
+                "iges_revolution_poles",
+                MAX_SURFACE_POLES as u64,
+                surface_pole_count as u64,
+                None,
             ));
-            continue;
         }
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
@@ -813,8 +819,14 @@ pub(super) fn project(
         };
         let indices = [record.integer(1), record.integer(2)];
         let degrees = [record.integer(3), record.integer(4)];
-        let [Some(k1), Some(k2)] = indices.map(|value| value.and_then(|v| usize::try_from(v).ok()))
-        else {
+        let [Some(raw_k1), Some(raw_k2)] = indices else {
+            losses.push(entity_loss(
+                entry,
+                "surface upper indices K1 or K2 are invalid",
+            ));
+            continue;
+        };
+        let [Some(k1), Some(k2)] = [raw_k1, raw_k2].map(|value| usize::try_from(value).ok()) else {
             losses.push(entity_loss(
                 entry,
                 "surface upper indices K1 or K2 are invalid",
@@ -834,6 +846,34 @@ pub(super) fn project(
                 "surface pole counts are smaller than their degrees plus one",
             ));
             continue;
+        }
+        let requested = u64::try_from(raw_k1)
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .and_then(|u_count| {
+                u64::try_from(raw_k2)
+                    .ok()
+                    .and_then(|value| value.checked_add(1))
+                    .and_then(|v_count| u_count.checked_mul(v_count))
+            });
+        match requested {
+            None => {
+                return Err(refuse_local_limit(
+                    "iges_surface_poles",
+                    MAX_SURFACE_POLES as u64,
+                    u64::MAX,
+                    None,
+                ));
+            }
+            Some(requested) if requested > MAX_SURFACE_POLES as u64 => {
+                return Err(refuse_local_limit(
+                    "iges_surface_poles",
+                    MAX_SURFACE_POLES as u64,
+                    requested,
+                    None,
+                ));
+            }
+            Some(_) => {}
         }
         let flags = (5..=9)
             .map(|index| record.integer(index))
@@ -859,11 +899,12 @@ pub(super) fn project(
             continue;
         };
         if pole_count > MAX_SURFACE_POLES {
-            losses.push(entity_loss(
-                entry,
-                format!("surface exceeds the {MAX_SURFACE_POLES}-pole limit"),
+            return Err(refuse_local_limit(
+                "iges_surface_poles",
+                MAX_SURFACE_POLES as u64,
+                pole_count as u64,
+                None,
             ));
-            continue;
         }
         let Some(u_knot_count) = u_count
             .checked_add(u_degree_usize)
@@ -1193,11 +1234,11 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    SurfaceProjection {
+    Ok(SurfaceProjection {
         handled,
         decoded,
         losses,
-    }
+    })
 }
 
 #[cfg(test)]

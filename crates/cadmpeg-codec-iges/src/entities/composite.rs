@@ -7,7 +7,8 @@ use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     NurbsCurve, ProceduralCurve, ProceduralCurveDefinition,
@@ -413,7 +414,15 @@ fn bounded_nurbs_for_id(
         .map_or(MAX_COMPOSITE_DEPTH, |policy| {
             policy.min(MAX_COMPOSITE_DEPTH)
         });
-    if depth > depth_limit {
+    if depth >= depth_limit {
+        if let Some(ctx) = ctx {
+            let _ = ctx.refuse_codec_limit(
+                "iges_composite_depth",
+                depth_limit as u64,
+                depth.saturating_add(1) as u64,
+                None,
+            );
+        }
         return None;
     }
     let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id)?;
@@ -679,7 +688,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &Global,
     ctx: Option<&DecodeContext<'_>>,
-) -> CompositeProjection {
+) -> Result<CompositeProjection, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -703,10 +712,21 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(child_count) = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0 && *count <= MAX_COMPOSITE_CHILDREN)
+        let Some(raw_child_count) = record.integer(1) else {
+            losses.push(entity_loss(entry, "child count is invalid"));
+            continue;
+        };
+        if raw_child_count > MAX_COMPOSITE_CHILDREN as i64 {
+            return Err(refuse_local_limit(
+                "iges_composite_children",
+                MAX_COMPOSITE_CHILDREN as u64,
+                u64::try_from(raw_child_count).unwrap_or(u64::MAX),
+                None,
+            ));
+        }
+        let Some(child_count) = usize::try_from(raw_child_count)
+            .ok()
+            .filter(|count| *count > 0)
         else {
             losses.push(entity_loss(
                 entry,
@@ -901,12 +921,12 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    CompositeProjection {
+    Ok(CompositeProjection {
         handled,
         decoded,
         losses,
         wire_edges,
-    }
+    })
 }
 
 #[cfg(test)]

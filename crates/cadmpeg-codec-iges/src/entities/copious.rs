@@ -5,7 +5,8 @@ use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::{coincident_distance, Global};
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext, WorkBudget};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -233,7 +234,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &Global,
     ctx: Option<&DecodeContext<'_>>,
-) -> CopiousProjection {
+) -> Result<CopiousProjection, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -259,16 +260,24 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let (Some(interpretation), Some(tuple_count)) = (
-            record.integer(1),
-            record
-                .integer(2)
-                .and_then(|value| usize::try_from(value).ok()),
-        ) else {
-            losses.push(entity_loss(
-                entry,
-                "interpretation or tuple count is invalid",
+        let Some(interpretation) = record.integer(1) else {
+            losses.push(entity_loss(entry, "interpretation is invalid"));
+            continue;
+        };
+        let Some(raw_tuple_count) = record.integer(2) else {
+            losses.push(entity_loss(entry, "tuple count is invalid"));
+            continue;
+        };
+        if raw_tuple_count > MAX_COPIOUS_TUPLES as i64 {
+            return Err(refuse_local_limit(
+                "iges_copious_tuples",
+                MAX_COPIOUS_TUPLES as u64,
+                u64::try_from(raw_tuple_count).unwrap_or(u64::MAX),
+                None,
             ));
+        }
+        let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {
+            losses.push(entity_loss(entry, "tuple count is invalid"));
             continue;
         };
         if Some(interpretation) != expected_interpretation(entry.form) {
@@ -278,7 +287,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        if tuple_count == 0 || tuple_count > MAX_COPIOUS_TUPLES {
+        if tuple_count == 0 {
             losses.push(entity_loss(
                 entry,
                 format!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"),
@@ -475,13 +484,13 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    CopiousProjection {
+    Ok(CopiousProjection {
         handled,
         decoded,
         losses,
         wire_edges,
         free_vertices,
-    }
+    })
 }
 
 #[cfg(test)]

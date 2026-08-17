@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{ResourceDimension, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::geometry::{
@@ -31,6 +31,25 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 use super::{simple_closed_path_error, SimpleClosedPathError};
+
+#[test]
+fn decode_refuses_a_copious_tuple_count_over_its_projection_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(12, b"106,2,1000001;", "00000000")),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_copious_tuples")
+                && limit.limit == 1_000_000
+                && limit.used == 1_000_000
+                && limit.additional == 1
+    ));
+}
 
 #[test]
 fn decode_projects_copious_linear_paths_with_segment_parameters() {
@@ -236,6 +255,28 @@ fn simple_closed_path_rejects_duplicate_and_intersecting_patterns() {
         simple_closed_path_error(&overlapping, 0.001, None),
         Some(SimpleClosedPathError::SelfIntersection)
     );
+}
+
+#[test]
+fn form_63_validation_stops_at_its_pair_work_cap() {
+    let below = vec![Point2::new(0.0, 0.0); 4_472];
+    let below_budget = WorkBudget::new(super::MAX_FORM_63_VALIDATION_WORK as usize);
+    assert_eq!(
+        simple_closed_path_error(&below, 0.001, Some(&below_budget)),
+        Some(SimpleClosedPathError::ConsecutiveCoincidentPoints)
+    );
+    assert_eq!(
+        below_budget.consumed(),
+        below.len().saturating_mul(below.len())
+    );
+
+    let at = vec![Point2::new(0.0, 0.0); 4_473];
+    let at_budget = WorkBudget::new(super::MAX_FORM_63_VALIDATION_WORK as usize);
+    assert_eq!(
+        simple_closed_path_error(&at, 0.001, Some(&at_budget)),
+        Some(SimpleClosedPathError::ValidationBudget)
+    );
+    assert_eq!(at_budget.consumed(), 0);
 }
 
 #[test]
