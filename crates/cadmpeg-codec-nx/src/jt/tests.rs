@@ -161,6 +161,30 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
 }
 
 #[test]
+fn jt_arithmetic_decode_rejects_normalization_past_declared_bits() {
+    let entries = vec![
+        super::ProbabilityEntry {
+            symbol: 0,
+            occurrence_count: 1,
+            value: 0,
+        },
+        super::ProbabilityEntry {
+            symbol: 1,
+            occurrence_count: 1,
+            value: 1,
+        },
+        super::ProbabilityEntry {
+            symbol: 2,
+            occurrence_count: 1,
+            value: 2,
+        },
+    ];
+    let code_word = 0x5555_0000_u32.to_le_bytes();
+
+    assert!(super::decode_arithmetic(&code_word, 16, 1, &entries).is_none());
+}
+
+#[test]
 fn jt_predictors_reconstruct_primal_integers() {
     use super::{unpack_predictor_residuals, Predictor};
 

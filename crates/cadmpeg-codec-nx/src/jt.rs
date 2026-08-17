@@ -648,7 +648,7 @@ impl CodeBits<'_> {
         }
         let mut value = 0;
         for _ in 0..count {
-            value = (value << 1) | u32::from(self.next());
+            value = (value << 1) | u32::from(self.next()?);
         }
         Some(value)
     }
@@ -662,16 +662,16 @@ impl CodeBits<'_> {
         })
     }
 
-    fn next(&mut self) -> u16 {
+    fn next(&mut self) -> Option<u16> {
         if self.bit >= self.bit_len {
-            return 0;
+            return None;
         }
         let word_index = self.bit / 32;
         let bit_index = self.bit % 32;
         let offset = word_index * 4;
-        let word = View::u32_le_at(self.words, offset).unwrap_or(0);
+        let word = View::u32_le_at(self.words, offset)?;
         self.bit += 1;
-        ((word >> (31 - bit_index)) & 1) as u16
+        Some(((word >> (31 - bit_index)) & 1) as u16)
     }
 }
 
@@ -710,7 +710,7 @@ fn decode_arithmetic(
     };
     let mut code = 0u16;
     for _ in 0..16 {
-        code = (code << 1) | bits.next();
+        code = (code << 1) | bits.next()?;
     }
     let mut low = 0u16;
     let mut high = u16::MAX;
@@ -741,7 +741,7 @@ fn decode_arithmetic(
             }
             low = low.wrapping_shl(1);
             high = high.wrapping_shl(1) | 1;
-            code = code.wrapping_shl(1) | bits.next();
+            code = code.wrapping_shl(1) | bits.next()?;
         }
         values.push(if entry.symbol == -2 {
             None
