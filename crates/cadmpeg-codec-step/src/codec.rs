@@ -57,6 +57,8 @@ impl CodecBackend for StepCodec {
             || is_ap242_bo_model_xml(prefix)
         {
             Confidence::Medium
+        } else if archive::has_zip_magic(prefix) {
+            Confidence::Low
         } else {
             Confidence::No
         }

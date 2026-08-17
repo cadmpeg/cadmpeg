@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 #![allow(unused_imports)]
-use super::{resolve_uri, ReferenceTarget, ROOT_NAME};
+use super::{has_root_marker, resolve_uri, ReferenceTarget, ROOT_NAME};
 
 #[test]
 fn resolves_archive_relative_uris_and_fragments() {
@@ -70,6 +70,21 @@ fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
             .unwrap();
         std::io::Write::write_all(&mut writer, bytes).unwrap();
     }
+    writer.finish().unwrap().into_inner()
+}
+
+fn step_zip_with_comment(entries: &[(&str, &[u8], CompressionMethod)], comment: &str) -> Vec<u8> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for &(name, bytes, method) in entries {
+        writer
+            .start_file(
+                name,
+                SimpleFileOptions::default().compression_method(method),
+            )
+            .unwrap();
+        std::io::Write::write_all(&mut writer, bytes).unwrap();
+    }
+    writer.set_comment(comment).unwrap();
     writer.finish().unwrap().into_inner()
 }
 
@@ -143,7 +158,7 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let codec = StepCodec::default();
 
     assert_eq!(codec.detect(bytes), Confidence::High);
-    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::No);
+    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::Low);
 
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
@@ -173,6 +188,39 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
     codec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("Part 21 leading trivia and case-insensitive magic");
+}
+
+#[test]
+fn zip_root_detection_uses_structured_entry_names() {
+    let root = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
+    let marker_payload = b"payload contains ISO-10303.p21 but has no such entry";
+    let codec = StepCodec::default();
+
+    let root_after_payload = step_zip(&[
+        ("preview.bin", marker_payload, CompressionMethod::Stored),
+        (ROOT_NAME, root, CompressionMethod::Stored),
+    ]);
+    assert!(has_root_marker(&root_after_payload));
+    assert_eq!(codec.detect(&root_after_payload), Confidence::Medium);
+
+    let marker_in_payload = step_zip(&[("preview.bin", marker_payload, CompressionMethod::Stored)]);
+    assert!(!has_root_marker(&marker_in_payload));
+    assert_eq!(codec.detect(&marker_in_payload), Confidence::Low);
+
+    let marker_in_filename = step_zip(&[(
+        "parts/ISO-10303.p21.preview",
+        b"ancillary",
+        CompressionMethod::Stored,
+    )]);
+    assert!(!has_root_marker(&marker_in_filename));
+    assert_eq!(codec.detect(&marker_in_filename), Confidence::Low);
+
+    let marker_in_comment = step_zip_with_comment(
+        &[("preview.bin", b"ancillary", CompressionMethod::Stored)],
+        ROOT_NAME,
+    );
+    assert!(!has_root_marker(&marker_in_comment));
+    assert_eq!(codec.detect(&marker_in_comment), Confidence::Low);
 }
 
 #[test]

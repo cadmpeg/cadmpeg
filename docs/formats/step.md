@@ -281,6 +281,19 @@ mismatch. For each member it retains the central-directory name, compression,
 CRC-32, compressed and uncompressed sizes, and local-header, payload, and
 central-directory offsets.
 
+The STEP detector uses a bounded prefix. A medium-confidence ZIP result
+requires the prefix to parse as a ZIP archive whose central directory has an
+entry with the exact name `ISO-10303.p21`. A generic ZIP local-file signature is
+only a low-confidence container signal. A byte sequence in an entry payload,
+archive comment, or unrelated entry name does not establish a STEP root. The
+full inspect and decode paths validate the complete central directory and then
+open that exact root entry. A root outside the bounded detection prefix does
+not produce medium-confidence detection; explicit STEP selection still runs
+the full archive validation. ISO 10303-21:2016 Annex A.4 requires the exact
+root name, and the [PKWARE ZIP application
+note](https://www.pkware.com/documents/APPNOTE/APPNOTE-6.3.3.TXT) defines the
+local-file header and central-directory entry records used to read it.
+
 ## 2. Byte repertoire and exchange framing
 
 A clear-text exchange structure uses this outer grammar:

@@ -26,10 +26,13 @@ pub(crate) fn has_zip_magic(bytes: &[u8]) -> bool {
 
 /// Returns whether a detection prefix names the required STEP root member.
 pub(crate) fn has_root_marker(prefix: &[u8]) -> bool {
+    // CE-07: the root name is evidence only when it is an entry in a
+    // structurally parsed ZIP central directory. Payloads, comments, and
+    // unrelated entry names are not root evidence.
     has_zip_magic(prefix)
-        && prefix
-            .windows(ROOT_NAME.len())
-            .any(|window| window == ROOT_NAME.as_bytes())
+        && ArchiveSnapshot::new(View::over_retained(prefix))
+            .ok()
+            .is_some_and(|archive| archive.entry(ROOT_NAME).is_some())
 }
 
 /// Opens and validates the required root member of one STEP ZIP container.

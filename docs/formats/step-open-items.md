@@ -92,18 +92,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-step/src/codec.rs:365-370` refuses HDF5 before graph construction. `step.md` §1 "CADIR decision: the STEP codec classifies an HDF5 signature at an allowed" explicitly leaves graph binding to the caller. No witness proves that identities, references, units, or conflicts remain resource-scoped during composition.
 
-### CE-07. ZIP root detection marker
-
-**Question.** What ZIP structure may establish the required STEP root member during format detection?
-
-**Known.** The root member name is exactly `ISO-10303.p21`. Structured archive validation checks the central directory and opens that exact entry before decode.
-
-**Need.** Require detection evidence to come from a ZIP entry name or defer root classification until structured archive validation. Bytes in payloads, comments, and unrelated filenames must not establish a STEP root.
-
-**Conflict.** The detection path scans raw prefix bytes for the root name, while the decode path requires an exact central-directory entry.
-
-**Note.** `crates/cadmpeg-codec-step/src/archive.rs:27-33` returns true when any byte window in a ZIP detection prefix equals `ISO-10303.p21`; it does not parse local-header or central-directory entry boundaries. `crates/cadmpeg-codec-step/src/codec.rs:51-60` then selects STEP with medium confidence, while `crates/cadmpeg-codec-step/src/archive.rs:35-58` later rejects an archive without the exact entry. A non-STEP ZIP containing the marker in arbitrary payload or comment bytes is therefore framed as STEP before structured validation.
-
 ## 4. Signatures
 
 ### SG-04. Signature verification result
