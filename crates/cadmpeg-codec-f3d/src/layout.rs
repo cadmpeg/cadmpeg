@@ -2642,6 +2642,56 @@ pub(crate) mod shifted_reference_aware_extrude_class_323_tail {
     pub(crate) const GUID_PREFIX: usize = 213;
 }
 
+/// Byte offsets for the `shifted_reference_aware_extrude_class_323_symmetric_prefix` record.
+///
+/// Spec §3.1. Record length 276 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. This class-specific prefix stores both symmetric-through-all extent discriminators before the grouped-reference tail and ends at the u32 reference count.
+/// ```
+pub(crate) mod shifted_reference_aware_extrude_class_323_symmetric_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 276;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 116;
+    /// Stated value of `first_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT_VALUE: u32 = 0x0000_0004;
+    /// Offset of `first_side_padding` (`bytes[9]`). Spec §3.1.
+    pub(crate) const FIRST_SIDE_PADDING: usize = 120;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 129;
+    /// Stated value of `second_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT_VALUE: u32 = 0x0000_0004;
+    /// Offset of `second_side_padding` (`bytes[6]`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_PADDING: usize = 133;
+    /// Offset of `symmetric_extent_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SYMMETRIC_EXTENT_REFERENCE: usize = 139;
+    /// Offset of `symmetric_extent_padding` (`bytes[5]`). Spec §3.1.
+    pub(crate) const SYMMETRIC_EXTENT_PADDING: usize = 150;
+    /// Offset of `profile_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_COUNT: usize = 155;
+    /// Stated value of `profile_group_count` (`u32`). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_REFERENCE: usize = 159;
+    /// Offset of `profile_group_padding` (`bytes[8]`). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_PADDING: usize = 170;
+    /// Offset of `trailing_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TRAILING_REFERENCE_COUNT: usize = 178;
+    /// Stated value of `trailing_reference_count` (`u32`). Spec §3.1.
+    pub(crate) const TRAILING_REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `trailing_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRAILING_REFERENCE: usize = 182;
+    /// Offset of `guid_prefix` (`bytes[76]`). Spec §3.1.
+    pub(crate) const GUID_PREFIX: usize = 193;
+    /// Offset of `reference_count_padding` (`bytes[3]`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_PADDING: usize = 269;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 272;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_000a;
+}
+
 /// Byte offsets for the `compact_shifted_extrude_prologue` record.
 ///
 /// Spec §3.1. Record length 41 B.

@@ -3190,34 +3190,81 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ) => {
                     let expected_layout =
                         match (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) {
-                            ("357", "258") | ("275" | "361", "262") => Some((538_u64, 13_usize)),
-                            ("323", "263") => Some((516_u64, 11_usize)),
+                            ("357", "258") | ("275" | "361", "262") => Some((
+                                538_u64,
+                                292_u64,
+                                13_usize,
+                                [2, 1],
+                                [2, 0],
+                                records::DesignExtrudeExtent::TwoSidedToFaces,
+                                288_u64,
+                            )),
+                            ("323", "263")
+                                if scope.reference_count_offset
+                                    == scope.byte_offset.saturating_add(292) =>
+                            {
+                                Some((
+                                    516_u64,
+                                    292_u64,
+                                    11_usize,
+                                    [2, 1],
+                                    [2, 0],
+                                    records::DesignExtrudeExtent::TwoSidedToFaces,
+                                    288_u64,
+                                ))
+                            }
+                            ("323", "263")
+                                if scope.reference_count_offset
+                                    == scope.byte_offset.saturating_add(272) =>
+                            {
+                                Some((
+                                    485_u64,
+                                    272_u64,
+                                    10_usize,
+                                    [3, 0],
+                                    [4, 4],
+                                    records::DesignExtrudeExtent::SymmetricThroughAll,
+                                    129_u64,
+                                ))
+                            }
                             _ => None,
                         };
-                    expected_layout.is_some_and(|(frame_length, reference_member_count)| {
-                        scope.frame_length == frame_length
-                            && scope.paired_byte_offset
-                                == scope.byte_offset.saturating_add(frame_length)
-                            && scope.reference_count_offset == scope.byte_offset.saturating_add(292)
-                            && scope.reference_members.len() == reference_member_count
-                            && operation_offset == scope.byte_offset.saturating_add(27)
-                            && direction_face_extend_values == [2, 1]
-                            && side_extent_discriminators == [2, 0]
-                            && extent == records::DesignExtrudeExtent::TwoSidedToFaces
-                            && side_extent_discriminator_offsets
-                                == [
-                                    scope.byte_offset.saturating_add(116),
-                                    scope.reference_count_offset.saturating_sub(4),
-                                ]
-                            && direction_face_extend_offsets
-                                == [
-                                    scope.byte_offset.saturating_add(31),
-                                    scope.byte_offset.saturating_add(35),
-                                ]
-                            && direction_reversed_offset == scope.byte_offset.saturating_add(39)
-                            && solid_operation_offset == scope.byte_offset.saturating_add(40)
-                            && start_offset == scope.byte_offset.saturating_add(41)
-                    })
+                    expected_layout.is_some_and(
+                        |(
+                            frame_length,
+                            reference_count_offset,
+                            reference_member_count,
+                            expected_direction_face_extend_values,
+                            expected_side_extent_discriminators,
+                            expected_extent,
+                            second_side_extent_offset,
+                        )| {
+                            scope.frame_length == frame_length
+                                && scope.paired_byte_offset
+                                    == scope.byte_offset.saturating_add(frame_length)
+                                && scope.reference_count_offset
+                                    == scope.byte_offset.saturating_add(reference_count_offset)
+                                && scope.reference_members.len() == reference_member_count
+                                && operation_offset == scope.byte_offset.saturating_add(27)
+                                && direction_face_extend_values
+                                    == expected_direction_face_extend_values
+                                && side_extent_discriminators == expected_side_extent_discriminators
+                                && extent == expected_extent
+                                && side_extent_discriminator_offsets
+                                    == [
+                                        scope.byte_offset.saturating_add(116),
+                                        scope.byte_offset.saturating_add(second_side_extent_offset),
+                                    ]
+                                && direction_face_extend_offsets
+                                    == [
+                                        scope.byte_offset.saturating_add(31),
+                                        scope.byte_offset.saturating_add(35),
+                                    ]
+                                && direction_reversed_offset == scope.byte_offset.saturating_add(39)
+                                && solid_operation_offset == scope.byte_offset.saturating_add(40)
+                                && start_offset == scope.byte_offset.saturating_add(41)
+                        },
+                    )
                 }
                 (
                     true,

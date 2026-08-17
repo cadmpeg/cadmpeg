@@ -6270,6 +6270,123 @@ source = "spec"
 anchor = "GUID prefix remains at `+213`"
 
 [[record]]
+name = "shifted_reference_aware_extrude_class_323_symmetric_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The `323 / 263` class pair uses the 485-byte symmetric-through-all form"
+size = 276
+note = "Offsets are relative to the primary indexed header. This class-specific prefix stores both symmetric-through-all extent discriminators before the grouped-reference tail and ends at the u32 reference count."
+
+[[record.gap]]
+offset = 0
+size = 116
+note = "The indexed header and shared shifted reference-aware prologue precede the symmetric extent lane."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 116
+type = "u32"
+source = "spec"
+anchor = "symmetric-through-all first-side extent `4`"
+value = 4
+
+[[record.field]]
+name = "first_side_padding"
+offset = 120
+type = "bytes[9]"
+source = "spec"
+anchor = "zero bytes at `+120..+128`"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 129
+type = "u32"
+source = "spec"
+anchor = "symmetric-through-all second-side extent `4`"
+value = 4
+
+[[record.field]]
+name = "second_side_padding"
+offset = 133
+type = "bytes[6]"
+source = "spec"
+anchor = "zero bytes at `+133..+138`"
+
+[[record.field]]
+name = "symmetric_extent_reference"
+offset = 139
+type = "bytes[11]"
+source = "spec"
+anchor = "marked symmetric-extent reference"
+
+[[record.field]]
+name = "symmetric_extent_padding"
+offset = 150
+type = "bytes[5]"
+source = "spec"
+anchor = "zero bytes at `+150..+154`"
+
+[[record.field]]
+name = "profile_group_count"
+offset = 155
+type = "u32"
+source = "spec"
+anchor = "profile construction-group count `1`"
+value = 1
+
+[[record.field]]
+name = "profile_group_reference"
+offset = 159
+type = "bytes[11]"
+source = "spec"
+anchor = "profile construction-group reference"
+
+[[record.field]]
+name = "profile_group_padding"
+offset = 170
+type = "bytes[8]"
+source = "spec"
+anchor = "zero bytes at `+170..+177`"
+
+[[record.field]]
+name = "trailing_reference_count"
+offset = 178
+type = "u32"
+source = "spec"
+anchor = "trailing-reference count `1`"
+value = 1
+
+[[record.field]]
+name = "trailing_reference"
+offset = 182
+type = "bytes[11]"
+source = "spec"
+anchor = "marked trailing reference"
+
+[[record.field]]
+name = "guid_prefix"
+offset = 193
+type = "bytes[76]"
+source = "spec"
+anchor = "UTF-16 code-unit count `36`"
+
+[[record.field]]
+name = "reference_count_padding"
+offset = 269
+type = "bytes[3]"
+source = "spec"
+anchor = "zero bytes at `+269..+271`"
+
+[[record.field]]
+name = "reference_count"
+offset = 272
+type = "u32"
+source = "spec"
+anchor = "ordered reference count `10`"
+value = 10
+
+[[record]]
 name = "compact_shifted_extrude_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

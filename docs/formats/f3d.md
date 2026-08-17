@@ -750,6 +750,27 @@ The `323 / 263` class pair uses a shifted tail: trailing-reference count `+190`,
 
 The 36-code-unit GUID payload ends at offset `+289`; its final high byte is the first byte of the zero second-side extent lane, and bytes `+289..+291` are zero. The three absent and four present nullable slots, the fixed tail references, the count, and the class-keyed paired-header distance jointly admit this grammar. The `+296 + 11i` reference run has `i = 0..12` for the 538-byte class pairs and `i = 0..10` for `323 / 263`. The four owned parameters are `Side1Offset`, `TaperAngle`, `Side2Offset`, and `Side2TaperAngle` in the 538-byte class pairs; the extent is `TwoSidedToFaces`, and the two termination groups remain in the scope's ordered reference table. This form is distinct from both the current reference-aware prologue and the shifted prologue without reference-aware fields.
 
+The `323 / 263` class pair uses the 485-byte symmetric-through-all form. Its reference-count field is at `+272`, its ordered reference table has ten entries, and its paired header starts at `+485`. The shared shifted reference-aware prologue through the seven nullable slots is unchanged. The class-specific prefix is:
+
+| Relative offset | Type | Discriminant or invariant |
+| ---: | --- | --- |
+| `+116` | u32 | symmetric-through-all first-side extent `4` |
+| `+120..+128` | bytes[9] | zero bytes at `+120..+128` |
+| `+129` | u32 | symmetric-through-all second-side extent `4` |
+| `+133..+138` | bytes[6] | zero bytes at `+133..+138` |
+| `+139` | bytes[11] | marked symmetric-extent reference |
+| `+150..+154` | bytes[5] | zero bytes at `+150..+154` |
+| `+155` | u32 | profile construction-group count `1` |
+| `+159` | bytes[11] | profile construction-group reference |
+| `+170..+177` | bytes[8] | zero bytes at `+170..+177` |
+| `+178` | u32 | trailing-reference count `1` |
+| `+182` | bytes[11] | marked trailing reference |
+| `+193` | bytes[76] | UTF-16 code-unit count `36` |
+| `+269..+271` | bytes[3] | zero bytes at `+269..+271` |
+| `+272` | u32 | ordered reference count `10` |
+
+The symmetric-extent reference, profile construction-group reference, trailing reference, and four present nullable slots resolve to members of the ten-entry ordered reference table. The symmetric extent is `SymmetricThroughAll`; it has no distance owners or termination face groups. The profile construction group supplies the profile operand, and the trailing group supplies the existing-body operand when the operation is Boolean. This grammar is distinct from the 516-byte class-`323` face-target form and from the shifted prologue without reference-aware fields.
+
 The compact legacy Extrude prologue stores u32 `1` at primary-header offset 20 and zero bytes at offsets 24 through 25. It stores the result-operation u32 at offset 26, the travel direction at offset 30, the face-extend option at offset 34, the direction-reversal Boolean at offset 38, the geometry-kind Boolean at offset 39, and the start-support byte at offset 40. For the one-sided distance and symmetric-distance forms, the scope reference-count field is at offset 251, the first-side extent is at offset 105, and the second-side extent is at offset 109. The valid tuples are `(1, 1, 0)` for one-sided distance and `(3, 1, 0)` for symmetric distance. These fields use the same operation, direction, geometry-kind, start-support, and extent enums as the shifted prologue.
 
 The compact legacy mixed two-sided Extrude form stores direction `2`, face-extend option `0`, first-side extent discriminator `1`, and second-side extent discriminator `2`. Its scope reference-count field is at offset 281, its first-side extent is at offset 124, and its second-side extent is at offset 128. Its ordered reference table has eleven members; its side-specific parameter owners are `Side2Offset` and `Side2TaperAngle`, and its face-operand group has the termination role. The neutral extent is two-sided with a blind first side from `AlongDistance` and a face-terminating second side; `Side2Offset` is the second-side termination offset and `Side2TaperAngle` is its draft.

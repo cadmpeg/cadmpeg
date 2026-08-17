@@ -1395,6 +1395,144 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
 }
 
 #[test]
+fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_through_all() {
+    use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as symmetric;
+    use crate::layout::shifted_reference_aware_extrude_scope_prefix as layout;
+
+    const FRAME_LENGTH: usize = 485;
+    const RECORD_INDEX: u32 = 1535;
+    const REFERENCE_MEMBERS: [u32; 10] = [11, 22, 33, 44, 55, 66, 77, 88, 99, 111];
+
+    let put_reference = |bytes: &mut [u8], offset: usize, record_index: u32| {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    let mut bytes = vec![0; symmetric::REFERENCE_COUNT];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"323");
+    bytes[7..11].copy_from_slice(&RECORD_INDEX.to_le_bytes());
+    bytes[layout::PREFIX_CONSTANT..layout::PREFIX_CONSTANT + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    bytes[layout::OPERATION..layout::OPERATION + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[layout::DIRECTION..layout::DIRECTION + 4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[layout::FACE_EXTEND..layout::FACE_EXTEND + 4].copy_from_slice(&0u32.to_le_bytes());
+    bytes[layout::GEOMETRY_KIND] = 1;
+    for (component, value) in [0.0_f64, 0.0, 1.0].into_iter().enumerate() {
+        let offset = layout::PROFILE_NORMAL + component * std::mem::size_of::<f64>();
+        bytes[offset..offset + std::mem::size_of::<f64>()].copy_from_slice(&value.to_le_bytes());
+    }
+    for (slot, record_index) in [55, 66, 22, 111].into_iter().enumerate() {
+        put_reference(
+            &mut bytes,
+            layout::REFERENCE_SLOTS + 3 + slot * 11,
+            record_index,
+        );
+    }
+    bytes[symmetric::FIRST_SIDE_EXTENT..symmetric::FIRST_SIDE_EXTENT + 4]
+        .copy_from_slice(&symmetric::FIRST_SIDE_EXTENT_VALUE.to_le_bytes());
+    bytes[symmetric::SECOND_SIDE_EXTENT..symmetric::SECOND_SIDE_EXTENT + 4]
+        .copy_from_slice(&symmetric::SECOND_SIDE_EXTENT_VALUE.to_le_bytes());
+    put_reference(
+        &mut bytes,
+        symmetric::SYMMETRIC_EXTENT_REFERENCE,
+        REFERENCE_MEMBERS[0],
+    );
+    bytes[symmetric::PROFILE_GROUP_COUNT..symmetric::PROFILE_GROUP_COUNT + 4]
+        .copy_from_slice(&symmetric::PROFILE_GROUP_COUNT_VALUE.to_le_bytes());
+    put_reference(
+        &mut bytes,
+        symmetric::PROFILE_GROUP_REFERENCE,
+        REFERENCE_MEMBERS[2],
+    );
+    bytes[symmetric::TRAILING_REFERENCE_COUNT..symmetric::TRAILING_REFERENCE_COUNT + 4]
+        .copy_from_slice(&symmetric::TRAILING_REFERENCE_COUNT_VALUE.to_le_bytes());
+    put_reference(
+        &mut bytes,
+        symmetric::TRAILING_REFERENCE,
+        REFERENCE_MEMBERS[3],
+    );
+    let mut guid = Vec::new();
+    lp_utf16(&mut guid, "00000000-0000-0000-0000-000000000000");
+    assert_eq!(
+        guid.len(),
+        symmetric::REFERENCE_COUNT_PADDING - symmetric::GUID_PREFIX
+    );
+    bytes[symmetric::GUID_PREFIX..symmetric::REFERENCE_COUNT_PADDING].copy_from_slice(&guid);
+
+    bytes.extend_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+    for record_index in REFERENCE_MEMBERS {
+        let offset = bytes.len();
+        bytes.resize(offset + 11, 0);
+        put_reference(&mut bytes, offset, record_index);
+    }
+    bytes.extend_from_slice(&5u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Extrude");
+    let mut tail = [0; 77];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"263");
+    bytes.extend_from_slice(&RECORD_INDEX.to_le_bytes());
+    assert_eq!(bytes.len(), FRAME_LENGTH + 11);
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: RECORD_INDEX,
+        class_tag: "323".into(),
+        byte_offset: 0,
+    };
+    let parse = |bytes: &[u8]| {
+        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
+            .expect("shifted reference-aware symmetric Extrude scope")
+    };
+    let scope = parse(&bytes);
+    assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
+    assert_eq!(
+        scope.reference_count_offset,
+        symmetric::REFERENCE_COUNT as u64
+    );
+    assert_eq!(
+        scope.extrude_prologue,
+        Some(DesignExtrudePrologue::ShiftedReferenceAware {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: layout::OPERATION as u64,
+            direction_face_extend_values: [3, 0],
+            side_extent_discriminators: [4, 4],
+            side_extent_discriminator_offsets: [
+                symmetric::FIRST_SIDE_EXTENT as u64,
+                symmetric::SECOND_SIDE_EXTENT as u64,
+            ],
+            extent: DesignExtrudeExtent::SymmetricThroughAll,
+            direction_face_extend_offsets: [layout::DIRECTION as u64, layout::FACE_EXTEND as u64],
+            direction_reversed: false,
+            direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
+            solid_operation: true,
+            solid_operation_offset: layout::GEOMETRY_KIND as u64,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: layout::START_SUPPORT as u64,
+        })
+    );
+
+    let mut invalid_extent = bytes.clone();
+    invalid_extent[symmetric::SECOND_SIDE_EXTENT..symmetric::SECOND_SIDE_EXTENT + 4]
+        .copy_from_slice(&3u32.to_le_bytes());
+    assert!(parse(&invalid_extent).extrude_prologue.is_none());
+
+    let mut invalid_trailing_reference = bytes.clone();
+    invalid_trailing_reference
+        [symmetric::TRAILING_REFERENCE + 1..symmetric::TRAILING_REFERENCE + 5]
+        .copy_from_slice(&9001u32.to_le_bytes());
+    assert!(parse(&invalid_trailing_reference)
+        .extrude_prologue
+        .is_none());
+
+    let mut invalid_class = bytes;
+    invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
+    assert!(parse(&invalid_class).extrude_prologue.is_none());
+}
+
+#[test]
 fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
     let scope = |frame_length: usize, operation: u32| {
         let reference_members: [u32; 10] =

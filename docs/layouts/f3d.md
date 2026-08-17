@@ -1922,6 +1922,36 @@ Unstated regions:
 
 - `0..175` (175 B): The indexed header and the shared class-specific prefix precede this tail.
 
+## `shifted_reference_aware_extrude_class_323_symmetric_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 276 B
+
+Offsets are relative to the primary indexed header. This class-specific prefix stores both symmetric-through-all extent discriminators before the grouped-reference tail and ends at the u32 reference count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 116 | 4 | `first_side_extent` | `u32` | little | spec | symmetric-through-all first-side extent `4` · value `4` |
+| 120 | 9 | `first_side_padding` | `bytes[9]` | little | spec | zero bytes at `+120..+128` |
+| 129 | 4 | `second_side_extent` | `u32` | little | spec | symmetric-through-all second-side extent `4` · value `4` |
+| 133 | 6 | `second_side_padding` | `bytes[6]` | little | spec | zero bytes at `+133..+138` |
+| 139 | 11 | `symmetric_extent_reference` | `bytes[11]` | little | spec | marked symmetric-extent reference |
+| 150 | 5 | `symmetric_extent_padding` | `bytes[5]` | little | spec | zero bytes at `+150..+154` |
+| 155 | 4 | `profile_group_count` | `u32` | little | spec | profile construction-group count `1` · value `1` |
+| 159 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | profile construction-group reference |
+| 170 | 8 | `profile_group_padding` | `bytes[8]` | little | spec | zero bytes at `+170..+177` |
+| 178 | 4 | `trailing_reference_count` | `u32` | little | spec | trailing-reference count `1` · value `1` |
+| 182 | 11 | `trailing_reference` | `bytes[11]` | little | spec | marked trailing reference |
+| 193 | 76 | `guid_prefix` | `bytes[76]` | little | spec | UTF-16 code-unit count `36` |
+| 269 | 3 | `reference_count_padding` | `bytes[3]` | little | spec | zero bytes at `+269..+271` |
+| 272 | 4 | `reference_count` | `u32` | little | spec | ordered reference count `10` · value `10` |
+
+Unstated regions:
+
+- `0..116` (116 B): The indexed header and shared shifted reference-aware prologue precede the symmetric extent lane.
+
 ## `compact_shifted_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 41 B

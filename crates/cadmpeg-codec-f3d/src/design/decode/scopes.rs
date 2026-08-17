@@ -68,6 +68,7 @@ use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
 use crate::layout::shifted_extrude_prologue as shifted_extrude;
+use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as shifted_reference_aware_323_symmetric;
 use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
@@ -8200,55 +8201,105 @@ fn exact_shifted_reference_aware_extrude_prologue(
         start.checked_add(CLASS_TAG_OFFSET)?
             ..start.checked_add(CLASS_TAG_OFFSET + CLASS_TAG_LENGTH)?,
     )?;
+    let has_reference_layout = |reference_count: usize, reference_count_at: usize| {
+        reference_count_at.checked_sub(start) == Some(reference_count)
+    };
     let (
         frame_length,
+        reference_count_offset,
         reference_member_count,
         expected_paired_class,
         trailing_reference_count_offset,
         trailing_reference_offset,
         trailing_reference_padding_offset,
+        guid_prefix_offset,
+        second_side_extent_offset,
         trailing_reference_is_ordered,
+        symmetric_through_all,
     ) = match primary_class {
         b"357" => (
             538,
+            shifted_reference_aware::REFERENCE_COUNT,
             13,
             &b"258"[..],
             shifted_reference_aware::BODY_GROUP_COUNT,
             shifted_reference_aware::BODY_GROUP_REFERENCE,
             shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+            shifted_reference_aware::SECOND_SIDE_EXTENT,
             true,
+            false,
         ),
         b"275" => (
             538,
+            shifted_reference_aware::REFERENCE_COUNT,
             13,
             &b"262"[..],
             shifted_reference_aware::BODY_GROUP_COUNT,
             shifted_reference_aware::BODY_GROUP_REFERENCE,
             shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+            shifted_reference_aware::SECOND_SIDE_EXTENT,
             true,
+            false,
         ),
         b"361" => (
             538,
+            shifted_reference_aware::REFERENCE_COUNT,
             13,
             &b"262"[..],
             shifted_reference_aware::BODY_GROUP_COUNT,
             shifted_reference_aware::BODY_GROUP_REFERENCE,
             shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+            shifted_reference_aware::SECOND_SIDE_EXTENT,
             true,
-        ),
-        b"323" => (
-            516,
-            11,
-            &b"263"[..],
-            shifted_reference_aware_323_tail::TRAILING_REFERENCE_COUNT,
-            shifted_reference_aware_323_tail::TRAILING_REFERENCE,
-            shifted_reference_aware_323_tail::TRAILING_REFERENCE_PADDING,
             false,
         ),
+        b"323"
+            if has_reference_layout(
+                shifted_reference_aware::REFERENCE_COUNT,
+                reference_count_at,
+            ) && reference_members.len() == 11 =>
+        {
+            (
+                516,
+                shifted_reference_aware::REFERENCE_COUNT,
+                11,
+                &b"263"[..],
+                shifted_reference_aware_323_tail::TRAILING_REFERENCE_COUNT,
+                shifted_reference_aware_323_tail::TRAILING_REFERENCE,
+                shifted_reference_aware_323_tail::TRAILING_REFERENCE_PADDING,
+                shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+                shifted_reference_aware::SECOND_SIDE_EXTENT,
+                false,
+                false,
+            )
+        }
+        b"323"
+            if has_reference_layout(
+                shifted_reference_aware_323_symmetric::REFERENCE_COUNT,
+                reference_count_at,
+            ) && reference_members.len() == 10 =>
+        {
+            (
+                485,
+                shifted_reference_aware_323_symmetric::REFERENCE_COUNT,
+                10,
+                &b"263"[..],
+                shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
+                shifted_reference_aware_323_symmetric::TRAILING_REFERENCE,
+                shifted_reference_aware_323_symmetric::GUID_PREFIX,
+                shifted_reference_aware_323_symmetric::GUID_PREFIX,
+                shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
+                true,
+                true,
+            )
+        }
         _ => return None,
     };
 
-    if reference_count_at.checked_sub(start)? != shifted_reference_aware::REFERENCE_COUNT
+    if reference_count_at.checked_sub(start)? != reference_count_offset
         || reference_members.len() != reference_member_count
         || View::u32_le_at(
             bytes,
@@ -8289,7 +8340,12 @@ fn exact_shifted_reference_aware_extrude_prologue(
         View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
         View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
     ];
-    if direction_face_extend_values != [2, 1] {
+    let expected_direction_face_extend = if symmetric_through_all {
+        [3, 0]
+    } else {
+        [2, 1]
+    };
+    if direction_face_extend_values != expected_direction_face_extend {
         return None;
     }
     let direction_reversed_offset =
@@ -8350,38 +8406,64 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if slot_offset != first_side_extent_offset {
         return None;
     }
-    let second_side_extent_offset = reference_count_at.checked_sub(4)?;
+    let second_side_extent_offset = if symmetric_through_all {
+        start.checked_add(second_side_extent_offset)?
+    } else {
+        reference_count_at.checked_sub(4)?
+    };
     let side_extent_discriminators = [
         View::u32_le_at(bytes, first_side_extent_offset)?,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
     let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
-    if side_extent_discriminators != [2, 0] {
+    let expected_side_extent_discriminators = if symmetric_through_all {
+        [4, 4]
+    } else {
+        [2, 0]
+    };
+    if side_extent_discriminators != expected_side_extent_discriminators {
         return None;
     }
-    let ordered_tail_references = [
-        marked_record_reference(
-            bytes,
-            start.checked_add(shifted_reference_aware::FIRST_SIDE_OWNER_REFERENCE)?,
-        )?,
-        marked_record_reference(
-            bytes,
-            start.checked_add(shifted_reference_aware::SECOND_SIDE_OFFSET_REFERENCE)?,
-        )?,
-        marked_record_reference(
-            bytes,
-            start.checked_add(shifted_reference_aware::SECOND_SIDE_TAPER_REFERENCE)?,
-        )?,
-        marked_record_reference(
-            bytes,
-            start.checked_add(shifted_reference_aware::PROFILE_GROUP_REFERENCE)?,
-        )?,
-    ];
+    let ordered_tail_references_valid = if symmetric_through_all {
+        [
+            marked_record_reference(
+                bytes,
+                start.checked_add(
+                    shifted_reference_aware_323_symmetric::SYMMETRIC_EXTENT_REFERENCE,
+                )?,
+            )?,
+            marked_record_reference(
+                bytes,
+                start
+                    .checked_add(shifted_reference_aware_323_symmetric::PROFILE_GROUP_REFERENCE)?,
+            )?,
+        ]
+        .iter()
+        .all(|record_index| reference_members.contains(record_index))
+    } else {
+        [
+            marked_record_reference(
+                bytes,
+                start.checked_add(shifted_reference_aware::FIRST_SIDE_OWNER_REFERENCE)?,
+            )?,
+            marked_record_reference(
+                bytes,
+                start.checked_add(shifted_reference_aware::SECOND_SIDE_OFFSET_REFERENCE)?,
+            )?,
+            marked_record_reference(
+                bytes,
+                start.checked_add(shifted_reference_aware::SECOND_SIDE_TAPER_REFERENCE)?,
+            )?,
+            marked_record_reference(
+                bytes,
+                start.checked_add(shifted_reference_aware::PROFILE_GROUP_REFERENCE)?,
+            )?,
+        ]
+        .iter()
+        .all(|record_index| reference_members.contains(record_index))
+    };
     let trailing_reference =
         marked_record_reference(bytes, start.checked_add(trailing_reference_offset)?)?;
-    let ordered_tail_references_valid = ordered_tail_references
-        .iter()
-        .all(|record_index| reference_members.contains(record_index));
     let trailing_reference_valid = if trailing_reference_is_ordered {
         reference_members.contains(&trailing_reference)
     } else {
@@ -8392,53 +8474,86 @@ fn exact_shifted_reference_aware_extrude_prologue(
             .get(start + range_start..start + range_end)
             .is_some_and(|value| value.iter().all(|byte| *byte == 0))
     };
-    let tail_fixed_valid = bytes
-        .get(
-            start + shifted_reference_aware::FIRST_SIDE_PADDING
-                ..start + shifted_reference_aware::FIRST_SIDE_DISCRIMINANT,
-        )
-        .is_some_and(|value| value == [0; 4])
-        && View::u32_le_at(
+    let tail_fixed_valid = if symmetric_through_all {
+        zero_range(
+            shifted_reference_aware_323_symmetric::FIRST_SIDE_PADDING,
+            shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
+        ) && View::u32_le_at(
             bytes,
-            start + shifted_reference_aware::FIRST_SIDE_DISCRIMINANT,
-        ) == Some(1)
-        && View::u32_le_at(bytes, start + shifted_reference_aware::FIRST_SIDE_PAYLOAD) == Some(2)
-        && bytes.get(start + shifted_reference_aware::FIRST_SIDE_SEPARATOR) == Some(&0)
-        && bytes
+            start + shifted_reference_aware_323_symmetric::FIRST_SIDE_EXTENT,
+        ) == Some(shifted_reference_aware_323_symmetric::FIRST_SIDE_EXTENT_VALUE)
+            && zero_range(
+                shifted_reference_aware_323_symmetric::SECOND_SIDE_PADDING,
+                shifted_reference_aware_323_symmetric::SYMMETRIC_EXTENT_REFERENCE,
+            )
+            && zero_range(
+                shifted_reference_aware_323_symmetric::SYMMETRIC_EXTENT_PADDING,
+                shifted_reference_aware_323_symmetric::PROFILE_GROUP_COUNT,
+            )
+            && View::u32_le_at(
+                bytes,
+                start + shifted_reference_aware_323_symmetric::PROFILE_GROUP_COUNT,
+            ) == Some(shifted_reference_aware_323_symmetric::PROFILE_GROUP_COUNT_VALUE)
+            && zero_range(
+                shifted_reference_aware_323_symmetric::PROFILE_GROUP_PADDING,
+                shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
+            )
+            && View::u32_le_at(
+                bytes,
+                start + shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
+            ) == Some(shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT_VALUE)
+    } else {
+        bytes
             .get(
-                start + shifted_reference_aware::SECOND_SIDE_OFFSET_PADDING
-                    ..start + shifted_reference_aware::SECOND_SIDE_TAPER_REFERENCE,
+                start + shifted_reference_aware::FIRST_SIDE_PADDING
+                    ..start + shifted_reference_aware::FIRST_SIDE_DISCRIMINANT,
             )
             .is_some_and(|value| value == [0; 4])
-        && bytes
-            .get(
-                start + shifted_reference_aware::SECOND_SIDE_TAPER_PADDING
-                    ..start + shifted_reference_aware::PROFILE_GROUP_COUNT,
+            && View::u32_le_at(
+                bytes,
+                start + shifted_reference_aware::FIRST_SIDE_DISCRIMINANT,
+            ) == Some(1)
+            && View::u32_le_at(bytes, start + shifted_reference_aware::FIRST_SIDE_PAYLOAD)
+                == Some(2)
+            && bytes.get(start + shifted_reference_aware::FIRST_SIDE_SEPARATOR) == Some(&0)
+            && bytes
+                .get(
+                    start + shifted_reference_aware::SECOND_SIDE_OFFSET_PADDING
+                        ..start + shifted_reference_aware::SECOND_SIDE_TAPER_REFERENCE,
+                )
+                .is_some_and(|value| value == [0; 4])
+            && bytes
+                .get(
+                    start + shifted_reference_aware::SECOND_SIDE_TAPER_PADDING
+                        ..start + shifted_reference_aware::PROFILE_GROUP_COUNT,
+                )
+                .is_some_and(|value| value == [0; 5])
+            && View::u32_le_at(bytes, start + shifted_reference_aware::PROFILE_GROUP_COUNT)
+                == Some(1)
+            && zero_range(
+                shifted_reference_aware::PROFILE_GROUP_PADDING,
+                trailing_reference_count_offset,
             )
-            .is_some_and(|value| value == [0; 5])
-        && View::u32_le_at(bytes, start + shifted_reference_aware::PROFILE_GROUP_COUNT) == Some(1)
-        && zero_range(
-            shifted_reference_aware::PROFILE_GROUP_PADDING,
-            trailing_reference_count_offset,
-        )
-        && View::u32_le_at(bytes, start + trailing_reference_count_offset) == Some(1)
-        && zero_range(
-            trailing_reference_padding_offset,
-            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-        );
+            && View::u32_le_at(bytes, start + trailing_reference_count_offset) == Some(1)
+            && zero_range(
+                trailing_reference_padding_offset,
+                shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+            )
+    };
     if !ordered_tail_references_valid || !trailing_reference_valid || !tail_fixed_valid {
         return None;
     }
-    let (guid, guid_end) = lp_utf16_bounded(
-        bytes,
-        start.checked_add(shifted_reference_aware::BODY_GROUP_GUID_PREFIX)?,
-        36..=36,
-    )?;
+    let (guid, guid_end) =
+        lp_utf16_bounded(bytes, start.checked_add(guid_prefix_offset)?, 36..=36)?;
+    let expected_guid_end = if symmetric_through_all {
+        start.checked_add(guid_prefix_offset)?.checked_add(76)?
+    } else {
+        start
+            .checked_add(second_side_extent_offset)?
+            .checked_add(1)?
+    };
     if !is_guid_relaxed(&guid)
-        || guid_end
-            != start
-                .checked_add(shifted_reference_aware::SECOND_SIDE_EXTENT)?
-                .checked_add(1)?
+        || guid_end != expected_guid_end
         || bytes.get(guid_end..reference_count_at)? != [0; 3]
     {
         return None;
