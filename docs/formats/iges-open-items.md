@@ -47,15 +47,15 @@ from a conformant file.
 
 ### PH-03. Entity-specific boundary for trailing pointer groups
 
-**Question.** Which entity-specific rule supplies `NV`, the last primary Parameter Data index, when a generic scan finds multiple structurally closed and target-valid suffixes?
+**Question.** Which remaining supported entity-specific layouts must supply `NV`, the last primary Parameter Data index, before generic recovery is allowed?
 
-**Known.** IGES 5.3 §2.2.4.5.2 places the two trailing pointer groups after all specified or defaulted entity parameters and defines `NV` as the last parameter number. The entity tables define the primary indexes; Type 116 §4.16, for example, lists indexes 1 through 4 before the additional pointer groups. `parameter.rs:261-283` scans every token position and accepts a suffix only when one candidate is fully target-valid. `native.rs:1497-1502` uses that result for `primary_end`; `native.rs:1525-1541` records a loss and leaves all tokens primary when several candidates are valid. The code-built ambiguity witness in `parameter/tests.rs:385-463` checks that refusal and raw-token retention.
+**Known.** IGES 5.3 §2.2.4.5.2 places the two trailing pointer groups after all specified or defaulted entity parameters and defines `NV` as the last parameter number. The entity tables define the primary indexes. Type 123 Form 0 §4.20 lists X, Y, and Z at indexes 1 through 3; `parameter.rs::entity_primary_end` now selects token index 4 for that form before generic scanning. A synthetic Type 123/Form 7 witness uses Type 123 tokens `123,0,0,2,1,1,0;` and Type 402 Form 7 `402,1,3;`: the Type 123 table boundary is token 4, while generic scanning also accepts token 3. The rebuilt decoder assigns the Type 402 association link and emits no boundary-ambiguous loss. `native.rs:1497-1502` uses the selected result for `primary_end`; `native.rs:1525-1541` reports ambiguity only for generic layouts.
 
-**Need.** We need an entity-specific `NV` rule, or an explicit fallback boundary for entity forms without a usable layout. Without it, a valid pointer group can become primary data, or a valid relationship can remain unassigned, when the candidate scan finds more than one target-valid suffix.
+**Need.** We need to trace and register the primary layout for every remaining supported variable-width entity form. Without it, a valid pointer group can become primary data, or a valid relationship can remain unassigned, when the candidate scan finds more than one target-valid suffix.
 
-**Conflict.** The Parameter Data, counted-parameter, and Entity graph sections in `iges.md` state that the entity-specific boundary precedes the trailing groups and record unique-candidate recovery as the rule, but the generic decoder does not consult the entity type and form layouts or an `NV` table. The source defines `NV` after the entity layout is known; the current closure treats the absence of a generic tie-breaker as the format answer.
+**Conflict.** The Parameter Data, counted-parameter, and Entity graph sections in `iges.md` now state that a proven entity-table boundary takes precedence and that unique-candidate recovery is only a CADIR fallback. The decoder implements this precedence for Type 123 Form 0; the remaining supported layouts still use the generic fallback until their table rules are proven.
 
-**Note.** The ambiguity witness proves that the conservative fallback is observable. It does not prove that a conformant entity lacks the entity-specific `NV` boundary.
+**Note.** The earlier Type 116 ambiguity fixture was insufficient because it did not establish a conformant Type 116 primary layout plus a valid relationship group. The Type 123/Form 7 witness supplies the different evidence required by the audit and settles Type 123 only; do not delete this item until the remaining supported layouts are covered.
 
 ## 2. Global metadata
 

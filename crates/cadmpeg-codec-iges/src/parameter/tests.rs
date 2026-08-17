@@ -382,6 +382,36 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
 }
 
 #[test]
+fn type123_entity_table_boundary_precedes_a_valid_generic_alternative() {
+    let mut association = directory_target(1, 402);
+    association.form = 7;
+    let direction = directory_target(3, 123);
+    let directory = BTreeMap::from([(1, &association), (3, &direction)]);
+    let record = ParameterRecord {
+        directory_sequence: 3,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [123, 0, 0, 2, 1, 1, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 7,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 123 table boundary");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![1]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
 fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
     let association = directory_target(1, 402);
     let directory = BTreeMap::from([(1, &association)]);
@@ -461,4 +491,43 @@ fn decode_reports_ambiguous_boundary_without_assigning_groups() {
         .unwrap()
         .is_empty());
     assert_eq!(source.fields()["parameters"].as_array().unwrap().len(), 7);
+}
+
+#[test]
+fn decode_uses_type123_entity_boundary_for_form7_association() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,3;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 123,
+                    form: 0,
+                    label: "DIRECT".into(),
+                    status: "00010000",
+                    parameters: "123,0,0,2,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#1")]
+    );
 }

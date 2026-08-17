@@ -262,10 +262,19 @@ pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
-    // IGES defines the group order and pointer classes, but no generic
-    // discriminator for a variable-width entity-specific prefix. A boundary
-    // is safe only when exactly one candidate is fully target-valid.
-    let candidates = structural_pointer_group_candidates(record);
+    // IGES defines the group order and pointer classes, but the entity table
+    // supplies NV when it defines the primary layout. Use that table boundary
+    // before applying the generic CADIR recovery for an entity without a
+    // registered layout.
+    let candidates = match entity_primary_end(record, directory) {
+        Some(start) => {
+            let prefix = non_integer_prefix(record);
+            pointer_group_candidate_with_prefix(record, start, &prefix)
+                .into_iter()
+                .collect()
+        }
+        None => structural_pointer_group_candidates(record),
+    };
     let valid_groups = candidates
         .iter()
         .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
@@ -283,6 +292,24 @@ pub(crate) fn analyze_trailing_pointer_groups(
     }
 }
 
+/// Return `NV + 1`, the token index at which the trailing pointer groups
+/// start, for an entity layout established in the supported format tables.
+///
+/// The entity type token is index zero. Type 123 §4.20 has exactly three
+/// primary values, so its additional-pointer groups start at token four.
+/// Unknown layouts retain the generic candidate recovery below until their
+/// entity table is proven and added here.
+fn entity_primary_end(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<usize> {
+    let entry = directory.get(&record.directory_sequence)?;
+    match (entry.entity_type, entry.form) {
+        (123, 0) => Some(4),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy)]
 struct PointerGroupCandidate {
     token_start: usize,
@@ -291,7 +318,7 @@ struct PointerGroupCandidate {
     property_count: usize,
 }
 
-fn pointer_group_candidate(
+fn pointer_group_candidate_with_prefix(
     record: &ParameterRecord,
     association_count_index: usize,
     non_integer_prefix: &[usize],
@@ -324,17 +351,25 @@ fn pointer_group_candidate(
 }
 
 fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerGroupCandidate> {
-    let mut non_integer_prefix = Vec::with_capacity(record.tokens.len() + 1);
-    non_integer_prefix.push(0);
-    for index in 0..record.tokens.len() {
-        non_integer_prefix
-            .push(non_integer_prefix[index] + usize::from(record.raw_integer(index).is_none()));
-    }
+    let non_integer_prefix = non_integer_prefix(record);
     (1..record.tokens.len())
         .filter_map(|association_count_index| {
-            pointer_group_candidate(record, association_count_index, &non_integer_prefix)
+            pointer_group_candidate_with_prefix(
+                record,
+                association_count_index,
+                &non_integer_prefix,
+            )
         })
         .collect()
+}
+
+fn non_integer_prefix(record: &ParameterRecord) -> Vec<usize> {
+    let mut prefix = Vec::with_capacity(record.tokens.len() + 1);
+    prefix.push(0);
+    for index in 0..record.tokens.len() {
+        prefix.push(prefix[index] + usize::from(record.raw_integer(index).is_none()));
+    }
+    prefix
 }
 
 fn pointer_is_valid(
