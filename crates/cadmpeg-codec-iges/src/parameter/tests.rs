@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -228,6 +229,159 @@ fn type116_property_group_follows_explicit_or_omitted_display_pointer() {
             result.report().losses
         );
     }
+}
+
+#[test]
+fn type102_count_driven_boundary_follows_constituent_list() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,7;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "CHILD1".into(),
+                    status: "00010000",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "CHILD2".into(),
+                    status: "00010000",
+                    parameters: "110,1,0,0,2,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 102,
+                    form: 0,
+                    label: "COMPOSIT".into(),
+                    status: "00000000",
+                    parameters: "102,2,3,5,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let composite = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#7")
+        .unwrap();
+    assert_eq!(
+        composite.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(composite.fields()["references"][0]["parameter_index"], 5);
+    assert_eq!(composite.fields()["references"][0]["raw_pointer"], 1);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type102_wrong_typed_constituent_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,5;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "CHILD".into(),
+                    status: "00010000",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 102,
+                    form: 0,
+                    label: "BADTYPE".into(),
+                    status: "00000000",
+                    parameters: "102,1,3.5,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let composite = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert_eq!(
+        composite.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(composite.fields()["references"][0]["parameter_index"], 4);
+    assert_eq!(composite.fields()["references"][0]["raw_pointer"], 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn type102_invalid_count_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,5;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "CHILD".into(),
+                    status: "00010000",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 102,
+                    form: 0,
+                    label: "BAD".into(),
+                    status: "00000000",
+                    parameters: "102,0,3,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let composite = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert!(composite.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(composite.fields()["references"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

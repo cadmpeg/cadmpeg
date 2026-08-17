@@ -51,6 +51,26 @@ pub(crate) struct TrailingPointer {
     pub(crate) raw_pointer: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParameterBoundary {
+    Unknown,
+    Known(usize),
+    Invalid,
+}
+
+impl ParameterBoundary {
+    fn end(self) -> Option<usize> {
+        match self {
+            Self::Known(end) => Some(end),
+            Self::Unknown | Self::Invalid => None,
+        }
+    }
+
+    fn is_registered(self) -> bool {
+        !matches!(self, Self::Unknown)
+    }
+}
+
 impl ParameterRecord {
     pub(crate) fn integer(&self, index: usize) -> Option<i64> {
         match self.tokens.get(index).map(|token| &token.value)? {
@@ -162,7 +182,7 @@ pub(crate) fn trailing_pointer_groups(
         .collect::<Vec<_>>();
     match valid.as_slice() {
         [groups] => Some((*groups).clone()),
-        [] if specified_end.is_some() => match candidates.as_slice() {
+        [] if specified_end.is_registered() => match candidates.as_slice() {
             [groups] => Some(groups.clone()),
             _ => None,
         },
@@ -185,7 +205,11 @@ pub(crate) fn trailing_pointer_group_candidates(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Vec<TrailingPointerGroups> {
-    let specified_end = specified_parameter_end(record, directory);
+    let boundary = specified_parameter_end(record, directory);
+    if matches!(boundary, ParameterBoundary::Invalid) {
+        return Vec::new();
+    }
+    let specified_end = boundary.end();
     (1..record.tokens.len())
         .filter_map(|association_count_index| {
             if specified_end.is_some_and(|end| end != association_count_index) {
@@ -267,12 +291,31 @@ pub(crate) fn trailing_pointer_group_candidates(
 fn specified_parameter_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-) -> Option<usize> {
-    let entry = directory.get(&record.directory_sequence)?;
+) -> ParameterBoundary {
+    let Some(entry) = directory.get(&record.directory_sequence) else {
+        return ParameterBoundary::Unknown;
+    };
     match (entry.entity_type, entry.form) {
-        (110, 0..=2) => Some(7),
-        (116, 0) => Some(5),
-        _ => None,
+        (102, 0) => {
+            let Some(raw_count) = record.integer(1) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(child_count) = usize::try_from(raw_count).ok().filter(|count| *count > 0)
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = child_count.checked_add(2) else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
+        (110, 0..=2) => ParameterBoundary::Known(7),
+        (116, 0) => ParameterBoundary::Known(5),
+        _ => ParameterBoundary::Unknown,
     }
 }
 
