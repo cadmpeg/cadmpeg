@@ -811,6 +811,14 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc14_disc16_disc1e_disc12_disc10_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1e_disc12_disc1a_disc18_disc10_direct_face_root_body(
+            &by_attr,
+        ));
+    }
+    if out.is_empty() {
+        out.extend(disc1e_disc1a_disc18_disc14_disc12_disc10_direct_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc22_disc1a_disc20_disc1e_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -6469,6 +6477,43 @@ fn disc18_disc1a_disc20_disc16_disc14_face_root_body(
     )
 }
 
+fn disc1e_disc12_disc1a_disc18_disc10_direct_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_direct_face_use_root_body(
+        by_attr,
+        &[
+            (0x001e, 2),
+            (0x0012, 2),
+            (0x001a, 2),
+            (0x0018, 2),
+            (0x0010, 1),
+        ],
+        0x0016,
+        0x001c,
+        4,
+    )
+}
+
+fn disc1e_disc1a_disc18_disc14_disc12_disc10_direct_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_direct_face_use_root_body(
+        by_attr,
+        &[
+            (0x001e, 2),
+            (0x001a, 2),
+            (0x0018, 2),
+            (0x0014, 2),
+            (0x0012, 2),
+            (0x0010, 1),
+        ],
+        0x0016,
+        0x001c,
+        5,
+    )
+}
+
 fn disc20_disc16_disc26_disc1e_disc14_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7558,6 +7603,95 @@ fn keyed_forward_chain_candidates<'a>(
         }
     }
     candidates
+}
+
+fn keyed_direct_face_use_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    use_disc: u16,
+    shell_index: usize,
+) -> Vec<BodyRecord> {
+    let matching_chains = keyed_forward_chain_candidates(by_attr)
+        .into_iter()
+        .filter(|chain| {
+            chain.len() == chain_shape.len()
+                && chain
+                    .first()
+                    .is_some_and(|root| root.refs.get(1) == Some(&1))
+                && chain
+                    .last()
+                    .is_some_and(|terminal| terminal.refs.get(2) == Some(&1))
+                && chain_shape
+                    .iter()
+                    .copied()
+                    .zip(chain.iter())
+                    .all(|((disc, flo), record)| record.disc == disc && record.flo() == flo)
+        })
+        .collect::<Vec<_>>();
+    let [chain] = matching_chains.as_slice() else {
+        return Vec::new();
+    };
+    let mut selected_faces = HashSet::new();
+    let mut selected_uses = HashSet::new();
+    let mut selected_keys = HashSet::new();
+    for face in by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == canonical_disc && record.flo() == 1)
+    {
+        let Some(key) = face.refs.first().copied().filter(|key| *key > 1) else {
+            continue;
+        };
+        let Some(use_node) = face
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|record| {
+                record.disc == use_disc
+                    && record.flo() == 4
+                    && record.refs.first() == Some(&key)
+                    && record.refs.get(2) == Some(&face.attr)
+            })
+        else {
+            continue;
+        };
+        if !selected_faces.insert(face.attr)
+            || !selected_uses.insert(use_node.attr)
+            || !selected_keys.insert(key)
+        {
+            return Vec::new();
+        }
+    }
+    if selected_faces.is_empty() || selected_faces.len() != selected_uses.len() {
+        return Vec::new();
+    }
+    let Some(shell) = chain.get(shell_index).copied() else {
+        return Vec::new();
+    };
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    // The selected face's slot-0 key is the topology bridge attribute; the
+    // entity attribute is only the lattice node identity.
+    refs.extend(selected_keys.iter().copied());
+    refs.sort_unstable();
+    refs.dedup();
+    let root = chain[0];
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
 }
 
 #[cfg(test)]
