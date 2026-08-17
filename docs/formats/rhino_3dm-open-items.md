@@ -21,6 +21,19 @@ major 1 with any nonnegative minor after the fixed cage prefix, and its suffix
 ends at the cage chunk boundary. A non-1 cage major is rejected. In morph
 variant 3, that cage boundary remains distinct from the enclosing morph
 control boundary.
+The current OpenNURBS object writers for points, simple curves, polycurves,
+NURBS curves and surfaces, procedural surfaces, Brep, extrusion, mesh, SubD,
+cages, annotations, dimensions, and instance classes emit only the version
+families specified in sections 12 through 18. Their versioned write paths are
+in `opennurbs_pointgeometry.cpp`, `opennurbs_linecurve.cpp`,
+`opennurbs_polycurve.cpp`, `opennurbs_nurbscurve.cpp`,
+`opennurbs_nurbssurface.cpp`, `opennurbs_planesurface.cpp`,
+`opennurbs_revsurface.cpp`, `opennurbs_sumsurface.cpp`,
+`opennurbs_brep_io.cpp`, `opennurbs_beam.cpp`, `opennurbs_mesh.cpp`,
+`opennurbs_subd_archive.cpp`, `opennurbs_nurbsvolume.cpp`,
+`opennurbs_internal_V2_annotation.cpp`, `opennurbs_dimensionstyle.cpp`, and
+`opennurbs_instance.cpp`. No later object-class major writer is defined by
+those current paths.
 
 **Need.** A producer implementation or independent witness for each later
 object-class major/version that is to enter typed decoding, with its field
@@ -28,7 +41,9 @@ grammar and neutral mapping.
 
 **Note.** Narrowed 2026-08-16. Bounded later-minor handling is settled for the
 audited classes, including the nested NURBS cage; later object-class versions
-with changed layout remain open.
+with changed layout remain open. The current source has no later object-class
+producer to characterize; the remaining question requires a later producer or
+an independent versioned witness.
 
 ### FV-02. Future table-record payloads
 
@@ -69,12 +84,22 @@ own chunk ends. This is established by
 `ON_BinaryArchive::ReadModelComponentAttributes` in
 `/home/pcurve/side2/opennurbs/opennurbs_model_component.cpp` and by the public
 linetype status and legacy-mask witnesses recorded in the notebook.
+The current table writers in `opennurbs_material.cpp`,
+`opennurbs_bitmap.cpp`, `opennurbs_hatch.cpp`, `opennurbs_linetype.cpp`,
+`opennurbs_font.cpp`, `opennurbs_text_style.cpp`,
+`opennurbs_dimensionstyle.cpp`, `opennurbs_viewport.cpp`,
+`opennurbs_3dm_settings.cpp`, `opennurbs_3dm_properties.cpp`, and
+`opennurbs_instance.cpp` select only the version bands specified by these
+sections. No later table-record major writer is defined by those current
+paths.
 
 **Need.** Producer source or an independent witness for any later table-record
 major or changed layout that is to be admitted as typed data.
 
 **Note.** Narrowed 2026-08-16. The audited bounded suffix subset is settled;
-later table-record layouts outside it remain open.
+later table-record layouts outside it remain open. The current source has no
+later table-record producer to characterize; the remaining question requires a
+later producer or an independent versioned witness.
 
 ### FV-03. Future user-data payloads
 
@@ -304,6 +329,13 @@ specified for legacy linear, radial, and ordinate dimensions. The built-in
 application UUID, class-owned anonymous version-1 payload, archive-50 write
 gate, inline-basepoint split, read-side basepoint application, and consumed
 userdata rule are specified.
+The generic userdata writer and reader in `opennurbs_userdata.cpp` define only
+the major-1 and major-2 header families. The built-in payload writers traced in
+`opennurbs_hatch.cpp`, `opennurbs_internal_V2_annotation.cpp`,
+`opennurbs_mesh.cpp`, `opennurbs_brep_io.cpp`,
+`opennurbs_subd_archive.cpp`, `opennurbs_material.cpp`, and
+`opennurbs_xml.cpp` select the current versions already specified in section
+7.2. No later userdata major writer is defined by those current paths.
 
 **Need.** The later userdata class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and loss mapping.
@@ -327,6 +359,9 @@ runtime-only helper with no serialized userdata under section 7.2.11; other
 future class-specific payload semantics, beyond the settled mesh-modifier,
 physically based material, RDK, mapping-CRC, and texture-mesh correspondence
 carriers, remain open.
+The current source has no later userdata producer to characterize; the
+remaining question requires a later class writer/reader or an independent
+versioned witness.
 
 ### FV-06. Later major payload admission
 
@@ -337,6 +372,10 @@ presentation, or userdata payloads may enter typed decoding?
 bounded later-minor suffixes, writer-band ceilings, and opaque unknown records.
 A later major still needs its own field grammar; complete byte retention does
 not establish typed admission.
+The current OpenNURBS writer inventory defines no additional major family
+beyond the families specified in this document. This leaves a CADIR admission
+rule for any later major, but it does not assign meanings to that producer's
+fields.
 
 **Need.** Producer source or an independent witness for each later major that is
 to be admitted, naming its fields, boundaries, and neutral mapping.
@@ -352,6 +391,9 @@ the known prefix of each built-in payload?
 **Known.** Source-defined later-minor readers consume known prefixes and skip
 bounded suffixes. The specification does not assign names or meanings to
 future bytes that no audited producer writes.
+The current OpenNURBS writers emit only the known minor gates and writer bands
+listed by the family sections. No current writer assigns a later suffix field
+grammar beyond those gates.
 
 **Need.** A future producer writer/reader or an independent witness for each
 future suffix, with its field order, boundary, and typed admission rule.
