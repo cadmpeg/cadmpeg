@@ -98,29 +98,13 @@ fn status(field: [u8; 8], sequence: u32) -> Result<Status, CodecError> {
             hierarchy: 0,
         });
     }
-    let first_digit = field.iter().position(u8::is_ascii_digit).ok_or_else(|| {
-        malformed(
-            sequence,
-            "status number is neither blank nor a right-justified decimal integer",
-        )
-    })?;
-    if field[..first_digit].iter().any(|byte| *byte != b' ')
-        || field[first_digit..]
-            .iter()
-            .any(|byte| !byte.is_ascii_digit())
-    {
+    if !field.iter().all(u8::is_ascii_digit) {
         return Err(malformed(
             sequence,
-            "status number is neither blank nor a right-justified decimal integer",
+            "status number is neither blank nor eight decimal digits",
         ));
     }
-    let digit = |at: usize| {
-        field
-            .get(at)
-            .copied()
-            .filter(u8::is_ascii_digit)
-            .map_or(0, |value| value - b'0')
-    };
+    let digit = |at: usize| field[at] - b'0';
     let pair = |at: usize| digit(at) * 10 + digit(at + 1);
     Ok(Status {
         blank: pair(0),
