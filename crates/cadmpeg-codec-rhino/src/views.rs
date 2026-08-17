@@ -6,8 +6,8 @@ use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
 use crate::chunks::{
-    chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion, BoundedReader,
-    ChecksumStatus, FramingError, TCODE_ENDOFTABLE,
+    chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges, ArchiveVersion,
+    BoundedReader, ChecksumStatus, FramingError, TCODE_ENDOFTABLE,
 };
 use crate::container::{Record, Scan};
 use crate::settings::{plane, utf16, Plane};
@@ -754,6 +754,19 @@ fn parse_attributes(
     Ok(result)
 }
 
+fn direct_view_child_checksum_warning(
+    data: &[u8],
+    child: &crate::chunks::Chunk,
+) -> Result<Option<String>, FramingError> {
+    match verify_checksum(data, child)? {
+        ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
+            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
+            child.header_start, child.typecode
+        ))),
+        _ => Ok(None),
+    }
+}
+
 fn parse_view(
     data: &[u8],
     record: &crate::chunks::Chunk,
@@ -761,7 +774,7 @@ fn parse_view(
     scale: f64,
     list_kind: &'static str,
     list_index: usize,
-) -> Result<(ViewRecord, Option<String>), FramingError> {
+) -> Result<(ViewRecord, Vec<String>), FramingError> {
     let mut offset = record.body.start;
     let mut name = String::new();
     let mut target = None;
@@ -782,11 +795,27 @@ fn parse_view(
     let mut wallpaper = None;
     let mut children = Vec::new();
     let mut checksum_children = Vec::new();
+    let mut checksum_warnings = Vec::new();
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
     while offset < record.body.end {
         let child = chunk_at(data, offset, record.body.end, archive, false)?;
         checksum_children.push(child.range());
+        if matches!(
+            child.typecode,
+            VIEW_VIEWPORT
+                | VIEW_CPLANE
+                | VIEW_TARGET
+                | VIEW_POSITION
+                | VIEW_NAME
+                | VIEW_TRACE_IMAGE
+                | VIEW_WALLPAPER
+                | VIEW_WALLPAPER_V3
+        ) {
+            if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
+                checksum_warnings.push(warning);
+            }
+        }
         children.push(ViewChild {
             typecode: format!("{:#010x}", child.typecode),
             kind: child_kind(child.typecode),
@@ -884,6 +913,9 @@ fn parse_view(
         )),
         _ => None,
     };
+    if let Some(warning) = checksum_warning {
+        checksum_warnings.push(warning);
+    }
     Ok((
         ViewRecord {
             id: format!("rhino:document:view#{list_kind}-{list_index:04}"),
@@ -910,7 +942,7 @@ fn parse_view(
             children,
             parse_warnings,
         },
-        checksum_warning,
+        checksum_warnings,
     ))
 }
 
@@ -990,8 +1022,8 @@ fn parse_list(
         }
         let next = view.next_offset;
         match parse_view(data, &view, archive, scale, kind, index) {
-            Ok((value, checksum_warning)) => {
-                if let Some(warning) = checksum_warning {
+            Ok((value, checksum_warnings)) => {
+                for warning in checksum_warnings {
                     losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
                 views.push(value);
@@ -1367,6 +1399,42 @@ mod tests {
             crate::loss::RhinoLossCode::IntegrityFailure.kind()
         );
         assert!(losses[0].message.contains("CRC mismatch"));
+    }
+
+    #[test]
+    fn direct_view_child_crc_mismatch_is_recoverable_integrity_loss() {
+        let archive = ArchiveVersion::V5;
+        let mut target = crc_chunk(archive, super::VIEW_TARGET, &[0; 24]);
+        let crc_offset = target.len() - 1;
+        target[crc_offset] ^= 1;
+        let end_marker = short_chunk(archive, super::TCODE_ENDOFTABLE, 0);
+        let mut view_body = target;
+        view_body.extend(end_marker);
+        let view_body_range = 0..view_body.len();
+        let view = crc_chunk_excluding(
+            archive,
+            super::VIEW_RECORD,
+            &view_body,
+            std::slice::from_ref(&view_body_range),
+        );
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(view);
+        let record = Record {
+            typecode: super::NAMED_VIEWS,
+            range: 0..body.len(),
+            body: 0..body.len(),
+            short: false,
+            value: 0,
+        };
+
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        assert_eq!(views.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::RhinoLossCode::IntegrityFailure.kind()
+        );
+        assert!(losses[0].message.contains("0x2000883b"));
     }
 
     #[test]

@@ -6151,6 +6151,14 @@ chunk. Each child has its own CRC and bounded body. The readers require
 the defined child typecode for every counted child; an unexpected typecode or
 short framing fails that list read.
 
+The direct-body long children `TCODE_VIEW_VIEWPORT`, `TCODE_VIEW_CPLANE`,
+`TCODE_VIEW_TARGET`, `TCODE_VIEW_POSITION`, `TCODE_VIEW_NAME`,
+`TCODE_VIEW_TRACEIMAGE`, `TCODE_VIEW_WALLPAPER`, and
+`TCODE_VIEW_WALLPAPER_V3` are CRC-bearing leaves. Each leaf CRC covers its
+complete body, including any direct suffix bytes. `TCODE_VIEW_ATTRIBUTES` and
+`TCODE_VIEW_VIEWPORT_USERDATA` are CRC-bearing containers with nested child
+streams.
+
 Each `TCODE_VIEW_RECORD` child is also CRC-bearing. Its CRC excludes every
 complete view child chunk through and including the short end marker. Bytes
 after that marker are direct suffix bytes and are included. The current view
