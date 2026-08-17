@@ -548,6 +548,77 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
 }
 
 #[test]
+fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
+    let surface = SurfaceId("nx:test:budget-plane".into());
+    let start_point = PointId("nx:test:budget-start-point".into());
+    let end_point = PointId("nx:test:budget-end-point".into());
+    let start_vertex = VertexId("nx:test:budget-start-vertex".into());
+    let end_vertex = VertexId("nx:test:budget-end-vertex".into());
+    let edge = EdgeId("nx:test:budget-edge".into());
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: start_point.clone(),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: end_point.clone(),
+            position: Point3::new(1.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: start_vertex.clone(),
+            point: start_point,
+            tolerance: Some(0.0),
+        },
+        Vertex {
+            id: end_vertex.clone(),
+            point: end_point,
+            tolerance: Some(0.0),
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: edge.clone(),
+        curve: None,
+        start: start_vertex,
+        end: end_vertex,
+        param_range: None,
+        tolerance: Some(0.0),
+    });
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let budget = WorkBudget::new(0);
+    let pcurve = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+
+    assert!(
+        !crate::decode::pcurves::pcurve_matches_edge_range_with_index_and_budget(
+            &index,
+            &edge,
+            &surface,
+            &pcurve,
+            Some([0.0, 1.0]),
+            None,
+            &budget,
+        )
+    );
+    assert!(budget.exhausted());
+}
+
+#[test]
 fn offset_cache_fit_accepts_higher_degree_translation_nets() {
     assert_eq!(
         super::certified_offset_cache_fit(
