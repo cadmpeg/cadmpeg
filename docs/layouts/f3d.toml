@@ -6096,6 +6096,46 @@ source = "spec"
 anchor = "the scope reference-count field is at offset 251"
 
 [[record]]
+name = "compact_shifted_extrude_mixed_extent_and_table_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact legacy mixed two-sided Extrude form stores direction `2`"
+size = 285
+note = "Offsets are relative to the compact legacy Extrude primary indexed header. The mixed two-sided form uses the two extent values shown here; the ordered reference table begins at the final field."
+
+[[record.gap]]
+offset = 0
+size = 124
+note = "The compact prologue and its intervening reference envelope precede the mixed extent lane."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 124
+type = "u32"
+source = "spec"
+anchor = "first-side extent discriminator `1`"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "second-side extent discriminator `2`"
+
+[[record.gap]]
+offset = 132
+size = 149
+note = "The mixed side-reference envelope precedes the ordered reference-count field."
+
+[[record.field]]
+name = "reference_count"
+offset = 281
+type = "u32"
+source = "spec"
+anchor = "Its scope reference-count field is at offset 281"
+
+[[record]]
 name = "marked_shifted_extrude_prologue"
 kind = "byte"
 section = "3.1"

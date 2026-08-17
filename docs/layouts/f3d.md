@@ -1899,6 +1899,26 @@ Unstated regions:
 - `0..105` (105 B): The compact prologue and its intervening reference envelope precede the selected extent lane.
 - `113..251` (138 B): The remaining compact extent envelope precedes the ordered reference-count field.
 
+## `compact_shifted_extrude_mixed_extent_and_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 285 B
+
+Offsets are relative to the compact legacy Extrude primary indexed header. The mixed two-sided form uses the two extent values shown here; the ordered reference table begins at the final field.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 124 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent discriminator `1` |
+| 128 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent discriminator `2` |
+| 281 | 4 | `reference_count` | `u32` | little | spec | Its scope reference-count field is at offset 281 |
+
+Unstated regions:
+
+- `0..124` (124 B): The compact prologue and its intervening reference envelope precede the mixed extent lane.
+- `132..281` (149 B): The mixed side-reference envelope precedes the ordered reference-count field.
+
 ## `marked_shifted_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 43 B

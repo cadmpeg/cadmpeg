@@ -882,6 +882,83 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
 }
 
 #[test]
+fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
+    const REFERENCE_COUNT_OFFSET: usize = 281;
+    const FIRST_SIDE_EXTENT_OFFSET: usize = 124;
+    const SECOND_SIDE_EXTENT_OFFSET: usize = 128;
+    const OPERATION_OFFSET: usize = 26;
+    let reference_members: [u32; 11] = [
+        3225, 3228, 3234, 3237, 3730, 3733, 3737, 3740, 3744, 3747, 3752,
+    ];
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"304");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.resize(REFERENCE_COUNT_OFFSET, 0);
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[OPERATION_OFFSET..OPERATION_OFFSET + 4].copy_from_slice(&1u32.to_le_bytes());
+    bytes[OPERATION_OFFSET + 4..OPERATION_OFFSET + 8].copy_from_slice(&2u32.to_le_bytes());
+    bytes[OPERATION_OFFSET + 8..OPERATION_OFFSET + 12].copy_from_slice(&0u32.to_le_bytes());
+    bytes[OPERATION_OFFSET + 12] = 0;
+    bytes[OPERATION_OFFSET + 13] = 1;
+    bytes[OPERATION_OFFSET + 14] = 0;
+    bytes[FIRST_SIDE_EXTENT_OFFSET..FIRST_SIDE_EXTENT_OFFSET + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    bytes[SECOND_SIDE_EXTENT_OFFSET..SECOND_SIDE_EXTENT_OFFSET + 4]
+        .copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&(reference_members.len() as u32).to_le_bytes());
+    for reference in reference_members {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Extrude");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 12,
+        class_tag: "304".into(),
+        byte_offset: 0,
+    };
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("compact mixed Extrude scope");
+    assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
+    assert_eq!(scope.reference_members, reference_members);
+    assert_eq!(
+        scope.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: OPERATION_OFFSET as u64,
+            direction_face_extend_values: [2, 0],
+            side_extent_discriminators: [1, 2],
+            side_extent_discriminator_offsets: [
+                FIRST_SIDE_EXTENT_OFFSET as u64,
+                SECOND_SIDE_EXTENT_OFFSET as u64,
+            ],
+            extent: Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
+            direction_face_extend_offsets: [30, 34],
+            direction_reversed: false,
+            direction_reversed_offset: 38,
+            solid_operation: true,
+            solid_operation_offset: 39,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 40,
+        })
+    );
+}
+
+#[test]
 fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());

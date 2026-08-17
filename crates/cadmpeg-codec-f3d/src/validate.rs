@@ -3286,45 +3286,92 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             }
                             _ => None,
                         };
-                    field_shift.is_some()
-                        && matches!(direction_face_extend_values[0], 1..=3)
-                        && matches!(
+                    let compact_extent_offsets = if (
+                        operation_prefix_marker,
+                        operation_prefix_marker_offset,
+                    ) == (None, None)
+                        && operation_offset == scope.byte_offset.saturating_add(26)
+                    {
+                        scope
+                            .reference_count_offset
+                            .checked_sub(scope.byte_offset)
+                            .and_then(|offset| match offset {
+                                251 => Some([
+                                    scope.byte_offset.saturating_add(105),
+                                    scope.byte_offset.saturating_add(109),
+                                ]),
+                                281 => Some([
+                                    scope.byte_offset.saturating_add(124),
+                                    scope.byte_offset.saturating_add(128),
+                                ]),
+                                _ => None,
+                            })
+                    } else {
+                        None
+                    };
+                    let extent_valid = if compact_extent_offsets.is_some() {
+                        matches!(
                             (
-                                direction_face_extend_values[0],
+                                direction_face_extend_values,
                                 side_extent_discriminators,
                                 extent,
                             ),
                             (
-                                1,
+                                [1, _],
                                 [1, 0],
                                 Some(records::DesignExtrudeExtent::OneSidedDistance)
                             ) | (
-                                1,
-                                [2, 0],
-                                Some(records::DesignExtrudeExtent::OneSidedToFace)
-                            ) | (
-                                1,
-                                [3, 0],
-                                Some(records::DesignExtrudeExtent::OneSidedThroughNext),
-                            ) | (
-                                1,
-                                [4, 0],
-                                Some(records::DesignExtrudeExtent::OneSidedThroughAll)
-                            ) | (
-                                2,
-                                [1, 1],
-                                Some(records::DesignExtrudeExtent::TwoSidedDistance)
-                            ) | (
-                                3,
+                                [3, _],
                                 [1, 0],
                                 Some(records::DesignExtrudeExtent::SymmetricDistance)
                             ) | (
-                                3,
-                                [4, 4],
-                                Some(records::DesignExtrudeExtent::SymmetricThroughAll)
+                                [2, 0],
+                                [1, 2],
+                                Some(records::DesignExtrudeExtent::TwoSidedDistanceToFace)
                             )
                         )
-                        && field_shift.is_some_and(|field_shift| {
+                    } else {
+                        matches!(direction_face_extend_values[0], 1..=3)
+                            && matches!(
+                                (
+                                    direction_face_extend_values[0],
+                                    side_extent_discriminators,
+                                    extent,
+                                ),
+                                (
+                                    1,
+                                    [1, 0],
+                                    Some(records::DesignExtrudeExtent::OneSidedDistance)
+                                ) | (
+                                    1,
+                                    [2, 0],
+                                    Some(records::DesignExtrudeExtent::OneSidedToFace)
+                                ) | (
+                                    1,
+                                    [3, 0],
+                                    Some(records::DesignExtrudeExtent::OneSidedThroughNext),
+                                ) | (
+                                    1,
+                                    [4, 0],
+                                    Some(records::DesignExtrudeExtent::OneSidedThroughAll)
+                                ) | (
+                                    2,
+                                    [1, 1],
+                                    Some(records::DesignExtrudeExtent::TwoSidedDistance)
+                                ) | (
+                                    3,
+                                    [1, 0],
+                                    Some(records::DesignExtrudeExtent::SymmetricDistance)
+                                ) | (
+                                    3,
+                                    [4, 4],
+                                    Some(records::DesignExtrudeExtent::SymmetricThroughAll)
+                                )
+                            )
+                    };
+                    let side_offsets_valid = compact_extent_offsets
+                        .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
+                        || field_shift.is_some_and(|field_shift| {
                             side_extent_discriminator_offsets
                                 == if direction_face_extend_values[0] == 2 {
                                     if scope
@@ -3378,7 +3425,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         scope.byte_offset.saturating_add(110 + field_shift),
                                     ]
                                 }
-                        })
+                        });
+                    (field_shift.is_some() || compact_extent_offsets.is_some())
+                        && extent_valid
+                        && side_offsets_valid
                         && direction_face_extend_offsets
                             == [
                                 operation_offset.saturating_add(4),
@@ -4807,6 +4857,14 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && side_one_offset_count == 0
                         && !prologue.direction_reversed()
                 }
+                records::DesignExtrudeExtent::TwoSidedDistanceToFace => {
+                    along_count == 1
+                        && !has_fixed_extrude_parameters
+                        && against_count == 0
+                        && side_one_offset_count == 0
+                        && side_two_offset_count == 1
+                        && !prologue.direction_reversed()
+                }
                 records::DesignExtrudeExtent::SymmetricDistance => {
                     has_one_along_carrier
                         && against_count == 0
@@ -4841,6 +4899,9 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 extrude_extent,
                 records::DesignExtrudeExtent::TwoSidedToFaces
             )) + usize::from(matches!(
+                extrude_extent,
+                records::DesignExtrudeExtent::TwoSidedDistanceToFace
+            )) + usize::from(matches!(
                 extrude_start,
                 records::DesignExtrudeStart::FromFace
             ));
@@ -4874,6 +4935,9 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     records::DesignExtrudeFaceRole::Termination,
                     records::DesignExtrudeFaceRole::Termination,
                 ],
+                (_, records::DesignExtrudeExtent::TwoSidedDistanceToFace) => {
+                    vec![records::DesignExtrudeFaceRole::Termination]
+                }
                 _ => Vec::new(),
             };
             if !extent_matches_operands

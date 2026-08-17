@@ -2572,6 +2572,24 @@ pub(crate) mod compact_shifted_extrude_extent_and_table_prefix {
     pub(crate) const REFERENCE_COUNT: usize = 251;
 }
 
+/// Byte offsets for the `compact_shifted_extrude_mixed_extent_and_table_prefix` record.
+///
+/// Spec §3.1. Record length 285 B.
+///
+/// ```text
+/// Offsets are relative to the compact legacy Extrude primary indexed header. The mixed two-sided form uses the two extent values shown here; the ordered reference table begins at the final field.
+/// ```
+pub(crate) mod compact_shifted_extrude_mixed_extent_and_table_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 285;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 124;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 128;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 281;
+}
+
 /// Byte offsets for the `marked_shifted_extrude_prologue` record.
 ///
 /// Spec §3.1. Record length 43 B.

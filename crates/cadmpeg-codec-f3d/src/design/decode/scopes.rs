@@ -45,6 +45,7 @@ use crate::layout::combine_external_selector_prefix as combine_external;
 use crate::layout::combine_standard_operation_prefix as combine_standard;
 use crate::layout::compact_loft_operation_prefix as compact_loft;
 use crate::layout::compact_shifted_extrude_extent_and_table_prefix as compact_extrude_extent;
+use crate::layout::compact_shifted_extrude_mixed_extent_and_table_prefix as compact_extrude_mixed;
 use crate::layout::compact_shifted_extrude_prologue as compact_extrude;
 use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
 use crate::layout::current_extrude_operation_fields as extrude_fields;
@@ -7643,6 +7644,14 @@ fn exact_extrude_prologue(
             )
         })
         .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at))
+        .or_else(|| {
+            exact_compact_shifted_extrude_mixed_prologue(
+                bytes,
+                start,
+                reference_count_at,
+                reference_members,
+            )
+        })
         .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
 }
 
@@ -7732,6 +7741,96 @@ fn exact_compact_shifted_extrude_prologue(
         solid_operation_offset: solid_operation_offset as u64,
         start,
         start_offset: start_offset as u64,
+    })
+}
+
+fn exact_compact_shifted_extrude_mixed_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    if View::u32_le_at(bytes, start.checked_add(compact_extrude::PREFIX_CONSTANT)?)? != 1
+        || bytes.get(
+            start.checked_add(compact_extrude::ZERO_RUN_2)?
+                ..start.checked_add(compact_extrude::OPERATION)?,
+        )? != [0; 2]
+        || reference_count_at.checked_sub(start)? != compact_extrude_mixed::REFERENCE_COUNT
+        || reference_members.len() != 11
+    {
+        return None;
+    }
+    let operation_offset = start.checked_add(compact_extrude::OPERATION)?;
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let direction_face_extend_offsets = [
+        start.checked_add(compact_extrude::DIRECTION)?,
+        start.checked_add(compact_extrude::FACE_EXTEND)?,
+    ];
+    let direction_face_extend_values = [
+        View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
+        View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
+    ];
+    if direction_face_extend_values != [2, 0] {
+        return None;
+    }
+    let side_extent_discriminator_offsets = [
+        start.checked_add(compact_extrude_mixed::FIRST_SIDE_EXTENT)?,
+        start.checked_add(compact_extrude_mixed::SECOND_SIDE_EXTENT)?,
+    ];
+    let side_extent_discriminators = [
+        View::u32_le_at(bytes, side_extent_discriminator_offsets[0])?,
+        View::u32_le_at(bytes, side_extent_discriminator_offsets[1])?,
+    ];
+    if side_extent_discriminators != [1, 2] {
+        return None;
+    }
+    let direction_reversed_offset = start.checked_add(compact_extrude::DIRECTION_REVERSED)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let solid_operation_offset = start.checked_add(compact_extrude::GEOMETRY_KIND)?;
+    let solid_operation = match bytes.get(solid_operation_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let start_offset = start.checked_add(compact_extrude::START_SUPPORT)?;
+    let start = match bytes.get(start_offset)? {
+        0 => DesignExtrudeStart::ProfilePlane,
+        1 => DesignExtrudeStart::OffsetProfilePlane,
+        2 => DesignExtrudeStart::FromFace,
+        _ => return None,
+    };
+    Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
+        operation,
+        operation_offset: u64::try_from(operation_offset).ok()?,
+        direction_face_extend_values,
+        side_extent_discriminators,
+        side_extent_discriminator_offsets: [
+            u64::try_from(side_extent_discriminator_offsets[0]).ok()?,
+            u64::try_from(side_extent_discriminator_offsets[1]).ok()?,
+        ],
+        extent: Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
+        direction_face_extend_offsets: [
+            u64::try_from(direction_face_extend_offsets[0]).ok()?,
+            u64::try_from(direction_face_extend_offsets[1]).ok()?,
+        ],
+        direction_reversed,
+        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        solid_operation,
+        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        start,
+        start_offset: u64::try_from(start_offset).ok()?,
     })
 }
 

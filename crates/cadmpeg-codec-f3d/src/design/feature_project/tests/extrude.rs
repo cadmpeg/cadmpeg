@@ -50,6 +50,7 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::OneSidedThroughAll => (1, [4, 0]),
                 DesignExtrudeExtent::TwoSidedToFaces => (2, [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => (2, [1, 1]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace => (2, [1, 2]),
                 DesignExtrudeExtent::SymmetricDistance => (3, [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => (3, [4, 4]),
             };
@@ -71,6 +72,7 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::OneSidedThroughAll => ([1, 0], [4, 0]),
                 DesignExtrudeExtent::TwoSidedToFaces => ([2, 0], [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => ([2, 0], [1, 1]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace => ([2, 0], [1, 2]),
                 DesignExtrudeExtent::SymmetricDistance => ([3, 0], [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => ([3, 0], [4, 4]),
             };
