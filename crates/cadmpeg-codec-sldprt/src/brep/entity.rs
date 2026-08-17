@@ -842,6 +842,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1a_disc14_disc24_disc18_disc16_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(
+            disc21_disc1f_disc1b_disc19_disc15_disc13_disc11_disc04_face_root_body(&by_attr),
+        );
+    }
+    if out.is_empty() {
         out.extend(disc1d_disc15_disc1b_disc19_disc13_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -6154,6 +6159,34 @@ fn disc1d_disc15_disc1b_disc19_disc13_face_root_body(
     )
 }
 
+fn disc21_disc1f_disc1b_disc19_disc15_disc13_disc11_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+        by_attr,
+        &[
+            (0x0021, 2),
+            (0x001f, 5),
+            (0x001b, 2),
+            (0x0019, 2),
+            (0x0015, 1),
+            (0x0013, 2),
+            (0x0011, 2),
+            (0x0004, 2),
+        ],
+        0x000f,
+        0x0017,
+        0x001d,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        false,
+    )
+}
+
 fn disc1c_disc14_disc1a_disc18_disc10_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -8400,6 +8433,7 @@ mod tests {
     mod disc20_disc1e_disc1c_disc18_disc16;
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc20_disc1e_disc1c_disc18_disc16_disc12;
+    mod disc21_disc1f_disc1b_disc19_disc15_disc13_disc11_disc04;
     mod disc22_disc20_disc1e_disc1a;
     mod disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06;
     mod disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e;
