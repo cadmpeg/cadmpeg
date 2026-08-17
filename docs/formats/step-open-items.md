@@ -29,13 +29,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 ## 7. Annotation, presentation, and tessellation
 
 ## 8. Product structure and placement
-
-### BM-02. BO-Model composition
-
-**Question.** How do BO-Model XML identities and values combine with a Part 21 instance graph?
-
-**Known.** The encodings have separate identity systems and explicit external-file references (`step.md` §1 "Part 21 does not define a sidecar filename", `step.md` §1 "The BO-Model XML identity system is local"). The codec refuses BO-Model XML (`crates/cadmpeg-codec-step/src/codec.rs:365-379`).
-
-**Need.** Define an AP242 cross-file identity relation, precedence policy, and independently paired XML and Part 21 exchanges.
-
-**Conflict.** Refusing BO-Model XML avoids an accidental join but does not implement or settle cross-file composition.

@@ -593,26 +593,63 @@ fn codec_refuses_schema_marked_part26_hdf5_population() {
 }
 
 #[test]
-fn codec_does_not_compose_a_same_stem_bo_model_resource() {
+fn bo_model_does_not_compose_with_explicit_part21_file_reference() {
     let codec = StepCodec::default();
     let part21 = include_bytes!("data/bm02_part21_base.p21");
-    let bo_model = include_bytes!("data/bm02_bo_model_resource.stpx");
 
     let result = codec
         .decode(&mut Cursor::new(part21), &DecodeOptions::default())
-        .expect("decode the Part 21 graph without a sidecar");
-    let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "2");
-    assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 2);
+        .expect("decode the Part 21 side of the pair");
+    assert_eq!(result.ir().model.product_definitions.len(), 1);
+    assert_eq!(
+        result.ir().model.product_definitions[0]
+            .source_name
+            .as_deref(),
+        Some("P21 value")
+    );
+    assert_eq!(
+        result.ir().model.product_definitions[0].label.as_deref(),
+        Some("P21 value")
+    );
+    assert_eq!(
+        result.ir().model.product_definitions[0]
+            .part_number
+            .as_deref(),
+        Some("P21_PRODUCT")
+    );
     assert!(!result
         .report()
         .notes
         .iter()
-        .any(|note| note.contains("bm02-model.stpx")));
+        .any(|note| note.contains("bm02-model")));
 
-    assert!(matches!(
-        codec.decode(&mut Cursor::new(bo_model), &DecodeOptions::default()),
-        Err(cadmpeg_core::CodecError::NotImplemented(message))
-            if message == "AP242 BO-Model XML sidecar"
-    ));
+    for (xml, value) in [
+        (
+            include_bytes!("data/bm02_bo_model_resource.stpx").as_slice(),
+            "XML value",
+        ),
+        (
+            include_bytes!("data/bm02_bo_model_conflicting_value.stpx").as_slice(),
+            "XML override",
+        ),
+    ] {
+        assert_eq!(codec.detect(xml), Confidence::Medium);
+        assert!(xml
+            .windows(b"ExternalItem".len())
+            .any(|window| { window == b"ExternalItem" }));
+        assert!(xml
+            .windows(b"bm02-model.p21".len())
+            .any(|window| { window == b"bm02-model.p21" }));
+        assert!(xml
+            .windows(b"P21_PRODUCT".len())
+            .any(|window| { window == b"P21_PRODUCT" }));
+        assert!(xml
+            .windows(value.len())
+            .any(|window| window == value.as_bytes()));
+        assert!(matches!(
+            codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
+            Err(cadmpeg_core::CodecError::NotImplemented(message))
+                if message == "AP242 BO-Model XML sidecar"
+        ));
+    }
 }

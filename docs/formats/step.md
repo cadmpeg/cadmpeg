@@ -213,78 +213,56 @@ The corresponding edition-1 schema uses its edition-1 namespace and its own
 schema document. A supplied `xsi:schemaLocation` names the namespace and the
 schema document; it does not replace namespace identity. The `.stpx` and
 `.stpxZ` suffixes are CAx-IF recommended filename conventions, not XML
-grammar tokens.
-
-Part 21 does not define a sidecar filename, a same-stem pairing, an XML root,
-or an association from `FILE_NAME` to a BO-Model XML document. The CAx-IF
-AP242 BO-Model XML recommended practices model a referenced Part 21 or nested
-BO-Model file as a `DigitalFile` with an `ExternalItem`; the target filename is
-in `ExternalItem.Id`, and an optional `ExternalItem.Source` supplies path or
-location information. This is an application-level external-file reference.
-It is not a Part 21 sidecar key and does not import the referenced file into
-the XML `Uos`.
-
-The AP242 BO-Model edition-2 schema declares
-`ExternalGeometricModel.ExternalFile` as a `cmn:Reference` to an XML `File`.
-`File.Locations.ExternalItem` has an `Id` and an optional `Source`; it has no
-Part 21 occurrence name or Part 21 anchor field. In the common schema, `uid`
-has XML Schema type `ID` and `uidRef` has type `IDREF`. These references are
-local to the XML population. The schema therefore supplies no XML-to-Part-21
-identity relation. The [edition-2 BO-Model schema](https://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model/bom.xsd)
+grammar tokens. The [edition-2 BO-Model schema](https://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model/bom.xsd)
 and [common schema](https://standards.iso.org/iso/ts/10303/-3000/-ed-2/tech/xml-schema/common/common.xsd)
 are the governing declarations.
 
-The [CAx-IF BO-Model XML Assembly Structure recommended practices](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ap242xml_assy_struct_v1.00.pdf)
-§9 defines these as basic or nested references to a named file and excludes
-External Element References. The [CAx-IF External (Element) References recommended practices](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ext_ref_v31.pdf)
-§2 excludes Part 28 XML EER. Its Part 21 EER rules require an explicit
-external source and target anchor; §7.3 says EER extends the basic file
-reference, and §7.4 describes EER as navigation information for an existing
-assembly, not as a way to create or replace that assembly.
+The BO-Model XML identity system is local to each XML document. In the common
+schema, `uid` has XML Schema type `ID` and `uidRef` has type `IDREF`; they
+identify XML elements and references in that document. `Id.id` and
+`Identifier.id` are BO-Model business identifier strings with the role and
+context fields defined by the BO Model. They are not Part 21 occurrence names.
+A Part 21 `#` or `@` occurrence is local to its exchange structure. Equal
+numeric values, text values, filenames, or business identifiers do not
+establish one object across the encodings.
+
+Part 21 does not define a sidecar filename, a same-stem pairing, an XML root,
+or an association from `FILE_NAME` to a BO-Model XML document. The AP242
+BO-Model XML Assembly Structure recommended practices define basic references
+to a named file and nested references to another BO-Model XML file. A
+`DigitalFile` carries `ExternalItem.Id` as the target filename and may carry
+`ExternalItem.Source` as the path or location. An
+`ExternalGeometricModel.ExternalFile` is a `cmn:Reference` to an XML `File`.
+These fields bind a BO-Model object to a file. They do not import that file's
+Part 21 graph into the XML `Uos` or identify a Part 21 `#` occurrence. Nested
+BO-Model references can carry target `Part.id`, `PartVersion.id`, and
+`PartView.id` values for navigation inside the BO-Model exchange. The
+[CAx-IF BO-Model XML Assembly Structure recommended practices](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ap242xml_assy_struct_v2.1.pdf)
+§§9.1 and 9.3 define these file-level rules and exclude External Element
+References from that practice.
+
+An element-level relation to a Part 21 file requires the separate CAx-IF
+External (Element) Reference mechanism. It requires an explicit external
+source, a target `EXTERNAL_ANCHOR`, and a source item identifier. The [CAx-IF
+External (Element) References recommended practices](https://www.mbx-if.org/home/wp-content/uploads/2024/05/rec_prac_ext_ref_v31.pdf)
+§§2 and 7.3–7.4 state that EER extends the basic file reference and provides
+navigation in an existing assembly; it does not create or replace the target
+assembly. The practice's Part 28 XML EER scope exclusion also means that an
+ordinary BO-Model `uid`/`uidRef` reference is not an EER.
 
 CADIR decision: the STEP codec classifies a document by its published BO-Model
 namespace and refuses it as an alternate encoding. It does not discover a
 same-stem XML file or infer an association from `FILE_NAME`, filename suffix,
-XML prefix, or `Uos` alone. A caller must explicitly bind an XML resource and
-declare its AP242 XML schema and edition before any separate composition step.
-
-The AP242 BO-Model XML schema is ISO/TS 10303-3001. The common envelope is
-defined by its common XML schema. CAx-IF Recommended Practices for AP242
-BO-Model XML Assembly Structure §§4.1.5, 4.1.6, 4.1.7, 4.1.8, 4.1.9, 9.1,
-and 9.3 define the recommended header population, namespaces, file suffixes,
-and external-file relationship.
-
-The BO-Model XML identity system is local to the XML document. `uid` has XML
-Schema type `ID`, and `uidRef` has type `IDREF`; they identify XML elements and
-references in that XML document. `Id.id` and `Identifier.id` are business
-identifier strings with the role and context fields defined by the BO Model.
-They are not Part 21 occurrence names. A Part 21 `#` or `@` occurrence is
-local to its exchange structure, so equal numeric values, equal text values,
-equal filenames, or equal business identifiers do not establish one object.
-
-The BO-Model recommended practices can carry a basic external-file reference
-from a `DigitalFile` or `ExternalGeometricModel` to a Part 21 file. Nested
-references can carry a target `Part.id`, `PartVersion.id`, and `PartView.id`
-with the component-file reference. These fields identify a target file and
-business object for navigation. They do not map an XML `uid` or business
-identifier to a Part 21 `#` occurrence, copy attributes, or define value
-precedence. The CAx-IF External (Element) References recommended practices
-explicitly leave Part 28 XML EER out of scope; their Part 21 EER rules use an
-explicit external source and target anchors, and state that EER adds
-information rather than replacing existing data.
-
-CADIR decision: there is no generic BO-Model-to-Part-21 composition in the
-STEP codec. It does not discover a sidecar, join by filename, stem, numeric
-occurrence, XML `uid`, XML `Id`, text value, or serialization order, and it does
-not let XML values override Part 21 values. A caller that composes the
-documents must supply an explicit resource binding, the declared XML schema
-edition, and an identity mapping for the domain fields it chooses to connect.
-CADIR retains both source graphs and source identities. No source
-representation has default precedence. A neutral value is projected only when
-the caller's mapping identifies one semantic field and the source values
-agree; a missing mapping or conflicting values retains both source values,
-emits a composition conflict, and selects no neutral value. The caller may
-apply a separate domain-specific policy after this binding and conflict result.
+XML prefix, `Uos`, XML `uid`, XML `Id`, text value, or serialization order. It
+does not compose a BO-Model graph with a Part 21 graph and does not let XML
+values override Part 21 values. A caller that composes the documents must
+provide the explicit resource binding, the declared XML schema edition, an
+identity map for the domain fields it chooses to connect, and a conflict
+policy. CADIR retains both source graphs and source identities. No source
+representation has default precedence. A neutral value is projected only
+when the caller's mapping identifies one semantic field and the source values
+agree. A missing mapping or conflicting values retains both source values,
+emits a composition conflict, and selects no neutral value.
 
 A Part 21 ZIP container uses PKZIP 2.04g compression. It admits stored and
 Deflate entries. PKZIP 2.04g excludes encryption, Unicode filename support,
