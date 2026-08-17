@@ -478,6 +478,25 @@ fn solves_unique_nonlinear_simultaneous_equations() {
 }
 
 #[test]
+fn rejects_nonlinear_roots_with_rank_deficient_jacobian() {
+    let lines = ["x=0", "SOLVE", "x*x*x=0", "FOR x"]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+    let evaluation =
+        evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+    assert!(evaluation.solve_solutions.is_empty());
+    assert_eq!(evaluation.assignments.len(), 1);
+    assert_eq!(evaluation.assignments[0].value, None);
+}
+
+#[test]
 fn leaves_nonlinear_systems_without_previous_values_unsolved() {
     let lines = ["SOLVE", "x*x*x=8", "FOR x"]
         .into_iter()

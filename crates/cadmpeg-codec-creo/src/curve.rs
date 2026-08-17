@@ -4865,6 +4865,7 @@ const MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS: usize = 16;
 const NONLINEAR_SOLVE_RESIDUAL_TOLERANCE: f64 = 1e-8;
 const NONLINEAR_SOLVE_DERIVATIVE_STEP: f64 = 1e-6;
 const NONLINEAR_SOLVE_SOLUTION_TOLERANCE: f64 = 1e-7;
+const NONLINEAR_SOLVE_STEP_TOLERANCE: f64 = 1e-12;
 
 #[derive(Debug, Clone, Copy)]
 struct SolveResidual {
@@ -5021,44 +5022,27 @@ fn refine_nonlinear_solution(
         evaluate_nonlinear_residuals(block, values, variable_dimensions, &point, context)?;
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
         if nonlinear_residuals_converged(&residuals) {
+            let mut rank_rows = nonlinear_jacobian_rows(
+                block,
+                values,
+                variable_dimensions,
+                &point,
+                &residuals,
+                context,
+            )?;
+            solve_unique_affine_system(&mut rank_rows, variable_count)?;
             return Some(point);
         }
-        let mut rows = Vec::with_capacity(residuals.len());
-        for (row_index, residual) in residuals.iter().enumerate() {
-            let mut coefficients = Vec::with_capacity(variable_count);
-            for column in 0..variable_count {
-                let step = NONLINEAR_SOLVE_DERIVATIVE_STEP * point[column].abs().max(1.0);
-                let mut plus = point.clone();
-                let mut minus = point.clone();
-                plus[column] += step;
-                minus[column] -= step;
-                let plus_residuals = evaluate_nonlinear_residuals(
-                    block,
-                    values,
-                    variable_dimensions,
-                    &plus,
-                    context,
-                )?;
-                let minus_residuals = evaluate_nonlinear_residuals(
-                    block,
-                    values,
-                    variable_dimensions,
-                    &minus,
-                    context,
-                )?;
-                let plus_residual = plus_residuals.get(row_index)?;
-                let minus_residual = minus_residuals.get(row_index)?;
-                (plus_residual.dimension == residual.dimension
-                    && minus_residual.dimension == residual.dimension)
-                    .then_some(())?;
-                let derivative = (plus_residual.value - minus_residual.value) / (2.0 * step);
-                derivative.is_finite().then_some(())?;
-                coefficients.push(derivative);
-            }
-            rows.push(AffineEquationRow {
-                coefficients,
-                rhs: -residual.value,
-            });
+        let mut rows = nonlinear_jacobian_rows(
+            block,
+            values,
+            variable_dimensions,
+            &point,
+            &residuals,
+            context,
+        )?;
+        for (row, residual) in rows.iter_mut().zip(&residuals) {
+            row.rhs = -residual.value;
         }
         let delta = solve_unique_affine_system(&mut rows, variable_count)?;
         let maximum_delta = delta.iter().map(|value| value.abs()).fold(0.0, f64::max);
@@ -5095,13 +5079,64 @@ fn refine_nonlinear_solution(
         let (candidate, candidate_residuals) = accepted?;
         point = candidate;
         residuals = candidate_residuals;
-        if maximum_delta * scale <= 1e-12 * point_scale
+        if maximum_delta * scale <= NONLINEAR_SOLVE_STEP_TOLERANCE * point_scale
             && !nonlinear_residuals_converged(&residuals)
         {
             return None;
         }
     }
-    nonlinear_residuals_converged(&residuals).then_some(point)
+    if !nonlinear_residuals_converged(&residuals) {
+        return None;
+    }
+    let mut rank_rows = nonlinear_jacobian_rows(
+        block,
+        values,
+        variable_dimensions,
+        &point,
+        &residuals,
+        context,
+    )?;
+    solve_unique_affine_system(&mut rank_rows, variable_count)?;
+    Some(point)
+}
+
+fn nonlinear_jacobian_rows(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    variable_dimensions: &[RelationDimension],
+    point: &[f64],
+    residuals: &[SolveResidual],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<AffineEquationRow>> {
+    let variable_count = variable_dimensions.len();
+    let mut rows = Vec::with_capacity(residuals.len());
+    for (row_index, residual) in residuals.iter().enumerate() {
+        let mut coefficients = Vec::with_capacity(variable_count);
+        for column in 0..variable_count {
+            let step = NONLINEAR_SOLVE_DERIVATIVE_STEP * point[column].abs().max(1.0);
+            let mut plus = point.to_vec();
+            let mut minus = point.to_vec();
+            plus[column] += step;
+            minus[column] -= step;
+            let plus_residuals =
+                evaluate_nonlinear_residuals(block, values, variable_dimensions, &plus, context)?;
+            let minus_residuals =
+                evaluate_nonlinear_residuals(block, values, variable_dimensions, &minus, context)?;
+            let plus_residual = plus_residuals.get(row_index)?;
+            let minus_residual = minus_residuals.get(row_index)?;
+            (plus_residual.dimension == residual.dimension
+                && minus_residual.dimension == residual.dimension)
+                .then_some(())?;
+            let derivative = (plus_residual.value - minus_residual.value) / (2.0 * step);
+            derivative.is_finite().then_some(())?;
+            coefficients.push(derivative);
+        }
+        rows.push(AffineEquationRow {
+            coefficients,
+            rhs: 0.0,
+        });
+    }
+    Some(rows)
 }
 
 fn evaluate_nonlinear_residuals(
