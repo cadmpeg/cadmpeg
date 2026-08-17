@@ -117,6 +117,7 @@ fn slot_count(schema: &str, disc: u16, flo: u8) -> Option<usize> {
     if !matches!(
         disc,
         0x0004
+            | 0x0006
             | 0x000c
             | 0x000e
             | 0x000f
@@ -819,6 +820,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     }
     if out.is_empty() {
         out.extend(disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
+        out.extend(
+            disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06_face_root_body(&by_attr),
+        );
     }
     if out.is_empty() {
         out.extend(disc1a_disc0e_disc1e_disc18_disc04_face_root_body(&by_attr));
@@ -5986,6 +5992,33 @@ fn disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e_face_root_body(
     )
 }
 
+fn disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+        by_attr,
+        &[
+            (0x0022, 2),
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001a, 2),
+            (0x0018, 1),
+            (0x0016, 2),
+            (0x0006, 2),
+        ],
+        0x0014,
+        0x001c,
+        0x0024,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        false,
+    )
+}
+
 fn disc1a_disc0e_disc1e_disc18_disc04_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -6698,6 +6731,29 @@ fn keyed_face_root_body_with_keyed_face_links_with_unselected_companions(
         options,
         None,
         KeyedLinkPolicy::ForwardKeyed,
+        allow_keyed_companion_fallback,
+        true,
+    )
+}
+
+fn keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    options: KeyedFaceRootOptions,
+    allow_keyed_companion_fallback: bool,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_with_population_policy(
+        by_attr,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        options,
+        None,
+        KeyedLinkPolicy::Reciprocal,
         allow_keyed_companion_fallback,
         true,
     )
@@ -8309,6 +8365,7 @@ mod tests {
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc20_disc1e_disc1c_disc18_disc16_disc12;
     mod disc22_disc20_disc1e_disc1a;
+    mod disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06;
     mod disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e;
     mod merged_stream_bodies;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
@@ -10231,18 +10288,23 @@ mod tests {
     fn bare_entity_slot_counts_use_schema_disc_and_flo() {
         let seven = bare_entity_slots(700, 1, 0x16, 2, &[2, 3, 4, 5, 6, 7, 8]);
         let nine = bare_entity_slots(701, 2, 0x1a, 4, &[9, 10, 11, 12, 13, 14, 15, 16, 17]);
+        let terminal = bare_entity_slots(702, 3, 0x06, 2, &[18, 19, 1, 1, 1, 1, 1]);
         let mut bytes = seven.clone();
         bytes.extend_from_slice(&nine);
+        bytes.extend_from_slice(&terminal);
         bytes.extend([0; 16]);
 
         let records = scan_entities(&bytes, "SCH_2400201_20000_13006", false);
-        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), 3);
         assert_eq!(records[0].refs.len(), 7);
         assert_eq!(records[0].end, seven.len());
         assert_eq!(records[1].refs.len(), 9);
         assert_eq!(records[1].end, seven.len() + nine.len());
+        assert_eq!(records[2].refs, [18, 19, 1, 1, 1, 1, 1]);
+        assert_eq!(records[2].end, seven.len() + nine.len() + terminal.len());
         assert!(scan_entities(&bytes, "SCH_UNKNOWN_99999_13006", false).is_empty());
         assert_eq!(slot_count(TEST_SCHEMA, 0x26, 3), Some(6));
+        assert_eq!(slot_count(TEST_SCHEMA, 0x06, 2), Some(7));
     }
 
     #[test]
