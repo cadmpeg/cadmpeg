@@ -191,19 +191,17 @@ pub(crate) fn trailing_pointer_group_candidates(
             if specified_end.is_some_and(|end| end != association_count_index) {
                 return None;
             }
-            let association_count = record
-                .integer(association_count_index)
-                .and_then(|value| usize::try_from(value).ok())?;
-            let association_start = association_count_index.checked_add(1)?;
+            let (association_count, association_width) =
+                trailing_count(record, association_count_index, specified_end.is_some())?;
+            let association_start = association_count_index.checked_add(association_width)?;
             let property_count_index = association_start.checked_add(association_count)?;
-            let property_count = record
-                .integer(property_count_index)
-                .and_then(|value| usize::try_from(value).ok())?;
+            let (property_count, property_width) =
+                trailing_count(record, property_count_index, specified_end.is_some())?;
             if association_count == 0 && property_count == 0 {
                 return None;
             }
             let end = property_count_index
-                .checked_add(1)?
+                .checked_add(property_width)?
                 .checked_add(property_count)?;
             if end != record.tokens.len() {
                 return None;
@@ -219,7 +217,7 @@ pub(crate) fn trailing_pointer_group_candidates(
                 .collect::<Option<Vec<_>>>()?;
             let property_pointers = (0..property_count)
                 .map(|index| {
-                    let token_index = property_count_index + 1 + index;
+                    let token_index = property_count_index + property_width + index;
                     Some(TrailingPointer {
                         token_index,
                         raw_pointer: record.integer(token_index)?,
@@ -273,8 +271,31 @@ fn specified_parameter_end(
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (110, 0..=2) => Some(7),
+        (116, 0) => Some(5),
         _ => None,
     }
+}
+
+fn defaulted_trailing_count(record: &ParameterRecord, index: usize) -> Option<(usize, usize)> {
+    let Some(token) = record.tokens.get(index) else {
+        return Some((0, 0));
+    };
+    match &token.value {
+        TokenValue::Omitted => Some((0, 1)),
+        TokenValue::Integer(value) => Some((usize::try_from(*value).ok()?, 1)),
+        TokenValue::Real(_) | TokenValue::String(_) => None,
+    }
+}
+
+fn trailing_count(
+    record: &ParameterRecord,
+    index: usize,
+    allow_default: bool,
+) -> Option<(usize, usize)> {
+    if allow_default {
+        return defaulted_trailing_count(record, index);
+    }
+    Some((usize::try_from(record.integer(index)?).ok()?, 1))
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {

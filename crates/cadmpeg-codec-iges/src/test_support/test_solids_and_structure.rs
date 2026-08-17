@@ -1210,7 +1210,7 @@ pub(crate) fn lep_property_forms_file() -> Vec<u8> {
             form: 0,
             label: "HOLE".into(),
             status: "00000000",
-            parameters: "116,0,0,0,0,1,7;".into(),
+            parameters: "116,0,0,0,0,0,1,7;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
@@ -1229,7 +1229,7 @@ pub(crate) fn variable_schema_property_forms_file() -> Vec<u8> {
             form: 0,
             label: "OWNER".into(),
             status: "00000000",
-            parameters: "116,0,0,0,0,1,3;".into(),
+            parameters: "116,0,0,0,0,0,1,3;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,

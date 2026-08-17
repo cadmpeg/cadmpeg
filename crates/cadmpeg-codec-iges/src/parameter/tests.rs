@@ -138,6 +138,99 @@ fn parameter_card_count_must_equal_the_owned_contiguous_range() {
 }
 
 #[test]
+fn type116_association_group_defaults_np_at_record_delimiter() {
+    for parameters in ["116,1.25,2.5,3.75,0,1,1;", "116,1.25,2.5,3.75,,1,1;"] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[
+                    OwnedTestEntity {
+                        entity_type: 402,
+                        form: 1,
+                        label: "GROUP".into(),
+                        status: "00000200",
+                        parameters: "402,1,3;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 116,
+                        form: 0,
+                        label: "POINT".into(),
+                        status: "00000000",
+                        parameters: parameters.into(),
+                    },
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let groups = &native.arenas["groups"];
+        assert_eq!(groups.len(), 1);
+        assert_eq!(
+            groups[0].fields()["members"],
+            serde_json::json!(["iges:entity:directory#3"])
+        );
+        let point = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#3")
+            .unwrap();
+        assert_eq!(
+            point.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#1"])
+        );
+        assert_eq!(point.fields()["references"].as_array().unwrap().len(), 1);
+        assert_eq!(point.fields()["references"][0]["parameter_index"], 6);
+        assert_eq!(point.fields()["references"][0]["raw_pointer"], 1);
+        assert!(
+            result.report().losses.is_empty(),
+            "{:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn type116_property_group_follows_explicit_or_omitted_display_pointer() {
+    for parameters in ["116,1.25,2.5,3.75,0,0,1,3;", "116,1.25,2.5,3.75,,0,1,3;"] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[
+                    OwnedTestEntity {
+                        entity_type: 116,
+                        form: 0,
+                        label: "POINT".into(),
+                        status: "00000000",
+                        parameters: parameters.into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 406,
+                        form: 7,
+                        label: "REFDES".into(),
+                        status: "00010000",
+                        parameters: "406,1,2HR1;".into(),
+                    },
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let point = &native.arenas["entities"][0];
+        assert_eq!(
+            point.fields()["property_links"],
+            serde_json::json!(["iges:entity:directory#3"])
+        );
+        let property = &native.arenas["product_properties"][0];
+        assert_eq!(
+            property.fields()["owners"],
+            serde_json::json!(["iges:entity:directory#1"])
+        );
+        assert!(
+            result.report().losses.is_empty(),
+            "{:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
 fn entity_table_boundary_beats_pointer_shaped_line_coordinates() {
     let result = IgesCodec
         .decode(
