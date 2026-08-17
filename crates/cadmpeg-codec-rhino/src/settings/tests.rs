@@ -655,7 +655,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     assert!(future.opaque_records.is_empty());
 }
 
-fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {
+fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -681,9 +681,7 @@ fn layer_metadata_with_description(description: &str) -> settings::DocumentMetad
         &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ));
     payload.extend([0; 16]);
-    payload.push(37);
-    payload.extend(utf16_bytes(description));
-    payload.push(0);
+    payload.extend_from_slice(extension);
 
     let class_uuid = [
         0x13, 0x98, 0x80, 0x95, 0x85, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
@@ -716,6 +714,13 @@ fn layer_metadata_with_description(description: &str) -> settings::DocumentMetad
     metadata
 }
 
+fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {
+    let mut extension = vec![37];
+    extension.extend(utf16_bytes(description));
+    extension.push(0);
+    layer_metadata_with_extension(&extension)
+}
+
 #[test]
 fn layer_description_uses_opennurbs_trim_set() {
     for (description, expected) in [
@@ -729,6 +734,16 @@ fn layer_description_uses_opennurbs_trim_set() {
         assert_eq!(metadata.layers[0].description.as_deref(), Some(expected));
         assert_eq!(metadata.layers[0].extension_items, vec![37]);
     }
+}
+
+#[test]
+fn layer_out_of_order_id_leaves_value_at_boundary() {
+    // Item 33 follows item 34. The source cascade consumes the ID and closes
+    // the class-data scan; the following byte is not a linetype payload.
+    let metadata = layer_metadata_with_extension(&[34, 1, 33, 0xaa]);
+    assert_eq!(metadata.layers.len(), 1);
+    assert_eq!(metadata.layers[0].extension_items, vec![34]);
+    assert!(metadata.layers[0].embedded_linetype.is_none());
 }
 
 #[test]
@@ -919,6 +934,35 @@ fn future_linetype_extension_stops_at_unknown_code() {
 }
 
 #[test]
+fn linetype_out_of_order_id_leaves_value_at_boundary() {
+    let archive = ArchiveVersion::V8;
+    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
+    let mut body = Vec::new();
+    body.extend(2_i32.to_le_bytes());
+    body.extend(4_i32.to_le_bytes());
+    body.extend(&model_attributes);
+    body.extend(0_i32.to_le_bytes());
+    body.push(3);
+    body.extend(2.0_f64.to_le_bytes());
+    // Item 1 follows item 3. The source cascade consumes the ID and closes;
+    // the one-byte value has no generic width.
+    body.extend([1, 0xaa]);
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
+    let chunk = crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &body,
+        &[8..8 + model_attributes.len()],
+    );
+    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
+    let mut warnings = Vec::new();
+    settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("source ordered cascade leaves out-of-order value bounded");
+    assert_eq!(reader.remaining(), 0);
+    assert!(warnings.is_empty());
+}
+
+#[test]
 fn future_section_style_extension_stops_at_unknown_code() {
     let archive = ArchiveVersion::V8;
     let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
@@ -940,6 +984,34 @@ fn future_section_style_extension_stops_at_unknown_code() {
         settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
             .expect("future section-style code is bounded by the anonymous chunk");
     assert_eq!(descriptor.version, (1, 4));
+    assert_eq!(reader.remaining(), 0);
+    assert!(warnings.is_empty());
+}
+
+#[test]
+fn section_style_out_of_order_id_leaves_value_at_boundary() {
+    let archive = ArchiveVersion::V8;
+    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
+    let mut body = Vec::new();
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(&model_attributes);
+    body.push(5);
+    body.extend(2.0_f64.to_le_bytes());
+    // The source reader has passed item 1 after consuming item 5. It reads
+    // this ID and closes the anonymous chunk; the value has no generic width.
+    body.extend([1, 0xaa]);
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
+    let chunk = crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &body,
+        &[8..8 + model_attributes.len()],
+    );
+    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
+    let mut warnings = Vec::new();
+    settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
+        .expect("source ordered cascade leaves out-of-order value bounded");
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty());
 }

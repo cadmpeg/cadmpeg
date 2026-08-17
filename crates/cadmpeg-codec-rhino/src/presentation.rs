@@ -1810,7 +1810,7 @@ fn parse_linetype(
     }
     if version.1 >= 3 && item == 6 {
         always = reader.bool()?;
-        item = reader.u8()?;
+        let _next_item = reader.u8()?;
     }
     if always {
         for segment in &mut values {
@@ -1823,15 +1823,9 @@ fn parse_linetype(
                 })?;
         }
     }
-    if item > 6 {
-        item = 0;
-    }
-    if item != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "linetype extension stream is invalid",
-        ));
-    }
+    // The source reader consumes an unknown or out-of-order ID and closes
+    // the anonymous chunk. Its value has no generic width and remains a
+    // bounded suffix.
     reader.skip_remaining()?;
     let component_id = component.id;
     Ok(linetype_record(

@@ -2152,12 +2152,15 @@ minor >= 15: item 35 embedded section style, item 36 obsolete clipping type,
               item 37 UTF-16 description
 ```
 
-The extension stream is item byte, payload, next item byte, terminated by item
-zero. If a nonzero extension ID is outside the defined set, only that ID byte
-is known; typed parsing stops and the remaining bytes through the layer
-class-data boundary remain untyped. Bytes after item zero are bounded suffix
-bytes, not another extension item. Layer visibility and lock state are
-independent. Item 37 contains a UTF-16 string using the standard string
+The writer emits non-default extension IDs in strictly increasing order. The
+extension stream is item byte, payload, next item byte, terminated by item
+zero. The reader applies the item gates through the same ascending cascade. If
+an ID is lower than or equal to the last consumed ID, below its minor gate, or
+greater than 37, only that ID byte is consumed; its value has no generic width
+and the remaining bytes through the layer class-data boundary remain untyped.
+The reader does not require a terminator after that ID. Bytes after item zero
+are bounded suffix bytes, not another extension item. Layer visibility and lock
+state are independent. Item 37 contains a UTF-16 string using the standard string
 grammar. The layer description is normalized by trimming leading and trailing
 code points in these ranges: U+0001–U+0020, U+007F–U+00A0, U+2000–U+200B,
 U+200E–U+200F, U+2028–U+202F, and U+2066–U+2069. U+1680, U+205F, and U+3000
@@ -5246,11 +5249,16 @@ pixels, `unset` (`255`) means the document unit system, and another code names
 that explicit unit system. Taper `x` is the fraction along the curve and taper
 `y` is the width at that fraction.
 
-The reader applies item gates from the minor version, accepts future modern
-minor values after the known prefix, and closes the anonymous chunk at its
-boundary. An item code greater than 6 terminates the known extension scan; its
-unlength-prefixed value and all later bytes remain a bounded suffix. The
-anonymous class-data reader accepts major 1 and major 2 only.
+The writer emits non-default extension items in strictly increasing code order
+and then writes code `0`. The reader applies item gates from the minor version
+through the same ascending cascade, accepts future modern minor values after
+the known prefix, and closes the anonymous chunk at its boundary. A code lower
+than or equal to the last consumed code is consumed only as an ID and its
+value remains an untyped suffix. An item code greater than 6 is a future
+extension: its ID is consumed, but its unlength-prefixed value and all later
+bytes remain a bounded suffix. The reader does not require a terminator after
+an out-of-order or future ID. The anonymous class-data reader accepts major 1
+and major 2 only.
 
 `ON_LinetypeSegment::m_length` is in millimeters on printed output. A legacy
 major-1 record has no model-distance flag and therefore carries print-millimeter
@@ -5511,9 +5519,14 @@ values, colors, enums, and override bits are not scaled.
 
 Section-style anonymous records use major 1. Minor 1 is the current writer
 version; later minor values retain the known model-component prefix and
-extension item grammars. A nonzero extension code outside 1 through 11
-terminates the known stream; only the code byte is known, and the remaining
-value bytes are bounded by the anonymous chunk.
+extension item grammars. The writer emits non-default extension items in
+strictly increasing code order, then writes code `0`. The reader consumes one
+item at a time through the same ascending cascade. Code `0` ends the stream;
+a code lower than or equal to the last consumed code is consumed only as an
+ID and its value remains an untyped suffix. A code greater than 11 is a future
+extension: its ID is consumed, but its value has no generic width and remains
+bounded by the anonymous chunk. The reader does not require a terminator after
+an out-of-order or future ID because the cascade has ended at that ID.
 
 Bounded font, text-style, dimension-style, hatch, rendering-attribute,
 texture-mapping, material, group, and light readers consume their known
@@ -6469,10 +6482,11 @@ reinterpreted as typed fields.
 
 Layer records use the same one-byte ID convention for their post-version
 extensions. A later layer ID outside the known set has no generic value
-grammar or skip length; the reader stops and leaves the remaining bounded
-layer payload untyped. A later major payload version or later minor suffix
-uses the same rule when its fields are not defined: only its containing chunk
-boundary is available for preservation.
+grammar or skip length; the reader consumes only that ID and leaves the
+remaining bounded layer payload untyped. An out-of-order or gate-inadmissible
+ID has the same boundary rule. A later major payload version or later minor
+suffix uses the same rule when its fields are not defined: only its containing
+chunk boundary is available for preservation.
 
 The settings table has a different boundary rule. Each top-level settings item
 is a length-bounded chunk. An unknown top-level typecode is skipped by ending

@@ -1911,16 +1911,21 @@ pub(crate) fn parse_direct_linetype<'a>(
             warnings,
         )?);
         read_segments(&mut payload)?;
-        let mut terminated = false;
-        while payload.remaining() > 0 {
-            let item = payload.u8()?;
-            if item == 0 {
-                terminated = true;
-                break;
+        if version.1 >= 1 {
+            // ON_Linetype::Read() consumes extension IDs through an ordered
+            // cascade. A duplicate, out-of-order, or future ID ends the
+            // typed scan; its value has no generic width.
+            let mut item = payload.u8()?;
+            if item == 1 {
+                payload.skip(1)?;
+                item = payload.u8()?;
             }
-            match item {
-                1 | 2 | 4 => payload.skip(1)?,
-                3 => {
+            if item == 2 {
+                payload.skip(1)?;
+                item = payload.u8()?;
+            }
+            if version.1 >= 2 {
+                if item == 3 {
                     let value = payload.f64()?;
                     if !value.is_finite() {
                         return Err(FramingError::structural(
@@ -1928,8 +1933,13 @@ pub(crate) fn parse_direct_linetype<'a>(
                             "linetype width is not finite",
                         ));
                     }
+                    item = payload.u8()?;
                 }
-                5 => {
+                if item == 4 {
+                    payload.skip(1)?;
+                    item = payload.u8()?;
+                }
+                if item == 5 {
                     let count = payload.i32()?;
                     let bytes = crate::chunks::checked_count_bytes(
                         count,
@@ -1939,25 +1949,13 @@ pub(crate) fn parse_direct_linetype<'a>(
                         payload.position(),
                     )?;
                     payload.skip(bytes)?;
-                }
-                6 => {
-                    let _ = payload.bool()?;
-                }
-                _ => {
-                    // Extension items have no length prefix. The source reader
-                    // consumes only this code and lets the anonymous-chunk
-                    // boundary discard the value bytes it cannot type.
-                    finish(&mut payload, "future embedded linetype")?;
-                    terminated = true;
-                    break;
+                    item = payload.u8()?;
                 }
             }
-        }
-        if !terminated {
-            return Err(FramingError::structural(
-                payload.position(),
-                "embedded linetype is missing terminator",
-            ));
+            if version.1 >= 3 && item == 6 {
+                let _ = payload.bool()?;
+                let _next_item = payload.u8()?;
+            }
         }
     }
     finish(&mut payload, "embedded linetype")?;
@@ -1994,54 +1992,84 @@ pub(crate) fn parse_direct_section_style<'a>(
         archive,
         warnings,
     )?];
-    let mut terminated = false;
-    while payload.remaining() > 0 {
-        let item = payload.u8()?;
-        if item == 0 {
-            terminated = true;
-            break;
-        }
-        match item {
-            1 | 6 => payload.skip(1)?,
-            2 | 4 | 10 => payload.skip(8)?,
-            3 => {
-                let _ = payload.bool()?;
-            }
-            5 | 8 | 9 => {
-                let value = payload.f64()?;
-                if !value.is_finite() {
-                    return Err(FramingError::structural(
-                        payload.position(),
-                        "section-style value is not finite",
-                    ));
-                }
-            }
-            7 => {
-                let _ = payload.i32()?;
-            }
-            11 => {
-                children.push(
-                    parse_direct_linetype(data, &mut payload, archive, warnings)?
-                        .source
-                        .range,
-                );
-            }
-            _ => {
-                // Extension items have no length prefix. The source reader
-                // consumes only this code and lets the anonymous-chunk
-                // boundary discard the value bytes it cannot type.
-                finish(&mut payload, "future embedded section style")?;
-                terminated = true;
-                break;
-            }
-        }
+    // ON_SectionStyle::Read() is an ordered cascade, not a general item
+    // loop. Each recognized item reads the next item ID and only the later
+    // IDs in the cascade can consume it. A duplicate or out-of-order ID has
+    // no source-defined value width and remains bounded suffix data.
+    let mut item = payload.u8()?;
+    if item == 1 {
+        payload.skip(1)?;
+        item = payload.u8()?;
     }
-    if !terminated {
-        return Err(FramingError::structural(
-            payload.position(),
-            "embedded section style is missing terminator",
-        ));
+    if item == 2 {
+        payload.skip(8)?;
+        item = payload.u8()?;
     }
+    if item == 3 {
+        let _ = payload.bool()?;
+        item = payload.u8()?;
+    }
+    if item == 4 {
+        payload.skip(8)?;
+        item = payload.u8()?;
+    }
+    if item == 5 {
+        let value = payload.f64()?;
+        if !value.is_finite() {
+            return Err(FramingError::structural(
+                payload.position(),
+                "section-style value is not finite",
+            ));
+        }
+        item = payload.u8()?;
+    }
+    if item == 6 {
+        payload.skip(1)?;
+        item = payload.u8()?;
+    }
+    if item == 7 {
+        let _ = payload.i32()?;
+        item = payload.u8()?;
+    }
+    if item == 8 {
+        let value = payload.f64()?;
+        if !value.is_finite() {
+            return Err(FramingError::structural(
+                payload.position(),
+                "section-style value is not finite",
+            ));
+        }
+        item = payload.u8()?;
+    }
+    if item == 9 {
+        let value = payload.f64()?;
+        if !value.is_finite() {
+            return Err(FramingError::structural(
+                payload.position(),
+                "section-style value is not finite",
+            ));
+        }
+        item = payload.u8()?;
+    }
+    if item == 10 {
+        payload.skip(8)?;
+        item = payload.u8()?;
+    }
+    if item == 11 {
+        children.push(
+            parse_direct_linetype(data, &mut payload, archive, warnings)?
+                .source
+                .range,
+        );
+        // The source reader consumes the following ID to decide whether the
+        // cascade can continue, but does not need to interpret it: no later
+        // section-style item follows code 11.
+        let _next_item = payload.u8()?;
+    }
+    // Extension items have no length prefix. The source reader consumes only
+    // the ID and lets the anonymous-chunk boundary discard the value bytes it
+    // cannot type. A lower or duplicate known ID has the same bounded-suffix
+    // result because the cascade has passed it.
     finish(&mut payload, "embedded section style")?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
@@ -2223,100 +2251,88 @@ fn parse_layer(
         }
     }
     if version.1 >= 10 {
-        let mut terminated = false;
-        while reader.remaining() > 0 {
-            let item = reader.u8()?;
-            if item == 0 {
-                terminated = true;
-                break;
-            }
-            let minimum_minor = match item {
-                28 => 10,
-                29..=31 => 11,
-                32 => 12,
-                33 => 13,
-                34 => 14,
-                35..=37 => 15,
-                _ => {
-                    // Extension items have no length prefix. The source reader
-                    // consumes only this ID and lets the class-data boundary
-                    // discard the value bytes it cannot type.
-                    finish(&mut reader, "future layer extension")?;
-                    return Ok(layer);
-                }
-            };
-            if version.1 < minimum_minor {
-                return Err(FramingError::structural(
-                    reader.position(),
-                    format!("layer extension item {item} precedes its version gate"),
-                ));
-            }
+        // ON_Layer::Read() consumes extension IDs through an ascending,
+        // version-gated cascade. A duplicate, out-of-order, or future ID is
+        // consumed only as an ID; its value has no generic width.
+        let mut item = reader.u8()?;
+        if item == 28 {
             layer.extension_items.push(item);
-            match item {
-                28 => {
-                    layer.no_clipping_planes =
-                        Some(reader.bool_with_writer_version(writer_version)?);
-                    read_uuid_list(&mut reader, archive)?;
-                }
-                29 => {
-                    reader.skip(4)?;
-                }
-                30 | 31 => {
-                    let value = reader.f64()?;
-                    finite(&reader, value, "layer extension value")?;
-                }
-                32 | 34 | 36 => {
-                    if item == 34 {
-                        layer.visible_in_new_details =
-                            Some(reader.bool_with_writer_version(writer_version)?);
-                    } else {
-                        reader.skip(1)?;
-                    }
-                }
-                33 => {
-                    layer.embedded_linetype =
-                        Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
-                }
-                35 => {
-                    layer.embedded_section_style = Some(parse_direct_section_style(
-                        data,
-                        &mut reader,
-                        archive,
-                        warnings,
-                    )?);
-                }
-                37 => {
-                    let description = utf16(&mut reader)?;
-                    let description = description
-                        .trim_matches(|character: char| {
-                            matches!(
-                                character as u32,
-                                0x0001..=0x0020
-                                    | 0x007f
-                                    | 0x0080..=0x009f
-                                    | 0x00a0
-                                    | 0x2000..=0x200b
-                                    | 0x200e..=0x200f
-                                    | 0x2028..=0x202f
-                                    | 0x2066..=0x2069
-                            )
-                        })
-                        .to_owned();
-                    layer.description = (!description.is_empty()).then_some(description);
-                }
-                _ => {
-                    return Err(FramingError::structural(
-                        reader.position(),
-                        format!("unsupported layer extension item {item}"),
-                    ))
-                }
+            layer.no_clipping_planes = Some(reader.bool_with_writer_version(writer_version)?);
+            read_uuid_list(&mut reader, archive)?;
+            item = reader.u8()?;
+        }
+        if version.1 > 10 {
+            if item == 29 {
+                layer.extension_items.push(item);
+                reader.skip(4)?;
+                item = reader.u8()?;
+            }
+            if item == 30 {
+                layer.extension_items.push(item);
+                let value = reader.f64()?;
+                finite(&reader, value, "layer extension value")?;
+                item = reader.u8()?;
+            }
+            if item == 31 {
+                layer.extension_items.push(item);
+                let value = reader.f64()?;
+                finite(&reader, value, "layer extension value")?;
+                item = reader.u8()?;
             }
         }
-        if !terminated {
-            return Err(FramingError::structural(
-                reader.position(),
-                "layer extension stream is missing terminator",
-            ));
+        if version.1 > 11 && item == 32 {
+            layer.extension_items.push(item);
+            reader.skip(1)?;
+            item = reader.u8()?;
+        }
+        if version.1 > 12 && item == 33 {
+            layer.extension_items.push(item);
+            layer.embedded_linetype =
+                Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
+            item = reader.u8()?;
+        }
+        if version.1 > 13 && item == 34 {
+            layer.extension_items.push(item);
+            layer.visible_in_new_details = Some(reader.bool_with_writer_version(writer_version)?);
+            item = reader.u8()?;
+        }
+        if version.1 > 14 {
+            if item == 35 {
+                layer.extension_items.push(item);
+                layer.embedded_section_style = Some(parse_direct_section_style(
+                    data,
+                    &mut reader,
+                    archive,
+                    warnings,
+                )?);
+                item = reader.u8()?;
+            }
+            if item == 36 {
+                layer.extension_items.push(item);
+                reader.skip(1)?;
+                item = reader.u8()?;
+            }
+            if item == 37 {
+                layer.extension_items.push(item);
+                let description = utf16(&mut reader)?;
+                let description = description
+                    .trim_matches(|character: char| {
+                        matches!(
+                            character as u32,
+                            0x0001..=0x0020
+                                | 0x007f
+                                | 0x0080..=0x009f
+                                | 0x00a0
+                                | 0x2000..=0x200b
+                                | 0x200e..=0x200f
+                                | 0x2028..=0x202f
+                                | 0x2066..=0x2069
+                        )
+                    })
+                    .to_owned();
+                layer.description = (!description.is_empty()).then_some(description);
+                let _next_item = reader.u8()?;
+            }
         }
     }
     finish(&mut reader, "layer payload")?;

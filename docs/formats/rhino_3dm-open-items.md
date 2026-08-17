@@ -106,11 +106,20 @@ tagged-stream boundaries. The audited readers use those boundaries where their
 producer rules are known. The direct-reader, writer-band, and tagged-stream
 families named by the removed item still lack a reader-by-reader source
 inventory that proves which later fields are appendable and which change the
-layout.
+layout. The tagged linetype, section-style, and layer readers are now settled:
+OpenNURBS writes non-default item codes in increasing order, consumes the same
+ordered cascade with each family’s minor gates, and leaves an out-of-order,
+gate-inadmissible, or future item value at the containing bounded boundary.
+The Rust parsers follow those cascades.
 
-**Need.** Producer writer/reader evidence for each remaining versioned reader,
-or an independent witness that distinguishes an appendable suffix from a
-changed layout. Record the field gate, containing boundary, and admission rule.
+**Need.** Producer writer/reader evidence for the remaining direct-reader and
+writer-band families. Record the field gate, containing boundary, and admission
+rule.
 
-**Note.** The closure removed this item while its own known evidence still
-listed the direct-reader, writer-band, and tagged-stream residue.
+**Note.** Partly settled 2026-08-17 with a different evidence kind: the
+OpenNURBS `ON_Linetype::Write`/`Read`, `ON_SectionStyle::Write`/`Read`, and
+`ON_Layer::Write`/`Read` implementations establish the ordered tagged-stream
+boundaries; an authored out-of-order section-style payload witness and owner
+tests exercise the boundary. The earlier aggregate closure did not provide
+this reader-level trace. The direct-reader and writer-band inventory remains
+open.
