@@ -297,8 +297,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
 ///
 /// The entity type token is index zero. Type 110 §4.13 has six primary
 /// coordinates in Forms 0–2, so its additional-pointer groups start at token
-/// seven. Type 123 §4.20 has three primary values, so its groups start at
-/// token four. Layouts not represented here use generic CADIR recovery.
+/// seven. Type 116 §4.16 has three coordinates and a display pointer, so its
+/// groups start at token five even when that pointer is zero or defaulted.
+/// Type 123 §4.20 has three primary values, so its groups start at token four.
+/// Layouts not represented here use generic CADIR recovery.
 fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
@@ -306,6 +308,7 @@ fn entity_primary_end(
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (110, 0..=2) => Some(7),
+        (116, 0) => Some(5),
         (123, 0) => Some(4),
         _ => None,
     }

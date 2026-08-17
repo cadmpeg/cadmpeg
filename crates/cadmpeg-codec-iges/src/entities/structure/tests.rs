@@ -241,11 +241,11 @@ fn decode_reports_an_ambiguous_required_trailing_back_pointer_boundary() {
             parameters: "402,1,3;".into(),
         },
         OwnedTestEntity {
-            entity_type: 116,
+            entity_type: 999,
             form: 0,
             label: "MEMBER".into(),
             status: "00000000",
-            parameters: "116,0,0,0,0,1,0,2,7,9;".into(),
+            parameters: "999,0,0,0,0,1,0,2,7,9;".into(),
         },
     ]);
     let result = IgesCodec

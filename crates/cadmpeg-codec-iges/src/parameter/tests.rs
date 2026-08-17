@@ -446,6 +446,51 @@ fn type110_entity_table_boundary_precedes_valid_generic_alternatives() {
 }
 
 #[test]
+fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
+    let association = directory_target(1, 402);
+    let point = directory_target(3, 116);
+    let directory = BTreeMap::from([(1, &association), (3, &point)]);
+    let token_values = [
+        vec![116, 1, 2, 3, 0, 1, 1, 0]
+            .into_iter()
+            .map(TokenValue::Integer)
+            .collect::<Vec<_>>(),
+        vec![
+            TokenValue::Integer(116),
+            TokenValue::Integer(1),
+            TokenValue::Integer(2),
+            TokenValue::Integer(3),
+            TokenValue::Omitted,
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(0),
+        ],
+    ];
+
+    for values in token_values {
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token { value, span: 0..0 })
+                .collect(),
+            parameter_end: 8,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 116 table boundary");
+        assert_eq!(groups.token_start, 5);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
 fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
     let association = directory_target(1, 402);
     let directory = BTreeMap::from([(1, &association)]);
@@ -472,14 +517,14 @@ fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
 }
 
 #[test]
-fn decode_reports_ambiguous_boundary_without_assigning_groups() {
+fn decode_uses_type116_boundary_without_assigning_malformed_groups() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file(&[
                 OwnedTestEntity {
                     entity_type: 116,
                     form: 0,
-                    label: "AMBIG".into(),
+                    label: "BAD".into(),
                     status: "00000000",
                     parameters: "116,4,3,3,3,3,0;".into(),
                 },
@@ -496,21 +541,11 @@ fn decode_reports_ambiguous_boundary_without_assigning_groups() {
         .unwrap();
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let ambiguity_losses = result
+    assert!(!result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(ambiguity_losses.len(), 1);
-    assert!(ambiguity_losses[0].message.contains("2 equally valid"));
-    assert_eq!(
-        ambiguity_losses[0]
-            .provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("directory_entry:D1")
-    );
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
 
     let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
         .iter()
@@ -525,6 +560,47 @@ fn decode_reports_ambiguous_boundary_without_assigning_groups() {
         .unwrap()
         .is_empty());
     assert_eq!(source.fields()["parameters"].as_array().unwrap().len(), 7);
+}
+
+#[test]
+fn decode_uses_type116_entity_boundary_for_explicit_and_omitted_display_pointer() {
+    for parameters in ["116,1,2,3,0,1,1,0;", "116,1,2,3,,1,1,0;"] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[
+                    OwnedTestEntity {
+                        entity_type: 402,
+                        form: 7,
+                        label: "GROUP".into(),
+                        status: "00000000",
+                        parameters: "402,1,3;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 116,
+                        form: 0,
+                        label: "POINT".into(),
+                        status: "00000000",
+                        parameters: parameters.into(),
+                    },
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+        let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+            .iter()
+            .find(|record| record.id() == "iges:entity:directory#3")
+            .unwrap();
+        assert_eq!(
+            source.fields()["association_links"].as_array().unwrap(),
+            &[serde_json::json!("iges:entity:directory#1")]
+        );
+    }
 }
 
 #[test]
