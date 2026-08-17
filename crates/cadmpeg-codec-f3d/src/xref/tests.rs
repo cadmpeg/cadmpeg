@@ -186,6 +186,59 @@ fn occurrence_record_with_serializer_magic(
     bytes
 }
 
+fn grouped_identity_carrier(role: &str, record_index: u32) -> Vec<u8> {
+    let component_guid = "11111111-2222-3333-4444-555555555555";
+    let type_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+    let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"382");
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&17_u64.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.push(0);
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(type_guid.as_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b));
+    bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
+    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.push(0);
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(type_guid.as_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
+    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(bytes.len(), 695);
+    bytes
+}
+
+#[test]
+fn grouped_identity_carriers_decode_as_identity_placements() {
+    let role = "cccccccc-dddd-eeee-ffff-000000000000";
+    let bytes = grouped_identity_carrier(role, 10);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+
+    assert_eq!(
+        placements,
+        vec![OccurrencePlacement {
+            link_names: vec![role.into()],
+            discriminators: vec![1],
+            transform: None,
+        }]
+    );
+}
+
 fn legacy_occurrence_reference(target: u64, identity: u64) -> Vec<u8> {
     let mut bytes = vec![1];
     bytes.extend_from_slice(&target.to_le_bytes());
@@ -650,8 +703,8 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         neutron_role: "role".into(),
         neutron_role_offset: 0,
         transform: selected,
-        transform_offset: 0,
-        carrier_transform_offset: 0,
+        transform_offset: Some(0),
+        carrier_transform_offset: Some(0),
     };
     let ignored_construction = crate::records::DesignComponentInsertConstruction {
         neutron_role: "other".into(),

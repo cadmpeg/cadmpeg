@@ -18,7 +18,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope, image-record prefixes, and current sketch-container visibility member. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, and the grouped identity `Component Insert` frames. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
@@ -2316,6 +2316,72 @@ Unstated regions:
 - `11..21` (10 B): The common prefix has ten zero bytes after the indexed header.
 - `36..53` (17 B): The one-member envelope has two null auxiliary references, a one-entry trailing count, and its trailing reference.
 - `61..71` (10 B): Ten zero bytes follow the role.
+
+## `component_insert_identity_scope_296_263`
+
+Spec §3.1 · layout: byte offsets · size: 261 B
+
+Offsets are relative to the primary class-296 indexed header. The paired class-263 indexed header begins at offset 261.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Relative to its primary indexed header |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | `01 00 00 00 00` at offsets 20 through 24 |
+| 21 | 4 | `prologue_value` | `u32` | little | spec | `01 00 00 00 00` at offsets 20 through 24 |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | an occurrence identity u64 at offset 25 |
+| 37 | 1 | `relation_marker` | `u8` | little | spec | a marked reference to the sole relation at offset 37 |
+| 38 | 4 | `relation_record_index` | `u32` | little | spec | a marked reference to the sole relation at offset 37 |
+| 48 | 2 | `identity_markers` | `bytes[2]` | little | spec | bytes `01 01` at offsets 48 and 49 |
+| 50 | 4 | `opaque_code_unit_count` | `u32` | little | spec | u32 code-unit count 36 at offset 50 |
+| 54 | 72 | `opaque_utf16_payload` | `bytes[72]` | little | spec | the 36-code-unit null GUID `00000000-0000-0000-0000-000000000000` at offset 54 |
+
+Unstated regions:
+
+- `11..20` (9 B): Nine zero bytes occupy offsets 11 through 19.
+- `33..37` (4 B): Four zero bytes occupy offsets 33 through 36.
+- `42..48` (6 B): Six zero bytes occupy offsets 42 through 47.
+- `126..261` (135 B): The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame.
+
+## `component_insert_grouped_identity_carrier_382`
+
+Spec §3.1 · layout: byte offsets · size: 695 B
+
+Offsets are relative to the primary class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `carrier_marker` | `u8` | little | spec | byte `1` at offset 19 |
+| 20 | 4 | `carrier_value` | `u32` | little | spec | u32 `1` at offset 20 |
+| 24 | 1 | `identity_marker` | `u8` | little | spec | byte `1` at offset 24 |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | an occurrence identity u64 at offset 25 |
+| 33 | 1 | `reference_marker` | `u8` | little | spec | byte `1` at offset 33 |
+| 38 | 76 | `first_component_guid` | `bytes[76]` | little | spec | At offset 38 it stores an LP-UTF16 component GUID |
+| 114 | 1 | `first_component_separator` | `u8` | little | spec | one zero separator byte |
+| 115 | 40 | `first_type_guid` | `bytes[40]` | little | spec | an LP-ASCII type GUID |
+| 155 | 76 | `first_role_guid` | `bytes[76]` | little | spec | an LP-UTF16 occurrence-role GUID |
+| 231 | 10 | `metadata_marker` | `bytes[10]` | little | spec | The role is followed by `00 01 00 00 00 00 01 00 00 00` |
+| 241 | 76 | `metadata_guid_a` | `bytes[76]` | little | spec | two LP-UTF16 metadata GUIDs |
+| 317 | 76 | `metadata_guid_b` | `bytes[76]` | little | spec | two LP-UTF16 metadata GUIDs |
+| 393 | 15 | `placement_marker` | `bytes[15]` | little | spec | `00 01 03 00 00 00 00 00 00 00 01 00 00 00 00` |
+| 408 | 76 | `repeated_component_guid` | `bytes[76]` | little | spec | It then repeats the component GUID |
+| 484 | 1 | `repeated_component_separator` | `u8` | little | spec | separator byte |
+| 485 | 40 | `repeated_type_guid` | `bytes[40]` | little | spec | type GUID, and role GUID |
+| 525 | 76 | `repeated_role_guid` | `bytes[76]` | little | spec | type GUID, and role GUID |
+| 601 | 6 | `construction_marker` | `bytes[6]` | little | spec | followed by `00 01 00 00 00 00` |
+| 607 | 76 | `final_role_guid` | `bytes[76]` | little | spec | a final role GUID |
+| 683 | 12 | `closure` | `bytes[12]` | little | spec | `00 01 04 00 00 00 00 00 00 00 00 00` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
+- `11..19` (8 B): Eight zero bytes occupy offsets 11 through 18.
+- `34..38` (4 B): Four zero bytes occupy offsets 34 through 37.
 
 ## Not tabulated
 

@@ -1538,10 +1538,14 @@ pub struct DesignComponentInsertConstruction {
     pub neutron_role_offset: u64,
     /// Row-major local occurrence transform in centimetres.
     pub transform: [[f64; 4]; 4],
-    /// Byte offset of the scope-local transform.
-    pub transform_offset: u64,
-    /// Byte offset of the equal transform in the grouped carrier.
-    pub carrier_transform_offset: u64,
+    /// Byte offset of the first scope-local transform scalar. `None` is the
+    /// stored identity form, which has no scalar block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_offset: Option<u64>,
+    /// Byte offset of the equal transform's first scalar in the grouped
+    /// carrier. `None` is the stored identity form, which has no scalar block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carrier_transform_offset: Option<u64>,
 }
 
 /// One exact local component-occurrence carrier.

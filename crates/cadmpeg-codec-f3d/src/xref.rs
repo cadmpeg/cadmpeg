@@ -19,9 +19,12 @@ use cadmpeg_ir::products::{
     ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
 };
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_strict, lp_utf16_bounded, take_reference};
+use crate::bytes::{
+    is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded, take_reference,
+};
 use crate::container::role;
 use crate::container::ContainerScan;
+use crate::layout::component_insert_grouped_identity_carrier_382 as grouped_identity_layout;
 use crate::records::{
     DesignComponentInsertConstruction, DesignParameterScope, XrefDesign, XrefReference,
 };
@@ -633,6 +636,127 @@ fn occurrence_placements_with_failures(
 fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<OccurrencePlacement> {
     legacy_occurrence_placement(body)
         .or_else(|| modern_occurrence_placement(body, serializer_magic))
+        .or_else(|| {
+            let record_index = View::u32_le_at(body, 7)?;
+            let (link_name, _) =
+                grouped_component_insert_identity(body, 0, body.len(), record_index)?;
+            Some(OccurrencePlacement {
+                link_names: vec![link_name],
+                discriminators: vec![1],
+                transform: None,
+            })
+        })
+}
+
+/// Parse the grouped identity carrier used by the compact `Component Insert`
+/// generation. The carrier has no matrix; its placement is the stored
+/// identity transform. The repeated GUID and role fields are part of the
+/// carrier grammar, not an occurrence-count signal.
+pub(crate) fn grouped_component_insert_identity(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<(String, usize)> {
+    const MARKER_AFTER_ROLE: &[u8] = &[0, 1, 0, 0, 0, 0, 1, 0, 0, 0];
+    const MARKER_AFTER_METADATA: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
+    const MARKER_AFTER_PLACEMENT: &[u8] = &[0, 1, 0, 0, 0, 0];
+    const CLOSURE: &[u8] = &[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    if class_tag != "382"
+        || after_tag != carrier_at + 7
+        || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
+        || relation_at.checked_sub(carrier_at)? != grouped_identity_layout::LEN
+        || bytes.get(carrier_at + 11..carrier_at + 19)? != [0; 8]
+        || bytes.get(carrier_at + 19) != Some(&1)
+        || bytes.get(carrier_at + 20..carrier_at + 24)? != [1, 0, 0, 0]
+        || bytes.get(carrier_at + 24) != Some(&1)
+        || bytes.get(carrier_at + 33) != Some(&1)
+        || bytes.get(carrier_at + 34..carrier_at + 38)? != [0; 4]
+    {
+        return None;
+    }
+
+    let (component_guid, mut at) = lp_utf16_bounded(
+        bytes,
+        carrier_at + grouped_identity_layout::FIRST_COMPONENT_GUID,
+        36..=36,
+    )?;
+    if !is_guid_relaxed(&component_guid) {
+        return None;
+    }
+    if bytes.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    let (type_guid, next) = lp_ascii_strict(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&type_guid) {
+        return None;
+    }
+    at = next;
+    let first_role_at = at;
+    let (role, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&role) {
+        return None;
+    }
+    at = next;
+    if bytes.get(at..at + MARKER_AFTER_ROLE.len())? != MARKER_AFTER_ROLE {
+        return None;
+    }
+    at += MARKER_AFTER_ROLE.len();
+
+    let (metadata_guid_a, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&metadata_guid_a) {
+        return None;
+    }
+    at = next;
+    let (metadata_guid_b, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&metadata_guid_b) {
+        return None;
+    }
+    at = next;
+    if bytes.get(at..at + MARKER_AFTER_METADATA.len())? != MARKER_AFTER_METADATA {
+        return None;
+    }
+    at += MARKER_AFTER_METADATA.len();
+
+    let (repeated_component_guid, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&repeated_component_guid)
+        || !repeated_component_guid.eq_ignore_ascii_case(&component_guid)
+    {
+        return None;
+    }
+    at = next;
+    if bytes.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    let (repeated_type_guid, next) = lp_ascii_strict(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&repeated_type_guid) || !repeated_type_guid.eq_ignore_ascii_case(&type_guid)
+    {
+        return None;
+    }
+    at = next;
+    let (repeated_role, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&repeated_role) || !repeated_role.eq_ignore_ascii_case(&role) {
+        return None;
+    }
+    at = next;
+    if bytes.get(at..at + MARKER_AFTER_PLACEMENT.len())? != MARKER_AFTER_PLACEMENT {
+        return None;
+    }
+    at += MARKER_AFTER_PLACEMENT.len();
+
+    let (final_role, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
+    if !is_guid_relaxed(&final_role) || !final_role.eq_ignore_ascii_case(&role) {
+        return None;
+    }
+    at = next;
+    if bytes.get(at..at + CLOSURE.len())? != CLOSURE || at + CLOSURE.len() != relation_at {
+        return None;
+    }
+    Some((role, first_role_at + 4))
 }
 
 /// Parse the current placement envelope: a standard target path, an optional

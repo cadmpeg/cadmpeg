@@ -17,7 +17,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope, image-record prefixes, and current sketch-container visibility member. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, and the grouped identity `Component Insert` frames. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 """
@@ -7477,3 +7477,259 @@ offset = 112
 type = "bytes[11]"
 source = "spec"
 anchor = "a reference to the owning scope"
+
+[[record]]
+name = "component_insert_identity_scope_296_263"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact identity form is a 261-byte class-`296` frame paired with class `263`"
+size = 261
+note = "Offsets are relative to the primary class-296 indexed header. The paired class-263 indexed header begins at offset 261."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Relative to its primary indexed header"
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "Nine zero bytes occupy offsets 11 through 19."
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "`01 00 00 00 00` at offsets 20 through 24"
+
+[[record.field]]
+name = "prologue_value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`01 00 00 00 00` at offsets 20 through 24"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "an occurrence identity u64 at offset 25"
+
+[[record.gap]]
+offset = 33
+size = 4
+note = "Four zero bytes occupy offsets 33 through 36."
+
+[[record.field]]
+name = "relation_marker"
+offset = 37
+type = "u8"
+source = "spec"
+anchor = "a marked reference to the sole relation at offset 37"
+
+[[record.field]]
+name = "relation_record_index"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "a marked reference to the sole relation at offset 37"
+
+[[record.gap]]
+offset = 42
+size = 6
+note = "Six zero bytes occupy offsets 42 through 47."
+
+[[record.field]]
+name = "identity_markers"
+offset = 48
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 01` at offsets 48 and 49"
+
+[[record.field]]
+name = "opaque_code_unit_count"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "u32 code-unit count 36 at offset 50"
+
+[[record.field]]
+name = "opaque_utf16_payload"
+offset = 54
+type = "bytes[72]"
+source = "spec"
+anchor = "the 36-code-unit null GUID `00000000-0000-0000-0000-000000000000` at offset 54"
+
+[[record.gap]]
+offset = 126
+size = 135
+note = "The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame."
+
+[[record]]
+name = "component_insert_grouped_identity_carrier_382"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The carrier is 695 bytes from its primary indexed header to the relation header"
+size = 695
+note = "Offsets are relative to the primary class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed carrier header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 8
+note = "Eight zero bytes occupy offsets 11 through 18."
+
+[[record.field]]
+name = "carrier_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "byte `1` at offset 19"
+
+[[record.field]]
+name = "carrier_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 20"
+
+[[record.field]]
+name = "identity_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "byte `1` at offset 24"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "an occurrence identity u64 at offset 25"
+
+[[record.field]]
+name = "reference_marker"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "byte `1` at offset 33"
+
+[[record.gap]]
+offset = 34
+size = 4
+note = "Four zero bytes occupy offsets 34 through 37."
+
+[[record.field]]
+name = "first_component_guid"
+offset = 38
+type = "bytes[76]"
+source = "spec"
+anchor = "At offset 38 it stores an LP-UTF16 component GUID"
+
+[[record.field]]
+name = "first_component_separator"
+offset = 114
+type = "u8"
+source = "spec"
+anchor = "one zero separator byte"
+
+[[record.field]]
+name = "first_type_guid"
+offset = 115
+type = "bytes[40]"
+source = "spec"
+anchor = "an LP-ASCII type GUID"
+
+[[record.field]]
+name = "first_role_guid"
+offset = 155
+type = "bytes[76]"
+source = "spec"
+anchor = "an LP-UTF16 occurrence-role GUID"
+
+[[record.field]]
+name = "metadata_marker"
+offset = 231
+type = "bytes[10]"
+source = "spec"
+anchor = "The role is followed by `00 01 00 00 00 00 01 00 00 00`"
+
+[[record.field]]
+name = "metadata_guid_a"
+offset = 241
+type = "bytes[76]"
+source = "spec"
+anchor = "two LP-UTF16 metadata GUIDs"
+
+[[record.field]]
+name = "metadata_guid_b"
+offset = 317
+type = "bytes[76]"
+source = "spec"
+anchor = "two LP-UTF16 metadata GUIDs"
+
+[[record.field]]
+name = "placement_marker"
+offset = 393
+type = "bytes[15]"
+source = "spec"
+anchor = "`00 01 03 00 00 00 00 00 00 00 01 00 00 00 00`"
+
+[[record.field]]
+name = "repeated_component_guid"
+offset = 408
+type = "bytes[76]"
+source = "spec"
+anchor = "It then repeats the component GUID"
+
+[[record.field]]
+name = "repeated_component_separator"
+offset = 484
+type = "u8"
+source = "spec"
+anchor = "separator byte"
+
+[[record.field]]
+name = "repeated_type_guid"
+offset = 485
+type = "bytes[40]"
+source = "spec"
+anchor = "type GUID, and role GUID"
+
+[[record.field]]
+name = "repeated_role_guid"
+offset = 525
+type = "bytes[76]"
+source = "spec"
+anchor = "type GUID, and role GUID"
+
+[[record.field]]
+name = "construction_marker"
+offset = 601
+type = "bytes[6]"
+source = "spec"
+anchor = "followed by `00 01 00 00 00 00`"
+
+[[record.field]]
+name = "final_role_guid"
+offset = 607
+type = "bytes[76]"
+source = "spec"
+anchor = "a final role GUID"
+
+[[record.field]]
+name = "closure"
+offset = 683
+type = "bytes[12]"
+source = "spec"
+anchor = "`00 01 04 00 00 00 00 00 00 00 00 00`"

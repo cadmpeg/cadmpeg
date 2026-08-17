@@ -2679,24 +2679,40 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let frame_matches_transform =
                     match (scope.frame_length, scope.paired_class_tag.as_str()) {
                         (399, "259") => {
-                            construction.transform_offset == scope.byte_offset.saturating_add(50)
+                            construction.transform_offset
+                                == Some(scope.byte_offset.saturating_add(50))
                         }
                         (381, "261") => {
-                            construction.transform_offset == scope.byte_offset.saturating_add(49)
+                            construction.transform_offset
+                                == Some(scope.byte_offset.saturating_add(49))
                         }
                         (395, "258") => {
-                            construction.transform_offset == scope.byte_offset.saturating_add(46)
+                            construction.transform_offset
+                                == Some(scope.byte_offset.saturating_add(46))
                         }
                         (404, _) => {
-                            construction.transform_offset == scope.byte_offset.saturating_add(54)
+                            construction.transform_offset
+                                == Some(scope.byte_offset.saturating_add(54))
+                        }
+                        (261, "263") if scope.class_tag == "296" => {
+                            construction.transform_offset.is_none()
+                                && construction.transform
+                                    == design::decode::sketch::identity_matrix()
                         }
                         _ => false,
                     };
-                let placement_field_order = if scope.frame_length == 404 {
-                    construction.carrier_transform_offset < construction.neutron_role_offset
-                } else {
-                    construction.neutron_role_offset < construction.carrier_transform_offset
-                };
+                let placement_field_order =
+                    match (scope.frame_length, scope.paired_class_tag.as_str()) {
+                        (261, "263") if scope.class_tag == "296" => {
+                            construction.carrier_transform_offset.is_none()
+                        }
+                        (404, _) => construction
+                            .carrier_transform_offset
+                            .is_some_and(|offset| offset < construction.neutron_role_offset),
+                        _ => construction
+                            .carrier_transform_offset
+                            .is_some_and(|offset| construction.neutron_role_offset < offset),
+                    };
                 scope.kind == "Component Insert"
                     && scope.reference_members == [construction.relation_record_index]
                     && construction.carrier_record_index != construction.relation_record_index
@@ -2705,7 +2721,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && frame_matches_transform
                     && placement_field_order
                     && relation.is_some_and(|relation| {
-                        construction.carrier_transform_offset < relation.byte_offset
+                        construction
+                            .carrier_transform_offset
+                            .is_none_or(|offset| offset < relation.byte_offset)
                     })
                     && (native.xref_references.is_empty()
                         || native.xref_references.iter().any(|reference| {

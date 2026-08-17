@@ -3105,3 +3105,85 @@ pub(crate) mod legacy_body_group_frame_123 {
     /// Offset of `owning_scope_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const OWNING_SCOPE_REFERENCE: usize = 112;
 }
+
+/// Byte offsets for the `component_insert_identity_scope_296_263` record.
+///
+/// Spec §3.1. Record length 261 B.
+///
+/// ```text
+/// Offsets are relative to the primary class-296 indexed header. The paired class-263 indexed header begins at offset 261.
+/// ```
+pub(crate) mod component_insert_identity_scope_296_263 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 261;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `prologue_marker` (`u8`). Spec §3.1.
+    pub(crate) const PROLOGUE_MARKER: usize = 20;
+    /// Offset of `prologue_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PROLOGUE_VALUE: usize = 21;
+    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_IDENTITY: usize = 25;
+    /// Offset of `relation_marker` (`u8`). Spec §3.1.
+    pub(crate) const RELATION_MARKER: usize = 37;
+    /// Offset of `relation_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RELATION_RECORD_INDEX: usize = 38;
+    /// Offset of `identity_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const IDENTITY_MARKERS: usize = 48;
+    /// Offset of `opaque_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_CODE_UNIT_COUNT: usize = 50;
+    /// Offset of `opaque_utf16_payload` (`bytes[72]`). Spec §3.1.
+    pub(crate) const OPAQUE_UTF16_PAYLOAD: usize = 54;
+}
+
+/// Byte offsets for the `component_insert_grouped_identity_carrier_382` record.
+///
+/// Spec §3.1. Record length 695 B.
+///
+/// ```text
+/// Offsets are relative to the primary class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+/// ```
+pub(crate) mod component_insert_grouped_identity_carrier_382 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 695;
+    /// Offset of `carrier_marker` (`u8`). Spec §3.1.
+    pub(crate) const CARRIER_MARKER: usize = 19;
+    /// Offset of `carrier_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CARRIER_VALUE: usize = 20;
+    /// Offset of `identity_marker` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_MARKER: usize = 24;
+    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_IDENTITY: usize = 25;
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 33;
+    /// Offset of `first_component_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const FIRST_COMPONENT_GUID: usize = 38;
+    /// Offset of `first_component_separator` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_COMPONENT_SEPARATOR: usize = 114;
+    /// Offset of `first_type_guid` (`bytes[40]`). Spec §3.1.
+    pub(crate) const FIRST_TYPE_GUID: usize = 115;
+    /// Offset of `first_role_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const FIRST_ROLE_GUID: usize = 155;
+    /// Offset of `metadata_marker` (`bytes[10]`). Spec §3.1.
+    pub(crate) const METADATA_MARKER: usize = 231;
+    /// Offset of `metadata_guid_a` (`bytes[76]`). Spec §3.1.
+    pub(crate) const METADATA_GUID_A: usize = 241;
+    /// Offset of `metadata_guid_b` (`bytes[76]`). Spec §3.1.
+    pub(crate) const METADATA_GUID_B: usize = 317;
+    /// Offset of `placement_marker` (`bytes[15]`). Spec §3.1.
+    pub(crate) const PLACEMENT_MARKER: usize = 393;
+    /// Offset of `repeated_component_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const REPEATED_COMPONENT_GUID: usize = 408;
+    /// Offset of `repeated_component_separator` (`u8`). Spec §3.1.
+    pub(crate) const REPEATED_COMPONENT_SEPARATOR: usize = 484;
+    /// Offset of `repeated_type_guid` (`bytes[40]`). Spec §3.1.
+    pub(crate) const REPEATED_TYPE_GUID: usize = 485;
+    /// Offset of `repeated_role_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const REPEATED_ROLE_GUID: usize = 525;
+    /// Offset of `construction_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_MARKER: usize = 601;
+    /// Offset of `final_role_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const FINAL_ROLE_GUID: usize = 607;
+    /// Offset of `closure` (`bytes[12]`). Spec §3.1.
+    pub(crate) const CLOSURE: usize = 683;
+}
