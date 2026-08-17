@@ -95,14 +95,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** A writer needs to know which field a reader follows before it can emit a record where the two differ, and whether value `3` may be written without a termination reference. A design authored with a to-object termination whose side is then switched to `to next` without clearing the object settles it.
 
-### DR-18A. Compact legacy mixed Extrude extent
-
-**Question.** Which neutral side laws does the compact legacy direction-2 extent tuple `[1, 2]` select?
-
-**Known.** `f3d.md` §3.1 "The compact legacy Extrude prologue" gives the compact operation fields and the settled one-sided extent lane. The direction-2 compact payload stores first-side value `1`, second-side value `2`, one `AlongDistance` owner, one role-`0x0000001100000000` termination group, and `Side2Offset` and `Side2TaperAngle` owners without an `AgainstDistance` owner.
-
-**Need.** A neutral Extrude extent must represent the distance law and the face-target law together, with the correct side ordering and offset sign.
-
 ### DR-19. Construction-group fields
 
 **Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean? What does the boolean of the compact flag record a trailing reference names select?

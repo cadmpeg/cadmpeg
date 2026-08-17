@@ -6417,7 +6417,9 @@ pub(crate) fn project_extrude(
             scope
                 .extrude_prologue
                 .and_then(DesignExtrudePrologue::extent),
-            Some(DesignExtrudeExtent::TwoSidedToFaces)
+            Some(
+                DesignExtrudeExtent::TwoSidedToFaces | DesignExtrudeExtent::TwoSidedDistanceToFace,
+            )
         )
     {
         return None;
@@ -6520,6 +6522,35 @@ pub(crate) fn project_extrude(
                     },
                     second: Termination::Blind {
                         length: Length(against.0.abs()),
+                    },
+                },
+                along.0 < 0.0,
+            )
+        }
+        (
+            DesignExtrudeExtent::TwoSidedDistanceToFace,
+            Some((along, AlongDirection::SignedDistance)),
+            None,
+        ) if along.0 != 0.0
+            && !prologue.direction_reversed()
+            && termination_groups.len() == 1
+            && target_shape_groups.is_empty()
+            && effective_side_one_offset.is_none()
+            && side_two_offset.is_some() =>
+        {
+            let [termination] = termination_groups.as_slice() else {
+                return None;
+            };
+            (
+                ExtentShape::TwoSided {
+                    first: Termination::Blind {
+                        length: Length(along.0.abs()),
+                    },
+                    second: Termination::ToFace {
+                        face: resolved_historical_face_group(scope, termination, face_operands)
+                            .or_else(|| resolved_face_group(termination, face_operands))
+                            .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
+                        offset: side_two_offset.filter(|offset| offset.0 != 0.0),
                     },
                 },
                 along.0 < 0.0,

@@ -1262,6 +1262,40 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if first_id == &face_group.id && second_id == &second_face_group.id
     ));
 
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistanceToFace);
+    let mixed_two_sided = project_extrude(
+        &scope,
+        &[(0, &along), (1, &second_side_offset), (2, &side_two_taper)],
+        &[body_group.clone(), face_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .expect("typed mixed two-sided Extrude");
+    assert!(matches!(
+        mixed_two_sided,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::ProfileNormal,
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(ref id),
+                        offset: Some(Length(0.5)),
+                    },
+                    draft: Some(Angle(-0.3)),
+                    ..
+                },
+            },
+            ..
+        } if id == &face_group.id
+    ));
+
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
