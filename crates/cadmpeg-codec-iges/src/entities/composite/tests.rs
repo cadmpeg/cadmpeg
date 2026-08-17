@@ -382,6 +382,40 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 }
 
 #[test]
+fn composite_zero_global_resolution_requires_exact_join() {
+    let mut bytes = composite_curve_with_join_gap(f64::EPSILON * 1024.0);
+    let declared_resolution = b",0.001,1000.0";
+    let zero_resolution = b",0.000,1000.0";
+    let offset = bytes
+        .windows(declared_resolution.len())
+        .position(|window| window == declared_resolution)
+        .expect("synthetic Global field 19");
+    bytes[offset..offset + declared_resolution.len()].copy_from_slice(zero_resolution);
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .expect("Type 102 curve at zero Global resolution");
+    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &curve.geometry else {
+        panic!("expected zero resolution to reject the positive join gap")
+    };
+    assert_eq!(
+        segments[1].transition,
+        cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::CompositeCarrierDegraded.kind()
+            && loss.message.contains("Global minimum resolution")
+    }));
+}
+
+#[test]
 fn decode_concatenates_exact_circular_arc_and_line_children() {
     let result = IgesCodec
         .decode(

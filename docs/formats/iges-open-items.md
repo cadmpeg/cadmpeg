@@ -184,16 +184,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10 reopened the prior exact-list closure because it had no independent format or producer evidence. This pass settles field-14 precedence, the ordinary-flag table, nonempty flag-3 storage, the per-data-entity scope of Type 316, and the CADIR refusal boundary; the flag-3 namespace and any external file-wide factor source remain open. A code-built witness with Type 316 attached to a data entity retains the Type 316 scale and owner but still refuses full semantic projection for the unresolved Global flag-3 name.
 
-### GL-03. A missing or zero Global minimum resolution
-
-**Question.** What does an absent, zero, or negative Global minimum resolution mean?
-
-**Known.** `global.rs:241-245` returns a value only when it is finite and positive. Consumers then refuse, replace with zero, or suppress topology based on the same missing field (`trimming.rs`, `geometry.rs`, `brep.rs`, and `csg.rs`).
-
-**Need.** We need the meaning of zero or omission and one behavior across the codec. Loss messages must name a missing or invalid resolution, not a geometry disagreement.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` validated one project interpretation but did not cite the IGES specification for positivity, zero semantics, or the cross-consumer policy.
-
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ### DR-04. One malformed subfigure definition promotes its instances to assembly roots
