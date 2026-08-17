@@ -1855,6 +1855,50 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
 
+## `compact_shifted_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 41 B
+
+Offsets are relative to the compact legacy Extrude primary indexed header. The operation fields end at the start-support byte; the one-sided extent lane and ordered reference table follow in the enclosing scope.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | The compact legacy Extrude prologue stores u32 `1` at primary-header offset 20 |
+| 24 | 2 | `zero_run_2` | `bytes[2]` | little | spec | zero bytes at offsets 24 through 25 |
+| 26 | 4 | `operation` | `u32` | little | spec | stores the result-operation u32 at offset 26 |
+| 30 | 4 | `direction` | `u32` | little | spec | the travel direction at offset 30 |
+| 34 | 4 | `face_extend` | `u32` | little | spec | the face-extend option at offset 34 |
+| 38 | 1 | `direction_reversed` | `u8` | little | spec | the direction-reversal Boolean at offset 38 |
+| 39 | 1 | `geometry_kind` | `u8` | little | spec | the geometry-kind Boolean at offset 39 |
+| 40 | 1 | `start_support` | `u8` | little | spec | the start-support byte at offset 40 |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding compact-operation envelope are outside this field run.
+
+## `compact_shifted_extrude_extent_and_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 255 B
+
+Offsets are relative to the compact legacy Extrude primary indexed header. The one-sided distance and symmetric-distance forms use the two extent values shown here; the ordered reference table begins at the final field.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 105 | 4 | `first_side_extent` | `u32` | little | spec | the first-side extent is at offset 105 |
+| 109 | 4 | `second_side_extent` | `u32` | little | spec | the second-side extent is at offset 109 |
+| 251 | 4 | `reference_count` | `u32` | little | spec | the scope reference-count field is at offset 251 |
+
+Unstated regions:
+
+- `0..105` (105 B): The compact prologue and its intervening reference envelope precede the selected extent lane.
+- `113..251` (138 B): The remaining compact extent envelope precedes the ordered reference-count field.
+
 ## `marked_shifted_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 43 B

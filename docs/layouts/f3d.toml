@@ -5986,6 +5986,116 @@ source = "spec"
 anchor = "the start-support byte at offset 41"
 
 [[record]]
+name = "compact_shifted_extrude_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact legacy Extrude prologue stores u32 `1` at primary-header offset 20"
+size = 41
+note = "Offsets are relative to the compact legacy Extrude primary indexed header. The operation fields end at the start-support byte; the one-sided extent lane and ordered reference table follow in the enclosing scope."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding compact-operation envelope are outside this field run."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The compact legacy Extrude prologue stores u32 `1` at primary-header offset 20"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 24
+type = "bytes[2]"
+source = "spec"
+anchor = "zero bytes at offsets 24 through 25"
+
+[[record.field]]
+name = "operation"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "stores the result-operation u32 at offset 26"
+
+[[record.field]]
+name = "direction"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "the travel direction at offset 30"
+
+[[record.field]]
+name = "face_extend"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "the face-extend option at offset 34"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "the direction-reversal Boolean at offset 38"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "the geometry-kind Boolean at offset 39"
+
+[[record.field]]
+name = "start_support"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "the start-support byte at offset 40"
+
+[[record]]
+name = "compact_shifted_extrude_extent_and_table_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "For the one-sided distance and symmetric-distance forms, the scope reference-count field is at offset 251"
+size = 255
+note = "Offsets are relative to the compact legacy Extrude primary indexed header. The one-sided distance and symmetric-distance forms use the two extent values shown here; the ordered reference table begins at the final field."
+
+[[record.gap]]
+offset = 0
+size = 105
+note = "The compact prologue and its intervening reference envelope precede the selected extent lane."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 105
+type = "u32"
+source = "spec"
+anchor = "the first-side extent is at offset 105"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 109
+type = "u32"
+source = "spec"
+anchor = "the second-side extent is at offset 109"
+
+[[record.gap]]
+offset = 113
+size = 138
+note = "The remaining compact extent envelope precedes the ordered reference-count field."
+
+[[record.field]]
+name = "reference_count"
+offset = 251
+type = "u32"
+source = "spec"
+anchor = "the scope reference-count field is at offset 251"
+
+[[record]]
 name = "marked_shifted_extrude_prologue"
 kind = "byte"
 section = "3.1"
