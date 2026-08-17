@@ -45,18 +45,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-03. Selection of a trailing pointer boundary
-
-**Question.** Which rule selects the entity-specific Parameter Data end when more than one suffix is structurally closed and target-valid?
-
-**Known.** `parameter.rs:265-280` accepts one target-valid candidate and suppresses the boundary when more than one candidate is valid. `native.rs:1525-1541` reports multiple valid candidates and retains the complete token sequence. The Entity graph paragraph in `iges.md` records this unique-candidate CADIR policy, but the Parameter Data paragraph still states that the decoder selects the earliest target-valid boundary.
-
-**Need.** We need one boundary rule in the specification and the decoder. A different rule changes primary-field arity, association and property ownership, and native pointer links.
-
-**Conflict.** The Parameter Data and Entity graph paragraphs in `iges.md` give two different selection rules: earliest target-valid and unique target-valid. The current decoder implements the latter.
-
-**Note.** The unique-candidate policy is conservative, but the stale earliest-boundary sentence remains a live specification contradiction.
-
 ## 2. Global metadata
 
 ### GL-02. Delegated Global flag-3 unit names

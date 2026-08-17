@@ -262,6 +262,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
+    // IGES defines the group order and pointer classes, but no generic
+    // discriminator for a variable-width entity-specific prefix. A boundary
+    // is safe only when exactly one candidate is fully target-valid.
     let candidates = structural_pointer_group_candidates(record);
     let valid_groups = candidates
         .iter()

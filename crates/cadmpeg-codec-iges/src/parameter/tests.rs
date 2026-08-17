@@ -439,6 +439,7 @@ fn decode_reports_ambiguous_boundary_without_assigning_groups() {
         .filter(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind())
         .collect::<Vec<_>>();
     assert_eq!(ambiguity_losses.len(), 1);
+    assert!(ambiguity_losses[0].message.contains("2 equally valid"));
     assert_eq!(
         ambiguity_losses[0]
             .provenance
@@ -459,4 +460,5 @@ fn decode_reports_ambiguous_boundary_without_assigning_groups() {
         .as_array()
         .unwrap()
         .is_empty());
+    assert_eq!(source.fields()["parameters"].as_array().unwrap().len(), 7);
 }
