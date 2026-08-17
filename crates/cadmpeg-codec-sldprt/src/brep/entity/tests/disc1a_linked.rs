@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use super::super::{
     disc1a_disc12_disc04_face_root_body, disc1a_disc14_disc04_face_root_body,
-    disc1a_disc14_disc0c_face_root_body, BodyRecord, EntityRecord,
+    disc1a_disc14_disc0c_face_root_body, disc1a_disc14_disc12_face_root_body, BodyRecord,
+    EntityRecord,
 };
 use super::{flo2, flo4, index_records, record};
 
@@ -18,6 +19,15 @@ fn lattice(
     chain_shape: &[(u16, u8)],
     canonical_disc: u16,
     companion_disc: u16,
+) -> Vec<EntityRecord> {
+    lattice_with_use(chain_shape, canonical_disc, companion_disc, 0x18)
+}
+
+fn lattice_with_use(
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
 ) -> Vec<EntityRecord> {
     let mut records = chain_shape
         .iter()
@@ -38,8 +48,8 @@ fn lattice(
         record(21, canonical_disc, [1, 31, 1, 1, 1, 1]),
         record(30, companion_disc, [1, 40, 20, 1, 1, 1]),
         record(31, companion_disc, [1, 41, 21, 1, 1, 1]),
-        flo4(40, 0x18, [1, 1, 30, 1, 1, 1]),
-        flo4(41, 0x18, [1, 1, 31, 1, 1, 1]),
+        flo4(40, use_disc, [1, 1, 30, 1, 1, 1]),
+        flo4(41, use_disc, [1, 1, 31, 1, 1, 1]),
     ]);
     records
 }
@@ -106,6 +116,17 @@ fn disc12_disc04_chain_owns_disc0c_faces() {
         0x14,
     );
     assert_body(&records, disc1a_disc12_disc04_face_root_body);
+}
+
+#[test]
+fn disc14_disc12_chain_owns_disc0e_faces() {
+    let records = lattice_with_use(
+        &[(0x1a, 2), (0x16, 2), (0x12, 2), (0x10, 1), (0x04, 2)],
+        0x0e,
+        0x14,
+        0x18,
+    );
+    assert_body(&records, disc1a_disc14_disc12_face_root_body);
 }
 
 #[test]
