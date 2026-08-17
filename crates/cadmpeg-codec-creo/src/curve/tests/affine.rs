@@ -534,6 +534,24 @@ fn rejects_nonlinear_systems_with_multiple_roots() {
 }
 
 #[test]
+fn leaves_discrete_unary_not_forms_unsolved() {
+    let lines = ["x=1", "SOLVE", "~x=0", "x=1", "FOR x"]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+    let evaluation =
+        evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+    assert!(evaluation.solve_solutions.is_empty());
+    assert_eq!(evaluation.assignments[0].value, None);
+}
+
+#[test]
 fn affine_solver_is_invariant_under_independent_equation_scaling() {
     let mut rows = [
         AffineEquationRow {

@@ -4940,7 +4940,10 @@ fn nonlinear_expression_is_smooth(expression: &str) -> bool {
             cursor += 1;
             continue;
         }
-        if matches!(bytes[cursor], b'=' | b'!' | b'<' | b'>' | b'&' | b'|') {
+        if matches!(
+            bytes[cursor],
+            b'=' | b'!' | b'~' | b'<' | b'>' | b'&' | b'|'
+        ) {
             return false;
         }
         if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
