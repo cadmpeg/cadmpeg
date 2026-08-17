@@ -890,6 +890,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
 
     for (ordinal, (class_tag, scope_kind)) in [
         ("323", "Move"),
+        ("328", "Move"),
         ("257", "Move"),
         ("338", "RemoveBody"),
         ("282", "Move"),
@@ -910,8 +911,16 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&1u32.to_le_bytes());
         reference(&mut bytes, group_record_index + 3);
-        bytes.extend_from_slice(&[0; 2]);
+        if class_tag == "328" {
+            bytes.push(0);
+            reference(&mut bytes, group_record_index + 13);
+        } else {
+            bytes.extend_from_slice(&[0; 2]);
+        }
         bytes.extend_from_slice(&0u32.to_le_bytes());
+        if class_tag == "328" {
+            bytes.push(0);
+        }
         bytes.extend_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&180u32.to_le_bytes());
@@ -921,12 +930,24 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         let flag_pair = matches!(class_tag, "282" | "302")
             .then_some([0, 1])
             .unwrap_or([1, 1]);
+        if class_tag == "328" {
+            bytes.push(0);
+        }
         bytes.extend_from_slice(&flag_pair);
-        reference(&mut bytes, group_record_index + 1);
-        bytes.push(0);
+        if class_tag == "328" {
+            bytes.extend_from_slice(&u64::from(group_record_index + 1).to_le_bytes());
+            bytes.extend_from_slice(&[0; 3]);
+        } else {
+            reference(&mut bytes, group_record_index + 1);
+            bytes.push(0);
+        }
         reference(&mut bytes, scope_record_index);
         let paired_at = bytes.len();
-        header(&mut bytes, *b"262", group_record_index);
+        header(
+            &mut bytes,
+            if class_tag == "328" { *b"263" } else { *b"262" },
+            group_record_index,
+        );
 
         let mut scope = DesignParameterScope::empty(
             &format!("f3d:test:legacy-body-group#{scope_record_index}"),

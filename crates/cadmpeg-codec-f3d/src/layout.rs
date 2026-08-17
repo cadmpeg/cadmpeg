@@ -3055,7 +3055,7 @@ pub(crate) mod hem_teardrop_fixed_operation_section {
 /// Spec §3.1. Record length 253 B.
 ///
 /// ```text
-/// Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the same-index paired header follows at offset 253.
+/// Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263; the same-index paired header follows at offset 253.
 /// ```
 pub(crate) mod move_transform_frame_253 {
     /// Record length in bytes. Spec §3.1.
@@ -3075,7 +3075,7 @@ pub(crate) mod move_transform_frame_253 {
 /// Spec §3.1. Record length 123 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header for the one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 00 01, and 00 01 respectively.
+/// Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 328/263, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 01 01, 00 01, and 00 01 respectively. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53; its tail has byte 0 at +98, discriminant 01 01 at +99, an unmarked N+1 reference at +101, and the owning-scope reference at +112. It has no counted trailing-reference run.
 /// ```
 pub(crate) mod legacy_body_group_frame_123 {
     /// Record length in bytes. Spec §3.1.

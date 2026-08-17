@@ -4684,6 +4684,12 @@ pub(crate) fn exact_move_operation(
             else {
                 continue;
             };
+            if class_tag == "447"
+                && lp_ascii_filtered(bytes, paired, 3..=3, u8::is_ascii_digit)
+                    .is_none_or(|(paired_class_tag, _)| paired_class_tag != "263")
+            {
+                continue;
+            }
             if bytes.get(start + 47) != Some(&0) {
                 continue;
             }
@@ -4722,7 +4728,7 @@ pub(crate) fn exact_move_operation(
 /// keyed by class avoids treating an arbitrary 253-byte record as a transform.
 fn move_transform_layout(class_tag: &str, frame_length: usize) -> Option<(usize, usize)> {
     let admitted = match class_tag {
-        "296" | "362" | "433" if frame_length == 253 => true,
+        "296" | "362" | "433" | "447" if frame_length == 253 => true,
         "349" if matches!(frame_length, 254 | 274) => true,
         "368" if frame_length == 254 => true,
         "293" | "393" | "442" | "451" if frame_length == 253 => true,

@@ -625,16 +625,31 @@ A modern uniform `Scale` or `Maßstab` scope has a 303-byte token-independent fr
 
 A legacy English `Scale` scope has a 307-byte frame with five ordered references or a 318-byte frame with six ordered references; each additional ordered reference adds 11 bytes. Its fixed operation prefix has five zero bytes at primary-header offsets 16 through 20, the positive finite f64 uniform factor at offset 21, and marked references at offsets 29, 40, and 64 naming the final, first, and second ordered references. Offset 51 stores u32 `1`, byte 55 is zero, and offsets 56 and 60 each store u32 `1`. The second ordered reference is the role-`0x0000000400000000` counted construction group selecting the transformed bodies. The final ordered reference is a point-data construction record; its `point3d` value is in centimetres and is the scale center, so each coordinate is multiplied by ten for neutral millimetres. The first ordered reference is the `ScaleFactor` owner. The group-selection and native fallback rules are the same as the modern form.
 
-A `Move` scope references one rigid-transform record and one role-`0x0000000400000000` whole-body construction group. Class `296`, `362`, `433`, `293`, `393`, `442`, and `451` transform records are 253 bytes to their same-index paired headers, class `349` transform records are 254 or 274 bytes, and class `368` transform records are 254 bytes. In all forms, offsets 11 through 42 are zero, offset 43 stores u32 form `1` or `5`, offset 47 is zero, and sixteen row-major f64 values begin at offset 48. The matrix has an orthonormal three-column basis and homogeneous final row `(0, 0, 0, 1)`. Translation components are centimetres. The matrix projects as a model-space rotation about the origin followed by its translation; an identity rotational basis has no axis-angle component.
+A `Move` scope references one rigid-transform record and one role-`0x0000000400000000` whole-body construction group. Class `296`, `362`, `433`, `447`, `293`, `393`, `442`, and `451` transform records are 253 bytes to their same-index paired headers; the class-447 form uses paired class `263`. Class `349` transform records are 254 or 274 bytes, and class `368` transform records are 254 bytes. In all forms, offsets 11 through 42 are zero, offset 43 stores u32 form `1` or `5`, offset 47 is zero, and sixteen row-major f64 values begin at offset 48. The matrix has an orthonormal three-column basis and homogeneous final row `(0, 0, 0, 1)`. Translation components are centimetres. The matrix projects as a model-space rotation about the origin followed by its translation; an identity rotational basis has no axis-angle component.
 
 A `RemoveBody` scope references exactly one nonempty construction-operand group with role `0x0000000400000000`. The group members are the whole bodies deleted by the operation. Both features use the legacy body-group grammar below.
 
-The legacy body-group frame is keyed by its primary and paired class tags. `byte_offset` anchors the primary indexed header, and the paired header is outside the frame. The common prefix after the payload prologue is `u32 member_count`, the member reference run, two nullable references, `u32 trailing_count`, the trailing reference run, a u64 role with low word zero, ten zero bytes, `u32 opaque_ordinal`, and one finite f64 opaque scalar. The body-group tail then stores a second copy of `opaque_ordinal`, a reference to `N+2`, a two-byte discriminant, a reference to `N+1`, byte `0`, a reference to the owning scope, and the same-index paired header. A same-segment reference is `u8 1`, a u64 target whose high word is zero, and two zero bytes; a null optional reference is one zero byte. The one-member, two-null-auxiliary, one-trailing-reference envelope is 123 bytes.
+The legacy body-group frame is keyed by its primary and paired class tags. `byte_offset` anchors the primary indexed header, and the paired header is outside the frame. The common prefix after the payload prologue is `u32 member_count`, the member reference run, two nullable references, `u32 trailing_count`, the trailing reference run, a u64 role with low word zero, ten zero bytes, `u32 opaque_ordinal`, and one finite f64 opaque scalar. The body-group tail then stores a second copy of `opaque_ordinal`, a reference to `N+2`, a two-byte discriminant, a reference to `N+1`, byte `0`, a reference to the owning scope, and the same-index paired header. A same-segment reference is `u8 1`, a u64 target whose high word is zero, and two zero bytes; a null optional reference is one zero byte. The ordinary one-member, two-null-auxiliary, one-trailing-reference envelope is 123 bytes. Its primary/paired class pairs are 257/262, 323/262, 328/263, 338/261, 282/262, and 302/258; the first four use discriminant `01 01`, and the last two use `00 01`. The class-328 `Move` form is a separate 123-byte variant:
+
+| Primary/paired class and scope | Relative offset | Type | Value |
+| --- | ---: | --- | --- |
+| `328`/`263`, `Move` | `+36` | u8 | null auxiliary reference |
+| `328`/`263`, `Move` | `+37` | `u8 1 + u64 + bytes[2]` | present auxiliary reference to `N+13` |
+| `328`/`263`, `Move` | `+48` | u32 | trailing count `0` |
+| `328`/`263`, `Move` | `+52` | u8 | retained null trailing-slot byte `0` |
+| `328`/`263`, `Move` | `+53` | u64 | role; low word zero |
+| `328`/`263`, `Move` | `+98` | u8 | leading tail byte `0` |
+| `328`/`263`, `Move` | `+99 .. +100` | bytes[2] | discriminant `01 01` |
+| `328`/`263`, `Move` | `+101` | `u64 + bytes[3]` | unmarked reference to `N+1` |
+| `328`/`263`, `Move` | `+112` | `u8 1 + u64 + bytes[2]` | owning-scope reference |
+
+The class-328 `Move` form has no counted trailing-reference run; its paired class is 263.
 
 | Primary class | Paired class | Frame length | Tail discriminant | `variant` |
 | ---: | ---: | ---: | --- | --- |
 | `257` | `262` | 123 | `01 01` | `true` |
 | `323` | `262` | 123 | `01 01` | `true` |
+| `328` (`Move`) | `263` | 123 | `01 01` | `true` |
 | `338` | `261` | 123 | `01 01` | `true` |
 | `282` | `262` | 123 | `00 01` | `false` |
 | `302` | `258` | 123 | `00 01` | `false` |

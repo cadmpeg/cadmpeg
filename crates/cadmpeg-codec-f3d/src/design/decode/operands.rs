@@ -1234,13 +1234,17 @@ impl ConstructionOperandGroupParse {
 /// its presence byte gates, the counted member run, two optional references,
 /// the counted trailing-reference run, a zero u32 and the u32 role, ten zero bytes, an
 /// ordinal, a duration, and a repeat of the ordinal that one container
-/// generation omits. The tail is a reference to record `N + 2`, a flag block,
-/// a reference to record `N + 1`, a zero byte, the owning scope's reference,
-/// and the same-index paired header. The flag block's last byte is zero; one
-/// container generation prefixes it with a further byte. Neither the repeated
-/// ordinal nor the prefix byte is announced, so the tail settles both: exactly
-/// one of the four readings reaches a paired header carrying this record's own
-/// index.
+/// generation omits. The class-328 Move form has one null and one present
+/// auxiliary reference, a zero trailing count, and a retained null trailing
+/// slot before the role. The ordinary tail is a reference to record `N + 2`,
+/// a flag block, a reference to record `N + 1`, a zero byte, the owning scope's
+/// reference, and the same-index paired header. The class-328 Move tail has a
+/// leading zero, the flag block, an unmarked `N + 1` u64 reference with three
+/// zero bytes, and the owning-scope reference. The flag block's last byte is
+/// zero; one container generation prefixes it with a further byte. Neither
+/// the repeated ordinal nor the prefix byte is announced, so the tail settles
+/// both: exactly one of the four readings reaches a paired header carrying
+/// this record's own index.
 pub(crate) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -1281,11 +1285,13 @@ pub(crate) fn parse_construction_operand_group(
     }
     let mut auxiliary_record_indices = Vec::new();
     let mut auxiliary_record_offsets = Vec::new();
-    for _ in 0..2 {
+    let mut auxiliary_reference_slots = [false; 2];
+    for present in &mut auxiliary_reference_slots {
         if bytes.get(cursor) == Some(&0) {
             cursor += 1;
             continue;
         }
+        *present = true;
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
@@ -1307,6 +1313,20 @@ pub(crate) fn parse_construction_operand_group(
         };
         trailing_record_indices.push(record_index);
         trailing_record_offsets.push(offset);
+    }
+    let legacy_move_class_328 = scope.kind == "Move"
+        && header.class_tag == "328"
+        && auxiliary_reference_slots == [false, true]
+        && header
+            .record_index
+            .checked_add(13)
+            .is_some_and(|expected| auxiliary_record_indices.as_slice() == [expected])
+        && trailing_count == 0;
+    if legacy_move_class_328 {
+        if bytes.get(cursor) != Some(&0) {
+            return NotAGroup;
+        }
+        cursor += 1;
     }
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
@@ -1469,6 +1489,7 @@ fn legacy_body_group_tail(
         || scope.kind == "RemoveBody";
     let (flag_pair, variant) = match header.class_tag.as_str() {
         "257" | "323" | "338" if body_scope => ([1, 1], true),
+        "328" if scope.kind == "Move" => ([1, 1], true),
         "282" | "302" if body_scope => ([0, 1], false),
         _ => return None,
     };
@@ -1482,23 +1503,43 @@ fn legacy_body_group_tail(
     {
         return None;
     }
-    if bytes.get(tail..tail + 2) != Some(&flag_pair) {
-        return None;
+    if scope.kind == "Move" && header.class_tag == "328" {
+        if bytes.get(tail) != Some(&0) {
+            return None;
+        }
+        tail += 1;
+        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
+            return None;
+        }
+        tail += 2;
+        if View::u64_le_at(bytes, tail)? != u64::from(header.record_index.checked_add(1)?)
+            || bytes.get(tail + 8..tail + 11) != Some(&[0; 3])
+        {
+            return None;
+        }
+        tail += 11;
+    } else {
+        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
+            return None;
+        }
+        tail += 2;
+        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+            != header.record_index.checked_add(1)
+        {
+            return None;
+        }
+        if bytes.get(tail) != Some(&0) {
+            return None;
+        }
+        tail += 1;
     }
-    tail += 2;
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-        != header.record_index.checked_add(1)
-    {
-        return None;
-    }
-    if bytes.get(tail) != Some(&0) {
-        return None;
-    }
-    tail += 1;
     if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
         return None;
     }
     let (paired_class_tag, after_tag) = lp_ascii_filtered(bytes, tail, 3..=3, u8::is_ascii_digit)?;
+    if scope.kind == "Move" && header.class_tag == "328" && paired_class_tag != "263" {
+        return None;
+    }
     if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
         return None;
     }

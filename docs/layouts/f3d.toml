@@ -7329,9 +7329,9 @@ anchor = "its rule-derived inside bend radius starts"
 name = "move_transform_frame_253"
 kind = "byte"
 section = "3.1"
-anchor = "Class `296`, `362`, `433`, `293`, `393`, `442`, and `451` transform records are 253 bytes"
+anchor = "Class `296`, `362`, `433`, `447`, `293`, `393`, `442`, and `451` transform records are 253 bytes"
 size = 253
-note = "Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the same-index paired header follows at offset 253."
+note = "Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263; the same-index paired header follows at offset 253."
 
 [[record.field]]
 name = "indexed_header"
@@ -7377,7 +7377,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The legacy body-group frame is keyed by its primary and paired class tags"
 size = 123
-note = "Offsets are relative to the primary indexed header for the one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 00 01, and 00 01 respectively."
+note = "Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 328/263, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 01 01, 00 01, and 00 01 respectively. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53; its tail has byte 0 at +98, discriminant 01 01 at +99, an unmarked N+1 reference at +101, and the owning-scope reference at +112. It has no counted trailing-reference run."
 
 [[record.field]]
 name = "indexed_header"
