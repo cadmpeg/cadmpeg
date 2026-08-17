@@ -18,6 +18,7 @@ container grammars:
 |              60 | V6                |           8 bytes | table sequence    |
 |              70 | V7                |           8 bytes | table sequence    |
 |              80 | V8                |           8 bytes | table sequence    |
+|              90 | V9                |           8 bytes | table sequence    |
 
 The archive version is the decimal value in the header. Version `5` and version
 `50` are distinct. Any positive decimal version fitting the eight-byte header
@@ -45,6 +46,7 @@ decimal digits. Canonical forms include:
 3D Geometry File Format        5
 3D Geometry File Format       50
 3D Geometry File Format       80
+3D Geometry File Format       90
 ```
 
 The first post-header chunk is a long comment chunk with typecode `0x00000001`.
@@ -5026,7 +5028,7 @@ nonnegative and every anonymous child is bounded independently. A line angle
 is in radians. Base coordinates, offsets, and signed dash lengths are lengths;
 positive dashes draw and negative dashes leave gaps.
 
-Archive version 90 and later retain that anonymous major-1, minor-0 body and
+Archive version 90 retains that anonymous major-1, minor-0 body and
 append these fields after the line-list chunk:
 
 ```text
@@ -5043,10 +5045,15 @@ part of the archive-90 class-data grammar, not an untyped suffix of the
 archive-80 grammar.
 
 The writer emits packed version 1.2 below archive 60 and anonymous version 1.0
-for archive versions 60 through 80. Archive version 90 and later use the same
-anonymous prefix followed by the two fields above. A missing or nil pattern
+for archive versions 60 through 80. Archive version 90 uses the same anonymous
+prefix followed by the two fields above. A missing or nil pattern
 UUID is not a source identity; CADIR keys that record by its source record
 offset and leaves `source_uuid` unset.
+
+For archive version 90, the native `hatch_patterns` record includes optional
+`pattern_unit_system` and `always_model_distances` fields. The former is the
+serialized unit-system code; the latter is the serialized Boolean. These
+fields are absent for earlier archive versions.
 
 Group and light records use packed major-1 versions. The group class UUID is
 `721D9F97-3645-44C4-8BE6-B2CF697D25CE`. A group table record is:

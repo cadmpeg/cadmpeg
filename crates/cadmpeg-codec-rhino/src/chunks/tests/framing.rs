@@ -48,6 +48,7 @@ fn parses_exact_header_and_scope() {
         ("60", ArchiveVersion::V6),
         ("70", ArchiveVersion::V7),
         ("80", ArchiveVersion::V8),
+        ("90", ArchiveVersion::V9),
     ] {
         let parsed = parse_header(&header(text)).expect("valid header");
         assert_eq!(parsed.archive_version, expected);

@@ -1034,6 +1034,7 @@ pub(crate) fn decode(
                 | ArchiveVersion::V6
                 | ArchiveVersion::V7
                 | ArchiveVersion::V8
+                | ArchiveVersion::V9
         )
     {
         return Ok(container_only_result(&scan));

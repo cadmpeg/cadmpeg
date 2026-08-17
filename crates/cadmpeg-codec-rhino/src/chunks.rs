@@ -48,6 +48,8 @@ pub(crate) enum ArchiveVersion {
     V7,
     /// Archive version 8.
     V8,
+    /// Archive version 9.
+    V9,
     /// A syntactically valid archive version outside the supported bands.
     Other(u64),
 }
@@ -64,6 +66,7 @@ impl ArchiveVersion {
             60 => Self::V6,
             70 => Self::V7,
             80 => Self::V8,
+            90 => Self::V9,
             other => Self::Other(other),
         }
     }
@@ -80,6 +83,7 @@ impl ArchiveVersion {
             Self::V6 => 60,
             Self::V7 => 70,
             Self::V8 => 80,
+            Self::V9 => 90,
             Self::Other(value) => value,
         }
     }
