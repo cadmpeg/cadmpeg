@@ -3,8 +3,9 @@
 
 use super::super::feature_history::feature_skamp_table_complete;
 use super::super::sketch::{
-    resolved_section_points, section_skamp_selected_point, section_skamp_selected_point_id,
-    unique_decoded_section_segment, unique_section_skamp_segment, SectionPointSource,
+    resolved_section_points, section_skamp_selected_point,
+    section_skamp_selected_point_id_with_ordinary_segment, unique_decoded_section_segment,
+    SectionPointSource,
 };
 use super::super::sketch_ids::sketch_entity_id;
 use super::{
@@ -405,13 +406,17 @@ pub(in super::super) fn section_skamp_shared_endpoint(
     selected: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     (entity.sense == 0).then_some(())?;
-    let segment = unique_section_skamp_segment(definition, entity.entity_id)?;
+    let segment = unique_decoded_section_segment(definition, entity.entity_id)?;
     matches!(
         segment.kind,
         crate::feature::FeatureSegmentKind::Line | crate::feature::FeatureSegmentKind::Arc
     )
     .then_some(())?;
-    let selected_point = section_skamp_selected_point_id(definition, selected)?;
+    let selected_point = section_skamp_selected_point_id_with_ordinary_segment(
+        definition,
+        selected,
+        unique_decoded_section_segment(definition, selected.entity_id),
+    )?;
     let mut endpoints = segment
         .point_ids
         .iter()
@@ -1562,6 +1567,83 @@ mod tests {
             Some(SketchLocus::Entity(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:99".to_string(),
             )))
+        );
+    }
+
+    #[test]
+    fn incomplete_unique_rows_supply_shared_endpoint_tangent_loci() {
+        let line = |external_id, point_ids| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids,
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 3,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![line(10, [1, 2]), line(11, [1, 3])],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        assert!(!definition
+            .segments
+            .as_ref()
+            .expect("segments")
+            .is_complete());
+        let sketch = SketchId("creo:model:sketch#917".to_string());
+        assert_eq!(
+            section_skamp_tangent_loci(
+                &definition,
+                &sketch,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 10,
+                    sense: 0,
+                },
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 11,
+                    sense: 2,
+                },
+                true,
+                None,
+            ),
+            Some([
+                SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:10".to_string(),
+                )),
+                SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:11".to_string(),
+                )),
+            ])
         );
     }
 }

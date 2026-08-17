@@ -345,6 +345,18 @@ pub(crate) fn section_skamp_selected_point_id(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<u32> {
+    section_skamp_selected_point_id_with_ordinary_segment(
+        definition,
+        item,
+        unique_section_skamp_segment(definition, item.entity_id),
+    )
+}
+
+pub(crate) fn section_skamp_selected_point_id_with_ordinary_segment(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+    ordinary_segment: Option<&crate::feature::FeatureSegment>,
+) -> Option<u32> {
     if let Some(segment) = unique_centered_line_segment(definition, item.entity_id) {
         return match item.sense {
             2 => Some(0),
@@ -373,7 +385,7 @@ pub(crate) fn section_skamp_selected_point_id(
     if let Some(circle) = unique_circle_segment(definition, item.entity_id) {
         return (item.sense == 4).then_some(circle.center_id);
     }
-    let segment = unique_section_skamp_segment(definition, item.entity_id)?;
+    let segment = ordinary_segment?;
     if segment.kind == crate::feature::FeatureSegmentKind::Point {
         return matches!(item.sense, 0 | 4).then_some(segment.point_ids[0]);
     }
