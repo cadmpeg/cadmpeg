@@ -180,6 +180,11 @@ fn ps04_product_definition_views_keep_identity_when_records_reordered() {
             "step:product:product#3-definition-8",
         ]
     );
+    let mut source_members = layer_items(&source_order);
+    let mut reordered_members = layer_items(&reordered);
+    source_members.sort();
+    reordered_members.sort();
+    assert_eq!(source_members, reordered_members);
     for result in [&source_order, &reordered] {
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
         assert!(validation.is_ok(), "{:#?}", validation.findings);

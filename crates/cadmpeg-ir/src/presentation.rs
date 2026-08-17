@@ -193,7 +193,7 @@ pub struct PresentationLayer {
     /// Explicit layer visibility; `false` means the layer is hidden.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible: Option<bool>,
-    /// Assigned items in source order.
+    /// Assigned items in deterministic projection order; order has no semantic meaning.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<PresentationItem>,
 }

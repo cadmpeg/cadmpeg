@@ -1599,7 +1599,11 @@ merged. Each definition that is not a usage child receives one root occurrence.
 Every usage occurrence references the specific child definition view. When a
 presentation layer references a `PRODUCT`, CADIR expands all of that
 product's definition views in `PRODUCT_DEFINITION` DATA record order; this is
-deterministic projection order, not a STEP view-order rule.
+deterministic projection order, not a STEP view-order rule. The resulting
+`PresentationLayer.items` sequence has no CADIR semantic order: it preserves
+the deterministic projection for reproducible output, while layer membership,
+view identity, visibility, and all other consumers treat the sequence as a
+set of assigned items.
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,
 including `ADVANCED_BREP_REPRESENTATION` and
@@ -1728,7 +1732,8 @@ list. A multiple-inheritance complex instance uses the parameters of its
 `PRODUCT_DEFINITION` or `PRODUCT_DEFINITION_FORMATION` partial. Product
 records use the parameters of their `PRODUCT` partial. A presentation layer
 item that references a `PRODUCT` expands to every CADIR product-definition
-view derived from that product, in source-definition order. A
+view derived from that product, in source-definition order. This order is a
+deterministic projection only; it does not rank the views. A
 `PRESENTATION_LAYER_ASSIGNMENT` is the carrier for layer membership and layer
 visibility. Its `name` is a `label` and may be empty. A valid assignment has
 at least one assigned item. `INVISIBILITY` targeting that assignment sets the

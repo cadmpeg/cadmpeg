@@ -60,35 +60,3 @@ that a passing finite witness preserves the source point set.
 ## 7. Annotation, presentation, and tessellation
 
 ## 8. Product structure and placement
-
-### PS-04. Product-definition view order
-
-**Question.** What order, if any, may a neutral presentation layer use for
-multiple `PRODUCT_DEFINITION` views of one `PRODUCT`?
-
-**Known.** `PRODUCT_DEFINITION_FORMATION.of_product` and
-`PRESENTATION_LAYER_ASSIGNMENT.assigned_items` are `SET`s, so neither source
-relationship supplies view order. `crates/cadmpeg-codec-step/src/reader/product.rs:73-89`
-groups definitions and sorts them by `record.span.start`.
-`crates/cadmpeg-codec-step/src/reader/presentation.rs:214-227` preserves that
-expanded order, and `crates/cadmpeg-codec-step/src/reader/presentation.rs:787-792`
-emits it as layer item order. `step.md` §8 "ISO 10303-41 defines a
-`PRODUCT_DEFINITION` as one aspect or view" calls this DATA-order projection
-but also states that STEP supplies no view order.
-
-**Need.** Provide a source-defined view-order rule or make the neutral order
-non-semantic. Add a producer or validator witness that permutes DATA records
-while preserving all relationships and proves that downstream consumers do
-not observe a changed presentation order, or remove order from the neutral
-contract.
-
-**Conflict.** The specification says that the source relationships do not
-order views, but the decoder makes DATA serialization order observable in
-`PresentationLayer.items`.
-
-**Note.** QA audit of commit `b28d82721c4ee1f48a389a5a100f9fb167885276`.
-Closures `29067a7725343e0f849135bf90aee04ed0ec9cd4` and
-`225b25fb6b9de5b9795b7d4667eca64884aa2d33` changed and tested byte-span
-ordering. Their reordered fixtures keep identities and relationships but
-change layer item order, so they prove the implementation policy rather than
-a STEP source rule.
