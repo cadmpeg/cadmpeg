@@ -433,25 +433,10 @@ pub(in super::super) fn transfer_native_brep(
         scan.framing.first_quilt_ptr,
         scan.topology.face_components.len(),
     );
-    if selected_body_count != Some(body_components.len())
-        || body_components
-            .iter()
-            .any(|(faces, curves)| faces.is_empty() && curves.is_empty())
-    {
-        return (0, 0);
-    }
-
-    let used_vertices = neutral_edge_curves
-        .iter()
-        .filter_map(|curve| edge_vertices.get(curve))
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>();
-    let solved_point_count = used_vertices.len();
-    for vertex_id in used_vertices {
+    let solved_point_count = solved_vertices.len();
+    for (vertex_id, position) in &solved_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
-        let vertex = VertexId(format!("creo:visibgeom:vertex#{vertex_id}"));
-        if ir.model.vertices.iter().any(|item| item.id == vertex) {
+        if ir.model.points.iter().any(|item| item.id == point_id) {
             continue;
         }
         annotate(
@@ -462,12 +447,32 @@ pub(in super::super) fn transfer_native_brep(
             "topological_vertex_point",
             Exactness::Derived,
         );
-        let position = solved_vertices[&vertex_id];
         ir.model.points.push(Point {
-            id: point_id.clone(),
+            id: point_id,
             position: Point3::new(position[0], position[1], position[2]),
             source_object: None,
         });
+    }
+    if selected_body_count != Some(body_components.len())
+        || body_components
+            .iter()
+            .any(|(faces, curves)| faces.is_empty() && curves.is_empty())
+    {
+        return (solved_point_count, 0);
+    }
+
+    let used_vertices = neutral_edge_curves
+        .iter()
+        .filter_map(|curve| edge_vertices.get(curve))
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    for vertex_id in used_vertices {
+        let vertex = VertexId(format!("creo:visibgeom:vertex#{vertex_id}"));
+        if ir.model.vertices.iter().any(|item| item.id == vertex) {
+            continue;
+        }
+        let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
         annotate(
             annotations,
             &vertex,

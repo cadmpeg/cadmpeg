@@ -375,8 +375,19 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         &BTreeSet::new(),
     );
 
-    assert_eq!(counts, (0, 0));
-    assert!(ir.model.points.is_empty());
+    assert_eq!(counts, (3, 0));
+    assert_eq!(
+        ir.model
+            .points
+            .iter()
+            .map(|point| point.id.to_string())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "creo:visibgeom:point#1".to_string(),
+            "creo:visibgeom:point#2".to_string(),
+            "creo:visibgeom:point#3".to_string(),
+        ])
+    );
     assert!(ir.model.vertices.is_empty());
     assert!(ir.model.edges.is_empty());
     assert!(ir.model.faces.is_empty());

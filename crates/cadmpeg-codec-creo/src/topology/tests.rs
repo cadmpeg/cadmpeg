@@ -507,7 +507,7 @@ fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let model = &result.ir().model;
-    assert!(model.points.is_empty());
+    assert_eq!(model.points.len(), 4);
     assert!(model.vertices.is_empty());
     assert!(model.edges.is_empty());
     assert!(model.faces.is_empty());
