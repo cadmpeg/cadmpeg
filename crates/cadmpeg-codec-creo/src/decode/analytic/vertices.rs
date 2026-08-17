@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -13,6 +13,7 @@ use crate::container::ContainerScan;
 use super::super::sketch::normalized;
 use super::super::surfaces::curve_contains_points;
 
+use super::super::uniqueness::exactly_one;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};
 use super::equations::{
     common_plane_conic_parameters, cross, dot, plane_intersection_line, CarrierEquation,
@@ -23,6 +24,10 @@ use super::planes::solve_carriers;
 
 const EPS_AGREE: f64 = 1e-9;
 const EPS_NEAR_ZERO: f64 = 1e-12;
+
+fn unique_model_curve<'a>(ir: &'a CadIr, id: &CurveId) -> Option<&'a Curve> {
+    exactly_one(ir.model.curves.iter().filter(|curve| &curve.id == id))
+}
 
 pub fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
     let scale = first
@@ -396,7 +401,7 @@ pub fn solved_topological_vertices(
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
-        let Some(geometry) = ir.model.curves.iter().find(|curve| curve.id == id) else {
+        let Some(geometry) = unique_model_curve(ir, &id) else {
             continue;
         };
         let Some(points) = nonperiodic_nurbs_endpoint_points(&geometry.geometry) else {
@@ -411,12 +416,7 @@ pub fn solved_topological_vertices(
         .into_iter()
         .filter_map(|row| {
             let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
-            let geometry = &ir
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == id)?
-                .geometry;
+            let geometry = &unique_model_curve(ir, &id)?.geometry;
             let evaluable = matches!(
                 geometry,
                 CurveGeometry::Line { .. }
@@ -454,4 +454,36 @@ pub fn solved_topological_vertices(
         &analytic_domains,
         &incident_curves,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::units::Units;
+
+    #[test]
+    fn unique_model_curve_rejects_duplicate_ids() {
+        let id = CurveId("creo:visibgeom:curve#7".to_string());
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.extend([
+            Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+            Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(0.0, 1.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+        ]);
+
+        assert!(unique_model_curve(&ir, &id).is_none());
+    }
 }
