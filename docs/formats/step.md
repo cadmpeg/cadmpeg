@@ -34,6 +34,14 @@ schema selects entity element names, attribute names, types, cardinalities,
 OPTIONAL values, SELECT values, aggregate representation, and reference
 attributes.
 
+The Part 28 conformance rule requires the UOS data to conform to one governing
+EXPRESS schema and its XML infoset to be valid against the XML Schema derived
+from that schema. A configuration with no directives or only default
+directives produces the default XML Schema binding. A configuration with any
+non-default directive produces the configured XML Schema binding. The
+[NAVSEA Part 28 schema summary](https://www.navsea.navy.mil/Home/Warfare-Centers/NSWC-Carderock/Resources/Technical-Information-Systems/Navy-XML-SGML-Repository/DTDs-Schemas/ISO-10303-Ship-Product-Model-Data-Schema-Suite/)
+records this default/configured distinction and the derived-schema requirement.
+
 In the terse configuration, the UOS element is commonly
 `iso_10303_28_terse`. The AP namespace identifies the EXPRESS schema mapping;
 the Part 28 namespace carries configuration elements such as `exp:header`;
@@ -51,13 +59,32 @@ ISO 10303-28:2003 is withdrawn. The current Part 28 edition is ISO
 10303-28:2007, edition 1. AP242 BO-Model XML uses ISO/TS 10303-3001 schemas,
 not the Part 28 mapping, and is a separate encoding.
 
+AP203, AP214, and AP242 do not have one interchangeable Part 28 XML grammar.
+Each exchange binds the exact AP edition's EXPRESS schema, Part 28 binding
+edition, configuration, derived XML Schema, target namespace, and imported
+schemas. A namespace identifies a target namespace. `xsi:schemaLocation`
+identifies a schema location. Neither value supplies the missing schema or
+configuration, and a file suffix does not select them. The [published EXPRESS
+schema catalog](https://www.mbx-if.org/home/mbx/resources/express-schemas/)
+lists AP203 Edition 2 as `{ 1 0 10303 403 2 1 2 }`, AP214 Edition 3 as
+`{ 1 0 10303 214 1 1 1 1 }`, AP242 Edition 1 as
+`{ 1 0 10303 442 1 1 4 }`, AP242 Edition 2 as
+`{ 1 0 10303 442 3 1 4 }`, AP242 Edition 3 as
+`{ 1 0 10303 442 4 1 4 }`, and AP242 Edition 4 as
+`{ 1 0 10303 442 7 1 4 }`. These EXPRESS schemas are inputs to Part 28
+derivation; they are not generated XML Schemas.
+
 CADIR decision: the STEP codec admits Part 21 clear text and its ZIP container
-only. XML with the Part 28 XML declaration and Part 28 document marker is
-recognized as an alternate encoding and is refused with
+only. It supports AP203, AP214, and AP242 through the Part 21 clear-text and
+ZIP paths. It supports no Part 28 XML AP grammar and therefore selects no Part
+28 configuration or generated XML Schema. It classifies a Part 28 document
+marker, or a root that declares a published Part 28 common namespace, as a
+medium-confidence alternate encoding and refuses it with
 `NotImplemented("STEP Part 28 XML encoding")` before Part 21 parsing. The
-codec does not infer an AP schema or edition from an XML prefix, filename,
-UOS-local name, or namespace alone; it does not implement a generic
-schema-driven XML adapter and does not join XML data to a Part 21 file by
+marker is admission evidence only; it is not XML validation. The codec does
+not infer an AP schema or edition from an XML prefix, filename, UOS-local name,
+namespace, `schema` attribute, or `xsi:schemaLocation`; it does not implement a
+generic schema-driven XML adapter or join XML data to a Part 21 file by
 filename or identifier. A caller that needs Part 28 must provide the exact
 Part 28 configuration, generated AP XML Schema, EXPRESS schema edition, and a
 separate graph-binding policy.
@@ -634,8 +661,8 @@ archive to contain the root member `ISO-10303.p21` and permits other members as
 subsidiaries. Only the root is addressed from outside the archive; a root
 `ANCHOR` forwards an external reference to an entity or value in a subsidiary.
 Relative addresses are interpreted against the directory of the referencing
-member and cannot leave
-the archive root. The codec normalizes `.` components, processes `..` only
+member and cannot leave the archive root. The codec normalizes `.` components,
+processes `..` only
 while a parent member remains, rejects an absolute path, an empty path
 component, or traversal above the root, and treats a URI scheme or network-path
 reference as external. It checks the resulting member name against the archive

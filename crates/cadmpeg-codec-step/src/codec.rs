@@ -386,16 +386,174 @@ fn is_part26_hdf5(bytes: &[u8]) -> bool {
 }
 
 fn is_part28_xml(bytes: &[u8]) -> bool {
-    let lower = bytes
+    let bytes = &bytes[..bytes.len().min(4096)];
+    let Some((name, attributes)) = xml_root_start_tag(bytes) else {
+        return false;
+    };
+    let local_name = name
         .iter()
-        .take(4096)
-        .map(u8::to_ascii_lowercase)
-        .collect::<Vec<_>>();
-    lower.starts_with(b"<?xml")
-        && (lower.windows(12).any(|window| window == b"iso_10303_28")
-            || lower
-                .windows(21)
-                .any(|window| window == b"iso:std:iso:10303:-28"))
+        .rposition(|byte| *byte == b':')
+        .map_or(name, |separator| &name[separator + 1..]);
+    if local_name.eq_ignore_ascii_case(b"iso_10303_28")
+        || ascii_starts_with(local_name, b"iso_10303_28_")
+    {
+        return true;
+    }
+
+    // A configured UOS can use a local name other than the document marker.
+    // Its governing-schema namespace varies by AP, but the Part 28 common
+    // namespace remains the bounded admission marker. Schema selection and
+    // the derived XML Schema remain caller inputs.
+    PART28_COMMON_NAMESPACES
+        .iter()
+        .any(|namespace| has_namespace_value(attributes, namespace))
+}
+
+const PART28_COMMON_NAMESPACES: [&[u8]; 3] = [
+    b"urn:oid:1.0.10303.28.2.1.1",
+    b"urn:iso:std:iso:10303:-28:ed-2:tech:XMLschema:common",
+    b"urn:iso.org:standard:10303:part(28):version(2):xmlschema:common",
+];
+
+fn ascii_starts_with(value: &[u8], prefix: &[u8]) -> bool {
+    value.len() >= prefix.len()
+        && value[..prefix.len()]
+            .iter()
+            .zip(prefix)
+            .all(|(value, prefix)| value.eq_ignore_ascii_case(prefix))
+}
+
+fn xml_root_start_tag(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let mut cursor = if bytes.starts_with(b"\xef\xbb\xbf") {
+        3
+    } else {
+        0
+    };
+    loop {
+        while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        if bytes.get(cursor) != Some(&b'<') {
+            return None;
+        }
+        if bytes.get(cursor + 1) == Some(&b'?') {
+            let end = bytes
+                .get(cursor + 2..)?
+                .windows(2)
+                .position(|window| window == b"?>")?
+                + cursor
+                + 2;
+            cursor = end + 2;
+            continue;
+        }
+        if bytes.get(cursor + 1..cursor + 4) == Some(b"!--") {
+            let end = bytes
+                .get(cursor + 4..)?
+                .windows(3)
+                .position(|window| window == b"-->")?
+                + cursor
+                + 4;
+            cursor = end + 3;
+            continue;
+        }
+        if bytes.get(cursor + 1) == Some(&b'!') {
+            let end = bytes
+                .get(cursor + 2..)?
+                .iter()
+                .position(|byte| *byte == b'>')?
+                + cursor
+                + 2;
+            cursor = end + 1;
+            continue;
+        }
+        break;
+    }
+
+    let tag_end = find_xml_tag_end(bytes, cursor + 1)?;
+    let mut name_end = cursor + 1;
+    while bytes
+        .get(name_end)
+        .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'/' && *byte != b'>')
+    {
+        name_end += 1;
+    }
+    if name_end == cursor + 1 {
+        return None;
+    }
+    Some((&bytes[cursor + 1..name_end], &bytes[name_end..tag_end]))
+}
+
+fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
+    let mut quote = None;
+    while let Some(byte) = bytes.get(cursor).copied() {
+        match quote {
+            Some(delimiter) if byte == delimiter => quote = None,
+            Some(_) => {}
+            None if byte == b'\'' || byte == b'"' => quote = Some(byte),
+            None if byte == b'>' => return Some(cursor),
+            None => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn has_namespace_value(attributes: &[u8], expected: &[u8]) -> bool {
+    xml_attribute_value(attributes, |name, value| {
+        (name == b"xmlns" || name.starts_with(b"xmlns:")) && value == expected
+    })
+    .is_some()
+}
+
+fn xml_attribute_value(
+    attributes: &[u8],
+    mut matches: impl FnMut(&[u8], &[u8]) -> bool,
+) -> Option<&[u8]> {
+    let mut cursor = 0;
+    while cursor < attributes.len() {
+        while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        if attributes.get(cursor).is_none_or(|byte| *byte == b'/') {
+            break;
+        }
+        let name_start = cursor;
+        while attributes
+            .get(cursor)
+            .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'=' && *byte != b'/')
+        {
+            cursor += 1;
+        }
+        let name = &attributes[name_start..cursor];
+        while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        if attributes.get(cursor) != Some(&b'=') {
+            return None;
+        }
+        cursor += 1;
+        while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        let delimiter = *attributes.get(cursor)?;
+        if delimiter != b'\'' && delimiter != b'"' {
+            return None;
+        }
+        cursor += 1;
+        let value_start = cursor;
+        while attributes
+            .get(cursor)
+            .is_some_and(|byte| *byte != delimiter)
+        {
+            cursor += 1;
+        }
+        let value = &attributes[value_start..cursor];
+        cursor += 1;
+        if matches(name, value) {
+            return Some(value);
+        }
+    }
+    None
 }
 
 fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
