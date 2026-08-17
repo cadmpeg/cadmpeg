@@ -3786,6 +3786,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                 if let Ok((range, userdata)) =
                     class_data_with_userdata(scan.data, record, scan.archive, MATERIAL)
                 {
+                    let mut physically_based_requires_opaque = false;
                     let legacy_rdk_instance_id =
                         legacy_rdk_material_instance_id(scan.data, &userdata);
                     let physically_based = userdata
@@ -3804,6 +3805,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                             ) {
                                 Ok(material) => Some(material),
                                 Err(error) => {
+                                    physically_based_requires_opaque = true;
                                     losses.push(RhinoLossCode::PresentationRecordDropped.note(
                                         format!(
                                             "physically based material userdata at offset {} could not be transferred: {error}",
@@ -3827,6 +3829,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                             material.rdk_instance_uuid = Some(instance_id.to_string());
                         }
                         materials.push(material);
+                        if physically_based_requires_opaque {
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
+                        }
                         parsed = true;
                     }
                 }

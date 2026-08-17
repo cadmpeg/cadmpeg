@@ -1509,8 +1509,11 @@ typed value. A different present application UUID is not recognized. CADIR
 stores the decoded fields under
 `native.rhino.materials[].physically_based`, including the inner minor
 version as `version`. A malformed recognized payload leaves the material
-record admitted, omits `physically_based`, and retains the bounded userdata
-record for opaque fidelity handling.
+record admitted, omits `physically_based`, and retains the complete containing
+material record for opaque fidelity handling. CADIR typed-admission decision:
+an unsupported inner major or malformed recognized payload supplies no
+physically-based fields; independently admitted material fields remain typed,
+and the material owner emits a presentation loss for the omitted value.
 
 #### 7.2.18 `ON_RdkUserData`
 

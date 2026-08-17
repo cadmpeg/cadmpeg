@@ -72,6 +72,10 @@ typed fields for the class-owned payload. The light-table attributes owner is
 also proven to retain the complete record when the registered
 `ON_UserStringList` payload has an unsupported anonymous major; independent
 light fields remain typed and the user-string fields are omitted.
+The material-table owner is proven to retain the complete record when the
+registered `ON_PhysicallyBasedMaterialUserData` payload has an unsupported
+anonymous major; independent material fields remain typed and the
+physically-based value is omitted.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
