@@ -363,26 +363,6 @@ The current source has no later userdata producer to characterize; the
 remaining question requires a later class writer/reader or an independent
 versioned witness.
 
-### FV-06. Later major payload admission
-
-**Question.** Which later major versions of built-in table, object, geometry,
-presentation, or userdata payloads may enter typed decoding?
-
-**Known.** The specification now distinguishes source-defined major families,
-bounded later-minor suffixes, writer-band ceilings, and opaque unknown records.
-A later major still needs its own field grammar; complete byte retention does
-not establish typed admission.
-The current OpenNURBS writer inventory defines no additional major family
-beyond the families specified in this document. This leaves a CADIR admission
-rule for any later major, but it does not assign meanings to that producer's
-fields.
-
-**Need.** Producer source or an independent witness for each later major that is
-to be admitted, naming its fields, boundaries, and neutral mapping.
-
-**Note.** Narrowed 2026-08-16. The admission distinction is settled; later
-major field grammars remain open.
-
 ### FV-07. Later minor payload suffixes
 
 **Question.** Which fields and boundaries do future minor versions append after

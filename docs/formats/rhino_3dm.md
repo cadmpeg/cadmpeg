@@ -6335,6 +6335,12 @@ built-in userdata carrier does not change that carrier's class ownership. All
 unregistered class wrappers, non-standard dictionaries, and direct plug-in
 records remain complete opaque records with their source identity and bytes.
 
+CADIR decision: a major version not defined by this specification never enters
+typed decoding, even when its class or record UUID is registered. The complete
+containing record remains retained, and the codec does not apply a known-major
+prefix to a later major. A future major can enter typed decoding only after its
+field grammar and neutral admission rule are added to this specification.
+
 `ON_ArchivableDictionary` has dictionary UUID
 `21EE7933-1E2D-4047-869E-6BDBF986EA11`. Its structure is:
 
