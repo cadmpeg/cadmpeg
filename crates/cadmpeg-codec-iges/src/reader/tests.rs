@@ -73,6 +73,36 @@ fn transfer_ledger_reports_an_unprojected_native_only_direction() {
 }
 
 #[test]
+fn container_decode_retains_unknown_flag_three_name_but_semantic_decode_refuses() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,6HCUSTOM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let bytes = point_file_with_global(global);
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::NotImplemented(message)
+            if message == "IGES units flag 3 names a unit without a known millimetre factor"
+    ));
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["native_units"],
+        "CUSTOM"
+    );
+    assert!(result.ir().model.points.is_empty());
+}
+
+#[test]
 fn decode_enforces_each_iges_session_resource_dimension() {
     fn assert_refusal(
         edit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),

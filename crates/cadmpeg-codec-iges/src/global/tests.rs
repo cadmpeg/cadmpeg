@@ -337,23 +337,23 @@ fn real_significance_fields_are_required_and_positive() {
 }
 
 #[test]
-fn other_units_require_an_exact_supported_standard_name() {
-    for units_name in ["2Hmm", "5HMM "] {
-        let global = format!(
-            "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,{units_name},1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;"
-        );
-        let error = IgesCodec
-            .inspect(
-                &mut Cursor::new(fixed_ascii_with_global(global.as_bytes())),
-                &cadmpeg_core::decode::InspectOptions::default(),
-            )
-            .unwrap_err();
-
-        assert!(
-            matches!(error, CodecError::Malformed(_)),
-            "{units_name}: {error}"
-        );
+fn flag_three_units_require_a_nonempty_name_but_allow_external_symbols() {
+    for units_name in ["2Hmm", "3HMM "] {
+        let mut fields = valid_global_fields();
+        fields[13] = "3".into();
+        fields[14] = units_name.into();
+        let parsed = parse_global_fields(&fields).unwrap();
+        assert_eq!(parsed.units_name().as_deref(), Some(&units_name[2..]));
+        assert!(!parsed.has_supported_length_factor());
     }
+
+    let mut fields = valid_global_fields();
+    fields[13] = "3".into();
+    fields[14] = "0H".into();
+    assert!(matches!(
+        parse_global_fields(&fields),
+        Err(CodecError::Malformed(_))
+    ));
 }
 
 #[test]

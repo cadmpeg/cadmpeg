@@ -421,9 +421,14 @@ impl Global {
         if !(1..=11).contains(&units) {
             return Err(malformed("field 14 (units flag) must be in 1 through 11"));
         }
-        if units == 3 && self.named_unit_factor_mm().is_none() {
+        if units == 3
+            && !matches!(
+                self.values.get(14),
+                Some(Value::String(value)) if !value.is_empty()
+            )
+        {
             return Err(malformed(
-                "field 15 (units name) is not a supported standard unit name for units flag 3",
+                "field 15 (units name) is required and nonempty for units flag 3",
             ));
         }
         let gradations = self.integer_field(15, "maximum line-weight gradations", Some(1))?;
@@ -507,6 +512,10 @@ impl Global {
             b"UIN" => Some(0.000_025_4),
             _ => None,
         }
+    }
+
+    pub(crate) fn has_supported_length_factor(&self) -> bool {
+        self.units_flag() != 3 || self.named_unit_factor_mm().is_some()
     }
 
     pub(crate) fn length_factor_mm(&self) -> f64 {

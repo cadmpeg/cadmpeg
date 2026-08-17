@@ -1767,7 +1767,10 @@ pub(crate) fn store(
             ),
             view: entry.view,
             line_weight_number: entry.line_weight,
-            line_weight_mm: global.line_weight_mm(entry.line_weight),
+            line_weight_mm: global
+                .has_supported_length_factor()
+                .then(|| global.line_weight_mm(entry.line_weight))
+                .flatten(),
             color_number: entry.color,
             color_definition: resolved_display_definition(
                 references,
@@ -4825,33 +4828,38 @@ pub(crate) fn store(
     let mut output_truncated_at = None;
     let mut depth_truncated_at = None;
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
-    let expansion = OccurrenceExpansion {
-        entries: &entries,
-        records: &by_directory,
-        definitions: &occurrence_definitions,
-        neutral_links: &occurrence_neutral_links,
-        length_factor: global.length_factor_mm(),
-        precision: global.real_precision(),
-        output_limit: limits.output,
-        depth_limit: limits.depth,
-        ctx,
-    };
-    if malformed_definition_sequences.is_empty() {
-        for root in directory.iter().filter(|entry| {
-            matches!(entry.entity_type, 408 | 420)
-                && entry.form == 0
-                && !contained_instances.contains(&entry.sequence)
-        }) {
-            if let Some(source_sequence) = expansion.expand(
-                root.sequence,
-                Affine::IDENTITY,
-                &mut Vec::new(),
-                &mut product_occurrences,
-                &mut depth_truncated_at,
-                &mut malformed_placement_sequences,
-            )? {
-                output_truncated_at = Some(source_sequence);
-                break;
+    if let Some(length_factor) = global
+        .has_supported_length_factor()
+        .then(|| global.length_factor_mm())
+    {
+        let expansion = OccurrenceExpansion {
+            entries: &entries,
+            records: &by_directory,
+            definitions: &occurrence_definitions,
+            neutral_links: &occurrence_neutral_links,
+            length_factor,
+            precision: global.real_precision(),
+            output_limit: limits.output,
+            depth_limit: limits.depth,
+            ctx,
+        };
+        if malformed_definition_sequences.is_empty() {
+            for root in directory.iter().filter(|entry| {
+                matches!(entry.entity_type, 408 | 420)
+                    && entry.form == 0
+                    && !contained_instances.contains(&entry.sequence)
+            }) {
+                if let Some(source_sequence) = expansion.expand(
+                    root.sequence,
+                    Affine::IDENTITY,
+                    &mut Vec::new(),
+                    &mut product_occurrences,
+                    &mut depth_truncated_at,
+                    &mut malformed_placement_sequences,
+                )? {
+                    output_truncated_at = Some(source_sequence);
+                    break;
+                }
             }
         }
     }
