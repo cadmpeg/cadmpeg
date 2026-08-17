@@ -220,9 +220,12 @@ fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
         if terminated {
             continue;
         }
-        let Some(current) = line.section else {
-            continue;
-        };
+        let current = line.section.ok_or_else(|| {
+            crate::error::malformed(format!(
+                "IGES physical line at offset {} is unsequenced before Terminate",
+                line.offset
+            ))
+        })?;
         let current_sequence = line.sequence.ok_or_else(|| {
             CodecError::Malformed(format!(
                 "IGES card at offset {} has an invalid sequence field",
@@ -407,28 +410,6 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
             compressed_size: size,
             uncompressed_size: size,
             attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
-        });
-    }
-    let noncanonical = scan
-        .lines
-        .iter()
-        .take_while(|line| line.section != Some(Section::Terminate))
-        .filter(|line| line.section.is_none())
-        .collect::<Vec<_>>();
-    if !noncanonical.is_empty() {
-        let size = noncanonical.iter().fold(0_u64, |size, line| {
-            size.saturating_add(
-                u64::try_from(line.payload.len()).unwrap_or(u64::MAX)
-                    + u64::try_from(line.line_ending().len()).unwrap_or(u64::MAX),
-            )
-        });
-        entries.push(ContainerEntry {
-            name: "noncanonical-physical-records".into(),
-            role: "retained-opaque-records".into(),
-            compression: "none".into(),
-            compressed_size: size,
-            uncompressed_size: size,
-            attributes: BTreeMap::from([("records".into(), noncanonical.len().to_string())]),
         });
     }
     ContainerSummary {

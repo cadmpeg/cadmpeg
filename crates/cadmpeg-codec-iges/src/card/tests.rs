@@ -48,6 +48,31 @@ fn overlong_preterminate_physical_line_is_malformed() {
 }
 
 #[test]
+fn inspect_rejects_unsequenced_physical_records_before_terminate() {
+    let mut blank = vec![b' '; 80];
+    blank.push(b'\n');
+    let invalid_marker = card(b"", b'X', 1);
+
+    for inserted in [blank, invalid_marker] {
+        let mut bytes = point_file();
+        let directory_card = bytes
+            .chunks_exact(81)
+            .position(|line| line[72] == b'D')
+            .expect("Directory card");
+        let offset = directory_card * 81;
+        bytes.splice(offset..offset, inserted);
+
+        let error = IgesCodec
+            .inspect(
+                &mut Cursor::new(bytes),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap_err();
+        assert!(matches!(error, CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn malformed_sequence_padding_is_rejected_without_panicking() {
     let mut bytes = point_file();
     bytes[73..80].copy_from_slice(b"     1 ");

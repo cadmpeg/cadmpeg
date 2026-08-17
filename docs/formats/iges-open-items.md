@@ -57,16 +57,6 @@ from a conformant file.
 
 **Note.** The ambiguity witness proves that the conservative fallback is observable. It does not prove that a conformant entity lacks the entity-specific `NV` boundary.
 
-### PH-08. Pre-Terminate unsequenced physical records
-
-**Question.** Must a Fixed ASCII physical line that is unsequenced because its section marker is absent or invalid be rejected before the Terminate Section?
-
-**Known.** IGES 5.3 §2.2 states that the file consists of 80-column lines with a section code in column 73 and an ascending sequence in columns 74 through 80, and that unsequenced lines shall not appear before Terminate. `card.rs:178-183` maps an unrecognized section marker to `None`; a recognized marker with a bad sequence is checked separately. `card.rs:215-225` skips every line with no section while validating order, and `card.rs:326-329` then accepts the scan. Global, Directory, and Parameter readers filter by recognized sections (`global.rs:166-170`, `directory.rs:154-168`, and `parameter.rs:568-573`). The Physical representation section in `iges.md` allows unsequenced lines only after Terminate.
-
-**Need.** We need the decoder to reject a pre-Terminate unsequenced line, or to state and account for a defined recovery that preserves its semantics. Section counts, sequence validation, and semantic projection must not ignore a physical record that the format forbids.
-
-**Conflict.** A blank 80-byte line or a line with an unrecognized marker inserted between valid pre-Terminate cards is accepted by `validate_card_order`; it is omitted from every parsed section and has no loss note. `card.rs:412-432` reports it only in the inspection summary as an opaque noncanonical record, while decode retains it only as an unclassified native card. The decoder therefore admits a file that the IGES physical framing rule forbids and silently excludes the line from section data.
-
 ## 2. Global metadata
 
 ## 3. Directory fields, the reference graph, and the native arenas
