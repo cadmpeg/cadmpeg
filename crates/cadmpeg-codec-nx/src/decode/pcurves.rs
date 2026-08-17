@@ -2,11 +2,12 @@
 //! Intersection pcurve completion, edge incidence, and boundary transfer.
 
 use super::blend::{
-    blend_boundary_parameter_from_contact_pcurve_with_geometry,
+    blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget,
     blend_boundary_parameter_from_support_pcurve, blend_surface_definition,
     blend_surface_definition_with_index, blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_point_inner_with_index_and_budget, closest_spine_parameter_with_index_and_budget,
-    decoded_surface_point_inner, decoded_surface_point_with_geometry, model_curve_point_with_index,
+    decoded_surface_point_inner, decoded_surface_point_inner_with_budget,
+    decoded_surface_point_with_geometry_and_budget, model_curve_point_with_index,
     model_curve_tangent_with_index, spine_contact_pcurve, BlendParameterGrid,
     BoundaryInverseTarget,
 };
@@ -28,8 +29,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, nurbs_curve_speed_bound, nurbs_surface_isocurve,
-    nurbs_surface_parameter_within_tolerance_with_budget, pcurve_tangent, pcurve_uv,
-    surface_second_partials,
+    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_point_with_budget,
+    pcurve_tangent, pcurve_uv, surface_second_partials,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
@@ -1349,7 +1350,14 @@ fn exact_boundary_pcurve_with_index(
             if !geometry_budget.charge() {
                 return None;
             }
-            let mapped = decoded_surface_point_inner(index, surface, parameter.u, parameter.v, 0)?;
+            let mapped = decoded_surface_point_inner_with_budget(
+                index,
+                surface,
+                parameter.u,
+                parameter.v,
+                0,
+                geometry_budget,
+            )?;
             let error = point_distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
                 return None;
@@ -1411,7 +1419,14 @@ fn exact_boundary_pcurve_with_index(
             if !geometry_budget.charge() {
                 return None;
             }
-            let mapped = decoded_surface_point_inner(index, surface, uv.u, uv.v, 0)?;
+            let mapped = decoded_surface_point_inner_with_budget(
+                index,
+                surface,
+                uv.u,
+                uv.v,
+                0,
+                geometry_budget,
+            )?;
             let error = point_distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
                 return None;
@@ -1456,8 +1471,12 @@ fn exact_boundary_pcurve_with_index(
         if !geometry_budget.charge() {
             return None;
         }
-        let point =
-            cadmpeg_ir::eval::nurbs_surface_point(nurbs, parameters[index].u, parameters[index].v)?;
+        let point = nurbs_surface_point_with_budget(
+            nurbs,
+            parameters[index].u,
+            parameters[index].v,
+            geometry_budget,
+        )?;
         let error = point_distance(point, endpoints[index]);
         if !error.is_finite() || error > tolerance {
             return None;
@@ -1546,7 +1565,9 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         let Some(uv) = pcurve_uv(pcurve, parameter) else {
             return false;
         };
-        let Some(expected) = decoded_surface_point_inner(index, surface, uv.u, uv.v, 0) else {
+        let Some(expected) =
+            decoded_surface_point_inner_with_budget(index, surface, uv.u, uv.v, 0, geometry_budget)
+        else {
             return false;
         };
         let Some(actual) = model_curve_point_with_index(index, curve, parameter) else {
@@ -1753,7 +1774,14 @@ fn coincident_pcurve_pair_with_index(
         }
         let points = [0usize, 1usize].map(|side| {
             let uv = pcurve_uv(pcurves[side], parameter)?;
-            decoded_surface_point_inner(index, surfaces[side], uv.u, uv.v, 0)
+            decoded_surface_point_inner_with_budget(
+                index,
+                surfaces[side],
+                uv.u,
+                uv.v,
+                0,
+                geometry_budget,
+            )
         });
         let [Some(first), Some(second)] = points else {
             return None;
@@ -2206,16 +2234,26 @@ fn transferred_pcurve_sample_with_budget(
     let source_uv = pcurve_uv(source_pcurve, parameter)?;
     let point = source_geometry
         .and_then(|geometry| {
-            decoded_surface_point_with_geometry(
+            decoded_surface_point_with_geometry_and_budget(
                 index,
                 source_surface,
                 geometry,
                 source_uv.u,
                 source_uv.v,
                 0,
+                geometry_budget,
             )
         })
-        .or_else(|| decoded_surface_point_inner(index, source_surface, source_uv.u, source_uv.v, 0))
+        .or_else(|| {
+            decoded_surface_point_inner_with_budget(
+                index,
+                source_surface,
+                source_uv.u,
+                source_uv.v,
+                0,
+                geometry_budget,
+            )
+        })
         .or_else(|| model_curve_point_with_index(index, curve, parameter))?;
     let target = BoundaryInverseTarget {
         point,
@@ -2224,7 +2262,7 @@ fn transferred_pcurve_sample_with_budget(
     };
     let target_uv = blend_contact
         .and_then(|contact| {
-            blend_boundary_parameter_from_contact_pcurve_with_geometry(
+            blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
                 index,
                 contact.support,
                 contact.support_geometry,
@@ -2233,6 +2271,7 @@ fn transferred_pcurve_sample_with_budget(
                 source_pcurve,
                 parameter,
                 target,
+                geometry_budget,
             )
         })
         .or_else(|| {
@@ -2269,20 +2308,30 @@ fn transferred_pcurve_sample_with_budget(
         })?;
     let accepted = blend_contact.is_some_and(|contact| {
         target_uv.v.to_bits() == (contact.boundary as f64).to_bits()
-            && blend_transfer_point_with_index(index, contact, target_uv.u)
+            && blend_transfer_point_with_index(index, contact, target_uv.u, geometry_budget)
                 .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
     }) || target_geometry
         .and_then(|geometry| {
-            decoded_surface_point_with_geometry(
+            decoded_surface_point_with_geometry_and_budget(
                 index,
                 target_surface,
                 geometry,
                 target_uv.u,
                 target_uv.v,
                 0,
+                geometry_budget,
             )
         })
-        .or_else(|| decoded_surface_point_inner(index, target_surface, target_uv.u, target_uv.v, 0))
+        .or_else(|| {
+            decoded_surface_point_inner_with_budget(
+                index,
+                target_surface,
+                target_uv.u,
+                target_uv.v,
+                0,
+                geometry_budget,
+            )
+        })
         .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
         || blend_boundary_spine_geometry_matches_with_index(
             index,
@@ -2298,15 +2347,17 @@ fn blend_transfer_point_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     contact: BlendTransferContact<'_>,
     parameter: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     let uv = pcurve_uv(contact.pcurve, parameter)?;
-    decoded_surface_point_with_geometry(
+    decoded_surface_point_with_geometry_and_budget(
         index,
         contact.support,
         contact.support_geometry,
         uv.u,
         uv.v,
         0,
+        geometry_budget,
     )
 }
 
@@ -2472,17 +2523,25 @@ fn append_transferred_pcurve_segment_with_budget(
         };
         let Some(source_point) = source_geometry
             .and_then(|geometry| {
-                decoded_surface_point_with_geometry(
+                decoded_surface_point_with_geometry_and_budget(
                     index,
                     source_surface,
                     geometry,
                     source_uv.u,
                     source_uv.v,
                     0,
+                    geometry_budget,
                 )
             })
             .or_else(|| {
-                decoded_surface_point_inner(index, source_surface, source_uv.u, source_uv.v, 0)
+                decoded_surface_point_inner_with_budget(
+                    index,
+                    source_surface,
+                    source_uv.u,
+                    source_uv.v,
+                    0,
+                    geometry_budget,
+                )
             })
             .or_else(|| model_curve_point_with_index(index, curve, parameter))
         else {
@@ -2490,14 +2549,32 @@ fn append_transferred_pcurve_segment_with_budget(
         };
         blend_contact.is_some_and(|contact| {
             uv.v.to_bits() == (contact.boundary as f64).to_bits()
-                && blend_transfer_point_with_index(index, contact, uv.u).is_some_and(
-                    |target_point| point_distance(source_point, target_point) <= tolerance,
-                )
+                && blend_transfer_point_with_index(index, contact, uv.u, geometry_budget)
+                    .is_some_and(|target_point| {
+                        point_distance(source_point, target_point) <= tolerance
+                    })
         }) || target_geometry
             .and_then(|geometry| {
-                decoded_surface_point_with_geometry(index, target_surface, geometry, uv.u, uv.v, 0)
+                decoded_surface_point_with_geometry_and_budget(
+                    index,
+                    target_surface,
+                    geometry,
+                    uv.u,
+                    uv.v,
+                    0,
+                    geometry_budget,
+                )
             })
-            .or_else(|| decoded_surface_point_inner(index, target_surface, uv.u, uv.v, 0))
+            .or_else(|| {
+                decoded_surface_point_inner_with_budget(
+                    index,
+                    target_surface,
+                    uv.u,
+                    uv.v,
+                    0,
+                    geometry_budget,
+                )
+            })
             .is_some_and(|target_point| point_distance(source_point, target_point) <= tolerance)
             || blend_boundary_spine_geometry_matches_with_index(
                 index,
@@ -2719,7 +2796,14 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
                         geometry_budget,
                     )
                     .and_then(|uv| {
-                        decoded_surface_point_inner(&model_index, surface, uv.u, uv.v, 0)
+                        decoded_surface_point_inner_with_budget(
+                            &model_index,
+                            surface,
+                            uv.u,
+                            uv.v,
+                            0,
+                            geometry_budget,
+                        )
                     })
                     .is_some_and(|support_point| point_distance(*point, support_point) <= tolerance)
                 })

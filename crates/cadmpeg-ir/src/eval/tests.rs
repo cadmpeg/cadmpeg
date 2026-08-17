@@ -73,6 +73,93 @@ fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
 }
 
 #[test]
+fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
+    let surface = bilinear_surface();
+    let budget = WorkBudget::new(3);
+    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_none());
+    assert!(budget.exhausted());
+
+    let budget = WorkBudget::new(12);
+    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_some());
+    assert_eq!(budget.consumed(), 12);
+
+    let budget = WorkBudget::new(27);
+    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_none());
+    assert!(budget.exhausted());
+
+    let budget = WorkBudget::new(28);
+    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_some());
+    assert_eq!(budget.consumed(), 28);
+
+    let transformed = SurfaceGeometry::Transformed {
+        basis: Box::new(SurfaceGeometry::Nurbs(surface)),
+        transform: Transform {
+            rows: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        },
+    };
+    let budget = WorkBudget::new(12);
+    assert!(surface_point_with_budget(&transformed, 0.25, 0.75, &budget).is_none());
+    assert!(budget.exhausted());
+    let budget = WorkBudget::new(13);
+    assert_eq!(
+        surface_point_with_budget(&transformed, 0.25, 0.75, &budget),
+        Some(Point3::new(0.25, 0.75, 1.0))
+    );
+    assert_eq!(budget.consumed(), 13);
+}
+
+#[test]
+fn budgeted_model_surface_charges_nurbs_directrix_work() {
+    let directrix_id = CurveId("budgeted-directrix".into());
+    let surface_id = SurfaceId("budgeted-sweep".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        }),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("budgeted-sweep-construction".into()),
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::LinearSweep {
+            directrix: directrix_id,
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = WorkBudget::new(5);
+    assert!(
+        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget).is_none()
+    );
+    assert!(budget.exhausted());
+    let budget = WorkBudget::new(6);
+    assert_eq!(
+        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget),
+        Some(Point3::new(0.25, 0.0, 2.0))
+    );
+    assert_eq!(budget.consumed(), 6);
+}
+
+#[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
     let surface = NurbsSurface {
         u_degree: 1,
@@ -544,6 +631,18 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
         model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16),
         Some(Point3::new(1.0e16, -1.0e16, -3.0))
     );
+    let budget = WorkBudget::new(2);
+    assert!(
+        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,)
+            .is_none()
+    );
+    assert!(budget.exhausted());
+    let budget = WorkBudget::new(3);
+    assert_eq!(
+        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,),
+        Some(Point3::new(1.0e16, -1.0e16, -3.0))
+    );
+    assert_eq!(budget.consumed(), 3);
     let partials = model_surface_partials_by_id(&index, &second_id, 1.0e16, -1.0e16)
         .expect("transformed plane evaluates");
     assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));

@@ -15,8 +15,9 @@ use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
-    model_surface_partials_by_id, model_surface_point_by_id,
+    model_surface_partials_by_id, model_surface_point_by_id, model_surface_point_by_id_with_budget,
     nurbs_surface_parameter_within_tolerance_with_budget, pcurve_tangent, pcurve_uv, surface_point,
+    surface_point_with_budget,
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve,
@@ -105,6 +106,27 @@ pub(crate) fn decoded_surface_point_inner(
         .or_else(|| blend_surface_point_inner_with_index(index, surface, u, v, depth + 1))
 }
 
+pub(crate) fn decoded_surface_point_inner_with_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    depth: usize,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point3> {
+    (depth < 32).then_some(())?;
+    model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget).or_else(|| {
+        blend_surface_point_inner_with_index_and_budget(
+            index,
+            surface,
+            u,
+            v,
+            depth + 1,
+            geometry_budget,
+        )
+    })
+}
+
 pub(crate) fn decoded_surface_point_with_geometry(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -127,8 +149,9 @@ pub(crate) fn decoded_surface_point_with_geometry_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    surface_point(geometry, u, v)
-        .or_else(|| model_surface_point_by_id(index, surface, u, v))
+    let direct = surface_point_with_budget(geometry, u, v, geometry_budget);
+    direct
+        .or_else(|| model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget))
         .or_else(|| {
             blend_surface_point_inner_with_index_and_budget(
                 index,
@@ -1331,6 +1354,56 @@ pub(crate) fn blend_boundary_parameter_from_contact_pcurve_with_geometry(
     curve_parameter: f64,
     target: BoundaryInverseTarget,
 ) -> Option<Point2> {
+    blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
+        index,
+        support,
+        support_geometry,
+        contact_pcurve,
+        boundary,
+        support_pcurve,
+        curve_parameter,
+        target,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    support: &SurfaceId,
+    support_geometry: &SurfaceGeometry,
+    contact_pcurve: &PcurveGeometry,
+    boundary: usize,
+    support_pcurve: &PcurveGeometry,
+    curve_parameter: f64,
+    target: BoundaryInverseTarget,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
+        index,
+        support,
+        support_geometry,
+        contact_pcurve,
+        boundary,
+        support_pcurve,
+        curve_parameter,
+        target,
+        Some(geometry_budget),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    support: &SurfaceId,
+    support_geometry: &SurfaceGeometry,
+    contact_pcurve: &PcurveGeometry,
+    boundary: usize,
+    support_pcurve: &PcurveGeometry,
+    curve_parameter: f64,
+    target: BoundaryInverseTarget,
+    geometry_budget: Option<&GeometryWorkBudget<'_>>,
+) -> Option<Point2> {
     let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
     let parameter = target
         .seed
@@ -1342,10 +1415,32 @@ pub(crate) fn blend_boundary_parameter_from_contact_pcurve_with_geometry(
             let Some(uv) = pcurve_uv(contact_pcurve, *parameter) else {
                 return false;
             };
-            decoded_surface_point_with_geometry(index, support, support_geometry, uv.u, uv.v, 0)
-                .is_some_and(|candidate| {
-                    point_distance(candidate, target.point) <= target.tolerance
-                })
+            let candidate = geometry_budget.map_or_else(
+                || {
+                    decoded_surface_point_with_geometry(
+                        index,
+                        support,
+                        support_geometry,
+                        uv.u,
+                        uv.v,
+                        0,
+                    )
+                },
+                |budget| {
+                    decoded_surface_point_with_geometry_and_budget(
+                        index,
+                        support,
+                        support_geometry,
+                        uv.u,
+                        uv.v,
+                        0,
+                        budget,
+                    )
+                },
+            );
+            candidate.is_some_and(|candidate| {
+                point_distance(candidate, target.point) <= target.tolerance
+            })
         })
         .map(|parameter| Point2::new(parameter, boundary as f64))
 }

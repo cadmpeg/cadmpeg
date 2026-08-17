@@ -12,9 +12,9 @@ use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, model_surface_partials_by_id, model_surface_point_by_id,
-    nurbs_surface_closest_parameter_with_budget,
-    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials, surface_partials,
+    analytic_surface_parameters, model_surface_partials_by_id_with_budget,
+    model_surface_point_by_id_with_budget, nurbs_surface_closest_parameter_with_budget,
+    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials_with_budget,
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
@@ -534,9 +534,11 @@ pub(crate) fn certified_curved_offset_cache_fit_with_budget(
         if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
             return None;
         }
-        let support_point = cadmpeg_ir::eval::nurbs_surface_point(support, u, v)?;
-        let candidate_point = cadmpeg_ir::eval::nurbs_surface_point(candidate, u, v)?;
-        let partials = nurbs_surface_partials(support, u, v)?;
+        let support_point =
+            cadmpeg_ir::eval::nurbs_surface_point_with_budget(support, u, v, geometry_budget)?;
+        let candidate_point =
+            cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
+        let partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
         let normal_vector = cross_vector(partials.du, partials.dv);
         let normal_size = normal_vector.norm();
         let half_u = (u1 - u0) * 0.5;
@@ -873,9 +875,9 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         support_fit_tolerance,
         geometry_budget,
     ));
-    add_start(
-        domain.and_then(|domain| coarse_model_surface_parameters(index, surface, point, domain)),
-    );
+    add_start(domain.and_then(|domain| {
+        coarse_model_surface_parameters(index, surface, point, domain, geometry_budget)
+    }));
 
     let mut best = None;
     for mut parameters in starts {
@@ -883,9 +885,13 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             if !geometry_budget.charge() {
                 break;
             }
-            let Some(position) =
-                model_surface_point_by_id(index, surface, parameters.u, parameters.v)
-            else {
+            let Some(position) = model_surface_point_by_id_with_budget(
+                index,
+                surface,
+                parameters.u,
+                parameters.v,
+                geometry_budget,
+            ) else {
                 break;
             };
             let residual = Vector3::new(
@@ -908,6 +914,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 true,
                 domain,
                 [None, None],
+                geometry_budget,
             ) else {
                 break;
             };
@@ -919,6 +926,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 false,
                 domain,
                 [None, None],
+                geometry_budget,
             ) else {
                 break;
             };
@@ -934,8 +942,13 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 break;
             }
         }
-        let Some(position) = model_surface_point_by_id(index, surface, parameters.u, parameters.v)
-        else {
+        let Some(position) = model_surface_point_by_id_with_budget(
+            index,
+            surface,
+            parameters.u,
+            parameters.v,
+            geometry_budget,
+        ) else {
             continue;
         };
         let residual = point_distance(position, point);
@@ -960,6 +973,7 @@ pub(crate) fn coarse_model_surface_parameters(
     surface: &SurfaceId,
     point: Point3,
     domain: ([f64; 2], [f64; 2]),
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     let (u_domain, v_domain) = domain;
     let mut best = None;
@@ -970,9 +984,13 @@ pub(crate) fn coarse_model_surface_parameters(
                 u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
                 v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
             );
-            let Some(candidate) =
-                model_surface_point_by_id(index, surface, parameters.u, parameters.v)
-            else {
+            let Some(candidate) = model_surface_point_by_id_with_budget(
+                index,
+                surface,
+                parameters.u,
+                parameters.v,
+                geometry_budget,
+            ) else {
                 continue;
             };
             let distance = (candidate.x - point.x).powi(2)
@@ -1092,6 +1110,9 @@ pub(crate) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>
     )
 }
 
+// Keep the parameter-space and finite-difference policy explicit while passing
+// the caller-owned budget through every surface evaluation.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn model_surface_derivative(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -1100,13 +1121,15 @@ pub(crate) fn model_surface_derivative(
     along_u: bool,
     domain: Option<([f64; 2], [f64; 2])>,
     periods: [Option<f64>; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
-    let carrier = index.surfaces(&surface.0)?;
-    if let Some(partials) = surface_partials(&carrier.geometry, parameters.u, parameters.v) {
-        return Some(if along_u { partials.du } else { partials.dv });
-    }
-    if let Some(partials) = model_surface_partials_by_id(index, surface, parameters.u, parameters.v)
-    {
+    if let Some(partials) = model_surface_partials_by_id_with_budget(
+        index,
+        surface,
+        parameters.u,
+        parameters.v,
+        geometry_budget,
+    ) {
         return Some(if along_u { partials.du } else { partials.dv });
     }
 
@@ -1129,8 +1152,10 @@ pub(crate) fn model_surface_derivative(
     if !width.is_finite() || width == 0.0 {
         return None;
     }
-    let first = model_surface_point_by_id(index, surface, before.u, before.v)?;
-    let second = model_surface_point_by_id(index, surface, after.u, after.v)?;
+    let first =
+        model_surface_point_by_id_with_budget(index, surface, before.u, before.v, geometry_budget)?;
+    let second =
+        model_surface_point_by_id_with_budget(index, surface, after.u, after.v, geometry_budget)?;
     Some(Vector3::new(
         (second.x - first.x) / width,
         (second.y - first.y) / width,
@@ -1245,7 +1270,14 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
         chart[1].y - chart[0].y,
         chart[1].z - chart[0].z,
     );
-    let seed_tangent = intersection_parameter_tangent(&index, surfaces, seed, space, first_chord)?;
+    let seed_tangent = intersection_parameter_tangent(
+        &index,
+        surfaces,
+        seed,
+        space,
+        first_chord,
+        geometry_budget,
+    )?;
     let mut current = correct_intersection_parameters(
         &index,
         surfaces,
@@ -1254,8 +1286,15 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
         space,
         fit_tolerance,
         1.0,
+        geometry_budget,
     )?;
-    let first_point = model_surface_point_by_id(&index, surfaces[0], current[0], current[1])?;
+    let first_point = model_surface_point_by_id_with_budget(
+        &index,
+        surfaces[0],
+        current[0],
+        current[1],
+        geometry_budget,
+    )?;
     if point_distance(first_point, chart[0]) > fit_tolerance {
         return None;
     }
@@ -1265,13 +1304,21 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
     ];
 
     for chart_pair in chart.windows(2) {
-        let jacobian = intersection_parameter_jacobian(&index, surfaces, current, space)?;
+        let jacobian =
+            intersection_parameter_jacobian(&index, surfaces, current, space, geometry_budget)?;
         let chord = Vector3::new(
             chart_pair[1].x - chart_pair[0].x,
             chart_pair[1].y - chart_pair[0].y,
             chart_pair[1].z - chart_pair[0].z,
         );
-        let tangent = intersection_parameter_tangent(&index, surfaces, current, space, chord)?;
+        let tangent = intersection_parameter_tangent(
+            &index,
+            surfaces,
+            current,
+            space,
+            chord,
+            geometry_budget,
+        )?;
         let spatial_tangent = Vector3::new(
             jacobian[0][0] * tangent[0] + jacobian[0][1] * tangent[1],
             jacobian[1][0] * tangent[0] + jacobian[1][1] * tangent[1],
@@ -1313,8 +1360,15 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
             space,
             fit_tolerance,
             scale,
+            geometry_budget,
         )?;
-        let point = model_surface_point_by_id(&index, surfaces[0], corrected[0], corrected[1])?;
+        let point = model_surface_point_by_id_with_budget(
+            &index,
+            surfaces[0],
+            corrected[0],
+            corrected[1],
+            geometry_budget,
+        )?;
         if point_distance(point, chart_pair[1]) > fit_tolerance {
             return None;
         }
@@ -1398,6 +1452,9 @@ pub(crate) fn surface_parameter_periods_inner(
     periods
 }
 
+// Newton correction carries its chart, scale, and shared work slice together
+// so no nested solve can silently create an independent budget.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn correct_intersection_parameters(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
@@ -1406,12 +1463,25 @@ pub(crate) fn correct_intersection_parameters(
     space: IntersectionParameterSpace,
     fit_tolerance: f64,
     scale: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[f64; 4]> {
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
-        let first = model_surface_point_by_id(index, surfaces[0], corrected[0], corrected[1])?;
-        let second = model_surface_point_by_id(index, surfaces[1], corrected[2], corrected[3])?;
+        let first = model_surface_point_by_id_with_budget(
+            index,
+            surfaces[0],
+            corrected[0],
+            corrected[1],
+            geometry_budget,
+        )?;
+        let second = model_surface_point_by_id_with_budget(
+            index,
+            surfaces[1],
+            corrected[2],
+            corrected[3],
+            geometry_budget,
+        )?;
         let residual = [
             first.x - second.x,
             first.y - second.y,
@@ -1430,7 +1500,8 @@ pub(crate) fn correct_intersection_parameters(
         {
             return Some(corrected);
         }
-        let jacobian = intersection_parameter_jacobian(index, surfaces, corrected, space)?;
+        let jacobian =
+            intersection_parameter_jacobian(index, surfaces, corrected, space, geometry_budget)?;
         let matrix = [jacobian[0], jacobian[1], jacobian[2], tangent];
         let rhs = residual.map(|value| -value);
         let step =
@@ -1455,8 +1526,10 @@ pub(crate) fn intersection_parameter_tangent(
     parameters: [f64; 4],
     space: IntersectionParameterSpace,
     chord: Vector3,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[f64; 4]> {
-    let jacobian = intersection_parameter_jacobian(index, surfaces, parameters, space)?;
+    let jacobian =
+        intersection_parameter_jacobian(index, surfaces, parameters, space, geometry_budget)?;
     if let Some(tangent) = null_vector_3x4(jacobian) {
         return Some(tangent);
     }
@@ -1498,6 +1571,7 @@ pub(crate) fn intersection_parameter_jacobian(
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
     space: IntersectionParameterSpace,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[[f64; 4]; 3]> {
     let pairs = [
         Point2::new(parameters[0], parameters[1]),
@@ -1517,6 +1591,7 @@ pub(crate) fn intersection_parameter_jacobian(
                 true,
                 space.domains[side],
                 space.periods[side],
+                geometry_budget,
             )?,
             model_surface_derivative(
                 index,
@@ -1526,6 +1601,7 @@ pub(crate) fn intersection_parameter_jacobian(
                 false,
                 space.domains[side],
                 space.periods[side],
+                geometry_budget,
             )?,
         ])
     });
