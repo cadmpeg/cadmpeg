@@ -23,7 +23,7 @@ use crate::topology::Graph;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, nurbs_surface_parameter_within_tolerance, pcurve_uv,
+    analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
     CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurface,
@@ -567,12 +567,15 @@ fn complete_support_uv_wave(
                     pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index)
                         .or_else(|| uv.last().copied());
                 let parameters = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance(
-                        nurbs,
-                        *point,
-                        seed,
-                        effective_fit_tolerance,
-                    ),
+                    SurfaceGeometry::Nurbs(nurbs) => {
+                        nurbs_surface_parameter_within_tolerance_with_budget(
+                            nurbs,
+                            *point,
+                            seed,
+                            effective_fit_tolerance,
+                            geometry_budget,
+                        )
+                    }
                     SurfaceGeometry::Procedural { .. } => {
                         let solve_blend_parameters = if source_chart_available {
                             blend_surface_parameters_for_fit_with_source_continuation_and_budget

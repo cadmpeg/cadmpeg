@@ -14,6 +14,7 @@ use crate::report::Check;
 use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::decode::WorkBudget;
 
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface {
@@ -47,6 +48,28 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
     assert!(
         nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.2 + 1.0e-12).is_some()
     );
+}
+
+#[test]
+fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.0);
+    let budget = WorkBudget::new(0);
+
+    assert!(nurbs_surface_parameter_within_tolerance_with_budget(
+        &surface, point, None, 1.0e-10, &budget,
+    )
+    .is_none());
+    assert!(budget.exhausted());
+
+    let budget = WorkBudget::new(10_000);
+    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
+        &surface, point, None, 1.0e-10, &budget,
+    )
+    .expect("a valid surface fits within a larger caller-owned budget");
+    assert!((parameters.u - 0.3).abs() < 1.0e-12);
+    assert!((parameters.v - 0.7).abs() < 1.0e-12);
+    assert!(budget.consumed() > 0);
 }
 
 #[test]

@@ -16,7 +16,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, model_surface_point_by_id,
-    nurbs_surface_parameter_within_tolerance, pcurve_tangent, pcurve_uv, surface_point,
+    nurbs_surface_parameter_within_tolerance_with_budget, pcurve_tangent, pcurve_uv, surface_point,
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve,
@@ -2468,9 +2468,13 @@ pub(crate) fn surface_contact_direction_with_index_and_budget(
         // check below then certifies the actual contact shell. A global
         // closest-point proof is neither required nor sufficient for this
         // incidence question.
-        SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_surface_parameter_within_tolerance(nurbs, center, None, radius + tolerance)
-        }
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
+            nurbs,
+            center,
+            None,
+            radius + tolerance,
+            geometry_budget,
+        ),
         SurfaceGeometry::Procedural { .. } => {
             offset_surface_parameters_with_tolerance_with_index_and_budget(
                 index,

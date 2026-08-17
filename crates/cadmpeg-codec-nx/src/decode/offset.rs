@@ -13,8 +13,8 @@ use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, model_surface_partials_by_id, model_surface_point_by_id,
-    nurbs_surface_closest_parameter, nurbs_surface_parameter_within_tolerance,
-    nurbs_surface_partials, surface_partials,
+    nurbs_surface_closest_parameter_with_budget,
+    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials, surface_partials,
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
@@ -865,12 +865,13 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         }
     };
     add_start(seed);
-    add_start(initial_surface_parameters(
+    add_start(initial_surface_parameters_with_budget(
         ir,
         support,
         point,
         None,
         support_fit_tolerance,
+        geometry_budget,
     ));
     add_start(
         domain.and_then(|domain| coarse_model_surface_parameters(index, surface, point, domain)),
@@ -986,12 +987,13 @@ pub(crate) fn coarse_model_surface_parameters(
     best
 }
 
-pub(crate) fn initial_surface_parameters(
+pub(crate) fn initial_surface_parameters_with_budget(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     let carrier = ir
         .model
@@ -1000,8 +1002,16 @@ pub(crate) fn initial_surface_parameters(
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => fit_tolerance.map_or_else(
-            || nurbs_surface_closest_parameter(nurbs, point, seed),
-            |tolerance| nurbs_surface_parameter_within_tolerance(nurbs, point, seed, tolerance),
+            || nurbs_surface_closest_parameter_with_budget(nurbs, point, seed, geometry_budget),
+            |tolerance| {
+                nurbs_surface_parameter_within_tolerance_with_budget(
+                    nurbs,
+                    point,
+                    seed,
+                    tolerance,
+                    geometry_budget,
+                )
+            },
         ),
         SurfaceGeometry::Procedural { construction } => {
             let procedural =
@@ -1018,7 +1028,14 @@ pub(crate) fn initial_surface_parameters(
                 let tolerance = tolerance + distance.abs();
                 tolerance.is_finite().then_some(tolerance)
             });
-            initial_surface_parameters(ir, support, point, seed, support_fit_tolerance)
+            initial_surface_parameters_with_budget(
+                ir,
+                support,
+                point,
+                seed,
+                support_fit_tolerance,
+                geometry_budget,
+            )
         }
         geometry => analytic_surface_parameters(geometry, point),
     }
@@ -1183,9 +1200,13 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds_and_budget(
             .find(|candidate| &candidate.id == surface)?
             .geometry;
         match geometry {
-            SurfaceGeometry::Nurbs(nurbs) => {
-                nurbs_surface_parameter_within_tolerance(nurbs, point, seed, fit_tolerance)
-            }
+            SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
+                nurbs,
+                point,
+                seed,
+                fit_tolerance,
+                geometry_budget,
+            ),
             SurfaceGeometry::Procedural { .. } => {
                 offset_surface_parameters_with_tolerance_with_index_and_budget(
                     &index,

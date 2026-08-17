@@ -28,7 +28,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, nurbs_curve_speed_bound, nurbs_surface_isocurve,
-    nurbs_surface_parameter_within_tolerance, pcurve_tangent, pcurve_uv, surface_second_partials,
+    nurbs_surface_parameter_within_tolerance_with_budget, pcurve_tangent, pcurve_uv,
+    surface_second_partials,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
@@ -1136,6 +1137,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     endpoints,
                     range,
                     tolerance,
+                    geometry_budget,
                 )
             });
             let pcurves = match candidates {
@@ -1298,7 +1300,17 @@ pub(crate) fn exact_boundary_pcurve(
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    exact_boundary_pcurve_with_index(&index, ir, curve, surface, endpoints, range, tolerance)
+    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    exact_boundary_pcurve_with_index(
+        &index,
+        ir,
+        curve,
+        surface,
+        endpoints,
+        range,
+        tolerance,
+        &geometry_budget,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1310,6 +1322,7 @@ fn exact_boundary_pcurve_with_index(
     endpoints: [Point3; 2],
     range: [f64; 2],
     tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
     (range[0].is_finite()
         && range[1].is_finite()
@@ -1331,6 +1344,9 @@ fn exact_boundary_pcurve_with_index(
         let [first, second] = [first?, second?];
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
             if !parameter.u.is_finite() || !parameter.v.is_finite() {
+                return None;
+            }
+            if !geometry_budget.charge() {
                 return None;
             }
             let mapped = decoded_surface_point_inner(index, surface, parameter.u, parameter.v, 0)?;
@@ -1356,7 +1372,14 @@ fn exact_boundary_pcurve_with_index(
             direction,
         };
         return exact_boundary_pcurve_matches_carrier_with_index(
-            index, ir, curve, surface, &candidate, range, tolerance,
+            index,
+            ir,
+            curve,
+            surface,
+            &candidate,
+            range,
+            tolerance,
+            geometry_budget,
         )
         .then_some(candidate);
     }
@@ -1385,6 +1408,9 @@ fn exact_boundary_pcurve_with_index(
         };
         for (endpoint, parameter) in endpoints.into_iter().zip(range) {
             let uv = pcurve_uv(&candidate, parameter)?;
+            if !geometry_budget.charge() {
+                return None;
+            }
             let mapped = decoded_surface_point_inner(index, surface, uv.u, uv.v, 0)?;
             let error = point_distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
@@ -1392,7 +1418,14 @@ fn exact_boundary_pcurve_with_index(
             }
         }
         return exact_boundary_pcurve_matches_carrier_with_index(
-            index, ir, curve, surface, &candidate, range, tolerance,
+            index,
+            ir,
+            curve,
+            surface,
+            &candidate,
+            range,
+            tolerance,
+            geometry_budget,
         )
         .then_some(candidate);
     }
@@ -1401,11 +1434,26 @@ fn exact_boundary_pcurve_with_index(
     };
     let domain = surface_parameter_domain(ir, surface)?;
     let parameters = [
-        nurbs_surface_parameter_within_tolerance(nurbs, endpoints[0], None, tolerance)?,
-        nurbs_surface_parameter_within_tolerance(nurbs, endpoints[1], None, tolerance)?,
+        nurbs_surface_parameter_within_tolerance_with_budget(
+            nurbs,
+            endpoints[0],
+            None,
+            tolerance,
+            geometry_budget,
+        )?,
+        nurbs_surface_parameter_within_tolerance_with_budget(
+            nurbs,
+            endpoints[1],
+            None,
+            tolerance,
+            geometry_budget,
+        )?,
     ];
     for index in 0..2 {
         if !parameters[index].u.is_finite() || !parameters[index].v.is_finite() {
+            return None;
+        }
+        if !geometry_budget.charge() {
             return None;
         }
         let point =
@@ -1445,7 +1493,14 @@ fn exact_boundary_pcurve_with_index(
         })
         .filter(|candidate| {
             exact_boundary_pcurve_matches_carrier_with_index(
-                index, ir, curve, surface, candidate, range, tolerance,
+                index,
+                ir,
+                curve,
+                surface,
+                candidate,
+                range,
+                tolerance,
+                geometry_budget,
             )
         })
         .collect::<Vec<_>>();
@@ -1464,6 +1519,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     pcurve: &PcurveGeometry,
     range: [f64; 2],
     tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> bool {
     let Some(carrier) = ir
         .model
@@ -1484,6 +1540,9 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
     breaks.into_iter().all(|parameter| {
+        if !geometry_budget.charge() {
+            return false;
+        }
         let Some(uv) = pcurve_uv(pcurve, parameter) else {
             return false;
         };
@@ -1689,6 +1748,9 @@ fn coincident_pcurve_pair_with_index(
         return false;
     }
     let separation = |parameter| {
+        if !geometry_budget.charge() {
+            return None;
+        }
         let points = [0usize, 1usize].map(|side| {
             let uv = pcurve_uv(pcurves[side], parameter)?;
             decoded_surface_point_inner(index, surfaces[side], uv.u, uv.v, 0)
@@ -2503,9 +2565,13 @@ pub(crate) fn surface_parameters_for_fit_with_index_and_budget(
         .iter()
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_surface_parameter_within_tolerance(nurbs, point, seed, tolerance)
-        }
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
+            nurbs,
+            point,
+            seed,
+            tolerance,
+            geometry_budget,
+        ),
         SurfaceGeometry::Procedural { .. } => {
             offset_surface_parameters_with_tolerance_with_index_and_budget(
                 index,

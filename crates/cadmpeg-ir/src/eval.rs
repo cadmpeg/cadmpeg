@@ -23,7 +23,9 @@ use crate::geometry::{
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+
+const DEFAULT_NURBS_SURFACE_INVERSION_WORK: usize = 1_000_000;
 
 /// Test whether two model-space points are reflections across a line carrier.
 ///
@@ -269,11 +271,27 @@ fn homogeneous_bezier_spans(
 }
 
 fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezierSurfacePatch>> {
+    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
+    rational_surface_patches_with_budget(surface, &budget)
+}
+
+fn rational_surface_patches_with_budget(
+    surface: &NurbsSurface,
+    budget: &WorkBudget<'_>,
+) -> Option<Vec<RationalBezierSurfacePatch>> {
     let u_degree = usize::try_from(surface.u_degree).ok()?;
     let v_degree = usize::try_from(surface.v_degree).ok()?;
     let u_count = usize::try_from(surface.u_count).ok()?;
     let v_count = usize::try_from(surface.v_count).ok()?;
     let control_count = u_count.checked_mul(v_count)?;
+    let patch_control_count = (u_degree + 1).checked_mul(v_degree + 1)?;
+    budget
+        .charge_by(
+            control_count
+                .checked_add(surface.u_knots.len())?
+                .checked_add(surface.v_knots.len())?,
+        )
+        .then_some(())?;
     if u_degree == 0
         || v_degree == 0
         || u_degree >= u_count
@@ -373,6 +391,7 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
             {
                 return None;
             }
+            budget.charge_by(patch_control_count).then_some(())?;
             patches.push(RationalBezierSurfacePatch {
                 u_domain,
                 v_domain,
@@ -390,11 +409,16 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
 fn rational_surface_residual_patches(
     surface: &NurbsSurface,
     point: Point3,
+    budget: &WorkBudget<'_>,
 ) -> Option<Vec<RationalBezierSurfacePatch>> {
     if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
         return None;
     }
-    let mut patches = rational_surface_patches(surface)?;
+    let mut patches = rational_surface_patches_with_budget(surface, budget)?;
+    let residual_work = patches
+        .iter()
+        .try_fold(0usize, |work, patch| work.checked_add(patch.controls.len()))?;
+    budget.charge_by(residual_work).then_some(())?;
     for patch in &mut patches {
         for control in &mut patch.controls {
             for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
@@ -648,7 +672,11 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     })
 }
 
-fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<(f64, f64)> {
+fn rational_patch_distance_bounds_with_budget(
+    patch: &RationalBezierSurfacePatch,
+    budget: &WorkBudget<'_>,
+) -> Option<(f64, f64)> {
+    budget.charge_by(patch.controls.len()).then_some(())?;
     let mut minimum = [f64::INFINITY; 3];
     let mut maximum = [f64::NEG_INFINITY; 3];
     for control in &patch.controls {
@@ -684,12 +712,16 @@ fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<
 fn split_rational_surface_patch(
     patch: &RationalBezierSurfacePatch,
     split_u: bool,
+    budget: &WorkBudget<'_>,
 ) -> Option<[RationalBezierSurfacePatch; 2]> {
     let (degree, line_count) = if split_u {
         (patch.u_degree, patch.v_degree + 1)
     } else {
         (patch.v_degree, patch.u_degree + 1)
     };
+    budget
+        .charge_by(patch.controls.len().checked_mul(degree + 1)?)
+        .then_some(())?;
     let mut first_lines = Vec::with_capacity(line_count);
     let mut second_lines = Vec::with_capacity(line_count);
     for line in 0..line_count {
@@ -779,6 +811,7 @@ fn refine_nurbs_surface_parameters(
     mut parameters: Point2,
     u_domain: [f64; 2],
     v_domain: [f64; 2],
+    budget: &WorkBudget<'_>,
 ) -> Option<Point2> {
     let squared_distance = |position: Point3| {
         (position.x - point.x).powi(2)
@@ -788,13 +821,14 @@ fn refine_nurbs_surface_parameters(
     parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
     parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
     for _ in 0..32 {
-        let position = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let position = budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)?;
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
             position.z - point.z,
         );
-        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let partials =
+            budgeted_nurbs_surface_partials(surface, parameters.u, parameters.v, budget)?;
         let (du, dv) = (partials.du, partials.dv);
         let du_squared = du.dot(du);
         let mixed = du.dot(dv);
@@ -819,7 +853,8 @@ fn refine_nurbs_surface_parameters(
                 (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
                 (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
             );
-            let candidate_position = nurbs_surface_point(surface, candidate.u, candidate.v)?;
+            let candidate_position =
+                budgeted_nurbs_surface_point(surface, candidate.u, candidate.v, budget)?;
             if squared_distance(candidate_position) <= current_distance {
                 accepted = Some(candidate);
                 break;
@@ -839,15 +874,49 @@ fn refine_nurbs_surface_parameters(
     Some(parameters)
 }
 
+fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    u_degree
+        .checked_add(1)?
+        .checked_mul(v_degree.checked_add(1)?)
+        .filter(|cost| *cost > 0)
+}
+
+fn budgeted_nurbs_surface_point(
+    surface: &NurbsSurface,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    budget
+        .charge_by(nurbs_surface_evaluation_cost(surface)?)
+        .then_some(())?;
+    nurbs_surface_point(surface, u, v)
+}
+
+fn budgeted_nurbs_surface_partials(
+    surface: &NurbsSurface,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<SurfacePartials> {
+    budget
+        .charge_by(nurbs_surface_evaluation_cost(surface)?)
+        .then_some(())?;
+    nurbs_surface_partials(surface, u, v)
+}
+
 fn complete_nurbs_surface_starts(
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
+    budget: &WorkBudget<'_>,
 ) -> Option<Vec<Point2>> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let patches = rational_surface_residual_patches(surface, point)?;
+    let patches = rational_surface_residual_patches(surface, point, budget)?;
     let coordinate_scale =
         patches
             .iter()
@@ -870,7 +939,7 @@ fn complete_nurbs_surface_starts(
     let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
     let squared_tolerance = distance_tolerance * distance_tolerance;
     let squared_distance = |parameters: Point2| {
-        let position = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let position = budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)?;
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
@@ -899,8 +968,9 @@ fn complete_nurbs_surface_starts(
             .get(usize::try_from(surface.v_count).ok()?)?,
     ];
     let refined_upper = |start, u_domain, v_domain| {
-        let parameters = refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain)
-            .unwrap_or(start);
+        let parameters =
+            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)
+                .unwrap_or(start);
         Some((parameters, squared_distance(parameters)?))
     };
     let mut best_distance = f64::INFINITY;
@@ -948,7 +1018,7 @@ fn complete_nurbs_surface_starts(
     let mut queue = BinaryHeap::new();
     let mut sequence = 0usize;
     for patch in patches {
-        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        let (lower_bound, diameter) = rational_patch_distance_bounds_with_budget(&patch, budget)?;
         queue.push(SurfacePatchQueueEntry {
             lower_bound,
             diameter,
@@ -961,7 +1031,7 @@ fn complete_nurbs_surface_starts(
     let mut examined = 0usize;
     while let Some(entry) = queue.pop() {
         examined += 1;
-        if examined > MAX_PATCHES {
+        if examined > MAX_PATCHES || !budget.charge() {
             return None;
         }
         let SurfacePatchQueueEntry {
@@ -1009,6 +1079,7 @@ fn complete_nurbs_surface_starts(
             terminal.push((upper_parameters, lower_bound));
             continue;
         }
+        budget.charge_by(patch.controls.len()).then_some(())?;
         let control = |u: usize, v: usize| {
             let homogeneous = patch.controls[u * (patch.v_degree + 1) + v];
             [
@@ -1037,9 +1108,10 @@ fn complete_nurbs_surface_starts(
                     .sum::<f64>()
             })
             .fold(0.0_f64, f64::max);
-        let children = split_rational_surface_patch(&patch, u_variation >= v_variation)?;
+        let children = split_rational_surface_patch(&patch, u_variation >= v_variation, budget)?;
         for patch in children {
-            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+            let (lower_bound, diameter) =
+                rational_patch_distance_bounds_with_budget(&patch, budget)?;
             queue.push(SurfacePatchQueueEntry {
                 lower_bound,
                 diameter,
@@ -1065,6 +1137,7 @@ fn solve_nurbs_surface_parameter(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
+    budget: &WorkBudget<'_>,
 ) -> Option<(Point2, f64)> {
     let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
     let u_degree = usize::try_from(surface.u_degree).ok()?;
@@ -1082,17 +1155,19 @@ fn solve_nurbs_surface_parameter(
     if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
         return None;
     }
-    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance)?;
+    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?;
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
     for start in starts {
         let Some(parameters) =
-            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain)
+            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)
         else {
             continue;
         };
-        let Some(position) = nurbs_surface_point(surface, parameters.u, parameters.v) else {
+        let Some(position) =
+            budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)
+        else {
             continue;
         };
         let distance = (position.x - point.x)
@@ -1123,7 +1198,21 @@ pub fn nurbs_surface_closest_parameter(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
-    solve_nurbs_surface_parameter(surface, point, seed, None).map(|(parameters, _)| parameters)
+    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
+    solve_nurbs_surface_parameter(surface, point, seed, None, &budget)
+        .map(|(parameters, _)| parameters)
+}
+
+/// Find a globally closest parameter pair on a finite NURBS surface within a
+/// caller-owned work slice.
+pub fn nurbs_surface_closest_parameter_with_budget(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    budget: &WorkBudget<'_>,
+) -> Option<Point2> {
+    solve_nurbs_surface_parameter(surface, point, seed, None, budget)
+        .map(|(parameters, _)| parameters)
 }
 
 /// Find a NURBS surface parameter pair whose image is within `tolerance` of
@@ -1137,11 +1226,24 @@ pub fn nurbs_surface_parameter_within_tolerance(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Option<Point2> {
+    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
+    nurbs_surface_parameter_within_tolerance_with_budget(surface, point, seed, tolerance, &budget)
+}
+
+/// Find a NURBS surface parameter pair within `tolerance` using a
+/// caller-owned work slice.
+pub fn nurbs_surface_parameter_within_tolerance_with_budget(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point2> {
     if !tolerance.is_finite() || tolerance < 0.0 {
         return None;
     }
     let (parameters, distance) =
-        solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance))?;
+        solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance), budget)?;
     (distance.is_finite() && distance <= tolerance).then_some(parameters)
 }
 
