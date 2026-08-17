@@ -814,6 +814,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1e_disc1c_disc16_disc14_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1e_disc1c_disc14_disc0e_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc1e_disc1c_disc16_disc14_disc0e_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4646,6 +4649,7 @@ fn disc1c_disc16_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0014,
         0x001a,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 2,
             require_exact_use_population: true,
@@ -4671,6 +4675,7 @@ fn disc1c_disc16_disc0e_disc04_face_root_body(
         0x0014,
         0x001a,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 2,
             require_exact_use_population: true,
@@ -4695,6 +4700,7 @@ fn disc1c_disc16_disc12_disc0e_face_root_body(
         0x0014,
         0x001a,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 2,
             require_exact_use_population: true,
@@ -4720,6 +4726,7 @@ fn disc1c_disc16_disc14_disc04_face_root_body(
         0x0012,
         0x001a,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 2,
             require_exact_use_population: true,
@@ -4742,6 +4749,7 @@ fn disc1a_disc14_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0012,
         0x0018,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 1,
             require_exact_use_population: true,
@@ -4764,6 +4772,7 @@ fn disc1a_disc14_disc0c_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0012,
         0x0018,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 1,
             require_exact_use_population: true,
@@ -4786,6 +4795,7 @@ fn disc1a_disc12_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0014,
         0x0018,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 1,
             require_exact_use_population: true,
@@ -4807,6 +4817,7 @@ fn disc1a_disc14_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0014,
         0x0018,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 1,
             require_exact_use_population: true,
@@ -4831,6 +4842,7 @@ fn disc1a_disc18_disc14_disc04_face_root_body(
         0x0016,
         0x001c,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 1,
             require_exact_use_population: true,
@@ -4852,6 +4864,7 @@ fn disc16_disc14_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
         0x0018,
         0x001a,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 1,
             require_exact_use_population: false,
@@ -4876,6 +4889,7 @@ fn disc18_disc14_disc12_disc04_face_root_body(
         0x0016,
         0x001a,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 1,
             require_exact_use_population: true,
@@ -4900,6 +4914,7 @@ fn disc20_disc1a_disc14_disc04_face_root_body(
         0x0010,
         0x001e,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: Some(KeyedFaceUse {
                 disc: 0x0018,
                 bridge_disc: Some(0x0016),
@@ -4928,6 +4943,7 @@ fn disc1e_disc1c_disc16_disc14_face_root_body(
         0x0018,
         0x0020,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 2,
             require_exact_use_population: true,
@@ -4954,8 +4970,35 @@ fn disc1e_disc1c_disc16_disc14_disc0e_face_root_body(
         0x0018,
         0x0020,
         KeyedFaceRootOptions {
+            canonical_face_bridge_disc: None,
             face_use_shape: None,
             shell_index: 3,
+            require_exact_use_population: true,
+        },
+    )
+}
+
+fn disc1e_disc1c_disc14_disc0e_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body(
+        by_attr,
+        &[
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x001a, 2),
+            (0x0014, 1),
+            (0x0012, 2),
+            (0x0010, 2),
+            (0x000e, 2),
+        ],
+        0x0004,
+        0x0018,
+        0x0020,
+        KeyedFaceRootOptions {
+            canonical_face_bridge_disc: Some(0x0016),
+            face_use_shape: None,
+            shell_index: 2,
             require_exact_use_population: true,
         },
     )
@@ -4969,6 +5012,7 @@ struct KeyedFaceUse {
 
 #[derive(Clone, Copy)]
 struct KeyedFaceRootOptions {
+    canonical_face_bridge_disc: Option<u16>,
     face_use_shape: Option<KeyedFaceUse>,
     shell_index: usize,
     require_exact_use_population: bool,
@@ -5011,25 +5055,56 @@ fn keyed_face_root_body(
         return Vec::new();
     }
     let companion_of = |face: &EntityRecord| {
-        let companion = face
+        let direct = face
             .refs
             .get(1)
             .and_then(|attr| by_attr.get(attr))
-            .copied()?;
-        (companion.disc == companion_disc
-            && companion.flo() == 1
-            && companion.refs.get(2) == Some(&face.attr))
-        .then_some(companion)
+            .copied()
+            .filter(|record| {
+                record.disc == companion_disc
+                    && record.flo() == 1
+                    && record.refs.get(2) == Some(&face.attr)
+            })
+            .map(|companion| (companion, None));
+        let bridged = options.canonical_face_bridge_disc.and_then(|bridge_disc| {
+            let bridge = face
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .copied()
+                .filter(|record| {
+                    record.disc == bridge_disc
+                        && record.flo() == 2
+                        && record.refs.get(2) == Some(&face.attr)
+                })?;
+            let companion = bridge
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .copied()
+                .filter(|record| {
+                    record.disc == companion_disc
+                        && record.flo() == 1
+                        && record.refs.get(2) == Some(&bridge.attr)
+                })?;
+            Some((companion, Some(bridge)))
+        });
+        match (direct, bridged) {
+            (Some(_), Some(_)) => None,
+            (Some(selected), None) | (None, Some(selected)) => Some(selected),
+            (None, None) => None,
+        }
     };
     let mut companions = HashSet::new();
     let mut face_uses = HashSet::new();
+    let mut canonical_face_bridges = HashSet::new();
     let mut face_use_bridges = HashSet::new();
     let mut use_nodes = HashSet::new();
     for face in canonical_faces.iter().copied() {
-        let Some(companion) = companion_of(face) else {
+        let Some((companion, canonical_face_bridge)) = companion_of(face) else {
             return Vec::new();
         };
-        let (face_use, bridge) = if let Some(face_use_shape) = options.face_use_shape {
+        let (face_use, face_use_bridge) = if let Some(face_use_shape) = options.face_use_shape {
             let direct = companion
                 .refs
                 .get(1)
@@ -5091,7 +5166,12 @@ fn keyed_face_root_body(
         if !face_uses.insert(face_use.attr) {
             return Vec::new();
         }
-        if let Some(bridge) = bridge {
+        if let Some(bridge) = canonical_face_bridge {
+            if !canonical_face_bridges.insert(bridge.attr) {
+                return Vec::new();
+            }
+        }
+        if let Some(bridge) = face_use_bridge {
             if !face_use_bridges.insert(bridge.attr) {
                 return Vec::new();
             }

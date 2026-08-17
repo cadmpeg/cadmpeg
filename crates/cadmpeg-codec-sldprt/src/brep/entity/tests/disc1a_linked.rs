@@ -4,9 +4,9 @@ use super::super::{
     disc16_disc14_disc04_face_root_body, disc18_disc14_disc12_disc04_face_root_body,
     disc1a_disc12_disc04_face_root_body, disc1a_disc14_disc04_face_root_body,
     disc1a_disc14_disc0c_face_root_body, disc1a_disc14_disc12_face_root_body,
-    disc1a_disc18_disc14_disc04_face_root_body, disc1e_disc1c_disc16_disc14_disc0e_face_root_body,
-    disc1e_disc1c_disc16_disc14_face_root_body, disc20_disc1a_disc14_disc04_face_root_body,
-    BodyRecord, EntityRecord,
+    disc1a_disc18_disc14_disc04_face_root_body, disc1e_disc1c_disc14_disc0e_face_root_body,
+    disc1e_disc1c_disc16_disc14_disc0e_face_root_body, disc1e_disc1c_disc16_disc14_face_root_body,
+    disc20_disc1a_disc14_disc04_face_root_body, BodyRecord, EntityRecord,
 };
 use super::{flo2, flo4, index_records, record};
 
@@ -271,6 +271,38 @@ fn disc1e_disc1c_disc16_disc14_disc0e_chain_owns_disc04_faces() {
     assert_eq!(body.attr, 10);
     assert_eq!(body.regions[0].shells[0].attr, 13);
     assert!(body.refs.contains(&20) && body.refs.contains(&21));
+}
+
+#[test]
+fn disc1e_disc1c_disc14_disc0e_chain_owns_disc04_faces() {
+    let mut records = lattice_with_use(
+        &[
+            (0x1e, 2),
+            (0x1c, 2),
+            (0x1a, 2),
+            (0x14, 1),
+            (0x12, 2),
+            (0x10, 2),
+            (0x0e, 2),
+        ],
+        0x04,
+        0x18,
+        0x20,
+    );
+    records[7].refs[1] = 60;
+    records[9].refs[2] = 60;
+    records.push(flo2(60, 0x16, [1, 30, 20, 1, 1, 1]));
+    let bodies = disc1e_disc1c_disc14_disc0e_face_root_body(&index_records(&records));
+    let [body] = bodies.as_slice() else {
+        panic!("one disc1e-disc1c-disc14-disc0e body");
+    };
+    assert_eq!(body.attr, 10);
+    assert_eq!(body.regions[0].shells[0].attr, 12);
+    assert!(body.refs.contains(&20) && body.refs.contains(&21) && body.refs.contains(&60));
+
+    let mut broken_bridge = records;
+    broken_bridge[13].refs[2] = 21;
+    assert!(disc1e_disc1c_disc14_disc0e_face_root_body(&index_records(&broken_bridge)).is_empty());
 }
 
 #[test]
