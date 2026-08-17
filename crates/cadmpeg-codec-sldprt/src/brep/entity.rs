@@ -750,6 +750,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1a_disc14_disc12_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1a_disc14_disc12_disc10_disc0e_disc0c_disc04_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(disc1a_disc18_disc14_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -5511,6 +5514,33 @@ fn disc1a_disc14_disc12_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
     )
 }
 
+fn disc1a_disc14_disc12_disc10_disc0e_disc0c_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+        by_attr,
+        &[
+            (0x001a, 2),
+            (0x0014, 2),
+            (0x0012, 2),
+            (0x0010, 2),
+            (0x000e, 1),
+            (0x000c, 2),
+            (0x0004, 2),
+        ],
+        0x0016,
+        0x0018,
+        0x001c,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        false,
+    )
+}
+
 fn disc1a_disc18_disc14_disc04_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -8412,6 +8442,7 @@ fn reachable_refs(by_attr: &HashMap<u16, &EntityRecord>, root: &EntityRecord) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod disc1a_disc14_disc12_disc10_disc0e_disc0c_disc04;
     mod disc1a_disc18_disc14_disc12;
     mod disc1a_linked;
     mod disc1c_disc14_linked;
