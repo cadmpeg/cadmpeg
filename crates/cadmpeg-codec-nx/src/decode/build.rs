@@ -890,10 +890,17 @@ pub(crate) fn try_decode_geometry(
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir);
-    if crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
-        .is_err()
-    {
-        return Ok(None);
+    match crate::native::attach_annotations(
+        ctx,
+        &mut ir,
+        &model,
+        scan,
+        &mut annotations,
+        &mut unknowns,
+    ) {
+        Ok(()) => {}
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
     }
     for (si, unknown_index) in stream_unknowns {
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;

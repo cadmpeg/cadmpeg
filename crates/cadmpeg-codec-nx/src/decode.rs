@@ -292,7 +292,14 @@ fn build_container_only_ir(
             unknowns.push(unknown);
         }
     }
-    crate::native::attach_container_layer(&mut ir, scan, &mut annotations, &mut unknowns, false);
+    crate::native::attach_container_layer(
+        ctx,
+        &mut ir,
+        scan,
+        &mut annotations,
+        &mut unknowns,
+        false,
+    )?;
     Ok((ir, annotations.build(), unknowns))
 }
 
@@ -431,8 +438,7 @@ fn build_metadata_ir(
         &parsed,
         None,
     );
-    crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    crate::native::attach_annotations(ctx, &mut ir, &model, scan, &mut annotations, &mut unknowns)?;
     Ok((ir, annotations.build(), unknowns))
 }
 

@@ -659,6 +659,46 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
 }
 
 #[test]
+fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+
+    let error = NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect_err("opaque payload copy must be budgeted");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.context.operation == "retain NX opaque container payload"
+    ));
+}
+
+#[test]
+fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+
+    let error = NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect_err("invalid preview copy must be budgeted");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.context.operation == "retain NX invalid JPEG preview"
+    ));
+}
+
+#[test]
 fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

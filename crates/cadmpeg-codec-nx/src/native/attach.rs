@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -49,23 +51,26 @@ use super::has_complete_saved_toggle_stream;
 use cadmpeg_ir::native::catalogue::Phase;
 
 pub(crate) fn attach_container_layer(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     typed_native_available: bool,
-) {
-    attach_container_payloads(ir, scan, annotations, unknowns, typed_native_available);
-    attach_indexed_om_unknowns(scan, annotations, unknowns);
+) -> Result<(), CodecError> {
+    attach_container_payloads(ctx, ir, scan, annotations, unknowns, typed_native_available)?;
+    attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
+    Ok(())
 }
 
 fn attach_container_payloads(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     typed_native_available: bool,
-) {
+) -> Result<(), CodecError> {
     let annotation_stream = annotations.stream("nx:container");
     for (ordinal, entry) in scan.container.entries.iter().enumerate() {
         let content = entry.content();
@@ -99,18 +104,20 @@ fn attach_container_payloads(
             offset,
             byte_len,
             sha256: sha256_hex(bytes),
-            data: Some(bytes.to_vec()),
+            data: Some(ctx.copy_retained(bytes, "retain NX opaque container payload", None)?),
             links: Vec::new(),
         });
     }
-    attach_jpeg_preview_assets(ir, scan, annotations, unknowns);
+    attach_jpeg_preview_assets(ctx, ir, scan, annotations, unknowns)?;
+    Ok(())
 }
 
 fn attach_indexed_om_unknowns(
+    ctx: &DecodeContext<'_>,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) {
+) -> Result<(), CodecError> {
     let annotation_stream = annotations.stream("nx:container");
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
@@ -143,21 +150,27 @@ fn attach_indexed_om_unknowns(
                 offset,
                 byte_len: record.bytes.len() as u64,
                 sha256: sha256_hex(record.bytes),
-                data: Some(record.bytes.to_vec()),
+                data: Some(ctx.copy_retained(
+                    record.bytes,
+                    "retain NX indexed object-model record",
+                    None,
+                )?),
                 links: Vec::new(),
             });
         }
     }
+    Ok(())
 }
 
 pub(crate) fn attach(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    attach_container_payloads(ir, scan, annotations, unknowns, true);
+) -> Result<(), CodecError> {
+    attach_container_payloads(ctx, ir, scan, annotations, unknowns, true)?;
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
     let annotation_stream = annotations.stream("nx:container");
     if model.is_empty() && !has_object_sections {
@@ -193,7 +206,7 @@ pub(crate) fn attach(
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(Phase::GroupA, model, annotations);
-    attach_material_texture_assets(ir, model, scan, annotations);
+    attach_material_texture_assets(ctx, ir, model, scan, annotations)?;
     for attribute in &model.om.part_attributes {
         annotations
             .note(&attribute.id, annotation_stream, attribute.source_offset)
@@ -257,7 +270,7 @@ pub(crate) fn attach(
         annotations,
     );
     NATIVE_CATALOGUE.note_phase(Phase::GroupB, model, annotations);
-    attach_indexed_om_unknowns(scan, annotations, unknowns);
+    attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
         for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
             let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));
@@ -335,7 +348,9 @@ pub(crate) fn attach(
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
     namespace.version = namespace.version.max(189);
-    NATIVE_CATALOGUE.emit_all(model, namespace)?;
+    NATIVE_CATALOGUE
+        .emit_all(model, namespace)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok(())
 }
 
@@ -711,11 +726,12 @@ fn resolve_rm_face_color_bindings(
 /// Transfer each independently validated JPEG preview with its exact bounded
 /// container bytes. Invalid entries remain absent from the neutral asset arena.
 fn attach_jpeg_preview_assets(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) {
+) -> Result<(), CodecError> {
     let stream = annotations.stream("nx:container");
     for (ordinal, entry) in scan
         .container
@@ -750,7 +766,7 @@ fn attach_jpeg_preview_assets(
                 offset: source_offset,
                 byte_len: source_byte_len,
                 sha256: sha256_hex(bytes),
-                data: Some(bytes.to_vec()),
+                data: Some(ctx.copy_retained(bytes, "retain NX invalid JPEG preview", None)?),
                 links: Vec::new(),
             });
             continue;
@@ -773,45 +789,54 @@ fn attach_jpeg_preview_assets(
             }),
             media_type: Some("image/jpeg".to_string()),
             content: AssetContent::Embedded {
-                data: bytes.to_vec(),
+                data: ctx.copy_retained(bytes, "retain NX JPEG preview asset", None)?,
             },
             native_ref: Some(native_ref),
         });
     }
+    Ok(())
 }
 
 /// Transfer the complete validated TIFF set atomically.
 fn attach_material_texture_assets(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
-) {
-    let assets = model
-        .om
-        .material_texture_assets
-        .iter()
-        .map(|texture| {
-            let start = usize::try_from(texture.source_offset).ok()?;
-            let byte_len = usize::try_from(texture.byte_len).ok()?;
-            let bytes = scan
-                .container
-                .data
-                .get(start..start.checked_add(byte_len)?)?;
-            (sha256_hex(bytes) == texture.sha256).then_some(Asset {
-                id: AssetId(format!("{}:asset", texture.id)),
-                name: Some(texture.name.clone()),
-                media_type: Some("image/tiff".to_string()),
-                content: AssetContent::Embedded {
-                    data: bytes.to_vec(),
-                },
-                native_ref: Some(texture.id.clone()),
-            })
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(assets) = assets else {
-        return;
-    };
+) -> Result<(), CodecError> {
+    let mut sources = Vec::with_capacity(model.om.material_texture_assets.len());
+    for texture in &model.om.material_texture_assets {
+        let Some(start) = usize::try_from(texture.source_offset).ok() else {
+            return Ok(());
+        };
+        let Some(byte_len) = usize::try_from(texture.byte_len).ok() else {
+            return Ok(());
+        };
+        let Some(end) = start.checked_add(byte_len) else {
+            return Ok(());
+        };
+        let Some(bytes) = scan.container.data.get(start..end) else {
+            return Ok(());
+        };
+        if sha256_hex(bytes) != texture.sha256 {
+            return Ok(());
+        }
+        sources.push((texture, bytes));
+    }
+
+    let mut assets = Vec::with_capacity(sources.len());
+    for (texture, bytes) in sources {
+        assets.push(Asset {
+            id: AssetId(format!("{}:asset", texture.id)),
+            name: Some(texture.name.clone()),
+            media_type: Some("image/tiff".to_string()),
+            content: AssetContent::Embedded {
+                data: ctx.copy_retained(bytes, "retain NX TIFF material asset", None)?,
+            },
+            native_ref: Some(texture.id.clone()),
+        });
+    }
     let stream = annotations.stream("nx:container");
     for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
         annotations
@@ -823,6 +848,7 @@ fn attach_material_texture_assets(
         annotations.derived(&asset.id.0, "native_ref");
     }
     ir.model.assets.extend(assets);
+    Ok(())
 }
 
 fn attach_active_configuration_parameter_values(
