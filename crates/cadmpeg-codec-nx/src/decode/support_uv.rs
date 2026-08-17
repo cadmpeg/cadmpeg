@@ -1127,6 +1127,38 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
         .iter()
         .filter_map(|edge| Some((&edge.id, edge.curve.as_ref()?)))
         .collect::<BTreeMap<_, _>>();
+    let edge_tolerances = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| Some((&edge.id, edge.tolerance?)))
+        .collect::<BTreeMap<_, _>>();
+    let coedge_candidates = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.pcurves.is_empty() && coedge.id.0.starts_with(prefix))
+        .filter_map(|coedge| {
+            let surface = loop_faces
+                .get(&coedge.owner_loop)
+                .and_then(|face| face_surfaces.get(*face))?;
+            let curve = edge_curves.get(&coedge.edge)?;
+            Some((
+                coedge.id.clone(),
+                coedge.edge.clone(),
+                (*curve).clone(),
+                (*surface).clone(),
+                edge_tolerances.get(&coedge.edge).copied(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    if coedge_candidates.is_empty() {
+        return;
+    }
+    let required_keys = coedge_candidates
+        .iter()
+        .map(|(_, _, curve, surface, _)| (curve.clone(), surface.clone()))
+        .collect::<BTreeSet<_>>();
     let mut candidates =
         BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], Option<f64>)>>::new();
     for procedural in &ir.model.procedural_curves {
@@ -1137,9 +1169,11 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
             let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
                 continue;
             };
-            let values = candidates
-                .entry((procedural.curve.clone(), surface.clone()))
-                .or_default();
+            let key = (procedural.curve.clone(), surface.clone());
+            if !required_keys.contains(&key) {
+                continue;
+            }
+            let values = candidates.entry(key).or_default();
             let candidate = (
                 pcurve.clone(),
                 context.parameter_range,
@@ -1153,43 +1187,23 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
 
     let replacements = {
         let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
-        ir.model
-            .coedges
-            .iter()
-            .filter(|coedge| coedge.pcurves.is_empty() && coedge.id.0.starts_with(prefix))
-            .filter_map(|coedge| {
-                let surface = loop_faces
-                    .get(&coedge.owner_loop)
-                    .and_then(|face| face_surfaces.get(*face))?;
-                let curve = edge_curves.get(&coedge.edge)?;
-                let [candidate] = candidates
-                    .get(&((*curve).clone(), (*surface).clone()))?
-                    .as_slice()
-                else {
+        coedge_candidates
+            .into_iter()
+            .filter_map(|(coedge_id, edge_id, curve, surface, edge_tolerance)| {
+                let [candidate] = candidates.get(&(curve, surface.clone()))?.as_slice() else {
                     return None;
                 };
-                let fit_tolerance = candidate.2.or_else(|| {
-                    ir.model
-                        .edges
-                        .iter()
-                        .find(|edge| edge.id == coedge.edge)
-                        .and_then(|edge| edge.tolerance)
-                });
+                let fit_tolerance = candidate.2.or(edge_tolerance);
                 pcurve_matches_edge_range_with_index_and_budget(
                     &model_index,
-                    &coedge.edge,
-                    surface,
+                    &edge_id,
+                    &surface,
                     &candidate.0,
                     None,
                     fit_tolerance,
                     geometry_budget,
                 )
-                .then(|| {
-                    (
-                        coedge.id.clone(),
-                        (candidate.0.clone(), candidate.1, fit_tolerance),
-                    )
-                })
+                .then(|| (coedge_id, (candidate.0.clone(), candidate.1, fit_tolerance)))
             })
             .collect::<Vec<_>>()
     };
