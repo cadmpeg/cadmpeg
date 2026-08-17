@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use super::super::{
-    disc1a_disc12_disc04_face_root_body, disc1a_disc14_disc04_face_root_body,
-    disc1a_disc14_disc0c_face_root_body, disc1a_disc14_disc12_face_root_body, BodyRecord,
-    EntityRecord,
+    disc16_disc14_disc04_face_root_body, disc1a_disc12_disc04_face_root_body,
+    disc1a_disc14_disc04_face_root_body, disc1a_disc14_disc0c_face_root_body,
+    disc1a_disc14_disc12_face_root_body, BodyRecord, EntityRecord,
 };
 use super::{flo2, flo4, index_records, record};
 
@@ -60,7 +60,7 @@ fn assert_body(
 ) {
     let bodies = resolve(&index_records(records));
     let [body] = bodies.as_slice() else {
-        panic!("one keyed disc1a body");
+        panic!("one keyed body");
     };
     assert_eq!(body.attr, 10);
     assert_eq!(body.regions[0].shells[0].attr, 11);
@@ -127,6 +127,21 @@ fn disc14_disc12_chain_owns_disc0e_faces() {
         0x18,
     );
     assert_body(&records, disc1a_disc14_disc12_face_root_body);
+}
+
+#[test]
+fn disc16_disc14_disc04_chain_allows_auxiliary_use_nodes() {
+    let mut records = lattice_with_use(
+        &[(0x16, 2), (0x14, 2), (0x12, 2), (0x10, 1), (0x04, 2)],
+        0x0e,
+        0x18,
+        0x1a,
+    );
+    records.push(flo4(50, 0x1a, [1; 6]));
+    assert_body(&records, disc16_disc14_disc04_face_root_body);
+
+    records[8].refs[2] = 1;
+    assert!(disc16_disc14_disc04_face_root_body(&index_records(&records)).is_empty());
 }
 
 #[test]
