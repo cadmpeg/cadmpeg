@@ -147,4 +147,20 @@ mod tests {
         };
         assert_eq!(boundary.control_points[1].x, 2.0);
     }
+
+    #[test]
+    fn minor_zero_defaults_ratio_and_skips_outer_suffix() {
+        let view = anonymous(0, &[7, 8, 9]);
+        let boundary = anonymous(0, &boundary());
+        let mut content = view;
+        content.extend(boundary);
+        content.extend([0xcc, 0xdd]);
+        let bytes = anonymous(0, &content);
+
+        let detail =
+            decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
+
+        assert_eq!(detail.page_per_model_ratio, 0.0);
+        assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
+    }
 }

@@ -4215,17 +4215,22 @@ geometry; the source object record remains retained for native fidelity.
 
 ### 18.3 Detail views
 
-`ON_DetailView` uses an anonymous chunk with major version 1 and a nonnegative
-minor:
+`ON_DetailView` writers emit an outer anonymous chunk packed version 1.1. The
+reader requires major version 1 and admits nonnegative minors. Its two child
+wrappers are anonymous chunks packed version 1.0:
 
 ```text
 anonymous detail version 1.minor
-  anonymous view-state version 1.minor
+  anonymous view-state version 1.0
     ON_3dmView payload
-  anonymous boundary version 1.minor
+  anonymous boundary version 1.0
     raw ON_NurbsCurve payload
   if minor >= 1: f64 page-per-model ratio
 ```
+
+At outer minor 0 the page-per-model ratio is absent and has value zero. At
+minor 1 and later the ratio follows the boundary child. Bytes after the known
+prefix remain bounded by the enclosing anonymous chunk.
 
 The child declarations independently bound extensible view state and boundary
 geometry. Each child reader consumes its known prefix and skips remaining bytes

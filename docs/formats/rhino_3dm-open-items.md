@@ -233,5 +233,8 @@ the nested children and direct future-minor suffix.
 The view subset is established by `ON_3dmConstructionPlane::Write`/`Read` and
 `ON_3dmViewPosition::Write`/`Read`; view owner tests cover suffixes,
 minor-gated fields, unknown-major defaults, and bound normalization.
+The detail-view boundary is established by `ON_DetailView::Write`/`Read` in
+`opennurbs_detail.cpp`; the owner tests cover the view, boundary, and outer
+suffix locations and the minor-0 ratio default.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.
