@@ -26,8 +26,11 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+const EPS_DOMAIN_REANCHOR: f64 = f64::EPSILON * 64.0;
 
 #[test]
 fn decode_preserves_rational_bspline_weights_and_multiplicities() {
@@ -220,6 +223,43 @@ fn decode_projects_a_counterclockwise_circular_arc() {
 }
 
 #[test]
+fn decode_reanchors_a_circular_arc_at_its_source_start_direction() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(offset_quarter_circle_with_absolute_native_parameters()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D1")
+        .expect("source circular arc");
+    let CurveGeometry::Circle { ref_direction, .. } = &curve.geometry else {
+        panic!("expected a circle carrier");
+    };
+    assert!((ref_direction.x).abs() < EPS_DOMAIN_REANCHOR);
+    assert!((ref_direction.y - 1.0).abs() < EPS_DOMAIN_REANCHOR);
+    let edge = result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.curve
+                .as_ref()
+                .is_some_and(|id| id.0 == "iges:model:curve#D1")
+        })
+        .expect("source circular arc edge");
+    let range = edge.param_range.expect("bounded source circular arc");
+    assert!(range[0].abs() < EPS_DOMAIN_REANCHOR);
+    assert!((range[1] - std::f64::consts::FRAC_PI_2).abs() < EPS_DOMAIN_REANCHOR);
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
 fn decode_accepts_rounded_transformed_circular_arc_frame() {
     let result = IgesCodec
         .decode(
@@ -394,18 +434,26 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
             .decode(&mut Cursor::new(line_file(form)), &DecodeOptions::default())
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), 1);
+        assert_eq!(result.ir().model.curves.len(), usize::from(form == 2));
         assert!(result.ir().model.edges.is_empty());
         assert!(result.ir().model.bodies.is_empty());
-        assert_eq!(
-            result.ir().model.curves[0]
-                .source_object
-                .as_ref()
-                .unwrap()
-                .object_id,
-            "D1"
-        );
-        assert!(result.report().losses.is_empty());
+        if form == 2 {
+            assert_eq!(
+                result.ir().model.curves[0]
+                    .source_object
+                    .as_ref()
+                    .unwrap()
+                    .object_id,
+                "D1"
+            );
+            assert!(result.report().losses.is_empty());
+        } else {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        }
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(native.arenas["entities"][0].fields()["form"], form);
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());

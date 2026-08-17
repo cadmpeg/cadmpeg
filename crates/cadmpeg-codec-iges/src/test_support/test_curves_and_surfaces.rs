@@ -201,6 +201,25 @@ pub(crate) fn offset_quarter_circle_with_absolute_native_parameters() -> Vec<u8>
     ])
 }
 
+pub(crate) fn offset_nurbs_base_without_exact_mapping_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "NURBS".into(),
+            status: "00010000",
+            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,1,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 130,
+            form: 0,
+            label: "OFFSET".into(),
+            status: "00000000",
+            parameters: "130,1,1,0,,,0.5,,,,0,0,1,0,1;".into(),
+        },
+    ])
+}
+
 pub(crate) fn linear_offset_line_file(basis: i64) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);

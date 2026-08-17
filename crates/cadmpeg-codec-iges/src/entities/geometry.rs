@@ -714,6 +714,13 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
+        if entry.form == 1 {
+            losses.push(entity_loss(
+                entry,
+                "semi-bounded line has no neutral ray carrier",
+            ));
+            continue;
+        }
         let stem = format!("D{}", entry.sequence);
         let curve = CurveId(format!("iges:model:curve#{stem}"));
         ir.model.curves.push(Curve {
