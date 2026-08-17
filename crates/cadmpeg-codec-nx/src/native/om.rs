@@ -2198,7 +2198,7 @@ pub fn data_block_control_class_references(
                 .om_sections()
                 .into_iter()
                 .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
-                .flat_map(|(_, section)| section.types)
+                .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
                 .chain(
                     container
                         .indexed_om_sections()

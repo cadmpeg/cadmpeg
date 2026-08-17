@@ -292,6 +292,50 @@ impl<'a> Container<'a> {
 
     /// Locate independently size-framed NX object-model sections.
     pub fn om_sections(&self) -> Vec<(&DirEntry, crate::om::Section<'_>)> {
+        let framed_cache = self.om_section_cache.get_or_init(|| {
+            let Cow::Borrowed(bytes) = &self.data else {
+                return FramedSectionCache { sections: None };
+            };
+            let bytes: &'a [u8] = bytes;
+            let mut sections = Vec::new();
+            let mut operation_label_layouts = Vec::new();
+            for (entry_index, entry) in self.entries.iter().enumerate() {
+                let Some((offset, size)) = entry.file_span else {
+                    continue;
+                };
+                let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size))
+                else {
+                    continue;
+                };
+                let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
+                    continue;
+                };
+                for section in crate::om::sections(payload) {
+                    if let Some(record_area_offset) = section.record_area_offset {
+                        operation_label_layouts.push((
+                            entry_index,
+                            record_area_offset,
+                            section.operation_label_layouts(),
+                        ));
+                    }
+                    sections.push((entry_index, section));
+                }
+            }
+            let _ = self.om_operation_label_layouts.set(operation_label_layouts);
+            FramedSectionCache {
+                sections: Some(sections),
+            }
+        });
+        if let Some(sections) = framed_cache.sections.as_ref() {
+            return sections
+                .iter()
+                .filter_map(|(entry_index, section)| {
+                    self.entries
+                        .get(*entry_index)
+                        .map(|entry| (entry, section.clone()))
+                })
+                .collect();
+        }
         let cached_operation_label_layouts = self.om_operation_label_layouts.get_or_init(|| {
             let mut layouts = Vec::new();
             for (entry_index, entry) in self.entries.iter().enumerate() {
@@ -739,6 +783,8 @@ pub struct Container<'a> {
     /// Cached operation-label layouts for size-framed object-model sections.
     pub(crate) om_operation_label_layouts:
         OnceLock<Vec<(usize, usize, Vec<crate::om::OperationLabelLayout>)>>,
+    /// Cached size-framed object-model sections when the container borrows its input.
+    pub(crate) om_section_cache: OnceLock<FramedSectionCache<'a>>,
 }
 
 /// Parsed indexed sections retained when their source bytes are borrowed from
@@ -748,6 +794,14 @@ pub struct Container<'a> {
 pub(crate) struct IndexedSectionCache<'a> {
     layouts: Vec<(usize, crate::om::IndexedSectionLayout)>,
     materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>>,
+}
+
+/// Parsed size-framed sections retained when their source bytes are borrowed
+/// from the container input. Owned test inputs use the existing materialization
+/// path because their bytes do not have the container's input lifetime.
+#[derive(Debug, Clone)]
+pub(crate) struct FramedSectionCache<'a> {
+    sections: Option<Vec<(usize, crate::om::Section<'a>)>>,
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
@@ -846,6 +900,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         entries,
         indexed_section_layouts: OnceLock::new(),
         om_operation_label_layouts: OnceLock::new(),
+        om_section_cache: OnceLock::new(),
     })
 }
 

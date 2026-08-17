@@ -337,6 +337,7 @@ mod tests {
                 entries: Vec::new(),
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_operation_label_layouts: std::sync::OnceLock::new(),
+                om_section_cache: std::sync::OnceLock::new(),
             },
             streams: vec![crate::parasolid::Stream {
                 file_offset: 0,

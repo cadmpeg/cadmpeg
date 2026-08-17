@@ -1202,15 +1202,15 @@ pub struct Section<'a> {
     /// Complete section length including its 16-byte header.
     pub byte_len: usize,
     /// Class declarations in the section's contiguous type registry.
-    pub types: Vec<TypeDefinition<'a>>,
+    pub types: Arc<[TypeDefinition<'a>]>,
     /// Member declarations in the section's field registry.
-    pub fields: Vec<FieldDefinition<'a>>,
+    pub fields: Arc<[FieldDefinition<'a>]>,
     /// Absolute offset of the section's internally pointed record area.
     pub record_area_offset: Option<usize>,
     /// Exact record-area bytes, including its 12-byte control prefix.
     pub record_area: Option<&'a [u8]>,
     /// Operation labels decoded while the section's record area is framed.
-    cached_operation_labels: Vec<OperationLabel<'a>>,
+    cached_operation_labels: Arc<[OperationLabel<'a>]>,
 }
 
 /// A feature operation name in a size-framed feature-history record area.
@@ -2346,7 +2346,7 @@ impl<'a> Section<'a> {
 
     /// Decode strictly framed operation labels from the pointed record area.
     pub fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
-        self.cached_operation_labels.clone()
+        self.cached_operation_labels.to_vec()
     }
 
     /// Return the validated operation-label layouts for container caching.
@@ -6210,11 +6210,11 @@ pub(crate) fn sections_with_operation_label_layouts<'a>(
         out.push(Section {
             offset,
             byte_len: end - offset,
-            types,
-            fields,
+            types: types.into(),
+            fields: fields.into(),
             record_area_offset,
             record_area,
-            cached_operation_labels,
+            cached_operation_labels: cached_operation_labels.into(),
         });
         at = end;
     }

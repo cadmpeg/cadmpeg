@@ -57,7 +57,7 @@ fn container_parses_header_and_directory() {
 fn container_cached_operation_labels_preserve_section_materialization() {
     let payload = size_framed_om_section_with_repeated_operations(2);
     let container = Container {
-        data: payload.clone().into(),
+        data: payload.as_slice().into(),
         version: 0,
         file_tag: 0,
         footer_offset: 0,
@@ -71,18 +71,25 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_operation_label_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
     };
     let direct = crate::om::sections(&payload);
     let cached = container.om_sections();
     assert_eq!(cached.len(), direct.len());
     assert!(container.om_operation_label_layouts.get().is_some());
+    assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
         assert_eq!(entry.name, "/Root/om");
         assert_eq!(section, expected);
         assert_eq!(section.operation_labels(), expected.operation_labels());
         assert_eq!(section.operation_records(), expected.operation_records());
     }
-    assert_eq!(container.om_sections(), cached);
+    let repeated = container.om_sections();
+    assert_eq!(repeated, cached);
+    assert!(std::sync::Arc::ptr_eq(
+        &cached[0].1.types,
+        &repeated[0].1.types
+    ));
 }
 
 #[test]
