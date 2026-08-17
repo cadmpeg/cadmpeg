@@ -5791,6 +5791,15 @@ flags, target point, camera-frame validity, and three dimensionless view-scale
 values. Camera locations, targets, and frustum coordinates are length values.
 Camera axes and view scale are not scaled.
 
+The viewport writer emits packed version 1.5 in every archive. The reader
+requires major version 1 for typed viewport fields and reads the viewport UUID
+at minor 1, the five camera and frustum locks at minor 2, the target point at
+minor 3, camera-frame validity at minor 4, and the three view-scale values at
+minor 5. Remaining bytes are skipped at the `TCODE_VIEW_VIEWPORT` child
+boundary. CADIR decision: a viewport with another major remains in the
+retained view child without typed viewport fields; no future-major field is
+inferred from the packed prefix.
+
 A saved or active view list has this body:
 
 ```text

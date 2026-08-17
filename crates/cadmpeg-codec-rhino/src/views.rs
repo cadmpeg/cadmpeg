@@ -1182,6 +1182,7 @@ mod tests {
         for value in [1.0_f64, 2.0, 3.0] {
             bytes.extend(value.to_le_bytes());
         }
+        bytes.extend([0xfa, 0xfb, 0xfc]);
         bytes
     }
 
