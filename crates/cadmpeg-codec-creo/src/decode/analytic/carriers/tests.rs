@@ -245,6 +245,47 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
 }
 
 #[test]
+fn parameter_loop_classifier_orders_unique_outer() {
+    let outer = crate::topology::Loop {
+        face_id: 5,
+        half_edges: (0..4)
+            .map(|index| crate::topology::HalfEdgeId {
+                curve_id: 10 + index,
+                side: 0,
+            })
+            .collect(),
+    };
+    let inner = crate::topology::Loop {
+        face_id: 5,
+        half_edges: (0..4)
+            .map(|index| crate::topology::HalfEdgeId {
+                curve_id: 20 + index,
+                side: 0,
+            })
+            .collect(),
+    };
+    let outer_polygon = vec![[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+    let inner_polygon = vec![[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+
+    let ordered = super::ordered_parameter_face_loops(
+        vec![&inner, &outer],
+        &[inner_polygon.clone(), outer_polygon.clone()],
+    )
+    .expect("one parameter-space outer loop");
+    assert_eq!(ordered[0].half_edges[0].curve_id, 10);
+    assert_eq!(ordered[1].half_edges[0].curve_id, 20);
+
+    assert!(super::ordered_parameter_face_loops(
+        vec![&outer, &inner],
+        &[
+            outer_polygon,
+            vec![[3.0, 3.0], [4.0, 3.0], [4.0, 4.0], [3.0, 4.0]]
+        ],
+    )
+    .is_none());
+}
+
+#[test]
 fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces

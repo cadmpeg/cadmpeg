@@ -513,19 +513,37 @@ fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> 
         })
 }
 
-pub fn ordered_planar_face_loops<'a>(
-    loops: Vec<&'a crate::topology::Loop>,
-    plane: PlaneEquation,
-    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
-    solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    if loops.len() == 1 {
-        return Some(loops);
+fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
+    if polygon.len() < 3 || polygon.iter().flatten().any(|value| !value.is_finite()) {
+        return false;
     }
-    let polygons = loops
+    let area_twice = (0..polygon.len())
+        .map(|index| {
+            let first = polygon[index];
+            let second = polygon[(index + 1) % polygon.len()];
+            first[0].mul_add(second[1], -(first[1] * second[0]))
+        })
+        .sum::<f64>();
+    let scale = polygon
         .iter()
-        .map(|lp| projected_loop_polygon(lp, plane, incidence, solved_vertices))
-        .collect::<Option<Vec<_>>>()?;
+        .flat_map(|point| point.iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    area_twice.abs() > EPS_NEAR_ZERO * scale * scale
+}
+
+fn ordered_contained_face_loops<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    polygons: &[Vec<[f64; 2]>],
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    if loops.len() < 2
+        || loops.len() != polygons.len()
+        || polygons
+            .iter()
+            .any(|polygon| !valid_parameter_polygon(polygon))
+    {
+        return None;
+    }
     let outer = polygons
         .iter()
         .enumerate()
@@ -548,6 +566,32 @@ pub fn ordered_planar_face_loops<'a>(
             .filter_map(|(index, lp)| (index != *outer).then_some(lp)),
     );
     Some(ordered)
+}
+
+pub fn ordered_planar_face_loops<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    plane: PlaneEquation,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    if loops.len() == 1 {
+        return Some(loops);
+    }
+    let polygons = loops
+        .iter()
+        .map(|lp| projected_loop_polygon(lp, plane, incidence, solved_vertices))
+        .collect::<Option<Vec<_>>>()?;
+    ordered_contained_face_loops(loops, &polygons)
+}
+
+pub fn ordered_parameter_face_loops<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    polygons: &[Vec<[f64; 2]>],
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    if loops.len() == 1 {
+        return Some(loops);
+    }
+    ordered_contained_face_loops(loops, polygons)
 }
 
 pub fn face_boundary_plane(

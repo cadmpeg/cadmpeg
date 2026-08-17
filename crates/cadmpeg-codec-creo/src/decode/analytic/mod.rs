@@ -14,9 +14,9 @@ mod vertices;
 #[allow(unused_imports)]
 pub(super) use carriers::{
     face_boundary_plane, geometry_section_record, native_face_orientations, ordered_face_loops,
-    ordered_planar_face_loops, placed_carriers, polygon_strictly_contains, projected_loop_polygon,
-    retain_unresolved_visible_carriers, rowless_round_face_orientations,
-    transfer_topology_bound_planes,
+    ordered_parameter_face_loops, ordered_planar_face_loops, placed_carriers,
+    polygon_strictly_contains, projected_loop_polygon, retain_unresolved_visible_carriers,
+    rowless_round_face_orientations, transfer_topology_bound_planes,
 };
 #[allow(unused_imports)]
 pub(super) use edges::{

@@ -10,7 +10,8 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::{
-    component_is_closed, split_neutral_component_shells, transfer_native_brep, NeutralShellSpec,
+    component_is_closed, native_parameter_loop_polygon, ordered_native_parameter_face_loops,
+    split_neutral_component_shells, transfer_native_brep, NeutralShellSpec,
 };
 
 #[test]
@@ -149,6 +150,85 @@ fn closed_component_counts_two_uses_of_one_face() {
         &half_edges,
         &[5],
     ));
+}
+
+#[test]
+fn native_parameter_loops_order_non_planar_cylindrical_face() {
+    let surface = SurfaceGeometry::Cylinder {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 2.0,
+    };
+    let make_loop = |first_curve| crate::topology::Loop {
+        face_id: 5,
+        half_edges: (0_u32..4)
+            .map(|index| crate::topology::HalfEdgeId {
+                curve_id: first_curve + index,
+                side: 0,
+            })
+            .collect(),
+    };
+    let outer = make_loop(10);
+    let inner = make_loop(20);
+    let outer_polygon = [[0.0, 0.0], [1.0, 0.0], [1.0, 4.0], [0.0, 4.0]];
+    let inner_polygon = [[0.25, 1.0], [0.75, 1.0], [0.75, 3.0], [0.25, 3.0]];
+    let mut bindings = Vec::new();
+    let mut solved_vertices = BTreeMap::new();
+    let mut native_pcurves = BTreeMap::<(u32, u32), Vec<([[f64; 2]; 2], usize)>>::new();
+    for (base_vertex, (lp, polygon)) in [
+        (1_u32, (&outer, outer_polygon)),
+        (5_u32, (&inner, inner_polygon)),
+    ] {
+        for index in 0..4 {
+            let half_edge = lp.half_edges[index];
+            let offset = u32::try_from(index).expect("four boundary edges");
+            let next_offset = u32::try_from((index + 1) % 4).expect("four boundary edges");
+            let start_vertex_id = base_vertex + offset;
+            let end_vertex_id = base_vertex + next_offset;
+            let start_uv = polygon[index];
+            let end_uv = polygon[(index + 1) % 4];
+            let point = cadmpeg_ir::eval::surface_point(&surface, start_uv[0], start_uv[1])
+                .expect("analytic cylinder endpoint");
+            solved_vertices.insert(start_vertex_id, [point.x, point.y, point.z]);
+            bindings.push(crate::topology::HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id,
+                end_vertex_id: Some(end_vertex_id),
+            });
+            native_pcurves
+                .entry((half_edge.curve_id, 5))
+                .or_default()
+                .push(([start_uv, end_uv], 0));
+        }
+    }
+    let incidence = bindings
+        .iter()
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
+
+    assert_eq!(
+        native_parameter_loop_polygon(
+            &outer,
+            5,
+            &surface,
+            &incidence,
+            &solved_vertices,
+            &native_pcurves,
+        ),
+        Some(outer_polygon.into_iter().collect())
+    );
+    let ordered = ordered_native_parameter_face_loops(
+        vec![&inner, &outer],
+        5,
+        &surface,
+        &incidence,
+        &solved_vertices,
+        &native_pcurves,
+    )
+    .expect("one parameter-space outer loop");
+    assert_eq!(ordered[0].half_edges[0].curve_id, 10);
+    assert_eq!(ordered[1].half_edges[0].curve_id, 20);
 }
 
 #[test]

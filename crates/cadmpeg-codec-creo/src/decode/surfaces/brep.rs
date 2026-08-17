@@ -23,7 +23,7 @@ use super::super::analytic::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
     full_periodic_nurbs_edge_parameter_range, geometry_section_record, meridian_circle_pcurve,
     native_face_orientations, nonperiodic_conic_edge_parameter_range, ordered_face_loops,
-    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
+    ordered_parameter_face_loops, orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
     pcurve_backed_periodic_conic_parameter_range, placed_carriers, planar_curve_pcurve,
     ruled_generator_line_pcurve, solved_topological_vertices,
     surface_of_revolution_parallel_pcurve, unique_oriented_native_pcurve, CarrierEquation,
@@ -34,6 +34,8 @@ use super::super::sweep::line_pcurve;
 use super::super::uniqueness::exactly_one;
 
 use super::fc05_model_frame;
+
+const EPS_PARAMETER_AGREE: f64 = 1e-9;
 
 #[derive(Debug, PartialEq, Eq)]
 struct NeutralShellSpec {
@@ -125,6 +127,81 @@ fn component_is_closed(
                 .iter()
                 .all(|face_id| *face_id != 0 && faces.contains(face_id))
     })
+}
+
+fn parameter_points_agree(first: [f64; 2], second: [f64; 2]) -> bool {
+    let scale = first
+        .into_iter()
+        .chain(second)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    first
+        .into_iter()
+        .zip(second)
+        .all(|(first, second)| (first - second).abs() <= EPS_PARAMETER_AGREE * scale)
+}
+
+fn native_parameter_loop_polygon(
+    lp: &crate::topology::Loop,
+    face_id: u32,
+    surface: &SurfaceGeometry,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    native_pcurves: &NativePcurveCandidates,
+) -> Option<Vec<[f64; 2]>> {
+    let segments = lp
+        .half_edges
+        .iter()
+        .map(|half_edge| {
+            let binding = incidence.get(half_edge)?;
+            let end_vertex_id = binding.end_vertex_id?;
+            let candidates = native_pcurves.get(&(half_edge.curve_id, face_id))?;
+            let traversal = [
+                solved_vertices.get(&binding.start_vertex_id).copied()?,
+                solved_vertices.get(&end_vertex_id).copied()?,
+            ];
+            unique_oriented_native_pcurve(surface, candidates, traversal)
+                .map(|(endpoints, _)| endpoints)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if segments.len() < 3
+        || segments
+            .iter()
+            .flatten()
+            .flatten()
+            .any(|value| !value.is_finite())
+        || segments.iter().enumerate().any(|(index, segment)| {
+            let next = segments[(index + 1) % segments.len()];
+            !parameter_points_agree(segment[1], next[0])
+        })
+    {
+        return None;
+    }
+    Some(segments.into_iter().map(|segment| segment[0]).collect())
+}
+
+fn ordered_native_parameter_face_loops<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    face_id: u32,
+    surface: &SurfaceGeometry,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    native_pcurves: &NativePcurveCandidates,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    let polygons = loops
+        .iter()
+        .map(|lp| {
+            native_parameter_loop_polygon(
+                lp,
+                face_id,
+                surface,
+                incidence,
+                solved_vertices,
+                native_pcurves,
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    ordered_parameter_face_loops(loops, &polygons)
 }
 
 #[cfg(test)]
@@ -259,11 +336,28 @@ pub(in super::super) fn transfer_native_brep(
                 })
                 .then_some(())?;
             let ordered = ordered_face_loops(
-                loops,
+                loops.clone(),
                 planes.get(&face_id).copied(),
                 &incidence,
                 &solved_vertices,
-            )?;
+            )
+            .or_else(|| {
+                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                let surface = exactly_one(
+                    ir.model
+                        .surfaces
+                        .iter()
+                        .filter(|candidate| candidate.id == surface_id),
+                )?;
+                ordered_native_parameter_face_loops(
+                    loops,
+                    face_id,
+                    &surface.geometry,
+                    &incidence,
+                    &solved_vertices,
+                    &native_pcurves,
+                )
+            })?;
             Some((face_id, ordered))
         })
         .collect::<BTreeMap<_, _>>();
