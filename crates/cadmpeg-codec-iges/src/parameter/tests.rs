@@ -136,3 +136,127 @@ fn parameter_card_count_must_equal_the_owned_contiguous_range() {
         assert!(error.to_string().contains(expected), "{error}");
     }
 }
+
+#[test]
+fn entity_table_boundary_beats_pointer_shaped_line_coordinates() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(ambiguous_trailing_pointer_boundary_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let line = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+
+    assert_eq!(
+        line.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#3"])
+    );
+    assert_eq!(line.fields()["references"].as_array().unwrap().len(), 1);
+    assert_eq!(line.fields()["references"][0]["parameter_index"], 8);
+    assert_eq!(line.fields()["references"][0]["raw_pointer"], 3);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("fully valid trailing pointer-group boundaries")
+    }));
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn unknown_entity_with_ambiguous_suffix_is_not_guessed() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP-A".into(),
+                    status: "00000000",
+                    parameters: "402,1,5;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP-B".into(),
+                    status: "00000000",
+                    parameters: "402,1,5;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 999,
+                    form: 0,
+                    label: "UNKNOWN".into(),
+                    status: "00000000",
+                    parameters: "999,7,3,3,1,3,3,1,3,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let unknown = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+
+    assert!(unknown.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.message
+                .contains("fully valid trailing pointer-group boundaries")
+        })
+        .unwrap();
+    assert_eq!(
+        loss.provenance.as_ref().unwrap().tag.as_deref(),
+        Some("directory_entry:D5")
+    );
+}
+
+#[test]
+fn exact_entity_boundary_retains_an_unresolved_pointer() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 110,
+                form: 0,
+                label: "DANGLING".into(),
+                status: "00000000",
+                parameters: "110,0,0,0,1,0,0,1,99,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let line = &native.arenas["entities"][0];
+
+    assert!(line.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let reference = &line.fields()["references"][0];
+    assert_eq!(reference["parameter_index"], 8);
+    assert_eq!(reference["raw_pointer"], 99);
+    assert_eq!(reference["resolution"], "dangling");
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("pointer 99"))
+        .unwrap();
+    assert_eq!(
+        loss.provenance.as_ref().unwrap().tag.as_deref(),
+        Some("D1:parameter[8]")
+    );
+}

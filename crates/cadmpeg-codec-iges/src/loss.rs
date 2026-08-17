@@ -41,6 +41,8 @@ pub enum IgesLossCode {
     EntityNotProjected,
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved,
+    /// More than one unregistered trailing pointer-group boundary is valid.
+    AmbiguousTrailingPointerGroups,
     /// Directory display, font, or color data was not projected.
     DisplayDataNotProjected,
     /// A Type 102 composite has no exact concatenated carrier.
@@ -64,6 +66,7 @@ impl IgesLossCode {
         Self::EntityOutsideEnvelope,
         Self::EntityNotProjected,
         Self::PointerUnresolved,
+        Self::AmbiguousTrailingPointerGroups,
         Self::DisplayDataNotProjected,
         Self::CompositeCarrierDegraded,
         Self::PreservedSourceUnavailable,
@@ -82,6 +85,7 @@ impl IgesLossCode {
             Self::EntityOutsideEnvelope => "entity.outside-envelope",
             Self::EntityNotProjected => "entity.not-projected",
             Self::PointerUnresolved => "graph.pointer-unresolved",
+            Self::AmbiguousTrailingPointerGroups => "parameter.ambiguous-trailing-pointer-groups",
             Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
             Self::CompositeCarrierDegraded => "curve.composite-carrier-degraded",
             Self::PreservedSourceUnavailable => "source.preserved-image-unavailable",
@@ -103,6 +107,7 @@ impl IgesLossCode {
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
             | Self::PointerUnresolved
+            | Self::AmbiguousTrailingPointerGroups
             | Self::DisplayDataNotProjected
             | Self::CompositeCarrierDegraded
             | Self::PassthroughRecordOmitted => Severity::Warning,
@@ -119,6 +124,7 @@ impl IgesLossCode {
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::AmbiguousTrailingPointerGroups => LossTaxonomy::DecodeDiagnostic,
             Self::DisplayDataNotProjected => LossTaxonomy::MaterialNotTransferred,
             Self::CompositeCarrierDegraded => LossTaxonomy::GeometryNotTransferred,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
@@ -171,6 +177,7 @@ mod tests {
                 "entity.outside-envelope",
                 "entity.not-projected",
                 "graph.pointer-unresolved",
+                "parameter.ambiguous-trailing-pointer-groups",
                 "presentation.display-data-not-projected",
                 "curve.composite-carrier-degraded",
                 "source.preserved-image-unavailable",

@@ -134,11 +134,11 @@ from a conformant file.
 
 **Question.** Where does an entity's own parameter list stop and its trailing pointer groups start?
 
-**Known.** `parameter.rs:153-161` scans every token position and accepts the earliest candidate for which the count and pointer groups are structurally valid. `native.rs:1362-1371` applies the same earliest-candidate rule when only an association group is available. The selected boundary controls entity parameters and Type 406 ownership.
+**Known.** IGES 5.3 §§2.2.4.5.1–2 state that the type number precedes Index 1, that the entity type/form table supplies the last specified parameter number `NV`, and that the two counted pointer groups follow those parameters before the record delimiter. `parameter.rs:153-273` now uses the published Type 110 Form 0–2 six-coordinate boundary and accepts an unregistered boundary only when exactly one complete candidate is valid. `native.rs:1362-1378` no longer selects an arbitrary invalid back-pointer candidate when multiple possibilities remain. The selected boundary controls entity parameters and Type 406 ownership.
 
-**Need.** We need per-entity parameter arity, or a source rule that makes the boundary unique. If a candidate group contains an unresolved member, the group must remain visible as a finding instead of disappearing through candidate selection.
+**Need.** We need the exact `NV` formula for each remaining supported entity/form pair, including optional or defaulted entity fields. Type 116 Form 0 still needs a witness that distinguishes its optional display-pointer field from an empty first group and a property-only suffix. A candidate with multiple valid unregistered boundaries must remain raw and produce the structured ambiguity loss. An unresolved pointer at a proven boundary remains a parameter reference and graph finding; unresolved candidates without a proven boundary remain part of the remaining entity-specific work.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `fdfda1cff` preserved malformed trailing groups but did not establish the boundary. The current `iges.md` wording promotes the earliest structurally closed suffix to a format rule without independent evidence. If an entity contains an earlier token suffix that also satisfies the pointer shape, the decoder can assign the wrong parameters and property owner.
+**Note.** Closure audit 2026-08-10: reopened. The synthesized Type 110 witness in `ambiguous_trailing_pointer_boundary_file` has one Type 402 Form 7 entry, one Type 402 Form 1 entry, and line parameters `110,7,3,3,1,3,3,1,3,0;`; the old earliest-candidate decoder assigned seven false association links, while the published six-coordinate table puts the suffix at token 7. The boundary, ambiguity loss, and dangling-pointer retention each have owner tests. Type 116 remains open until its optional/default encoding is independently established.
 
 ### PH-04. A physical line longer than 80 bytes
 

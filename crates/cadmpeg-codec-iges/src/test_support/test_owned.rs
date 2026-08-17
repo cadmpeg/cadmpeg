@@ -16,6 +16,32 @@ pub(crate) fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
     owned_test_file_with_colors(entities, &[])
 }
 
+pub(crate) fn ambiguous_trailing_pointer_boundary_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 7,
+            label: "GROUP-A".into(),
+            status: "00000000",
+            parameters: "402,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 1,
+            label: "GROUP-B".into(),
+            status: "00000000",
+            parameters: "402,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00000000",
+            parameters: "110,7,3,3,1,3,3,1,3,0;".into(),
+        },
+    ])
+}
+
 pub(crate) fn owned_test_file_with_colors(
     entities: &[OwnedTestEntity],
     colors: &[(u32, i64)],

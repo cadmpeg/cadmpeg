@@ -117,6 +117,10 @@ fn decode_with_occurrence_limits(
         .map(|record| record.tokens.len() as u64)
         .sum();
     charge_work(ctx, parameter_tokens, "iges_parameter_parse")?;
+    let directory_by_sequence = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
     let mut references = graph::build(&directory);
     let mut source_fidelity = SourceFidelity::default();
     source_fidelity.retained_records.push(RetainedSourceRecord {
@@ -169,6 +173,21 @@ fn decode_with_occurrence_limits(
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
     losses.extend(graph::losses(&references, &scan, &parameters));
+    losses.extend(parameters.iter().filter_map(|record| {
+        let count = parameter::ambiguous_trailing_pointer_group_count(
+            record,
+            &directory_by_sequence,
+        )?;
+        let entry = directory_by_sequence.get(&record.directory_sequence)?;
+        Some(
+            IgesLossCode::AmbiguousTrailingPointerGroups
+                .note(format!(
+                    "IGES Directory Entry D{} has {count} fully valid trailing pointer-group boundaries; entity-specific parameter arity is required",
+                    entry.sequence
+                ))
+                .with_provenance(entry.loss_provenance()),
+        )
+    }));
     if product_occurrence_expansion.output_truncated {
         losses.push(
             IgesLossCode::OccurrenceExpansionOutputTruncated

@@ -1366,10 +1366,15 @@ pub(crate) fn store(
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
                 parameters.and_then(|record| {
-                    trailing_pointer_group_candidates(record, &entries)
+                    let candidates = trailing_pointer_group_candidates(record, &entries);
+                    if candidates.iter().any(|groups| groups.fully_valid) {
+                        return None;
+                    }
+                    let mut association_candidates = candidates
                         .into_iter()
-                        .filter(|groups| !groups.association_pointers.is_empty())
-                        .min_by_key(|groups| groups.token_start)
+                        .filter(|groups| !groups.association_pointers.is_empty());
+                    let candidate = association_candidates.next()?;
+                    association_candidates.next().is_none().then_some(candidate)
                 })
             })
             .flatten();

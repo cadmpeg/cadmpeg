@@ -154,18 +154,43 @@ pub(crate) fn trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TrailingPointerGroups> {
-    trailing_pointer_group_candidates(record, directory)
+    let specified_end = specified_parameter_end(record, directory);
+    let candidates = trailing_pointer_group_candidates(record, directory);
+    let valid = candidates
+        .iter()
+        .filter(|groups| groups.fully_valid)
+        .collect::<Vec<_>>();
+    match valid.as_slice() {
+        [groups] => Some((*groups).clone()),
+        [] if specified_end.is_some() => match candidates.as_slice() {
+            [groups] => Some(groups.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+pub(crate) fn ambiguous_trailing_pointer_group_count(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<usize> {
+    let count = trailing_pointer_group_candidates(record, directory)
         .into_iter()
         .filter(|groups| groups.fully_valid)
-        .min_by_key(|groups| groups.token_start)
+        .count();
+    (count > 1).then_some(count)
 }
 
 pub(crate) fn trailing_pointer_group_candidates(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Vec<TrailingPointerGroups> {
+    let specified_end = specified_parameter_end(record, directory);
     (1..record.tokens.len())
         .filter_map(|association_count_index| {
+            if specified_end.is_some_and(|end| end != association_count_index) {
+                return None;
+            }
             let association_count = record
                 .integer(association_count_index)
                 .and_then(|value| usize::try_from(value).ok())?;
@@ -239,6 +264,17 @@ pub(crate) fn trailing_pointer_group_candidates(
             })
         })
         .collect()
+}
+
+fn specified_parameter_end(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<usize> {
+    let entry = directory.get(&record.directory_sequence)?;
+    match (entry.entity_type, entry.form) {
+        (110, 0..=2) => Some(7),
+        _ => None,
+    }
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
