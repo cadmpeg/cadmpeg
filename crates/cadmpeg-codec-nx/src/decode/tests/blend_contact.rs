@@ -974,6 +974,17 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     });
     let expected = Point2::new(8.0, 0.35);
     let point = crate::decode::blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
+    let boundary_without_contact_chart =
+        crate::decode::blend_surface_point(&ir, &surface, expected.u, 1.0)
+            .expect("analytic supports provide a blend boundary without a spine pcurve");
+    let boundary_without_contact_parameters = crate::decode::blend_surface_parameters(
+        &ir,
+        &surface,
+        boundary_without_contact_chart,
+        None,
+    )
+    .expect("blend inverse evaluates an analytic-support boundary");
+    assert!((0.0..=1.0).contains(&boundary_without_contact_parameters.v));
 
     assert_eq!(
         crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),

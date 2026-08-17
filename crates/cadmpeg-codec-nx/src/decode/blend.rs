@@ -635,10 +635,16 @@ pub(crate) fn blend_surface_point_inner_with_index(
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
     if v.to_bits() == 0.0f64.to_bits() {
-        return blend_boundary_point_with_index(index, surface, u, 0, depth + 1);
+        return blend_boundary_point_with_index(index, surface, u, 0, depth + 1).or_else(|| {
+            let frame = blend_surface_frame_from_spine_with_index(index, surface, u, depth + 1)?;
+            Some(blend_surface_point_from_frame(frame, v))
+        });
     }
     if v.to_bits() == 1.0f64.to_bits() {
-        return blend_boundary_point_with_index(index, surface, u, 1, depth + 1);
+        return blend_boundary_point_with_index(index, surface, u, 1, depth + 1).or_else(|| {
+            let frame = blend_surface_frame_from_spine_with_index(index, surface, u, depth + 1)?;
+            Some(blend_surface_point_from_frame(frame, v))
+        });
     }
     let frame = blend_surface_frame_from_spine_with_index(index, surface, u, depth + 1)?;
     Some(blend_surface_point_from_frame(frame, v))
@@ -654,10 +660,28 @@ pub(crate) fn blend_surface_point_inner_with_index_and_budget(
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
     if v.to_bits() == 0.0f64.to_bits() {
-        return blend_boundary_point_with_index(index, surface, u, 0, depth + 1);
+        return blend_boundary_point_with_index(index, surface, u, 0, depth + 1).or_else(|| {
+            let frame = blend_surface_frame_with_index_and_budget(
+                index,
+                surface,
+                u,
+                depth + 1,
+                geometry_budget,
+            )?;
+            Some(blend_surface_point_from_frame(frame, v))
+        });
     }
     if v.to_bits() == 1.0f64.to_bits() {
-        return blend_boundary_point_with_index(index, surface, u, 1, depth + 1);
+        return blend_boundary_point_with_index(index, surface, u, 1, depth + 1).or_else(|| {
+            let frame = blend_surface_frame_with_index_and_budget(
+                index,
+                surface,
+                u,
+                depth + 1,
+                geometry_budget,
+            )?;
+            Some(blend_surface_point_from_frame(frame, v))
+        });
     }
     let frame =
         blend_surface_frame_with_index_and_budget(index, surface, u, depth + 1, geometry_budget)?;
@@ -874,7 +898,16 @@ fn blend_surface_frame_from_spine_with_index(
         center,
         radius,
         depth + 1,
-    )?;
+    )
+    .or_else(|| {
+        analytic_surface_contact_direction_with_index(
+            index,
+            &supports[0],
+            center,
+            radius,
+            depth + 1,
+        )
+    })?;
     let second = spine_contact_direction_with_index(
         index,
         &supports[1],
@@ -883,8 +916,46 @@ fn blend_surface_frame_from_spine_with_index(
         center,
         radius,
         depth + 1,
-    )?;
+    )
+    .or_else(|| {
+        analytic_surface_contact_direction_with_index(
+            index,
+            &supports[1],
+            center,
+            radius,
+            depth + 1,
+        )
+    })?;
     Some((center, tangent, first, second, radius))
+}
+
+fn analytic_surface_contact_direction_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    center: Point3,
+    radius: f64,
+    depth: usize,
+) -> Option<Vector3> {
+    (depth < 32).then_some(())?;
+    let carrier = index.surfaces(surface.0.as_str())?;
+    let parameters = match &carrier.geometry {
+        SurfaceGeometry::Plane { .. }
+        | SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Torus { .. } => analytic_surface_parameters(&carrier.geometry, center)?,
+        _ => return None,
+    };
+    let contact = model_surface_point_by_id(index, surface, parameters.u, parameters.v)?;
+    let offset = Vector3::new(
+        contact.x - center.x,
+        contact.y - center.y,
+        contact.z - center.z,
+    );
+    let magnitude = offset.norm();
+    (radius.is_finite() && radius > 0.0 && magnitude.is_finite() && magnitude > 0.0)
+        .then(|| unit_vector(offset))
+        .flatten()
 }
 
 pub(crate) fn blend_surface_frame_with_index_and_budget(
