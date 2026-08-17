@@ -759,6 +759,53 @@ fn infers_independent_dimensions_for_untyped_solve_variables() {
 }
 
 #[test]
+fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
+    let block = CurveExpressionSolveBlock {
+        equations: vec![CurveExpressionEquation {
+            left: "sqrt(area)".to_owned(),
+            right: "length".to_owned(),
+            dependencies: vec!["area".to_owned(), "length".to_owned()],
+            offset: 0,
+        }],
+        assignments: Vec::new(),
+        variables: vec!["area".to_owned()],
+        solutions: vec![None],
+        offset: 0,
+        for_offset: 1,
+    };
+    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(2.0))]);
+
+    assert_eq!(
+        infer_solve_variable_dimensions(
+            &block,
+            &values,
+            &[None],
+            RelationEvaluationContext::default(),
+        ),
+        Some(vec![RelationDimension {
+            length: 2,
+            mass: 0,
+            time: 0,
+            angle: 0,
+            temperature: 0,
+        }]),
+    );
+
+    let mut non_integral = block;
+    non_integral.equations[0].left = "area".to_owned();
+    non_integral.equations[0].right = "sqrt(length)".to_owned();
+    assert_eq!(
+        infer_solve_variable_dimensions(
+            &non_integral,
+            &values,
+            &[None],
+            RelationEvaluationContext::default(),
+        ),
+        None,
+    );
+}
+
+#[test]
 fn preserves_reserved_quantity_dimensions_in_affine_systems() {
     let lines = [
         "acceleration=0[mm/s^2]",

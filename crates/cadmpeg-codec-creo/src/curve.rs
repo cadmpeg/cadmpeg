@@ -2435,36 +2435,121 @@ impl ExpressionValue for SimultaneousAffineValue {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DimensionRational {
+    numerator: i64,
+    denominator: i64,
+}
+
+impl Default for DimensionRational {
+    fn default() -> Self {
+        Self {
+            numerator: 0,
+            denominator: 1,
+        }
+    }
+}
+
+impl DimensionRational {
+    fn new(numerator: i64, denominator: i64) -> Option<Self> {
+        (denominator != 0).then_some(())?;
+        let (numerator, denominator) = if denominator < 0 {
+            (numerator.checked_neg()?, denominator.checked_neg()?)
+        } else {
+            (numerator, denominator)
+        };
+        let mut left = numerator.unsigned_abs();
+        let mut right = denominator.unsigned_abs();
+        while right != 0 {
+            let remainder = left % right;
+            left = right;
+            right = remainder;
+        }
+        let divisor = i64::try_from(left).ok()?;
+        Some(Self {
+            numerator: numerator / divisor,
+            denominator: denominator / divisor,
+        })
+    }
+
+    fn integer(value: i8) -> Self {
+        Self {
+            numerator: i64::from(value),
+            denominator: 1,
+        }
+    }
+
+    fn one() -> Self {
+        Self {
+            numerator: 1,
+            denominator: 1,
+        }
+    }
+
+    fn combine(self, right: Self, subtract: bool) -> Option<Self> {
+        let sign = if subtract { -1 } else { 1 };
+        let numerator = self.numerator.checked_mul(right.denominator)?.checked_add(
+            right
+                .numerator
+                .checked_mul(self.denominator)?
+                .checked_mul(sign)?,
+        )?;
+        let denominator = self.denominator.checked_mul(right.denominator)?;
+        Self::new(numerator, denominator)
+    }
+
+    fn scale(self, factor: i8) -> Option<Self> {
+        Self::new(
+            self.numerator.checked_mul(i64::from(factor))?,
+            self.denominator,
+        )
+    }
+
+    fn divide(self, divisor: i16) -> Option<Self> {
+        let divisor = i64::from(divisor);
+        (divisor != 0).then_some(())?;
+        Self::new(self.numerator, self.denominator.checked_mul(divisor)?)
+    }
+
+    fn as_f64(self) -> f64 {
+        self.numerator as f64 / self.denominator as f64
+    }
+
+    fn is_zero(self) -> bool {
+        self.numerator == 0
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct DimensionForm {
-    constant: i16,
-    variables: BTreeMap<String, i16>,
+    constant: DimensionRational,
+    variables: BTreeMap<String, DimensionRational>,
 }
 
 impl DimensionForm {
     fn constant(value: i8) -> Self {
         Self {
-            constant: i16::from(value),
+            constant: DimensionRational::integer(value),
             variables: BTreeMap::new(),
         }
     }
 
     fn variable(name: &str) -> Self {
         Self {
-            constant: 0,
-            variables: BTreeMap::from([(name.to_owned(), 1)]),
+            constant: DimensionRational::default(),
+            variables: BTreeMap::from([(name.to_owned(), DimensionRational::one())]),
         }
     }
 
     fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
-        let sign = if subtract { -1 } else { 1 };
-        self.constant = self
-            .constant
-            .checked_add(right.constant.checked_mul(sign)?)?;
+        self.constant = self.constant.combine(right.constant, subtract)?;
         for (name, coefficient) in right.variables {
-            let entry = self.variables.entry(name.clone()).or_default();
-            *entry = entry.checked_add(coefficient.checked_mul(sign)?)?;
-            if *entry == 0 {
+            let is_zero = {
+                let entry = self.variables.entry(name.clone()).or_default();
+                *entry = (*entry).combine(coefficient, subtract)?;
+                entry.is_zero()
+            };
+            if is_zero {
                 self.variables.remove(&name);
             }
         }
@@ -2472,28 +2557,27 @@ impl DimensionForm {
     }
 
     fn scale(mut self, factor: i8) -> Option<Self> {
-        let factor = i16::from(factor);
-        self.constant = self.constant.checked_mul(factor)?;
+        self.constant = self.constant.scale(factor)?;
         for coefficient in self.variables.values_mut() {
-            *coefficient = coefficient.checked_mul(factor)?;
+            *coefficient = (*coefficient).scale(factor)?;
         }
-        self.variables.retain(|_, coefficient| *coefficient != 0);
+        self.variables
+            .retain(|_, coefficient| !coefficient.is_zero());
         Some(self)
     }
 
     fn divide_exact(mut self, divisor: i16) -> Option<Self> {
-        (divisor != 0 && self.constant % divisor == 0).then_some(())?;
-        self.constant /= divisor;
+        self.constant = self.constant.divide(divisor)?;
         for coefficient in self.variables.values_mut() {
-            (*coefficient % divisor == 0).then_some(())?;
-            *coefficient /= divisor;
+            *coefficient = (*coefficient).divide(divisor)?;
         }
-        self.variables.retain(|_, coefficient| *coefficient != 0);
+        self.variables
+            .retain(|_, coefficient| !coefficient.is_zero());
         Some(self)
     }
 
     fn is_zero(&self) -> bool {
-        self.constant == 0 && self.variables.is_empty()
+        self.constant.is_zero() && self.variables.is_empty()
     }
 }
 
@@ -4583,10 +4667,11 @@ fn infer_solve_variable_dimensions(
                         .variables
                         .get(variable)
                         .copied()
-                        .unwrap_or_default() as f64
+                        .unwrap_or_default()
+                        .as_f64()
                 })
                 .collect::<Vec<_>>();
-            let rhs = -f64::from(difference.constant);
+            let rhs = -difference.constant.as_f64();
             if coefficients.iter().any(|coefficient| *coefficient != 0.0) || rhs != 0.0 {
                 rows.push(AffineEquationRow { coefficients, rhs });
             }
