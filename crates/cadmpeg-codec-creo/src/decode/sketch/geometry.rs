@@ -435,8 +435,7 @@ pub(crate) fn saved_section_circle_values(
     segment: &crate::feature::FeatureCircleSegment,
 ) -> Option<([f64; 2], f64)> {
     let segments = definition.segments.as_ref()?;
-    (segments.is_complete() && segments.external_id_count(segment.external_id) == 1)
-        .then_some(())?;
+    (segments.external_id_count(segment.external_id) == 1).then_some(())?;
     let entity = section_saved_entity(definition, segment.external_id)?;
     let (_, geometry, _) = saved_section_entity_geometry(entity)?;
     let SketchGeometry::Circle { center, radius } = geometry else {

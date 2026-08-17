@@ -309,7 +309,7 @@ fn decode_reports_missing_declared_solver_variable_rows() {
 }
 
 #[test]
-fn incomplete_variable_table_keeps_saved_endpoint_witnesses() {
+fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
     let definition = crate::feature::FeatureDefinition {
         id: 7,
         owner_feature_id: Some(8),
@@ -324,7 +324,7 @@ fn incomplete_variable_table_keeps_saved_endpoint_witnesses() {
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 1,
+            declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {

@@ -37,7 +37,6 @@ pub(crate) fn resolved_section_radii(
     for segment in definition
         .segments
         .iter()
-        .filter(|table| table.is_complete())
         .flat_map(|table| &table.circle_rows)
     {
         if let Some((_, radius)) = saved_section_circle_values(definition, segment) {

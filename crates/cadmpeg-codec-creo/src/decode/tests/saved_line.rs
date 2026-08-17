@@ -1075,7 +1075,7 @@ fn saved_line_joins_through_order_table() {
 }
 
 #[test]
-fn complete_saved_circle_defines_full_section_geometry() {
+fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     let entity = crate::feature::FeatureSavedEntity::Circle(crate::feature::FeatureSavedCircle {
         entity_id: 7,
         center: [Some(2.0), Some(-3.0), Some(0.0)],
@@ -1122,7 +1122,7 @@ fn complete_saved_circle_defines_full_section_geometry() {
             offset: 30,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 1,
+            declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
             rows: Vec::new(),

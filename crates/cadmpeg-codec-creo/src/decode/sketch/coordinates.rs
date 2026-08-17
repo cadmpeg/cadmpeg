@@ -38,7 +38,6 @@ pub(crate) fn saved_section_coordinate_witnesses(
     let mut witnesses = definition
         .segments
         .iter()
-        .filter(|table| table.is_complete())
         .flat_map(|table| {
             table
                 .rows
@@ -58,7 +57,6 @@ pub(crate) fn saved_section_coordinate_witnesses(
         definition
             .segments
             .iter()
-            .filter(|table| table.is_complete())
             .flat_map(|table| &table.circle_rows)
             .filter_map(|segment| {
                 (!ambiguous_point_ids.contains(&segment.center_id)).then_some(())?;

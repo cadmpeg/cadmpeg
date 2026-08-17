@@ -367,9 +367,9 @@ fixtures, scores above L1 remain blocked.
   dimension-driven sentinel state for each lane. Complete endpoints from
   uniquely joined saved lines and arcs, and the center of a joined saved arc or
   circle, seed the corresponding segment-point equations even when no variable
-  table is present. A joined saved circle also seeds its
-  radius-reference component. Disagreement with stored or constraint-derived
-  coordinates or radii withholds the inconsistent derivation.
+  table is present or the segment table is incomplete. A joined saved circle
+  also seeds its radius-reference component. Disagreement with stored or
+  constraint-derived coordinates or radii withholds the inconsistent derivation.
 - Positional `entity(line)` rows require exactly one six-scalar endpoint suffix
   start that consumes the complete row body; competing starts withhold the
   line.
