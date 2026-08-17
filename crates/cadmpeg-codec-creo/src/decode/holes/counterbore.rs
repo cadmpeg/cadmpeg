@@ -745,10 +745,8 @@ pub fn counterbore_source_boundary_circle(
     cylinder_ids: &[u32],
     radius: f64,
 ) -> Option<(u32, Point3, [f64; 3])> {
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
+    let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
         .map(|row| (row.id, row))
         .collect::<BTreeMap<_, _>>();
     let local_planes = placed_planes(scan);

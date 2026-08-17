@@ -128,3 +128,17 @@ fn boundary_circle_rejects_duplicate_model_curves() {
         None
     );
 }
+
+#[test]
+fn boundary_circle_rejects_duplicate_surface_rows() {
+    let mut scan = boundary_scan();
+    let duplicate = scan.surfaces.rows[0].clone();
+    scan.surfaces.rows.push(duplicate);
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.curves.push(boundary_circle());
+
+    assert_eq!(
+        super::counterbore_source_boundary_circle(&scan, &ir, 42, &[2], 1.0),
+        None
+    );
+}
