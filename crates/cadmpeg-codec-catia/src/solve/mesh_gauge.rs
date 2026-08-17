@@ -1090,9 +1090,8 @@ pub(crate) fn canonicalize_endpoint_relation_state(
     gauge: MeshCandidateGauge<'_>,
 ) -> Option<MeshEndpointRelationStateSignature> {
     // Partial relation states are search keys, not emitted candidates. The
-    // row quotient is sufficient to merge repeated branches here; applying
-    // every coordinate automorphism at every partial state moves the
-    // expensive complete-candidate quotient into the hot search path.
+    // row quotient is cheap enough for every state; coordinate permutations
+    // are applied only by the bounded state-specific helper below.
     let row_gauge = MeshCandidateGauge {
         coordinate_gauge: None,
         ..gauge
@@ -1114,5 +1113,152 @@ pub(crate) fn canonicalize_endpoint_relation_state(
             Some(choices)
         })
         .collect::<Option<Vec<_>>>()?;
+    let mut state = (assigned, domains);
+    if let Some(coordinate_gauge) = gauge.coordinate_gauge {
+        for permutations in &coordinate_gauge.components {
+            if permutations.len() <= 1 {
+                continue;
+            }
+            let support = coordinate_gauge_support(permutations);
+            let base_projection = assigned_coordinate_projection(&state.0, &support, None)?;
+            if base_projection.is_empty() {
+                continue;
+            }
+            let mut best_projection = base_projection;
+            let mut best_permutation = None;
+            for permutation in permutations {
+                let projection =
+                    assigned_coordinate_projection(&state.0, &support, Some(permutation))?;
+                if projection < best_projection {
+                    best_projection = projection;
+                    best_permutation = Some(permutation);
+                }
+            }
+            if let Some(permutation) = best_permutation {
+                state = map_endpoint_relation_state(&state, permutation)?;
+            }
+        }
+    }
+    Some(state)
+}
+
+fn map_endpoint_relation_state(
+    state: &MeshEndpointRelationStateSignature,
+    permutation: &[usize],
+) -> Option<MeshEndpointRelationStateSignature> {
+    let assigned = state
+        .0
+        .iter()
+        .map(|pair| match pair {
+            Some(pair) => Some(mapped_endpoint_pair(Some(*pair), Some(permutation))?),
+            None => None,
+        })
+        .collect::<Vec<_>>();
+    let domains = state
+        .1
+        .iter()
+        .map(|choices| {
+            let mut choices = choices
+                .iter()
+                .map(|(assignments, pairs)| {
+                    let pairs = pairs
+                        .iter()
+                        .map(|&(edge, pair)| {
+                            Some((edge, mapped_endpoint_pair(Some(pair), Some(permutation))?))
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some((assignments.clone(), pairs))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            choices.sort_unstable();
+            Some(choices)
+        })
+        .collect::<Option<Vec<_>>>()?;
     Some((assigned, domains))
+}
+
+fn coordinate_gauge_support(permutations: &[Vec<usize>]) -> Vec<usize> {
+    let mut support = Vec::new();
+    for permutation in permutations {
+        for (point, target) in permutation.iter().copied().enumerate() {
+            if point != target && !support.contains(&point) {
+                support.push(point);
+            }
+            if point != target && !support.contains(&target) {
+                support.push(target);
+            }
+        }
+    }
+    support.sort_unstable();
+    support
+}
+
+fn assigned_coordinate_projection(
+    assigned: &[Option<[usize; 2]>],
+    support: &[usize],
+    permutation: Option<&[usize]>,
+) -> Option<Vec<[usize; 2]>> {
+    assigned
+        .iter()
+        .copied()
+        .filter_map(|pair| {
+            let pair = pair?;
+            support
+                .iter()
+                .any(|support_point| pair.contains(support_point))
+                .then_some(pair)
+        })
+        .map(|pair| mapped_endpoint_pair(Some(pair), permutation))
+        .collect()
+}
+
+#[test]
+fn relation_state_memo_collapses_coordinate_gauge() {
+    let edge_rows = [
+        EdgeRow {
+            kind: 1,
+            handles: vec![10],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+        EdgeRow {
+            kind: 1,
+            handles: vec![11],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+    ];
+    let edge_faces = [[0, 1], [0, 1]];
+    let edge_classes = [0, 0];
+    let edge_candidates = vec![vec![[0, 1], [2, 3]], vec![[0, 1], [2, 3]]];
+    let edge_identity_evidence = [true, true];
+    let coordinate_gauge = MeshCoordinateGauge {
+        components: vec![vec![vec![0, 1, 2, 3], vec![2, 3, 0, 1]]],
+    };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &edge_rows,
+        edge_faces: &edge_faces,
+        edge_classes: &edge_classes,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: Some(&coordinate_gauge),
+    };
+    let state = |swapped: bool| {
+        let pairs = if swapped {
+            [[2, 3], [0, 1]]
+        } else {
+            [[0, 1], [2, 3]]
+        };
+        let domains = vec![vec![MeshEndpointRelationChoice {
+            id: 0,
+            assignments: vec![0],
+            edge_pairs: pairs.into_iter().enumerate().collect(),
+        }]];
+        canonicalize_endpoint_relation_state(
+            &domains,
+            &pairs.into_iter().map(Some).collect::<Vec<_>>(),
+            gauge,
+        )
+        .expect("coordinate gauge state")
+    };
+
+    assert_eq!(state(false), state(true));
 }
