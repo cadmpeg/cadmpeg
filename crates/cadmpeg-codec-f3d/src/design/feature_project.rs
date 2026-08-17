@@ -2601,6 +2601,14 @@ fn project_surface_offset(
     })
 }
 
+/// Derive the neutral material-side flag from F3D's signed Draft angle.
+///
+/// F3D does not store a second outward bit. Keeping this rule in one helper
+/// makes every Draft projection branch use the same convention.
+pub(crate) const fn draft_outward(angle: f64) -> bool {
+    angle < 0.0
+}
+
 fn project_draft(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
@@ -2651,7 +2659,7 @@ fn project_draft(
                     pull_direction: Some(pull_direction),
                     pull_plane: Some(neutral_feature_id(neutral_plane)),
                     angle: Some(Angle(construction.angle)),
-                    outward: Some(construction.angle < 0.0),
+                    outward: Some(draft_outward(construction.angle)),
                 });
             }
             let neutral_plane = selected_historical_face_selection(
@@ -2667,7 +2675,7 @@ fn project_draft(
                 pull_direction: None,
                 pull_plane: None,
                 angle: Some(Angle(construction.angle)),
-                outward: Some(construction.angle < 0.0),
+                outward: Some(draft_outward(construction.angle)),
             })
         }
         [neutral_plane] if member_of_scope(neutral_plane) => Some(FeatureDefinition::Draft {
@@ -2682,7 +2690,7 @@ fn project_draft(
             pull_direction: None,
             pull_plane: None,
             angle: Some(Angle(construction.angle)),
-            outward: Some(construction.angle < 0.0),
+            outward: Some(draft_outward(construction.angle)),
         }),
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
             let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
@@ -2716,7 +2724,7 @@ fn project_draft(
                 pull_direction: Some(pull_direction),
                 pull_plane: Some(neutral_feature_id(pull_plane)),
                 angle: Some(Angle(construction.angle)),
-                outward: Some(construction.angle < 0.0),
+                outward: Some(draft_outward(construction.angle)),
             })
         }
         _ => None,

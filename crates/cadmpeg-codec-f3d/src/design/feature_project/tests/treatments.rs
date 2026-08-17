@@ -756,6 +756,13 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
 }
 
 #[test]
+fn draft_outward_is_derived_from_the_signed_angle() {
+    assert!(crate::design::feature_project::draft_outward(-0.25));
+    assert!(!crate::design::feature_project::draft_outward(0.0));
+    assert!(!crate::design::feature_project::draft_outward(0.25));
+}
+
+#[test]
 fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     use cadmpeg_ir::features::Length;
 
