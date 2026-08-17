@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -187,5 +189,21 @@ fn radius_anchored_counterbore_accepts_signed_depth() {
     assert_eq!(
         super::counterbore_dimension_values(std::iter::once(&table), &[0.3125]),
         Some((0.196, 0.625, 0.15))
+    );
+}
+
+#[test]
+fn counterbore_source_patches_require_a_complete_carrier_pair() {
+    let carrier = SurfaceGeometry::Cylinder {
+        origin: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 0.3125,
+    };
+    let sources = vec![vec![10, 11], vec![30, 31]];
+    let existing = BTreeMap::from([(30, carrier)]);
+
+    assert!(
+        super::counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625,).is_none()
     );
 }

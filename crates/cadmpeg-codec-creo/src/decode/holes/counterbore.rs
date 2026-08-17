@@ -840,12 +840,18 @@ pub fn counterbore_source_patch_geometries(
         return None;
     };
     let counterbore_radius = 0.5 * counterbore_diameter;
+    let has_observed_geometry =
+        |source: &[u32]| source.iter().any(|id| existing_geometries.contains_key(id));
     let (counterbore_source, bore_source, carrier) = match (
-        observed_cylinder_source_carrier(first_source, existing_geometries, counterbore_radius),
-        observed_cylinder_source_carrier(second_source, existing_geometries, counterbore_radius),
+        complete_cylinder_source_carrier(first_source, existing_geometries, counterbore_radius),
+        complete_cylinder_source_carrier(second_source, existing_geometries, counterbore_radius),
     ) {
-        (Some(carrier), None) => (first_source, second_source, carrier),
-        (None, Some(carrier)) => (second_source, first_source, carrier),
+        (Some(carrier), None) if !has_observed_geometry(second_source) => {
+            (first_source, second_source, carrier)
+        }
+        (None, Some(carrier)) if !has_observed_geometry(first_source) => {
+            (second_source, first_source, carrier)
+        }
         _ => return None,
     };
     let SurfaceGeometry::Cylinder {
@@ -894,23 +900,3 @@ pub fn complete_cylinder_source_carrier(
 
 #[cfg(test)]
 mod tests;
-
-pub fn observed_cylinder_source_carrier(
-    ids: &[u32],
-    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
-    radius: f64,
-) -> Option<SurfaceGeometry> {
-    let carriers = ids
-        .iter()
-        .filter_map(|id| existing_geometries.get(id))
-        .filter(|geometry| {
-            matches!(geometry, SurfaceGeometry::Cylinder { radius: candidate, .. }
-                if (*candidate - radius).abs() <= 1e-9)
-        })
-        .collect::<Vec<_>>();
-    let first = (*carriers.first()?).clone();
-    carriers
-        .iter()
-        .all(|candidate| **candidate == first)
-        .then_some(first)
-}
