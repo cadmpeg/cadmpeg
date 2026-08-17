@@ -115,6 +115,11 @@ The revision-history, notes, and application property readers are also settled
 as direct prefixes: their writers emit the listed packed versions and fields,
 their readers consume those prefixes, and the containing property record is the
 only suffix boundary.
+The units/tolerances, annotation-settings, grid-defaults, and render-settings
+readers are likewise settled: the first three use direct settings-record
+prefixes, while render settings use the source-selected legacy direct body or
+the modern anonymous child; each remaining suffix is bounded by its enclosing
+settings record or anonymous child.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -127,5 +132,11 @@ boundaries; an authored out-of-order section-style payload witness and owner
 tests exercise the boundary. The property subset is established by
 `ON_3dmRevisionHistory::Write`/`Read`, `ON_3dmNotes::Write`/`Read`, and
 `ON_3dmApplication::Write`/`Read`; the owner test exercises direct suffixes.
+The settings subset is established by `ON_3dmUnitsAndTolerances::Write`/`Read`,
+the V1 units helper, `ON_3dmAnnotationSettings::Write`/`Read`,
+`ON_3dmConstructionPlaneGridDefaults::Write`/`Read`, and
+`ON_3dmRenderSettings::UseV5ReadWrite`, `Write`/`Read`, and
+`WriteV5`/`ReadV5`; the document-settings owner tests exercise every known
+gate and bounded suffix.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.

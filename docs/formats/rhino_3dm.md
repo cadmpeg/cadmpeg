@@ -1773,6 +1773,10 @@ Unit values 23, 24, and 25 scale one stored unit to
 `149597870000000`, `9460730472580800000`, and `30856775800000000000`
 millimeters, respectively.
 
+In V2 settings, the units body is direct data in its own long record. The
+ordinary settings-record boundary, not structure version 100–199, consumes
+later direct bytes.
+
 The legacy V1 structure is:
 
 ```text
