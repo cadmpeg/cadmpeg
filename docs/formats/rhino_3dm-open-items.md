@@ -198,6 +198,13 @@ minor 0. Each reader closes its own child; a suffix after a family child stays
 at `TCODE_OPENNURBS_CLASS_DATA`, and a suffix after a V5 extension child stays
 at the enclosing class-userdata boundary. The Rust parsers follow these
 source boundaries.
+The V2 text-dot and annotation-arrow class readers are also settled direct
+prefixes: each requires packed major 1, the text dot reads one point and one
+UTF-16 string, and the arrow reads tail and head points. Their remaining
+bytes stay at the enclosing `TCODE_OPENNURBS_CLASS_DATA` boundary. The Rust
+codec transfers V2 text dots to its native text-dot arena and V2 arrows to a
+native arrow arena; the latter has no neutral curve or semantic annotation
+mapping because the source class carries only display endpoints.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -307,3 +314,11 @@ The annotation and dimension boundary is established by
 `opennurbs_internal_V2_annotation.cpp`. Owner tests cover modern and legacy
 class-data suffixes and both V5 extension-child suffixes. The remaining
 direct-reader and writer-band inventory remains open.
+The V2 compatibility subset is established by
+`ON_OBSOLETE_V2_TextDot::Write`/`Read` and
+`ON_OBSOLETE_V2_AnnotationArrow::Write`/`Read` in
+`opennurbs_internal_V5_annotation.cpp`, together with the class-data wrapper
+path in `opennurbs_archive.cpp` and its packed-version and UTF-16 string
+helpers. The annotation owner tests cover both direct prefixes and bounded
+class-data suffixes; the public V2 witness contains both class UUIDs and the
+rebuilt CLI transfers them to the native arenas.

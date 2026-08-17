@@ -28,6 +28,12 @@ const LEGACY_LEADER: Uuid = Uuid::from_canonical([
 const TEXT_DOT: Uuid = Uuid::from_canonical([
     0x74, 0x19, 0x83, 0x02, 0xcd, 0xf4, 0x4f, 0x95, 0x96, 0x09, 0x6d, 0x68, 0x4f, 0x22, 0xab, 0x37,
 ]);
+const V2_TEXT_DOT: Uuid = Uuid::from_canonical([
+    0x8b, 0xd9, 0x4e, 0x19, 0x59, 0xe1, 0x11, 0xd4, 0x80, 0x18, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+const V2_ANNOTATION_ARROW: Uuid = Uuid::from_canonical([
+    0x8b, 0xd9, 0x4e, 0x1a, 0x59, 0xe1, 0x11, 0xd4, 0x80, 0x18, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
 const V5_TEXT_EXTRA: Uuid = Uuid::from_canonical([
     0xd9, 0x04, 0x90, 0xa5, 0xdb, 0x86, 0x49, 0xf8, 0xbd, 0xa1, 0x90, 0x80, 0xb1, 0xf4, 0xe9, 0x76,
 ]);
@@ -92,6 +98,16 @@ struct TextDotRecord {
     transparent: bool,
     bold: bool,
     italic: bool,
+    links: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnnotationArrowRecord {
+    id: String,
+    source_offset: u64,
+    source_uuid: String,
+    tail: [f64; 3],
+    head: [f64; 3],
     links: Vec<String>,
 }
 
@@ -291,6 +307,75 @@ fn decode_dot(
     })
 }
 
+fn v2_version(
+    reader: &mut BoundedReader<'_>,
+    offset: usize,
+    kind: &str,
+) -> Result<(), FramingError> {
+    if reader.u8()? >> 4 != 1 {
+        return Err(FramingError::structural(
+            offset,
+            format!("V2 {kind} version is unsupported"),
+        ));
+    }
+    Ok(())
+}
+
+fn v2_point(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    offset: usize,
+    kind: &str,
+) -> Result<[f64; 3], FramingError> {
+    let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
+    for value in &mut point {
+        *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+            FramingError::structural(offset, format!("scaled V2 {kind} point is invalid"))
+        })?;
+    }
+    Ok(point)
+}
+
+fn decode_v2_text_dot(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    scale: f64,
+) -> Result<TextDotRecord, FramingError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    v2_version(&mut reader, range.start, "text-dot")?;
+    let center = v2_point(&mut reader, scale, range.start, "text-dot")?;
+    let primary_text = utf16(&mut reader)?;
+    reader.skip_remaining()?;
+    Ok(TextDotRecord {
+        id: String::new(),
+        source_offset: range.start as u64,
+        source_uuid: String::new(),
+        center,
+        height_points: 0,
+        primary_text,
+        secondary_text: String::new(),
+        font_face: String::new(),
+        always_on_top: false,
+        transparent: false,
+        bold: false,
+        italic: false,
+        links: Vec::new(),
+    })
+}
+
+fn decode_v2_annotation_arrow(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    scale: f64,
+) -> Result<([f64; 3], [f64; 3]), FramingError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    v2_version(&mut reader, range.start, "annotation-arrow")?;
+    let tail = v2_point(&mut reader, scale, range.start, "annotation-arrow tail")?;
+    let head = v2_point(&mut reader, scale, range.start, "annotation-arrow head")?;
+    reader.skip_remaining()?;
+    Ok((tail, head))
+}
+
 /// Projects every supported general annotation into stable native records.
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let Some(scale) = scan
@@ -305,6 +390,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let mut losses = Vec::new();
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
+    let mut arrows = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         let identity = object.identity.as_ref();
         let link = format!("rhino:object:record#{source_order:06}");
@@ -419,9 +505,13 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 leader_points: value.points,
                 links: vec![link],
             });
-        } else if object.class_uuid == TEXT_DOT {
-            let Ok(mut value) = decode_dot(scan.data, object.class_data_range.clone(), scale)
-            else {
+        } else if matches!(object.class_uuid, TEXT_DOT | V2_TEXT_DOT) {
+            let decoded = if object.class_uuid == TEXT_DOT {
+                decode_dot(scan.data, object.class_data_range.clone(), scale)
+            } else {
+                decode_v2_text_dot(scan.data, object.class_data_range.clone(), scale)
+            };
+            let Ok(mut value) = decoded else {
                 continue;
             };
             value.id = format!("rhino:document:text_dot#{key}");
@@ -429,6 +519,20 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
             value.source_uuid = source_uuid;
             value.links.push(link);
             dots.push(value);
+        } else if object.class_uuid == V2_ANNOTATION_ARROW {
+            let Ok((tail, head)) =
+                decode_v2_annotation_arrow(scan.data, object.class_data_range.clone(), scale)
+            else {
+                continue;
+            };
+            arrows.push(AnnotationArrowRecord {
+                id: format!("rhino:document:annotation_arrow#{key}"),
+                source_offset: object.range.start as u64,
+                source_uuid,
+                tail,
+                head,
+                links: vec![link],
+            });
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
@@ -439,18 +543,27 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     namespace
         .set_arena("text_dots", &dots)
         .expect("Rhino text dots serialize");
+    if !arrows.is_empty() {
+        namespace
+            .set_arena("annotation_arrows", &arrows)
+            .expect("Rhino annotation arrows serialize");
+    }
     losses
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_annotation, decode_dot, decode_legacy_annotation, parse_v5_text_extra, ANONYMOUS,
-        V5_TEXT_EXTRA,
+        decode_annotation, decode_dot, decode_legacy_annotation, decode_v2_annotation_arrow,
+        decode_v2_text_dot, install, parse_v5_text_extra, ANONYMOUS, V2_ANNOTATION_ARROW,
+        V2_TEXT_DOT, V5_TEXT_EXTRA,
     };
     use crate::chunks::ArchiveVersion;
     use crate::objects::UserdataDescriptor;
+    use crate::test_support::test_dump::{object_record_with_payload, scan_with_objects};
     use crate::wire::Uuid;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::units::Units;
 
     fn utf16(value: &str) -> Vec<u8> {
         let mut units = value.encode_utf16().collect::<Vec<_>>();
@@ -550,6 +663,78 @@ mod tests {
         assert_eq!(dot.secondary_text, "");
         assert_eq!(dot.font_face, "Courier New");
         assert!(!dot.always_on_top && !dot.transparent && !dot.bold && !dot.italic);
+    }
+
+    #[test]
+    fn v2_text_dot_reads_point_and_utf16_text_and_skips_class_data_suffix() {
+        let mut bytes = vec![0x1f];
+        for value in [1.25_f64, -2.5, 4.75] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(utf16("V2 dot"));
+        bytes.extend([0xd1, 0xce]);
+        let dot = decode_v2_text_dot(&bytes, 0..bytes.len(), 2.0).expect("valid V2 text dot");
+        assert_eq!(dot.center, [2.5, -5.0, 9.5]);
+        assert_eq!(dot.primary_text, "V2 dot");
+        assert_eq!(dot.height_points, 0);
+        assert_eq!(dot.font_face, "");
+        assert!(!dot.always_on_top && !dot.transparent && !dot.bold && !dot.italic);
+    }
+
+    #[test]
+    fn v2_annotation_arrow_reads_tail_and_head_and_skips_class_data_suffix() {
+        let mut bytes = vec![0x10];
+        for value in [[1.0_f64, 2.0, 3.0], [-4.0_f64, 5.0, -6.0]] {
+            for coordinate in value {
+                bytes.extend(coordinate.to_le_bytes());
+            }
+        }
+        bytes.extend([0xa5, 0x5a]);
+        let (tail, head) =
+            decode_v2_annotation_arrow(&bytes, 0..bytes.len(), 10.0).expect("valid V2 arrow");
+        assert_eq!(tail, [10.0, 20.0, 30.0]);
+        assert_eq!(head, [-40.0, 50.0, -60.0]);
+    }
+
+    #[test]
+    fn install_transfers_v2_compatibility_annotations_to_native_arenas() {
+        let mut dot = vec![0x1f];
+        for value in [1.25_f64, -2.5, 4.75] {
+            dot.extend(value.to_le_bytes());
+        }
+        dot.extend(utf16("V2 dot"));
+        dot.extend([0xd1, 0xce]);
+
+        let mut arrow = vec![0x10];
+        for value in [[1.0_f64, 2.0, 3.0], [-4.0_f64, 5.0, -6.0]] {
+            for coordinate in value {
+                arrow.extend(coordinate.to_le_bytes());
+            }
+        }
+        arrow.extend([0xa5, 0x5a]);
+
+        let scan = scan_with_objects(&[
+            object_record_with_payload(ArchiveVersion::V5, 0x20, V2_TEXT_DOT.to_wire(), &dot),
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                V2_ANNOTATION_ARROW.to_wire(),
+                &arrow,
+            ),
+        ]);
+        let mut ir = CadIr::empty(Units::default());
+        install(&scan, &mut ir);
+
+        let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
+        assert_eq!(namespace.arenas["text_dots"].len(), 1);
+        assert_eq!(namespace.arenas["annotation_arrows"].len(), 1);
+        let dot = serde_json::to_value(&namespace.arenas["text_dots"][0]).expect("dot JSON");
+        assert_eq!(dot["primary_text"], "V2 dot");
+        assert_eq!(dot["center"][0], 1.25);
+        let arrow =
+            serde_json::to_value(&namespace.arenas["annotation_arrows"][0]).expect("arrow JSON");
+        assert_eq!(arrow["tail"][2], 3.0);
+        assert_eq!(arrow["head"][0], -4.0);
     }
 
     #[test]

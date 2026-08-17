@@ -5150,6 +5150,45 @@ For archive version 90, the native `hatch_patterns` record includes optional
 serialized unit-system code; the latter is the serialized Boolean. These
 fields are absent for earlier archive versions.
 
+The V2 compatibility annotation classes use these class UUIDs:
+
+| class | UUID |
+| --- | --- |
+| `ON_OBSOLETE_V2_TextDot` | `8BD94E19-59E1-11D4-8018-0010830122F0` |
+| `ON_OBSOLETE_V2_AnnotationArrow` | `8BD94E1A-59E1-11D4-8018-0010830122F0` |
+
+Their class-data payloads are direct packed version 1.0 records. The reader
+requires major version 1 and does not gate the known prefix on the minor
+version. The text-dot payload is:
+
+```text
+packed version 1.minor
+ON_3dPoint center
+UTF-16 text
+```
+
+The annotation-arrow payload is:
+
+```text
+packed version 1.minor
+ON_3dPoint tail
+ON_3dPoint head
+```
+
+The text-dot string uses the UTF-16 archive grammar in section 7.3. The
+class-data chunk ends after the known prefix; later bytes remain at that
+`OPENNURBS_CLASS_DATA` boundary. The text-dot center and arrow endpoints use
+document length conversion. The source arrow is annotation display geometry,
+not a neutral curve.
+
+CADIR decision: V2 text dots enter `native.rhino.text_dots`. Because the V2
+payload has no modern height, secondary-text, font, or display fields, those
+fields use neutral values: height `0`, empty secondary text and font, and
+false display flags. V2 annotation arrows enter
+`native.rhino.annotation_arrows` with their scaled tail and head points and
+source links. CADIR does not create a neutral curve or semantic annotation
+for an arrow because the V2 class carries only its display endpoints.
+
 Group and light records use packed major-1 versions. The group class UUID is
 `721D9F97-3645-44C4-8BE6-B2CF697D25CE`. A group table record is:
 
