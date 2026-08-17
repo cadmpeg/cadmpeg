@@ -2,6 +2,7 @@ use super::super::{
     disc14_disc16_disc1e_disc12_disc10_face_root_body,
     disc16_disc12_disc1a_disc14_disc10_face_root_body,
     disc1a_disc0e_disc1e_disc18_disc04_face_root_body,
+    disc1a_disc14_disc24_disc18_disc16_face_root_body,
     disc1a_disc16_disc1e_disc18_disc14_face_root_body,
     disc1c_disc14_disc1a_disc18_disc10_face_root_body,
     disc1c_disc16_disc24_disc1a_disc18_face_root_body,
@@ -1772,4 +1773,97 @@ fn disc16_disc26_terminal_lattice_rejects_ambiguous_same_key_companions() {
         .refs[1] = 43;
 
     assert!(disc26_disc1c_disc24_disc22_disc16_face_root_body(&index_records(&records)).is_empty());
+}
+
+fn disc16_disc14_terminal_lattice() -> Vec<super::super::EntityRecord> {
+    vec![
+        flo2(10, 0x1a, [7, 1, 11, 1, 1, 1]),
+        flo2(11, 0x14, [7, 10, 12, 1, 1, 1]),
+        flo2(12, 0x24, [7, 11, 13, 1, 1, 1]),
+        flo2(13, 0x18, [7, 12, 14, 1, 1, 1]),
+        record(14, 0x16, [7, 13, 1, 1, 1, 1]),
+        record(20, 0x1c, [100, 30, 1, 1, 1, 1]),
+        record(21, 0x1c, [101, 31, 1, 1, 1, 1]),
+        record(22, 0x1c, [102, 50, 1, 1, 1, 1]),
+        record(30, 0x22, [100, 40, 20, 1, 1, 1]),
+        record(31, 0x22, [101, 41, 1, 1, 1, 1]),
+        record(32, 0x22, [102, 42, 22, 1, 1, 1]),
+        record(33, 0x22, [103, 1, 1, 1, 1, 1]),
+        flo4(40, 0x26, [100, 1, 30, 1, 1, 1]),
+        flo4(41, 0x26, [101, 1, 1, 1, 1, 1]),
+        flo4(42, 0x26, [102, 1, 32, 1, 1, 1]),
+        flo4(43, 0x26, [103, 1, 33, 1, 1, 1]),
+        record(50, 0x02, [1, 1, 1, 1, 1, 1]),
+    ]
+}
+
+#[test]
+fn disc16_disc14_terminal_lattice_owns_forward_and_keyed_faces_with_extra_records() {
+    let records = disc16_disc14_terminal_lattice();
+    let bodies = disc1a_disc14_disc24_disc18_disc16_face_root_body(&index_records(&records));
+    let [body] = bodies.as_slice() else {
+        panic!("one disc1a-disc14-disc24-disc18-disc16 body");
+    };
+    assert_eq!(body.attr, 10);
+    assert_eq!(body.regions[0].shells[0].attr, 14);
+    assert!(body.refs.contains(&20) && body.refs.contains(&21) && body.refs.contains(&22));
+    assert!(body.refs.contains(&30) && body.refs.contains(&31) && body.refs.contains(&32));
+    assert!(body.refs.contains(&33) && body.refs.contains(&40) && body.refs.contains(&43));
+}
+
+#[test]
+fn disc16_disc14_terminal_lattice_accepts_stale_reverse_links_by_key() {
+    let mut records = disc16_disc14_terminal_lattice();
+    records
+        .iter_mut()
+        .find(|record| record.attr == 20)
+        .expect("first canonical face")
+        .refs[1] = 50;
+    records
+        .iter_mut()
+        .find(|record| record.attr == 30)
+        .expect("first companion")
+        .refs[2] = 1;
+    records
+        .iter_mut()
+        .find(|record| record.attr == 40)
+        .expect("first use node")
+        .refs[2] = 1;
+
+    let bodies = disc1a_disc14_disc24_disc18_disc16_face_root_body(&index_records(&records));
+    assert_eq!(bodies.len(), 1);
+}
+
+#[test]
+fn disc16_disc14_terminal_lattice_rejects_a_companion_with_a_different_key() {
+    let mut records = disc16_disc14_terminal_lattice();
+    records
+        .iter_mut()
+        .find(|record| record.attr == 31)
+        .expect("second companion")
+        .refs[0] = 102;
+
+    assert!(disc1a_disc14_disc24_disc18_disc16_face_root_body(&index_records(&records)).is_empty());
+}
+
+#[test]
+fn disc16_disc14_terminal_lattice_rejects_ambiguous_same_key_companions() {
+    let mut records = disc16_disc14_terminal_lattice();
+    records
+        .iter_mut()
+        .find(|record| record.attr == 20)
+        .expect("first canonical face")
+        .refs[1] = 50;
+    records
+        .iter_mut()
+        .find(|record| record.attr == 33)
+        .expect("unselected companion")
+        .refs[0] = 100;
+    records
+        .iter_mut()
+        .find(|record| record.attr == 33)
+        .expect("ambiguous companion")
+        .refs[1] = 43;
+
+    assert!(disc1a_disc14_disc24_disc18_disc16_face_root_body(&index_records(&records)).is_empty());
 }
