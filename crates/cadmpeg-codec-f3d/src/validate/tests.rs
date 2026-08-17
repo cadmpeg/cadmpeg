@@ -192,6 +192,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         let operand_record_index = 100 + ordinal * 10;
         let byte_offset = 1_000 + u64::from(ordinal) * 1_000;
         let recipe_id = format!("{stream}:construction-recipe#{ordinal}");
+        let empty_legacy_tool = ordinal == 0;
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{scope_record_index}"),
             "Combine",
@@ -205,11 +206,19 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             keep_tools: false,
             keep_tools_offset: 0,
             target: DesignCombineBodySelection {
-                record_index: operand_record_index,
+                record_index: if empty_legacy_tool {
+                    operand_record_index + 1
+                } else {
+                    operand_record_index
+                },
                 external_identity: None,
             },
             tools: vec![DesignCombineBodySelection {
-                record_index: operand_record_index + 1,
+                record_index: if empty_legacy_tool {
+                    operand_record_index
+                } else {
+                    operand_record_index + 1
+                },
                 external_identity: None,
             }],
         });
@@ -244,20 +253,24 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             byte_offset,
             class_tag: "365".into(),
             asset_id: "11111111-1111-4111-8111-111111111111".into(),
-            asset_id_offset: byte_offset + 56,
+            asset_id_offset: byte_offset + if empty_legacy_tool { 44 } else { 56 },
             context_id: "22222222-2222-4222-8222-222222222222".into(),
-            context_id_offset: byte_offset + 136,
-            references: vec![DesignBodyRecipeReference {
-                design_reference: u64::from(300 + ordinal),
-                design_reference_offset: byte_offset + 25,
-                form: 3,
-                form_offset: byte_offset + 33,
-                candidate_faces: Vec::new(),
-                preceding_candidate_faces: Vec::new(),
-                preceding_body_slots: Vec::new(),
-            }],
+            context_id_offset: byte_offset + if empty_legacy_tool { 124 } else { 136 },
+            references: if empty_legacy_tool {
+                Vec::new()
+            } else {
+                vec![DesignBodyRecipeReference {
+                    design_reference: u64::from(300 + ordinal),
+                    design_reference_offset: byte_offset + 25,
+                    form: 3,
+                    form_offset: byte_offset + 33,
+                    candidate_faces: Vec::new(),
+                    preceding_candidate_faces: Vec::new(),
+                    preceding_body_slots: Vec::new(),
+                }]
+            },
             nested_record_index: u64::from(operand_record_index + 3),
-            nested_record_index_offset: byte_offset + 38,
+            nested_record_index_offset: byte_offset + if empty_legacy_tool { 26 } else { 38 },
             recipe_id,
             resolved_face_slot: None,
             resolved_body_state_id: None,

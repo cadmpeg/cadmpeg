@@ -40,6 +40,26 @@ fn valid_design_guid(value: &str) -> bool {
         })
 }
 
+/// Admit the empty reference table used by a legacy Combine tool operand.
+fn body_recipe_reference_table_is_admitted(
+    scope: Option<&records::DesignParameterScope>,
+    operand: &records::DesignBodyRecipeOperand,
+) -> bool {
+    !operand.references.is_empty()
+        || matches!(
+            operand.owner,
+            records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+        ) && scope.is_some_and(|scope| {
+            scope.kind == "Combine"
+                && scope.combine_operation.as_ref().is_some_and(|operation| {
+                    operation
+                        .tools
+                        .iter()
+                        .any(|tool| tool.record_index == operand.record_index)
+                })
+        })
+}
+
 fn valid_assembly_operand_path_link(
     scope: &records::DesignParameterScope,
     path: &records::DesignAssemblyOperandPath,
@@ -5735,7 +5755,7 @@ fn validate_body_recipe_operands<'a>(
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
             })
-            && !operand.references.is_empty()
+            && body_recipe_reference_table_is_admitted(scope.copied(), operand)
             && operand
                 .references
                 .iter()
