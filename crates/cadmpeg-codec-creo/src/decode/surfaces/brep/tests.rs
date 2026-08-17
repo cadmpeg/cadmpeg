@@ -152,7 +152,7 @@ fn closed_component_counts_two_uses_of_one_face() {
 }
 
 #[test]
-fn native_brep_rejects_duplicate_model_curve_ids() {
+fn native_brep_rejects_ambiguous_model_carriers() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.framing.declared_body_count = Some(1);
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -305,4 +305,56 @@ fn native_brep_rejects_duplicate_model_curve_ids() {
     assert!(ir.model.bodies.is_empty());
     assert!(ir.model.regions.is_empty());
     assert!(ir.model.shells.is_empty());
+
+    ir.model.curves.clear();
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 6,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 0,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    });
+    for pcurve in &mut scan.curves.pcurves {
+        pcurve.faces = [5, 6];
+        pcurve.face_1_endpoints = pcurve.face_0_endpoints;
+    }
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#5".to_string()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+
+    let counts = transfer_native_brep(
+        &scan,
+        &mut ir,
+        &mut AnnotationBuilder::new(),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    );
+
+    assert_eq!(counts, (3, 3));
+    assert!(ir.model.faces.is_empty());
+    assert!(ir.model.loops.is_empty());
+    assert!(ir.model.coedges.is_empty());
+    assert_eq!(ir.model.edges.len(), 3);
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.model.shells.len(), 1);
+    assert_eq!(ir.model.shells[0].wire_edges.len(), 3);
 }

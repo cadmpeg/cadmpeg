@@ -224,6 +224,24 @@ pub(in super::super) fn transfer_native_brep(
         .copied()
         .filter(|curve_id| model_curve_counts[curve_id] <= 1)
         .collect::<BTreeSet<_>>();
+    let model_surface_counts = face_orientations
+        .keys()
+        .map(|face_id| {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+            let count = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == id)
+                .count();
+            (*face_id, count)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let admitted_face_ids = face_orientations
+        .keys()
+        .copied()
+        .filter(|face_id| model_surface_counts[face_id] <= 1)
+        .collect::<BTreeSet<_>>();
     let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
     for lp in &scan.topology.loops {
         loops_by_face.entry(lp.face_id).or_default().push(lp);
@@ -231,7 +249,7 @@ pub(in super::super) fn transfer_native_brep(
     let eligible_faces = loops_by_face
         .into_iter()
         .filter_map(|(face_id, loops)| {
-            face_orientations.contains_key(&face_id).then_some(())?;
+            admitted_face_ids.contains(&face_id).then_some(())?;
             loops
                 .iter()
                 .all(|lp| {
