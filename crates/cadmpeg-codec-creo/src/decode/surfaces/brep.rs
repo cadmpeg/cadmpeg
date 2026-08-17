@@ -31,6 +31,7 @@ use super::super::analytic::{
 };
 use super::super::native::annotate;
 use super::super::sweep::line_pcurve;
+use super::super::uniqueness::exactly_one;
 
 use super::fc05_model_frame;
 
@@ -334,62 +335,77 @@ pub(in super::super) fn transfer_native_brep(
                     .iter()
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
+        let model_curve_count = ir
+            .model
+            .curves
+            .iter()
+            .filter(|candidate| candidate.id == curve)
+            .count();
+        if model_curve_count > 1 {
+            continue;
+        }
         let derived_line = (derived_intersection_curves.contains(&curve)
             || analytic_pcurve_carriers.contains(&curve))
-            && ir.model.curves.iter().any(|candidate| {
-                candidate.id == curve && matches!(candidate.geometry, CurveGeometry::Line { .. })
-            });
-        let param_range =
-            if derived_line {
+            && exactly_one(
+                ir.model
+                    .curves
+                    .iter()
+                    .filter(|candidate| candidate.id == curve),
+            )
+            .is_some_and(|candidate| matches!(&candidate.geometry, CurveGeometry::Line { .. }));
+        let param_range = if model_curve_count == 0 {
+            None
+        } else if derived_line {
+            exactly_one(
                 ir.model
                     .curves
                     .iter_mut()
-                    .find(|candidate| candidate.id == curve)
-                    .and_then(|candidate| orient_line_edge_carrier(&mut candidate.geometry, points))
-            } else {
+                    .filter(|candidate| candidate.id == curve),
+            )
+            .and_then(|candidate| orient_line_edge_carrier(&mut candidate.geometry, points))
+        } else {
+            exactly_one(
                 ir.model
                     .curves
                     .iter_mut()
-                    .find(|candidate| candidate.id == curve)
-                    .and_then(|candidate| {
-                        orient_nonperiodic_nurbs_edge_carrier(&mut candidate.geometry, points)
-                            .or_else(|| {
-                                exact_line_edge_parameter_range(&candidate.geometry, points)
-                                    .or_else(|| {
-                                        nonperiodic_conic_edge_parameter_range(
+                    .filter(|candidate| candidate.id == curve),
+            )
+            .and_then(|candidate| {
+                orient_nonperiodic_nurbs_edge_carrier(&mut candidate.geometry, points).or_else(
+                    || {
+                        exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
+                            nonperiodic_conic_edge_parameter_range(&candidate.geometry, points)
+                                .or_else(|| {
+                                    pcurve_backed_periodic_conic_parameter_range(
+                                        &candidate.geometry,
+                                        *curve_id,
+                                        *curve_faces.get(curve_id)?,
+                                        &native_pcurves,
+                                        &ir.model.surfaces,
+                                        points,
+                                    )
+                                })
+                                .or_else(|| {
+                                    unbacked_closed_edge.then_some(()).and_then(|()| {
+                                        full_periodic_conic_edge_parameter_range(
                                             &candidate.geometry,
-                                            points,
+                                            points[0],
                                         )
-                                        .or_else(|| {
-                                            pcurve_backed_periodic_conic_parameter_range(
-                                                &candidate.geometry,
-                                                *curve_id,
-                                                *curve_faces.get(curve_id)?,
-                                                &native_pcurves,
-                                                &ir.model.surfaces,
-                                                points,
-                                            )
-                                        })
-                                        .or_else(|| {
-                                            unbacked_closed_edge.then_some(()).and_then(|()| {
-                                                full_periodic_conic_edge_parameter_range(
-                                                    &candidate.geometry,
-                                                    points[0],
-                                                )
-                                            })
-                                        })
-                                        .or_else(|| {
-                                            unbacked_closed_edge.then_some(()).and_then(|()| {
-                                                full_periodic_nurbs_edge_parameter_range(
-                                                    &candidate.geometry,
-                                                    points[0],
-                                                )
-                                            })
-                                        })
                                     })
-                            })
-                    })
-            };
+                                })
+                                .or_else(|| {
+                                    unbacked_closed_edge.then_some(()).and_then(|()| {
+                                        full_periodic_nurbs_edge_parameter_range(
+                                            &candidate.geometry,
+                                            points[0],
+                                        )
+                                    })
+                                })
+                        })
+                    },
+                )
+            })
+        };
         let id = EdgeId(format!("creo:visibgeom:edge#{curve_id}"));
         annotate(
             annotations,
@@ -697,10 +713,13 @@ pub(in super::super) fn transfer_native_brep(
                                 solved_vertices[&incidence.start_vertex_id],
                                 solved_vertices[&end],
                             ];
-                            let surface = ir.model.surfaces.iter().find(|candidate| {
-                                candidate.id
-                                    == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
-                            })?;
+                            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                            let surface = exactly_one(
+                                ir.model
+                                    .surfaces
+                                    .iter()
+                                    .filter(|candidate| candidate.id == surface_id),
+                            )?;
                             unique_oriented_native_pcurve(&surface.geometry, candidates, traversal)
                         })
                         .map(|(endpoints, offset)| {
@@ -713,21 +732,29 @@ pub(in super::super) fn transfer_native_brep(
                         })
                         .or_else(|| {
                             native_candidates.is_none().then_some(())?;
-                            let surface = ir.model.surfaces.iter().find(|candidate| {
-                                candidate.id
-                                    == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
-                            })?;
-                            let curve = ir.model.curves.iter().find(|candidate| {
-                                candidate.id
-                                    == CurveId(format!(
-                                        "creo:visibgeom:curve#{}",
-                                        half_edge.curve_id
-                                    ))
-                            })?;
-                            let edge = ir.model.edges.iter().find(|candidate| {
-                                candidate.id
-                                    == EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
-                            })?;
+                            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                            let surface = exactly_one(
+                                ir.model
+                                    .surfaces
+                                    .iter()
+                                    .filter(|candidate| candidate.id == surface_id),
+                            )?;
+                            let curve_id =
+                                CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
+                            let curve = exactly_one(
+                                ir.model
+                                    .curves
+                                    .iter()
+                                    .filter(|candidate| candidate.id == curve_id),
+                            )?;
+                            let edge_id =
+                                EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id));
+                            let edge = exactly_one(
+                                ir.model
+                                    .edges
+                                    .iter()
+                                    .filter(|candidate| candidate.id == edge_id),
+                            )?;
                             let (geometry, tag) =
                                 planar_curve_pcurve(&surface.geometry, &curve.geometry)
                                     .map(|geometry| (geometry, "projected_planar_pcurve"))
