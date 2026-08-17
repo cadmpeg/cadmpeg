@@ -6,6 +6,26 @@ Settled format rules remain in
 
 ## Remaining items
 
+### PR-02. Current settings plugin-list checksum coverage
+
+**Question.** Which bytes does the CRC on the current
+`TCODE_SETTINGS_PLUGINLIST` record cover when its body contains nested plugin
+reference chunks?
+
+**Known.** The settings writer emits a one-byte version, a plugin count, and
+CRC-bearing anonymous plugin-reference chunks. The generic scanner currently
+checks the outer record as one contiguous body, including those complete
+children, while the source writer suspends the parent CRC while a nested chunk
+is open.
+
+**Need.** Trace the source CRC lifecycle and a public plugin-list witness,
+state the direct checksum ranges in the specification, and align the scanner
+and owner test. Preserve the existing plugin-reference field transfer.
+
+**Note.** This is a current checksum-boundary question, not a future-version
+question. The public sweep reports the mismatch on records that the source
+reader accepts.
+
 ### FV-01. Future object-class payloads
 
 **Question.** What field grammar does each later built-in object-class major
