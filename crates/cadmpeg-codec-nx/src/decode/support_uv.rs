@@ -844,13 +844,9 @@ fn complete_coupled_support_uv(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let mut replacements = Vec::new();
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
-        let Some(procedural) = ir
-            .model
-            .procedural_curves
-            .iter()
-            .find(|procedural| &procedural.id == procedural_id)
-        else {
+        let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
@@ -869,10 +865,11 @@ fn complete_coupled_support_uv(
         let unresolved_procedural_support = (0..2).any(|side| {
             missing[side]
                 && pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), 0).is_some()
-                && ir.model.surfaces.iter().any(|surface| {
-                    &surface.id == surfaces[side]
-                        && matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
-                })
+                && model_index
+                    .surfaces(surfaces[side].0.as_str())
+                    .is_some_and(|surface| {
+                        matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
+                    })
         });
         if !unresolved_procedural_support {
             continue;
@@ -886,7 +883,7 @@ fn complete_coupled_support_uv(
             .each_ref()
             .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
         let Some(lanes) = continue_surface_intersection_parameters_with_seeds_and_budget(
-            ir,
+            &*ir,
             surfaces,
             points,
             *fit_tolerance,
@@ -911,6 +908,7 @@ fn complete_coupled_support_uv(
             }
         }
     }
+    drop(model_index);
     for (procedural_id, side, pcurve) in replacements {
         let Some(procedural) = ir
             .model
