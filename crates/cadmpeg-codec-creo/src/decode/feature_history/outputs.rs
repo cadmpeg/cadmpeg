@@ -6,7 +6,7 @@ use super::super::sketch_transfer::{
     current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
     feature_schema_class, unique_feature_revolution_extent_kind,
 };
-use super::super::uniqueness::unique_feature_definition_for_transform;
+use super::super::uniqueness::{exactly_one, unique_feature_definition_for_transform};
 use super::dependencies::feature_generated_dependencies;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
 use crate::container::ContainerScan;
@@ -69,15 +69,20 @@ fn feature_output_bodies_with_history(
     let generated_input_outputs = generated_input_output_bodies(scan, ir, feature_id, visiting);
     for surface in generated_surfaces {
         for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
-            let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell) else {
+            let Some(shell) = exactly_one(
+                ir.model
+                    .shells
+                    .iter()
+                    .filter(|shell| shell.id == face.shell),
+            ) else {
                 continue;
             };
-            let Some(region) = ir
-                .model
-                .regions
-                .iter()
-                .find(|region| region.id == shell.region)
-            else {
+            let Some(region) = exactly_one(
+                ir.model
+                    .regions
+                    .iter()
+                    .filter(|region| region.id == shell.region),
+            ) else {
                 continue;
             };
             if !outputs.contains(&region.body) {
@@ -101,12 +106,12 @@ fn generated_input_output_bodies(
     visiting: &mut BTreeSet<u32>,
 ) -> Vec<BodyId> {
     let feature_id_text = format!("creo:model:feature#{feature_id}");
-    let Some(feature) = ir
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.id.as_str() == feature_id_text)
-    else {
+    let Some(feature) = exactly_one(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| feature.id.as_str() == feature_id_text),
+    ) else {
         return Vec::new();
     };
     feature_generated_dependencies(&feature.definition)
@@ -159,15 +164,13 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
         .iter()
         .filter(|coedge| selected.contains(&coedge.edge))
         .filter_map(|coedge| {
-            let lp = ir
-                .model
-                .loops
-                .iter()
-                .find(|lp| lp.id == coedge.owner_loop)?;
-            ir.model
-                .faces
-                .iter()
-                .find(|face| face.id == lp.face)
+            let lp = exactly_one(
+                ir.model
+                    .loops
+                    .iter()
+                    .filter(|lp| lp.id == coedge.owner_loop),
+            )?;
+            exactly_one(ir.model.faces.iter().filter(|face| face.id == lp.face))
                 .map(|face| face.shell.clone())
         })
         .collect::<BTreeSet<_>>();
@@ -178,20 +181,18 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
             .filter(|shell| shell.wire_edges.iter().any(|edge| selected.contains(edge)))
             .map(|shell| shell.id.clone()),
     );
-    ir.model
-        .shells
-        .iter()
-        .filter(|shell| shell_ids.contains(&shell.id))
-        .filter_map(|shell| {
-            let region = ir
-                .model
-                .regions
-                .iter()
-                .find(|region| region.id == shell.region)?;
-            ir.model
-                .bodies
-                .iter()
-                .any(|body| body.id == region.body)
+    shell_ids
+        .into_iter()
+        .filter_map(|shell_id| {
+            let shell = exactly_one(ir.model.shells.iter().filter(|shell| shell.id == shell_id))?;
+            let region = exactly_one(
+                ir.model
+                    .regions
+                    .iter()
+                    .filter(|region| region.id == shell.region),
+            )?;
+            exactly_one(ir.model.bodies.iter().filter(|body| body.id == region.body))
+                .is_some()
                 .then(|| region.body.clone())
         })
         .fold(Vec::new(), |mut bodies, body| {
@@ -206,7 +207,7 @@ pub(in super::super) fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u3
     ["extrusion", "revolution"]
         .into_iter()
         .map(|family| BodyId(format!("creo:feature:{family}#{feature_id}:body")))
-        .filter(|id| ir.model.bodies.iter().any(|body| body.id == *id))
+        .filter(|id| exactly_one(ir.model.bodies.iter().filter(|body| body.id == *id)).is_some())
         .collect()
 }
 
@@ -216,11 +217,7 @@ pub(in super::super) fn evaluated_sweep_body_kind(
     feature_id: u32,
 ) -> Option<BodyKind> {
     let id = BodyId(format!("creo:feature:{family}#{feature_id}:body"));
-    ir.model
-        .bodies
-        .iter()
-        .find(|body| body.id == id)
-        .map(|body| body.kind)
+    exactly_one(ir.model.bodies.iter().filter(|body| body.id == id)).map(|body| body.kind)
 }
 
 pub(in super::super) fn new_sheet_output_surface_id(
