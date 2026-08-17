@@ -5367,8 +5367,9 @@ If the packed ID is absent or nil, the CADIR decision is to use the table
 record offset for the native record identity and leave `source_uuid` absent;
 the decoder does not fabricate the UUID that openNURBS creates at read time.
 
-Dimension-style records use an anonymous major-1 chunk. The writer emits
-minor 9. The common minor-0 prefix after model-component attributes is:
+Dimension-style records use an anonymous major-1 chunk. OpenNURBS writers
+through version 8 emit minor 9; the version-9 writer emits minor 11. The
+common minor-0 prefix after model-component attributes is:
 
 ```text
 7 × f64 model lengths: extension-line extension, extension-line offset,
@@ -5451,13 +5452,17 @@ minor >= 6: 2 × u32 primary and alternate dimension length-display modes
 minor >= 7: u32 center-mark style
 minor >= 8: bool force dimension line; u32 text fit; u32 arrow fit
 minor >= 9: u32 decimal separator
+minor >= 10: bool use kerning
+minor >= 11: f64 line-space scale
 ```
 
 The scale-value, font-characteristics, and text-mask values are anonymous
 child chunks and are bounded independently. A major-1 reader consumes the
-minor-0 prefix and each gate through minor 9. For a minor greater than 9 it
-does not interpret later fields; it leaves those bytes to the containing
-anonymous chunk boundary. A non-major-1 chunk is rejected.
+minor-0 prefix and each gate through minor 11. `use kerning` enables kerning
+when glyph placement is computed. `line-space scale` is the dimensionless
+multiplier applied to line spacing. For a minor greater than 11, the reader
+consumes this known prefix and leaves later bytes to the containing anonymous
+chunk boundary. A non-major-1 chunk is rejected.
 
 Sizes, baseline spacing, fixed extension length, leader landing length, and
 plot weights are length values. Scale factors, rotations, fractions, rounding

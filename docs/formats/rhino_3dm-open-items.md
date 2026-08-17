@@ -45,62 +45,6 @@ with changed layout remain open. The current source has no later object-class
 producer to characterize; the remaining question requires a later producer or
 an independent versioned witness.
 
-### FV-02. Future table-record payloads
-
-**Question.** Which later table-record versions retain typed decoding, and what
-fields do those versions add or change?
-
-**Known.** The audited material, texture, group, light, linetype, hatch, font,
-dimension-style, view, and settings readers consume known bounded prefixes and
-skip source-defined suffixes. Tagged streams, explicit terminators, and
-writer-band ceilings remain grammar controls. An unknown table record has no
-typed fields from its typecode alone.
-`ON_Group::Internal_WriteV5` and `Internal_ReadV5` define the group class
-wrapper's packed 1.1 prefix: archive index, UTF-16 name, and UUID. The group
-record writer and reader in `ON_BinaryArchive::Write3dmGroup` and
-`Read3dmGroup` contain that wrapper directly in the CRC-bearing group record.
-The Rust decoder consumes that prefix and resolves object-attribute group
-indexes to unique group records.
-`ON_Linetype::Write` and `Read` define the linetype class wrapper's legacy
-anonymous 1.1 and modern anonymous 2.3 payloads. The modern payload contains
-the five-status model-attributes child, segment array, and minor-gated item
-stream for cap, join, width, width units, taper, and always-model-distance.
-`ON_BinaryArchive::WriteLinetypeSegment` defines the line/space wire tags.
-`ON_HatchPattern::WriteV5`/`ReadV5` define the below-version-60 packed 1.2
-prefix and packed 1.1 hatch-line elements. The version-60 writer uses an
-anonymous major-1 pattern body with model-component attributes, a nested
-anonymous line-list body, and anonymous major-1 hatch-line elements.
-`ON_BinaryArchive::Write3dmHatchPattern`/`Read3dmHatchPattern` put one class
-wrapper directly in each CRC-bearing hatch-pattern record. The Rust decoder
-consumes both source branches and scales only line lengths.
-The shared model-component child is also source-defined: the legacy anonymous
-version-1.0 form uses the five-bit UUID/parent/index/name/status presence mask,
-ignores other mask bits, and uses a two-`u32` locked/hidden status mask; the
-modern `0x40008002` version-1.0 form uses five status bytes for model serial,
-UUID, type, index, and name, where only 0, 1, and 2 have writer meanings and
-the reader treats other values as no field. Both children are bounded by their
-own chunk ends. This is established by
-`ON_ModelComponent::ReadModelComponentAttributes` and
-`ON_BinaryArchive::ReadModelComponentAttributes` in
-`/home/pcurve/side2/opennurbs/opennurbs_model_component.cpp` and by the public
-linetype status and legacy-mask witnesses recorded in the notebook.
-The current table writers in `opennurbs_material.cpp`,
-`opennurbs_bitmap.cpp`, `opennurbs_hatch.cpp`, `opennurbs_linetype.cpp`,
-`opennurbs_font.cpp`, `opennurbs_text_style.cpp`,
-`opennurbs_dimensionstyle.cpp`, `opennurbs_viewport.cpp`,
-`opennurbs_3dm_settings.cpp`, `opennurbs_3dm_properties.cpp`, and
-`opennurbs_instance.cpp` select only the version bands specified by these
-sections. No later table-record major writer is defined by those current
-paths.
-
-**Need.** Producer source or an independent witness for any later table-record
-major or changed layout that is to be admitted as typed data.
-
-**Note.** Narrowed 2026-08-16. The audited bounded suffix subset is settled;
-later table-record layouts outside it remain open. The current source has no
-later table-record producer to characterize; the remaining question requires a
-later producer or an independent versioned witness.
-
 ### FV-03. Future user-data payloads
 
 **Question.** Which later user-data versions have a typed payload grammar, and

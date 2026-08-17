@@ -2264,6 +2264,12 @@ fn dimension_style_controls(
     if minor >= 9 {
         put!("decimal_separator", reader.u32()?);
     }
+    if minor >= 10 {
+        put!("use_kerning", reader.bool()?);
+    }
+    if minor >= 11 {
+        put!("line_space_scale", read_finite(reader, "line-space scale")?);
+    }
     reader.skip_remaining()?;
     Ok(values)
 }
@@ -3891,7 +3897,7 @@ mod tests {
         bytes
     }
 
-    fn future_dimension_style_chunk() -> Vec<u8> {
+    fn dimension_style_chunk(minor: i32) -> Vec<u8> {
         let mut body = model_attributes_chunk(7, "dimension style");
         for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0] {
             body.extend(value.to_le_bytes());
@@ -3996,8 +4002,22 @@ mod tests {
         body.extend(111_u32.to_le_bytes());
         body.push(1);
         body.extend(112_u32.to_le_bytes());
+        if minor >= 10 {
+            body.push(1);
+        }
+        if minor >= 11 {
+            body.extend(1.75_f64.to_le_bytes());
+        }
         body.extend([0xaa, 0xbb]);
-        anonymous(10, &body)
+        anonymous(minor, &body)
+    }
+
+    fn future_dimension_style_chunk() -> Vec<u8> {
+        dimension_style_chunk(12)
+    }
+
+    fn current_dimension_style_chunk() -> Vec<u8> {
+        dimension_style_chunk(11)
     }
 
     fn v5_dimension_style_chunk() -> Vec<u8> {
@@ -4417,6 +4437,8 @@ mod tests {
         assert_eq!(value.name, "dimension style");
         assert_eq!(value.extension_line_extension_mm, 1.0);
         assert_eq!(value.controls["decimal_separator"], serde_json::json!(112));
+        assert_eq!(value.controls["use_kerning"], serde_json::json!(true));
+        assert_eq!(value.controls["line_space_scale"], serde_json::json!(1.75));
         assert_eq!(
             value.controls["dimension_length_display"],
             serde_json::json!(107)
@@ -4426,6 +4448,16 @@ mod tests {
             serde_json::json!(24)
         );
         assert_eq!(value.source_offset, 321);
+    }
+
+    #[test]
+    fn dimension_style_current_minor_transfers_new_text_controls() {
+        let bytes = current_dimension_style_chunk();
+        let value = parse_dimension_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 1.0, 654)
+            .expect("dimension style with current minor");
+        assert_eq!(value.controls["use_kerning"], serde_json::json!(true));
+        assert_eq!(value.controls["line_space_scale"], serde_json::json!(1.75));
+        assert_eq!(value.source_offset, 654);
     }
 
     #[test]
