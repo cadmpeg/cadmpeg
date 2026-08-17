@@ -27,7 +27,7 @@ use super::geometry::{
     saved_section_circle_values,
 };
 use super::skamp::{
-    section_line_entity_fixed_coordinate, section_segment_rows, unique_section_skamp_segment,
+    section_line_entity_fixed_coordinate, section_segment_rows, unique_decoded_section_segment,
 };
 
 pub(crate) fn resolved_section_radii(
@@ -198,7 +198,7 @@ pub(crate) fn resolved_section_radii(
         .flat_map(|table| &table.rows)
         .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
     {
-        if unique_section_skamp_segment(definition, segment.external_id) != Some(segment) {
+        if unique_decoded_section_segment(definition, segment.external_id) != Some(segment) {
             continue;
         }
         let Some(radius_id) = segment.radius_ref else {
@@ -396,7 +396,7 @@ pub(crate) fn section_skamp_radius_source(
     if let Some(circle) = unique_circle_segment(definition, item.entity_id) {
         return Some(SectionRadiusSource::Reference(circle.radius_ref));
     }
-    if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
+    if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return (segment.kind == crate::feature::FeatureSegmentKind::Arc)
             .then_some(segment.radius_ref)
             .flatten()
@@ -616,5 +616,97 @@ pub(crate) fn trim_segment_id(
     match (unmatched_segments.as_slice(), unmatched_rows.as_slice()) {
         ([segment_id], [unmatched]) if std::ptr::eq(*unmatched, row) => Some(*segment_id),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolved_section_radii, section_skamp_radius_source, SectionRadiusSource};
+
+    #[test]
+    fn unique_arc_rows_remain_radius_sources_in_incomplete_segment_tables() {
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 1,
+                        u: Some(0.0),
+                        v: Some(0.0),
+                    },
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 2,
+                        u: Some(3.0),
+                        v: Some(0.0),
+                    },
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 3,
+                        u: Some(0.0),
+                        v: Some(3.0),
+                    },
+                ],
+                offset: 0,
+            }),
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 2,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Arc,
+                    directions: [None; 3],
+                    point_ids: [2, 3],
+                    center_id: Some(1),
+                    arc_orientation: Some(1),
+                    vertical_horizontal: None,
+                    radius_ref: Some(42),
+                    radius2_ref: None,
+                    external_id: 10,
+                    body: Vec::new(),
+                    offset: 0,
+                }],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        assert!(!definition
+            .segments
+            .as_ref()
+            .expect("segments")
+            .is_complete());
+        assert_eq!(
+            resolved_section_radii(&definition),
+            std::collections::BTreeMap::from([(42, 3.0)])
+        );
+        assert!(matches!(
+            section_skamp_radius_source(
+                &definition,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 10,
+                    sense: 0,
+                },
+            ),
+            Some(SectionRadiusSource::Reference(42))
+        ));
     }
 }

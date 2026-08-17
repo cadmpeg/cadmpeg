@@ -375,6 +375,9 @@ fixtures, scores above L1 remain blocked.
   uniquely identified ordinary segment row from an incomplete segment table.
   Profile chains, model-space placement, and whole-table topology continue to
   require the complete-table proof.
+- A unique ordinary arc row with complete center and endpoint coordinates adds
+  its consistent radius to radius solving despite an incomplete segment table;
+  active complete equal-radius incidences use that row's radius reference.
 - Positional `entity(line)` rows require exactly one six-scalar endpoint suffix
   start that consumes the complete row body; competing starts withhold the
   line.
