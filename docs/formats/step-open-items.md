@@ -18,16 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-03. Resource composition
-
-**Question.** How does an external resource occurrence combine with the local instance graph?
-
-**Known.** Part 21 substitutes one referenced anchor item at one local occurrence and does not copy the target resource's numeric instances into the local exchange (`step.md` §7 "For a resolved external resource"). The codec parses the supplied root only and reports external dependencies (`crates/cadmpeg-codec-step/src/codec.rs:323-362`).
-
-**Need.** Define resource-qualified identity, schema, unit, trust, and anchor-substitution rules for a composition step, with a multi-resource witness.
-
-**Conflict.** Root-only decode preserves the dependency but does not execute the cross-resource substitution that the format defines.
-
 ### ER-04. Resource cache identity
 
 **Question.** Which URI components and resource metadata identify one cached external resource?

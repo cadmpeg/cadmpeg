@@ -598,12 +598,25 @@ For a resolved external resource, the referenced `ANCHOR_ITEM` supplies one
 entity or value at the local occurrence. URI forwarding repeats this lookup.
 It does not copy the resource's DATA records, numeric instance names, schema
 sections, units, or other records into the local exchange. Numeric instance
-names are unique within their own exchange structure; the URI fragment and
-anchor name identify the cross-resource target. A target that is not an entity
-or value in the current `FILE_SCHEMA`, or that cannot be resolved, has the
-format result `$`. The [Part 21 edition-3 text](https://www.steptools.com/stds/step/IS_final_p21e3.html)
+names are local to their exchange structure. The URI fragment and anchor name
+identify the cross-resource target, and the target must satisfy the entity or
+value requirement for the current `FILE_SCHEMA`. A target that is not such an
+entity or value, or that cannot be resolved, has the format result `$`. The
+[Part 21 edition-3 text](https://www.steptools.com/stds/step/IS_final_p21e3.html)
 §§10.2.5–10.2.7 and Annex J define this single-target substitution across
 distributed exchange structures.
+
+CADIR decision: a composition graph uses three identities. A local DATA node
+is `(root-resource, occurrence-kind, numeric-id)`. An external target is
+`(resource-binding, occurrence-kind, anchor-name)`, where `resource-binding`
+is the caller's resolver-qualified binding and carries the exact URI,
+retrieved representation, and admission result. The numeric DATA id behind an
+anchor is local to that resource and is not part of the target identity. A
+root external occurrence is an explicit binding from its local occurrence name
+to that target. Two resources that reuse a numeric id or anchor name therefore
+remain different targets. Reuse of one target requires the caller to provide
+the same resource binding; URI spelling, file name, numeric id, anchor name,
+or byte equality alone does not unify resources.
 
 CADIR decision: a standalone clear-text input has no implicit transport base
 URI. The codec does not derive one from `FILE_NAME.name`, any other header
@@ -663,8 +676,11 @@ not merge subsidiary DATA, schemas, units, or coordinate contexts. A caller
 that chooses composition must provide a resolver-qualified resource binding,
 verify the supplied target and its schema, and apply its trust, digest or
 signature, unit, and coordinate-context policies before connecting that target
-to a local occurrence. The codec has no implicit cross-resource composition
-step. A missing, refused, or unverified target remains an external dependency.
+to a local occurrence. The target's schema, units, and coordinate context
+remain resource-scoped; the caller must prove compatibility or apply an
+explicit conversion and retain that decision. The codec has no implicit
+cross-resource composition step. A missing, refused, or unverified target
+remains an external dependency.
 
 CADIR decision: the STEP codec has no external-resource cache and does not
 canonicalize URI spellings. For a caller cache, the retrieved representation

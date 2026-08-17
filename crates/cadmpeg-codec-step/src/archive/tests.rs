@@ -394,6 +394,103 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
 }
 
 #[test]
+fn distinct_external_resources_keep_reused_numeric_targets_separate() {
+    let root = include_bytes!("tests/data/er03_root_distinct_resources.p21");
+    let alpha = include_bytes!("tests/data/er03_subsidiary_alpha.p21");
+    let beta = include_bytes!("tests/data/er03_subsidiary_beta.p21");
+    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse identity root");
+    assert!(root_diagnostics.is_empty());
+    assert_eq!(root_exchange.references.len(), 2);
+    assert_eq!(
+        root_exchange.references[0].uri,
+        "parts/er03_subsidiary_alpha.p21#remote_item"
+    );
+    assert_eq!(
+        root_exchange.references[1].uri,
+        "parts/er03_subsidiary_beta.p21#remote_item"
+    );
+    assert_eq!(
+        root_exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(10),
+            crate::parse::Value::Reference(11)
+        ]
+    );
+
+    for (bytes, value) in [
+        (alpha.as_slice(), b"alpha".as_slice()),
+        (beta.as_slice(), b"beta".as_slice()),
+    ] {
+        let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse subsidiary");
+        assert!(diagnostics.is_empty());
+        assert_eq!(exchange.anchors[0].name, "remote_item");
+        assert_eq!(exchange.anchors[0].value, crate::parse::Value::Reference(1));
+        assert_eq!(
+            exchange.records[&1].partials[0].parameters,
+            vec![crate::parse::Value::String(value.to_vec())]
+        );
+    }
+
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/er03_subsidiary_alpha.p21",
+            alpha,
+            CompressionMethod::Stored,
+        ),
+        (
+            "parts/er03_subsidiary_beta.p21",
+            beta,
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect distinct resource identity witness");
+    assert_eq!(summary.entries.len(), 3);
+    for note in [
+        "internal resource #10 -> parts/er03_subsidiary_alpha.p21#remote_item",
+        "internal resource #11 -> parts/er03_subsidiary_beta.p21#remote_item",
+    ] {
+        assert!(summary.notes.iter().any(|candidate| candidate == note));
+    }
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root without composing subsidiaries");
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert_eq!(source.attributes["entity_instances"], "1");
+    let unknown = result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert_eq!(unknown.len(), 1);
+    assert_eq!(unknown[0].id.0, "step:data:item#1");
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(&unknown[0].id.0)
+            .expect("root occurrence source fidelity")
+            .data
+            .as_deref(),
+        Some(b"#1=ITEM(#10,#11);".as_slice())
+    );
+    for note in [
+        "external reference #10 -> parts/er03_subsidiary_alpha.p21#remote_item",
+        "external reference #11 -> parts/er03_subsidiary_beta.p21#remote_item",
+        "internal resource #10 -> parts/er03_subsidiary_alpha.p21#remote_item",
+        "internal resource #11 -> parts/er03_subsidiary_beta.p21#remote_item",
+    ] {
+        assert!(result
+            .report()
+            .notes
+            .iter()
+            .any(|candidate| candidate == note));
+    }
+}
+
+#[test]
 fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
     let root = include_bytes!("tests/data/ce02_root_anchor_valid.p21");
     let subsidiary = include_bytes!("tests/data/ce02_subsidiary_valid.p21");
