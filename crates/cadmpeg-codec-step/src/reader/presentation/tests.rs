@@ -4,6 +4,8 @@
 #![allow(unused_imports)]
 use super::*;
 
+mod surface_styles;
+
 #[test]
 fn surface_color_search_ignores_curve_style_colors() {
     let (exchange, _) = crate::parse::parse(
@@ -23,6 +25,7 @@ ENDSEC;END-ISO-10303-21;",
         &mut BTreeSet::new(),
         &mut BTreeMap::new(),
         &mut Vec::new(),
+        &mut BTreeSet::new(),
         0,
     )
     .expect("surface color");

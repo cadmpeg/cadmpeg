@@ -267,6 +267,7 @@ pub(super) fn decode(
         let domain = style_domain(target_step, exchange);
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
+        let mut invalid_surface_sides = BTreeSet::new();
         let style_references = parts
             .styles
             .list()
@@ -312,6 +313,7 @@ pub(super) fn decode(
                     &mut active,
                     &mut color_cache,
                     &mut losses,
+                    &mut invalid_surface_sides,
                     0,
                 )
             }));
@@ -326,6 +328,7 @@ pub(super) fn decode(
                             &mut active,
                             &mut color_cache,
                             &mut losses,
+                            &mut invalid_surface_sides,
                             0,
                         )
                     },
@@ -438,7 +441,12 @@ pub(super) fn decode(
         if let Some(overridden) = overridden_style(style) {
             typed.insert(overridden);
         }
-        typed.extend(color_cache.keys().map(|(id, _)| *id));
+        typed.extend(
+            color_cache
+                .keys()
+                .filter(|(id, _)| !invalid_surface_sides.contains(id))
+                .map(|(id, _)| *id),
+        );
         typed.insert(color_id);
     }
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
@@ -1064,6 +1072,7 @@ fn combine_color_resolutions(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Recursive search keeps cache, loss, and invalid-source tracking separate.
 fn find_color(
     id: u64,
     exchange: &Exchange,
@@ -1071,6 +1080,7 @@ fn find_color(
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<(u64, StyleDomain), CachedColor>,
     losses: &mut Vec<LossNote>,
+    invalid_surface_sides: &mut BTreeSet<u64>,
     depth: usize,
 ) -> CachedColor {
     if depth >= 256 {
@@ -1091,7 +1101,7 @@ fn find_color(
         .flatten();
     let mut result = (|| {
         let side_rank = if domain == StyleDomain::Surface {
-            surface_side_rank(record)
+            surface_side_rank(id, record, losses, invalid_surface_sides)?
         } else {
             0
         };
@@ -1131,6 +1141,7 @@ fn find_color(
                     active,
                     cache,
                     losses,
+                    invalid_surface_sides,
                     depth + 1,
                 );
             }
@@ -1223,6 +1234,7 @@ fn find_color(
                             active,
                             cache,
                             losses,
+                            invalid_surface_sides,
                             depth + 1,
                         )
                     })
@@ -1286,19 +1298,38 @@ fn surface_transparency(
     }
 }
 
-fn surface_side_rank(record: &RawRecord) -> u8 {
-    record
+fn surface_side_rank(
+    id: u64,
+    record: &RawRecord,
+    losses: &mut Vec<LossNote>,
+    invalid_surface_sides: &mut BTreeSet<u64>,
+) -> Option<u8> {
+    let Some(partial) = record
         .partials
         .iter()
         .find(|partial| partial.name == "SURFACE_STYLE_USAGE")
-        .and_then(|partial| partial.parameters.first())
-        .and_then(ValueExt::enumeration)
-        .map_or(0, |side| match side {
-            "BOTH" => 3,
-            "POSITIVE" => 2,
-            "NEGATIVE" => 1,
-            _ => 0,
-        })
+    else {
+        return Some(0);
+    };
+    let Some(side) = partial.parameters.first().and_then(ValueExt::enumeration) else {
+        invalid_surface_sides.insert(id);
+        losses.push(StepLossCode::SurfaceSideInvalid.note(format!(
+            "SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"
+        )));
+        return None;
+    };
+    match side {
+        "BOTH" => Some(3),
+        "POSITIVE" => Some(2),
+        "NEGATIVE" => Some(1),
+        _ => {
+            invalid_surface_sides.insert(id);
+            losses.push(StepLossCode::SurfaceSideInvalid.note(format!(
+                "SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"
+            )));
+            None
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

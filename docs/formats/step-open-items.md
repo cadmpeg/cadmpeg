@@ -124,18 +124,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 7. Annotation, presentation, and tessellation
 
-### AP-13. Invalid surface-side value
-
-**Question.** How must a `SURFACE_STYLE_USAGE` with an invalid `surface_side` value be admitted?
-
-**Known.** `surface_side` is one of `.POSITIVE.`, `.NEGATIVE.`, and `.BOTH.`. The CADIR scalar projection ranks these values as `BOTH`, `POSITIVE`, then `NEGATIVE`.
-
-**Need.** Define the loss, opaque-retention, and neutral-color behavior for an enumeration value outside the declared set.
-
-**Conflict.** The decoder treats an unknown value as rank zero and still returns the color candidate. An invalid side therefore participates in style resolution without a loss or rejection.
-
-**Note.** `crates/cadmpeg-codec-step/src/reader/presentation.rs:1067-1105,1164-1172` keeps the candidate returned by `surface_side_rank`, and `crates/cadmpeg-codec-step/src/reader/presentation.rs:1289-1301` maps every unknown enumeration to `0` without emitting a loss. `step.md` §8 "ISO 10303-46 §6.3.35 defines `surface_side` as `.POSITIVE.`, `.NEGATIVE.`," defines only the three valid values. A `SURFACE_STYLE_USAGE(.SIDE_NOT_IN_SCHEMA.,#style)` with no competing candidate can silently transfer a neutral color as if the style were usable.
-
 ## 8. Product structure and placement
 
 ### PS-10. Direct context-representation binding

@@ -88,6 +88,8 @@ pub enum StepLossCode {
     PmiAngleUnitUnresolved,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
+    /// A surface style usage has an invalid `surface_side` enumeration value.
+    SurfaceSideInvalid,
     /// A surface rendering has multiple transparency properties.
     SurfaceTransparencyConflict,
     /// A context-dependent style has no matching neutral presentation context.
@@ -323,6 +325,7 @@ impl StepLossCode {
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
         Self::ConflictingScalarColors,
+        Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
         Self::ContextDependentStyleUnresolved,
         Self::DrawingRecordTooFewParameters,
@@ -466,6 +469,7 @@ impl StepLossCode {
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
+            Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
             Self::ContextDependentStyleUnresolved => {
                 "presentation.context-dependent-style-unresolved"
@@ -649,6 +653,7 @@ impl StepLossCode {
             | Self::DimensionalNominalAmbiguous
             | Self::DimensionalUnnamedMeasureAmbiguous
             | Self::ConflictingScalarColors
+            | Self::SurfaceSideInvalid
             | Self::SurfaceTransparencyConflict
             | Self::ContextDependentStyleUnresolved
             | Self::DrawingRelationshipUntypedTarget
@@ -846,6 +851,7 @@ mod tests {
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
                 "presentation.conflicting-scalar-colors",
+                "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
                 "presentation.context-dependent-style-unresolved",
                 "drawing.record-too-few-parameters",

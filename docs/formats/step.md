@@ -1724,6 +1724,16 @@ and negative appearances. The scalar projection therefore ranks
 It applies this projection independently of SET serialization order. The
 ranking is a CADIR projection, not a STEP precedence rule.
 
+The Part 46 `surface_side` enumeration has no value other than `.POSITIVE.`,
+`.NEGATIVE.`, or `.BOTH.`. CADIR treats a `SURFACE_STYLE_USAGE` with a missing,
+non-enumeration, or other enumeration value as an invalid style branch. The
+decoder records `presentation.surface-side-invalid`, does not use that branch
+for neutral color or appearance bindings, and retains the usage and its
+untyped style descendants as native STEP records. A valid sibling usage in the
+same style assignment remains eligible for the CADIR side projection. This is
+a CADIR admission decision for invalid source data; it is not a fourth side
+meaning.
+
 ISO 10303-46 §6.2 states that it does not define the effect of a style
 conflict, including the case where one `representation_item` is used by
 several independent `STYLED_ITEM` instances. The `styles` attributes of
