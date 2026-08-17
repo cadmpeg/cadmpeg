@@ -6635,6 +6635,10 @@ if minor >= 2:
   i32 plugin SDK service release
 ```
 
+The outer CRC covers the packed version, count, and any direct suffix bytes.
+It excludes each complete anonymous plugin-reference chunk, including its
+header and trailing CRC.
+
 The plugin-reference writer emits version `1.2`. Its reader requires major
 version 1 and accepts every nonnegative minor. The plugin identity identifies
 the application plugin whose userdata may be present in the file. The

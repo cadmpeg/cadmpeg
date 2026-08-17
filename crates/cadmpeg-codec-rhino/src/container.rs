@@ -10,9 +10,9 @@ use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
-    chunk_at, direct_checksum_ranges, parse_eof, parse_header, verify_checksum,
-    verify_checksum_ranges, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_CRC,
-    TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    checked_count_bytes, chunk_at, direct_checksum_ranges, parse_eof, parse_header,
+    verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader, ChecksumStatus,
+    FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -234,6 +234,12 @@ fn checksum_warning(
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
         let Ok(children) = settings_attributes_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_PLUGIN_LIST {
+        let Ok(children) = plugin_list_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
         let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
@@ -607,6 +613,51 @@ fn list_checksum_children(
         }
         children.push(child.range());
         offset = child.next_offset;
+    }
+    Ok(children)
+}
+
+/// Returns the complete plugin-reference chunks after the packed
+/// version/count prefix.
+///
+/// The plugin-list CRC covers the prefix and any direct suffix bytes, but not
+/// these complete anonymous child chunks.
+fn plugin_list_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let packed_version = reader.u8()?;
+    if packed_version >> 4 != 1 {
+        return Ok(Vec::new());
+    }
+    let count_offset = reader.position();
+    let child_count = checked_count_bytes(
+        reader.i32()?,
+        1,
+        reader.remaining(),
+        TABLE_RECORD_CAP,
+        count_offset,
+    )?;
+    let mut children = Vec::with_capacity(child_count);
+    for _ in 0..child_count {
+        let start = reader.position();
+        let child = chunk_at(data, start, reader.end(), archive, false)?;
+        if child.typecode != TCODE_ANONYMOUS || child.short {
+            return Err(FramingError::structural(
+                start,
+                "plugin-list child must be an anonymous long chunk",
+            ));
+        }
+        if child.next_offset <= start {
+            return Err(FramingError::structural(
+                start,
+                "plugin-list child did not advance",
+            ));
+        }
+        children.push(child.range());
+        reader.skip(child.next_offset - start)?;
     }
     Ok(children)
 }

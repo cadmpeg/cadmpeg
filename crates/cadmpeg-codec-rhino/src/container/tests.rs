@@ -552,6 +552,30 @@ fn settings_attributes_crc_excludes_all_nested_children() {
 }
 
 #[test]
+fn plugin_list_crc_excludes_plugin_reference_chunks() {
+    let archive = ArchiveVersion::V5;
+    let child = anonymous_chunk(archive, 2, &[0xde, 0xad]);
+    let mut body = vec![0x10];
+    body.extend(1_i32.to_le_bytes());
+    let child_start = body.len();
+    body.extend(child);
+    let child_range = child_start..body.len();
+    body.extend([0xbe, 0xef]);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8135,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+
+    assert_eq!(
+        super::checksum_warning(&record, 0x2000_8135, 0, record.len(), archive)
+            .expect("plugin-list checksum framing"),
+        None
+    );
+}
+
+#[test]
 fn user_table_uuid_crc_excludes_record_header() {
     let archive = ArchiveVersion::V5;
     let mut body = vec![0; 16];
