@@ -157,6 +157,10 @@ body, the archive-1 reader alone admits raw buffers, Windows bitmap Ex adds
 packed 1.0 and a path, and embedded bitmap writes packed 1.1 with UUID/name
 fields after its compressed buffer. All known buffers close before the bounded
 class-data suffix.
+The settings plugin list is settled: the list is emitted from archive 4 when
+nonempty, its outer version is 1.0, and each plugin-reference child writes
+version 1.2 with developer fields at minor 1 and platform/SDK fields at minor
+2. The list and every child close independently.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -209,5 +213,9 @@ The bitmap subset is established by `ON_WindowsBitmap::Write`/`Read`,
 `ON_EmbeddedBitmap::Internal_WriteV5`/`Internal_ReadV5` in
 `opennurbs_bitmap.cpp`; the presentation owner tests exercise raw, contiguous,
 split, compressed, and suffix variants.
+The plugin subset is established by the settings writer path and
+`ON_PlugInRef::Write`/`Read` in `opennurbs_pluginlist.cpp`; the
+`parses_plugin_list_entries_and_bounded_future_minors` owner witness exercises
+outer and child suffixes and both minor branches.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.
