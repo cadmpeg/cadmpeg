@@ -186,6 +186,104 @@ fn occurrence_record_with_serializer_magic(
     bytes
 }
 
+fn legacy_occurrence_reference(target: u64, identity: u64) -> Vec<u8> {
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&target.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&identity.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    bytes.push(0);
+    bytes
+}
+
+/// One legacy typed placement envelope. The target-reference fields are
+/// deliberately built from independent values; only the role and transform
+/// are projected by the placement reader.
+fn legacy_occurrence_record(
+    role: &str,
+    entity_id: u64,
+    transform: Option<[[f64; 4]; 4]>,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"380");
+    bytes.extend_from_slice(&entity_id.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend(legacy_occurrence_reference(3, 0x0102_0304_0506_0708));
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(
+        "11111111-2222-3333-4444-555555555555",
+    ));
+    bytes.extend(crate::bytes::lp_utf16_bytes(
+        "66666666-7777-8888-9999-aaaaaaaaaaaa",
+    ));
+    bytes.push(0);
+    bytes.extend(legacy_occurrence_reference(3, 0x1112_1314_1516_1718));
+    match transform {
+        Some(transform) => {
+            bytes.push(0);
+            for value in transform.into_iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        None => bytes.push(1),
+    }
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
+#[test]
+fn legacy_typed_placements_decode_identity_and_matrix_forms() {
+    let matrix = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let identity = legacy_occurrence_record(role, 10, None);
+    let matrix_record = legacy_occurrence_record(role, 11, Some(matrix));
+    assert_eq!(identity.len(), 403);
+    assert_eq!(matrix_record.len(), 531);
+    let mut bytes = identity;
+    bytes.extend(matrix_record);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+
+    assert_eq!(placements.len(), 2);
+    assert_eq!(placements[0].discriminators, vec![1]);
+    assert_eq!(placements[1].discriminators, vec![1]);
+    assert_eq!(
+        super::occurrence_transforms(&placements, role),
+        vec![None, Some(matrix)]
+    );
+}
+
+#[test]
+fn malformed_legacy_typed_placement_reports_its_role() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let mut bytes = legacy_occurrence_record(role, 10, None);
+    bytes.pop();
+    let (placements, failures) = super::occurrence_placements_with_failures(
+        &bytes,
+        &super::indexed_records(&bytes),
+        None,
+        None,
+    );
+
+    assert!(placements.is_empty());
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].link_names, vec![role]);
+}
+
 #[test]
 fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
     let first = [
@@ -333,6 +431,67 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
     let transform = native.xref_references[0]
         .transform
         .expect("tagged placement transform");
+    assert!((transform[0][3] - 7.0).abs() < 1e-12);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::XrefPlacementUndecoded.kind()));
+}
+
+#[test]
+fn paired_design_metastream_selects_the_legacy_typed_placement_form() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let properties =
+        br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
+    let placement = legacy_occurrence_record(
+        role,
+        10,
+        Some([
+            [1.0, 0.0, 0.0, 7.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]),
+    );
+    let mut placement = placement;
+    placement[4..7].copy_from_slice(b"256");
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("Properties.dat", stored).unwrap();
+    zip.write_all(&(properties.len() as u32).to_le_bytes())
+        .unwrap();
+    zip.write_all(properties).unwrap();
+    zip.start_file("RedirectionsStream.dat", stored).unwrap();
+    zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
+        .unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design_metastream_with_records(
+        &[(
+            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &[10],
+        )],
+        &[(10, 0)],
+    ))
+    .unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&placement).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("synthetic legacy XRef archive");
+    let native = f3d_native(decoded.ir());
+    assert_eq!(native.xref_references.len(), 1);
+    let transform = native.xref_references[0]
+        .transform
+        .expect("legacy placement transform");
     assert!((transform[0][3] - 7.0).abs() < 1e-12);
     assert!(decoded
         .report()

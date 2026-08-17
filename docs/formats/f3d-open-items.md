@@ -250,11 +250,11 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 ### XR-04. Occurrence-placement reference runs
 
-**Question.** What do the counted reference run after the matrix, the modern tagged u32 run, and the two closing references of an occurrence placement name?
+**Question.** What do the counted reference run after the matrix, the modern tagged u32 run, the two modern closing references, and the legacy typed target-reference fields name?
 
-**Known.** `f3d.md` §1.4 "**Placement.**" gives the class, the layout, the instance discriminator, and the identity-marked matrix. The counted run reaches both local and cross-document targets. The two closing references name the same pair of entities for every placement of one document, so neither depends on the placement. A placement record can also carry the UTF-16 string `GatedByParent`; its position in the member sequence, its gate, and its value are not established.
+**Known.** `f3d.md` §1.4 "**Placement.**" gives the class, the modern and legacy layouts, the instance discriminator, the identity-marked matrices, and the exact 403-byte and 531-byte legacy closures. The modern counted run reaches both local and cross-document targets. The two modern closing references name the same pair of entities for every placement of one document, so neither depends on the placement. The legacy form carries two target-reference envelopes and two opaque UTF-16 GUID fields; its role and identity-or-matrix transform are independently defined. A placement record can also carry the UTF-16 string `GatedByParent`; its position in the member sequence, its gate, and its value are not established.
 
-**Need.** We must know the targets to write a complete occurrence placement. A reader takes the target path, the discriminators, and the transform without them.
+**Need.** We must know the targets and field meanings to write a complete occurrence placement in each envelope. A reader takes the target path, the discriminators, the role, and the transform without resolving the remaining fields.
 
 ## 3. Material assets
 

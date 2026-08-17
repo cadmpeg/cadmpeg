@@ -19,7 +19,7 @@ use cadmpeg_ir::products::{
     ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
 };
 
-use crate::bytes::{lp_ascii_strict, take_reference};
+use crate::bytes::{is_guid_relaxed, lp_ascii_strict, lp_utf16_bounded, take_reference};
 use crate::container::role;
 use crate::container::ContainerScan;
 use crate::records::{
@@ -619,6 +619,10 @@ fn occurrence_placements_with_failures(
                 placements.push(placement);
             } else if let Some((link_names, _, _)) = occurrence_path(body) {
                 failures.push(OccurrencePlacementFailure { link_names });
+            } else if let Some(link_name) = legacy_occurrence_role(body) {
+                failures.push(OccurrencePlacementFailure {
+                    link_names: vec![link_name],
+                });
             }
         });
     (placements, failures)
@@ -627,6 +631,16 @@ fn occurrence_placements_with_failures(
 /// Parse one record body, header included, requiring the member sequence to end
 /// exactly at the record end.
 fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<OccurrencePlacement> {
+    legacy_occurrence_placement(body)
+        .or_else(|| modern_occurrence_placement(body, serializer_magic))
+}
+
+/// Parse the current placement envelope: a standard target path, an optional
+/// rigid matrix, and the generation-selected reference runs.
+fn modern_occurrence_placement(
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Option<OccurrencePlacement> {
     let (link_names, discriminators, at) = occurrence_path(body)?;
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
@@ -662,6 +676,138 @@ fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<Oc
         }
     }
     None
+}
+
+/// Parse the legacy typed placement envelope.
+///
+/// This form keeps the same stable type-table identity as the current
+/// placement, but its target-reference carrier is wider and its matrix is
+/// after the repeated target envelope. The dynamic class tag is deliberately
+/// not an admission key: the type-table identity and exact member framing are
+/// the stable discriminators.
+fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
+    let (discriminator, mut at) = legacy_occurrence_prefix(body)?;
+    let identity_marker = *body.get(at)?;
+    at += 1;
+    let transform = match identity_marker {
+        1 => None,
+        0 => {
+            let matrix = decode_rigid_matrix(body, at)?;
+            at = at.checked_add(128)?;
+            Some(matrix)
+        }
+        _ => return None,
+    };
+    if View::u32_le_at(body, at)? != 0 {
+        return None;
+    }
+    at += 4;
+    let (link_name, after_role) = lp_utf16_bounded(body, at, 36..=36)?;
+    if !is_guid_relaxed(&link_name) {
+        return None;
+    }
+    at = after_role;
+    if body.get(at..at + 12)? != [0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0] {
+        return None;
+    }
+    at += 12;
+    (at == body.len()).then_some(OccurrencePlacement {
+        link_names: vec![link_name],
+        discriminators: vec![discriminator],
+        transform,
+    })
+}
+
+/// Return the role from a structurally valid legacy placement prefix.
+///
+/// The role is recovered even when the transform or closing tail is damaged,
+/// so the caller can report an undecoded typed placement against the correct
+/// external reference instead of treating it as an unrelated record.
+fn legacy_occurrence_role(body: &[u8]) -> Option<String> {
+    let (_, mut at) = legacy_occurrence_prefix(body)?;
+    match *body.get(at)? {
+        1 => at += 1,
+        0 => at = at.checked_add(129)?,
+        _ => return None,
+    }
+    if View::u32_le_at(body, at)? != 0 {
+        return None;
+    }
+    at += 4;
+    let (link_name, _) = lp_utf16_bounded(body, at, 36..=36)?;
+    is_guid_relaxed(&link_name).then_some(link_name)
+}
+
+/// Parse the shared prefix of the legacy identity and matrix forms.
+fn legacy_occurrence_prefix(body: &[u8]) -> Option<(u32, usize)> {
+    let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
+    let mut at = after_tag.checked_add(8)?;
+    let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
+    at = after_name;
+    if body.get(at) != Some(&1) {
+        return None;
+    }
+    at += 1;
+    if View::u32_le_at(body, at)? != 1 {
+        return None;
+    }
+    at += 4;
+    take_legacy_occurrence_reference(body, &mut at)?;
+    let discriminator = View::u32_le_at(body, at)?;
+    at += 4;
+    if View::u32_le_at(body, at)? != 1 {
+        return None;
+    }
+    at += 4;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    if View::u32_le_at(body, at)? != 1 {
+        return None;
+    }
+    at += 4;
+    for _ in 0..2 {
+        let (guid, next) = lp_utf16_bounded(body, at, 36..=36)?;
+        if !is_guid_relaxed(&guid) {
+            return None;
+        }
+        at = next;
+    }
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    take_legacy_occurrence_reference(body, &mut at)?;
+    Some((discriminator, at))
+}
+
+/// Consume one legacy occurrence target reference.
+fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
+    if body.get(*at) != Some(&1) {
+        return None;
+    }
+    *at += 1;
+    *at = at.checked_add(8)?;
+    if body.get(*at) != Some(&1) {
+        return None;
+    }
+    *at += 1;
+    *at = at.checked_add(8)?;
+    if body.get(*at) != Some(&0) {
+        return None;
+    }
+    *at += 1;
+    let (type_guid, next) = lp_ascii_strict(body, *at, 36..=36)?;
+    if !is_guid_relaxed(&type_guid) {
+        return None;
+    }
+    *at = next;
+    if body.get(*at) != Some(&0) {
+        return None;
+    }
+    *at += 1;
+    Some(())
 }
 
 /// Parse the target-path prefix shared by every occurrence-placement form.
