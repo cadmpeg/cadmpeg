@@ -674,14 +674,16 @@ text](https://www.steptools.com/stds/step/IS_final_p21e3.html) defines each
 signature as CMS for external content and requires the CMS structure to be
 encoded as Base64. [RFC 5652](https://www.rfc-editor.org/rfc/rfc5652) §§5.4–5.6
 defines the digest input, signed-attribute input, signature comparison, and
-recipient public-key input. The digest and signature algorithm identifiers and
-their parameters are CMS fields; Part 21 supplies no separate method or
-parameter field. CADIR decision: the parser checks the CMS envelope, detached
-content form, algorithm-identifier shape, signer identifier, signer-info field
-order, and signature-value shape, then retains the decoded bytes. It does not
-execute the RFC digest, signed-attribute, signature, key, or trust checks and
-does not infer an algorithm or verification parameter from Part 21 delimiters
-or Base64 text. Those checks use CMS fields and a caller-supplied verifier.
+recipient public-key input. [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280)
+§§6.1 and 6.3 define certificate-path and revocation inputs. The digest and
+signature algorithm identifiers and their parameters are CMS fields; Part 21
+supplies no separate method or parameter field. CADIR decision: the parser
+checks the CMS envelope, detached-content form, algorithm-identifier shape,
+signer identifier, signer-info field order, and signature-value shape, then
+retains the decoded bytes. It does not execute the RFC digest, signed-attribute,
+signature, key, certificate-path, validity-time, revocation, or authorization
+checks and does not infer an algorithm or verification parameter from Part 21
+delimiters or Base64 text.
 
 CADIR decision: the STEP codec admits only the root member's exchange graph
 into CADIR. It checks that each root REFERENCE binding that resolves to an
@@ -716,26 +718,46 @@ signature section and the alphabet bytes between it and the later
 `SIGNATURE;` token. The reader retains both the complete source span and the
 decoded CMS payload.
 
-For one signature, a downstream verifier reports `valid` only after it computes
-the digest over the exact Table 1 alphabet projection of the preceding source;
-when `SignerInfo.signedAttrs` is present, verifies the DER signed-attribute
-input, the `messageDigest` attribute against that content digest, and the
-`content-type` attribute against `encapContentInfo.eContentType`; verifies the
-CMS `signature` OCTET STRING with the `signatureAlgorithm` identifier and the
-selected signer public key; and applies a trust policy that accepts the signer,
-certificate path, key usage, validity time, revocation evidence, and required
-authorization. `invalid` means that a cryptographic check or an explicitly
-required policy check fails. A source or CMS value that fails Part 21 or CMS
-structural admission is structurally invalid and is refused by the parser
-before a signature result is emitted. `indeterminate` means that the CMS is
-structurally admitted but required content, key, certificate, trust, time,
-revocation, or authorization evidence is unavailable. RFC 5652 §5.6 leaves
-public-key selection, certification-path validation, and other external
-context to the recipient; therefore the absence of a caller-supplied verifier
-or trust policy is indeterminate, never valid. CADIR decision: the STEP codec
-performs structural admission only, retains the source span and decoded CMS,
-and emits no cryptographic result; a downstream verifier reports the result
-for each signature section.
+At the CADIR boundary, one verifier input is the tuple
+`(cms_der, detached_content, signature_policy)`. `cms_der` is the decoded CMS
+payload. `detached_content` is the exact Table 1 alphabet projection of the
+`signed` source range. `signature_policy` supplies signer selection, trust
+anchors, certificate-path rules, key-usage and authorization rules, validation
+time, and revocation evidence. The verifier interface returns exactly one of
+`valid`, `invalid`, or `indeterminate`; structural parser refusal is not a
+verification result.
+
+For one signer, a verifier returns `valid` only after it computes the digest
+over `detached_content`; when `SignerInfo.signedAttrs` is present, verifies the
+DER signed-attribute input, the `messageDigest` attribute against that content
+digest, and the `content-type` attribute against
+`encapContentInfo.eContentType`; verifies the CMS `signature` OCTET STRING with
+the `signatureAlgorithm` identifier and the selected signer public key; and
+applies `signature_policy`. It returns `invalid` when a cryptographic check or
+an explicitly required policy check fails. It returns `indeterminate` when the
+CMS is structurally admitted but required content, key, certificate,
+certificate-path, trust anchor, validation time, revocation evidence, or
+authorization evidence is unavailable. RFC 5652 §5.6 leaves public-key
+selection, certification-path validation, and other external context to the
+recipient; RFC 5280 §6 makes the trust anchor, validation time, and revocation
+inputs caller inputs. The absence of a caller verifier or required policy is
+therefore `indeterminate`, never `valid`.
+
+A CMS `SignedData` may contain several `SignerInfo` values. CADIR decision: the
+signature policy must name the required signer set. A policy that requires all
+listed signers returns `invalid` when any required signer fails and
+`indeterminate` when any required signer lacks evidence; it returns `valid`
+only when every required signer passes. A policy that accepts one signer may
+return `valid` when one accepted signer passes, but an unselected signer does
+not silently become a CADIR assertion. The STEP codec does not select or
+aggregate signers.
+
+CADIR decision: the STEP codec performs structural admission only, retains the
+source span and decoded CMS during parsing, carries the complete SIGNATURE
+section as the opaque `step:file:signature#n` source-fidelity record, and emits
+no cryptographic result. A downstream verifier obtains the tuple above from
+the retained source and original exchange bytes and reports one result per
+SIGNATURE section.
 
 DATA sections are optional in edition 3. One unnamed DATA section requires one
 FILE_SCHEMA identifier. If a DATA section has parameters, they contain a

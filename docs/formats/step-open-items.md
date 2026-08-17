@@ -102,16 +102,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 4. Signatures
 
-### SG-04. Signature verification result
-
-**Question.** Which executed checks make a retained STEP signature valid, invalid, or indeterminate?
-
-**Known.** The parser retains the detached CMS object and signed byte range (`crates/cadmpeg-codec-step/src/parse.rs:124-139`). CMS admission checks only structure and detached form (`crates/cadmpeg-codec-step/src/signature.rs:227-281`); the decode path calls that structural validator (`crates/cadmpeg-codec-step/src/parse.rs:1923-1933`).
-
-**Need.** Define a verifier interface, caller trust policy, and independently signed valid, modified, expired, revoked, and unknown-chain witnesses.
-
-**Conflict.** Structural CMS admission emits no cryptographic result and does not execute digest, signed-attribute, signature, certificate-path, revocation, time, or trust checks.
-
 ## 5. Topology and pcurve decisions
 
 ## 6. Units and measures

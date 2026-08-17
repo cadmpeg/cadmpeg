@@ -227,6 +227,39 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
 }
 
 #[test]
+pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
+    let bytes = include_bytes!("../signature/tests/data/sg04_openssl_detached.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode signature witness");
+
+    let signature = result
+        .ir()
+        .native_unknowns("step")
+        .unwrap()
+        .into_iter()
+        .find(|record| record.id.0 == "step:file:signature#0")
+        .expect("signature is retained as an opaque source record");
+    let retained = result
+        .source_fidelity()
+        .retained_record(&signature.id.0)
+        .expect("signature source fidelity");
+    assert_eq!(
+        retained.data.as_deref(),
+        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::OpaqueRecordPreserved.kind()
+            && loss.message.contains("SIGNATURE")
+    }));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message.contains("signature valid")
+            || loss.message.contains("signature invalid")
+            || loss.message.contains("signature indeterminate")
+    }));
+}
+
+#[test]
 pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
     let bytes = include_bytes!("tests/data/ud01_user_defined_entity.p21");
     let result = StepCodec::default()
