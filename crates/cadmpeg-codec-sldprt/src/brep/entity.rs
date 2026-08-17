@@ -789,6 +789,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc20_disc1e_disc1c_disc16_disc14_disc12_face_root_body(
+            &by_attr,
+        ));
+    }
+    if out.is_empty() {
         out.extend(
             disc22_disc20_disc1e_disc1a_disc18_disc12_disc10_disc04_face_root_body(&by_attr),
         );
@@ -4028,6 +4033,36 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc10_disc04_face_root_body(
     )
 }
 
+fn disc20_disc1e_disc1c_disc16_disc14_disc12_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_and_companion_use_bridge(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0016, 2),
+            (0x0014, 2),
+            (0x0012, 2),
+        ],
+        0x0010,
+        0x0018,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 3,
+            require_exact_use_population: true,
+        },
+        Some(KeyedFaceBridge {
+            disc: 0x001a,
+            flo: 2,
+        }),
+        false,
+    )
+}
+
 fn keyed_disc1a_disc18_disc14_disc12_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -5566,6 +5601,53 @@ fn keyed_face_companion<'a>(
     }
 }
 
+fn keyed_companion_use<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+    companion: &EntityRecord,
+    use_disc: u16,
+    bridge_shape: Option<KeyedFaceBridge>,
+) -> Option<(&'a EntityRecord, Option<&'a EntityRecord>)> {
+    let direct = companion
+        .refs
+        .get(1)
+        .and_then(|attr| by_attr.get(attr))
+        .copied()
+        .filter(|record| {
+            record.disc == use_disc
+                && record.flo() == 4
+                && record.refs.get(2) == Some(&companion.attr)
+        })
+        .map(|use_node| (use_node, None));
+    let bridged = bridge_shape.and_then(|bridge_shape| {
+        let bridge = companion
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|record| {
+                record.disc == bridge_shape.disc
+                    && record.flo() == bridge_shape.flo
+                    && record.refs.get(2) == Some(&companion.attr)
+            })?;
+        let use_node = bridge
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|record| {
+                record.disc == use_disc
+                    && record.flo() == 4
+                    && record.refs.get(2) == Some(&bridge.attr)
+            })?;
+        Some((use_node, Some(bridge)))
+    });
+    match (direct, bridged) {
+        (Some(_), Some(_)) => None,
+        (Some(selected), None) | (None, Some(selected)) => Some(selected),
+        (None, None) => None,
+    }
+}
+
 fn keyed_face_root_body_with_keyed_face_links(
     by_attr: &HashMap<u16, &EntityRecord>,
     chain_shape: &[(u16, u8)],
@@ -5575,7 +5657,7 @@ fn keyed_face_root_body_with_keyed_face_links(
     options: KeyedFaceRootOptions,
     allow_keyed_companion_fallback: bool,
 ) -> Vec<BodyRecord> {
-    let bodies = keyed_face_root_body_with_companion_use_bridge_and_fallback(
+    keyed_face_root_body_with_keyed_face_links_and_companion_use_bridge(
         by_attr,
         chain_shape,
         canonical_disc,
@@ -5583,6 +5665,29 @@ fn keyed_face_root_body_with_keyed_face_links(
         use_disc,
         options,
         None,
+        allow_keyed_companion_fallback,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Each argument identifies an independent layout role or link policy.
+fn keyed_face_root_body_with_keyed_face_links_and_companion_use_bridge(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    options: KeyedFaceRootOptions,
+    companion_use_bridge: Option<KeyedFaceBridge>,
+    allow_keyed_companion_fallback: bool,
+) -> Vec<BodyRecord> {
+    let bodies = keyed_face_root_body_with_companion_use_bridge_and_fallback(
+        by_attr,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        options,
+        companion_use_bridge,
         allow_keyed_companion_fallback,
     );
     if bodies.is_empty() {
@@ -5602,16 +5707,8 @@ fn keyed_face_root_body_with_keyed_face_links(
             ) else {
                 return false;
             };
-            let Some(use_node) = companion
-                .refs
-                .get(1)
-                .and_then(|attr| by_attr.get(attr))
-                .copied()
-                .filter(|record| {
-                    record.disc == use_disc
-                        && record.flo() == 4
-                        && record.refs.get(2) == Some(&companion.attr)
-                })
+            let Some((use_node, use_bridge)) =
+                keyed_companion_use(by_attr, companion, use_disc, companion_use_bridge)
             else {
                 return false;
             };
@@ -5636,11 +5733,19 @@ fn keyed_face_root_body_with_keyed_face_links(
                 }
                 None => direct_selected || keyed_fallback_selected,
             };
-            let keyed = companion_link_matches
+            let use_link_matches = match use_bridge {
+                Some(bridge) => {
+                    bridge.refs.get(2) == Some(&companion.attr)
+                        && use_node.refs.get(2) == Some(&bridge.attr)
+                }
+                None => use_node.refs.get(2) == Some(&companion.attr),
+            };
+            companion_link_matches
+                && use_link_matches
                 && face.refs.first() == companion.refs.first()
                 && companion.refs.first() == use_node.refs.first()
-                && bridge.is_none_or(|bridge| bridge.refs.first() == face.refs.first());
-            keyed
+                && bridge.is_none_or(|bridge| bridge.refs.first() == face.refs.first())
+                && use_bridge.is_none_or(|bridge| bridge.refs.first() == companion.refs.first())
         });
     if keyed_links {
         bodies
@@ -5818,63 +5923,12 @@ fn keyed_face_root_body_with_companion_use_bridge_and_fallback(
         } else {
             (companion, None)
         };
-        let (use_node, selected_companion_use_bridge) =
-            if let Some(bridge_shape) = companion_use_bridge {
-                let direct = companion
-                    .refs
-                    .get(1)
-                    .and_then(|attr| by_attr.get(attr))
-                    .copied()
-                    .filter(|record| {
-                        record.disc == use_disc
-                            && record.flo() == 4
-                            && record.refs.get(2) == Some(&companion.attr)
-                    });
-                let bridged = companion
-                    .refs
-                    .get(1)
-                    .and_then(|attr| by_attr.get(attr))
-                    .copied()
-                    .filter(|record| {
-                        record.disc == bridge_shape.disc
-                            && record.flo() == bridge_shape.flo
-                            && record.refs.get(2) == Some(&companion.attr)
-                    })
-                    .and_then(|bridge| {
-                        let use_node = bridge
-                            .refs
-                            .get(1)
-                            .and_then(|attr| by_attr.get(attr))
-                            .copied()
-                            .filter(|record| {
-                                record.disc == use_disc
-                                    && record.flo() == 4
-                                    && record.refs.get(2) == Some(&bridge.attr)
-                            })?;
-                        Some((use_node, bridge))
-                    });
-                match (direct, bridged) {
-                    (Some(_), Some(_)) => return Vec::new(),
-                    (Some(use_node), None) => (use_node, None),
-                    (None, Some((use_node, bridge))) => (use_node, Some(bridge)),
-                    (None, None) => return Vec::new(),
-                }
-            } else {
-                let Some(use_node) = face_use
-                    .refs
-                    .get(1)
-                    .and_then(|attr| by_attr.get(attr))
-                    .copied()
-                    .filter(|record| {
-                        record.disc == use_disc
-                            && record.flo() == 4
-                            && record.refs.get(2) == Some(&face_use.attr)
-                    })
-                else {
-                    return Vec::new();
-                };
-                (use_node, None)
-            };
+        let use_owner = companion_use_bridge.map_or(face_use, |_| companion);
+        let Some((use_node, selected_companion_use_bridge)) =
+            keyed_companion_use(by_attr, use_owner, use_disc, companion_use_bridge)
+        else {
+            return Vec::new();
+        };
         if !companions.insert(companion.attr) || !use_nodes.insert(use_node.attr) {
             return Vec::new();
         }
@@ -7151,6 +7205,7 @@ mod tests {
     mod disc20_disc18;
     mod disc20_disc1a_disc18;
     mod disc20_disc1e_disc1c;
+    mod disc20_disc1e_disc1c_disc16_disc14_disc12;
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc22_disc20_disc1e_disc1a;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
@@ -7278,7 +7333,6 @@ mod tests {
         assert_eq!(bodies[1].regions[0].attr, 90);
         assert_eq!(bodies[1].regions[0].shells[0].attr, 500);
     }
-
     #[test]
     fn schema_36001_root_lattice_owns_all_disc20_faces() {
         let records = vec![
