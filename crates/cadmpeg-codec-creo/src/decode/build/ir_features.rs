@@ -55,6 +55,13 @@ fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
     }
 }
 
+fn ordered_row_feature_ids(rows: &[crate::feature::FeatureRow]) -> Vec<u32> {
+    let mut seen = BTreeSet::new();
+    rows.iter()
+        .filter_map(|row| seen.insert(row.feature_id).then_some(row.feature_id))
+        .collect()
+}
+
 pub(super) fn emit_model_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -105,12 +112,7 @@ pub(super) fn emit_model_features(
             native_ref: None,
         });
     }
-    let row_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
+    let row_feature_ids = ordered_row_feature_ids(&scan.features.rows);
     let mut geometry_generator_feature_count = 0;
     for generator in geometry_generator_features(scan) {
         let feature_id = generator.feature_id;
@@ -635,3 +637,6 @@ pub(super) fn finish_feature_transfers(
     close_sketch_constraint_parameter_references(ir);
     (feature_result_topology_count, feature_result_edge_count)
 }
+
+#[cfg(test)]
+mod tests;
