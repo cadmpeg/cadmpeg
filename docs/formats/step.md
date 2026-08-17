@@ -633,16 +633,23 @@ is `$`. Subsidiary members remain resources and are not read into the root
 graph by the codec.
 
 CADIR decision: external resource access is an admission boundary outside the
-STEP codec. The codec performs no network, filesystem, archive-download, or
-registry request for an `http`, `https`, `file`, `urn`, or UUID-only URI. It
-retains the exact URI and external occurrence and reports the dependency. A
-caller may resolve a dependency with an explicit resolver, but that resolver
-must apply its own scheme allowlist, redirect, size and time limits,
-authentication, TLS and certificate rules, authorization scope, and optional
-message-digest or signature checks before it supplies resource bytes to a
-separate composition step. No resolver result enters the decoded STEP graph
-implicitly; a missing or refused access result remains an unresolved external
-dependency.
+STEP codec. The caller resolver interface is
+`resolve(uri, origin, occurrence, policy) -> retrieved | unresolved | refused`.
+`uri` is the exact source URI, `origin` identifies the containing exchange or
+archive member, `occurrence` is the external `#id` or `@id`, and `policy`
+contains the caller's scheme allowlist, redirect, size, time, authentication,
+TLS, certificate, authorization, digest, and signature rules. `retrieved`
+returns resource bytes and the exact URI-to-resource binding only after the
+policy checks pass. `unresolved` means that lookup or UUID service discovery
+did not produce bytes. `refused` means that the caller policy rejected the
+request or the supplied bytes. Both failure results retain the external
+dependency and supply no bytes to composition.
+
+The codec performs no network, filesystem, archive-download, or registry
+request for an `http`, `https`, `file`, `urn`, or UUID-only URI. It retains the
+exact URI and external occurrence and reports the dependency. No resolver
+result enters the decoded STEP graph implicitly; a caller composition step
+must validate the supplied resource and bind it explicitly.
 For an edition-3 ZIP, the root exchange has the schema-population and
 REFERENCE rules above. A root ANCHOR whose value is a URI can forward a root
 reference to an entity or value in a subsidiary member. A caller composition

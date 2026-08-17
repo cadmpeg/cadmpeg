@@ -122,6 +122,30 @@ fn resource_schemes_and_uuid_references_require_external_access() {
 }
 
 #[test]
+fn decode_does_not_invoke_the_external_resource_resolver() {
+    let bytes = include_bytes!("../../parse/tests/data/er02_resource_access_witness.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode must not access the URI resources");
+
+    assert_eq!(
+        result
+            .report()
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("external reference "))
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "external reference #10 -> https://example.invalid/part.p21#shape",
+            "external reference #11 -> file:///definitely/not/a/real/part.p21#shape",
+            "external reference #12 -> urn:uuid:123e4567-e89b-12d3-a456-426614174000#shape",
+            "external reference #13 -> #123e4567-e89b-12d3-a456-426614174000",
+        ]
+    );
+}
+
+#[test]
 fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
     let bytes = include_bytes!("tests/data/er04_cache_identity.p21");
     let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse cache witness");

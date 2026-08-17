@@ -18,16 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-02. Resource access
-
-**Question.** Which retrieval and authentication procedure applies to an external resource URI?
-
-**Known.** Part 21 defines the URI, anchor, and external occurrence result (`step.md` §7 "REFERENCE entries bind an external entity"). The specification assigns transport, authentication, redirect, certificate, authorization, and freshness controls to an external resolver (`step.md` §7 "CADIR decision: external resource access"). The codec only reports external dependencies (`crates/cadmpeg-codec-step/src/codec.rs:157-176`); it does not call a resolver.
-
-**Need.** Define the caller resource-provider interface, access result, and trust boundary before external bytes can enter a composition step.
-
-**Conflict.** A no-access codec boundary does not define the retrieval or authentication procedure that a caller must apply.
-
 ### ER-03. Resource composition
 
 **Question.** How does an external resource occurrence combine with the local instance graph?
