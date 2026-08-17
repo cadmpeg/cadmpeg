@@ -5943,6 +5943,13 @@ length units; plane axes are dimensionless. The file reference is the section
 20.1 anonymous major-1 child. A major other than 1 is rejected. Remaining bytes
 are skipped at the trace-image child boundary.
 
+The trace-image writer emits packed version 1.3 below archive version 60 and
+1.4 at archive version 60 and later. The wallpaper V3 writer emits packed
+version 1.1 below archive version 60 and 1.2 at archive version 60 and later.
+The readers consume the file-reference child only at the corresponding minor
+gate and leave later bytes at the enclosing `TCODE_VIEW_TRACEIMAGE` or
+`TCODE_VIEW_WALLPAPER_V3` boundary.
+
 `TCODE_VIEW_WALLPAPER` is the legacy long child containing only a UTF-16 path.
 `TCODE_VIEW_WALLPAPER_V3` contains packed version `1.1` below archive version
 60 and `1.2` at archive version 60 and later:

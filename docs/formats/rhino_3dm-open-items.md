@@ -148,6 +148,10 @@ The view-attributes child is settled as packed version 1.9: its direct fields
 are gated at minors 1 through 9, its page-settings and clipping-plane children
 close independently, and later bytes remain at the
 `TCODE_VIEW_ATTRIBUTES` boundary.
+Trace-image and V3 wallpaper children are also settled: their writers select
+1.3/1.4 and 1.1/1.2 at archive 60, their file-reference children are gated at
+minors 4 and 2, and their remaining bytes stay at the respective view-child
+boundaries.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -191,5 +195,9 @@ view-scale prefix.
 The view-attributes subset is established by `ON_3dmView::Write`/`Read` and
 `ON_3dmPageSettings::Write`/`Read` in `opennurbs_3dm_settings.cpp`; the view
 owner tests exercise page, clipping, and outer attributes suffixes.
+The image subset is established by `ON_3dmViewTraceImage::Write`/`Read` and
+`ON_3dmWallpaperImage::Write`/`Read`; the existing view image owner witness
+exercises their direct suffixes and section 20.1 covers their shared file
+reference.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.
