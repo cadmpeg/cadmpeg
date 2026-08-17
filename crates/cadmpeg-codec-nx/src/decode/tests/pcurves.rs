@@ -259,9 +259,29 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         tolerance: Some(1.0e-8),
     });
 
-    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
+    let procedural_start = ir.model.procedural_curves.len();
+    let mut annotations = AnnotationBuilder::new();
+    let budget = WorkBudget::new(usize::MAX);
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
         &mut ir,
-        &mut AnnotationBuilder::new(),
+        &mut annotations,
+        procedural_start,
+        &budget,
+        &budget,
+    );
+    let ProceduralCurveDefinition::TolerantIntersection {
+        parameterization, ..
+    } = &ir.model.procedural_curves[0].definition
+    else {
+        panic!("closed intersection construction");
+    };
+    assert!(parameterization.is_none());
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &mut ir,
+        &mut annotations,
+        0,
+        &budget,
+        &budget,
     );
     let ProceduralCurveDefinition::TolerantIntersection {
         supports,

@@ -687,6 +687,7 @@ pub(super) fn emit_topology(
     complete_exact_boundary_intersection_pcurves_with_budget(
         ir,
         annotations,
+        procedural_start,
         exact_transfer_budget,
         adaptive_geometry_budget,
     );

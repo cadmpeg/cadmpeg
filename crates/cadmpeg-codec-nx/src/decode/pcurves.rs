@@ -1075,6 +1075,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
     complete_exact_boundary_intersection_pcurves_with_budget(
         ir,
         annotations,
+        0,
         &transfer_budget,
         &geometry_budget,
     );
@@ -1083,6 +1084,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
 pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    procedural_start: usize,
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
@@ -1104,6 +1106,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         .model
         .procedural_curves
         .iter()
+        .skip(procedural_start)
         .filter_map(|procedural| {
             let edges = ir
                 .model
