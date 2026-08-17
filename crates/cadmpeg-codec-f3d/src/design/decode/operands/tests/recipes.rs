@@ -1852,3 +1852,40 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .is_none());
 }
+
+#[test]
+fn face_recipe_boundary_accepts_omitted_n_plus_four() {
+    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    let mut ordinary = Vec::new();
+    for record_index in 100..=104 {
+        header(&mut ordinary, *b"306", record_index);
+    }
+    let ordinary_position = ordinary.len() - 11;
+    assert_eq!(
+        crate::design::decode::operands::face_recipe_next_boundary(
+            &ordinary,
+            ordinary_position,
+            100,
+            None,
+        ),
+        Some((ordinary_position, 104))
+    );
+
+    let mut omitted = Vec::new();
+    for record_index in 100..=103 {
+        header(&mut omitted, *b"306", record_index);
+    }
+    let position = omitted.len();
+    header(&mut omitted, *b"124", 0);
+    let next = omitted.len();
+    header(&mut omitted, *b"317", 105);
+    assert_eq!(
+        crate::design::decode::operands::face_recipe_next_boundary(&omitted, position, 100, None),
+        Some((next, 105))
+    );
+}

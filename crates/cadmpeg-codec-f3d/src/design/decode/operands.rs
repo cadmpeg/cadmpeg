@@ -4000,6 +4000,45 @@ fn edge_recipe_topology_triplet(
     })
 }
 
+/// Find the indexed header that terminates a face-recipe member.
+///
+/// The ordinary envelope terminates at `N+4`. One serialized generation
+/// omits that header and terminates at `N+5`; its recipe payload can contain
+/// byte sequences that look like indexed headers with unrelated record
+/// indexes. Select the first expected continuation index before falling back
+/// to the historical immediate-header behavior used by synthetic frames.
+fn face_recipe_next_boundary(
+    bytes: &[u8],
+    position: usize,
+    record_index: u32,
+    limit: Option<u64>,
+) -> Option<(usize, u32)> {
+    let within_limit = |offset: usize| {
+        limit.is_none_or(|limit| {
+            usize::try_from(limit)
+                .ok()
+                .is_some_and(|limit| offset <= limit)
+        })
+    };
+    let mut expected = Vec::with_capacity(2);
+    for expected_index in [record_index.checked_add(4)?, record_index.checked_add(5)?] {
+        if let Some(offset) = next_indexed_record_offset_with_index(bytes, position, expected_index)
+        {
+            expected.push((expected_index, offset));
+        }
+    }
+    expected
+        .into_iter()
+        .filter(|(_, offset)| within_limit(*offset))
+        .min_by_key(|(_, offset)| *offset)
+        .or_else(|| {
+            let offset = next_indexed_record_offset(bytes, position)?;
+            let record_index = indexed_record_index(bytes, offset)?;
+            within_limit(offset).then_some((record_index, offset))
+        })
+        .map(|(record_index, offset)| (offset, record_index))
+}
+
 // One indexed-offset view rides along with the seven framing inputs the
 // parse already required; bundling them would touch every caller for no
 // structural gain.
@@ -4022,12 +4061,8 @@ pub(crate) fn parse_face_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
-    let immediate_next = next_indexed_record_offset(bytes, position)?;
-    if let Some(limit) = next_byte_offset {
-        if immediate_next > usize::try_from(limit).ok()? {
-            return None;
-        }
-    }
+    let (immediate_next, next_record_index) =
+        face_recipe_next_boundary(bytes, position, header.record_index, next_byte_offset)?;
     offsets.push(immediate_next);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
@@ -4040,6 +4075,7 @@ pub(crate) fn parse_face_operand(
         || indexed[1].1 != header.record_index.checked_add(1)?
         || indexed[2].1 != header.record_index.checked_add(2)?
         || indexed[3].1 != recipe_record_index
+        || indexed[4].1 != next_record_index
     {
         return None;
     }
@@ -4155,7 +4191,7 @@ pub(crate) fn parse_face_operand(
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
-        next_record_index: indexed[4].1,
+        next_record_index,
         next_byte_offset,
     })
 }
