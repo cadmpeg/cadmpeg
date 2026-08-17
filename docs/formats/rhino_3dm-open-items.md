@@ -165,6 +165,10 @@ The settings-attributes record is settled: archive 4 and later writes packed
 version 1.7, direct fields gate at minors 1 through 7, page-units,
 earth-anchor, IO-settings, and SubD-display children close independently, and
 custom render-mesh direct fields end at the outer settings-attributes boundary.
+The view construction-plane and window-position children are settled:
+construction planes write 1.1 with the depth flag at minor 1; window positions
+write 1.0 below archive 5 and 1.1 from archive 5 with the floating byte at
+minor 1. Both readers close at their enclosing view-child boundaries.
 
 **Need.** Producer writer/reader evidence for the remaining direct-reader and
 writer-band families. Record the field gate, containing boundary, and admission
@@ -226,5 +230,8 @@ The settings-attributes subset is established by `ON_3dmSettings::Write_v2`/
 `Read`, `ON_MeshParameters::Write`/`Read`, and
 `ON_SubDDisplayParameters::Write`/`Read`; the settings owner witnesses cover
 the nested children and direct future-minor suffix.
+The view subset is established by `ON_3dmConstructionPlane::Write`/`Read` and
+`ON_3dmViewPosition::Write`/`Read`; view owner tests cover suffixes,
+minor-gated fields, unknown-major defaults, and bound normalization.
 The earlier aggregate closure did not provide this reader-level trace. The
 remaining direct-reader and writer-band inventory remains open.
