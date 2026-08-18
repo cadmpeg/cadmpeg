@@ -417,3 +417,60 @@ whose archive OpenNURBS version is below 2348833910 has the packed form. The
 specification does not admit that record, while the owner accepts it through
 the first-byte test. The obsolete transparent-color substitution is bound to
 the same branch, so the two rules must select the same records.
+
+### QA-07. Declared archive OpenNURBS version in written archives
+
+**Question.** Which archive OpenNURBS version value must a written 3DM archive
+declare, and how is that value obtained?
+
+**Known.** `rhino_3dm.md` §6.3 "| writer version" gives `0xa0000026` as the
+typecode of the writer-version record, and `settings.rs:26`,
+`container.rs:67`, and `writer.rs:33` all hold that same value as a typecode.
+`writer.rs:34` holds `0xa000_0026` again as the record's value, and
+`writer.rs:236-239` writes it as the declared archive OpenNURBS version. A
+reader therefore obtains 2684354598. Decoded under the source version-number
+rule at `opennurbs_version_number.cpp:81-113`, that value is major 16, dated
+9 January 2000. No OpenNURBS release has that number. `settings.rs:2391-2393`
+stores the value as the writer version, and the owners at `objects.rs:28`,
+`settings.rs:2177`, `brep.rs:1570`, `mesh.rs:346`, `chunks.rs:31`, and
+`presentation.rs:1924-1929` compare it against source thresholds.
+
+**Need.** The writer must declare a version it can support, and the
+specification must state which value a written archive carries and why. The
+same change must confirm the record layouts that the value selects.
+
+**Note.** The written records are read back with the current-generation rules
+only because the declared value is above every threshold the owners compare
+against. Two of those selections change the record layout, not a repair: the
+object-attributes reader selects the item-coded form only at or above
+200712190 (`opennurbs_3dm_attributes.cpp:925-929`), and the mesh reader
+expects the mapping tag only at or above 200606010
+(`opennurbs_mesh.cpp:2692`). A corrected value must stay above both.
+
+### QA-08. Legacy major-2 Brep vertices for an edge with no trim
+
+**Question.** What vertex identity does a legacy major-2 Brep edge with no
+trim receive, and what does the transfer record for it?
+
+**Known.** `rhino_3dm.md` §15.0 "Major-2 has no serialized vertex table."
+states that an edge with no trim uses its C3 endpoints as independent vertex
+positions. `brep.rs:1056-1076` does not keep them independent: `legacy_vertex`
+at `brep.rs:1350-1358` returns an existing vertex when its stored point is
+exactly equal to the new point, so two such edges share a vertex and
+`brep.rs:1078-1097` then averages their endpoints. The source reader creates
+one edge for each C3 curve at `opennurbs_brep_io.cpp:1239-1244`, but builds
+vertices only from loop rings at `opennurbs_brep.cpp:5994-6006`; an edge with
+no trim keeps the `ON_BrepEdge` initial vertex indices of `-1`
+(`opennurbs_brep.cpp:158-171`). The transfer emits no loss for the added
+vertices.
+
+**Need.** The owner must state the vertex identity rule for a trimless legacy
+edge, the specification must state the same rule, and the added vertices need
+a named loss or finding because the source admits none.
+
+**Note.** Exact floating-point equality is the current identity test. Two
+trimless edges whose endpoints differ by one unit in the last place receive
+separate vertices, and a trimless edge whose two C3 endpoints are exactly
+equal collapses to one vertex used twice. Each result changes the vertex
+count, the averaged vertex position, and the vertex tolerance that §15.0
+derives from that position.
