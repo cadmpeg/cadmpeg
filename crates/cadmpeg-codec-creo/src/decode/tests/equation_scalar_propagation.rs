@@ -384,6 +384,18 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].value, 5.0);
 
+    let mut signed_dimension = coordinate_definition.clone();
+    signed_dimension
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .value = Some(-5.0);
+    let constraints =
+        section_equation_unsigned_coordinate_distance_rows(&signed_dimension, &BTreeSet::new());
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].value, 5.0);
+
     let mut dimension_driven = coordinate_definition.clone();
     let variables = dimension_driven.variables.as_mut().expect("variables");
     for row in &mut variables.rows[2..] {

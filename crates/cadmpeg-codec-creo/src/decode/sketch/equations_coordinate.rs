@@ -273,7 +273,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
             let value = section_equation_dimension_scalar_value(
                 dimension,
                 equality_value,
-                dimension_row.value?,
+                dimension_row.value?.abs(),
                 false,
             )?;
             Some(SectionUnsignedCoordinateDistance {

@@ -1628,16 +1628,17 @@ both rows have type `2`, the assertion equates the corresponding coordinate of
 their point keys. Function `3` has exactly three argument slots. Its first two
 rows have the same type, either `1` or `2`; its third row has type `0`. The
 third row key is a zero-based ordinal into a complete `dimtab_ptr` row table.
-For dimension types `1` through `5`, the type-0 scalar and selected dimension
-value are equal non-negative millimetre values, and the equation asserts that
-the absolute difference of the first two coordinates equals that value. An
-inline type-0 scalar, or a value resolved for that row through a scalar-
-equality component, must equal the selected dimension value. A type-0 row
-with the nine-byte dimension-driven sentinel receives its resolved value from
-the selected complete dimension row. When a function-2 row pairs one type-3
-row with one type-0 row, the type-0 key is a zero-based ordinal into a complete
-`dimtab_ptr` row table of dimension type `3`. The type-0 scalar, selected
-dimension value, and type-3 radius scalar are equal positive millimetre values;
+For dimension types `1` through `5`, the type-0 scalar and the selected
+dimension magnitude are equal non-negative millimetre values, and the equation
+asserts that the absolute difference of the first two coordinates equals that
+magnitude. An inline type-0 scalar, or a value resolved for that row through a
+scalar-equality component, must equal the selected dimension magnitude. A
+type-0 row with the nine-byte dimension-driven sentinel receives its resolved
+value from the magnitude of the selected complete dimension row. When a
+function-2 row pairs one type-3 row with one type-0 row, the type-0 key is a
+zero-based ordinal into a complete `dimtab_ptr` row of dimension type `3`.
+The type-0 scalar, selected dimension value, and type-3 radius scalar are
+equal positive millimetre values;
 each scalar may be resolved through its scalar-equality component, and the
 type-3 row key is the radius identity. The same dimension-driven sentinel rule
 applies to the type-0 scalar in this function-2 form.

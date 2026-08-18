@@ -58,11 +58,11 @@ fixtures, scores above L1 remain blocked.
   resolves to an emitted point locus. Function-three equations transfer as
   typed horizontal- or vertical-distance constraints when their dimension
   ordinal resolves to one emitted parameter, their inline or scalar-equality-
-  resolved value agrees with that dimension, and both point keys resolve to
-  emitted loci. Function-forty-three equations transfer as typed horizontal-
-  or vertical-distance constraints when their unique dimension parameter
-  agrees with the solved one-axis coordinate difference and both point keys
-  resolve to emitted loci. Function-five scalar-equality rows join the scalar
+  resolved value agrees with the magnitude of that dimension, and both point
+  keys resolve to emitted loci. Function-forty-three equations transfer as
+  typed horizontal- or vertical-distance constraints when their unique dimension
+  parameter agrees with the solved one-axis coordinate difference and both point
+  keys resolve to emitted loci. Function-five scalar-equality rows join the scalar
   equality graph when their type-five selector has a stored or independently
   reconciled zero value.
 - Function-two type-3/type-0 radius equations transfer as typed radius
