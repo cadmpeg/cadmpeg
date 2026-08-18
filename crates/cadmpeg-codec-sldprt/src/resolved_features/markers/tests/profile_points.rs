@@ -6,6 +6,7 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use super::super::*;
+use crate::layout::legacy_140_single_incidence_profile_point as point_140;
 use crate::layout::legacy_144_single_incidence_profile_point as point_144;
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
@@ -1308,9 +1309,10 @@ fn legacy_144_profile_point_variant_decodes_shifted_terminal() {
     payload[point_144::COORDINATE_SECOND..point_144::ZERO_LINK_PREFIX]
         .copy_from_slice(&(-0.25f64).to_le_bytes());
     payload[point_144::LINK_STATE..point_144::INCIDENCE_CELL].copy_from_slice(&1u16.to_le_bytes());
-    payload[point_144::INCIDENCE_CELL..point_144::LINK_TERMINATOR].copy_from_slice(&[
+    payload[point_144::INCIDENCE_CELL..point_144::ZERO_POST_CELL].copy_from_slice(&[
         0x04, 0x81, 0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
     ]);
+    payload[point_144::ZERO_POST_CELL..point_144::LINK_TERMINATOR].fill(0);
     payload[point_144::LINK_TERMINATOR..point_144::TRAILER_PREFIX]
         .copy_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00]);
     payload[point_144::IDENTITY..record_end].copy_from_slice(&25u32.to_le_bytes());
@@ -1336,8 +1338,11 @@ fn legacy_144_profile_point_variant_decodes_shifted_terminal() {
         None
     );
     let mut old_boundary = payload.clone();
-    let old_identity = point_144::IDENTITY - std::mem::size_of::<u32>();
-    old_boundary[old_identity..point_144::IDENTITY].copy_from_slice(&24u32.to_le_bytes());
+    old_boundary[point_140::LINK_TERMINATOR..point_140::TRAILER_PREFIX]
+        .copy_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00]);
+    old_boundary[point_140::TRAILER_PREFIX..point_140::IDENTITY_SECOND].fill(0);
+    old_boundary[point_140::IDENTITY_SECOND..point_144::IDENTITY]
+        .copy_from_slice(&24u32.to_le_bytes());
     let old_marker_end = point_144::IDENTITY + LEGACY_SKETCH_MARKER.len();
     old_boundary[point_144::IDENTITY..old_marker_end].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert!(legacy_140_profile_point_variant_coordinates(&old_boundary, 0).is_some());
