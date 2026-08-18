@@ -390,15 +390,3 @@ Type 510/514 evidence: the official [IGES 5.3 §§4.146–4.147](https://paulbou
 **Note.** GE-01 is the demonstrated case. Commit `f20d17e65` set `TRANSFORM_TOLERANCE` and authored the fixture that justifies it in the same commit, perturbed to 5e-11 against a threshold of 1e-10.
 
 **Need.** We need each tolerance and default in sections 2 through 5 traced to evidence outside this repository, or marked as a project convention in `iges.md` rather than as a format rule.
-
-## 9. Audit residues
-
-### QA-01. CADIR decisions have no auditable decision records
-
-**Question.** Which record defines and reopens a CADIR decision embedded in `iges.md`?
-
-**Known.** `iges.md` marks neutral policies with `CADIR decision` clauses, including Type 124 precision admission, zero-resolution equality, Type 102 salvage, angular comparison, resource ceilings, malformed product-root handling, generated Global metadata, and Type 126 containing-plane handling. No `docs/formats/iges-decisions.md` exists, and no `D-NN` record provides the decision Question, Silence, Rule, Ground, Cost, and Reopens fields. The closure commits carry source citations, code traces, and tests, but the decision burden remains inline specification prose.
-
-**Need.** Each CADIR decision must identify the format silence, state the selected rule, cite its ground, charge every discard or refusal through a named loss or finding, and name an executable condition that reopens it. The specification markers must reference those records.
-
-**Note.** Closure audit 2026-08-18: reopened. The removed `GE-01`, `GL-04`, `GL-03`, `GE-05`, `GE-08`, `GE-07`, `GE-09`, `GE-10`, `GE-11`, `GE-12`, `DR-04`, `WR-04`, and `PH-04` items close design questions with inline CADIR policy clauses but no decision records. This item targets the missing decision burden; the cited source rules and existing implementation evidence remain relevant.
