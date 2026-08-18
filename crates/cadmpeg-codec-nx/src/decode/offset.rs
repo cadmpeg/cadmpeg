@@ -29,6 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const OFFSET_NEWTON_ITERATIONS: usize = 32;
 const OFFSET_PARAMETER_STEP_EPSILON: f64 = 1.0e-12;
+const MAX_OFFSET_FIT_CACHE_ENTRIES: usize = 4096;
 
 pub(crate) fn saved_offset_carriers(
     ir: &CadIr,
@@ -62,6 +63,10 @@ pub(crate) fn saved_offset_carriers(
 
     let mut matches = BTreeMap::<u32, Vec<(SurfaceId, f64)>>::new();
     let mut candidate_owners = BTreeMap::<SurfaceId, Vec<u32>>::new();
+    // A fit depends only on the support, candidate, distance, and tolerance;
+    // cap the cache so a large offset roster cannot turn this optimization
+    // into unbounded model-sized storage.
+    let mut fit_cache = BTreeMap::<(SurfaceId, SurfaceId, u64, u64), Option<f64>>::new();
     for offset in offsets
         .iter()
         .filter(|offset| !face_surfaces.contains(&offset.xmt))
@@ -82,13 +87,28 @@ pub(crate) fn saved_offset_carriers(
             if *candidate_id == support_id {
                 continue;
             }
-            if let Some(fit) = certified_offset_cache_fit_with_budget(
-                support,
-                candidate,
-                offset.distance,
-                tolerance,
-                geometry_budget,
-            ) {
+            let key = (
+                support_id.clone(),
+                (*candidate_id).clone(),
+                offset.distance.to_bits(),
+                tolerance.to_bits(),
+            );
+            let fit = if let Some(fit) = fit_cache.get(&key).copied() {
+                fit
+            } else {
+                let fit = certified_offset_cache_fit_with_budget(
+                    support,
+                    candidate,
+                    offset.distance,
+                    tolerance,
+                    geometry_budget,
+                );
+                if fit_cache.len() < MAX_OFFSET_FIT_CACHE_ENTRIES {
+                    fit_cache.insert(key, fit);
+                }
+                fit
+            };
+            if let Some(fit) = fit {
                 matches
                     .entry(offset.xmt)
                     .or_default()
@@ -200,6 +220,11 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
             return (maximum_error <= tolerance).then_some(maximum_error);
         }
     }
+    if offset_candidate_sample_error(support, candidate, distance, geometry_budget)
+        .is_some_and(|error| error > tolerance)
+    {
+        return None;
+    }
     certified_curved_offset_cache_fit_with_budget(
         support,
         candidate,
@@ -208,6 +233,58 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
         same_basis,
         geometry_budget,
     )
+}
+
+/// Return one certified lower bound for a same-parameter offset candidate.
+///
+/// A whole-patch offset relation must satisfy this pointwise relation at every
+/// parameter. A sample that already exceeds the requested tolerance therefore
+/// cannot be admitted and can be rejected before its derivative nets and
+/// subdivision queue are built.
+fn offset_candidate_sample_error(
+    support: &NurbsSurface,
+    candidate: &NurbsSurface,
+    distance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<f64> {
+    let active_domain = |surface: &NurbsSurface| {
+        let u_degree = usize::try_from(surface.u_degree).ok()?;
+        let v_degree = usize::try_from(surface.v_degree).ok()?;
+        let u_count = usize::try_from(surface.u_count).ok()?;
+        let v_count = usize::try_from(surface.v_count).ok()?;
+        Some([
+            [
+                *surface.u_knots.get(u_degree)?,
+                *surface.u_knots.get(u_count)?,
+            ],
+            [
+                *surface.v_knots.get(v_degree)?,
+                *surface.v_knots.get(v_count)?,
+            ],
+        ])
+    };
+    let [[u0, u1], [v0, v1]] = active_domain(support)?;
+    if !u0.is_finite()
+        || !u1.is_finite()
+        || !v0.is_finite()
+        || !v1.is_finite()
+        || u0 >= u1
+        || v0 >= v1
+    {
+        return None;
+    }
+    let u = u0 + (u1 - u0) * 0.5;
+    let v = v0 + (v1 - v0) * 0.5;
+    let support_partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
+    let normal = unit_vector(cross_vector(support_partials.du, support_partials.dv))?;
+    let candidate_point =
+        cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
+    let expected = Point3::new(
+        support_partials.point.x + distance * normal.x,
+        support_partials.point.y + distance * normal.y,
+        support_partials.point.z + distance * normal.z,
+    );
+    Some(point_distance(expected, candidate_point))
 }
 
 pub(crate) fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
@@ -2088,4 +2165,49 @@ pub(crate) fn normalize_pcurve_parameters(
         _ => {}
     }
     Some(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pointwise_offset_rejection_preserves_the_adaptive_budget() {
+        let coordinates = [0.0, 0.5, 1.0];
+        let square_controls = [0.0, 0.0, 1.0];
+        let support = NurbsSurface {
+            u_degree: 2,
+            v_degree: 2,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            u_count: 3,
+            v_count: 3,
+            control_points: (0..3)
+                .flat_map(|u| {
+                    (0..3).map(move |v| {
+                        Point3::new(
+                            coordinates[u],
+                            coordinates[v],
+                            square_controls[u] + square_controls[v],
+                        )
+                    })
+                })
+                .collect(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let mut candidate = support.clone();
+        candidate.control_points[4].z += 1.0;
+        let support = SurfaceGeometry::Nurbs(support);
+        let candidate = SurfaceGeometry::Nurbs(candidate);
+        let budget = WorkBudget::new(200);
+
+        assert!(
+            certified_offset_cache_fit_with_budget(&support, &candidate, 0.0, 0.01, &budget,)
+                .is_none()
+        );
+        assert!(budget.consumed() > 0);
+        assert!(!budget.exhausted());
+    }
 }
