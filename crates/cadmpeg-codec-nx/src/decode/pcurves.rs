@@ -2845,12 +2845,7 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
 ) -> Option<Point2> {
-    let ir = index.ir();
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(surface.0.as_str())?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
             nurbs,

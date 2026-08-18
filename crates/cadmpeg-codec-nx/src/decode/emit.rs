@@ -203,6 +203,13 @@ pub(super) fn emit_topology(
         });
         vertices.insert(node.xmt, vertex.clone());
     }
+    let pcurve_indices: BTreeMap<_, _> = ir
+        .model
+        .pcurves
+        .iter()
+        .enumerate()
+        .map(|(index, pcurve)| (pcurve.id.clone(), index))
+        .collect();
     let mut edges = BTreeMap::new();
     for node in graph
         .of_kind(16)
@@ -226,11 +233,8 @@ pub(super) fn emit_topology(
             let lifted = curve_xmt
                 .and_then(|xmt| pcurves.get(&xmt))
                 .and_then(|pcurve_id| {
-                    let pcurve = ir
-                        .model
-                        .pcurves
-                        .iter()
-                        .find(|pcurve| &pcurve.id == pcurve_id)?;
+                    let pcurve_index = pcurve_indices.get(pcurve_id)?;
+                    let pcurve = ir.model.pcurves.get(*pcurve_index)?;
                     let surface = pcurve_supports.get(&curve_xmt?)?.clone();
                     let parameter_range = pcurve
                         .parameter_range
@@ -372,6 +376,12 @@ pub(super) fn emit_topology(
         });
         edges.insert(node.xmt, id);
     }
+    let edge_curves_by_id: BTreeMap<_, _> = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
+        .collect();
     let mut faces = BTreeMap::new();
     for node in graph
         .of_kind(14)
@@ -497,7 +507,7 @@ pub(super) fn emit_topology(
                     .and_then(|face| surfaces.get(&face.surface))?;
                 let carrier = pcurves
                     .get(&fields.curve_xmt)
-                    .and_then(|id| ir.model.pcurves.iter().find(|carrier| &carrier.id == id))?;
+                    .and_then(|id| index.pcurves(id.0.as_str()))?;
                 let use_range = trim_ranges
                     .get(&fields.curve_xmt)
                     .copied()
@@ -529,12 +539,7 @@ pub(super) fn emit_topology(
                     .and_then(Node::face_fields)
                     .and_then(|face| surfaces.get(&face.surface))
                     .cloned()?;
-                let carrier = ir
-                    .model
-                    .edges
-                    .iter()
-                    .find(|candidate| candidate.id == *edge)
-                    .and_then(|edge| edge.curve.clone())?;
+                let carrier = edge_curves_by_id.get(edge).cloned()?;
                 let (geometry, parameter_range, fit_tolerance) = intersection_pcurves
                     .get(&(carrier, support.clone()))?
                     .clone();
@@ -596,12 +601,7 @@ pub(super) fn emit_topology(
             .contains(&node.xmt)
             .then(|| pcurves.get(&fields.curve_xmt).cloned())
             .flatten();
-        let edge_curve = ir
-            .model
-            .edges
-            .iter()
-            .find(|candidate| candidate.id == edge)
-            .and_then(|edge| edge.curve.as_ref());
+        let edge_curve = edge_curves_by_id.get(&edge);
         if let (Some(pcurve), Some(edge_curve), Some(support)) =
             (pcurve.as_ref(), edge_curve, support.as_ref())
         {
