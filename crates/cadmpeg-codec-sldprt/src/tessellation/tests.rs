@@ -458,6 +458,116 @@ fn model_with_body() -> cadmpeg_ir::document::Model {
     }
 }
 
+fn persistent_mesh(id: &str) -> Tessellation {
+    Tessellation {
+        id: id.into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    }
+}
+
+#[test]
+fn persistent_surface_identity_requires_agreeing_duplicates() {
+    let face = DisplayFace {
+        mesh: Mesh::default(),
+        table_index: 0,
+        table: ByteRange { start: 0, end: 1 },
+        metadata: ByteRange { start: 1, end: 2 },
+        surface_references: vec![
+            PersistentSurfaceReference {
+                feature_source_id: 7,
+                local_surface_id: 3,
+            },
+            PersistentSurfaceReference {
+                feature_source_id: 7,
+                local_surface_id: 3,
+            },
+        ],
+    };
+    assert_eq!(face.feature_source_id(), Some(7));
+    assert_eq!(face.persistent_surface_identity(), Some((7, 3)));
+
+    let mut conflicting = face;
+    conflicting.surface_references[1].local_surface_id = 4;
+    assert_eq!(conflicting.feature_source_id(), Some(7));
+    assert_eq!(conflicting.persistent_surface_identity(), None);
+}
+
+#[test]
+fn persistent_surface_identity_binds_one_face_and_body() {
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "persistent", 0.0);
+    model.shells[0].faces.push(face.clone());
+    model.tessellations.push(persistent_mesh("mesh"));
+
+    let face_identities = vec![(face.0.clone(), 7, 3)];
+    let bindings = vec![PersistentFaceBinding {
+        tessellation: "mesh".into(),
+        feature_source: 7,
+        local_surface: 3,
+    }];
+
+    assert_eq!(
+        assign_persistent_owners(&mut model, &face_identities, &bindings),
+        vec!["mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+}
+
+#[test]
+fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-persistent", 0.0);
+    let second = add_square_face(&mut model, "second-persistent", 3.0);
+    model.shells[0].faces = vec![first.clone(), second.clone()];
+    model.tessellations.push(persistent_mesh("mesh"));
+    let face_identities = vec![(first.0.clone(), 7, 3), (second.0.clone(), 7, 3)];
+    let binding = PersistentFaceBinding {
+        tessellation: "mesh".into(),
+        feature_source: 7,
+        local_surface: 3,
+    };
+    assert!(assign_persistent_owners(&mut model, &face_identities, &[binding]).is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-mesh", 0.0);
+    let second = add_square_face(&mut model, "second-mesh", 3.0);
+    model.shells[0].faces = vec![first.clone(), second.clone()];
+    model.tessellations.push(persistent_mesh("mesh"));
+    let face_identities = vec![(first.0.clone(), 7, 3), (second.0.clone(), 8, 4)];
+    let bindings = vec![
+        PersistentFaceBinding {
+            tessellation: "mesh".into(),
+            feature_source: 7,
+            local_surface: 3,
+        },
+        PersistentFaceBinding {
+            tessellation: "mesh".into(),
+            feature_source: 8,
+            local_surface: 4,
+        },
+    ];
+    assert!(assign_persistent_owners(&mut model, &face_identities, &bindings).is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+}
+
 #[test]
 fn bounded_planar_trim_selects_between_coincident_supports() {
     let mut model = model_with_body();
