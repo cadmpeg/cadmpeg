@@ -80,10 +80,8 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
     }
     if let Some(unit) = &scan.framing.principal_unit {
         attributes.insert("principal_unit".to_string(), unit.token());
-        if scan.framing.layout == crate::container::Layout::LegacyAscii {
-            if let Some(scale) = unit.length_scale_mm() {
-                attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
-            }
+        if let Some(scale) = unit.length_scale_mm().filter(|scale| *scale != 1.0) {
+            attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
         }
     }
     if scan.framing.layout == crate::container::Layout::LegacyAscii {

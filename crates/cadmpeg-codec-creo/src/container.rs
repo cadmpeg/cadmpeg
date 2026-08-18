@@ -972,12 +972,14 @@ fn geom_census(data: &[u8], sections: &[Section]) -> GeomCensus {
     }
 }
 
-/// Decode the active unit-system selector. `51` is millimeter-Newton-Second
-/// and `55` is millimeter-Kilogram-Second; both use millimeters for lengths.
+/// Decode the active unit-system selector. `51` is millimeter-Newton-Second,
+/// `54` is the Creo default inch-pound-mass-second system, and `55` is
+/// millimeter-Kilogram-Second.
 fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
     let start = find(data, PRINCIPAL_UNIT_ID, 0)? + PRINCIPAL_UNIT_ID.len();
     match *data.get(start)? {
         51 => Some(legacy::PrincipalUnitSystem::MillimeterNewtonSecond),
+        54 => Some(legacy::PrincipalUnitSystem::InchPoundMassSecond),
         55 => Some(legacy::PrincipalUnitSystem::MillimeterKilogramSecond),
         value => Some(legacy::PrincipalUnitSystem::UnknownBinarySelector(value)),
     }
