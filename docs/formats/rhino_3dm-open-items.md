@@ -197,6 +197,10 @@ per-viewport-settings field, and emits no layer-userdata loss, including when
 the child major is later than the current writer major. If the generic wrapper
 is framed but the obsolete child is absent or malformed, the userdata item is
 discarded and the typed layer remains unchanged.
+The generic unregistered class boundary is also proven: a point object with an
+unregistered class, item, and application UUID in generic userdata 2.2 retains
+typed point geometry and its complete object record without typed userdata
+fields; a later generic userdata header has the same result.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

@@ -26,6 +26,7 @@ mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;
 mod settings_userdata;
+mod unknown_userdata;
 mod v5_hatch_extra_userdata;
 mod views_userdata;
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -122,7 +123,6 @@ fn curve_pipeline_composes_points_clouds_lines_arcs_polylines_and_compounds() {
     assert!(!result.ir().model.procedural_curves.is_empty());
     assert_valid(&result);
 }
-
 #[test]
 fn geometry_pipeline_composes_mesh_subd_extrusion_and_connected_brep_objects() {
     let objects = vec![
