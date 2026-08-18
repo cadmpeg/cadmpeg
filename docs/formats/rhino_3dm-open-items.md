@@ -474,3 +474,30 @@ separate vertices, and a trimless edge whose two C3 endpoints are exactly
 equal collapses to one vertex used twice. Each result changes the vertex
 count, the averaged vertex position, and the vertex tolerance that §15.0
 derives from that position.
+
+### QA-09. Brep solid-cache reset threshold
+
+**Question.** Which archive OpenNURBS version values make the serialized Brep
+`m_is_solid` cache unusable, and does any source reader discard it?
+
+**Known.** `rhino_3dm.md` §15.5 "For minor at least 2, the writer copies the
+Brep" states that the source reader resets the value to 0 when the archive
+OpenNURBS writer version is before 2 October 2002.
+`decode.rs:4613-4615` puts that rule in code: it keeps the stored value only
+when the writer version is at least 200210020. The source literal is not that
+value. `opennurbs_brep_io.cpp:1134-1137` reads
+`ArchiveOpenNURBSVersion() < 20021002`, which is eight digits, while every
+archive value in the year-month-day form has nine digits and starts at
+200012210 (`opennurbs_version_number.cpp:167-174`). The source condition is
+therefore false for every such archive, and the source reader keeps the stored
+value in each of them.
+
+**Need.** The owner and the specification must state the reset rule that the
+source applies, or state that the codec deliberately departs from the source
+literal and name the evidence for the departure.
+
+**Note.** A Brep in an archive whose writer version is between 200012210 and
+200210019 has a minor at least 2 record whose `m_is_solid` the source keeps and
+the codec discards. When that stored value is 1 or 2 and the topology does not
+close, the neutral `BodyKind` becomes a sheet where the source is solid. The
+codec also has no diagnostic for the discarded cache.
