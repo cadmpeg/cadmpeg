@@ -823,7 +823,11 @@ major other than 1 supplies no typed user-string fields. An owner may retain
 independent fields that have their own admitted grammar, but the complete
 containing record is also retained in source fidelity. The light-table
 attributes owner applies this rule to its `ON_UserStringList` item and emits a
-decode loss for the omitted user strings.
+decode loss for the omitted user strings. The object owner applies the same
+rule to its `ON_UserStringList` item: independently admitted object geometry
+and attributes remain typed, the user-string fields are omitted, the complete
+object record remains in source fidelity, and the owner emits an object decode
+loss.
 
 `ON_Object::SetUserString` rejects an empty key. A nonempty value updates the
 first existing key using case-insensitive ordinal comparison and preserves

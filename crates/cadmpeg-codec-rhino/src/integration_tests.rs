@@ -914,6 +914,105 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
 }
 
 #[test]
+fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() {
+    let archive = ArchiveVersion::V5;
+    let future_list_payload = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[
+            2_i32.to_le_bytes().as_slice(),
+            0_i32.to_le_bytes().as_slice(),
+        ]
+        .concat(),
+    );
+    let userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::objects::USER_STRING_LIST.to_wire(),
+        crate::wire::Uuid::from_canonical([
+            0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe,
+            0x52, 0x0d,
+        ])
+        .to_wire(),
+        50,
+        0,
+        &future_list_payload,
+    );
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 1);
+    let mut uuid_body = crate::test_support::test_dump::POINT_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&crate::test_support::test_dump::POINT_CLASS).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x0002_fffc,
+        &support::point_payload([1.0, 2.0, 3.0]),
+    );
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[class_uuid, class_data, userdata, class_end].concat(),
+    );
+    let attributes = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x0200_8072,
+        &crate::test_support::test_dump::fixed_attributes(0, 0, Some(true)),
+    );
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    let object_record = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_8070 | crate::chunks::TCODE_CRC,
+        &[object_type, class, attributes, object_end].concat(),
+    );
+    let following_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let mut units_body = 100_i32.to_le_bytes().to_vec();
+    units_body.extend(2_i32.to_le_bytes());
+    units_body.extend(0.01_f64.to_le_bytes());
+    units_body.extend(0.1_f64.to_le_bytes());
+    units_body.extend(0.001_f64.to_le_bytes());
+    let units = crate::test_support::test_dump::crc_chunk(archive, 0x2000_8031, &units_body);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[units]),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0013,
+                &[object_record.clone(), following_point],
+            ),
+        ],
+    );
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.points.len(), 2);
+    let presentation =
+        &result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"];
+    assert_eq!(presentation.len(), 1);
+    assert_ne!(
+        presentation[0]
+            .field("user_strings")
+            .and_then(|value| value.as_array().map(|values| !values.is_empty())),
+        Some(true)
+    );
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| record.id == "rhino:object:record#000000")
+        .expect("future object userdata record is retained");
+    assert_eq!(retained.data.as_deref(), Some(object_record.as_slice()));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("object user-string userdata") && loss.message.contains("unsupported")
+    }));
+    assert_valid(&result);
+}
+
+#[test]
 fn future_settings_payload_is_retained_without_known_prefix() {
     let archive = ArchiveVersion::V5;
     let future_annotation =

@@ -84,6 +84,10 @@ The material-table owner is also proven to retain the complete record when the
 registered `ON_RdkUserData` payload uses the callback-owned version-2 UTF-8
 form; the userdata supplies no typed fields, independent material fields remain
 typed, and the owner emits a presentation loss.
+The object owner is proven to retain the complete object record when the
+registered `ON_UserStringList` payload has an unsupported anonymous major;
+independently admitted object geometry and attributes remain typed, the
+user-string fields are omitted, and the owner emits an object decode loss.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
