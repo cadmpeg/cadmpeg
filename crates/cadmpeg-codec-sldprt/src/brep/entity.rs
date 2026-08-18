@@ -10164,6 +10164,7 @@ mod tests {
     mod disc22_disc28_disc20_disc04_disc1a_disc1e_keyed_population;
     mod disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e;
     mod disc24_disc22_disc20_disc1c_disc16_disc14_disc0e;
+    mod disc28_disc1e_disc1c_disc18_disc16_disc14_keyed_population;
     mod disc28_disc26_disc24_disc1a_disc18_disc16_disc06;
     mod merged_stream_bodies;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
@@ -11917,7 +11918,6 @@ mod tests {
         assert_eq!(body.regions[0].shells[0].attr, 12);
         assert!(body.refs.contains(&20) && body.refs.contains(&21));
     }
-
     fn index_records(records: &[EntityRecord]) -> HashMap<u16, &EntityRecord> {
         records.iter().map(|record| (record.attr, record)).collect()
     }
