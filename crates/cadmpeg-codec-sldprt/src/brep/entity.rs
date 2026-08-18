@@ -10198,6 +10198,7 @@ mod tests {
     mod disc20_disc1c_disc1a_disc14_disc12_disc10_disc0e;
     mod disc20_disc1c_disc1a_disc16_disc12_disc10_disc0e;
     mod disc20_disc1c_disc1a_disc16_disc14_disc12_disc10_disc04;
+    mod disc20_disc1c_disc1a_disc16_disc14_disc12_disc10_disc0e_disc10_tail_direct_face_use;
     mod disc20_disc1c_disc1a_disc18_disc16_disc14_disc12_disc10_disc0e;
     mod disc20_disc1e_disc1c;
     mod disc20_disc1e_disc1c_disc14_disc12_disc10_disc04;
@@ -10445,7 +10446,6 @@ mod tests {
         assert_eq!(body.kind, BodyKind::Solid);
         assert_eq!(body.regions[0].shells[0].attr, 14);
         assert!(by_attr.keys().all(|attr| body.refs.contains(attr)));
-
         let incomplete = records
             .iter()
             .filter(|record| record.attr != 13)
