@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
 use cadmpeg_ir::Exactness;
 
@@ -22,6 +22,138 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 use super::*;
+
+const EPS_SHARED_NURBS_GEOMETRY: f64 = f64::EPSILON;
+
+fn assert_same_f64s(actual: &[f64], expected: &[f64]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!((actual - expected).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+    }
+}
+
+fn assert_same_points3(actual: &[Point3], expected: &[Point3]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!((actual.x - expected.x).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+        assert!((actual.y - expected.y).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+        assert!((actual.z - expected.z).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+    }
+}
+
+fn assert_same_points2(actual: &[Point2], expected: &[Point2]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!((actual.u - expected.u).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+        assert!((actual.v - expected.v).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+    }
+}
+
+fn assert_same_weights(actual: Option<&[f64]>, expected: Option<&[f64]>) {
+    match (actual, expected) {
+        (Some(actual), Some(expected)) => assert_same_f64s(actual, expected),
+        (None, None) => {}
+        _ => panic!("shared and standalone NURBS weights differ"),
+    }
+}
+
+fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.pos, expected.pos);
+        let (SurfaceGeometry::Nurbs(actual), SurfaceGeometry::Nurbs(expected)) =
+            (&actual.geometry, &expected.geometry)
+        else {
+            panic!("shared and standalone surface kinds differ");
+        };
+        assert_eq!(actual.u_degree, expected.u_degree);
+        assert_eq!(actual.v_degree, expected.v_degree);
+        assert_eq!(actual.u_count, expected.u_count);
+        assert_eq!(actual.v_count, expected.v_count);
+        assert_eq!(actual.u_periodic, expected.u_periodic);
+        assert_eq!(actual.v_periodic, expected.v_periodic);
+        assert_same_f64s(&actual.u_knots, &expected.u_knots);
+        assert_same_f64s(&actual.v_knots, &expected.v_knots);
+        assert_same_points3(&actual.control_points, &expected.control_points);
+        assert_same_weights(actual.weights.as_deref(), expected.weights.as_deref());
+    }
+}
+
+fn assert_same_curves(actual: &[Curve], expected: &[Curve]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.pos, expected.pos);
+        let (CurveGeometry::Nurbs(actual), CurveGeometry::Nurbs(expected)) =
+            (&actual.geometry, &expected.geometry)
+        else {
+            panic!("shared and standalone curve kinds differ");
+        };
+        assert_eq!(actual.degree, expected.degree);
+        assert_eq!(actual.periodic, expected.periodic);
+        assert_same_f64s(&actual.knots, &expected.knots);
+        assert_same_points3(&actual.control_points, &expected.control_points);
+        assert_same_weights(actual.weights.as_deref(), expected.weights.as_deref());
+    }
+}
+
+fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.pos, expected.pos);
+        let (
+            PcurveGeometry::Nurbs {
+                degree: actual_degree,
+                knots: actual_knots,
+                control_points: actual_control_points,
+                weights: actual_weights,
+                periodic: actual_periodic,
+            },
+            PcurveGeometry::Nurbs {
+                degree: expected_degree,
+                knots: expected_knots,
+                control_points: expected_control_points,
+                weights: expected_weights,
+                periodic: expected_periodic,
+            },
+        ) = (&actual.geometry, &expected.geometry)
+        else {
+            panic!("shared and standalone pcurve kinds differ");
+        };
+        assert_eq!(actual_degree, expected_degree);
+        assert_eq!(actual_periodic, expected_periodic);
+        assert_same_f64s(actual_knots, expected_knots);
+        assert_same_points2(actual_control_points, expected_control_points);
+        assert_same_weights(actual_weights.as_deref(), expected_weights.as_deref());
+    }
+}
+
+fn assert_shared_parse_matches_standalone(stream: &[u8]) {
+    let graph = crate::topology::Graph::parse(stream);
+    let shared = crate::nurbs::parse_with_graph(stream, &graph);
+    assert_same_surfaces(&shared.surfaces, &crate::nurbs::surfaces(stream));
+    assert_same_curves(&shared.curves, &crate::nurbs::curves(stream));
+    assert_same_pcurves(&shared.pcurves, &crate::nurbs::pcurves(stream));
+}
+
+#[test]
+fn shared_nurbs_parse_matches_each_standalone_family_decoder() {
+    assert_shared_parse_matches_standalone(&bspline_partition_stream());
+
+    let mut pcurve_stream = bspline_partition_stream();
+    let descriptor = pcurve_stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    put_ref(&mut pcurve_stream, descriptor + 10, 2);
+    let payload = pcurve_stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
+        put_f64(&mut pcurve_stream, payload + 15 + index * 8, value);
+    }
+    assert_shared_parse_matches_standalone(&pcurve_stream);
+}
 
 #[test]
 fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
