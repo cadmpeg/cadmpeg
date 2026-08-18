@@ -1224,7 +1224,7 @@ pub(crate) fn apply_userdata(
     }
     let Some(extra) = userdata
         .iter()
-        .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA)
+        .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
     else {
         return Ok(());
     };
@@ -2221,8 +2221,14 @@ pub(crate) mod tests {
             unknown_version: false,
         };
         let mut radial = radial;
-        apply_userdata(&extension, &[descriptor], archive, 1.0, &mut radial)
-            .expect("required invariant");
+        apply_userdata(
+            &extension,
+            std::slice::from_ref(&descriptor),
+            archive,
+            1.0,
+            &mut radial,
+        )
+        .expect("required invariant");
         assert_eq!(radial.measurement, 200.0);
         assert_eq!(radial.distance_scale, 2.0);
         assert_eq!(radial.arrow_position, -1);
@@ -2230,6 +2236,28 @@ pub(crate) mod tests {
             radial.detail_measured.to_string(),
             "00000000-0000-0000-0000-00000000002a"
         );
+
+        let mut wrong_item_descriptor = descriptor.clone();
+        wrong_item_descriptor.item_uuid = Uuid::nil();
+        let mut wrong_item_radial = decode(
+            &radial_bytes,
+            V5_RADIAL,
+            0..radial_bytes.len(),
+            1.0,
+            archive,
+        )
+        .expect("fresh radial baseline");
+        apply_userdata(
+            &extension,
+            std::slice::from_ref(&wrong_item_descriptor),
+            archive,
+            1.0,
+            &mut wrong_item_radial,
+        )
+        .expect("wrong dimension item UUID is not a matching extension");
+        assert_eq!(wrong_item_radial.arrow_position, 0);
+        assert_eq!(wrong_item_radial.distance_scale, 1.0);
+        assert!(wrong_item_radial.detail_measured.is_nil());
 
         let mut angular_extension =
             anonymous(0, &[2.5_f64.to_le_bytes(), 4.0_f64.to_le_bytes()].concat());

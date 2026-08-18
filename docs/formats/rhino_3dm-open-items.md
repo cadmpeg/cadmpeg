@@ -168,6 +168,13 @@ to the object presentation's `custom_render_mesh`; a bounded mesh-parameter
 failure leaves point geometry and attributes typed, omits that presentation
 field, emits the bounded userdata diagnostic, and retains the complete object
 record.
+The V5 dimension owner is proven for the registered
+`ON_OBSOLETE_V5_DimExtra` carrier: its anonymous 1.2 child supplies forced
+arrow position, detail distance scale, and measured-detail UUID to a legacy
+linear dimension; an unsupported child major or truncated child retains the
+complete object record, admits no dimension, and emits the bounded dimension
+diagnostic. The class and item UUID must both match before the carrier is
+admitted.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

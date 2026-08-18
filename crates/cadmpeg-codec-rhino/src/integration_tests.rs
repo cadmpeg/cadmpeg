@@ -18,6 +18,7 @@ use crate::chunks::ArchiveVersion;
 use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
 mod annotations_userdata;
+mod dimension_userdata;
 mod hatch_userdata;
 mod layer_userdata;
 mod mesh_modifiers_userdata;
@@ -35,7 +36,6 @@ fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("rhino").is_some());
 }
-
 #[test]
 fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_only_modes() {
     for version in ["50", "60", "70", "80"] {
