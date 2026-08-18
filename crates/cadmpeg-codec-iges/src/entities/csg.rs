@@ -5,7 +5,7 @@ use super::geometry::{
     declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform, Projection,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::{coincident_distance, Global};
+use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::ids::CurveId;
@@ -50,10 +50,7 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
     };
     let start = point(&edge.start)?;
     let end = point(&edge.end)?;
-    Some(coincident_distance(
-        super::evaluation::distance(start, end),
-        tolerance,
-    ))
+    Some(super::evaluation::distance(start, end) <= tolerance)
 }
 
 #[derive(Clone, Copy)]

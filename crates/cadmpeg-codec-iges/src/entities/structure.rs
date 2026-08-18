@@ -4,7 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::{trailing_pointer_groups_with_records, ParameterRecord, TokenValue};
+use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -147,9 +147,8 @@ fn has_association_back_pointer(
     record: &ParameterRecord,
     group_sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
 ) -> bool {
-    trailing_pointer_groups_with_records(record, entries, records)
+    trailing_pointer_groups(record, entries)
         .is_some_and(|groups| groups.associations.contains(&group_sequence))
 }
 
@@ -157,9 +156,8 @@ fn has_property_pointer(
     record: &ParameterRecord,
     property_sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
 ) -> bool {
-    trailing_pointer_groups_with_records(record, entries, records)
+    trailing_pointer_groups(record, entries)
         .is_some_and(|groups| groups.properties.contains(&property_sequence))
 }
 
@@ -212,9 +210,8 @@ fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
 fn entity_parameter_end(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
 ) -> usize {
-    trailing_pointer_groups_with_records(record, entries, records)
+    trailing_pointer_groups(record, entries)
         .map_or(record.tokens.len(), |groups| groups.token_start)
 }
 
@@ -289,27 +286,14 @@ fn property_fields_valid(
         2 => exact(3) && (2..=4).all(|index| integer_range(index, 0..=2)),
         3 => exact(2) && record.integer(2).is_some() && record.string(3).is_some(),
         5 => {
-            let Some(extension_flag) = record.integer_or(4, 0) else {
-                return false;
-            };
-            let extension_valid = if extension_flag == 2 {
-                record.number(6).is_some_and(f64::is_finite)
-            } else {
-                record.number_or(6, 0.0).is_some_and(f64::is_finite)
-            };
-            record.integer(1) == Some(5)
-                && end <= 7
+            exact(5)
                 && record
-                    .number_or(2, 0.0)
+                    .number(2)
                     .is_some_and(|value| value.is_finite() && value >= 0.0)
-                && record
-                    .integer_or(3, 0)
-                    .is_some_and(|value| (0..=1).contains(&value))
-                && (0..=2).contains(&extension_flag)
-                && record
-                    .integer_or(5, 0)
-                    .is_some_and(|value| (0..=2).contains(&value))
-                && extension_valid
+                && integer_range(3, 0..=1)
+                && integer_range(4, 0..=2)
+                && integer_range(5, 0..=2)
+                && record.number(6).is_some_and(f64::is_finite)
         }
         6 => {
             exact(5)
@@ -572,7 +556,7 @@ fn predefined_associativity_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> bool {
-    let end = entity_parameter_end(record, entries, records);
+    let end = entity_parameter_end(record, entries);
     match entry.form {
         5 => {
             let Some(count) = record.count(1).filter(|count| *count > 0) else {
@@ -610,13 +594,13 @@ fn predefined_associativity_valid(
                         .get(&sequence)
                         .is_some_and(|target| target.entity_type == 410)
                         && records.get(&sequence).is_some_and(|record| {
-                            has_association_back_pointer(record, entry.sequence, entries, records)
+                            has_association_back_pointer(record, entry.sequence, entries)
                         })
                 })
                 && visible.is_some_and(|visible| {
                     visible.iter().all(|sequence| {
                         records.get(sequence).is_some_and(|record| {
-                            has_association_back_pointer(record, entry.sequence, entries, records)
+                            has_association_back_pointer(record, entry.sequence, entries)
                         })
                     })
                 })
@@ -633,7 +617,7 @@ fn predefined_associativity_valid(
                 && members.is_some_and(|members| {
                     members.iter().all(|sequence| {
                         records.get(sequence).is_some_and(|member| {
-                            has_association_back_pointer(member, entry.sequence, entries, records)
+                            has_association_back_pointer(member, entry.sequence, entries)
                         })
                     })
                 })
@@ -662,7 +646,7 @@ fn predefined_associativity_valid(
                     entries.get(&sequence).is_some_and(|target| {
                         matches!(target.entity_type, 202 | 206 | 216 | 218 | 220 | 222)
                     }) && records.get(&sequence).is_some_and(|member| {
-                        has_association_back_pointer(member, entry.sequence, entries, records)
+                        has_association_back_pointer(member, entry.sequence, entries)
                     })
                 })
         }
@@ -737,7 +721,7 @@ fn predefined_associativity_valid(
             let back_pointer_owners = records
                 .iter()
                 .filter_map(|(sequence, owner)| {
-                    has_association_back_pointer(owner, entry.sequence, entries, records)
+                    has_association_back_pointer(owner, entry.sequence, entries)
                         .then_some(*sequence)
                 })
                 .collect::<Vec<_>>();
@@ -829,13 +813,13 @@ fn flow_associativity(
             }
         }) && (form == 20
             || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, entries, records)
+                has_association_back_pointer(member, entry.sequence, entries)
             }))
     });
     let joins_valid = joins.iter().all(|sequence| {
         (form == 20
             || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, entries, records)
+                has_association_back_pointer(member, entry.sequence, entries)
             }))
             && entries
                 .get(sequence)
@@ -856,10 +840,10 @@ fn flow_associativity(
                 }
         }) && (form == 20
             || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, entries, records)
+                has_association_back_pointer(member, entry.sequence, entries)
             }))
     });
-    (cursor == entity_parameter_end(record, entries, records)
+    (cursor == entity_parameter_end(record, entries)
         && associated_valid
         && connections_valid
         && joins_valid
@@ -914,14 +898,14 @@ pub(super) fn project(
             .iter()
             .filter_map(|(sequence, owner_record)| {
                 (*sequence != entry.sequence
-                    && has_property_pointer(owner_record, entry.sequence, &entries, &records))
+                    && has_property_pointer(owner_record, entry.sequence, &entries))
                 .then_some(*sequence)
             })
             .collect::<Vec<_>>();
         let fields_valid = property_fields_valid(
             entry,
             record,
-            entity_parameter_end(record, &entries, &records),
+            entity_parameter_end(record, &entries),
             &entries,
         );
         let attachment_valid = entry.status.subordinate == 0 || !owners.is_empty();
@@ -979,8 +963,7 @@ pub(super) fn project(
                         let Some(owner_record) = records.get(owner) else {
                             return false;
                         };
-                        let groups =
-                            trailing_pointer_groups_with_records(owner_record, &entries, &records);
+                        let groups = trailing_pointer_groups(owner_record, &entries);
                         let has_basic = groups.as_ref().is_some_and(|groups| {
                             groups.properties.iter().any(|sequence| {
                                 entries.get(sequence).is_some_and(|property| {
@@ -1051,19 +1034,18 @@ pub(super) fn project(
                 });
                 let sole_sheet_id = owners.first().is_some_and(|owner| {
                     records.get(owner).is_some_and(|owner_record| {
-                        trailing_pointer_groups_with_records(owner_record, &entries, &records)
-                            .is_some_and(|groups| {
-                                groups
-                                    .properties
-                                    .iter()
-                                    .filter(|sequence| {
-                                        entries.get(sequence).is_some_and(|property| {
-                                            property.entity_type == 406 && property.form == 33
-                                        })
+                        trailing_pointer_groups(owner_record, &entries).is_some_and(|groups| {
+                            groups
+                                .properties
+                                .iter()
+                                .filter(|sequence| {
+                                    entries.get(sequence).is_some_and(|property| {
+                                        property.entity_type == 406 && property.form == 33
                                     })
-                                    .count()
-                                    == 1
-                            })
+                                })
+                                .count()
+                                == 1
+                        })
                     })
                 });
                 owners.len() == 1
@@ -1134,15 +1116,11 @@ pub(super) fn project(
             let data_type = record
                 .integer(cursor + 1)
                 .filter(|value| matches!(value, 1..=6));
-            let value_stride = if entry.form == 2 { 2 } else { 1 };
             let value_count = match record.tokens.get(cursor + 2).map(|token| &token.value) {
-                None | Some(TokenValue::Omitted) => (entry.form == 0
-                    || value_stride <= record.tokens.len().saturating_sub(cursor + 3))
-                .then_some(1),
+                None | Some(TokenValue::Omitted) => Some(1),
                 Some(TokenValue::Integer(value)) => {
                     usize::try_from(*value).ok().and_then(|count| {
-                        let width = count.checked_mul(value_stride)?;
-                        (entry.form == 0 || width <= record.tokens.len().saturating_sub(cursor + 3))
+                        (entry.form == 0 || count <= record.tokens.len().saturating_sub(cursor + 3))
                             .then_some(count)
                     })
                 }
@@ -1251,7 +1229,7 @@ pub(super) fn project(
         let count = record.count(1).filter(|count| *count > 0);
         let mut types = BTreeSet::<Vec<u8>>::new();
         let units_valid = count.is_some_and(|count| {
-            entity_parameter_end(record, &entries, &records) == 2 + count * 3
+            entity_parameter_end(record, &entries) == 2 + count * 3
                 && (0..count).all(|offset| {
                     let start = 2 + offset * 3;
                     record
@@ -1320,10 +1298,7 @@ pub(super) fn project(
             && entry.label_display == 0
             && entry.line_weight == 0
             && entry.color == 0;
-        if directory_valid
-            && classes_valid
-            && cursor == entity_parameter_end(record, &entries, &records)
-        {
+        if directory_valid && classes_valid && cursor == entity_parameter_end(record, &entries) {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -1357,12 +1332,7 @@ pub(super) fn project(
             !matches!(entry.form, 1 | 14)
                 || members.iter().all(|member| {
                     records.get(member).is_some_and(|member_record| {
-                        has_association_back_pointer(
-                            member_record,
-                            entry.sequence,
-                            &entries,
-                            &records,
-                        )
+                        has_association_back_pointer(member_record, entry.sequence, &entries)
                     })
                 })
         });

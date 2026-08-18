@@ -30,37 +30,6 @@ fn number_collapses_libm_near_zeros_and_near_ones() {
 }
 
 #[test]
-fn encode_nurbs_uses_the_active_range_for_closedness() {
-    let nurbs = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-        ],
-        weights: None,
-        periodic: false,
-    };
-    let entity = encode_nurbs(
-        &nurbs,
-        [0.0, 2.0],
-        "NURBS",
-        cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-    )
-    .expect("active range is a valid NURBS range");
-    let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
-    let flags = parameters
-        .trim_end_matches(';')
-        .split(',')
-        .skip(3)
-        .take(4)
-        .collect::<Vec<_>>();
-    assert_eq!(flags, ["1", "1", "1", "0"]);
-}
-
-#[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let geometry = CurveGeometry::Hyperbola {
         center: Point3::new(1.0, 2.0, 3.0),
@@ -75,13 +44,8 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
         start: curve_point(&geometry, range[0]).expect("start evaluates"),
         end: curve_point(&geometry, range[1]).expect("end evaluates"),
     };
-    let entity = oriented_curve_entity(
-        &geometry,
-        &span,
-        Sense::Reversed,
-        cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-    )
-    .expect("a bounded hyperbola can be reversed exactly");
+    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed)
+        .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
         entity.transform.expect("hyperbola has a placement").rows,
@@ -187,8 +151,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: 2.0,
     };
-    let entity = curve_entity(&geometry, None, cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
-        .expect("full circle is writable");
+    let entity = curve_entity(&geometry, None).expect("full circle is writable");
     let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
     let values = parameters
         .trim_end_matches(';')
@@ -210,45 +173,10 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
-    let error = curve_entity(
-        &geometry,
-        Some(&span),
-        cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-    )
-    .err()
-    .expect("zero-length span must not become a full revolution");
+    let error = curve_entity(&geometry, Some(&span))
+        .err()
+        .expect("zero-length span must not become a full revolution");
     assert!(error.to_string().contains("non-zero ordered span"));
-}
-
-#[test]
-fn conic_writer_uses_the_shared_angular_tolerance_for_one_revolution() {
-    let geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let span = |extra| {
-        let range = [0.0, TAU + extra];
-        CurveSpan {
-            range,
-            start: curve_point(&geometry, range[0]).expect("start evaluates"),
-            end: curve_point(&geometry, range[1]).expect("end evaluates"),
-        }
-    };
-
-    assert!(curve_entity(
-        &geometry,
-        Some(&span(ANGULAR_TOLERANCE * 0.5)),
-        cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-    )
-    .is_ok());
-    assert!(curve_entity(
-        &geometry,
-        Some(&span(ANGULAR_TOLERANCE * 1.01)),
-        cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-    )
-    .is_err());
 }
 
 #[test]

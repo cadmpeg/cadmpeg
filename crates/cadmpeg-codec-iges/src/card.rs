@@ -87,7 +87,6 @@ impl PhysicalLine {
 pub(crate) struct CardScan<'a> {
     pub(crate) source: &'a [u8],
     pub(crate) lines: Vec<PhysicalLine>,
-    pub(crate) noncanonical_before_terminate: bool,
 }
 
 fn take_line(input: &[u8]) -> Option<(&[u8], &[u8])> {
@@ -141,11 +140,10 @@ pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
 fn physical_lines(
     source: &[u8],
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<(Vec<PhysicalLine>, bool), CodecError> {
+) -> Result<Vec<PhysicalLine>, CodecError> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut terminated = false;
-    let mut noncanonical_before_terminate = false;
     while start < source.len() {
         let relative_end = source[start..]
             .iter()
@@ -165,9 +163,6 @@ fn physical_lines(
             }
             None => (source.len(), LineEnding::None, source.len()),
         };
-        if !terminated && payload_end.saturating_sub(start) != CARD_WIDTH {
-            noncanonical_before_terminate = true;
-        }
         let card_end = start.saturating_add(CARD_WIDTH).min(payload_end);
         let payload = source[start..card_end].to_vec();
         let section = (!terminated && payload.len() == CARD_WIDTH)
@@ -204,7 +199,7 @@ fn physical_lines(
         }
         start = next;
     }
-    Ok((lines, noncanonical_before_terminate))
+    Ok(lines)
 }
 
 fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
@@ -318,14 +313,10 @@ pub(crate) fn scan_with_context<'a>(
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }
-    let (lines, noncanonical_before_terminate) = physical_lines(source, ctx)?;
+    let lines = physical_lines(source, ctx)?;
     validate_card_order(&lines)?;
     validate_terminate_counts(&lines)?;
-    Ok(CardScan {
-        source,
-        lines,
-        noncanonical_before_terminate,
-    })
+    Ok(CardScan { source, lines })
 }
 
 fn charge_line(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {

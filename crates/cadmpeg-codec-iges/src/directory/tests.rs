@@ -77,14 +77,14 @@ fn blank_directory_status_defaults_to_zero_fields() {
 }
 
 #[test]
-fn full_width_directory_status_supplies_zero_groups() {
+fn right_justified_directory_status_supplies_leading_zero_groups() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
                 entity_type: 116,
                 form: 0,
                 label: "STATUS".into(),
-                status: "00000201",
+                status: "     201",
                 parameters: "116,1,2,3,0;".into(),
             }])),
             &DecodeOptions::default(),
@@ -99,8 +99,8 @@ fn full_width_directory_status_supplies_zero_groups() {
 }
 
 #[test]
-fn directory_status_rejects_leading_embedded_or_trailing_blanks() {
-    for status in ["     201", "0000 201", "0000020 "] {
+fn directory_status_rejects_embedded_or_trailing_blanks() {
+    for status in ["0000 201", "0000020 "] {
         let error = IgesCodec
             .decode(
                 &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
@@ -113,7 +113,9 @@ fn directory_status_rejects_leading_embedded_or_trailing_blanks() {
                 &DecodeOptions::default(),
             )
             .unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(_)));
+        assert!(error
+            .to_string()
+            .contains("status number is neither blank nor a right-justified decimal integer"));
     }
 }
 

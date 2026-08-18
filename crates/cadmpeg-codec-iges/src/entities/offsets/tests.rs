@@ -26,7 +26,6 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
-use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -124,33 +123,6 @@ fn decode_does_not_default_an_unused_offset_pointer() {
         .losses
         .iter()
         .any(|loss| { loss.message.contains("DE2 is not explicit integer zero") }));
-}
-
-#[test]
-fn decode_retains_an_offset_with_an_unsupported_base_parameter_mapping() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(offset_nurbs_base_without_exact_mapping_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .all(|curve| curve.id.0 != "iges:model:curve#D3"));
-    assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["entities"].len(),
-        2
-    );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

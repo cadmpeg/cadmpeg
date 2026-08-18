@@ -280,25 +280,6 @@ fn local_limit_refusal_uses_codec_dimension() {
 }
 
 #[test]
-fn codec_limit_refusal_fuses_the_decode_session() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
-    assert!(matches!(
-        ctx.refuse_codec_limit("nested_records", 4, 5, None),
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("nested_records")
-                && limit.limit == 4
-                && limit.used == 4
-                && limit.additional == 1
-    ));
-    assert!(matches!(
-        ctx.charge_work(0, "after_codec_limit"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Codec("nested_records")
-    ));
-}
-
-#[test]
 fn committed_reads_preserve_truncation_location_and_operation() {
     let arena = DecodeArena::new();
     let (_, mut root) =

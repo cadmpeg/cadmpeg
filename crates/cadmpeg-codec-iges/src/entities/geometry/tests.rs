@@ -26,115 +26,8 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
-use super::enforce_transform_depth;
-use crate::global::RealPrecision;
-use crate::loss::IgesLossCode;
-use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
-
-const EPS_DOMAIN_REANCHOR: f64 = f64::EPSILON * 64.0;
-
-#[test]
-fn declared_unit_vector_uses_real_token_significance_as_its_interval() {
-    for (token, expected) in [
-        (".9999995", true),
-        (".99999949", false),
-        (".9999999D0", false),
-    ] {
-        let bytes = format!("{token},0,0").into_bytes();
-        let first_end = token.len();
-        let value = token.replace(['D', 'd'], "E").parse().unwrap();
-        let record = ParameterRecord {
-            directory_sequence: 1,
-            line_range: 0..0,
-            bytes,
-            tokens: vec![
-                Token {
-                    value: TokenValue::Real(value),
-                    span: 0..first_end,
-                },
-                Token {
-                    value: TokenValue::Integer(0),
-                    span: first_end + 1..first_end + 2,
-                },
-                Token {
-                    value: TokenValue::Integer(0),
-                    span: first_end + 3..first_end + 4,
-                },
-            ],
-            comment: Vec::new(),
-        };
-        assert_eq!(
-            super::declared_unit_vector(
-                &record,
-                0,
-                Vector3::new(value, 0.0, 0.0),
-                RealPrecision {
-                    single_significance: 6,
-                    double_significance: 15,
-                },
-            ),
-            expected,
-            "{token}"
-        );
-    }
-}
-
-#[test]
-fn transform_depth_overflow_is_a_structured_resource_refusal() {
-    fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
-        crate::directory::DirectoryEntry {
-            source_offset: 0,
-            sequence,
-            entity_type: 124,
-            parameter_start: 0,
-            structure: 0,
-            line_font: 0,
-            level: 0,
-            view: 0,
-            transform,
-            label_display: 0,
-            status: crate::directory::Status {
-                blank: 0,
-                subordinate: 0,
-                use_flag: 0,
-                hierarchy: 0,
-            },
-            line_weight: 0,
-            color: 0,
-            parameter_line_count: 0,
-            form: 0,
-            reserved: [[b' '; 8]; 2],
-            label: [b' '; 8],
-            subscript: 0,
-        }
-    }
-
-    let transform_count = 65_u32;
-    let mut directory = (0..transform_count)
-        .map(|index| {
-            let sequence = 1 + index * 2;
-            let transform = if index + 1 < transform_count {
-                sequence + 2
-            } else {
-                0
-            };
-            transform_entry(sequence, i64::from(transform))
-        })
-        .collect::<Vec<_>>();
-    directory.push(transform_entry(1 + transform_count * 2, 1));
-
-    let error = enforce_transform_depth(&directory, None).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
-                && limit.limit == 64
-                && limit.used == 64
-                && limit.additional == 1
-    ));
-}
 
 #[test]
 fn decode_preserves_rational_bspline_weights_and_multiplicities() {
@@ -168,7 +61,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
 }
 
 #[test]
-fn decode_rejects_a_rational_declaration_with_equal_weights() {
+fn decode_preserves_a_rational_declaration_with_equal_weights() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(equal_weight_rational_nurbs_curve_file()),
@@ -176,26 +69,11 @@ fn decode_rejects_a_rational_declaration_with_equal_weights() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
-    assert_eq!(result.report().losses.len(), 1);
-    assert_eq!(
-        result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
-    );
-}
-
-#[test]
-fn decode_accepts_a_declared_plane_for_a_degenerate_curve() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(polynomial_nurbs_curve_file(
-                b"126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(result.ir().model.curves.len(), 1);
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
+    else {
+        panic!("expected a NURBS carrier");
+    };
+    assert_eq!(nurbs.weights, Some(vec![1.0, 1.0, 1.0]));
     assert!(result.report().losses.is_empty());
 }
 
@@ -240,7 +118,7 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
         ("1.,0.99", false),
         ("1.D0,0.9999999D0", false),
     ] {
-        let parameters = format!("126,1,1,0,0,1,0,0,0,1,1,{weights},0,0,0,2,0,0,0,1,0,0,0;");
+        let parameters = format!("126,1,1,1,0,1,0,0,0,1,1,{weights},0,0,0,2,0,0,0,1,0,0,1;");
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),
@@ -273,7 +151,7 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
 fn decode_clamps_bspline_parameter_range_within_declared_real_significance() {
     for (range_start, decoded) in [("0.12345695", true), ("0.12", false)] {
         let parameters =
-            format!("126,1,1,0,0,1,0,0.123457,0.123457,1,1,1,1,0,0,0,2,0,0,{range_start},1,0,0,0;");
+            format!("126,1,1,1,0,1,0,0.123457,0.123457,1,1,1,1,0,0,0,2,0,0,{range_start},1,0,0,1;");
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),
@@ -342,43 +220,6 @@ fn decode_projects_a_counterclockwise_circular_arc() {
 }
 
 #[test]
-fn decode_reanchors_a_circular_arc_at_its_source_start_direction() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(offset_quarter_circle_with_absolute_native_parameters()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let curve = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D1")
-        .expect("source circular arc");
-    let CurveGeometry::Circle { ref_direction, .. } = &curve.geometry else {
-        panic!("expected a circle carrier");
-    };
-    assert!((ref_direction.x).abs() < EPS_DOMAIN_REANCHOR);
-    assert!((ref_direction.y - 1.0).abs() < EPS_DOMAIN_REANCHOR);
-    let edge = result
-        .ir()
-        .model
-        .edges
-        .iter()
-        .find(|edge| {
-            edge.curve
-                .as_ref()
-                .is_some_and(|id| id.0 == "iges:model:curve#D1")
-        })
-        .expect("source circular arc edge");
-    let range = edge.param_range.expect("bounded source circular arc");
-    assert!(range[0].abs() < EPS_DOMAIN_REANCHOR);
-    assert!((range[1] - std::f64::consts::FRAC_PI_2).abs() < EPS_DOMAIN_REANCHOR);
-    assert!(result.report().losses.is_empty());
-}
-
-#[test]
 fn decode_accepts_rounded_transformed_circular_arc_frame() {
     let result = IgesCodec
         .decode(
@@ -411,25 +252,6 @@ fn decode_rejects_transform_roundoff_beyond_its_declared_precision() {
         .decode(
             &mut Cursor::new(transformed_circular_arc_file(
                 b"124,1.0000051,0,0,0,0,1,0,0,0,0,1,0;",
-                b"100,0,0,0,1,0,0,1;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result.ir().model.curves.is_empty());
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("not orthonormal within its declared numeric precision")
-    }));
-}
-
-#[test]
-fn decode_rejects_occt_rounded_transform_under_declared_single_precision() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(transformed_circular_arc_file_with_single_significance(
-                b"124,1.0000049,0,0,0,0,1,0,0,0,0,1,0;",
                 b"100,0,0,0,1,0,0,1;",
             )),
             &DecodeOptions::default(),
@@ -572,26 +394,18 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
             .decode(&mut Cursor::new(line_file(form)), &DecodeOptions::default())
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), usize::from(form == 2));
+        assert_eq!(result.ir().model.curves.len(), 1);
         assert!(result.ir().model.edges.is_empty());
         assert!(result.ir().model.bodies.is_empty());
-        if form == 2 {
-            assert_eq!(
-                result.ir().model.curves[0]
-                    .source_object
-                    .as_ref()
-                    .unwrap()
-                    .object_id,
-                "D1"
-            );
-            assert!(result.report().losses.is_empty());
-        } else {
-            assert!(result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-        }
+        assert_eq!(
+            result.ir().model.curves[0]
+                .source_object
+                .as_ref()
+                .unwrap()
+                .object_id,
+            "D1"
+        );
+        assert!(result.report().losses.is_empty());
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(native.arenas["entities"][0].fields()["form"], form);
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());

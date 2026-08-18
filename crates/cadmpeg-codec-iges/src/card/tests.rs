@@ -30,7 +30,7 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
-fn over_width_lines_are_retained_for_inspection_and_rejected_semantically() {
+fn over_width_lines_split_into_cards_and_retained_remainders() {
     let canonical = point_file();
     let line_count = canonical.split_inclusive(|byte| *byte == b'\n').count();
     let mut padded = Vec::with_capacity(canonical.len() + line_count);
@@ -43,10 +43,24 @@ fn over_width_lines_are_retained_for_inspection_and_rejected_semantically() {
         padded.extend_from_slice(ending);
     }
 
-    assert!(matches!(
-        IgesCodec.decode(&mut Cursor::new(padded.clone()), &DecodeOptions::default()),
-        Err(CodecError::Malformed(_))
-    ));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(padded.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.report().transfer_ledger.entries.len(), 1);
+    let transfer = &result.report().transfer_ledger.entries[0];
+    assert_eq!(transfer.source, "D1");
+    assert_eq!(transfer.target.as_deref(), Some("iges:entity:directory#1"));
+    assert_eq!(
+        transfer.disposition,
+        cadmpeg_ir::report::TransferDisposition::Retained
+    );
+    assert_eq!(
+        transfer.note.as_deref(),
+        Some("native record retained; semantic projection emitted")
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
 
     let summary = IgesCodec
         .inspect(
@@ -93,7 +107,7 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
 fn inspect_reports_sections_and_physical_line_endings() {
     let mut bytes = card_with_ending(b"original fixture", b'S', 1, b"\r\n");
     bytes.extend(card_with_ending(
-        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,1,1,1,1,1,,1,2,1HX,1,1,13H240714.000000,0,0,,,1;",
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
         b'G',
         1,
         b"\n",
@@ -122,17 +136,12 @@ fn inspect_reports_sections_and_physical_line_endings() {
 }
 
 #[test]
-fn inspect_retains_short_and_extended_physical_records_before_terminate() {
+fn decode_retains_short_and_extended_physical_records_before_terminate() {
     let mut bytes = point_file();
     let mut inserted = b"short record\n".to_vec();
     inserted.extend(std::iter::repeat_n(b'x', 81));
     inserted.push(b'\n');
     bytes.splice(162..162, inserted);
-
-    assert!(matches!(
-        IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()),
-        Err(CodecError::Malformed(_))
-    ));
 
     let summary = IgesCodec
         .inspect(
@@ -171,7 +180,7 @@ fn inspect_rejects_terminate_count_mismatch() {
 fn inspect_accepts_space_padded_terminate_counts() {
     let mut bytes = card(b"original fixture", b'S', 1);
     bytes.extend(card(
-        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,1,1,1,1,1,,1,2,1HX,1,1,13H240714.000000,0,0,,,1;",
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
         b'G',
         1,
     ));

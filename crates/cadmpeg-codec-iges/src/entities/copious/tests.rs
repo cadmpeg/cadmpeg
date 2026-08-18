@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::{ResourceDimension, WorkBudget};
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::geometry::{
@@ -29,27 +29,6 @@ use cadmpeg_ir::CadIr;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
-
-use super::{simple_closed_path_error, SimpleClosedPathError};
-
-#[test]
-fn decode_refuses_a_copious_tuple_count_over_its_projection_limit() {
-    let error = IgesCodec
-        .decode(
-            &mut Cursor::new(copious_data_file(12, b"106,2,1000001;", "00000000")),
-            &DecodeOptions::default(),
-        )
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("iges_copious_tuples")
-                && limit.limit == 1_000_000
-                && limit.used == 1_000_000
-                && limit.additional == 1
-    ));
-}
 
 #[test]
 fn decode_projects_copious_linear_paths_with_segment_parameters() {
@@ -104,36 +83,6 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
 }
 
 #[test]
-fn decode_preserves_coincident_segments_in_planar_and_vector_linear_paths() {
-    for (form, parameters) in [
-        (11, "106,1,4,0,0,0,0,0,1,0,1,1;"),
-        (
-            13,
-            "106,3,4,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,1,0,0,1,1,0,1,0,0;",
-        ),
-    ] {
-        let result = IgesCodec
-            .decode(
-                &mut Cursor::new(copious_data_file(form, parameters.as_bytes(), "00000000")),
-                &DecodeOptions::default(),
-            )
-            .unwrap();
-
-        assert_eq!(result.ir().model.curves.len(), 1, "form {form}");
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) =
-            &result.ir().model.curves[0].geometry
-        else {
-            panic!("expected a degree-one path carrier for form {form}");
-        };
-        assert!(
-            path.control_points[0].distance(path.control_points[1]) < f64::EPSILON,
-            "form {form}"
-        );
-        assert!(result.report().losses.is_empty(), "form {form}");
-    }
-}
-
-#[test]
 fn decode_closes_form_63_with_the_global_minimum_resolution() {
     for (gap, decoded) in [("0.000999", true), ("0.001001", false)] {
         let parameters = format!("106,1,3,0,0,0,1,0,0,{gap};");
@@ -163,154 +112,6 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
                 .message
                 .contains("endpoints disagree beyond the minimum resolution")));
         }
-    }
-}
-
-#[test]
-fn decode_accepts_an_exact_form_63_closure() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(copious_data_file(
-                63,
-                b"106,1,4,0,0,0,1,0,1,1,0,0;",
-                "00000000",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert_eq!(
-        result.ir().model.edges[0].start,
-        result.ir().model.edges[0].end
-    );
-    assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn simple_closed_path_rejects_duplicate_and_intersecting_patterns() {
-    let square = [
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-        Point2::new(1.0, 1.0),
-        Point2::new(0.0, 1.0),
-        Point2::new(0.0, 0.0),
-    ];
-    assert_eq!(simple_closed_path_error(&square, 0.001, None), None);
-
-    let near_closure = [
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-        Point2::new(1.0, 1.0),
-        Point2::new(0.0005, 0.0005),
-    ];
-    assert_eq!(simple_closed_path_error(&near_closure, 0.001, None), None);
-
-    let consecutive_duplicate = [
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-        Point2::new(1.0, 0.0),
-        Point2::new(0.0, 0.0),
-    ];
-    assert_eq!(
-        simple_closed_path_error(&consecutive_duplicate, 0.001, None),
-        Some(SimpleClosedPathError::ConsecutiveCoincidentPoints)
-    );
-
-    let nonadjacent_duplicate = [
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-        Point2::new(1.0, 1.0),
-        Point2::new(0.0, 1.0),
-        Point2::new(1.0, 0.0),
-        Point2::new(0.0, 0.0),
-    ];
-    assert_eq!(
-        simple_closed_path_error(&nonadjacent_duplicate, 0.001, None),
-        Some(SimpleClosedPathError::RepeatedPoint)
-    );
-
-    let crossing = [
-        Point2::new(0.0, 0.0),
-        Point2::new(2.0, 2.0),
-        Point2::new(0.0, 2.0),
-        Point2::new(2.0, 0.0),
-        Point2::new(0.0, 0.0),
-    ];
-    assert_eq!(
-        simple_closed_path_error(&crossing, 0.001, None),
-        Some(SimpleClosedPathError::SelfIntersection)
-    );
-
-    let overlapping = [
-        Point2::new(0.0, 0.0),
-        Point2::new(2.0, 0.0),
-        Point2::new(1.0, 0.0),
-        Point2::new(1.0, 1.0),
-        Point2::new(0.0, 0.0),
-    ];
-    assert_eq!(
-        simple_closed_path_error(&overlapping, 0.001, None),
-        Some(SimpleClosedPathError::SelfIntersection)
-    );
-}
-
-#[test]
-fn form_63_validation_stops_at_its_pair_work_cap() {
-    let below = vec![Point2::new(0.0, 0.0); 4_472];
-    let below_budget = WorkBudget::new(super::MAX_FORM_63_VALIDATION_WORK as usize);
-    assert_eq!(
-        simple_closed_path_error(&below, 0.001, Some(&below_budget)),
-        Some(SimpleClosedPathError::ConsecutiveCoincidentPoints)
-    );
-    assert_eq!(
-        below_budget.consumed(),
-        below.len().saturating_mul(below.len())
-    );
-
-    let at = vec![Point2::new(0.0, 0.0); 4_473];
-    let at_budget = WorkBudget::new(super::MAX_FORM_63_VALIDATION_WORK as usize);
-    assert_eq!(
-        simple_closed_path_error(&at, 0.001, Some(&at_budget)),
-        Some(SimpleClosedPathError::ValidationBudget)
-    );
-    assert_eq!(at_budget.consumed(), 0);
-}
-
-#[test]
-fn decode_retains_invalid_form_63_paths_without_neutral_projection() {
-    let cases = [
-        (
-            "nonadjacent duplicate",
-            "106,1,6,0,0,0,1,0,1,1,0,1,1,0,0,0;",
-        ),
-        ("crossing", "106,1,5,0,0,0,2,2,0,2,2,0,0,0;"),
-        ("overlapping segments", "106,1,5,0,0,0,2,0,1,0,1,1,0,0;"),
-    ];
-    for (name, parameters) in cases {
-        let result = IgesCodec
-            .decode(
-                &mut Cursor::new(copious_data_file(63, parameters.as_bytes(), "00000000")),
-                &DecodeOptions::default(),
-            )
-            .unwrap();
-
-        assert!(result.ir().model.curves.is_empty(), "{name}");
-        assert_eq!(result.report().losses.len(), 1, "{name}");
-        assert_eq!(
-            result.report().losses[0].code,
-            IgesLossCode::EntityNotProjected.kind(),
-            "{name}"
-        );
-        let native = result.ir().native.namespace("iges").unwrap();
-        assert_eq!(native.arenas["copious_data"].len(), 1, "{name}");
-        assert_eq!(
-            result.report().transfer_ledger.entries[0].note.as_deref(),
-            Some("native record retained; semantic projection omitted with an attributed loss"),
-            "{name}"
-        );
     }
 }
 

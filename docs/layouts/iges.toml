@@ -95,7 +95,7 @@ note = "Representation detection validates the six-byte Binary sequence padding 
 name = "canonical_card"
 kind = "column"
 section = "Physical representation"
-anchor = "A canonical line contains exactly an 80-byte card followed by a line ending."
+anchor = "A canonical line contains an 80-byte card followed by a line ending."
 size = 80
 note = "Byte positions are one-based in the specification. The Global data stream is the concatenation of columns 1 through 72 from its cards."
 

@@ -107,33 +107,12 @@ pub(crate) fn transformed_circular_arc_file(matrix: &[u8], arc: &[u8]) -> Vec<u8
     transformed_circular_arc_file_with_form(0, matrix, arc)
 }
 
-pub(crate) fn transformed_circular_arc_file_with_single_significance(
-    matrix: &[u8],
-    arc: &[u8],
-) -> Vec<u8> {
-    transformed_circular_arc_file_with_form_and_global(
-        0,
-        matrix,
-        arc,
-        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,308,15,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
-    )
-}
-
 pub(crate) fn transformed_circular_arc_file_with_form(
     form: i64,
     matrix: &[u8],
     arc: &[u8],
 ) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    transformed_circular_arc_file_with_form_and_global(form, matrix, arc, global)
-}
-
-fn transformed_circular_arc_file_with_form_and_global(
-    form: i64,
-    matrix: &[u8],
-    arc: &[u8],
-    global: &[u8],
-) -> Vec<u8> {
     let form = form.to_string();
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -218,25 +197,6 @@ pub(crate) fn offset_quarter_circle_with_absolute_native_parameters() -> Vec<u8>
                 std::f64::consts::FRAC_PI_2,
                 std::f64::consts::PI
             ),
-        },
-    ])
-}
-
-pub(crate) fn offset_nurbs_base_without_exact_mapping_file() -> Vec<u8> {
-    owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 126,
-            form: 1,
-            label: "NURBS".into(),
-            status: "00010000",
-            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,1,0,0,0,1,0,0,1;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 130,
-            form: 0,
-            label: "OFFSET".into(),
-            status: "00000000",
-            parameters: "130,1,1,0,,,0.5,,,,0,0,1,0,1;".into(),
         },
     ])
 }
@@ -469,8 +429,8 @@ pub(crate) fn mixed_degree_composite_pcurve_file() -> Vec<u8> {
             form: 0,
             label: "CUBIC".into(),
             status: "00010000",
-            parameters:
-                "126,3,3,1,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1,0,0,1;".into(),
+            parameters: "126,3,3,1,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1;"
+                .into(),
         },
         OwnedTestEntity {
             entity_type: 110,
@@ -1108,7 +1068,7 @@ pub(crate) fn ellipse_surface_of_revolution_file() -> Vec<u8> {
 pub(crate) fn trimmed_surface_of_revolution_file() -> Vec<u8> {
     let angle = 0.3_f64;
     let pcurve = format!(
-        "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,{angle},0,0.5,{},0,0,1,0,0,1;",
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,{angle},0,0.5,{},0,0,1;",
         angle + std::f64::consts::TAU
     );
     owned_test_file(&[

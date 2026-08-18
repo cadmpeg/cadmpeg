@@ -29,8 +29,6 @@ use cadmpeg_ir::CadIr;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
-const EPS_PARAMETER_DOMAIN: f64 = 1.0e-12;
-
 #[test]
 fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
     let fixtures: [(i64, &[u8]); 5] = [
@@ -73,37 +71,6 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             "form {form}: {:#?}",
             validation.findings
         );
-    }
-}
-
-#[test]
-fn decode_uses_exact_neutral_domains_for_conic_default_parameterizations() {
-    let fixtures: [(i64, &[u8], [f64; 2]); 3] = [
-        (
-            1,
-            b"104,0.25,0,1,0,0,-1,0,2,0,0,1;",
-            [0.0, std::f64::consts::FRAC_PI_2],
-        ),
-        (
-            2,
-            b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
-            [0.0, 1.0],
-        ),
-        (3, b"104,1,0,0,0,-4,0,0,2,1,-2,1;", [-1.0, 1.0]),
-    ];
-    for (form, parameters, expected) in fixtures {
-        let result = IgesCodec
-            .decode(
-                &mut Cursor::new(conic_arc_file(form, parameters)),
-                &DecodeOptions::default(),
-            )
-            .unwrap();
-        let actual = result.ir().model.edges[0]
-            .param_range
-            .expect("bounded conic edge range");
-        assert!((actual[0] - expected[0]).abs() < EPS_PARAMETER_DOMAIN);
-        assert!((actual[1] - expected[1]).abs() < EPS_PARAMETER_DOMAIN);
-        assert!(result.report().losses.is_empty(), "{parameters:?}");
     }
 }
 
@@ -161,39 +128,6 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
             );
         }
     }
-}
-
-#[test]
-fn decode_preserves_declared_conic_endpoints_as_neutral_vertices() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(conic_arc_file(
-                1,
-                b"104,0.25,0,1,0,0,-1,0,2.0005,0,0,1.0005;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result.report().losses.is_empty());
-    assert_eq!(result.ir().model.points.len(), 2);
-    let positions = result
-        .ir()
-        .model
-        .points
-        .iter()
-        .map(|point| point.position)
-        .collect::<Vec<_>>();
-    assert!(positions.iter().any(|position| {
-        (position.x - 2.0005).abs() < EPS_PARAMETER_DOMAIN
-            && position.y.abs() < EPS_PARAMETER_DOMAIN
-            && position.z.abs() < EPS_PARAMETER_DOMAIN
-    }));
-    assert!(positions.iter().any(|position| {
-        position.x.abs() < EPS_PARAMETER_DOMAIN
-            && (position.y - 1.0005).abs() < EPS_PARAMETER_DOMAIN
-            && position.z.abs() < EPS_PARAMETER_DOMAIN
-    }));
 }
 
 #[test]

@@ -12,20 +12,11 @@ enum Value {
     Atom(Vec<u8>),
 }
 
-fn is_valid_string_bytes(bytes: &[u8]) -> bool {
-    bytes
-        .iter()
-        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-}
-
 impl Value {
     fn string(&self) -> Option<String> {
         match self {
-            Self::String(bytes) if is_valid_string_bytes(bytes) => {
-                String::from_utf8(bytes.clone()).ok()
-            }
+            Self::String(bytes) => String::from_utf8(bytes.clone()).ok(),
             Self::Omitted | Self::Atom(_) => None,
-            Self::String(_) => None,
         }
     }
 
@@ -41,10 +32,6 @@ impl Value {
             Self::String(bytes) => Some(bytes),
             Self::Omitted | Self::Atom(_) => None,
         }
-    }
-
-    fn has_invalid_string_bytes(&self) -> bool {
-        matches!(self, Self::String(bytes) if !is_valid_string_bytes(bytes))
     }
 
     fn real(&self) -> Option<f64> {
@@ -79,8 +66,6 @@ pub(crate) struct RealPrecision {
 fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
 }
-
-const SENDER_PRODUCT_FIELD: usize = 2;
 
 fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize)>, CodecError> {
     let mut cursor = start;
@@ -131,26 +116,21 @@ fn delimited_value(
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
 ) -> Result<(Value, Range<usize>, usize, bool), CodecError> {
-    let value_start = start
-        + bytes[start..]
-            .iter()
-            .position(|byte| *byte != b' ')
-            .ok_or_else(|| malformed("record delimiter is missing"))?;
-    if bytes.get(value_start) == Some(&parameter_delimiter) {
-        return Ok((Value::Omitted, start..start, value_start + 1, false));
+    if bytes.get(start) == Some(&parameter_delimiter) {
+        return Ok((Value::Omitted, start..start, start + 1, false));
     }
-    if record_delimiter.is_some_and(|delimiter| bytes.get(value_start) == Some(&delimiter)) {
-        return Ok((Value::Omitted, start..start, value_start + 1, true));
+    if record_delimiter.is_some_and(|delimiter| bytes.get(start) == Some(&delimiter)) {
+        return Ok((Value::Omitted, start..start, start + 1, true));
     }
-    let (value, end) = if let Some((payload, end)) = hollerith(bytes, value_start)? {
+    let (value, end) = if let Some((payload, end)) = hollerith(bytes, start)? {
         (Value::String(payload), end)
     } else {
-        let end = bytes[value_start..]
+        let end = bytes[start..]
             .iter()
             .position(|byte| *byte == parameter_delimiter || record_delimiter == Some(*byte))
-            .and_then(|relative| value_start.checked_add(relative))
+            .and_then(|relative| start.checked_add(relative))
             .ok_or_else(|| malformed("record delimiter is missing"))?;
-        let atom = &bytes[value_start..end];
+        let atom = &bytes[start..end];
         if atom.iter().all(u8::is_ascii_whitespace) {
             (Value::Omitted, end)
         } else {
@@ -159,10 +139,10 @@ fn delimited_value(
     };
     match bytes.get(end).copied() {
         Some(separator) if separator == parameter_delimiter => {
-            Ok((value, value_start..end, end + 1, false))
+            Ok((value, start..end, end + 1, false))
         }
         Some(separator) if record_delimiter == Some(separator) => {
-            Ok((value, value_start..end, end + 1, true))
+            Ok((value, start..end, end + 1, true))
         }
         _ => Err(malformed("value is not followed by a delimiter")),
     }
@@ -238,37 +218,6 @@ fn version_name(flag: i64) -> Option<&'static str> {
     }
 }
 
-fn date_value_is_valid(bytes: &[u8]) -> bool {
-    let dot = match bytes.len() {
-        13 => 6,
-        15 => 8,
-        _ => return false,
-    };
-    if bytes.get(dot) != Some(&b'.')
-        || bytes
-            .iter()
-            .enumerate()
-            .any(|(index, byte)| index != dot && !byte.is_ascii_digit())
-    {
-        return false;
-    }
-    let number = |start: usize, end: usize| {
-        std::str::from_utf8(&bytes[start..end])
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok())
-    };
-    let (month_start, day_start, hour_start, minute_start, second_start) = if dot == 6 {
-        (2, 4, 7, 9, 11)
-    } else {
-        (4, 6, 9, 11, 13)
-    };
-    number(month_start, month_start + 2).is_some_and(|month| (1..=12).contains(&month))
-        && number(day_start, day_start + 2).is_some_and(|day| (1..=31).contains(&day))
-        && number(hour_start, hour_start + 2).is_some_and(|hour| hour < 24)
-        && number(minute_start, minute_start + 2).is_some_and(|minute| minute < 60)
-        && number(second_start, second_start + 2).is_some_and(|second| second < 60)
-}
-
 impl Global {
     fn integer_field(
         &self,
@@ -300,75 +249,7 @@ impl Global {
         }
     }
 
-    fn string_field(
-        &self,
-        index: usize,
-        name: &str,
-        allow_omitted: bool,
-    ) -> Result<(), CodecError> {
-        match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted if allow_omitted => Ok(()),
-            Value::Omitted => Err(malformed(format!(
-                "field {} ({name}) has no value",
-                index + 1
-            ))),
-            Value::String(_) => Ok(()),
-            Value::Atom(_) => Err(malformed(format!(
-                "field {} ({name}) is not a string",
-                index + 1
-            ))),
-        }
-    }
-
-    fn date_field(&self, index: usize, name: &str, allow_omitted: bool) -> Result<(), CodecError> {
-        match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted if allow_omitted => Ok(()),
-            Value::Omitted => Err(malformed(format!(
-                "field {} ({name}) has no value",
-                index + 1
-            ))),
-            Value::String(value) if allow_omitted && value.is_empty() => Ok(()),
-            Value::String(value) if date_value_is_valid(value) => Ok(()),
-            Value::String(_) => Err(malformed(format!(
-                "field {} ({name}) is not a valid timestamp",
-                index + 1
-            ))),
-            Value::Atom(_) => Err(malformed(format!(
-                "field {} ({name}) is not a string",
-                index + 1
-            ))),
-        }
-    }
-
     fn validate(&self) -> Result<(), CodecError> {
-        if self.values.len() > 26 {
-            return Err(malformed("Global record has more than 26 fields"));
-        }
-        for (index, name) in [
-            (2, "product identification"),
-            (3, "file name"),
-            (4, "native system ID"),
-            (5, "preprocessor version"),
-        ] {
-            self.string_field(index, name, index == SENDER_PRODUCT_FIELD)?;
-        }
-        for (index, name) in [
-            (6, "integer representation bits"),
-            (7, "single-precision magnitude"),
-            (8, "single-precision significance"),
-            (9, "double-precision magnitude"),
-            (10, "double-precision significance"),
-        ] {
-            self.integer_field(index, name, None)?;
-        }
-        self.string_field(11, "receiver product identification", true)?;
-        self.string_field(14, "units name", true)?;
-        self.date_field(17, "date and time of exchange file generation", false)?;
-        self.string_field(20, "author name", true)?;
-        self.string_field(21, "author organization", true)?;
-        self.date_field(24, "date and time model was created or modified", true)?;
-        self.string_field(25, "application protocol", true)?;
-
         for (index, name) in [
             (8, "single-precision significance"),
             (10, "double-precision significance"),
@@ -391,20 +272,15 @@ impl Global {
         if !(1..=11).contains(&units) {
             return Err(malformed("field 14 (units flag) must be in 1 through 11"));
         }
-        if units == 3
-            && !matches!(
-                self.values.get(14),
-                Some(Value::String(value)) if !value.is_empty()
-            )
-        {
+        if units == 3 && self.named_unit_factor_mm().is_none() {
             return Err(malformed(
-                "field 15 (units name) is required and nonempty for units flag 3",
+                "field 15 (units name) is not a supported standard unit name for units flag 3",
             ));
         }
         let gradations = self.integer_field(15, "maximum line-weight gradations", Some(1))?;
-        if gradations <= 0 {
+        if !(1..=32_768).contains(&gradations) {
             return Err(malformed(
-                "field 16 (maximum line-weight gradations) must be greater than zero",
+                "field 16 (maximum line-weight gradations) must be in 1 through 32768",
             ));
         }
         let maximum_width = self.real_field(16, "maximum line width", None)?;
@@ -419,17 +295,10 @@ impl Global {
                 "field 19 (minimum resolution) must be finite and nonnegative",
             ));
         }
-        let maximum_coordinate = self.real_field(19, "maximum coordinate", Some(0.0))?;
-        if !maximum_coordinate.is_finite() || maximum_coordinate < 0.0 {
+        let version = self.integer_field(22, "version flag", Some(3))?;
+        if version_name(version).is_none() {
             return Err(malformed(
-                "field 20 (maximum coordinate) must be finite and nonnegative",
-            ));
-        }
-        self.integer_field(22, "version flag", Some(3))?;
-        let drafting_standard = self.integer_field(23, "drafting standard flag", Some(0))?;
-        if !(0..=7).contains(&drafting_standard) {
-            return Err(malformed(
-                "field 24 (drafting standard flag) must be in 0 through 7",
+                "field 23 (version flag) is not a defined IGES version",
             ));
         }
         Ok(())
@@ -482,17 +351,6 @@ impl Global {
             b"UIN" => Some(0.000_025_4),
             _ => None,
         }
-    }
-
-    pub(crate) fn has_supported_length_factor(&self) -> bool {
-        self.units_flag() != 3 || self.named_unit_factor_mm().is_some()
-    }
-
-    pub(crate) fn invalid_string_fields(&self) -> impl Iterator<Item = usize> + '_ {
-        self.values
-            .iter()
-            .enumerate()
-            .filter_map(|(index, value)| value.has_invalid_string_bytes().then_some(index + 1))
     }
 
     pub(crate) fn length_factor_mm(&self) -> f64 {
@@ -565,19 +423,9 @@ impl Global {
         self.values.get(14).and_then(Value::string)
     }
 
-    pub(crate) fn units_name_bytes(&self) -> Option<&[u8]> {
-        self.values.get(14).and_then(Value::string_bytes)
-    }
-
     pub(crate) fn version_flag(&self) -> i64 {
-        match self
-            .integer_field(22, "version flag", Some(3))
+        self.integer_field(22, "version flag", Some(3))
             .expect("validated Global version flag")
-        {
-            value if value < 1 => 3,
-            value if value > 11 => 11,
-            value => value,
-        }
     }
 
     pub(crate) fn version(&self) -> &'static str {
@@ -598,29 +446,8 @@ impl Global {
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
         }
-        let invalid_fields = self
-            .invalid_string_fields()
-            .map(|field| field.to_string())
-            .collect::<Vec<_>>();
-        if !invalid_fields.is_empty() {
-            notes.push(format!(
-                "invalid_global_string_fields={}",
-                invalid_fields.join(",")
-            ));
-        }
         notes.push(format!("iges_version={}", self.version()));
         notes
-    }
-}
-
-pub(crate) fn coincident_distance(distance: f64, resolution: f64) -> bool {
-    if !distance.is_finite() || !resolution.is_finite() || distance < 0.0 || resolution < 0.0 {
-        return false;
-    }
-    if resolution == 0.0 {
-        distance == 0.0
-    } else {
-        distance < resolution
     }
 }
 

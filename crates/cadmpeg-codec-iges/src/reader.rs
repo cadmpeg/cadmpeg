@@ -40,8 +40,6 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     );
     if let Some(value) = global.units_name() {
         attributes.insert("native_units".into(), value);
-    } else if let Some(value) = global.units_name_bytes() {
-        attributes.insert("native_units_bytes_hex".into(), bytes_hex(value));
     }
     if let Some(value) = global.sender_product() {
         attributes.insert("sender_product".into(), value);
@@ -89,11 +87,6 @@ fn decode_with_occurrence_limits(
         .map(|ctx| ctx.reserve_scoped(bytes.len() as u64, "iges_card_storage", None))
         .transpose()?;
     let scan = card::scan_with_context(bytes, ctx)?;
-    if !options.container_only && scan.noncanonical_before_terminate {
-        return Err(crate::error::malformed(
-            "IGES Fixed ASCII has a short or overlong line before Terminate",
-        ));
-    }
     let global = global::parse(&scan)?;
     if !matches!(global.version(), "5.1" | "5.2" | "5.3") {
         return Err(CodecError::NotImplemented(format!(
@@ -101,35 +94,14 @@ fn decode_with_occurrence_limits(
             global.version()
         )));
     }
-    if !options.container_only {
-        if let Some(field) = global.invalid_string_fields().next() {
-            return Err(crate::error::malformed(format!(
-                "IGES Global field {field} contains a non-ASCII or control byte"
-            )));
-        }
-    }
-    if !options.container_only && !global.has_supported_length_factor() {
-        return Err(CodecError::NotImplemented(
-            "IGES units flag 3 names a unit without a known millimetre factor".into(),
-        ));
-    }
     let directory = directory::parse(&scan)?;
     charge_entities(ctx, directory.len() as u64, "iges_directory_entries")?;
-    entities::geometry::enforce_transform_depth(&directory, ctx)?;
     let parameters = parameter::assemble_with_context(&scan, &directory, &global, ctx)?;
     let parameter_tokens = parameters
         .iter()
         .map(|record| record.tokens.len() as u64)
         .sum();
     charge_work(ctx, parameter_tokens, "iges_parameter_parse")?;
-    let directory_by_sequence = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
-    let parameter_by_sequence = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
     let mut references = graph::build(&directory);
     let mut source_fidelity = SourceFidelity::default();
     source_fidelity.retained_records.push(RetainedSourceRecord {
@@ -154,18 +126,10 @@ fn decode_with_occurrence_limits(
         }
     } else {
         charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)?
+        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)
     };
-    let structure_decoded = projection
-        .decoded
-        .iter()
-        .filter(|sequence| {
-            directory_by_sequence
-                .get(sequence)
-                .is_some_and(|entry| matches!(entry.entity_type, 308 | 320 | 408 | 420))
-        })
-        .copied()
-        .collect::<BTreeSet<_>>();
+    let projected_entities = ir.model.entity_count() as u64;
+    charge_entities(ctx, projected_entities, "iges_projected_entities")?;
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let product_occurrence_expansion = native::store(
         &mut ir,
@@ -174,12 +138,16 @@ fn decode_with_occurrence_limits(
         &parameters,
         &mut references,
         &global,
-        (!options.container_only).then_some(&structure_decoded),
         native::ProductOccurrenceLimits::new(
             product_occurrence_output_limit,
             product_occurrence_depth_limit,
         ),
         ctx,
+    )?;
+    charge_entities(
+        ctx,
+        (ir.model.entity_count() as u64).saturating_sub(projected_entities),
+        "iges_native_entities",
     )?;
     ir.finalize();
     let document_digest = crate::document_digest(&ir);
@@ -193,22 +161,6 @@ fn decode_with_occurrence_limits(
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
     losses.extend(graph::losses(&references, &scan, &parameters));
-    losses.extend(parameters.iter().filter_map(|record| {
-        let count = parameter::ambiguous_trailing_pointer_group_count_with_records(
-            record,
-            &directory_by_sequence,
-            &parameter_by_sequence,
-        )?;
-        let entry = directory_by_sequence.get(&record.directory_sequence)?;
-        Some(
-            IgesLossCode::AmbiguousTrailingPointerGroups
-                .note(format!(
-                    "IGES Directory Entry D{} has {count} fully valid trailing pointer-group boundaries; entity-specific parameter arity is required",
-                    entry.sequence
-                ))
-                .with_provenance(entry.loss_provenance()),
-        )
-    }));
     if product_occurrence_expansion.output_truncated {
         losses.push(
             IgesLossCode::OccurrenceExpansionOutputTruncated
@@ -222,17 +174,9 @@ fn decode_with_occurrence_limits(
             ),
         );
     }
-    if product_occurrence_expansion
-        .diagnostics
-        .root_inference_blocked()
-    {
+    if product_occurrence_expansion.root_inference_blocked {
         losses.push(IgesLossCode::OccurrenceRootInferenceBlocked.note(
             "IGES product occurrence root inference was suppressed because a definition member list is malformed",
-        ));
-    }
-    if product_occurrence_expansion.diagnostics.invalid_structure() {
-        losses.push(IgesLossCode::OccurrenceInvalidStructure.note(
-            "IGES product occurrence expansion omitted a definition or instance rejected by structure validation",
         ));
     }
     if !options.container_only {

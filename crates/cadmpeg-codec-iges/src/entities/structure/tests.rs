@@ -454,49 +454,6 @@ fn decode_types_scalar_and_string_property_forms() {
 }
 
 #[test]
-fn decode_form6_layer_range_admits_equal_and_retains_descending() {
-    let decode = |parameters: &str, label: &str| {
-        IgesCodec
-            .decode(
-                &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
-                    entity_type: 406,
-                    form: 6,
-                    label: label.into(),
-                    status: "00000000",
-                    parameters: parameters.into(),
-                }])),
-                &DecodeOptions::default(),
-            )
-            .unwrap()
-    };
-    for (parameters, label, lower, upper, projected) in [
-        ("406,5,0.5,0.45,1,2,8;", "ASCEND", 2, 8, true),
-        ("406,5,0.5,0.45,1,4,4;", "EQUAL", 4, 4, true),
-        ("406,5,0.5,0.45,1,8,2;", "DESCEND", 8, 2, false),
-    ] {
-        let result = decode(parameters, label);
-        let properties = &result.ir().native.namespace("iges").unwrap().arenas["properties"];
-        assert_eq!(properties.len(), 1);
-        let property = &properties[0];
-        assert_eq!(property.fields()["lower_layer"], lower);
-        assert_eq!(property.fields()["upper_layer"], upper);
-        if projected {
-            assert!(
-                result.report().losses.is_empty(),
-                "{:#?}",
-                result.report().losses
-            );
-        } else {
-            assert!(result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-        }
-    }
-}
-
-#[test]
 fn decode_types_grid_group_and_lep_property_forms() {
     let decode = |bytes| {
         IgesCodec
@@ -625,14 +582,15 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     assert_eq!(display["property_kind"], "dimension_display_data");
     assert_eq!(display["dimension_type"], 2);
     assert_eq!(display["label_position"], 1);
-    assert_eq!(display["declared_character_set"], 1003);
-    assert_eq!(display["character_set"], 1003);
+    assert_eq!(display["declared_character_set"], 1);
+    assert_eq!(display["character_set"], 1);
     assert_eq!(display["label"], serde_json::json!([68, 73, 65]));
     assert_eq!(display["decimal_symbol"], 0);
-    let declared_witness_line_angle = display["declared_witness_line_angle"].as_f64().unwrap();
-    assert!((declared_witness_line_angle - 0.25).abs() < f64::EPSILON * 16.0);
-    let witness_line_angle = display["witness_line_angle"].as_f64().unwrap();
-    assert!((witness_line_angle - 0.25).abs() < f64::EPSILON * 16.0);
+    assert_eq!(
+        display["declared_witness_line_angle"],
+        std::f64::consts::FRAC_PI_2
+    );
+    assert_eq!(display["witness_line_angle"], std::f64::consts::FRAC_PI_2);
     assert_eq!(display["text_alignment"], 1);
     assert_eq!(display["text_level"], 0);
     assert_eq!(display["text_placement"], 0);
@@ -706,27 +664,6 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
         closure.report().losses.is_empty(),
         "{:#?}",
         closure.report().losses
-    );
-}
-
-#[test]
-fn decode_accepts_same_sheet_number_with_distinct_revision_ids() {
-    let mut bytes = duplicate_drawing_sheet_ids_file();
-    let revision = bytes
-        .windows(4)
-        .enumerate()
-        .filter_map(|(offset, window)| (window == b"1HC;").then_some(offset))
-        .nth(1)
-        .expect("second sheet revision");
-    bytes[revision + 2] = b'D';
-
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
     );
 }
 
@@ -874,74 +811,6 @@ fn decode_types_bounded_predefined_associativity_roles() {
         "{:#?}",
         result.report().losses
     );
-}
-
-#[test]
-fn decode_type402_form5_requires_nonnull_leader_pointer() {
-    let decode = |leader| {
-        IgesCodec
-            .decode(
-                &mut Cursor::new(owned_test_file(&[
-                    OwnedTestEntity {
-                        entity_type: 410,
-                        form: 0,
-                        label: "VIEW".into(),
-                        status: "00000000",
-                        parameters: "410,1,1,0,0,0,0,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 214,
-                        form: 1,
-                        label: "LEADER".into(),
-                        status: "00010100",
-                        parameters: "214,1,2,1,0,0,0,2,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 116,
-                        form: 0,
-                        label: "LABEL".into(),
-                        status: "00000000",
-                        parameters: "116,1,2,3,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 402,
-                        form: 5,
-                        label: "LABELDSP".into(),
-                        status: "00000200",
-                        parameters: format!("402,1,1,1,2,3,{leader},0,5;"),
-                    },
-                ])),
-                &DecodeOptions::default(),
-            )
-            .unwrap()
-    };
-
-    let valid = decode(3);
-    let valid_label = valid.ir().native.namespace("iges").unwrap().arenas["associativities"]
-        .iter()
-        .find(|value| value.fields()["kind"] == "label_display")
-        .unwrap();
-    assert_eq!(
-        valid_label.fields()["placements"][0]["leader"],
-        "iges:entity:directory#3"
-    );
-    assert!(
-        valid.report().losses.is_empty(),
-        "{:#?}",
-        valid.report().losses
-    );
-
-    let invalid = decode(0);
-    let invalid_label = invalid.ir().native.namespace("iges").unwrap().arenas["associativities"]
-        .iter()
-        .find(|value| value.fields()["kind"] == "label_display")
-        .unwrap();
-    assert!(invalid_label.fields()["placements"][0]["leader"].is_null());
-    assert!(invalid
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]
@@ -1310,97 +1179,6 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
         .unwrap()
         .fields()["members"][0]
         .is_null());
-}
-
-#[test]
-fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[
-                OwnedTestEntity {
-                    entity_type: 320,
-                    form: 0,
-                    label: "BROKEN".into(),
-                    status: "00000200",
-                    parameters: "320,1,3HNET,1,3.,0,2HR1,0,0;".into(),
-                },
-                OwnedTestEntity {
-                    entity_type: 420,
-                    form: 0,
-                    label: "NETINST".into(),
-                    status: "00000000",
-                    parameters: "420,1,1,2,3,2,,,,2HU1,0,2,0,0;".into(),
-                },
-            ])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let native = result.ir().native.namespace("iges").unwrap();
-
-    assert!(native.arenas["product_occurrences"].is_empty());
-    let expansion = &native.arenas["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            == "IGES product occurrence root inference was suppressed because a definition member list is malformed"
-    }));
-}
-
-#[test]
-fn decode_omits_occurrences_for_invalid_top_level_subfigure_structure() {
-    for bytes in [
-        invalid_top_level_subfigure_definition_file(),
-        invalid_top_level_subfigure_instance_file(),
-    ] {
-        let result = IgesCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
-        let native = result.ir().native.namespace("iges").unwrap();
-
-        assert_eq!(native.arenas["subfigure_definitions"].len(), 1);
-        assert_eq!(native.arenas["subfigure_instances"].len(), 1);
-        assert!(native.arenas["product_occurrences"].is_empty());
-        let expansion = &native.arenas["product_occurrence_expansion"][0];
-        assert_eq!(expansion.fields()["emitted"], 0);
-        assert_eq!(expansion.fields()["truncated"], true);
-        assert_eq!(expansion.fields()["issues"][0], "invalid_structure");
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| { loss.code == IgesLossCode::OccurrenceInvalidStructure.kind() }));
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-    }
-}
-
-#[test]
-fn decode_keeps_valid_occurrences_beside_invalid_top_level_subfigures() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(mixed_top_level_subfigure_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let native = result.ir().native.namespace("iges").unwrap();
-
-    assert_eq!(native.arenas["product_occurrences"].len(), 1);
-    assert_eq!(
-        native.arenas["product_occurrences"][0].id(),
-        "iges:product:occurrence#3"
-    );
-    let expansion = &native.arenas["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["emitted"], 1);
-    assert_eq!(expansion.fields()["issues"][0], "invalid_structure");
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == IgesLossCode::OccurrenceInvalidStructure.kind() }));
 }
 
 #[test]

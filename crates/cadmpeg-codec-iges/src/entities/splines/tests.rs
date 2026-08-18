@@ -30,52 +30,6 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
-fn decode_refuses_a_parametric_spline_segment_count_over_its_projection_limit() {
-    let error = IgesCodec
-        .decode(
-            &mut Cursor::new(parametric_spline_curve_file_with_parameters(
-                b"112,3,1,3,100001;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("iges_spline_segments")
-                && limit.limit == 100_000
-                && limit.used == 100_000
-                && limit.additional == 1
-    ));
-}
-
-#[test]
-fn decode_refuses_a_parametric_spline_surface_over_its_pole_limit() {
-    let error = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
-                entity_type: 114,
-                form: 0,
-                label: "SPLSURF".into(),
-                status: "00000000",
-                parameters: "114,3,1,1000,1000;".into(),
-            }])),
-            &DecodeOptions::default(),
-        )
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("iges_spline_surface_poles")
-                && limit.limit == 1_000_000
-                && limit.used == 1_000_000
-                && limit.additional == 8_006_001
-    ));
-}
-
-#[test]
 fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
     let result = IgesCodec
         .decode(
@@ -186,40 +140,15 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
 }
 
 #[test]
-fn decode_uses_global_euclidean_resolution_for_parametric_spline_segments() {
-    for (first_slope, second_start, second_y, terminal_x, terminal_y, decoded, terminal_loss) in [
-        ("1.", "1000.0009", "0.", "2000.0009", "0.", true, false),
-        (
-            "1.",
-            "1000.0010000000001",
-            "0.",
-            "2000.0010000000001",
-            "0.",
-            false,
-            false,
-        ),
-        (
-            "1.D0",
-            "1000.0009D0",
-            "0.",
-            "2000.0009D0",
-            "0.",
-            true,
-            false,
-        ),
-        ("1.", "1000.004", "0.", "2000.004", "0.", false, false),
-        (
-            "1.",
-            "1000.0008",
-            "0.0008",
-            "2000.0008",
-            "0.0008",
-            false,
-            false,
-        ),
+fn decode_propagates_declared_precision_through_parametric_spline_segments() {
+    for (first_slope, second_start, terminal_x, decoded, terminal_loss) in [
+        ("1.", "1000.009999", "2000.012", true, false),
+        ("1.", "1000.010001", "2000.02", false, false),
+        ("1.D0", "1000.004D0", "2000.004D0", false, false),
+        ("1.", "1000.004", "2000.1", true, true),
     ] {
         let parameters = format!(
-            "112,3,0,3,2,0,1000,2000,0,{first_slope},0,0,0,0,0,0,0,0,0,0,{second_start},1.,0,0,{second_y},0,0,0,0,0,0,0,{terminal_x},1.,0,0,{terminal_y},0,0,0,0,0,0,0;"
+            "112,3,0,3,2,0,1000,2000,0,{first_slope},0,0,0,0,0,0,0,0,0,0,{second_start},1.,0,0,0,0,0,0,0,0,0,0,{terminal_x},1.,0,0,0,0,0,0,0,0,0,0;"
         );
         let result = IgesCodec
             .decode(

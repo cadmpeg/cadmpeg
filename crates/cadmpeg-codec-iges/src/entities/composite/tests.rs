@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
+use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::geometry::{
@@ -32,110 +32,6 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 use super::*;
-
-#[test]
-fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
-    let error = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
-                entity_type: 102,
-                form: 0,
-                label: "COMPOSIT".into(),
-                status: "00000000",
-                parameters: "102,100001;".into(),
-            }])),
-            &DecodeOptions::default(),
-        )
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("iges_composite_children")
-                && limit.limit == 100_000
-                && limit.used == 100_000
-                && limit.additional == 1
-    ));
-}
-
-#[test]
-fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
-    let base_id = CurveId("base".into());
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.curves.push(Curve {
-        id: base_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
-        source_object: None,
-    });
-    ir.model.points.extend([
-        Point {
-            id: PointId("base-start-point".into()),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId("base-end-point".into()),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
-    ]);
-    ir.model.vertices.extend([
-        Vertex {
-            id: VertexId("base-start".into()),
-            point: PointId("base-start-point".into()),
-            tolerance: None,
-        },
-        Vertex {
-            id: VertexId("base-end".into()),
-            point: PointId("base-end-point".into()),
-            tolerance: None,
-        },
-    ]);
-    ir.model.edges.push(Edge {
-        id: EdgeId("base-edge".into()),
-        curve: Some(base_id.clone()),
-        start: VertexId("base-start".into()),
-        end: VertexId("base-end".into()),
-        param_range: Some([0.0, 1.0]),
-        tolerance: None,
-    });
-
-    let mut child_id = base_id;
-    for level in 0..65 {
-        let composite_id = CurveId(format!("composite-{level}"));
-        ir.model.curves.push(Curve {
-            id: composite_id.clone(),
-            geometry: CurveGeometry::Composite {
-                segments: vec![CompositeCurveSegment {
-                    curve: child_id,
-                    same_sense: true,
-                    transition: CompositeCurveTransition::Continuous,
-                }],
-                self_intersect: None,
-            },
-            source_object: None,
-        });
-        child_id = composite_id;
-    }
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
-    assert!(bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx)).is_none());
-    assert!(matches!(
-        ctx.finish_session(),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Codec("iges_composite_depth")
-                && limit.limit == 64
-                && limit.used == 64
-                && limit.additional == 1
-    ));
-}
 
 #[test]
 fn rational_linear_degree_elevation_preserves_the_curve() {
@@ -483,74 +379,6 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         outside_resolution.report().losses.clone(),
     );
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn composite_join_at_positive_global_resolution_boundary_is_not_coincident() {
-    let mut bytes = composite_curve_with_join_gap(0.5);
-    let declared_resolution = b",0.001,1000.0";
-    let exact_boundary_resolution = b",0.500,1000.0";
-    let offset = bytes
-        .windows(declared_resolution.len())
-        .position(|window| window == declared_resolution)
-        .expect("synthetic Global field 19");
-    bytes[offset..offset + declared_resolution.len()].copy_from_slice(exact_boundary_resolution);
-
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let curve = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
-        .expect("Type 102 curve at the Global resolution boundary");
-    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &curve.geometry else {
-        panic!("expected retained native Type 102 carrier")
-    };
-    assert_eq!(
-        segments[1].transition,
-        cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
-    );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::CompositeCarrierDegraded.kind()
-            && loss.message.contains("Global minimum resolution")
-    }));
-}
-
-#[test]
-fn composite_zero_global_resolution_requires_exact_join() {
-    let mut bytes = composite_curve_with_join_gap(f64::EPSILON * 1024.0);
-    let declared_resolution = b",0.001,1000.0";
-    let zero_resolution = b",0.000,1000.0";
-    let offset = bytes
-        .windows(declared_resolution.len())
-        .position(|window| window == declared_resolution)
-        .expect("synthetic Global field 19");
-    bytes[offset..offset + declared_resolution.len()].copy_from_slice(zero_resolution);
-
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let curve = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
-        .expect("Type 102 curve at zero Global resolution");
-    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &curve.geometry else {
-        panic!("expected zero resolution to reject the positive join gap")
-    };
-    assert_eq!(
-        segments[1].transition,
-        cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
-    );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::CompositeCarrierDegraded.kind()
-            && loss.message.contains("Global minimum resolution")
-    }));
 }
 
 #[test]

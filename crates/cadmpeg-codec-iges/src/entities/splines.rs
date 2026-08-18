@@ -3,10 +3,9 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInterval};
 use crate::directory::DirectoryEntry;
-use crate::global::{coincident_distance, Global, RealPrecision};
+use crate::global::{Global, RealPrecision};
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
 };
@@ -183,7 +182,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &Global,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<SplineProjection, CodecError> {
+) -> SplineProjection {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -220,21 +219,10 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "spline header enum is out of range"));
             continue;
         }
-        let Some(raw_segment_count) = record.integer(4) else {
-            losses.push(entity_loss(entry, "spline segment count is invalid"));
-            continue;
-        };
-        if raw_segment_count > MAX_SPLINE_SEGMENTS as i64 {
-            return Err(refuse_local_limit(
-                "iges_spline_segments",
-                MAX_SPLINE_SEGMENTS as u64,
-                u64::try_from(raw_segment_count).unwrap_or(u64::MAX),
-                None,
-            ));
-        }
-        let Some(segment_count) = usize::try_from(raw_segment_count)
-            .ok()
-            .filter(|count| *count > 0)
+        let Some(segment_count) = record
+            .integer(4)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0 && *count <= MAX_SPLINE_SEGMENTS)
         else {
             losses.push(entity_loss(
                 entry,
@@ -296,11 +284,41 @@ pub(super) fn project(
         let mut control_points = Vec::with_capacity(segment_count * 3 + 1);
         let mut continuous = true;
         let precision = global.real_precision();
-        let resolution = global.minimum_resolution_mm();
-        let mut previous_terminal = None::<Point3>;
+        let mut previous_terminal = None;
         for (segment, values) in coefficients.chunks_exact(12).enumerate() {
             let width = breakpoints[segment + 1] - breakpoints[segment];
+            let width_interval =
+                declared_interval(record, 5 + segment + 1, breakpoints[segment + 1], precision)
+                    .subtract(declared_interval(
+                        record,
+                        5 + segment,
+                        breakpoints[segment],
+                        precision,
+                    ));
             let segment_start = coefficient_start + segment * 12;
+            let intervals = [
+                terminal_intervals(
+                    record,
+                    segment_start,
+                    &values[0..4],
+                    width_interval,
+                    precision,
+                ),
+                terminal_intervals(
+                    record,
+                    segment_start + 4,
+                    &values[4..8],
+                    width_interval,
+                    precision,
+                ),
+                terminal_intervals(
+                    record,
+                    segment_start + 8,
+                    &values[8..12],
+                    width_interval,
+                    precision,
+                ),
+            ];
             if dimensions == 2
                 && (1..4).any(|power| {
                     !declared_interval(
@@ -312,6 +330,18 @@ pub(super) fn project(
                     .contains(0.0)
                 })
             {
+                continuous = false;
+                break;
+            }
+            let starts = [0, 4, 8].map(|offset| {
+                declared_interval(record, segment_start + offset, values[offset], precision)
+            });
+            if previous_terminal.is_some_and(|previous: [DeclaredInterval; 3]| {
+                previous
+                    .into_iter()
+                    .zip(starts)
+                    .any(|(left, right)| !left.overlaps(right))
+            }) {
                 continuous = false;
                 break;
             }
@@ -339,19 +369,12 @@ pub(super) fn project(
                     ))
                 })
                 .collect::<Vec<_>>();
-            if previous_terminal.is_some_and(|previous| {
-                !coincident_distance(previous.distance(bezier[0]), resolution)
-            }) {
-                continuous = false;
-                break;
-            }
-            let terminal = bezier[3];
             if control_points.is_empty() {
                 control_points.extend(bezier);
             } else {
                 control_points.extend_from_slice(&bezier[1..]);
             }
-            previous_terminal = Some(terminal);
+            previous_terminal = Some([intervals[0][0], intervals[1][0], intervals[2][0]]);
         }
         if !continuous {
             losses.push(entity_loss(
@@ -454,45 +477,11 @@ pub(super) fn project(
             continue;
         }
         let dimensions = [record.integer(3), record.integer(4)];
-        let [Some(raw_u_segments), Some(raw_v_segments)] = dimensions else {
-            losses.push(entity_loss(entry, "spline-surface dimensions are invalid"));
-            continue;
-        };
-        if raw_u_segments > 0 && raw_v_segments > 0 {
-            let requested = u64::try_from(raw_u_segments)
-                .ok()
-                .and_then(|value| value.checked_mul(3))
-                .and_then(|value| value.checked_add(1))
-                .and_then(|u_count| {
-                    u64::try_from(raw_v_segments)
-                        .ok()
-                        .and_then(|value| value.checked_mul(3))
-                        .and_then(|value| value.checked_add(1))
-                        .and_then(|v_count| u_count.checked_mul(v_count))
-                });
-            match requested {
-                None => {
-                    return Err(refuse_local_limit(
-                        "iges_spline_surface_poles",
-                        MAX_SPLINE_SURFACE_POLES as u64,
-                        u64::MAX,
-                        None,
-                    ));
-                }
-                Some(requested) if requested > MAX_SPLINE_SURFACE_POLES as u64 => {
-                    return Err(refuse_local_limit(
-                        "iges_spline_surface_poles",
-                        MAX_SPLINE_SURFACE_POLES as u64,
-                        requested,
-                        None,
-                    ));
-                }
-                Some(_) => {}
-            }
-        }
-        let [Some(u_segments), Some(v_segments)] = [raw_u_segments, raw_v_segments]
-            .map(|value| usize::try_from(value).ok().filter(|count| *count > 0))
-        else {
+        let [Some(u_segments), Some(v_segments)] = dimensions.map(|value| {
+            value
+                .and_then(|number| usize::try_from(number).ok())
+                .filter(|count| *count > 0)
+        }) else {
             losses.push(entity_loss(entry, "spline-surface dimensions are invalid"));
             continue;
         };
@@ -511,20 +500,15 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_count) = u_count.checked_mul(v_count) else {
-            return Err(refuse_local_limit(
-                "iges_spline_surface_poles",
-                MAX_SPLINE_SURFACE_POLES as u64,
-                u64::MAX,
-                None,
-            ));
+            losses.push(entity_loss(entry, "spline-surface pole count overflows"));
+            continue;
         };
         if pole_count > MAX_SPLINE_SURFACE_POLES {
-            return Err(refuse_local_limit(
-                "iges_spline_surface_poles",
-                MAX_SPLINE_SURFACE_POLES as u64,
-                pole_count as u64,
-                None,
+            losses.push(entity_loss(
+                entry,
+                format!("spline surface exceeds the {MAX_SPLINE_SURFACE_POLES}-pole limit"),
             ));
+            continue;
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
             losses.push(entity_loss(entry, "u-breakpoint count overflows"));
@@ -714,12 +698,12 @@ pub(super) fn project(
         let _ = (curve_type, patch_type);
     }
 
-    Ok(SplineProjection {
+    SplineProjection {
         handled,
         decoded,
         losses,
         wire_edges,
-    })
+    }
 }
 
 #[cfg(test)]

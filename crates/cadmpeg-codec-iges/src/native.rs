@@ -9,14 +9,13 @@ use crate::entities::structure::array_base_type;
 use crate::global::{Global, RealPrecision};
 use crate::graph::{ParameterResolver, ReferenceEdge};
 use crate::parameter::{
-    trailing_pointer_group_candidates_with_records, trailing_pointer_groups_with_records,
-    ParameterRecord, Token, TokenValue,
+    trailing_pointer_group_candidates, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
@@ -795,37 +794,13 @@ enum ProductOccurrenceIssue {
     OutputLimit,
     DepthLimit,
     MalformedDefinition,
-    InvalidStructure,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ProductOccurrenceDiagnostics(u8);
-
-impl ProductOccurrenceDiagnostics {
-    const ROOT_INFERENCE_BLOCKED: u8 = 1 << 0;
-    const INVALID_STRUCTURE: u8 = 1 << 1;
-
-    const fn from_flags(root_inference_blocked: bool, invalid_structure: bool) -> Self {
-        Self(
-            ((root_inference_blocked as u8) * Self::ROOT_INFERENCE_BLOCKED)
-                | ((invalid_structure as u8) * Self::INVALID_STRUCTURE),
-        )
-    }
-
-    pub(crate) const fn root_inference_blocked(self) -> bool {
-        self.0 & Self::ROOT_INFERENCE_BLOCKED != 0
-    }
-
-    pub(crate) const fn invalid_structure(self) -> bool {
-        self.0 & Self::INVALID_STRUCTURE != 0
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) output_truncated: bool,
     pub(crate) depth_truncated: bool,
-    pub(crate) diagnostics: ProductOccurrenceDiagnostics,
+    pub(crate) root_inference_blocked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1203,7 +1178,6 @@ struct OccurrenceExpansion<'a, 'ctx> {
     records: &'a BTreeMap<u32, &'a ParameterRecord>,
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
     neutral_links: &'a BTreeMap<u32, Vec<String>>,
-    valid_structure: Option<&'a BTreeSet<u32>>,
     length_factor: f64,
     precision: RealPrecision,
     output_limit: usize,
@@ -1219,7 +1193,6 @@ impl OccurrenceExpansion<'_, '_> {
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
         depth_truncated: &mut bool,
-        invalid_structure: &mut bool,
     ) -> Result<bool, CodecError> {
         let _depth = self
             .ctx
@@ -1233,13 +1206,6 @@ impl OccurrenceExpansion<'_, '_> {
             return Ok(false);
         }
         if path.contains(&instance_sequence) {
-            return Ok(false);
-        }
-        if self
-            .valid_structure
-            .is_some_and(|valid| !valid.contains(&instance_sequence))
-        {
-            *invalid_structure = true;
             return Ok(false);
         }
         let (Some(instance), Some(record)) = (
@@ -1259,13 +1225,6 @@ impl OccurrenceExpansion<'_, '_> {
         ) else {
             return Ok(false);
         };
-        if self
-            .valid_structure
-            .is_some_and(|valid| !valid.contains(&definition_sequence))
-        {
-            *invalid_structure = true;
-            return Ok(false);
-        }
         let Some(definition) = self.definitions.get(&definition_sequence) else {
             return Ok(false);
         };
@@ -1303,14 +1262,7 @@ impl OccurrenceExpansion<'_, '_> {
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if self.expand(
-                    *member,
-                    world,
-                    path,
-                    occurrences,
-                    depth_truncated,
-                    invalid_structure,
-                )? {
+                if self.expand(*member, world, path, occurrences, depth_truncated)? {
                     path.pop();
                     return Ok(true);
                 }
@@ -1359,7 +1311,6 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
-    valid_structure: Option<&BTreeSet<u32>>,
     limits: ProductOccurrenceLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ProductOccurrenceExpansion, CodecError> {
@@ -1410,26 +1361,15 @@ pub(crate) fn store(
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
-            let trailing = parameters.and_then(|record| {
-                trailing_pointer_groups_with_records(record, &entries, &by_directory)
-            });
+            let trailing = parameters.and_then(|record| trailing_pointer_groups(record, &entries));
             let invalid_trailing = (trailing.is_none()
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
                 parameters.and_then(|record| {
-                    let candidates = trailing_pointer_group_candidates_with_records(
-                        record,
-                        &entries,
-                        &by_directory,
-                    );
-                    if candidates.iter().any(|groups| groups.fully_valid) {
-                        return None;
-                    }
-                    let mut association_candidates = candidates
+                    trailing_pointer_group_candidates(record, &entries)
                         .into_iter()
-                        .filter(|groups| !groups.association_pointers.is_empty());
-                    let candidate = association_candidates.next()?;
-                    association_candidates.next().is_none().then_some(candidate)
+                        .filter(|groups| !groups.association_pointers.is_empty())
+                        .min_by_key(|groups| groups.token_start)
                 })
             })
             .flatten();
@@ -1620,7 +1560,6 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
-    let has_supported_length_factor = global.has_supported_length_factor();
     let display_attributes = directory
         .iter()
         .map(|entry| NativeDisplayAttributes {
@@ -1643,9 +1582,7 @@ pub(crate) fn store(
             }),
             view: entry.view,
             line_weight_number: entry.line_weight,
-            line_weight_mm: has_supported_length_factor
-                .then(|| global.line_weight_mm(entry.line_weight))
-                .flatten(),
+            line_weight_mm: global.line_weight_mm(entry.line_weight),
             color_number: entry.color,
             color_definition: (entry.color < 0)
                 .then(|| format!("iges:presentation:color#D{}", entry.color.unsigned_abs())),
@@ -3167,12 +3104,8 @@ pub(crate) fn store(
                     .iter()
                     .filter(|(sequence, owner_record)| {
                         **sequence != entry.sequence
-                            && trailing_pointer_groups_with_records(
-                                owner_record,
-                                &entries,
-                                &by_directory,
-                            )
-                            .is_some_and(|groups| groups.properties.contains(&entry.sequence))
+                            && trailing_pointer_groups(owner_record, &entries)
+                                .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -3473,7 +3406,7 @@ pub(crate) fn store(
                     .iter()
                     .filter(|(sequence, owner)| {
                         **sequence != entry.sequence
-                            && trailing_pointer_groups_with_records(owner, &entries, &by_directory)
+                            && trailing_pointer_groups(owner, &entries)
                                 .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3493,7 +3426,7 @@ pub(crate) fn store(
             let owners = by_directory
                 .iter()
                 .filter(|(_, owner)| {
-                    trailing_pointer_groups_with_records(owner, &entries, &by_directory)
+                    trailing_pointer_groups(owner, &entries)
                         .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                 })
                 .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3762,9 +3695,7 @@ pub(crate) fn store(
             let annotation_count = record
                 .and_then(|record| record.count(annotation_count_index))
                 .unwrap_or_default();
-            let trailing = record.and_then(|record| {
-                trailing_pointer_groups_with_records(record, &entries, &by_directory)
-            });
+            let trailing = record.and_then(|record| trailing_pointer_groups(record, &entries));
             let property = |form| {
                 trailing.as_ref().and_then(|groups| {
                     groups.properties.iter().find_map(|sequence| {
@@ -4377,9 +4308,8 @@ pub(crate) fn store(
         })
         .collect::<BTreeMap<_, _>>();
     let contained_instances = occurrence_definitions
-        .iter()
-        .filter(|(sequence, _)| valid_structure.is_none_or(|valid| valid.contains(sequence)))
-        .flat_map(|(_, definition)| definition.members.iter().copied())
+        .values()
+        .flat_map(|definition| definition.members.iter().copied())
         .filter(|sequence| {
             entries
                 .get(sequence)
@@ -4434,40 +4364,32 @@ pub(crate) fn store(
     let mut product_occurrences = Vec::new();
     let mut output_truncated = false;
     let mut depth_truncated = false;
-    let mut invalid_structure = false;
-    if let Some(length_factor) = global
-        .has_supported_length_factor()
-        .then(|| global.length_factor_mm())
-    {
-        let expansion = OccurrenceExpansion {
-            entries: &entries,
-            records: &by_directory,
-            definitions: &occurrence_definitions,
-            neutral_links: &occurrence_neutral_links,
-            valid_structure,
-            length_factor,
-            precision: global.real_precision(),
-            output_limit: limits.output,
-            depth_limit: limits.depth,
-            ctx,
-        };
-        if !root_inference_blocked {
-            for root in directory.iter().filter(|entry| {
-                matches!(entry.entity_type, 408 | 420)
-                    && entry.form == 0
-                    && !contained_instances.contains(&entry.sequence)
-            }) {
-                if expansion.expand(
-                    root.sequence,
-                    Affine::IDENTITY,
-                    &mut Vec::new(),
-                    &mut product_occurrences,
-                    &mut depth_truncated,
-                    &mut invalid_structure,
-                )? {
-                    output_truncated = true;
-                    break;
-                }
+    let expansion = OccurrenceExpansion {
+        entries: &entries,
+        records: &by_directory,
+        definitions: &occurrence_definitions,
+        neutral_links: &occurrence_neutral_links,
+        length_factor: global.length_factor_mm(),
+        precision: global.real_precision(),
+        output_limit: limits.output,
+        depth_limit: limits.depth,
+        ctx,
+    };
+    if !root_inference_blocked {
+        for root in directory.iter().filter(|entry| {
+            matches!(entry.entity_type, 408 | 420)
+                && entry.form == 0
+                && !contained_instances.contains(&entry.sequence)
+        }) {
+            if expansion.expand(
+                root.sequence,
+                Affine::IDENTITY,
+                &mut Vec::new(),
+                &mut product_occurrences,
+                &mut depth_truncated,
+            )? {
+                output_truncated = true;
+                break;
             }
         }
     }
@@ -4475,7 +4397,6 @@ pub(crate) fn store(
         output_truncated.then_some(ProductOccurrenceIssue::OutputLimit),
         depth_truncated.then_some(ProductOccurrenceIssue::DepthLimit),
         root_inference_blocked.then_some(ProductOccurrenceIssue::MalformedDefinition),
-        invalid_structure.then_some(ProductOccurrenceIssue::InvalidStructure),
     ]
     .into_iter()
     .flatten()
@@ -4549,10 +4470,7 @@ pub(crate) fn store(
     Ok(ProductOccurrenceExpansion {
         output_truncated,
         depth_truncated,
-        diagnostics: ProductOccurrenceDiagnostics::from_flags(
-            root_inference_blocked,
-            invalid_structure,
-        ),
+        root_inference_blocked,
     })
 }
 

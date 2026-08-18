@@ -1210,7 +1210,7 @@ pub(crate) fn lep_property_forms_file() -> Vec<u8> {
             form: 0,
             label: "HOLE".into(),
             status: "00000000",
-            parameters: "116,0,0,0,0,0,1,7;".into(),
+            parameters: "116,0,0,0,0,1,7;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
@@ -1229,7 +1229,7 @@ pub(crate) fn variable_schema_property_forms_file() -> Vec<u8> {
             form: 0,
             label: "OWNER".into(),
             status: "00000000",
-            parameters: "116,0,0,0,0,0,1,3;".into(),
+            parameters: "116,0,0,0,0,1,3;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
@@ -1297,7 +1297,7 @@ pub(crate) fn dimension_property_forms_file() -> Vec<u8> {
             form: 30,
             label: "DIMDISP".into(),
             status: "00010000",
-            parameters: "406,15,2,1,1003,3HDIA,0,0.25,1,0,0,0,12.5,1,1,1,1;".into(),
+            parameters: "406,15,2,1,1,3HDIA,0,1.5707963267948966,1,0,0,0,12.5,1,1,1,1;".into(),
         },
     ])
 }

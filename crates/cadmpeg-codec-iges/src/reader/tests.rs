@@ -30,28 +30,6 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
-fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
-    let error = IgesCodec
-        .decode(
-            &mut Cursor::new(transform_chain_overflow_file(65)),
-            &DecodeOptions::default(),
-        )
-        .unwrap_err();
-
-    assert!(
-        matches!(
-            &error,
-            CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
-                    && limit.limit == 64
-                    && limit.used == 64
-                    && limit.additional == 1
-        ),
-        "{error:#?}"
-    );
-}
-
-#[test]
 fn decode_enforces_each_iges_session_resource_dimension() {
     fn assert_refusal(
         edit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
@@ -88,11 +66,6 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         |limits| limits.max_entities = 0,
         ResourceDimension::Entities,
         "iges_directory_entries",
-    );
-    assert_refusal(
-        |limits| limits.max_entities = 1,
-        ResourceDimension::Entities,
-        "iges_geometry_primitives",
     );
     assert_refusal(
         |limits| limits.max_collection_items = 0,
@@ -136,97 +109,6 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
     assert!(error.to_string().contains("referential_integrity"));
     assert!(error.to_string().contains("iges:model:vertex#invalid"));
     assert!(error.to_string().contains("iges:model:point#missing"));
-}
-
-#[test]
-fn container_only_retains_unknown_flag_three_units_without_projection() {
-    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;";
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-
-    let result = IgesCodec
-        .decode(&mut Cursor::new(fixed_ascii_with_global(global)), &options)
-        .unwrap();
-
-    assert!(result.report().container_only);
-    assert_eq!(
-        result
-            .ir()
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get("native_units"))
-            .map(String::as_str),
-        Some("FOO")
-    );
-    assert_eq!(result.ir().model.entity_count(), 0);
-}
-
-#[test]
-fn container_only_retains_invalid_global_units_name_as_hex() {
-    let mut global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;".to_vec();
-    let name = global
-        .windows(5)
-        .position(|window| window == b"3HFOO")
-        .expect("Global units name");
-    global[name + 2] = 0xff;
-
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(fixed_ascii_with_global(&global)),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .unwrap();
-    let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    assert_eq!(attributes["native_units_bytes_hex"], "ff4f4f");
-    assert!(!attributes.contains_key("native_units"));
-
-    let error = IgesCodec
-        .decode(
-            &mut Cursor::new(fixed_ascii_with_global(&global)),
-            &DecodeOptions::default(),
-        )
-        .unwrap_err();
-    assert!(matches!(error, CodecError::Malformed(_)));
-}
-
-#[test]
-fn type316_property_does_not_supply_a_global_flag_three_factor() {
-    let mut bytes = units_data_file();
-    let old = b",1.0,2,2HMG";
-    let new = b",1.0,3,2HFG";
-    let position = bytes
-        .windows(old.len())
-        .position(|window| window == old)
-        .expect("Global units fields");
-    bytes[position..position + old.len()].copy_from_slice(new);
-    let old = b"\nM,1,1.0";
-    let new = b"\nO,1,1.0";
-    let position = bytes
-        .windows(old.len())
-        .position(|window| window == old)
-        .expect("Global continuation");
-    bytes[position..position + old.len()].copy_from_slice(new);
-
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes.clone()), &options)
-        .unwrap();
-    let units = &result.ir().native.namespace("iges").unwrap().arenas["units_data"][0];
-    assert_eq!(units.fields()["owners"][0], "iges:entity:directory#1");
-    assert_eq!(units.fields()["units"][0]["scale_factor"], 1852.0);
-
-    let error = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap_err();
-    assert!(matches!(error, CodecError::NotImplemented(_)));
 }
 
 /// Phase 5 freeze: shared builders must match the IGES rejection gate.
