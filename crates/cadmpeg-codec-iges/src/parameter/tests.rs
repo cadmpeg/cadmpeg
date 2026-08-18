@@ -32,6 +32,36 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 const TYPE212_NOTE_PARAMETERS: &str = "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;";
 
+fn type100_boundary_entity(label: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 100,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: "100,0,0,0,1,0,1,0;".into(),
+    }
+}
+
+fn type212_note_entity(label: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 212,
+        form: 0,
+        label: label.into(),
+        status: "00010100",
+        parameters: TYPE212_NOTE_PARAMETERS.into(),
+    }
+}
+
+fn type230_sectioned_area_entity(label: &str, parameters: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 230,
+        form: 0,
+        label: label.into(),
+        status: "00000100",
+        parameters: parameters.into(),
+    }
+}
+
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
@@ -1010,6 +1040,226 @@ fn type308_zero_count_keeps_the_count_defined_boundary() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn type230_count_driven_boundary_follows_island_list() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type100_boundary_entity("BOUNDARY"),
+                type100_boundary_entity("ISLAND"),
+                type212_note_entity("TARGET"),
+                type230_sectioned_area_entity(
+                    "SECTION",
+                    "230,1,2,0,0,0,1,0.7853981633974483,1,3,1,5,0;",
+                ),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let section = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#7")
+        .unwrap();
+    assert_eq!(
+        section.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#5"])
+    );
+    let mut parameter_indices = section.fields()["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|reference| reference["parameter_index"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    parameter_indices.sort_unstable();
+    assert_eq!(parameter_indices, vec![1, 9, 11]);
+    assert_eq!(
+        section.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|reference| reference["parameter_index"] == 11)
+            .unwrap()["raw_pointer"],
+        5
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type230_zero_count_keeps_the_count_defined_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type100_boundary_entity("BOUNDARY"),
+                type212_note_entity("TARGET"),
+                type230_sectioned_area_entity(
+                    "EMPTY",
+                    "230,1,2,0,0,0,1,0.7853981633974483,0,1,3,0;",
+                ),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let section = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert_eq!(
+        section.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#3"])
+    );
+    let fields = section.fields();
+    let association_reference = fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["parameter_index"] == 10)
+        .unwrap();
+    assert_eq!(association_reference["raw_pointer"], 3);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type230_negative_count_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type100_boundary_entity("BOUNDARY"),
+                type212_note_entity("TARGET"),
+                type230_sectioned_area_entity(
+                    "BADCOUNT",
+                    "230,1,2,0,0,0,1,0.7853981633974483,-1,1,3,0;",
+                ),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let section = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert!(section.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!section.fields()["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reference| reference["parameter_index"] == 9));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type230_wrong_typed_island_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type100_boundary_entity("BOUNDARY"),
+                type212_note_entity("TARGET"),
+                type230_sectioned_area_entity(
+                    "BADISLND",
+                    "230,1,2,0,0,0,1,0.7853981633974483,1,3,1,3,0;",
+                ),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let section = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert_eq!(
+        section.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#3"])
+    );
+    assert_eq!(
+        section.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|reference| reference["parameter_index"] == 9)
+            .unwrap()["resolution"],
+        "wrong_type"
+    );
+    assert_eq!(
+        section.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|reference| reference["parameter_index"] == 11)
+            .unwrap()["raw_pointer"],
+        3
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type230_truncated_island_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type100_boundary_entity("BOUNDARY"),
+                type100_boundary_entity("ISLAND"),
+                type212_note_entity("TARGET"),
+                type230_sectioned_area_entity(
+                    "TRUNCATE",
+                    "230,1,2,0,0,0,1,0.7853981633974483,2,3;",
+                ),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let section = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#7")
+        .unwrap();
+    assert!(section.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
 }
 
 #[test]

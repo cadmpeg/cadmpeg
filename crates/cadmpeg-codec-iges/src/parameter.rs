@@ -375,6 +375,19 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (230, 0) => {
+            let Some(island_count) = record.count(8) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = island_count.checked_add(9) else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (110, 0..=2) => ParameterBoundary::Known(7),
         (116, 0) => ParameterBoundary::Known(5),
         _ => ParameterBoundary::Unknown,
