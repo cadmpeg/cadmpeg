@@ -1150,6 +1150,111 @@ fn brep_region_userdata_future_payload_retains_parent_brep_record() {
 }
 
 #[test]
+fn brep_nested_mesh_userdata_future_payload_retains_parent_record() {
+    let archive = ArchiveVersion::V5;
+    let future_ngon_payload = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[
+            2_i32.to_le_bytes().as_slice(),
+            0_i32.to_le_bytes().as_slice(),
+        ]
+        .concat(),
+    );
+    let userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::mesh::V4V5_MESH_NGON_USERDATA.to_wire(),
+        crate::wire::Uuid::from_canonical([
+            0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe,
+            0x52, 0x0d,
+        ])
+        .to_wire(),
+        50,
+        0,
+        &future_ngon_payload,
+    );
+    let mut nested_uuid_body = support::MESH_CLASS.to_vec();
+    nested_uuid_body.extend(crc32fast::hash(&support::MESH_CLASS).to_le_bytes());
+    let nested_uuid = support::long_chunk(0x0002_fffb, &nested_uuid_body);
+    let nested_class_data =
+        support::crc_chunk(0x0002_fffc, &support::mesh_payload(3, 5, false, true));
+    let nested_class_end = support::short_chunk(0x0002_7fff, 0);
+    let nested_class = support::long_chunk(
+        0x0002_7ffa,
+        &[nested_uuid, nested_class_data, userdata, nested_class_end].concat(),
+    );
+    let mut mesh_side_body = vec![1_u8];
+    mesh_side_body.extend(nested_class);
+    let nested_class_range = 1..mesh_side_body.len();
+    let mesh_side = crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &mesh_side_body,
+        std::slice::from_ref(&nested_class_range),
+    );
+    let empty_mesh_side = support::crc_chunk(0x4000_8000, &[0]);
+    let mut brep_payload = support::brep_payload(false);
+    let payload_end = brep_payload.len();
+    let inline_region_start = (0..payload_end)
+        .rev()
+        .find(|offset| {
+            crate::chunks::chunk_at(&brep_payload, *offset, payload_end, archive, false).is_ok_and(
+                |chunk| chunk.typecode == 0x4000_8000 && chunk.next_offset == payload_end,
+            )
+        })
+        .expect("Brep fixture has an inline region wrapper");
+    brep_payload.truncate(inline_region_start);
+    brep_payload[0] = 0x32;
+    let empty_positions = brep_payload
+        .windows(empty_mesh_side.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == empty_mesh_side).then_some(index))
+        .collect::<Vec<_>>();
+    assert!(empty_positions.len() >= 2);
+    let replace_at = empty_positions[empty_positions.len() - 2];
+    brep_payload.splice(replace_at..replace_at + empty_mesh_side.len(), mesh_side);
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 0x10);
+    let mut uuid_body = support::BREP_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&support::BREP_CLASS).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(archive, 0x0002_fffc, &brep_payload);
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[class_uuid, class_data, class_end].concat(),
+    );
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    let brep_record = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_8070 | crate::chunks::TCODE_CRC,
+        &[object_type, class, object_end].concat(),
+    );
+    let following_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let bytes = support::archive(&[brep_record.clone(), following_point]);
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("V4/V5 mesh n-gon userdata") && loss.message.contains("dropped")
+    }));
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| record.id == "rhino:object:record#000000")
+        .expect("nested mesh userdata object record is retained");
+    assert_eq!(retained.data.as_deref(), Some(brep_record.as_slice()));
+    assert_valid(&result);
+}
+
+#[test]
 fn future_settings_payload_is_retained_without_known_prefix() {
     let archive = ArchiveVersion::V5;
     let future_annotation =

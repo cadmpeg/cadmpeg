@@ -950,6 +950,13 @@ contributes its admitted record count to the existing
 invalid or malformed list contributes no grouping count and leaves the mesh
 admissible.
 
+When this item is attached to an `ON_Mesh` nested in a Brep render or analysis
+side, failure is local to the userdata item. A valid nested mesh class-data
+payload remains a typed tessellation and contributes no n-gon grouping when
+the list is rejected. CADIR retains the complete containing Brep object record
+in source fidelity and reports the mesh userdata warning; this child-level
+failure does not reject the Brep mesh-cache side or its analytic topology.
+
 #### 7.2.5 `ON_V5_BrepRegionTopologyUserData`
 
 The built-in `ON_V5_BrepRegionTopologyUserData` class uses class UUID and item
@@ -3662,6 +3669,11 @@ Any archive band can carry the `ON_V4V5_MeshNgonUserData` item from section
 7.2.4 on the nested mesh when it remains attached. Its admitted grouping count
 contributes the same neutral `mesh.ngon-grouping-dropped` loss; it does not
 alter Brep topology.
+Failure of that userdata item after a nested mesh class-data payload has been
+admitted is local to the item. The nested mesh remains a typed tessellation,
+the Brep side remains present, and no n-gon grouping is admitted. CADIR retains
+the complete Brep object record in source fidelity and reports the mesh
+userdata warning.
 If a present slot has the wrong class or its bounded mesh payload cannot be
 parsed, the slot is discarded independently and the decode report emits
 `brep.mesh-cache-degraded` with the diagnostic cause. The Brep remains
