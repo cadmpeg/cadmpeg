@@ -522,13 +522,16 @@ pub(in super::super) fn solver_only_section_entity_family(
         .contains_key(&entity_id)
         .then_some(())?;
     let mut evidence = section_incidence_curve_family_evidence(definition, entity_id);
-    if complete_section_skamps(definition).any(|skamp| {
-        skamp
-            .items
-            .iter()
-            .any(|item| item.entity_id == entity_id && item.sense == 4)
-    }) {
+    if !evidence.contains(&SectionEntityIncidenceFamily::Arc)
+        && complete_section_skamps(definition).any(|skamp| {
+            skamp
+                .items
+                .iter()
+                .any(|item| item.entity_id == entity_id && item.sense == 4)
+        })
+    {
         evidence.insert(SectionEntityIncidenceFamily::Circular);
+        normalize_section_incidence_curve_family_evidence(&mut evidence);
     }
     if !evidence.contains(&SectionEntityIncidenceFamily::Line)
         && complete_section_skamps(definition).any(|skamp| {
@@ -751,6 +754,74 @@ mod tests {
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 101),
             None
+        );
+    }
+
+    #[test]
+    fn center_role_normalizes_bounded_curve_solver_family_to_arc() {
+        let mut definition = definition(201, false);
+        definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .circle_rows
+            .push(crate::feature::FeatureCircleSegment {
+                center_id: 0,
+                radius_ref: 1,
+                external_id: 22,
+                offset: 22,
+            });
+        definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .declared_count += 1;
+        let relations = definition.relations.as_mut().expect("relations");
+        relations.skamps.extend([
+            crate::feature::FeatureSkamp {
+                id: 0,
+                kind: 0,
+                flags: 0,
+                status: 35,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 21,
+                        sense: 4,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 22,
+                        sense: 4,
+                    },
+                ],
+                offset: 23,
+            },
+            crate::feature::FeatureSkamp {
+                id: 1,
+                kind: 3,
+                flags: 0,
+                status: 34,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 22,
+                        sense: 0,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 21,
+                        sense: 2,
+                    },
+                ],
+                offset: 24,
+            },
+        ]);
+        relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = u32::try_from(relations.skamps.len()).expect("skamp count");
+
+        assert_eq!(
+            solver_only_section_entity_family(&definition, 21),
+            Some(SectionEntityIncidenceFamily::Arc)
         );
     }
 }
