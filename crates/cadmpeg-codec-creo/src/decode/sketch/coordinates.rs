@@ -19,7 +19,8 @@ use super::equations_scalar::{
     append_section_equation_auxiliary_coordinate_constraints, merge_scalar_value_candidate,
     section_equation_auxiliary_constraints, section_equation_coordinate_equalities,
     section_equation_radial_constraints, section_equation_scalar_seed_values,
-    section_equation_scalar_values_from_coordinates,
+    section_equation_scalar_values_from_coordinates, SectionEquationAuxiliaryConstraints,
+    SectionScalarVariable,
 };
 use super::geometry::{saved_section_circle_values, saved_section_segment_point_coordinates};
 use super::radii::section_relation_length_dimension;
@@ -138,16 +139,48 @@ fn append_equal_length_coordinate_values(
     appended
 }
 
+fn append_unique_auxiliary_coordinate_constraints(
+    constraints: &SectionEquationAuxiliaryConstraints,
+    scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
+    stored_coordinates: &BTreeMap<(u32, usize), f64>,
+    equations: &mut Vec<SectionCoordinateEquation>,
+) -> bool {
+    let previous_len = equations.len();
+    append_section_equation_auxiliary_coordinate_constraints(
+        constraints,
+        scalar_values,
+        stored_coordinates,
+        equations,
+    );
+    let pending = equations.drain(previous_len..).collect::<Vec<_>>();
+    let mut appended = false;
+    for equation in pending {
+        if equations.iter().any(|candidate| {
+            candidate.terms == equation.terms && approximately_equal(candidate.rhs, equation.rhs)
+        }) {
+            continue;
+        }
+        equations.push(equation);
+        appended = true;
+    }
+    appended
+}
+
 fn solve_section_coordinates_with_derived_constraints(
+    definition: &crate::feature::FeatureDefinition,
     equations: &mut Vec<SectionCoordinateEquation>,
     stored_coordinates: &BTreeMap<(u32, usize), f64>,
     point_on_line_constraints: &[(u32, u32, u32)],
     equal_length_constraints: &[SectionEqualLengthConstraint],
+    auxiliary_constraints: &SectionEquationAuxiliaryConstraints,
+    auxiliary_scalar_values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
 ) -> BTreeMap<u32, [Option<f64>; 2]> {
     let mut solved_coordinates = solve_section_coordinate_equations(equations, stored_coordinates);
     let max_passes = point_on_line_constraints
         .len()
         .saturating_add(equal_length_constraints.len())
+        .saturating_add(auxiliary_constraints.midpoints.len())
+        .saturating_add(auxiliary_constraints.point_bindings.len().saturating_mul(2))
         .saturating_add(1);
     for _ in 0..max_passes {
         let mut appended = false;
@@ -161,6 +194,23 @@ fn solve_section_coordinates_with_derived_constraints(
             &solved_coordinates,
             equations,
         ) {
+            appended = true;
+            solved_coordinates = solve_section_coordinate_equations(equations, stored_coordinates);
+        }
+        let previous_scalar_values = auxiliary_scalar_values.clone();
+        for (variable, value) in
+            section_equation_scalar_values_from_coordinates(definition, &solved_coordinates)
+        {
+            merge_scalar_value_candidate(auxiliary_scalar_values, variable, value);
+        }
+        if *auxiliary_scalar_values != previous_scalar_values
+            && append_unique_auxiliary_coordinate_constraints(
+                auxiliary_constraints,
+                auxiliary_scalar_values,
+                stored_coordinates,
+                equations,
+            )
+        {
             appended = true;
             solved_coordinates = solve_section_coordinate_equations(equations, stored_coordinates);
         }
@@ -538,10 +588,13 @@ pub(crate) fn resolved_section_coordinates(
         ));
     }
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
+        definition,
         &mut equations,
         &stored_coordinates,
         &point_on_line_constraints,
         &equal_length_constraints,
+        &auxiliary_constraints,
+        &mut auxiliary_scalar_values,
     );
     for constraint in
         section_equation_radial_constraints(definition, &solved_coordinates, &ambiguous_point_ids)
@@ -571,23 +624,14 @@ pub(crate) fn resolved_section_coordinates(
             point, coordinate, value,
         ));
     }
-    let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
-    for (variable, value) in
-        section_equation_scalar_values_from_coordinates(definition, &solved_coordinates)
-    {
-        merge_scalar_value_candidate(&mut auxiliary_scalar_values, variable, value);
-    }
-    append_section_equation_auxiliary_coordinate_constraints(
-        &auxiliary_constraints,
-        &auxiliary_scalar_values,
-        &stored_coordinates,
-        &mut equations,
-    );
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
+        definition,
         &mut equations,
         &stored_coordinates,
         &point_on_line_constraints,
         &equal_length_constraints,
+        &auxiliary_constraints,
+        &mut auxiliary_scalar_values,
     );
     let arc_midpoint_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| {
@@ -1090,6 +1134,90 @@ mod tests {
         assert_eq!(
             resolved_section_points(&definition).get(&30),
             Some(&[0.0, 4.0])
+        );
+    }
+
+    #[test]
+    fn derived_auxiliary_values_retry_after_point_on_line_resolution() {
+        let row = |variable_type, key, value| FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven: false,
+            offset: 0,
+        };
+        let mut body = b"eqtn_arr\0\xf2\xf8\x07\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
+            .to_vec();
+        let mut equation = |id, function, arguments: &[u8]| {
+            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(arguments);
+            body.extend_from_slice(b"\xf6\xe2");
+        };
+        equation(1, 0x2a, &[9, 11, 13]);
+        equation(2, 0x1f, &[2, 3, 13, 14]);
+        equation(3, 0x1f, &[4, 5, 15, 16]);
+        equation(4, 0x23, &[0, 1, 2, 3, 4, 5, 6, 7, 8]);
+        equation(5, 0x2a, &[0, 17, 21]);
+        equation(6, 0x1f, &[19, 20, 21, 22]);
+        let definition = FeatureDefinition {
+            id: 4,
+            owner_feature_id: None,
+            body,
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 23,
+                entity_ref: None,
+                rows: vec![
+                    row(1, 30, None),
+                    row(2, 30, Some(4.0)),
+                    row(1, 10, None),
+                    row(2, 10, None),
+                    row(1, 11, None),
+                    row(2, 11, None),
+                    row(4, 0, None),
+                    row(5, 0, Some(0.0)),
+                    row(5, 1, Some(0.0)),
+                    row(1, 20, Some(0.0)),
+                    row(2, 20, Some(0.0)),
+                    row(1, 21, Some(2.0)),
+                    row(2, 21, Some(2.0)),
+                    row(6, 100, None),
+                    row(6, 101, Some(0.0)),
+                    row(6, 102, Some(2.0)),
+                    row(6, 103, Some(2.0)),
+                    row(1, 31, Some(5.0)),
+                    row(2, 31, Some(0.0)),
+                    row(1, 40, None),
+                    row(2, 40, Some(0.0)),
+                    row(6, 104, None),
+                    row(6, 105, Some(0.0)),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+        assert_eq!(
+            resolved_section_points(&definition).get(&40),
+            Some(&[4.0, 0.0])
         );
     }
 }
