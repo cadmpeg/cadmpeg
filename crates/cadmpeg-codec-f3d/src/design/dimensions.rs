@@ -621,6 +621,20 @@ fn project_all_dimension_constraints(
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
+                .or_else(|| {
+                    let [first_index, second_index] = indices;
+                    let first = projected.get(&(scope, first_index))?;
+                    let second = projected.get(&(scope, second_index))?;
+                    symmetric_parallel_line_dimension_definition(
+                        first,
+                        second,
+                        pair.first_role,
+                        pair.second_role,
+                        parameter,
+                        parameter_id.clone(),
+                        linear_tolerance,
+                    )
+                })
                 .unwrap_or_else(|| {
                     native_definition(
                         scope,
@@ -4139,6 +4153,39 @@ pub(crate) fn parallel_line_separation(
     };
     let expected = evaluated_mm.abs();
     (separation - expected).abs() <= 1.0e-9 * (1.0 + expected)
+}
+
+/// Resolve the symmetric line-width form of a paired linear dimension.
+///
+/// A nonzero role on both parallel line loci selects a width dimension: the
+/// stored value is twice the perpendicular carrier separation. Zero roles use
+/// the ordinary direct separation rules in `exact_definition`.
+pub(crate) fn symmetric_parallel_line_dimension_definition(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+    first_role: u32,
+    second_role: u32,
+    parameter: &DesignParameter,
+    parameter_id: cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+
+    if first_role == 0
+        || second_role == 0
+        || !parameter.source_kind.starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+    {
+        return None;
+    }
+    let separation = parallel_line_distance(first, second)?;
+    let expected = parameter.evaluated_value * 10.0;
+    linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(|| {
+        Definition::Distance {
+            entities: vec![first.id.clone(), second.id.clone()],
+            parameter: parameter_id,
+        }
+    })
 }
 
 fn parallel_line_distance(

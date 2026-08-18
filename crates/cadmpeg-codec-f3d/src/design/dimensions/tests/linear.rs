@@ -195,6 +195,84 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 }
 
 #[test]
+fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
+    let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#symmetric-distance".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let first = entity(
+        "generated:line#first",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(0.0, 10.0),
+        },
+    );
+    let second = entity(
+        "generated:line#second",
+        SketchGeometry::Line {
+            start: Point2::new(5.0, 2.0),
+            end: Point2::new(5.0, 8.0),
+        },
+    );
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "value",
+        "Linear Dimension-3",
+        Some("mm"),
+        "d1",
+        1.0,
+    ))
+    .expect("symmetric line-width parameter");
+    let parameter_id = cadmpeg_ir::features::ParameterId("generated:parameter#symmetric".into());
+
+    assert!(matches!(
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            &first,
+            &second,
+            1,
+            1,
+            &parameter,
+            parameter_id.clone(),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Distance { entities, parameter: actual })
+            if entities == vec![first.id.clone(), second.id.clone()] && actual == parameter_id
+    ));
+
+    let mut direct_parameter = parameter.clone();
+    direct_parameter.evaluated_value = 0.5;
+    assert!(
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            &first,
+            &second,
+            1,
+            1,
+            &direct_parameter,
+            parameter_id.clone(),
+            1.0e-6,
+        )
+        .is_none()
+    );
+    assert!(
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            &first,
+            &second,
+            0,
+            1,
+            &parameter,
+            parameter_id,
+            1.0e-6,
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let entity = |id: &str, position| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),
