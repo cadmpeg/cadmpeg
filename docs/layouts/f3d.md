@@ -1455,6 +1455,22 @@ Unstated regions:
 
 - `49..100` (51 B): The compact-form tail is retained with the native record; no semantic field is assigned.
 
+## `form_serializer_frame_132`
+
+Spec §1.1.1 · layout: byte offsets · size: 132 B
+
+Offsets are relative to the serializer's primary indexed header. The LP-UTF16 entry-name span and the marked surface reference are variable-length fields within the fixed frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes after its indexed header |
+| 21 | 4 | `entry_name_length` | `u32` | little | spec | LP-UTF16 blob-part entry name |
+
+Unstated regions:
+
+- `25..132` (107 B): The LP-UTF16 entry name, marked surface reference, and two-byte zero tail occupy this variable-length region; the complete serializer frame remains 132 bytes.
+
 ## `extrude_selection_member_fixed_frame`
 
 Spec §3.1 · layout: byte offsets · size: 190 B

@@ -4895,6 +4895,40 @@ size = 51
 note = "The compact-form tail is retained with the native record; no semantic field is assigned."
 
 [[record]]
+name = "form_serializer_frame_132"
+kind = "byte"
+section = "1.1.1"
+anchor = "A 132-byte class-315, class-349, class-360, class-431, or class-446 serializer record"
+size = 132
+note = "Offsets are relative to the serializer's primary indexed header. The LP-UTF16 entry-name span and the marked surface reference are variable-length fields within the fixed frame."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "entry_name_length"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "LP-UTF16 blob-part entry name"
+
+[[record.gap]]
+offset = 25
+size = 107
+note = "The LP-UTF16 entry name, marked surface reference, and two-byte zero tail occupy this variable-length region; the complete serializer frame remains 132 bytes."
+
+[[record]]
 name = "extrude_selection_member_fixed_frame"
 kind = "byte"
 section = "3.1"

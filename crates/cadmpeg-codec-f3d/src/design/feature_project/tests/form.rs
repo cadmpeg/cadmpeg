@@ -122,7 +122,7 @@ fn resolves_cage_surface_through_owned_object_chain() {
 #[test]
 fn serializer_joins_surface_to_exact_cage_entry_name() {
     let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-    for class in [b"315", b"446"] {
+    for class in [b"315", b"349", b"360", b"431", b"446"] {
         let mut serializer = indexed_frame(class, 8305, 132);
         serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
         for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {

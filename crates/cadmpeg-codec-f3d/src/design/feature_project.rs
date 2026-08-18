@@ -26,6 +26,7 @@ use crate::ids::{
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::{
     form_compact_one_cage_list as form_cage, form_legacy_one_cage_owner as legacy_form_cage,
+    form_serializer_frame_132 as form_serializer,
 };
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
@@ -4170,13 +4171,20 @@ fn form_cage_serializers(
     let mut serializers = HashMap::new();
     for (_, offsets) in records.records() {
         for offset in offsets {
-            if !matches!(bytes.get(offset + 4..offset + 7), Some(b"315" | b"446"))
-                || next_indexed_record_offset(bytes, offset + 1) != Some(offset + 132)
-                || bytes.get(offset + 11..offset + 21) != Some(&[0; 10])
+            if !matches!(
+                bytes.get(offset + 4..offset + 7),
+                Some(b"315" | b"349" | b"360" | b"431" | b"446")
+            ) || next_indexed_record_offset(bytes, offset + 1)
+                != Some(offset + form_serializer::LEN)
+                || bytes.get(
+                    offset + form_serializer::ZERO_RUN_10
+                        ..offset + form_serializer::ENTRY_NAME_LENGTH,
+                ) != Some(&[0; 10])
             {
                 continue;
             }
-            let Some((entry_name, after_name)) = lp_utf16_bounded(bytes, offset + 21, 1..=256)
+            let Some((entry_name, after_name)) =
+                lp_utf16_bounded(bytes, offset + form_serializer::ENTRY_NAME_LENGTH, 1..=256)
             else {
                 continue;
             };
@@ -4186,7 +4194,7 @@ fn form_cage_serializers(
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("tsm"))
                 || bytes.get(after_name) != Some(&1)
                 || bytes.get(after_name + 9..after_name + 11) != Some(&[0, 0])
-                || after_name + 11 != offset + 132
+                || after_name + 11 != offset + form_serializer::LEN
             {
                 continue;
             }

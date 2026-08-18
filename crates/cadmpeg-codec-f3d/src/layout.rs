@@ -2122,6 +2122,24 @@ pub(crate) mod form_compact_one_cage_list {
     pub(crate) const MEMBER_FLAGS: usize = 47;
 }
 
+/// Byte offsets for the `form_serializer_frame_132` record.
+///
+/// Spec §1.1.1. Record length 132 B.
+///
+/// ```text
+/// Offsets are relative to the serializer's primary indexed header. The LP-UTF16 entry-name span and the marked surface reference are variable-length fields within the fixed frame.
+/// ```
+pub(crate) mod form_serializer_frame_132 {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 132;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §1.1.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `entry_name_length` (`u32`, little-endian). Spec §1.1.1.
+    pub(crate) const ENTRY_NAME_LENGTH: usize = 21;
+}
+
 /// Byte offsets for the `extrude_selection_member_fixed_frame` record.
 ///
 /// Spec §3.1. Record length 190 B.
