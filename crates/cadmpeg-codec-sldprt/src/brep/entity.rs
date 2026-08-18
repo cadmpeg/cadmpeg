@@ -723,6 +723,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1c_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc1c_disc18_disc16_disc14_disc12_disc0e_disc04_chain_body(
+            &by_attr,
+        ));
+    }
+    if out.is_empty() {
         out.extend(disc1c_disc12_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -4646,6 +4651,73 @@ fn disc1c_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     }
     let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
     refs.sort_unstable();
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
+}
+
+fn disc1c_disc18_disc16_disc14_disc12_disc0e_disc04_chain_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    let chain_shape = [
+        (0x001c, 2),
+        (0x0018, 2),
+        (0x0016, 2),
+        (0x0014, 2),
+        (0x0012, 2),
+        (0x000e, 2),
+        (0x0004, 1),
+    ];
+    let matching_chains = keyed_forward_chain_candidates(by_attr)
+        .into_iter()
+        .filter(|chain| {
+            chain.len() == chain_shape.len()
+                && chain
+                    .first()
+                    .is_some_and(|root| root.refs.get(1) == Some(&1))
+                && chain
+                    .last()
+                    .is_some_and(|terminal| terminal.refs.get(2) == Some(&1))
+                && chain_shape
+                    .iter()
+                    .copied()
+                    .zip(chain.iter())
+                    .all(|((disc, flo), record)| record.disc == disc && record.flo() == flo)
+        })
+        .collect::<Vec<_>>();
+    let [chain] = matching_chains.as_slice() else {
+        return Vec::new();
+    };
+    let keyed_population = |disc: u16, flo: u8| {
+        by_attr
+            .values()
+            .filter(|record| record.disc == disc && record.flo() == flo)
+            .filter_map(|record| record.refs.first().copied().filter(|key| *key > 1))
+            .collect::<HashSet<_>>()
+    };
+    let canonical_keys = keyed_population(0x0010, 1);
+    if canonical_keys.is_empty()
+        || !canonical_keys.is_subset(&keyed_population(0x001a, 1))
+        || !canonical_keys.is_subset(&keyed_population(0x001e, 4))
+    {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    let root = chain[0];
+    let shell = chain[2];
     vec![BodyRecord {
         attr: root.attr,
         kind: BodyKind::Solid,
