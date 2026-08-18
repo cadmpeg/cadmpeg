@@ -388,3 +388,32 @@ the earth-anchor gate, an unset anchor enters native data as latitude 0,
 longitude 0, and elevation 0, which is a valid position. The legacy annotation
 gate has no effect now because `container.rs:1190-1194` refuses raw archive
 value 5.
+
+### QA-06. Material class-data form discriminator
+
+**Question.** Which value selects the packed-`2.0` wrapper form or the direct
+anonymous form of a material class-data payload, and for which archive
+versions does each form occur?
+
+**Known.** `rhino_3dm.md` §20.2 "For archive versions 4, 5, and 50, the
+class-data payload begins with packed" gives the archive version as the
+discriminator and names archives 4, 5, and 50. The OpenNURBS writer agrees with
+that band, because it emits the packed form when the archive version is above 3
+and below 60 (`opennurbs_material.cpp:130-133,321-337`). The OpenNURBS reader
+is wider: it also reads the packed form for archives 60 and later when the
+archive OpenNURBS version is below 2348833910
+(`opennurbs_material.cpp:222-232`). `presentation.rs:1874` does not use the
+archive version. It selects the anonymous form when the first class-data byte
+is zero and the packed form for any other first byte, and rejects a first byte
+other than `0x20` in the packed branch.
+
+**Need.** The specification and the owner must state the same discriminator. If
+the first class-data byte is the intended discriminator, the specification must
+state that rule and the byte values that select each form, together with the
+archive bands in which each form occurs.
+
+**Note.** A material record in an archive-60, archive-70, or archive-80 file
+whose archive OpenNURBS version is below 2348833910 has the packed form. The
+specification does not admit that record, while the owner accepts it through
+the first-byte test. The obsolete transparent-color substitution is bound to
+the same branch, so the two rules must select the same records.
