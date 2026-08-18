@@ -318,6 +318,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// and `N` transformation pointers, so their groups start at token `2 + 2*N`.
 /// Type 412 Form 0 puts `LC` at index 11, followed by the fixed `DDF` flag and
 /// `LC` position numbers, so its groups start at token `13 + LC`.
+/// Type 414 Form 0 puts `LC` at index 9, followed by the fixed `DDF` flag and
+/// `LC` position numbers, so its groups start at token `11 + LC`.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -351,6 +353,7 @@ pub(crate) fn entity_primary_end(
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (412, 0) => Some(rectangular_array_primary_end(record)),
+        (414, 0) => Some(circular_array_primary_end(record)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }
@@ -441,6 +444,15 @@ fn rectangular_array_primary_end(record: &ParameterRecord) -> usize {
         .integer(11)
         .and_then(|value| usize::try_from(value).ok())
         .and_then(|list_count| list_count.checked_add(13))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn circular_array_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(9)
+        .and_then(|value| usize::try_from(value).ok())
+        .and_then(|list_count| list_count.checked_add(11))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
