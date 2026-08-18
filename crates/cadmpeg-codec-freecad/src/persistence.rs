@@ -565,6 +565,18 @@ fn parse_properties(
     Ok(())
 }
 
+pub(crate) fn validate_link_property(
+    property: roxmltree::Node<'_, '_>,
+    type_name: &str,
+) -> Result<(), CodecError> {
+    let grammar_type = if type_name == "App::PropertyPlacementLink" {
+        "App::PropertyLink"
+    } else {
+        type_name
+    };
+    parse_link_targets(property, grammar_type).map(|_| ())
+}
+
 fn parse_link_targets(
     property: roxmltree::Node<'_, '_>,
     type_name: &str,
@@ -575,18 +587,28 @@ fn parse_link_targets(
     };
     let root = single_value_element(property, grammar.root_tag(), type_name)?;
     match grammar {
-        LinkGrammar::Link => Ok(vec![local_link(root, "value", &[])?]),
+        LinkGrammar::Link => {
+            reject_nested_link_value(root)?;
+            Ok(vec![local_link(root, "value", &[])?])
+        }
         LinkGrammar::LinkList => counted_children(root, "Link", type_name)?
-            .map(|node| local_link(node, "value", &[]))
+            .map(|node| {
+                reject_nested_link_value(node)?;
+                local_link(node, "value", &[])
+            })
             .collect(),
         LinkGrammar::LinkSub => {
             let subelements = counted_children(root, "Sub", type_name)?
-                .map(|node| restored_subelement(node, "value"))
+                .map(|node| {
+                    reject_nested_link_value(node)?;
+                    restored_subelement(node, "value")
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(vec![local_link(root, "value", &subelements)?])
         }
         LinkGrammar::LinkSubList => counted_children(root, "Link", type_name)?
             .map(|node| {
+                reject_nested_link_value(node)?;
                 let sub = restored_subelement(node, "sub")?;
                 local_link(node, "obj", &[sub])
             })
@@ -596,6 +618,15 @@ fn parse_link_targets(
             .map(xlink)
             .collect(),
     }
+}
+
+fn reject_nested_link_value(node: roxmltree::Node<'_, '_>) -> Result<(), CodecError> {
+    if node.children().any(|child| child.is_element()) {
+        return Err(CodecError::Malformed(
+            "link carrier contains nested element values".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]

@@ -829,6 +829,9 @@ fn validate_gui_property(
     if is_visual_layer_list(property_name, type_name) {
         return validate_visual_layer_list(property, property_name);
     }
+    if is_gui_link_type(type_name) {
+        return crate::persistence::validate_link_property(property, type_name);
+    }
     match type_name {
         "App::PropertyExpressionEngine" => {
             return validate_gui_expression_engine(property, property_name);

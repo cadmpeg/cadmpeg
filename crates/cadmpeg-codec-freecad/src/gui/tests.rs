@@ -238,6 +238,52 @@ fn rejects_malformed_registered_gui_property_values() {
 }
 
 #[test]
+fn validates_gui_link_value_grammars() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="8">
+<Property name="Link" type="App::PropertyLink"><Link value=""/></Property>
+<Property name="LinkList" type="App::PropertyLinkList"><LinkList count="2"><Link value=""/><Link value=""/></LinkList></Property>
+<Property name="LinkSub" type="App::PropertyLinkSub"><LinkSub value="" count="1"><Sub value="Face1"/></LinkSub></Property>
+<Property name="LinkSubList" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="" sub="Face1"/></LinkSubList></Property>
+<Property name="XLink" type="App::PropertyXLink"><XLink name="" file=""/></Property>
+<Property name="XLinkSub" type="App::PropertyXLinkSub"><XLink name="" file="" sub="Face1"/></Property>
+<Property name="XLinkSubList" type="App::PropertyXLinkSubList"><XLinkSubList count="1"><XLink name="" file="" sub="Face1"/></XLinkSubList></Property>
+<Property name="PlacementLink" type="App::PropertyPlacementLink"><Link value=""/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid GUI link grammars");
+
+    for invalid in [
+        r#"<Property name="Link" type="App::PropertyLink"><Link value=""><Nested/></Link></Property>"#,
+        r#"<Property name="LinkList" type="App::PropertyLinkList"><LinkList count="1"><Link value=""/><Link value=""/></LinkList></Property>"#,
+        r#"<Property name="LinkSub" type="App::PropertyLinkSub"><LinkSub value="" count="1"><Sub value="Face1"><Nested/></Sub></LinkSub></Property>"#,
+        r#"<Property name="LinkSubList" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="" sub="Face1"><Nested/></Link></LinkSubList></Property>"#,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid GUI link grammar");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn accepts_and_validates_gui_custom_enumerations() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">

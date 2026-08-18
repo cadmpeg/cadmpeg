@@ -117,7 +117,8 @@ grammar have the `App::` prefix. `PropertyLink` and its
 contain one `LinkSub` with a `value` object name and a `count` of `Sub` children. Each `Sub` has a
 `value` subelement name. `PropertyLinkSubList` and its three variants contain one `LinkSubList`;
 `count` equals the number of `Link` children, and each child has an `obj` object name and a `sub`
-subelement name.
+subelement name. A `Link` root, a `Link` child, or a `Sub` child in these local carriers has no
+element children. `PropertyPlacementLink` uses the `PropertyLink` grammar.
 
 `PropertyXLink`, `PropertyXLinkSub`, and `PropertyXLinkSubHidden` contain one `XLink`. Its `name`
 is the object name. An optional `file` is the external document path; an absent or empty `file`
@@ -699,6 +700,11 @@ exact runtime type token, ordered value XML, referenced side-entry names and byt
 span as native data. It has no neutral presentation meaning. This is a CADIR decision: only the
 exact presentation carriers named below populate neutral fields; all other registered or
 provider-defined properties remain native, even when their producer serializer is known.
+
+GUI link-family properties use the same direct carrier grammar as application link properties.
+Their value has one direct carrier, counted children are direct, and local link carriers are leaf
+elements. `PropertyPlacementLink` uses the `Link` carrier. Nested, duplicate, or miscounted link
+carriers are malformed.
 
 A color-list side entry contains a little-endian `u32` count followed by that many little-endian
 packed `u32` colors. A material-list value has a format version from zero through three. Versions

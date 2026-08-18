@@ -15,27 +15,29 @@ Each item has an identifier and these fields:
 
 ### GP-01. Other GUI property grammars
 
-**Question.** What value grammar remains for each GUI property runtime type not yet covered by the
-specification?
+**Question.** What value grammar remains for each non-link GUI property runtime type not yet
+covered by the specification?
 
-**Known.** View-provider properties use the shared application property persistence path. The
-current registry in `gui.rs:30-39` classifies GUI links, custom types, and every non-Unknown
-`PropertyFamily` as registered. `validate_gui_property` at `gui.rs:824-860` has exact branches for
-some types, but no value grammar branch for the remaining link and application-family types.
+**Known.** View-provider properties use the shared application property persistence path. Every
+GUI link-family runtime type uses the exact direct carrier grammar defined for application links,
+including the `PropertyPlacementLink` subtype. The GUI validator checks the carrier root,
+cardinality, attributes, and leaf rule before neutral transfer or native admission. The current
+registry in `gui.rs:30-39` still classifies custom types and every non-Unknown `PropertyFamily` as
+registered.
 
-**Need.** Establish the producer grammar for every classified GUI runtime type. Validate its direct
-value roots, cardinality, attributes, and side-entry references before neutral transfer or native
-admission. Provider-defined types without a registered grammar must remain opaque.
+**Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type.
+Validate its direct value roots, cardinality, attributes, and side-entry references before neutral
+transfer or native admission. Provider-defined types without a registered grammar must remain
+opaque.
 
-**Conflict.** A GUI `App::PropertyLink` or `Mesh::PropertyMeshKernel` property can enter the
-registered path and return `Ok(())` without a link or geometry-root check. Its arbitrary descendant
-values are then retained as if the registry had established their grammar. A nested or duplicate
-carrier can therefore pass the typed gate while the neutral presentation path silently withholds
-or misreads the value.
+**Conflict.** A non-link GUI property such as `Mesh::PropertyMeshKernel` can enter the registered
+path without a complete value-grammar check. Its arbitrary descendant values can then be retained
+as if the registry had established their grammar, while the neutral presentation path silently
+withholds or misreads the value.
 
-**Note.** Reopened. The GUI registry closure established runtime-name coverage and selected source
-classes, but its broad registration predicate is not backed by executable grammar checks for all
-members.
+**Note.** Partly settled. The link-family half is closed by the application writer inheritance
+rules and the shared direct-carrier validator. The remaining question is limited to non-link
+runtime types.
 
 ### GP-02. Other GUI property semantics
 
