@@ -95,6 +95,32 @@ guards synthetic XML that the producer does not write.
 **Note.** Reopened. The camera cardinality fix does not bind to the producer's authoritative value
 carrier.
 
+### GP-10. Topology color-array count admission
+
+**Question.** What is the result when a per-face, per-edge, or per-vertex color-list count does not
+equal the mapped element-map count?
+
+**Known.** The specification states that a missing identity or a count mismatch leaves the side
+entry retained without guessing transient topology labels. `gui.rs:2934-2967` instead returns a
+malformed-document error when the count is neither one nor equal to the mapped count.
+`gui.rs:2659-2742` handles the same mismatch for the `ShapeAppearance` material list by keeping the
+list native and continuing. FreeCAD `ViewProviderPartExt::getElementColors` reads a color by its
+one-based index only when that index is inside the list and uses the default diffuse color for
+every other index, and `finishRestoring` passes a restored color list to the scene graph without a
+size check against the shape. `LineColorArray` and `PointColorArray` remain current
+`App::PropertyColorList` view-provider properties.
+
+**Need.** Select one result for a count mismatch and apply it to the color arrays and to
+`ShapeAppearance`. If the result is retention, record the withheld override as a loss. If the
+result is refusal, give the producer rule that makes the mismatch invalid.
+
+**Conflict.** A document whose `Shape` element map has six `Face` names and whose `DiffuseColor`
+side entry holds five colors fails to decode. The specification retains the side entry for that
+document and the producer opens it. The same mismatch in a `ShapeAppearance` material list is
+dropped with no finding and no loss, so one condition has two opposite results in one module.
+
+**Note.** New hostile-sweep finding.
+
 ## 3. Persistent topology identity
 
 ### PT-04. Source topology index provenance
