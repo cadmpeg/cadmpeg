@@ -20,9 +20,9 @@ use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
 mod hatch_userdata;
 mod layer_userdata;
 mod mesh_userdata;
+mod object_attributes_userdata;
 mod settings_userdata;
 mod views_userdata;
-
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

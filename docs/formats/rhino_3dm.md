@@ -1212,9 +1212,11 @@ to true and `compute_curvature` to false. The parsed
 `custom_settings_enabled` value remains effective. CADIR stores the resulting
 wire fields in the owning native object presentation's optional
 `custom_render_mesh` record and does not create another geometry or userdata
-identity. A malformed recognized class payload is discarded at its bounded
-userdata item, the object attributes remain admitted, and the decoder records
-the bounded diagnostic. Duplicate selection follows section 7.2.
+identity. Failure of the outer-major check, nested-child framing, or mesh
+parameter read is local to this userdata item: the containing object attributes
+and the object's class data remain admitted, `custom_render_mesh` is absent,
+and the decoder records the bounded diagnostic. Duplicate selection follows
+section 7.2.
 
 #### 7.2.11 `ON_AnnotationTextFormula`
 

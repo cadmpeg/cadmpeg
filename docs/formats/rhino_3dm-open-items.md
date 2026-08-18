@@ -133,6 +133,12 @@ its current major-1 grammar supplies the native gradient parameter, while an
 unsupported or malformed gradient payload leaves the hatch class data and loop
 curves typed, omits that parameter, emits the hatch-userdata diagnostic, and
 retains the complete `TCODE_OBJECT_RECORD`.
+The object-attributes owner is proven for the registered
+`ON_PerObjectMeshParameters` carrier: its current outer major-1 grammar
+supplies the owning presentation's `custom_render_mesh` value, while an
+unsupported outer major or malformed nested child leaves the point class data
+and object attributes typed, omits that value, emits the bounded userdata
+diagnostic, and retains the complete `TCODE_OBJECT_RECORD`.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
