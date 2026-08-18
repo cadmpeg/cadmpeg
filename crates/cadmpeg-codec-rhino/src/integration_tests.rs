@@ -17,6 +17,7 @@ use cadmpeg_ir::Encoder;
 use crate::chunks::ArchiveVersion;
 use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+mod angular_dimension_userdata;
 mod annotations_userdata;
 mod dimension_userdata;
 mod hatch_userdata;
@@ -68,7 +69,6 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         assert!(container.ir().model.points.is_empty());
     }
 }
-
 #[test]
 fn curve_pipeline_composes_points_clouds_lines_arcs_polylines_and_compounds() {
     let children = [

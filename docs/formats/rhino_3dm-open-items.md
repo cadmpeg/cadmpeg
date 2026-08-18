@@ -175,6 +175,12 @@ linear dimension; an unsupported child major or truncated child retains the
 complete object record, admits no dimension, and emits the bounded dimension
 diagnostic. The class and item UUID must both match before the carrier is
 admitted.
+The separate V5 angular owner is proven for the registered
+`ON_AngularDimension2Extra` carrier: its anonymous 1.0 child supplies the two
+extension-line origin offsets in order; an unsupported child major or
+truncated child retains the complete object record, admits no angular
+dimension, and emits the bounded dimension diagnostic. The class and item UUID
+must both match before the offsets are applied.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
