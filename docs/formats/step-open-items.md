@@ -18,6 +18,44 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
+### ER-05. Local form of a resource token in a value position
+
+**Question.** Which spelling of a resource token in a value position binds to the
+ANCHOR table of the same exchange?
+
+**Known.** `step.md` §7 "the process working directory. A fragment-only non-UUID
+is resolved against" gives two rules: a fragment-only non-UUID resolves against
+the ANCHOR table of the current exchange, and a URI with a nonempty path, query,
+or scheme stays the exact external dependency. The lexer removes the `<` and `>`
+delimiters, so `<#name>` gives the resource text `#name` and `<name>` gives the
+resource text `name`.
+`crates/cadmpeg-codec-step/src/parse.rs:862-865` keys the anchor map by the
+anchor name, which holds no `#`.
+`crates/cadmpeg-codec-step/src/parse.rs:2294` matches a resource against that map
+by its full text. The text `#name` matches no key, so a fragment-only resource
+stays unresolved. The text `name` matches the key `name`, so a relative-path
+resource takes the value of the anchor.
+`crates/cadmpeg-codec-step/src/parse.rs:870-888` applies this to each anchor
+value, each anchor tag value, and each parameter of each DATA record. Two other
+functions use the opposite rule:
+`crates/cadmpeg-codec-step/src/parse.rs:2472-2481` needs an empty path and then
+finds the anchor by the fragment, and
+`crates/cadmpeg-codec-step/src/archive.rs:158-171` removes the `#` prefix and
+then finds the anchor by that name. The codec holds no external-resource loss
+code, so neither result is reported.
+
+**Conflict.** The specification and two of the three resolvers make the
+fragment-only form local and the relative-path form external. The third resolver
+makes the relative-path form local and the fragment-only form external.
+
+**Need.** The two forms have opposite meanings, so one spelling always gives the
+wrong result. A relative-path resource that takes an anchor value replaces an
+external dependency with local data. A fragment-only resource that stays
+unresolved keeps a local binding as an external dependency. The answer gives the
+one rule that the three resolvers share. Add a witness with an anchor named
+`part`, one parameter `<#part>`, and one parameter `<part>`, and show which
+parameter takes the anchor value.
+
 ## 3. Containers and other encodings
 
 ### CE-09. Unregistered root name in a schema object identifier
