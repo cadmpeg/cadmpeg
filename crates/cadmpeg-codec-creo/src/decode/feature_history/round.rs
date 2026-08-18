@@ -124,7 +124,11 @@ pub(in super::super) fn slot_fillet_cylinder(
             {
                 continue;
             }
-            let origin = solve_planes(&[cap_planes[0], midplanes[first].0, midplanes[second].0])?;
+            let Some(origin) =
+                solve_planes(&[cap_planes[0], midplanes[first].0, midplanes[second].0])
+            else {
+                continue;
+            };
             let tangent_to_all = support_planes.iter().all(|plane| {
                 let Some(normal) = normalized(plane.normal) else {
                     return false;

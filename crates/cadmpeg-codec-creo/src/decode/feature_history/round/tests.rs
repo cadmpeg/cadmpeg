@@ -173,6 +173,52 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 }
 
 #[test]
+fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
+    let cylinder = super::slot_fillet_cylinder(
+        [
+            crate::decode::analytic::PlaneEquation {
+                origin: [0.0, -2.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+            crate::decode::analytic::PlaneEquation {
+                origin: [0.0, 3.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+        ],
+        &[
+            crate::decode::analytic::PlaneEquation {
+                origin: [-9.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            crate::decode::analytic::PlaneEquation {
+                origin: [-8.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            crate::decode::analytic::PlaneEquation {
+                origin: [-9.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            crate::decode::analytic::PlaneEquation {
+                origin: [-8.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            crate::decode::analytic::PlaneEquation {
+                origin: [0.0, 0.0, -7.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+            crate::decode::analytic::PlaneEquation {
+                origin: [0.0, 0.0, -6.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+        ],
+    )
+    .expect("later independent support pair");
+
+    assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
+    assert_eq!(cylinder.radius, 0.5);
+}
+
+#[test]
 fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([
