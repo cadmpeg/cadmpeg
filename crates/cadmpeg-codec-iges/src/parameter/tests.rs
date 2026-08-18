@@ -142,6 +142,61 @@ fn type316_entity(label: &str, parameters: &str) -> OwnedTestEntity {
     }
 }
 
+fn type402_form21_boundary_entities(parameters: &str) -> Vec<OwnedTestEntity> {
+    vec![
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "DIMNOTE".into(),
+            status: "00010100",
+            parameters: TYPE212_NOTE_PARAMETERS.into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 2,
+            label: "ARROW1".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 2,
+            label: "ARROW2".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,4,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "GEOM1".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,0,4,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "GEOM2".into(),
+            status: "00000000",
+            parameters: "110,4,0,0,4,4,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 0,
+            label: "DIMENS".into(),
+            status: "00000100",
+            parameters: "216,1,3,5,0,0,1,13,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 21,
+            label: "RECALCD".into(),
+            status: "00010200",
+            parameters: parameters.into(),
+        },
+        type212_note_entity("TARGET"),
+    ]
+}
+
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
@@ -1217,6 +1272,179 @@ fn type402_form16_wrong_entity_pointer_keeps_count_boundary() {
         .losses
         .iter()
         .any(|loss| { loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind() }));
+}
+
+#[test]
+fn type402_form21_count_driven_boundary_follows_geometry_list() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&type402_form21_boundary_entities(
+                "402,1,2,11,4,0,7,0,0,0,0,9,1,4,0,1,1,15,0;",
+            ))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#13")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#15"])
+    );
+    let fields = entity.fields();
+    let reference = fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["parameter_index"] == 17)
+        .unwrap();
+    assert_eq!(reference["raw_pointer"], 15);
+    let associativity = native.arenas["associativities"]
+        .iter()
+        .find(|value| value.fields()["source_entity"] == "iges:entity:directory#13")
+        .unwrap();
+    assert_eq!(
+        associativity.fields()["dimension"],
+        "iges:entity:directory#11"
+    );
+    assert_eq!(associativity.fields()["declared_geometry_count"], 2);
+    assert_eq!(
+        associativity.fields()["geometry"],
+        serde_json::json!([
+            {
+                "geometry": "iges:entity:directory#7",
+                "location_flag": 0,
+                "point": [0.0, 0.0, 0.0]
+            },
+            {
+                "geometry": "iges:entity:directory#9",
+                "location_flag": 1,
+                "point": [4.0, 0.0, 1.0]
+            }
+        ])
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type402_form21_count_boundary_beats_target_valid_generic_suffix() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&type402_form21_boundary_entities(
+                "402,1,2,11,4,0,7,0,0,0,0,9,1,4,0,2,1,15,0;",
+            ))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#13")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#15"])
+    );
+    let fields = entity.fields();
+    let reference = fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["parameter_index"] == 17)
+        .unwrap();
+    assert_eq!(reference["raw_pointer"], 15);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type402_form21_wrong_geometry_pointer_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&type402_form21_boundary_entities(
+                "402,1,2,11,4,0,1.5,0,0,0,0,9,1,4,0,1,1,15,0;",
+            ))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#13")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#15"])
+    );
+    let fields = entity.fields();
+    let reference = fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["parameter_index"] == 17)
+        .unwrap();
+    assert_eq!(reference["raw_pointer"], 15);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type402_form21_invalid_primary_context_suppresses_generic_suffix_candidate() {
+    for (label, parameters) in [
+        ("WRONGND", "402,2,1,0,4,0,7,0,0,0,1,15,0;"),
+        ("ZERONG", "402,1,0,0,4,0,1,15,0;"),
+        ("WRNGCNT", "402,1,1.5,0,4,0,7,0,0,0,1,15,0;"),
+        (
+            "OVERFLOW",
+            "402,1,9223372036854775807,0,4,0,7,0,0,0,1,15,0;",
+        ),
+        ("TRUNCATE", "402,1,2,0,4,0,7,0,0,0,1,15,0;"),
+        ("MISSING", "402;"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&type402_form21_boundary_entities(
+                    parameters,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#13")
+            .unwrap();
+        assert!(
+            entity.fields()["association_links"]
+                .as_array()
+                .unwrap()
+                .is_empty(),
+            "{label}: {:#?}",
+            entity.fields()["association_links"]
+        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+    }
 }
 
 #[test]

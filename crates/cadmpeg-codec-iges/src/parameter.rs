@@ -390,6 +390,25 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (402, 21) => {
+            if record.integer(1) != Some(1) {
+                return ParameterBoundary::Invalid;
+            }
+            let Some(geometry_count) = record.count(2).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = geometry_count
+                .checked_mul(5)
+                .and_then(|width| width.checked_add(6))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (308, 0) => {
             let Some(member_count) = record.count(3) else {
                 return ParameterBoundary::Invalid;
