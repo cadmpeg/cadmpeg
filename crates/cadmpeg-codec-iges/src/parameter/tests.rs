@@ -1084,6 +1084,132 @@ fn type180_malformed_length_or_terms_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type406_form1_entity_table_boundary_follows_level_list() {
+    let mut source = directory_target(1, 406);
+    source.form = 1;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for values in [
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(1),
+            TokenValue::Integer(5),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(1),
+            TokenValue::String(b"5".to_vec()),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 406 Form 1 table boundary");
+        assert_eq!(groups.token_start, 3);
+        assert_eq!(groups.associations, vec![3]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type406_form1_table_boundary_precedes_generic_candidate() {
+    let mut source = directory_target(1, 406);
+    source.form = 1;
+    let association = directory_target(3, 212);
+    let property_a = directory_target(5, 406);
+    let property_b = directory_target(7, 406);
+    let directory = BTreeMap::from([
+        (1, &source),
+        (3, &association),
+        (5, &property_a),
+        (7, &property_b),
+    ]);
+    let values = vec![
+        TokenValue::Integer(406),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(3),
+        TokenValue::Integer(2),
+        TokenValue::Integer(5),
+        TokenValue::Integer(7),
+    ];
+    let record = token_parameter_record(1, values);
+    let generic = structural_pointer_group_candidates(&record);
+    assert!(generic.iter().any(|candidate| candidate.token_start == 2));
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 406 Form 1 table boundary");
+    assert_eq!(groups.token_start, 3);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5, 7]);
+}
+
+#[test]
+fn type406_form1_malformed_np_or_span_does_not_enable_generic_recovery() {
+    let mut source = directory_target(1, 406);
+    source.form = 1;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for values in [
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Real(1.0),
+            TokenValue::Integer(5),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Omitted,
+            TokenValue::Integer(5),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(0),
+            TokenValue::Integer(5),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(5),
+            TokenValue::Integer(5),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(4),
+            TokenValue::Integer(5),
+            TokenValue::Integer(6),
+        ],
+    ] {
+        let record = token_parameter_record(1, values);
+        let generic_count = structural_pointer_group_candidates(&record).len();
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "generic_count={generic_count}");
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type406_form2_entity_table_boundary_follows_fixed_values() {
     let mut source = directory_target(1, 406);
     source.form = 2;

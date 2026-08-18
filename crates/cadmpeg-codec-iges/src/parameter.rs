@@ -313,6 +313,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// token `4 + N1`.
 /// Type 402 Form 12 puts the positive entry count `N` at index 1 and stores a
 /// name/pointer pair per entry, so its groups start at token `2 + 2*N`.
+/// Type 406 Form 1 puts positive `NP` at index 1 and stores `NP` level numbers,
+/// so its groups start at token `2 + NP`.
 /// Type 406 Form 2 fixes `NP=3` at index 1 and stores the three restriction
 /// values at indexes 2 through 4, so its groups start at token five.
 /// Type 406 Form 3 fixes `NP=2` at index 1 and stores its function code and
@@ -420,6 +422,7 @@ pub(crate) fn entity_primary_end(
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
         (402, 20) => Some(flow_associativity_primary_end(record, 1)),
+        (406, 1) => Some(counted_primary_end(record)),
         (406, 2) => Some(region_restriction_primary_end(record)),
         (406, 3) => Some(level_function_primary_end(record)),
         (406, 8) => Some(pin_number_primary_end(record)),

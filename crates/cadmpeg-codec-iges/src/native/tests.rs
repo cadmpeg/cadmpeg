@@ -333,7 +333,7 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
             form: 1,
             label: "LEVELS".into(),
             status: "00000200",
-            parameters: "406,3,7,0,1,3;".into(),
+            parameters: "406,3,7,0,1,0,1,3;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
@@ -355,7 +355,7 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
         "iges:entity:directory#3"
     );
     assert_eq!(levels.fields()["declared_count"], 3);
-    assert!(levels.fields()["levels"].as_array().unwrap().is_empty());
+    assert_eq!(levels.fields()["levels"], serde_json::json!([7, 0, 1]));
 }
 
 #[test]
