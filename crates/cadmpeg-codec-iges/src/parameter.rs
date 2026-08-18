@@ -409,6 +409,32 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (404, 0 | 1) => {
+            let Some(view_count) = record.count(1) else {
+                return ParameterBoundary::Invalid;
+            };
+            let view_width = if entry.form == 0 { 3 } else { 4 };
+            let Some(annotation_count_index) = view_count
+                .checked_mul(view_width)
+                .and_then(|width| width.checked_add(2))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(annotation_count) = record.count(annotation_count_index) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = annotation_count_index
+                .checked_add(1)
+                .and_then(|index| index.checked_add(annotation_count))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (308, 0) => {
             let Some(member_count) = record.count(3) else {
                 return ParameterBoundary::Invalid;

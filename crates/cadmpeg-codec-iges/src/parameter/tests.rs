@@ -297,6 +297,40 @@ fn type514_boundary_file(form: i64, label: &str, parameters: &str) -> Vec<u8> {
     ])
 }
 
+fn type404_boundary_file(form: i64, label: &str, parameters: &str) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00020000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "ANNOT".into(),
+            status: "00010100",
+            parameters: TYPE212_NOTE_PARAMETERS.into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "TARGET".into(),
+            status: "00010100",
+            parameters: TYPE212_NOTE_PARAMETERS.into(),
+        },
+        type406_form2_entity("PROP2", "406,3,0,1,2;"),
+        OwnedTestEntity {
+            entity_type: 404,
+            form,
+            label: label.into(),
+            status: "00000100",
+            parameters: parameters.into(),
+        },
+    ])
+}
+
 fn type316_entity(label: &str, parameters: &str) -> OwnedTestEntity {
     OwnedTestEntity {
         entity_type: 316,
@@ -4222,6 +4256,138 @@ fn type514_invalid_count_or_truncated_face_list_suppresses_generic_suffix_candid
             .unwrap()
             .is_empty());
         assert!(entity.fields()["references"].as_array().unwrap().is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+    }
+}
+
+#[test]
+fn type404_count_driven_boundary_follows_view_and_annotation_lists() {
+    for (form, label, parameters, association_index, property_index) in [
+        (0, "F0ONE", "404,1,1,0,0,1,3,1,5,1,7;", 8, 10),
+        (0, "F0TWO", "404,2,1,0,0,1,0,0,1,3,1,5,1,7;", 11, 13),
+        (0, "F0ZERO", "404,0,1,3,1,5,1,7;", 5, 7),
+        (0, "F0NOANN", "404,1,1,0,0,0,1,5,1,7;", 7, 9),
+        (1, "F1ONE", "404,1,1,0,0,0,1,3,1,5,1,7;", 9, 11),
+        (1, "F1TWO", "404,2,1,0,0,0,1,0,0,0,1,3,1,5,1,7;", 13, 15),
+        (1, "F1ZERO", "404,0,1,3,1,5,1,7;", 5, 7),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(type404_boundary_file(form, label, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#9")
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#5"])
+        );
+        assert_eq!(
+            entity.fields()["property_links"],
+            serde_json::json!(["iges:entity:directory#7"])
+        );
+        let fields = entity.fields();
+        let references = fields["references"].as_array().unwrap();
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == association_index));
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == property_index));
+        assert!(
+            result.report().losses.is_empty(),
+            "{label}: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn type404_wrong_typed_view_or_annotation_keeps_count_boundary() {
+    for (label, parameters) in [
+        ("WRNGVIEW", "404,1,1.0,0,0,1,3,1,5,1,7;"),
+        ("WRNGANN", "404,1,1,0,0,1,3.0,1,5,1,7;"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(type404_boundary_file(0, label, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#9")
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#5"])
+        );
+        assert_eq!(
+            entity.fields()["property_links"],
+            serde_json::json!(["iges:entity:directory#7"])
+        );
+        let fields = entity.fields();
+        let references = fields["references"].as_array().unwrap();
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == 8));
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == 10));
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+    }
+}
+
+#[test]
+fn type404_invalid_count_or_truncated_list_suppresses_generic_suffix_candidate() {
+    for (label, parameters) in [
+        ("WRNGCNT", "404,1.0,1,0,0,1,3,1,5,1,7;"),
+        ("NEGATIVE", "404,-1,1,0,0,1,3,1,5,1,7;"),
+        ("TRNCVIEW", "404,2,1,0,0;"),
+        ("TRNCANN", "404,1,1,0,0,2,3;"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(type404_boundary_file(0, label, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#9")
+            .unwrap();
+        assert!(entity.fields()["association_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(entity.fields()["property_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         assert!(result
             .report()
             .losses
