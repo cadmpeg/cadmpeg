@@ -9234,6 +9234,7 @@ mod tests {
     mod disc1e_disc1a_disc18_disc14_disc12_disc10_direct_face_use;
     mod disc1e_disc1a_disc18_disc16_disc14_disc12_disc04;
     mod disc1e_disc1c_disc1a_disc16_disc14_disc12;
+    mod disc1f_disc1d_disc1b_disc17_disc15_disc13_disc11_disc0f;
     mod disc20_disc12_disc1e_disc1c_disc18;
     mod disc20_disc18;
     mod disc20_disc1a_disc18;
