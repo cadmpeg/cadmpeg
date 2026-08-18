@@ -1013,8 +1013,11 @@ CADIR decision: a recognized valid item populates the Brep's existing region
 face-side and region carriers. It does not create a second neutral topology
 representation. A structurally unreadable or semantically invalid optional
 item is discarded, the Brep remains admissible, and the decode report emits
-`container.redundant-field-repaired` with the diagnostic cause. A checksum
-mismatch follows the recoverable warning policy in §4.1.
+`container.redundant-field-repaired` with the diagnostic cause. An unsupported
+class-owned payload major follows the same optional-carrier rule: independent
+Brep geometry remains typed, the complete containing object record remains in
+source fidelity, and the owner emits the repair warning. A checksum mismatch
+follows the recoverable warning policy in §4.1.
 
 #### 7.2.6 `ON_SubDMeshProxyUserData`
 

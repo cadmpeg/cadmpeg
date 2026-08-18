@@ -92,6 +92,10 @@ The top-level mesh owner is proven to retain the complete object record when
 the registered `ON_SubDMeshProxyUserData` payload has an unsupported anonymous
 major; the parent tessellation remains typed, no SubD entity is admitted, and
 the owner emits a decode warning for the failed proxy.
+The Brep owner is proven to retain the complete object record when the
+registered `ON_V5_BrepRegionTopologyUserData` payload has an unsupported
+anonymous major; independent Brep geometry remains typed, the optional region
+carrier is discarded, and the owner emits the repair warning.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
