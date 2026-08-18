@@ -399,6 +399,9 @@ fixtures, scores above L1 remain blocked.
   selected endpoint or center point identities from unique ordinary line or arc
   rows in an incomplete segment table. Duplicate ordinary or cross-family
   identifiers withhold the affected affine source.
+- Active point-symmetry equations use selected endpoint or center point
+  identities from unique ordinary line or arc rows in an incomplete segment
+  table; duplicate ordinary or cross-family identifiers withhold the equation.
 - Signed type-zero linear dimensions select their measured coordinate from a
   unique spanning line, or from one equal endpoint coordinate on uniquely
   incident section entities when no segment spans the pair. Standalone type-1

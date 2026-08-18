@@ -272,8 +272,8 @@ pub(crate) fn section_skamp_point_symmetry(
     };
     Some((
         section_skamp_point_entity_id(definition, center)?,
-        section_skamp_selected_point(definition, first)?,
-        section_skamp_selected_point(definition, second)?,
+        section_skamp_incidence_point(definition, first)?,
+        section_skamp_incidence_point(definition, second)?,
     ))
 }
 
@@ -456,7 +456,10 @@ pub(crate) fn saved_section_point(
 
 #[cfg(test)]
 mod tests {
-    use super::{section_skamp_point_entity_id, section_skamp_selected_point_id};
+    use super::{
+        section_skamp_point_entity_id, section_skamp_point_symmetry,
+        section_skamp_selected_point_id, SectionPointSource,
+    };
 
     fn point_definition(
         declared_count: u32,
@@ -594,5 +597,77 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn incomplete_unique_rows_supply_point_symmetry_sources() {
+        let line = |external_id, point_ids| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids,
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        };
+        let definition = point_definition(
+            4,
+            vec![ordinary_point(5, 9, 1), line(10, [1, 2]), line(11, [3, 4])],
+            Vec::new(),
+        );
+        let skamp = crate::feature::FeatureSkamp {
+            id: 14,
+            kind: 14,
+            flags: 0,
+            status: 1,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 5,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 10,
+                    sense: 2,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 11,
+                    sense: 3,
+                },
+            ],
+            offset: 0,
+        };
+        let Some((center, first, second)) = section_skamp_point_symmetry(&definition, &skamp)
+        else {
+            panic!("point-symmetry sources");
+        };
+        assert_eq!(center, 9);
+        assert!(matches!(first, SectionPointSource::Point(1)));
+        assert!(matches!(second, SectionPointSource::Point(4)));
+
+        let mut duplicate = definition.clone();
+        duplicate
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(line(10, [6, 7]));
+        assert!(section_skamp_point_symmetry(&duplicate, &skamp).is_none());
+
+        let mut cross_family = definition;
+        cross_family
+            .segments
+            .as_mut()
+            .expect("segments")
+            .point_rows
+            .push(crate::feature::FeaturePointSegment {
+                point_id: 99,
+                external_id: 10,
+                offset: 99,
+            });
+        assert!(section_skamp_point_symmetry(&cross_family, &skamp).is_none());
     }
 }
