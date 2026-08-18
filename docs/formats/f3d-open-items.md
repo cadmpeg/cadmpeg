@@ -250,6 +250,26 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Note.** The change that deleted this item takes the first reading and removes the validator report. It adds no specimen that separates the two readings and gives no reasoning in its commit body. `component_record_index` stays decoded and unused for identity: `crates/cadmpeg-codec-f3d/src/design/decode/components.rs` only makes sure that the two copies inside one carrier agree, and `crates/cadmpeg-codec-f3d/src/design/components.rs` builds the neutral component identity from the component GUID alone. Two carriers that describe two definitions therefore merge into one neutral component, and no loss records the merge. The added validator test builds both carriers from the rule that it confirms.
 
+### DR-63. Result-face lane of a legacy `Extrude` bounded-face recipe
+
+**Question.** Which stored field names the result-face lane of a legacy `Extrude` bounded-face recipe?
+
+**Known.** `f3d.md` §3.1 "For a legacy `Extrude` face-group member," states that the first effective recipe reference is the result-face lane. `crates/cadmpeg-codec-f3d/src/design/face_resolve.rs` `legacy_face_recipe_reference_candidates` reads `recipe_references.first()`, so list position names the lane. The gate that admits the rule tests the recipe kind, the counted program kind, a nonempty node run with one offset for each node, two empty operand candidate lanes, and equality between the operand candidate lane and the first reference's lane. `crates/cadmpeg-codec-f3d/src/history.rs` `bind_face_operand_history_candidates` also makes sure that exactly one operand group carries the `Faces` extrude role with a face role. No test in either function reads a stored field that names the lane.
+
+`f3d.md` §3.1 "An `Extrude` face-group member and an edge-treatment bounded-face member" gives the selector field and the token field that separate the lanes of a current-generation recipe. The legacy rule uses neither.
+
+**Need.** A legacy `Extrude` whose references occur in another order selects the wrong profile face, and the feature still reports as complete. We must find the source-side field that names the result-face lane, or documents that show that the lane is always first.
+
+### DR-64. Face operands that resolve to a current active face
+
+**Question.** Which stored field states that a legacy `Extrude` face operand names a current active face and not a face slot of the preceding state?
+
+**Known.** `f3d.md` §3.1 "For a legacy `Extrude` face-group member," gives an ordered rule: the unique changed preceding face slot, then the unique preceding face slot, then a unique candidate in the source-qualified active-BREP namespace of the ASM state, then the sole candidate of the first lane. `crates/cadmpeg-codec-f3d/src/history.rs` `select_legacy_extrude_face_candidate` gives the last two outcomes as a current active face and writes them to the native field `resolved_active_face`.
+
+`crates/cadmpeg-codec-f3d/src/design/face_resolve.rs` `resolved_face_operand` returns that face as the operand's complete selection, so the neutral operand becomes a resolved face selection. `crates/cadmpeg-codec-f3d/src/decode.rs` `face_selection_is_resolved` then reports the feature as complete, and the `DesignProjectionGaps` counters raise nothing: `face_selections` counts only native and unresolved selections, and `partially_resolved_face_members` counts only the unresolved members of a historical selection. The native operand keeps the field, so the substitution is visible in the native arena and nowhere else.
+
+**Need.** The two outcomes have different replay semantics. A reader that replays the feature against the preceding state needs to know that the face comes from the current model. The decode report must separate a proven historical slot from a substituted active face.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
