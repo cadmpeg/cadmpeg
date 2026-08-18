@@ -73,6 +73,26 @@ fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
 }
 
 #[test]
+fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
+    const FIT_TOLERANCE: f64 = 1.0e-12;
+
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.0);
+    let budget = WorkBudget::new(12);
+    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
+        &surface,
+        point,
+        Some(Point2::new(0.3, 0.7)),
+        FIT_TOLERANCE,
+        &budget,
+    )
+    .expect("a fit-qualified continuation seed does not need global search");
+
+    assert_eq!(parameters, Point2::new(0.3, 0.7));
+    assert_eq!(budget.consumed(), 12);
+}
+
+#[test]
 fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
     let surface = bilinear_surface();
     let budget = WorkBudget::new(3);

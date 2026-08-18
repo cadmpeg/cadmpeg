@@ -1148,6 +1148,19 @@ fn solve_nurbs_surface_parameter(
     if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
         return None;
     }
+    if let (Some(seed), Some(tolerance)) = (seed, fit_tolerance) {
+        let parameters = Point2::new(
+            seed.u.clamp(u_domain[0], u_domain[1]),
+            seed.v.clamp(v_domain[0], v_domain[1]),
+        );
+        let position = budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)?;
+        let distance = (position.x - point.x)
+            .hypot(position.y - point.y)
+            .hypot(position.z - point.z);
+        if distance.is_finite() && distance <= tolerance {
+            return Some((parameters, distance));
+        }
+    }
     let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?;
     let mut best = None;
     let mut best_distance = f64::INFINITY;
