@@ -74,7 +74,7 @@ pub(crate) fn decode(
         archive,
         "detail boundary",
     )?;
-    let geometry = crate::surfaces::read_nurbs_curve_2d(&mut boundary)?;
+    let geometry = crate::surfaces::read_nurbs_curve(&mut boundary, 1.0)?;
     boundary.skip_remaining()?;
     outer.skip(boundary_next - outer.position())?;
     let page_per_model_ratio = if minor >= 1 { outer.f64()? } else { 0.0 };
@@ -126,6 +126,23 @@ mod tests {
         bytes
     }
 
+    fn boundary_3d() -> Vec<u8> {
+        let mut bytes = vec![0x11];
+        for value in [3_i32, 0, 2, 2, 0, 0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend([0; 48]);
+        bytes.extend(2_i32.to_le_bytes());
+        bytes.extend(0.0_f64.to_le_bytes());
+        bytes.extend(1.0_f64.to_le_bytes());
+        bytes.extend(2_i32.to_le_bytes());
+        for value in [0.0_f64, 0.0, 7.0, 2.0, 0.0, 8.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.push(0);
+        bytes
+    }
+
     #[test]
     fn decodes_boundary_and_bounds_native_view_state() {
         let view = anonymous(2, &[7, 8, 9]);
@@ -162,5 +179,22 @@ mod tests {
 
         assert_eq!(detail.page_per_model_ratio, 0.0);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
+    }
+
+    #[test]
+    fn preserves_three_dimensional_boundary_poles() {
+        let view = anonymous(0, &[]);
+        let boundary = anonymous(0, &boundary_3d());
+        let mut content = view;
+        content.extend(boundary);
+        let bytes = anonymous(0, &content);
+
+        let detail =
+            decode(&bytes, 0..bytes.len(), ArchiveVersion::V5).expect("required invariant");
+        let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
+            panic!("detail boundary must be NURBS");
+        };
+        assert_eq!(boundary.control_points[0].z, 7.0);
+        assert_eq!(boundary.control_points[1].z, 8.0);
     }
 }

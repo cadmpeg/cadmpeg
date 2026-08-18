@@ -4400,10 +4400,14 @@ prefix remain bounded by the enclosing anonymous chunk.
 
 The child declarations independently bound extensible view state and boundary
 geometry. Each child reader consumes its known prefix and skips remaining bytes
-before that child's bounded end. The boundary NURBS curve uses the ordinary
-two-dimensional NURBS curve layout without a class wrapper. Its control points
-are page-layout coordinates in millimeters and are not multiplied by the model
-document scale. The page-per-model ratio is finite, nonnegative, and
+before that child's bounded end. The boundary uses the ordinary NURBS curve
+layout without a class wrapper. OpenNURBS writes and reads the member's
+positive source dimension and its corresponding control-point coordinates. The
+page-layout coordinates are the x and y control-point coordinates in
+millimeters, and are not multiplied by the model document scale. CADIR
+decision: typed detail admission accepts dimensions 2 and 3; a dimension-2
+pole receives a zero z coordinate in CADIR, and a dimension-3 pole retains its
+z coordinate. The page-per-model ratio is finite, nonnegative, and
 dimensionless; detail minor 0 defaults it to zero.
 
 CADIR creates one native `detail_view` feature and one linked neutral curve for
