@@ -421,6 +421,53 @@ fn decode_view_list_uses_form6_class_entry_and_visible_count() {
 }
 
 #[test]
+fn decode_external_reference_index_uses_counted_name_pointer_pairs() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "TARGET".into(),
+            status: "00010100",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 12,
+            label: "XREF".into(),
+            status: "00000200",
+            parameters: "402,1,6HREF001,1,1,5,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "ASSOC".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let index = native.arenas["associativities"]
+        .iter()
+        .find(|record| record.id() == "iges:structure:associativity#D3")
+        .unwrap();
+    let fields = index.fields();
+    assert_eq!(fields["declared_count"], 1);
+    assert_eq!(
+        fields["entries"][0]["symbolic_name"],
+        serde_json::json!([82, 69, 70, 48, 48, 49])
+    );
+    assert_eq!(fields["entries"][0]["entity"], "iges:entity:directory#1");
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn decode_general_note_count_stops_before_trailing_property_group() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
