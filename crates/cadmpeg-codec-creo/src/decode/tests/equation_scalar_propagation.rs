@@ -349,6 +349,25 @@ fn function_five_accepts_a_zero_selector_proved_by_scalar_equality() {
 }
 
 #[test]
+fn scalar_equality_propagation_preserves_a_conflicting_source() {
+    let definition = definition(
+        &equation_body(&[(1, 2, &[0, 1])]),
+        vec![row(6, 10, Some(f64::NAN)), row(6, 11, Some(2.0))],
+    );
+    let mut values = section_equation_scalar_seed_values(&definition);
+    assert_eq!(values.get(&(6, 10)), Some(&None));
+    assert_eq!(values.get(&(6, 11)), Some(&Some(2.0)));
+
+    assert!(propagate_section_equation_scalar_equality_values(
+        &definition,
+        &mut values,
+    ));
+    assert_eq!(values.get(&(6, 10)), Some(&None));
+    assert_eq!(values.get(&(6, 11)), Some(&None));
+    assert!(section_equation_scalar_equalities(&definition).is_empty());
+}
+
+#[test]
 fn dimension_equations_accept_scalar_values_proved_by_equality() {
     let mut coordinate_definition = definition(
         &equation_body(&[(1, 3, &[0, 1, 2]), (2, 2, &[2, 3])]),

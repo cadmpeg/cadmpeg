@@ -602,16 +602,20 @@ pub(crate) fn propagate_section_equation_scalar_equality_values(
                 conflicting = true;
                 break;
             }
-            let Some(Some(value)) = values.get(variable) else {
-                continue;
-            };
-            if !value.is_finite()
-                || component_value.is_some_and(|stored| !approximately_equal(stored, *value))
-            {
-                conflicting = true;
-                break;
+            match values.get(variable) {
+                Some(Some(value))
+                    if value.is_finite()
+                        && component_value
+                            .is_none_or(|stored| approximately_equal(stored, *value)) =>
+                {
+                    component_value = Some(*value);
+                }
+                Some(Some(_) | None) => {
+                    conflicting = true;
+                    break;
+                }
+                None => {}
             }
-            component_value = Some(*value);
         }
         if conflicting {
             for variable in component {
