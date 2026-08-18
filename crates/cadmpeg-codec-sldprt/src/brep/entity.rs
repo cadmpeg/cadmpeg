@@ -956,6 +956,16 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(disc1d_disc1b_disc19_disc13_disc11_disc04_face_root_body(
+            &by_attr,
+        ));
+    }
+    if out.is_empty() {
+        out.extend(disc19_disc1b_disc1d_disc11_disc13_disc04_face_root_body(
+            &by_attr,
+        ));
+    }
+    if out.is_empty() {
         out.extend(disc1d_disc15_disc1b_disc19_disc13_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -6676,6 +6686,58 @@ fn disc1d_disc15_disc1b_disc19_disc13_face_root_body(
             require_exact_use_population: true,
         },
         true,
+    )
+}
+
+fn disc1d_disc1b_disc19_disc13_disc11_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+        by_attr,
+        &[
+            (0x001d, 2),
+            (0x001b, 2),
+            (0x0019, 2),
+            (0x0013, 1),
+            (0x0011, 2),
+            (0x0004, 2),
+        ],
+        0x000f,
+        0x0015,
+        0x0017,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 3,
+            require_exact_use_population: true,
+        },
+        false,
+    )
+}
+
+fn disc19_disc1b_disc1d_disc11_disc13_disc04_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+        by_attr,
+        &[
+            (0x0019, 2),
+            (0x001b, 2),
+            (0x001d, 2),
+            (0x0011, 2),
+            (0x0013, 1),
+            (0x0004, 2),
+        ],
+        0x000f,
+        0x0015,
+        0x0017,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: true,
+        },
+        false,
     )
 }
 
