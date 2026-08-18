@@ -19,8 +19,9 @@ use super::equations_scalar::{
     append_section_equation_auxiliary_coordinate_constraints, merge_scalar_value_candidate,
     propagate_section_equation_scalar_equality_values, section_equation_auxiliary_constraints,
     section_equation_coordinate_equalities, section_equation_radial_constraints,
-    section_equation_scalar_seed_values, section_equation_scalar_values_from_coordinates,
-    SectionEquationAuxiliaryConstraints, SectionScalarVariable,
+    section_equation_radial_constraints_with_scalar_values, section_equation_scalar_seed_values,
+    section_equation_scalar_values_from_coordinates, SectionEquationAuxiliaryConstraints,
+    SectionScalarVariable,
 };
 use super::geometry::{saved_section_circle_values, saved_section_segment_point_coordinates};
 use super::radii::section_relation_length_dimension;
@@ -598,9 +599,12 @@ pub(crate) fn resolved_section_coordinates(
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
     );
-    for constraint in
-        section_equation_radial_constraints(definition, &solved_coordinates, &ambiguous_point_ids)
-    {
+    for constraint in section_equation_radial_constraints_with_scalar_values(
+        definition,
+        &solved_coordinates,
+        &ambiguous_point_ids,
+        &auxiliary_scalar_values,
+    ) {
         if let Some(offset) = constraint.offset() {
             equations.push(SectionCoordinateEquation::point_difference(
                 constraint.first,
@@ -1285,6 +1289,78 @@ mod tests {
         assert_eq!(
             resolved_section_points(&definition).get(&30),
             Some(&[2.0, 3.0])
+        );
+    }
+
+    #[test]
+    fn derived_axis_distance_feeds_equal_radius_polar_constraint() {
+        let row = |variable_type, key, value| FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven: false,
+            offset: 0,
+        };
+        let mut body = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
+            .to_vec();
+        let mut equation = |id, function, arguments: &[u8]| {
+            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(arguments);
+            body.extend_from_slice(b"\xf6\xe2");
+        };
+        equation(1, 0x2b, &[0, 1, 2, 3, 4, 5, 6, 7]);
+        equation(2, 0x02, &[6, 8]);
+        equation(3, 0x00, &[9, 10, 11, 12, 8, 13]);
+        let definition = FeatureDefinition {
+            id: 6,
+            owner_feature_id: None,
+            body,
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 14,
+                entity_ref: None,
+                rows: vec![
+                    row(1, 10, Some(0.0)),
+                    row(2, 10, Some(0.0)),
+                    row(1, 11, Some(4.0)),
+                    row(2, 11, Some(0.0)),
+                    row(4, 2, Some(0.0)),
+                    row(5, 0, Some(0.0)),
+                    row(0, 20, None),
+                    row(5, 1, Some(0.0)),
+                    row(0, 21, None),
+                    row(1, 30, Some(1.0)),
+                    row(2, 30, Some(1.0)),
+                    row(1, 40, None),
+                    row(2, 40, None),
+                    row(4, 3, Some(0.0)),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+        assert_eq!(
+            resolved_section_points(&definition).get(&40),
+            Some(&[5.0, 1.0])
         );
     }
 }

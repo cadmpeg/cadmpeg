@@ -952,10 +952,41 @@ pub(crate) fn section_equation_radial_constraints(
         .collect()
 }
 
+pub(crate) fn section_equation_radial_constraints_with_scalar_values(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+    scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
+) -> Vec<SectionRadialConstraint> {
+    section_equation_radial_constraint_rows_with_scalar_values(
+        definition,
+        coordinates,
+        ambiguous_point_ids,
+        Some(scalar_values),
+    )
+    .into_iter()
+    .filter(|constraint| constraint.active)
+    .collect()
+}
+
 pub(crate) fn section_equation_radial_constraint_rows(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionRadialConstraint> {
+    section_equation_radial_constraint_rows_with_scalar_values(
+        definition,
+        coordinates,
+        ambiguous_point_ids,
+        None,
+    )
+}
+
+fn section_equation_radial_constraint_rows_with_scalar_values(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+    scalar_values: Option<&BTreeMap<SectionScalarVariable, Option<f64>>>,
 ) -> Vec<SectionRadialConstraint> {
     let Some(variables) = definition
         .variables
@@ -1012,22 +1043,27 @@ pub(crate) fn section_equation_radial_constraint_rows(
             {
                 return None;
             }
-            let radius_equality = scalar_equality_values
-                .get(&(radius.variable_type, radius.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let mut radius_value = match reconcile_equation_value(radius.value, radius_equality).ok()? {
+            let scalar_value = |row: &crate::feature::FeatureVariableRow| {
+                let equality_value = scalar_equality_values
+                    .get(&(row.variable_type, row.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let resolved = reconcile_equation_value(row.value, equality_value).ok()?;
+                let Some(scalar_values) = scalar_values else {
+                    return Some(resolved);
+                };
+                let Some(Some(value)) = scalar_values.get(&(row.variable_type, row.key)) else {
+                    return Some(resolved);
+                };
+                reconcile_equation_value(resolved, Some(*value)).ok()
+            };
+            let mut radius_value = match scalar_value(radius)? {
                 Some(value) if value.is_finite() && value >= 0.0 => Some(value),
                 Some(_) => return None,
                 None => None,
             };
-            let angle_equality = scalar_equality_values
-                .get(&(angle.variable_type, angle.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let mut angle_value = match reconcile_equation_value(angle.value, angle_equality).ok()? {
+            let mut angle_value = match scalar_value(angle)? {
                 Some(value) if value.is_finite() => Some(value),
                 Some(_) => return None,
                 None => None,
