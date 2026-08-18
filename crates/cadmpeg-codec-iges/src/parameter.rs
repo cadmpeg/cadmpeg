@@ -313,6 +313,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// token `4 + N1`.
 /// Type 402 Form 12 puts the positive entry count `N` at index 1 and stores a
 /// name/pointer pair per entry, so its groups start at token `2 + 2*N`.
+/// Type 406 Form 12 puts positive `NP` at index 1 and stores `NP` external
+/// reference file-name strings, so its groups start at token `2 + NP`.
 /// Type 402 Form 13 fixes `ND` to one, puts the positive geometry count `NG` at
 /// index 2, and lists the dimension plus `NG` geometry pointers, so its groups
 /// start at token `4 + NG`.
@@ -380,6 +382,7 @@ pub(crate) fn entity_primary_end(
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record)),
         (406, 11) => Some(tabular_data_primary_end(record)),
+        (406, 12) => Some(external_reference_file_list_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
@@ -536,6 +539,16 @@ fn external_reference_index_primary_end(record: &ParameterRecord) -> usize {
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_mul(2))
         .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn external_reference_file_list_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_add(2))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }

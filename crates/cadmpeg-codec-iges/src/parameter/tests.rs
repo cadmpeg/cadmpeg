@@ -2158,6 +2158,178 @@ fn type406_form11_malformed_nested_counts_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type406_form12_entity_table_boundary_follows_name_count() {
+    let association = directory_target(1, 212);
+    let units = directory_target(3, 316);
+    let mut source = directory_target(5, 406);
+    source.form = 12;
+    let directory = BTreeMap::from([(1, &association), (3, &units), (5, &source)]);
+    let cases = [
+        (
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(1),
+                TokenValue::String(b"BASE.IGS".to_vec()),
+                TokenValue::Integer(1),
+                TokenValue::Integer(1),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+            ],
+            3,
+        ),
+        (
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(2),
+                TokenValue::String(b"BASE.IGS".to_vec()),
+                TokenValue::String(b"DETAIL.IGS".to_vec()),
+                TokenValue::Integer(1),
+                TokenValue::Integer(1),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+            ],
+            4,
+        ),
+    ];
+    for (values, expected_start) in cases {
+        let tokens = values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect::<Vec<_>>();
+        let record = ParameterRecord {
+            directory_sequence: 5,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            parameter_end: tokens.len(),
+            tokens,
+            comment: Vec::new(),
+        };
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Form 12 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.properties, vec![3]);
+    }
+}
+
+#[test]
+fn type406_form12_table_boundary_beats_generic_alternatives() {
+    let association = directory_target(1, 212);
+    let units = directory_target(3, 316);
+    let mut source = directory_target(5, 406);
+    source.form = 12;
+    let directory = BTreeMap::from([(1, &association), (3, &units), (5, &source)]);
+    let tokens = [
+        TokenValue::Integer(406),
+        TokenValue::Integer(2),
+        TokenValue::String(b"BASE.IGS".to_vec()),
+        TokenValue::Integer(2),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(0),
+    ]
+    .into_iter()
+    .map(|value| Token { value, span: 0..0 })
+    .collect::<Vec<_>>();
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        parameter_end: tokens.len(),
+        tokens,
+        comment: Vec::new(),
+    };
+    let generic_valid_candidate_count = structural_pointer_group_candidates(&record)
+        .iter()
+        .filter_map(|candidate| groups_for_candidate(&record, &directory, *candidate))
+        .filter(|groups| groups.fully_valid)
+        .count();
+    assert_eq!(generic_valid_candidate_count, 2);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Form 12 table boundary");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![1]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type406_form12_malformed_count_or_name_list_do_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let units = directory_target(3, 316);
+    let mut source = directory_target(5, 406);
+    source.form = 12;
+    let directory = BTreeMap::from([(1, &association), (3, &units), (5, &source)]);
+    let cases = [
+        vec![TokenValue::Integer(406)],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(0),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(-1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::String(b"1".to_vec()),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(2),
+            TokenValue::String(b"BASE.IGS".to_vec()),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(1),
+            TokenValue::String(b"BASE.IGS".to_vec()),
+            TokenValue::String(b"EXTRA.IGS".to_vec()),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(i64::MAX),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(0),
+        ],
+    ];
+    for values in cases {
+        let tokens = values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect::<Vec<_>>();
+        let record = ParameterRecord {
+            directory_sequence: 5,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            parameter_end: tokens.len(),
+            tokens,
+            comment: Vec::new(),
+        };
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type406_form27_entity_table_boundary_follows_np_and_value_pair_count() {
     let association = directory_target(1, 212);
     let units = directory_target(3, 316);
