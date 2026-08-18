@@ -1313,6 +1313,41 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
 }
 
 #[test]
+fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 320,
+                    form: 0,
+                    label: "BROKEN".into(),
+                    status: "00000200",
+                    parameters: "320,1,3HNET,1,3.,0,2HR1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 420,
+                    form: 0,
+                    label: "NETINST".into(),
+                    status: "00000000",
+                    parameters: "420,1,1,2,3,2,,,,2HU1,0,2,0,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+            == "IGES product occurrence root inference was suppressed because a definition member list is malformed"
+    }));
+}
+
+#[test]
 fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
     let result = IgesCodec
         .decode(

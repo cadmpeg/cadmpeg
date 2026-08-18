@@ -211,16 +211,6 @@ Type 402 Form 21 evidence: [IGES 5.3 §4.95](https://paulbourke.net/dataformats/
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-04. One malformed subfigure definition promotes its instances to assembly roots
-
-**Question.** How is a top-level product instance identified when a subfigure definition is malformed?
-
-**Known.** `native.rs:3438-3450` drops a complete Type 308 or Type 320 definition when one member fails integer parsing. `native.rs:3515-3519` then infers roots from instances not named by a surviving definition. The current code suppresses root inference when it records a malformed definition, but this is a project recovery policy.
-
-**Need.** We need a source rule for per-member recovery or for blocking root inference after a malformed definition. The decoder must not fabricate occurrences or silently discard valid independent roots.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `4080057b9` added suppression and a synthetic malformed fixture, but the rule that one malformed member invalidates every root inference is not established from the IGES specification or from witness files.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance
