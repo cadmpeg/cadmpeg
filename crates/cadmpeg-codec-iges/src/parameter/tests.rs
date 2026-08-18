@@ -62,6 +62,24 @@ fn directory_target(sequence: u32, entity_type: i64) -> DirectoryEntry {
     }
 }
 
+fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
+    ParameterRecord {
+        directory_sequence: sequence,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: values
+            .iter()
+            .copied()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: values.len(),
+        comment: Vec::new(),
+    }
+}
+
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
@@ -985,6 +1003,69 @@ fn type320_malformed_counts_do_not_enable_generic_recovery() {
         assert_eq!(analysis.valid_candidate_count, 0);
         assert!(analysis.groups.is_none());
     }
+}
+
+#[test]
+fn type180_forms_share_postorder_boundary() {
+    for form in [0_i64, 1] {
+        let mut source = directory_target(1, 180);
+        source.form = form;
+        let operand = directory_target(3, if form == 1 { 186 } else { 158 });
+        let association = directory_target(7, 212);
+        let directory = BTreeMap::from([(1, &source), (3, &operand), (7, &association)]);
+        let record = integer_parameter_record(1, &[180, 3, -3, -5, 1, 1, 7, 0]);
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis.groups.expect("Type 180 table boundary");
+        assert_eq!(groups.token_start, 5, "Form {form}");
+        assert_eq!(groups.associations, vec![7], "Form {form}");
+        assert!(groups.properties.is_empty(), "Form {form}");
+    }
+}
+
+#[test]
+fn type180_table_boundary_precedes_generic_candidate() {
+    let source = directory_target(1, 180);
+    let association = directory_target(7, 212);
+    let directory = BTreeMap::from([(1, &source), (7, &association)]);
+    let record = integer_parameter_record(1, &[180, 5, -3, -5, 1, -3, 1, 7, 0]);
+
+    let generic = structural_pointer_group_candidates(&record);
+    assert_eq!(generic.len(), 1);
+    assert_eq!(generic[0].token_start, 6);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
+fn type180_malformed_length_or_terms_do_not_enable_generic_recovery() {
+    let source = directory_target(1, 180);
+    let association = directory_target(7, 212);
+    let directory = BTreeMap::from([(1, &source), (7, &association)]);
+    for values in [
+        vec![180, 2, -3, -5, 1, 7, 0],
+        vec![180, 0, -3, -5, 1, 7, 0],
+        vec![180, -1, -3, -5, 1, 7, 0],
+        vec![180, 5, -3, -5, 1],
+    ] {
+        let record = integer_parameter_record(1, &values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "values={values:?}");
+        assert_eq!(analysis.valid_candidate_count, 0, "values={values:?}");
+        assert!(analysis.groups.is_none(), "values={values:?}");
+    }
+
+    let mut record = integer_parameter_record(1, &[180, 5, -3, -5, 1, 7, 0]);
+    record.tokens[1].value = TokenValue::Real(5.0);
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
 }
 
 #[test]

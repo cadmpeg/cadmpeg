@@ -370,6 +370,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
 /// segment after the first breakpoint, so its groups start at token
 /// `18 + 13*N`.
+/// Type 180 Forms 0 and 1 put the postorder length `N` at index 1 and store
+/// `N` operation-or-operand terms, so their groups start at token `N + 2`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
 /// layout returns the record end as a sentinel and never enables generic
 /// recovery.
@@ -407,6 +409,7 @@ pub(crate) fn entity_primary_end(
         (123, 0) => Some(4),
         (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
         (128, 0..=9) => Some(rational_bspline_surface_primary_end(record)),
+        (180, 0 | 1) => Some(boolean_tree_primary_end(record)),
         (141, 0) => Some(boundary_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),
@@ -420,6 +423,16 @@ fn counted_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(2))
+        .unwrap_or(record.tokens.len())
+}
+
+fn boolean_tree_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 2)
+        .and_then(|count| count.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
 
