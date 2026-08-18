@@ -30,6 +30,8 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+const TYPE212_NOTE_PARAMETERS: &str = "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;";
+
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
@@ -799,6 +801,215 @@ fn type402_zero_count_keeps_the_count_defined_boundary() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type308_count_driven_boundary_follows_member_list() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "TARGET".into(),
+                    status: "00010100",
+                    parameters: TYPE212_NOTE_PARAMETERS.into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "MEMBER3".into(),
+                    status: "00010100",
+                    parameters: TYPE212_NOTE_PARAMETERS.into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "MEMBER5".into(),
+                    status: "00010100",
+                    parameters: TYPE212_NOTE_PARAMETERS.into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 308,
+                    form: 0,
+                    label: "SUBFIG".into(),
+                    status: "00000200",
+                    parameters: "308,0,8HDEFNAME1,2,3,1,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let subfigure = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#7")
+        .unwrap();
+    assert_eq!(
+        subfigure.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    let fields = subfigure.fields();
+    let references = fields["references"].as_array().unwrap();
+    let mut parameter_indices = references
+        .iter()
+        .map(|reference| reference["parameter_index"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    parameter_indices.sort_unstable();
+    assert_eq!(parameter_indices, vec![4, 5, 7]);
+    assert_eq!(
+        references
+            .iter()
+            .find(|reference| reference["parameter_index"] == 7)
+            .unwrap()["raw_pointer"],
+        1
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type308_negative_count_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "TARGET".into(),
+                    status: "00010100",
+                    parameters: TYPE212_NOTE_PARAMETERS.into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 308,
+                    form: 0,
+                    label: "BADCOUNT".into(),
+                    status: "00000200",
+                    parameters: "308,0,8HDEFNAME1,-1,3,1,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let subfigure = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert!(subfigure.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(subfigure.fields()["references"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type308_wrong_typed_member_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "TARGET".into(),
+                    status: "00010100",
+                    parameters: TYPE212_NOTE_PARAMETERS.into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 308,
+                    form: 0,
+                    label: "BADMEM".into(),
+                    status: "00000200",
+                    parameters: "308,0,8HDEFNAME1,2,2,1,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let subfigure = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        subfigure.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(
+        subfigure.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|reference| reference["parameter_index"] == 7)
+            .unwrap()["raw_pointer"],
+        1
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type308_zero_count_keeps_the_count_defined_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "TARGET".into(),
+                    status: "00010100",
+                    parameters: TYPE212_NOTE_PARAMETERS.into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 308,
+                    form: 0,
+                    label: "EMPTY".into(),
+                    status: "00000200",
+                    parameters: "308,0,8HDEFNAME1,0,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let subfigure = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        subfigure.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(subfigure.fields()["references"][0]["parameter_index"], 5);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 #[test]
