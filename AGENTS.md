@@ -1,8 +1,7 @@
 - Write dense, direct technical prose. No hype, filler, rhetorical framing, or emphasis cadence. Use ASD-STE100.
 - Specs state the settled format model as fact. Never qualify it with corpus, sample, experiment, or provenance language.
-- Specs contain byte semantics and invariants only. Each normative clause is one of two kinds: a format rule with its standard citation, or a house rule marked `CADIR decision D-NN`. An unmarked, uncited rule is a defect. Put genuine unknowns in `docs/formats/*-open-items.md`.
-- Decision records live in `docs/formats/<codec>-decisions.md`, one `### D-NN.` record for each marked clause, with fields Question, Silence, Rule, Ground, Cost, Reopens, and optional From. The record holds the justification; the specification holds only the rule. The file holds only rules in force: a change that supersedes a decision rewrites or deletes its record in the same commit that changes the specification clause. Git history is the archive.
-- Open-items fields are Question, Known, Need, Conflict, and Note only. Delete a resolved item in the same change that writes the answer into the specification — as a cited format rule, or as a marked CADIR decision with its record. Do not keep a Resolved part. A decision may close an item by discharging its Need without answering its Question; a remainder that survives shrinks the item instead.
+- Specs contain byte semantics and invariants only. Put genuine unknowns in `docs/formats/*-open-items.md`.
+- Open-items fields are Question, Known, Need, Conflict, and Note only. Delete a resolved item in the same change that writes the answer into the specification. Do not keep a Resolved part.
 - Do not treat finite evidence as an unknown. Do not put research history, project status, implementation bugs, or export behavior in specs.
 - When moving code, update callers to import from the owning module. Do not retain old paths through top-level or orchestration re-exports.
 - Commit early, commit often.
