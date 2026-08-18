@@ -935,6 +935,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     }
     if out.is_empty() {
         out.extend(
+            disc1a_disc18_disc16_disc12_disc10_disc04_auxiliary_face_root_body(&by_attr, entities),
+        );
+    }
+    if out.is_empty() {
+        out.extend(
             disc21_disc1f_disc1b_disc19_disc15_disc13_disc11_disc04_face_root_body(&by_attr),
         );
     }
@@ -2332,6 +2337,47 @@ fn disc1e_direct_disc0e_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) ->
     }]
 }
 
+fn auxiliary_face_population_is_valid(entities: &[EntityRecord], face_use_disc: u16) -> bool {
+    let count = |disc: u16, flo: u8| {
+        entities
+            .iter()
+            .filter(|record| record.disc == disc && record.flo() == flo)
+            .count()
+    };
+    let faces = count(0x000e, 1);
+    let face_uses = count(face_use_disc, 1);
+    if faces == 0 || faces != face_uses || count(0x001c, 4) < faces {
+        return false;
+    }
+    let face_use_attrs = entities
+        .iter()
+        .filter(|record| record.disc == face_use_disc && record.flo() == 1)
+        .map(|record| record.attr)
+        .collect::<HashSet<_>>();
+    let use_node_attrs = entities
+        .iter()
+        .filter(|record| record.disc == 0x001c && record.flo() == 4)
+        .map(|record| record.attr)
+        .collect::<HashSet<_>>();
+    !entities
+        .iter()
+        .filter(|record| record.disc == 0x000e && record.flo() == 1)
+        .any(|face| {
+            face.refs
+                .get(1)
+                .is_none_or(|attr| !face_use_attrs.contains(attr))
+        })
+        && !entities
+            .iter()
+            .filter(|record| record.disc == face_use_disc && record.flo() == 1)
+            .any(|face_use| {
+                face_use
+                    .refs
+                    .get(1)
+                    .is_none_or(|attr| !use_node_attrs.contains(attr))
+            })
+}
+
 fn disc1e_direct_disc0e_auxiliary_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
     entities: &[EntityRecord],
@@ -2376,45 +2422,7 @@ fn disc1e_direct_disc0e_auxiliary_face_root_body(
     if terminal.refs.get(2).is_some_and(|attr| *attr > 1) {
         return Vec::new();
     }
-    let count = |disc: u16, flo: u8| {
-        entities
-            .iter()
-            .filter(|record| record.disc == disc && record.flo() == flo)
-            .count()
-    };
-    let faces = count(0x000e, 1);
-    let face_uses = count(0x0016, 1);
-    if faces == 0 || faces != face_uses || count(0x001c, 4) < faces {
-        return Vec::new();
-    }
-    let face_use_attrs = entities
-        .iter()
-        .filter(|record| record.disc == 0x0016 && record.flo() == 1)
-        .map(|record| record.attr)
-        .collect::<HashSet<_>>();
-    let use_node_attrs = entities
-        .iter()
-        .filter(|record| record.disc == 0x001c && record.flo() == 4)
-        .map(|record| record.attr)
-        .collect::<HashSet<_>>();
-    if entities
-        .iter()
-        .filter(|record| record.disc == 0x000e && record.flo() == 1)
-        .any(|face| {
-            face.refs
-                .get(1)
-                .is_none_or(|attr| !face_use_attrs.contains(attr))
-        })
-        || entities
-            .iter()
-            .filter(|record| record.disc == 0x0016 && record.flo() == 1)
-            .any(|face_use| {
-                face_use
-                    .refs
-                    .get(1)
-                    .is_none_or(|attr| !use_node_attrs.contains(attr))
-            })
-    {
+    if !auxiliary_face_population_is_valid(entities, 0x0016) {
         return Vec::new();
     }
     let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
@@ -2427,6 +2435,62 @@ fn disc1e_direct_disc0e_auxiliary_face_root_body(
         regions: vec![RegionRecord {
             attr: region.attr,
             offset: region.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
+}
+
+fn disc1a_disc18_disc16_disc12_disc10_disc04_auxiliary_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    entities: &[EntityRecord],
+) -> Vec<BodyRecord> {
+    let chain_shape = [
+        (0x001a, 2),
+        (0x0018, 2),
+        (0x0016, 2),
+        (0x0012, 2),
+        (0x0010, 1),
+        (0x0004, 2),
+    ];
+    let matching_chains = keyed_forward_chain_candidates(by_attr)
+        .into_iter()
+        .filter(|chain| {
+            chain.len() == chain_shape.len()
+                && chain
+                    .first()
+                    .is_some_and(|root| root.refs.get(1) == Some(&1))
+                && chain
+                    .last()
+                    .is_some_and(|terminal| terminal.refs.get(2) == Some(&1))
+                && chain_shape
+                    .iter()
+                    .copied()
+                    .zip(chain.iter())
+                    .all(|((disc, flo), record)| record.disc == disc && record.flo() == flo)
+        })
+        .collect::<Vec<_>>();
+    let [chain] = matching_chains.as_slice() else {
+        return Vec::new();
+    };
+    if !auxiliary_face_population_is_valid(entities, 0x0014) {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    let root = chain[0];
+    let shell = chain[2];
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
             shells: vec![ShellRecord {
                 attr: shell.attr,
                 offset: shell.offset,
