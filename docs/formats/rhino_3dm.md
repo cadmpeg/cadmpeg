@@ -5205,12 +5205,16 @@ Before writer version 1 December 2009, transparent RGB `(128,128,128)` is the
 obsolete default and the diffuse color replaces the complete transparent
 color.
 
-The legacy V4 material's inner anonymous chunk also has major 1 and a
-nonnegative minor. Minor 1 adds the obsolete library string; minor 2 adds
-material channels; minor 3 adds shareable and lighting flags; minor 4 adds
-Fresnel fields; minor 5 adds the RDK UUID; and minor 6 adds the diffuse-alpha
-switch. Material readers consume the known prefix and skip remaining bytes
-before the bounded end.
+For archive versions 4 and 50, the class-data payload begins with packed
+version `2.0`, followed by one anonymous long chunk. This outer version is a
+material-format discriminator; it has no fields beyond the child boundary.
+The child has major 1 and a nonnegative minor. Minor 1 adds the obsolete
+library string; minor 2 adds material channels; minor 3 adds shareable and
+lighting flags; minor 4 adds Fresnel fields; minor 5 adds the RDK UUID; and
+minor 6 adds the diffuse-alpha switch. The child owns its suffix boundary;
+material readers consume the known prefix and skip remaining bytes before that
+boundary. The outer packed version and the inner anonymous version are
+separate: the outer `2.0` byte is not the inner major-1 version.
 
 When component attributes omit the archive index, the in-memory index is
 `ON_UNSET_INT_INDEX` (`-2147483647`). Negative index `-1` identifies a live
