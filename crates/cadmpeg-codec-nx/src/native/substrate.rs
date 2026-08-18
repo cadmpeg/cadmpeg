@@ -398,6 +398,86 @@ mod tests {
     }
 
     #[test]
+    fn nurbs_cache_is_lazy_and_moved_after_preparation() {
+        let stream = |file_offset| {
+            let inflated = bspline_partition_stream();
+            crate::parasolid::Stream {
+                file_offset,
+                consumed: u64::try_from(inflated.len()).expect("test stream length fits u64"),
+                inflated,
+                kind: StreamKind::Partition,
+                schema: Some("schema".into()),
+            }
+        };
+        let scan = crate::decode::Scan {
+            container: crate::container::Container {
+                data: Vec::new().into(),
+                version: 0,
+                file_tag: 0,
+                footer_offset: 0,
+                header_entry_count: 0,
+                footer_entry_count: 0,
+                footer_fingerprint: [0; 4],
+                entries: Vec::new(),
+                indexed_section_layouts: std::sync::OnceLock::new(),
+                om_operation_label_layouts: std::sync::OnceLock::new(),
+                om_section_cache: std::sync::OnceLock::new(),
+            },
+            streams: vec![stream(0), stream(1)],
+        };
+
+        let mut parsed = ParsedStreams::parse(&scan);
+        assert!(parsed.nurbs.iter().all(Option::is_none));
+
+        let expected =
+            crate::nurbs::parse_with_graph(parsed.semantic_bytes(1), &parsed.nurbs_graphs[1]);
+        let actual = parsed.take_nurbs(1);
+        assert_eq!(actual.surfaces.len(), expected.surfaces.len());
+        assert_eq!(actual.curves.len(), expected.curves.len());
+        assert_eq!(actual.pcurves.len(), expected.pcurves.len());
+        assert!(!actual.surfaces.is_empty());
+        assert!(!actual.curves.is_empty());
+        assert_eq!(
+            actual
+                .surfaces
+                .iter()
+                .map(|surface| surface.pos)
+                .collect::<Vec<_>>(),
+            expected
+                .surfaces
+                .iter()
+                .map(|surface| surface.pos)
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            actual
+                .curves
+                .iter()
+                .map(|curve| curve.pos)
+                .collect::<Vec<_>>(),
+            expected
+                .curves
+                .iter()
+                .map(|curve| curve.pos)
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            actual
+                .pcurves
+                .iter()
+                .map(|pcurve| pcurve.pos)
+                .collect::<Vec<_>>(),
+            expected
+                .pcurves
+                .iter()
+                .map(|pcurve| pcurve.pos)
+                .collect::<Vec<_>>(),
+        );
+        assert!(parsed.nurbs[0].is_none());
+        assert!(parsed.nurbs[1].is_none());
+    }
+
+    #[test]
     fn segment_order_pairs_delta_across_intervening_non_history_stream() {
         use crate::parasolid::{Stream, StreamKind};
         use std::collections::BTreeSet;
