@@ -243,8 +243,8 @@ fn resolved_edge_group_with_transition_chain(
         let mut edges = first.transition_edge_candidates.clone();
         edges.sort_unstable();
         edges.dedup();
-        let is_complete_compact_deletion_set = allow_edge_treatment_transition_chain
-            && edges.len() == group.members.len()
+        let is_uniform_compact_transition_chain = allow_edge_treatment_transition_chain
+            && !edges.is_empty()
             && identity_operands.iter().all(|operand| {
                 if !operand.compact_layout {
                     return false;
@@ -254,7 +254,7 @@ fn resolved_edge_group_with_transition_chain(
                 candidate.dedup();
                 candidate == edges
             });
-        (!edges.is_empty() && is_complete_compact_deletion_set).then_some(edges)
+        is_uniform_compact_transition_chain.then_some(edges)
     });
     let recipe_supports_transition_chain = |chain: &[i64]| {
         let member_operands = group
@@ -279,6 +279,14 @@ fn resolved_edge_group_with_transition_chain(
         .as_deref()
         .or(identity_group_transition_slots.as_deref())
         .is_some_and(recipe_supports_transition_chain);
+    // A cardinality mismatch is a group-level transition proof, not a
+    // member-to-edge assignment. Recipe evidence must therefore cover the
+    // complete chain before it can replace the unresolved member identities.
+    let identity_group_transition_is_admitted = identity_group_transition_slots
+        .as_deref()
+        .is_some_and(|edges| {
+            edges.len() == group.members.len() || recipe_supports_transition_chain(edges)
+        });
     let identity_radius_slots = treatment_radius.and_then(|radius| {
         radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
     });
@@ -287,17 +295,17 @@ fn resolved_edge_group_with_transition_chain(
             && (operands.iter().all(|operand| {
                 operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
             }) || identity_transition_slots.is_some()
-                || identity_group_transition_slots.is_some()
+                || identity_group_transition_is_admitted
                 || identity_radius_slots.is_some())
     });
     let all_member_identities_are_lost =
         !group.members.is_empty() && group.lost_edge_references.len() == group.members.len();
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
-        !has_recipe_operands
-            || (has_complete_identity_selection
-                && (!has_concrete_recipe_evidence
-                    || identity_transition_is_supported
-                    || all_member_identities_are_lost))
+        has_complete_identity_selection
+            && (!has_recipe_operands
+                || !has_concrete_recipe_evidence
+                || identity_transition_is_supported
+                || all_member_identities_are_lost)
     }) {
         if identity_matches.is_empty() {
             return unmatched_selection(previous_state_id);

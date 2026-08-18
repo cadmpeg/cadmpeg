@@ -596,6 +596,47 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
         ),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
+
+    let recipe_operands = [
+        recipe_edge_operand(10, &[17, 18, 19], &[17]),
+        recipe_edge_operand(11, &[17, 18, 19], &[18]),
+    ];
+    let mut recipe_second_identity = identity(11, &[(17, 5.0), (18, 5.0), (19, 5.0)]);
+    recipe_second_identity.group_member_ordinal = 1;
+    let recipe_identities = [
+        identity(10, &[(17, 5.0), (18, 5.0), (19, 5.0)]),
+        recipe_second_identity,
+    ];
+    assert!(matches!(
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            &recipe_operands,
+            &recipe_identities,
+            Some(7),
+            &feature_id,
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+            if edges.len() == 3
+    ));
+
+    let incomplete_recipe_operands = [
+        recipe_edge_operand(10, &[17, 18], &[17]),
+        recipe_edge_operand(11, &[17, 18], &[18]),
+    ];
+    assert!(matches!(
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            &incomplete_recipe_operands,
+            &recipe_identities,
+            Some(7),
+            &feature_id,
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
 }
 
 #[test]
