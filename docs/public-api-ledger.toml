@@ -460,3 +460,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::{SketchSolverScalar,SketchConstraintDefinition::AngleDifference}"
 reason = "Creo direct Function 16 angle differences transfer as typed solver-scalar sketch relations"
+
+[[change]]
+commit = "3d9ad9160"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality"
+reason = "Creo direct Function 5 scalar equalities transfer as typed solver-scalar relations"
