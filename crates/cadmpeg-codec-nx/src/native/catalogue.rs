@@ -6,6 +6,8 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
@@ -695,12 +697,15 @@ fn note_parasolid_parasolid_attribute_class_uses(
     _catalogue_row: &CatalogueRow,
     a: &mut AnnotationBuilder,
 ) {
+    let mut entities_by_id: BTreeMap<&str, &ParasolidEntity51Record> = BTreeMap::new();
+    for entity in &m.parasolid.parasolid_entity_51_records {
+        // Preserve slice-find semantics if a malformed input repeats an id.
+        entities_by_id.entry(entity.id.as_str()).or_insert(entity);
+    }
     for class_use in &m.parasolid.parasolid_attribute_class_uses {
-        let entity = m
-            .parasolid
-            .parasolid_entity_51_records
-            .iter()
-            .find(|entity| entity.id == class_use.entity_51_record)
+        let entity = entities_by_id
+            .get(class_use.entity_51_record.as_str())
+            .copied()
             .expect("class use owns a type-81 entity");
         let source_stream = a.stream(format!("nx:s{}", class_use.stream_ordinal));
         a.note(&class_use.id, source_stream, entity.inflated_offset)
@@ -714,19 +719,28 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     _catalogue_row: &CatalogueRow,
     a: &mut AnnotationBuilder,
 ) {
+    let mut references_by_id: BTreeMap<&str, &ParasolidTopologyAttributeListReference> =
+        BTreeMap::new();
+    for reference in &m.parasolid.parasolid_topology_attribute_list_references {
+        // Preserve slice-find semantics if a malformed input repeats an id.
+        references_by_id
+            .entry(reference.id.as_str())
+            .or_insert(reference);
+    }
+    let mut entities_by_id: BTreeMap<&str, &ParasolidEntity51Record> = BTreeMap::new();
+    for entity in &m.parasolid.parasolid_entity_51_records {
+        // Preserve slice-find semantics if a malformed input repeats an id.
+        entities_by_id.entry(entity.id.as_str()).or_insert(entity);
+    }
     for class_use in &m.parasolid.parasolid_topology_attribute_class_uses {
-        let reference = m
-            .parasolid
-            .parasolid_topology_attribute_list_references
-            .iter()
-            .find(|reference| reference.id == class_use.topology_attribute_reference)
+        let reference = references_by_id
+            .get(class_use.topology_attribute_reference.as_str())
+            .copied()
             .expect("class use owns a topology attribute reference");
         let source_stream = a.stream(format!("nx:s{}", reference.stream_ordinal));
-        let entity = m
-            .parasolid
-            .parasolid_entity_51_records
-            .iter()
-            .find(|entity| entity.id == class_use.entity_51_record)
+        let entity = entities_by_id
+            .get(class_use.entity_51_record.as_str())
+            .copied()
             .expect("class use owns a type-81 entity");
         a.note(&class_use.id, source_stream, entity.inflated_offset)
             .tag("TOPOLOGY_ATTRIBUTE_CLASS_USE");
