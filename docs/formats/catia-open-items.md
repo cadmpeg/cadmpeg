@@ -76,6 +76,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know their roles to validate and write the body.
 
+### DI-07. Compound relation-program result binding
+
+**Question.** Which compound relation-program frame slot selects the `paramout` result entity?
+
+**Known.** `catia.md` §7.3 "A compact compound relation-program instance is" and `catia.md` §7.3 "A separator-form compound relation-program instance is" defines lead-`12` and lead-`54` relation-program frames. A complete typed expression and its source symbols give the ordered inputs. The program identity, repeated reference, lead-`12` `ref(h)` context identity, and lead-`54` trailing identity remain distinct incidences. A selected entity class does not by itself assign a result.
+
+**Need.** We must know the result slot to transfer a relation with an output.
+
+**Note.** Reopened by the 2026-08-18 closure audit; this is the second reopening. The 2026-08-10 audit reopened the item because commit `5f1d8cb2d` changed only this ledger. Commit `54a9ccb3a` closes it again and changes only `catia.md` and this ledger. It adds the framing-specific slot and `paramout` class rule to `catia.md` §7.3 "In both productions, `self` equals the paired entity identity." The rule it adds is the rule `native.rs` already applied, so the change writes decoder policy into the specification and gives it format authority. The commit body names synthetic lead-`12`, lead-`54`, and transfer tests as the cover. The earlier Note rejected that same evidence, because the tests are built from the rule they test. The specification clause carries no `CADIR decision` marker, and no cost is charged when the slot class is not `paramout`. Corpus byte records must show which slot carries the result before this item closes.
+
 ### DI-08. Legacy relation `body` selector
 
 **Question.** What identity space does a nonlocal `body` selector on a legacy typed relation use?
