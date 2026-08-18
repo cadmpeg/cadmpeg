@@ -406,6 +406,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// `LC` position numbers, so its groups start at token `13 + LC`.
 /// Type 414 Form 0 puts `LC` at index 9, followed by the fixed `DDF` flag and
 /// `LC` position numbers, so its groups start at token `11 + LC`.
+/// Type 408 Form 0 stores a definition pointer, three translation values, and
+/// an optional scale at indexes 1 through 5, so its groups start at token 6.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -477,6 +479,7 @@ pub(crate) fn entity_primary_end(
         (218, 1) => Some(fixed_primary_end(record, 4)),
         (412, 0) => Some(rectangular_array_primary_end(record)),
         (414, 0) => Some(circular_array_primary_end(record)),
+        (408, 0) => Some(fixed_primary_end(record, 6)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }

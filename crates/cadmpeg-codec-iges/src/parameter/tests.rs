@@ -6362,6 +6362,107 @@ fn type402_form13_malformed_fields_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type408_fixed_primary_boundary_follows_translation_and_scale() {
+    let association = directory_target(3, 212);
+    let source = directory_target(7, 408);
+    let definition = directory_target(9, 308);
+    let directory = BTreeMap::from([(3, &association), (7, &source), (9, &definition)]);
+    let record = token_parameter_record(
+        7,
+        vec![
+            408.into(),
+            9.into(),
+            1.into(),
+            2.into(),
+            3.into(),
+            TokenValue::Real(0.5),
+            1.into(),
+            3.into(),
+            0.into(),
+        ],
+    );
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 408 table boundary");
+    assert_eq!(groups.token_start, 6);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type408_fixed_primary_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 408);
+    let definition = directory_target(9, 308);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (7, &source),
+        (9, &definition),
+    ]);
+    let record = integer_parameter_record(7, &[408, 9, 1, 2, 3, 2, 1, 3, 6, 5, 5, 5, 5, 5, 5]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 408 table boundary");
+    assert_eq!(groups.token_start, 6);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5; 6]);
+}
+
+#[test]
+fn type408_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recover() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let source = directory_target(7, 408);
+    let definition = directory_target(9, 308);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (7, &source),
+        (9, &definition),
+    ]);
+    let wrong_fields = token_parameter_record(
+        7,
+        vec![
+            408.into(),
+            TokenValue::String(b"bad".to_vec()),
+            TokenValue::Real(2.0),
+            TokenValue::String(b"bad".to_vec()),
+            1.into(),
+            TokenValue::Omitted,
+            1.into(),
+            3.into(),
+            0.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(
+        analysis
+            .groups
+            .expect("Type 408 table boundary")
+            .token_start,
+        6
+    );
+
+    for values in [vec![408, 9, 1, 2, 3], vec![408, 9, 1, 2, 3, 1, 1, 3]] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(7, &values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type402_form18_entity_table_boundary_follows_all_class_lists() {
     for (counts, expected_start) in [
         (vec![0_i64; 6], 10_usize),
