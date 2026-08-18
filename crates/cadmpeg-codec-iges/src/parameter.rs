@@ -427,6 +427,33 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (302, 5001..=9999) => {
+            let Some(class_count) = record.count(1).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let mut cursor = 2_usize;
+            for _ in 0..class_count {
+                let Some(item_count_index) = cursor.checked_add(2) else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(item_count) = record.count(item_count_index).filter(|count| *count > 0)
+                else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(next) = item_count_index
+                    .checked_add(1)
+                    .and_then(|index| index.checked_add(item_count))
+                else {
+                    return ParameterBoundary::Invalid;
+                };
+                cursor = next;
+            }
+            if cursor <= record.tokens.len() {
+                ParameterBoundary::Known(cursor)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (406, 14) => {
             let Some(value_count) = record.count(1).filter(|count| *count > 0) else {
                 return ParameterBoundary::Invalid;
