@@ -856,6 +856,74 @@ fn decode_types_bounded_predefined_associativity_roles() {
 }
 
 #[test]
+fn decode_type402_form5_requires_nonnull_leader_pointer() {
+    let decode = |leader| {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[
+                    OwnedTestEntity {
+                        entity_type: 410,
+                        form: 0,
+                        label: "VIEW".into(),
+                        status: "00000000",
+                        parameters: "410,1,1,0,0,0,0,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 214,
+                        form: 1,
+                        label: "LEADER".into(),
+                        status: "00010100",
+                        parameters: "214,1,2,1,0,0,0,2,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 116,
+                        form: 0,
+                        label: "LABEL".into(),
+                        status: "00000000",
+                        parameters: "116,1,2,3,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 402,
+                        form: 5,
+                        label: "LABELDSP".into(),
+                        status: "00000200",
+                        parameters: format!("402,1,1,1,2,3,{leader},0,5;"),
+                    },
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+
+    let valid = decode(3);
+    let valid_label = valid.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|value| value.fields()["kind"] == "label_display")
+        .unwrap();
+    assert_eq!(
+        valid_label.fields()["placements"][0]["leader"],
+        "iges:entity:directory#3"
+    );
+    assert!(
+        valid.report().losses.is_empty(),
+        "{:#?}",
+        valid.report().losses
+    );
+
+    let invalid = decode(0);
+    let invalid_label = invalid.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|value| value.fields()["kind"] == "label_display")
+        .unwrap();
+    assert!(invalid_label.fields()["placements"][0]["leader"].is_null());
+    assert!(invalid
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
 fn decode_preserves_signal_and_piping_flow_class_order() {
     let result = IgesCodec
         .decode(

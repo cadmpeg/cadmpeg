@@ -357,16 +357,6 @@ Type 402 Form 21 evidence: [IGES 5.3 §4.95](https://paulbourke.net/dataformats/
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `d11d59213` reconciled local behavior but did not establish the format rule.
 
-### PS-06. Type 402 Form 5 requires a non-null leader pointer
-
-**Question.** May a Type 402 Form 5 label placement have no leader?
-
-**Known.** `structure.rs:573-594` requires a non-null leader pointer, while other nullable pointers accept zero explicitly. The current documentation states the leader requirement.
-
-**Need.** We need the nullability of the Form 5 leader field from the IGES specification or exporter-authored witness files.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `45cddb592` added the requirement and fixture coverage, but did not establish it from the specification or a witness file.
-
 ### PS-07. Type 406 Form 33 requires a file-global unique identity
 
 **Question.** Must a Type 406 Form 33 sheet identifier be unique across the file?
