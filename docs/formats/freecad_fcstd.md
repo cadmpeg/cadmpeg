@@ -786,6 +786,8 @@ exact runtime type token, ordered value XML, referenced side-entry names and byt
 span as native data. It has no neutral presentation meaning. This is a CADIR decision: only the
 exact presentation carriers named below populate neutral fields; all other registered or
 provider-defined properties remain native, even when their producer serializer is known.
+The exact forms above are the complete semantic GUI value grammar set; no other runtime type
+selects one of them. A provider-defined runtime type remains native opaque data.
 
 GUI link-family properties use the same direct carrier grammar as application link properties.
 Their value has one direct carrier, counted children are direct, and local link carriers are leaf

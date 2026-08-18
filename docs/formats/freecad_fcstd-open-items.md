@@ -13,62 +13,6 @@ Each item has an identifier and these fields:
 
 ## 2. GUI properties
 
-### GP-01. Other GUI property grammars
-
-**Question.** What value grammar remains for each non-link GUI property runtime type outside the
-settled scalar, quantity, in-memory list, and standard side-entry branches?
-
-**Known.** View-provider properties use the shared application property persistence path. Every
-GUI link-family runtime type uses the exact direct carrier grammar defined for application links,
-including the `PropertyPlacementLink` subtype. The GUI validator checks the carrier root,
-cardinality, attributes, and leaf rule before neutral transfer or native admission. Scalar and
-quantity GUI types use one direct `Bool`, `Integer`, or `Float` root; constraint subtypes admit the
-producer's optional numeric `min`, `max`, and `step` attributes. In-memory list GUI types use the
-producer's direct `BoolList`, `StringList`, `IntegerList`, `IntegerSet`, or `Map` roots, with exact
-counts, direct leaf values, and the producer's ordering rules. The current registry in
-`gui.rs:30-39` still classifies custom types and every non-Unknown `PropertyFamily` as registered.
-Standard side-entry GUI types use direct leaf `FloatList`, `VectorList`, `PlacementList`,
-`ColorList`, `MaterialList`, or `FileIncluded` roots. The five list/material roots use only the
-direct root's lowercase `file`; `FileIncluded` instead admits exactly one `file` or `data` attribute.
-The GUI validator rejects nested side-entry carriers and the mutual `file`/`data` form.
-GUI Mesh and Points properties use one direct `Mesh` or `Points` root, bind a non-empty side entry
-only from that root, and validate the optional Points `mtrx` as sixteen finite scalars.
-TechDraw `PropertyGeomFormatList` uses one direct `GeomFormatList` root with exact direct record
-count and typed `GeomFormat` records. Each record has direct integer `GeomIndex` and `Style`, finite
-`Weight`, non-empty `Color`, Boolean `Visible`, and an optional `LineNumber` or `ISOLineNumber`.
-TechDraw `PropertyCosmeticVertexList` uses one direct `CosmeticVertexList` root with exact direct
-record count and typed `CosmeticVertex` records. Each record has the producer's ordered direct
-vertex and cosmetic fields, finite point coordinates and size, integer and Boolean values, a
-hexadecimal color, and a UUID tag; `VertexTag` is an optional legacy field in its source position.
-TechDraw `PropertyCosmeticEdgeList` uses one direct `CosmeticEdgeList` root with exact direct record
-count and typed `CosmeticEdge` records. Each record has the producer's format fields, ten direct
-`BaseGeom` fields, and one of the Generic, Circle, or ArcOfCircle geometry branches selected by
-matching `GeometryType` and `GeomType` values. Branch counts, direct point records, finite scalars,
-integer and Boolean values, hexadecimal colors, and optional `LineNumber` are validated; the
-legacy `ISOLineNumber` spelling is not admitted for CosmeticEdge.
-TechDraw `PropertyCenterLineList` uses one direct `CenterLineList` root with exact direct record
-count and typed `CenterLine` records. Each record has the ordered endpoint, mode, shift, source
-collection, line-format, and geometry fields. `Faces`, `Edges`, and `CLPoints` have exact direct
-leaf counts; `Mode` and `Type` use their three producer enum values; the shared Generic, Circle,
-and ArcOfCircle branches require matching `GeometryType` and `GeomType`; and an optional
-`LineNumber` or legacy `ISOLineNumber` is accepted.
-
-**Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
-outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
-references before neutral transfer or native admission. Provider-defined types without a registered
-grammar must remain opaque.
-
-**Conflict.** A non-link GUI property such as `TechDraw::PropertyCenterLineList` can enter the
-registered path without a complete value-grammar check. Its arbitrary descendant values can then be
-retained as if the registry had established their grammar, while the neutral presentation path
-silently withholds or misreads the value.
-
-**Note.** Partly settled. Link-family, scalar/quantity, in-memory list, standard side-entry,
-Mesh/Points, and TechDraw GeomFormatList, CosmeticVertexList, CosmeticEdgeList, and
-CenterLineList value grammars are closed by the application writer inheritance rules and shared
-direct-root validation. The remaining question is limited to other custom runtime types and their
-custom side-entry forms.
-
 ### GP-02. Other GUI property semantics
 
 **Question.** What presentation semantics remain for each GUI property runtime type after the
