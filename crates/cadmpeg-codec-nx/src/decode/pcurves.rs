@@ -183,6 +183,13 @@ pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr
         .iter()
         .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
         .collect::<BTreeMap<_, _>>();
+    let pcurves_by_id = ir.model.pcurves.iter().enumerate().fold(
+        BTreeMap::<PcurveId, usize>::new(),
+        |mut indices, (index, pcurve)| {
+            indices.entry(pcurve.id.clone()).or_insert(index);
+            indices
+        },
+    );
     let mut incident_pcurves = BTreeMap::<(CurveId, SurfaceId), Vec<PcurveId>>::new();
     for coedge in &ir.model.coedges {
         let Some(curve) = edge_curves.get(&coedge.edge) else {
@@ -222,12 +229,10 @@ pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr
             else {
                 continue;
             };
-            let Some(carrier) = ir
-                .model
-                .pcurves
-                .iter()
-                .find(|carrier| &carrier.id == pcurve)
-            else {
+            let Some(carrier_index) = pcurves_by_id.get(pcurve) else {
+                continue;
+            };
+            let Some(carrier) = ir.model.pcurves.get(*carrier_index) else {
                 continue;
             };
             side.pcurve = Some(carrier.geometry.clone());
