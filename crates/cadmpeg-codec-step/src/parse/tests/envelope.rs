@@ -124,16 +124,6 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
         ),
         source(
             "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
-            "'AP242 { 3 0 }'",
-            "",
-        ),
-        source(
-            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
-            "'AP242 { 0 40 }'",
-            "",
-        ),
-        source(
-            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
             "'AP242 { 01 0 }'",
             "",
         ),
@@ -235,6 +225,49 @@ fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
         crate::reader::schema_identifiers(&exchange),
         ["AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"]
     );
+}
+
+#[test]
+fn parser_recovers_every_out_of_range_schema_object_identifier_component() {
+    // A component number outside the range that its position permits is
+    // recoverable, and the diagnostic names the first such component in source
+    // order. A root number is `0`, `1`, or `2`. Under root `0` or `1` the
+    // second number is in `0..=39`. Every other position permits every
+    // non-negative number. A root component with no known number constrains no
+    // second component.
+    let cases = [
+        ("AP242 { -1 40 }", Some("-1")),
+        ("AP242 { 1 40 }", Some("40")),
+        ("AP242 { 3 1 }", Some("3")),
+        ("AP242 { 0 40 }", Some("40")),
+        ("AP242 { iso 40 }", Some("40")),
+        ("AP242 { 1 part(214) }", Some("part(214)")),
+        ("AP242 { 1 39 }", None),
+        ("AP242 { 2 40 }", None),
+        ("AP242 { foo 40 }", None),
+        ("AP242 { 1 0 10303 442 3 1 4 }", None),
+        ("AP242", None),
+    ];
+    for (identifier, component) in cases {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('{identifier}'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        let (_, diagnostics) = crate::parse::parse(source.as_bytes())
+            .unwrap_or_else(|error| panic!("{identifier} is admissible: {error}"));
+        let expected = component.map_or_else(Vec::new, |component| {
+            vec![format!(
+                "FILE_SCHEMA identifier AP242 has an out-of-range object identifier component {component}; the object identifier is not admitted"
+            )]
+        });
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.message.clone())
+                .collect::<Vec<_>>(),
+            expected,
+            "{identifier}"
+        );
+    }
 }
 
 #[test]

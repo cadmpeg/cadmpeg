@@ -682,18 +682,31 @@ a non-negative decimal number, an ASN.1 identifier, or an identifier followed
 by parentheses containing a non-negative decimal number or identifier. A
 numeric component has no leading zero. An ASN.1 identifier starts with a
 lowercase ASCII letter, uses ASCII letters, digits, and hyphens, and has no
-trailing or consecutive hyphens. Numeric root components are `0`, `1`, or `2`;
-when the first numeric root is `0` or `1`, a numeric second component is in
-`0..=39`. CADIR decision: leading and trailing whitespace around an identifier
-is ignored for validation, matching, and uniqueness.
-CADIR decision: an object identifier component with a negative number is a
-recoverable defect. The header parse continues, and the header uses the schema
-name as it uses the name of a valid identifier. The object identifier is not
-admitted: it stays invalid for a DATA section schema name, for a
-`FILE_POPULATION` governing schema, and for the AP242 edition report. The
-decode reports one `metadata.schema-object-identifier-out-of-range` warning
-that names the schema and the component. Each other identifier defect refuses
-the exchange structure.
+trailing or consecutive hyphens. The root component number is `0`, `1`, or `2`.
+The ASN.1 identifiers `itu-t` and `ccitt` are root `0`, `iso` is root `1`, and
+`joint-iso-itu-t` and `joint-iso-ccitt` are root `2`. When the root number is
+`0` or `1`, a numeric second component is in `0..=39`. A root component that is
+another ASN.1 identifier has no known number; the root rule and the second
+component rule do not apply to it. CADIR decision: leading and trailing
+whitespace around an identifier is ignored for validation, matching, and
+uniqueness.
+CADIR decision: an object identifier component number outside the range that
+its position permits is a recoverable defect. The out-of-range numbers are a
+negative number in any position, a root component number that is not `0`, `1`,
+or `2`, and a second component number above `39` under root `0` or `1`. The
+header parse continues, and the header uses the schema name as it uses the name
+of a valid identifier. The object identifier is not admitted: it stays invalid
+for a DATA section schema name, for a `FILE_POPULATION` governing schema, and
+for the AP242 edition report. The decode reports one
+`metadata.schema-object-identifier-out-of-range` warning for each such
+identifier. The warning names the schema and the first component in source
+order whose number is out of range. Strict decode does not refuse this warning,
+because the decode transfers the source identifier text and reports the defect.
+An identifier that does not parse refuses the exchange structure. The
+unparseable forms are an invalid schema name, an unbalanced brace, fewer than
+two components, a numeric component with a leading zero, and a component that
+does not have one of the component forms. Each other identifier defect, such as
+a duplicate identifier, also refuses the exchange structure.
 The schema name in a parameterized DATA section compares with the
 identifier's schema-name portion when the identifier has an object identifier.
 The writer's supported schema identifiers are:

@@ -32,7 +32,7 @@ pub enum StepLossCode {
     OpaqueRecordPreserved,
     /// A metadata string field failed to decode.
     MetadataStringInvalid,
-    /// A `FILE_SCHEMA` object identifier has a negative component number.
+    /// A `FILE_SCHEMA` object identifier component number is out of range.
     SchemaObjectIdentifierOutOfRange,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
