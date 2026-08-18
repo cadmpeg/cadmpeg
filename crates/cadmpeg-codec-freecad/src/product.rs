@@ -355,15 +355,26 @@ pub(crate) fn transfer_neutral(
                 .unwrap_or_default();
             let bom_properties = ["Label2", "StockCode", "Vendor", "Manufacturer"]
                 .into_iter()
-                .filter_map(|name| scalar(owned, name).map(|value| (name.into(), value.into())))
+                .filter_map(|name| metadata_string(owned, name).map(|value| (name.into(), value)))
                 .collect();
+            let id_part_number = source_object.and_then(|object| {
+                matches!(
+                    object.type_name.as_str(),
+                    "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part"
+                )
+                .then(|| metadata_string(owned, "Id"))
+                .flatten()
+                .filter(|value| !value.is_empty())
+            });
             ProductDefinition {
                 id: definition_id(object),
                 kind,
                 source_name: source_object.map(|object| object.name.clone()),
-                label: scalar(owned, "Label").map(str::to_owned),
-                description: scalar(owned, "Description").map(str::to_owned),
-                part_number: scalar(owned, "PartNumber").map(str::to_owned),
+                label: metadata_string(owned, "Label"),
+                description: metadata_string(owned, "Description"),
+                part_number: metadata_string(owned, "PartNumber")
+                    .filter(|value| !value.is_empty())
+                    .or(id_part_number),
                 bom_properties,
                 bodies: bodies
                     .iter()
@@ -799,16 +810,25 @@ fn product_kind(kind: &str) -> Option<&'static str> {
     }
 }
 
-fn scalar<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a str> {
+fn metadata_string(properties: &[&PropertyRecord], name: &str) -> Option<String> {
     let property = properties.iter().find(|property| property.name == name)?;
-    property_scalar(property)
-}
-
-fn property_scalar(property: &PropertyRecord) -> Option<&str> {
-    property
-        .values
-        .iter()
-        .find_map(|value| value.attributes.get("value").map(String::as_str))
+    if property.type_name != "App::PropertyString" {
+        return None;
+    }
+    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    let root = document.root_element();
+    if !root.has_tag_name("Property") {
+        return None;
+    }
+    let mut values = root.children().filter(roxmltree::Node::is_element);
+    let value = values.next()?;
+    if values.next().is_some()
+        || !value.has_tag_name("String")
+        || value.children().any(|node| node.is_element())
+    {
+        return None;
+    }
+    value.attribute("value").map(str::to_owned)
 }
 
 fn parse_bool(value: &str) -> Option<bool> {

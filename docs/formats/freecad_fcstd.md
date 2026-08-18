@@ -408,6 +408,18 @@ every direct container membership, while neutral admission requires each member 
 distinct parent container. Overlapping parent containers are refused instead of selecting by source
 order. Product record identities are unique by object identity; duplicate records are invalid.
 
+Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one
+direct `String` value with a required `value` attribute and no nested element. `Label`, `Description`,
+and `PartNumber` supply the corresponding product-definition fields. `Label2`, `StockCode`, `Vendor`,
+and `Manufacturer` supply named BOM properties. `Label` may carry the additional `restore` attribute;
+it does not replace the `value` attribute. `Id` on the part runtimes is the built-in item
+part-number carrier. CADIR decision: `PartNumber` takes precedence; when that carrier is absent or
+invalid, `Id` supplies the part number for a part runtime. An `Id` carrier on another product runtime
+is native-only. An empty `PartNumber` or `Id` value leaves the neutral part-number field unset. A
+wrong runtime type, wrong root tag, missing or extra direct value, nested value, or missing `value`
+leaves the selected neutral field unset and retains the property natively. Duplicate property names
+within one owner are malformed.
+
 Named product carriers use the producer runtime type and value grammar. `Group` and `ElementList`
 are `App::PropertyLinkList` properties with one `LinkList` root; its `count` equals the number of
 ordered `Link` children. `LinkedObject` and `LinkCopyOnChangeSource` are `App::PropertyXLink`

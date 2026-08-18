@@ -577,29 +577,6 @@ refusal or loss.
 
 **Note.** New hostile-sweep finding.
 
-## 8. Product structure
-
-### PR-05. Product metadata value-root framing
-
-**Question.** Which direct value root and property carrier supply product labels, descriptions,
-part numbers, and BOM metadata?
-
-**Known.** Product identity transfer at `product.rs:356-366` reads named scalar properties through
-`property_scalar` at `product.rs:802-812`, which selects the first retained descendant carrying a
-`value` attribute. FreeCAD standard string properties write one direct `String` value. The
-application property registry requires an exact runtime type, direct root, canonical attribute,
-and cardinality.
-
-**Need.** Establish the runtime type, direct root, attribute, and duplicate-property rule for
-each product metadata carrier before projecting it into a definition or BOM field.
-
-**Conflict.** A nested parseable value or a duplicate named property can win by retained-property
-or value order and change a neutral label, description, part number, or BOM field. A wrong or
-malformed carrier is instead omitted silently, so product identity changes without native
-retention or a loss.
-
-**Note.** New hostile-sweep finding.
-
 ## 9. Assembly joints
 
 ### JN-05. Assembly joint value-root framing

@@ -188,6 +188,129 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
+fn projects_direct_string_metadata_and_part_number_precedence() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="App::Part" name="Explicit" id="1"/>
+ <Object type="App::Part" name="IdOnly" id="2"/>
+ <Object type="App::Part" name="EmptyId" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Explicit"><Properties Count="8">
+  <Property name="Label" type="App::PropertyString"><String value="Explicit label"/></Property>
+  <Property name="Label2" type="App::PropertyString"><String value="BOM description"/></Property>
+  <Property name="Id" type="App::PropertyString"><String value="ID-42"/></Property>
+  <Property name="Description" type="App::PropertyString"><String value="Explicit description"/></Property>
+  <Property name="PartNumber" type="App::PropertyString"><String value="PART-42"/></Property>
+  <Property name="StockCode" type="App::PropertyString"><String value="STOCK-42"/></Property>
+  <Property name="Vendor" type="App::PropertyString"><String value="Vendor 42"/></Property>
+  <Property name="Manufacturer" type="App::PropertyString"><String value="Maker 42"/></Property>
+ </Properties></Object>
+ <Object name="IdOnly"><Properties Count="1">
+  <Property name="Id" type="App::PropertyString"><String value="ID-ONLY-42"/></Property>
+ </Properties></Object>
+ <Object name="EmptyId"><Properties Count="1">
+  <Property name="Id" type="App::PropertyString"><String value=""/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("direct product metadata");
+    let definition = |name: &str| {
+        result
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.source_name.as_deref() == Some(name))
+            .expect("product definition")
+    };
+    let explicit = definition("Explicit");
+    assert_eq!(explicit.label.as_deref(), Some("Explicit label"));
+    assert_eq!(
+        explicit.description.as_deref(),
+        Some("Explicit description")
+    );
+    assert_eq!(explicit.part_number.as_deref(), Some("PART-42"));
+    assert_eq!(explicit.bom_properties.len(), 4);
+    assert_eq!(
+        explicit.bom_properties.get("Label2").map(String::as_str),
+        Some("BOM description")
+    );
+    assert_eq!(
+        explicit.bom_properties.get("StockCode").map(String::as_str),
+        Some("STOCK-42")
+    );
+    assert_eq!(
+        explicit.bom_properties.get("Vendor").map(String::as_str),
+        Some("Vendor 42")
+    );
+    assert_eq!(
+        explicit
+            .bom_properties
+            .get("Manufacturer")
+            .map(String::as_str),
+        Some("Maker 42")
+    );
+    assert_eq!(
+        definition("IdOnly").part_number.as_deref(),
+        Some("ID-ONLY-42")
+    );
+    assert_eq!(definition("EmptyId").part_number, None);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn retains_malformed_product_metadata_without_neutral_projection() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Part" name="Malformed" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Malformed"><Properties Count="5">
+ <Property name="Label" type="App::PropertyString"><Wrapper><String value="nested label"/></Wrapper></Property>
+ <Property name="Label2" type="App::PropertyString"><Wrapper><String value="nested BOM"/></Wrapper></Property>
+ <Property name="Description" type="App::PropertyString"><Wrapper><String value="nested description"/></Wrapper></Property>
+ <Property name="PartNumber" type="App::PropertyInteger"><Integer value="17"/></Property>
+ <Property name="Id" type="App::PropertyInteger"><Integer value="18"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("native malformed metadata");
+    let definition = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.source_name.as_deref() == Some("Malformed"))
+        .expect("malformed product definition");
+    assert_eq!(definition.label, None);
+    assert_eq!(definition.description, None);
+    assert_eq!(definition.part_number, None);
+    assert!(definition.bom_properties.is_empty());
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(properties.len(), 5);
+    assert!(properties.iter().any(|property| {
+        property.name == "Description" && property.raw_xml.contains("<Wrapper>")
+    }));
+    assert!(properties.iter().any(|property| {
+        property.name == "PartNumber" && property.type_name == "App::PropertyInteger"
+    }));
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn selects_the_active_link_placement_carrier() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">

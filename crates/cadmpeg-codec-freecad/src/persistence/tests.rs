@@ -94,6 +94,27 @@ fn rejects_duplicate_root_property_containers() {
 }
 
 #[test]
+fn rejects_duplicate_property_names_for_one_owner() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Part" name="Part"/></Objects>
+<ObjectData Count="1"><Object name="Part"><Properties Count="2">
+ <Property name="Label" type="App::PropertyString"><String value="one"/></Property>
+ <Property name="Label" type="App::PropertyString"><String value="two"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("duplicate object property names");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("duplicate property name Label")
+    ));
+}
+
+#[test]
 pub(crate) fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts() {
     let cases = [
         r#"<Document SchemaVersion="2"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
