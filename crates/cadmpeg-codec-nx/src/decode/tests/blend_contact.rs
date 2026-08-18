@@ -1051,6 +1051,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::topology::Edge;
 
     const OUTSIDE_BLEND_SECTION_DELTA: f64 = 1.0e-6;
+    const DIRECT_INVERSE_TOLERANCE: f64 = 1.0e-8;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let first = SurfaceId("synthetic:first-plane".into());
@@ -1226,6 +1227,26 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .expect("bounded source continuation admits the certified section point");
     assert!((continuation_parameters.u - expected.u).abs() < 1.0e-8);
     assert!((continuation_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs() < 1.0e-8);
+
+    let direct_geometry_budget =
+        WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let mut direct_contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
+    let direct_parameters =
+        crate::decode::blend::blend_surface_parameters_from_point_with_index_and_budget(
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            &surface,
+            outside_boundary_point,
+            None,
+            DIRECT_INVERSE_TOLERANCE,
+            &mut direct_contact_seeds,
+            &direct_geometry_budget,
+        )
+        .expect("direct blend inverse admits a certified continuation point");
+    assert!((direct_parameters.u - expected.u).abs() < DIRECT_INVERSE_TOLERANCE);
+    assert!(
+        (direct_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs()
+            < DIRECT_INVERSE_TOLERANCE
+    );
 
     let continued = crate::decode::blend_surface_parameters_for_fit(
         &ir,
