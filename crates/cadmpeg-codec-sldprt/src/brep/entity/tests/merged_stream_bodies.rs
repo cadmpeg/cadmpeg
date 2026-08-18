@@ -81,6 +81,50 @@ fn partition_chain_survives_prefixed_delta_updates() {
     assert!(body.refs.contains(&200) && body.refs.contains(&201));
 }
 
+#[test]
+fn delta_body_chain_uses_the_complete_site_population_for_face_binding() {
+    let partition = [
+        entity51(2, 11, 0x20, &[3, 1, 1, 1, 1, 1, 1]),
+        entity51(1, 90, 0x10, &[999, 1, 1, 1, 1, 1]),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let deltas = [
+        prefixed_entity51(2, 10, 0x22, &[3, 1, 11, 1, 1, 1]),
+        prefixed_entity51(2, 11, 0x28, &[3, 10, 12, 1, 1, 1]),
+        prefixed_entity51(2, 12, 0x20, &[3, 11, 13, 1, 1, 1]),
+        prefixed_entity51(1, 13, 0x04, &[3, 12, 14, 1, 1, 1]),
+        prefixed_entity51(2, 14, 0x1a, &[3, 13, 15, 1, 1, 1]),
+        prefixed_entity51(2, 15, 0x1e, &[3, 14, 1, 1, 1, 1]),
+        prefixed_entity51(1, 20, 0x10, &[100, 30, 1, 1, 1, 1]),
+        prefixed_entity51(1, 21, 0x10, &[101, 31, 1, 1, 1, 1]),
+        prefixed_entity51(1, 22, 0x10, &[100, 32, 1, 1, 1, 1]),
+        prefixed_entity51(1, 30, 0x26, &[100, 40, 1, 1, 1, 1]),
+        prefixed_entity51(1, 31, 0x26, &[101, 41, 1, 1, 1, 1]),
+        prefixed_entity51(1, 32, 0x26, &[100, 42, 1, 1, 1, 1]),
+        prefixed_entity51(4, 40, 0x2a, &[100, 1, 1, 1, 1, 1]),
+        prefixed_entity51(4, 41, 0x2a, &[101, 1, 1, 1, 1, 1]),
+        prefixed_entity51(4, 42, 0x2a, &[100, 1, 1, 1, 1, 1]),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    let (bodies, ambiguous) = scan_combined_bodies(&[
+        (&partition, TEST_SCHEMA, false),
+        (&deltas, TEST_SCHEMA, true),
+    ]);
+    assert_eq!(ambiguous, 0);
+    let [body] = bodies.as_slice() else {
+        panic!("one delta-selected body");
+    };
+    assert_eq!(body.attr, 10);
+    assert_eq!(body.regions[0].shells[0].attr, 13);
+    assert!(body.refs.contains(&90));
+    assert!(body.regions[0].shells[0].refs.contains(&90));
+}
+
 fn prefixed_entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
     let mut bytes = vec![0, 0x51];
     bytes.extend_from_slice(&flags.to_be_bytes());
