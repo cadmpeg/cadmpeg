@@ -152,10 +152,10 @@ pub(in super::super) fn section_point_locus(
                 })
             }),
     );
-    candidates
-        .into_iter()
-        .min_by_key(|(offset, _)| *offset)
-        .map(|(_, locus)| locus)
+    let [(_, locus)] = candidates.as_slice() else {
+        return None;
+    };
+    Some(locus.clone())
 }
 
 pub(in super::super) fn unique_circle_segment(
@@ -1253,6 +1253,18 @@ mod tests {
                 offset: 40,
             });
         assert_eq!(section_point_locus(&ambiguous, &sketch, 7), None);
+
+        ambiguous
+            .segments
+            .as_mut()
+            .expect("segments")
+            .point_rows
+            .push(crate::feature::FeaturePointSegment {
+                point_id: 0,
+                external_id: 33,
+                offset: 50,
+            });
+        assert_eq!(section_point_locus(&ambiguous, &sketch, 0), None);
     }
 
     #[test]

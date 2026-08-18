@@ -4591,30 +4591,31 @@ fn positional_skamp_item_array(
     row_separator.push(0xe2);
     let row_end = find_bytes(payload, &row_separator, start, end).unwrap_or(end);
     let candidate = (start..row_end).find_map(|array| {
-        (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-        let (count, after_count) = psb::compact_int(payload, array + 1);
-        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let (_, after_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
-        let table_class = payload.get(after_count..after_table_class)?;
-        expected_table_class
-            .is_none_or(|expected| expected == table_class)
-            .then_some(())?;
-        (payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2]))
-            .then_some(())?;
-        let row_class_start = after_table_class + 2;
-        (payload.get(row_class_start) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let (_, after_row_class) = psb::reference_id(payload, row_class_start + 1).ok()?;
-        let row_class = payload.get(row_class_start..after_row_class)?;
-        expected_row_class
-            .is_none_or(|expected| expected == row_class)
-            .then_some(())?;
-        Some((
-            count,
-            after_row_class,
-            table_class.to_vec(),
-            row_class.to_vec(),
-        ))
+        positional_skamp_item_array_candidate(
+            payload,
+            array,
+            row_end,
+            expected_table_class,
+            expected_row_class,
+        )
     })?;
+    let item_end =
+        positional_skamp_item_array_body_end(payload, candidate.1, candidate.0, &candidate.2, end)?;
+    if payload.get(item_end) == Some(&psb::token::ARRAY_OPEN)
+        && positional_skamp_item_array_candidate(
+            payload,
+            item_end,
+            row_end,
+            expected_table_class,
+            expected_row_class,
+        )
+        .is_some_and(|second| {
+            positional_skamp_item_array_body_end(payload, second.1, second.0, &second.2, end)
+                .is_some()
+        })
+    {
+        return None;
+    }
     positional_skamp_item_array_has_valid_boundary(
         payload,
         candidate.1,
@@ -4626,14 +4627,45 @@ fn positional_skamp_item_array(
     Some(candidate)
 }
 
-fn positional_skamp_item_array_has_valid_boundary(
+fn positional_skamp_item_array_candidate(
+    payload: &[u8],
+    array: usize,
+    end: usize,
+    expected_table_class: Option<&[u8]>,
+    expected_row_class: Option<&[u8]>,
+) -> Option<(u32, usize, Vec<u8>, Vec<u8>)> {
+    (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (count, after_count) = psb::compact_int(payload, array + 1);
+    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, after_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
+    let table_class = payload.get(after_count..after_table_class)?;
+    expected_table_class
+        .is_none_or(|expected| expected == table_class)
+        .then_some(())?;
+    (payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2])).then_some(())?;
+    let row_class_start = after_table_class + 2;
+    (payload.get(row_class_start) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, after_row_class) = psb::reference_id(payload, row_class_start + 1).ok()?;
+    (after_row_class <= end).then_some(())?;
+    let row_class = payload.get(row_class_start..after_row_class)?;
+    expected_row_class
+        .is_none_or(|expected| expected == row_class)
+        .then_some(())?;
+    Some((
+        count,
+        after_row_class,
+        table_class.to_vec(),
+        row_class.to_vec(),
+    ))
+}
+
+fn positional_skamp_item_array_body_end(
     payload: &[u8],
     mut cursor: usize,
     item_count: u32,
     item_table_class: &[u8],
-    outer_table_class: &[u8],
     end: usize,
-) -> Option<()> {
+) -> Option<usize> {
     let item_limit = usize::try_from(item_count).unwrap_or(usize::MAX);
     let mut items = 0;
     while items < item_limit {
@@ -4644,6 +4676,19 @@ fn positional_skamp_item_array_has_valid_boundary(
             cursor = consume_positional_separator(payload, cursor, end, item_table_class, &[0xf1])?;
         }
     }
+    Some(cursor)
+}
+
+fn positional_skamp_item_array_has_valid_boundary(
+    payload: &[u8],
+    mut cursor: usize,
+    item_count: u32,
+    item_table_class: &[u8],
+    outer_table_class: &[u8],
+    end: usize,
+) -> Option<()> {
+    cursor =
+        positional_skamp_item_array_body_end(payload, cursor, item_count, item_table_class, end)?;
 
     let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
     row_separator.push(0xf3);

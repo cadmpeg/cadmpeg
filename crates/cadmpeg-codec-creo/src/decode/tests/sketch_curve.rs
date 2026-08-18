@@ -363,6 +363,25 @@ fn dimension_identity_includes_its_feature_definition() {
             parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
         }
     );
+    let mut duplicate_circle_id = definition.clone();
+    duplicate_circle_id
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .circle_rows
+        .push(crate::feature::FeatureCircleSegment {
+            center_id: 8,
+            radius_ref: 0,
+            external_id: 42,
+            offset: 21,
+        });
+    let duplicate_constraints =
+        section_segment_radius_constraints(&duplicate_circle_id, &sketch_917);
+    assert_eq!(duplicate_constraints.len(), 2);
+    assert!(duplicate_constraints.iter().all(|(constraint, _)| matches!(
+        constraint.definition,
+        SketchConstraintDefinition::Native { .. }
+    )));
     definition
         .segments
         .as_mut()

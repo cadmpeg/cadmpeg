@@ -776,6 +776,18 @@ fn positional_skamp_table_rejects_ambiguous_nested_item_arrays() {
 }
 
 #[test]
+fn positional_skamp_table_rejects_multiple_matching_nested_item_arrays() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf8\x01\xf7\x62\xfb\xe2\xf7\x63\x07\x00\
+            \xf3\xf7\x58\xe2";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert!(skamps.is_empty());
+}
+
+#[test]
 fn positional_solver_tables_retain_complete_prefix_rows() {
     let skamps = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\

@@ -3911,23 +3911,15 @@
         [Some(0), Some(0), Some(0), Some(0)],
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
-    assert_eq!(
+    assert!(matches!(
         section_dimension_constraints(
             &separate_point_distance,
             &SketchId("creo:model:sketch#917".into())
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::HorizontalDistance {
-            first: SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:12".to_string()
-            )),
-            second: SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:15".to_string()
-            )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
-        }
-    );
+        SketchConstraintDefinition::Native { .. }
+    ));
     let mut coincident_point_keys = separate_point_distance.clone();
     coincident_point_keys
         .variables

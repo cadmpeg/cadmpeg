@@ -531,16 +531,20 @@ fn section_segment_radius_bindings(
         } else {
             format!("circle:offset:{}", segment.offset)
         };
-        let typed_circle = usize::try_from(segment.radius_ref)
-            .ok()
-            .and_then(|ordinal| {
-                resolved_feature_dimension_parameter(
-                    sketch,
-                    definition.dimensions.as_ref()?,
-                    ordinal,
-                )
-            })
-            .map(|(dimension, parameter)| (dimension.dimension_type, parameter));
+        let typed_circle = if unique_segment_ids.contains(&segment.external_id) {
+            usize::try_from(segment.radius_ref)
+                .ok()
+                .and_then(|ordinal| {
+                    resolved_feature_dimension_parameter(
+                        sketch,
+                        definition.dimensions.as_ref()?,
+                        ordinal,
+                    )
+                })
+                .map(|(dimension, parameter)| (dimension.dimension_type, parameter))
+        } else {
+            None
+        };
         bindings.push(SectionSegmentRadiusBinding {
             suffix,
             external_id: segment.external_id,
