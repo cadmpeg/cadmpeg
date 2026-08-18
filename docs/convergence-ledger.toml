@@ -34,7 +34,7 @@ bare_tolerance_literals = 708
 nonliteral_vec_repeat = 152
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 4724
+test_line_debt = 4722
 production_line_debt = 0
 
 [reasons]
