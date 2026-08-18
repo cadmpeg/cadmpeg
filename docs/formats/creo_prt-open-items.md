@@ -634,24 +634,6 @@ field declares the form, and counterbore is the only recognized stepped form.
 **Need.** We must know the declared form to separate a counterbore from a
 countersink and from other stepped forms, and to set the neutral hole kind.
 
-### SP-42. Nested item-array selection
-
-**Question.** Which stored field selects the nested item array of a positional
-`skamp_ptr` row when more than one array before the row separator matches the
-item-table and item-row classes?
-
-**Known.** `creo_prt.md` §8.2 "items. Exactly one matching nested item array
-must occur before the incidence" gives the uniqueness rule. `creo_prt.md` §8.2
-"rows replay the auxiliary body positionally" gives the retained item classes
-and the one permitted repeated class reference before the array opener.
-
-**Need.** We must know the selector to bind the incidence items to their row.
-
-**Conflict.** `positional_skamp_item_array` in
-`src/feature/definitions.rs:4593-4617` takes the matching array with the lowest
-byte offset. It does not reject a second matching array. The search window ends
-at the bounded definition when the row separator is absent.
-
 ### SP-43. Structural `e3` separator
 
 **Question.** What separates a structural `e3` that starts an `ent_tab` replay
@@ -669,62 +651,6 @@ a byte scan.
 `src/feature/definitions.rs:5449-5471` accepts each `e3` byte as a row start
 when the following identifier joins a generated segment and an `e2` byte occurs
 in the next 24 bytes. The specification does not give this window.
-
-### SP-44. Shared point-key carrier
-
-**Question.** Which field selects the carrier of a `var_arr` point key when
-more than one unique `segtab` entity has an endpoint or a center on that key?
-
-**Known.** `creo_prt.md` §5 "The two point identifiers denote endpoint or center
-loci owned by unique" gives that a point identifier denotes a locus of a unique
-`segtab` entity, and that a spanning segment is not necessary when each point
-has an incident unique entity.
-
-**Need.** We must know the selector to attach an equation constraint to the
-correct entity.
-
-**Note.** The specification does not give a rule for more than one carrier.
-`section_point_locus` in `src/decode/sketch_transfer/loci.rs:24-159` collects
-candidate loci from the ordinary, circle, point, centered-line, reference-line,
-and bounded-curve row families, and selects the candidate with the lowest row
-offset.
-
-### SP-45. Incidence family precedence
-
-**Question.** Can a type-5, type-7, or type-8 incidence establish the line
-family of its own operands, and does an established family replace the family
-of a decoded `segtab` row?
-
-**Known.** `creo_prt.md` §5 "A solver incidence entity identifier with no
-`segtab_ptr` or ordered" gives the line role of a two-line type-5, type-7, or
-type-8 incidence for a solver-only entity only.
-
-**Need.** We must know the scope of the rule to keep a decoded row family, and
-to reject an incidence that has no independent evidence.
-
-**Conflict.** `section_incidence_curve_family_evidence` in
-`src/decode/sketch_transfer/profiles.rs:459-478` records the line family for
-both operands of each type-5, type-7, and type-8 row that has two sense-zero
-items. `section_skamp_is_line` in `src/decode/sketch_transfer/loci.rs:654-676`
-uses that family for each entity, and before the family of a decoded `segtab`
-row.
-
-### SP-46. Circle dimension join identity
-
-**Question.** Does the circular-size dimension join apply to a `type=10`
-`segtab` circle row whose external identifier is not unique?
-
-**Known.** `creo_prt.md` §5 "The dimension join requires a complete dimension
-table and a unique type-10" gives that the join requires a unique type-10
-external identifier.
-
-**Need.** We must know the identity rule to keep a shared-identifier circle row
-as a native record.
-
-**Conflict.** `section_segment_radius_bindings` in
-`src/decode/sketch_transfer/constraints.rs:527-551` computes the typed circle
-dimension for each circle row. It uses identifier uniqueness only to select the
-neutral entity identifier.
 
 ### SP-47. Conflicting scalar sources
 

@@ -1740,6 +1740,8 @@ type-three selected dimension stores the radius. A type-four selected dimension
 stores the diameter, so half its positive value is the solved geometric radius.
 The dimension join requires a complete dimension table and a unique type-10
 external identifier; it does not require every declared `segtab` row to decode.
+When the type-10 external identifier is not unique, the circular-size relation
+remains native.
 The unique type-10 circle and selected dimension transfer as a neutral radius
 constraint for type three and a neutral diameter constraint for type four.
 Other dimension types do not define the circle size or a circular-size
@@ -1981,8 +1983,10 @@ A solver incidence entity identifier with no `segtab_ptr` or ordered
 saved-section definition is a solver-only section entity. It retains one
 construction-entity identity shared by every incidence in the sketch; its
 geometry remains native. A unique non-conflicting line role from a two-line
-type five, seven, or eight incidence retains the native line family. Sense `4`
-retains the native circular family independently of solver activity; a
+type five, seven, or eight incidence retains the native line family. This line
+evidence applies only to solver-only entities and does not replace the family
+of a decoded `segtab` row. Sense `4` retains the native circular family
+independently of solver activity; a
 two-circle type-six incidence supplies the same role while active. Sense `2` or
 `3` retains the native endpoint-bearing curve family; independent line evidence
 narrows that family to line, while circular evidence narrows it to arc.
@@ -2088,7 +2092,9 @@ The two point identifiers denote endpoint or center loci owned by unique
 `segtab` entities. An arc or circle center is a valid locus when its carrier
 external identifier is unique. A segment spanning the pair is not required
 when each point has an incident unique entity and the two solved points agree
-on exactly one coordinate. Equal `u` selects a vertical distance and equal
+on exactly one coordinate. When a point key has more than one incident unique
+carrier, its locus is ambiguous and the affected relation remains native.
+Equal `u` selects a vertical distance and equal
 `v` selects a horizontal distance. The selected `dimtab_ptr` row is the
 driving parameter independently of whether both point coordinates are
 evaluated.
@@ -3646,7 +3652,8 @@ same item-table and item-row classes across these rows. A repeated item-table
 class reference can immediately precede the array opener. The auxiliary frame
 does not replace or reorder `id`, `type`, `flags`, `status`, or the incidence
 items. Exactly one matching nested item array must occur before the incidence
-row separator. The final row may terminate at the end of the bounded
+row separator. A second matching array makes the positional row invalid; no
+selector chooses one array. The final row may terminate at the end of the bounded
 definition, at a named record, at a structurally complete following positional
 table header `f8 <count> f7 <class> fb e2 f7 <row-class>`, or at a positional
 table wrapper `f4 04|05 f7 <class>` followed by a complete array header `f8
