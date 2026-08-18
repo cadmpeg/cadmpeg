@@ -25,6 +25,7 @@ use crate::ids::{
 };
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::{
+    form_class_325_cage_entry as form_325_entry, form_class_325_cage_table as form_325,
     form_compact_one_cage_list as form_cage, form_legacy_one_cage_owner as legacy_form_cage,
     form_serializer_frame_132 as form_serializer,
 };
@@ -39,7 +40,7 @@ use crate::records::{
     DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -3897,6 +3898,60 @@ pub(crate) fn bind_form_cages(
                     })
             })
             .collect::<Vec<_>>();
+        if scope.class_tag == "325" {
+            if let Some(cage_objects) = form_class_325_cage_objects(
+                bytes,
+                &records,
+                scope.record_index,
+                &scope.reference_members,
+            ) {
+                let serializers = form_cage_serializers(bytes, &records);
+                let mut resolved = Vec::new();
+                let mut valid = true;
+                for object in cage_objects {
+                    let Some(surface) = form_class_325_cage_surface(bytes, &records, object) else {
+                        valid = false;
+                        break;
+                    };
+                    let Some(Some(entry_name)) = serializers.get(&surface) else {
+                        valid = false;
+                        break;
+                    };
+                    let mut matches = cages.iter().filter(|cage| {
+                        cage.source_object
+                            .as_ref()
+                            .and_then(|source| source.object_id.rsplit('/').next())
+                            == Some(entry_name.as_str())
+                    });
+                    let Some(cage) = matches.next() else {
+                        continue;
+                    };
+                    if matches.next().is_some() {
+                        valid = false;
+                        break;
+                    }
+                    resolved.push(cage.id.clone());
+                }
+                if valid
+                    && !resolved.is_empty()
+                    && resolved.iter().collect::<HashSet<_>>().len() == resolved.len()
+                {
+                    let feature_id = neutral_feature_id(scope);
+                    if let Some(feature) =
+                        features.iter_mut().find(|feature| feature.id == feature_id)
+                    {
+                        if matches!(
+                            &feature.definition,
+                            cadmpeg_ir::features::FeatureDefinition::Native { .. }
+                        ) {
+                            feature.definition =
+                                cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
+                        }
+                    }
+                }
+                continue;
+            }
+        }
         if scopes
             .iter()
             .filter(|candidate| candidate.kind == "Form")
@@ -4068,6 +4123,145 @@ fn legacy_form_owner_count(
         return None;
     };
     (bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)
+}
+
+fn form_class_325_cage_objects(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope_record_index: u32,
+    owner_record_indices: &[u32],
+) -> Option<Vec<u32>> {
+    const CAGE_COUNT: usize = 32;
+    const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
+
+    let frames = records.frames(scope_record_index).collect::<Vec<_>>();
+    let [(start, paired)] = frames.as_slice() else {
+        return None;
+    };
+    let start = *start;
+    if bytes.get(start + 4..start + 7) != Some(b"325")
+        || bytes.get(*paired + 4..*paired + 7) != Some(b"258")
+        || paired.checked_sub(start)? != form_325::LEN
+        || bytes.get(start + form_325::ZERO_RUN_9..start + form_325::LIST_MARKER)? != [0; 9]
+        || bytes.get(start + form_325::LIST_MARKER) != Some(&1)
+        || bytes.get(start + form_325::ZERO_RUN_5..start + form_325::OWNER_MARKER)? != [0; 5]
+        || bytes.get(start + form_325::OWNER_MARKER) != Some(&1)
+        || bytes.get(start + form_325::ZERO_RUN_2..start + form_325::CAGE_COUNT)? != [0; 2]
+    {
+        return None;
+    }
+    let owner_record = u32::try_from(View::u64_le_at(
+        bytes,
+        start + form_325::OWNER_RESULT_RECORD_INDEX,
+    )?)
+    .ok()?;
+    let [owner_at, ..] = records.offsets(owner_record) else {
+        return None;
+    };
+    if !owner_record_indices.contains(&owner_record)
+        || bytes.get(*owner_at + 4..*owner_at + 7) != Some(b"407")
+    {
+        return None;
+    }
+    let count = bounded_len(
+        u64::from(View::u32_le_at(bytes, start + form_325::CAGE_COUNT)?),
+        form_325_entry::LEN,
+        paired.checked_sub(start + form_325::CAGE_ENTRIES)?,
+    )?;
+    if count != CAGE_COUNT {
+        return None;
+    }
+    let mut objects = Vec::with_capacity(count);
+    let mut seen_type_discriminators = [false; CAGE_COUNT];
+    for ordinal in 0..count {
+        let entry = start
+            .checked_add(form_325::CAGE_ENTRIES)?
+            .checked_add(form_325_entry::LEN.checked_mul(ordinal)?)?;
+        if bytes.get(entry + form_325_entry::CAGE_OBJECT_MARKER) != Some(&1)
+            || bytes.get(
+                entry + form_325_entry::CAGE_OBJECT_ZERO
+                    ..entry + form_325_entry::TYPE_DISCRIMINATOR,
+            )? != [0, 0]
+            || bytes.get(entry + form_325_entry::COMPANION_MARKER) != Some(&1)
+            || bytes.get(entry + form_325_entry::COMPANION_ZERO..entry + form_325_entry::LEN)?
+                != [0, 0]
+        {
+            return None;
+        }
+        let type_discriminator = u32::try_from(View::u64_le_at(
+            bytes,
+            entry + form_325_entry::TYPE_DISCRIMINATOR,
+        )?)
+        .ok()?;
+        let type_slot =
+            usize::try_from(type_discriminator.checked_sub(TYPE_DISCRIMINATOR_FIRST)?).ok()?;
+        if type_slot >= CAGE_COUNT || seen_type_discriminators[type_slot] {
+            return None;
+        }
+        seen_type_discriminators[type_slot] = true;
+        let object = u32::try_from(View::u64_le_at(
+            bytes,
+            entry + form_325_entry::CAGE_OBJECT_RECORD_INDEX,
+        )?)
+        .ok()?;
+        let companion = u32::try_from(View::u64_le_at(
+            bytes,
+            entry + form_325_entry::COMPANION_RECORD_INDEX,
+        )?)
+        .ok()?;
+        let object_frames = records
+            .frames(object)
+            .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"))
+            .collect::<Vec<_>>();
+        let [(object_at, _)] = object_frames.as_slice() else {
+            return None;
+        };
+        let [companion_at, ..] = records.offsets(companion) else {
+            return None;
+        };
+        if bytes.get(*object_at + 4..*object_at + 7) != Some(b"289")
+            || bytes.get(*companion_at + 4..*companion_at + 7) != Some(b"273")
+        {
+            return None;
+        }
+        objects.push(object);
+    }
+    Some(objects)
+}
+
+fn form_class_325_cage_surface(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    object_record: u32,
+) -> Option<u32> {
+    let frames = records
+        .frames(object_record)
+        .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"))
+        .collect::<Vec<_>>();
+    let [(start, paired)] = frames.as_slice() else {
+        return None;
+    };
+    let start = *start;
+    if bytes.get(start + 4..start + 7) != Some(b"289") {
+        return None;
+    }
+    let mut surfaces = Vec::new();
+    for at in start.checked_add(11)?..*paired {
+        if bytes.get(at) != Some(&1) {
+            continue;
+        }
+        let target = View::u32_le_at(bytes, at + 1)?;
+        let [target_at] = records.offsets(target) else {
+            continue;
+        };
+        if bytes.get(target_at + 4..target_at + 7) == Some(b"310") {
+            surfaces.push(target);
+        }
+    }
+    let [surface] = surfaces.as_slice() else {
+        return None;
+    };
+    Some(*surface)
 }
 
 fn form_cage_objects(

@@ -4895,6 +4895,146 @@ size = 51
 note = "The compact-form tail is retained with the native record; no semantic field is assigned."
 
 [[record]]
+name = "form_class_325_cage_table"
+kind = "byte"
+section = "1.1.1"
+anchor = "A class-325 Form cage table is 1850 bytes from its indexed header to its class-258 paired header and carries 32 entries."
+size = 1850
+note = "Offsets are relative to the class-325 Form primary indexed header. The 32-entry run starts at offset 41; each entry is 30 bytes. The class-325 frame length is 890 plus 30 times its cage count."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offset 11"
+
+[[record.field]]
+name = "list_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "zero_run_5"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "five zero bytes"
+
+[[record.field]]
+name = "owner_marker"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "a marked u64 result-record reference at offset 26"
+value = 1
+
+[[record.field]]
+name = "owner_result_record_index"
+offset = 27
+type = "u64"
+source = "spec"
+anchor = "a marked u64 result-record reference at offset 26"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 35
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "cage_count"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "the u32 cage count at offset 37"
+value = 32
+
+[[record.field]]
+name = "cage_entries"
+offset = 41
+type = "bytes[960]"
+source = "spec"
+anchor = "The entries start at offset 41 and repeat every 30 bytes."
+
+[[record.gap]]
+offset = 1001
+size = 849
+note = "The fixed class-325 tail follows the 32-entry cage run."
+
+[[record]]
+name = "form_class_325_cage_entry"
+kind = "byte"
+section = "1.1.1"
+anchor = "Each class-325 Form cage entry is 30 bytes."
+size = 30
+note = "Offsets are relative to one entry's base; the entry repeats every 30 bytes from class-325 offset 41."
+
+[[record.field]]
+name = "cage_object_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "a marked u64 class-289 cage-object reference"
+value = 1
+
+[[record.field]]
+name = "cage_object_record_index"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a marked u64 class-289 cage-object reference"
+
+[[record.field]]
+name = "cage_object_zero"
+offset = 9
+type = "u16"
+source = "spec"
+anchor = "`u16 0`"
+value = 0
+
+[[record.field]]
+name = "type_discriminator"
+offset = 11
+type = "u64"
+source = "spec"
+anchor = "a u64 type discriminator"
+
+[[record.field]]
+name = "companion_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a marked u64 class-273 companion reference"
+value = 1
+
+[[record.field]]
+name = "companion_record_index"
+offset = 20
+type = "u64"
+source = "spec"
+anchor = "a marked u64 class-273 companion reference"
+
+[[record.field]]
+name = "companion_zero"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "`u16 0`"
+value = 0
+
+[[record]]
 name = "form_serializer_frame_132"
 kind = "byte"
 section = "1.1.1"

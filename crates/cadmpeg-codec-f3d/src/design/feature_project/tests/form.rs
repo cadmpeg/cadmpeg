@@ -145,6 +145,78 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
 }
 
 #[test]
+fn reads_class_325_cage_table_entries() {
+    let scope_record = 309;
+    let owner_record = 315;
+    let mut table = indexed_frame(b"325", scope_record, 1850);
+    table[20] = 1;
+    table[26] = 1;
+    table[27..35].copy_from_slice(&(owner_record as u64).to_le_bytes());
+    table[37..41].copy_from_slice(&32u32.to_le_bytes());
+    let mut object_records = Vec::new();
+    for ordinal in 0..32u32 {
+        let object_record = 1_000 + ordinal * 2;
+        let companion_record = 2_000 + ordinal * 2;
+        let entry = 41 + ordinal as usize * 30;
+        table[entry] = 1;
+        table[entry + 1..entry + 9].copy_from_slice(&(object_record as u64).to_le_bytes());
+        table[entry + 11..entry + 19].copy_from_slice(&(307u64 + ordinal as u64).to_le_bytes());
+        table[entry + 19] = 1;
+        table[entry + 20..entry + 28].copy_from_slice(&(companion_record as u64).to_le_bytes());
+        object_records.extend([
+            indexed_frame(b"289", object_record, 15),
+            indexed_frame(b"258", object_record, 15),
+            indexed_frame(b"273", companion_record, 15),
+        ]);
+    }
+    let bytes = [
+        table,
+        indexed_frame(b"258", scope_record, 15),
+        indexed_frame(b"407", owner_record, 15),
+        object_records.concat(),
+    ]
+    .concat();
+    assert_eq!(
+        super::form_class_325_cage_objects(
+            &bytes,
+            &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+            scope_record,
+            &[owner_record],
+        ),
+        Some((0..32u32).map(|ordinal| 1_000 + ordinal * 2).collect())
+    );
+    let mut duplicate_discriminator = bytes.clone();
+    duplicate_discriminator[41 + 30 + 11..41 + 30 + 19].copy_from_slice(&307u64.to_le_bytes());
+    assert_eq!(
+        super::form_class_325_cage_objects(
+            &duplicate_discriminator,
+            &crate::design::decode::sketch::IndexedRecordOffsets::build(&duplicate_discriminator),
+            scope_record,
+            &[owner_record],
+        ),
+        None
+    );
+}
+
+#[test]
+fn resolves_class_325_cage_surface_from_unique_class_310_reference() {
+    let mut object = indexed_frame(b"289", 1_000, 80);
+    object[20] = 1;
+    object[21..25].copy_from_slice(&700u32.to_le_bytes());
+    let paired = indexed_frame(b"258", 1_000, 15);
+    let surface = indexed_frame(b"310", 700, 15);
+    let bytes = [object, paired, surface].concat();
+    assert_eq!(
+        super::form_class_325_cage_surface(
+            &bytes,
+            &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+            1_000,
+        ),
+        Some(700)
+    );
+}
+
+#[test]
 fn reads_compact_form_one_cage_envelope() {
     let mut list = indexed_frame(b"355", 205, 100);
     list[21] = 1;

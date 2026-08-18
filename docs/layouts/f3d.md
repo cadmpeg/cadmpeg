@@ -1455,6 +1455,44 @@ Unstated regions:
 
 - `49..100` (51 B): The compact-form tail is retained with the native record; no semantic field is assigned.
 
+## `form_class_325_cage_table`
+
+Spec §1.1.1 · layout: byte offsets · size: 1850 B
+
+Offsets are relative to the class-325 Form primary indexed header. The 32-entry run starts at offset 41; each entry is 30 bytes. The class-325 frame length is 890 plus 30 times its cage count.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offset 11 |
+| 20 | 1 | `list_marker` | `u8` | little | spec | `u8 1` at offset 20 · value `1` |
+| 21 | 5 | `zero_run_5` | `bytes[5]` | little | spec | five zero bytes |
+| 26 | 1 | `owner_marker` | `u8` | little | spec | a marked u64 result-record reference at offset 26 · value `1` |
+| 27 | 8 | `owner_result_record_index` | `u64` | little | spec | a marked u64 result-record reference at offset 26 |
+| 35 | 2 | `zero_run_2` | `bytes[2]` | little | spec | two zero bytes |
+| 37 | 4 | `cage_count` | `u32` | little | spec | the u32 cage count at offset 37 · value `32` |
+| 41 | 960 | `cage_entries` | `bytes[960]` | little | spec | The entries start at offset 41 and repeat every 30 bytes. |
+
+Unstated regions:
+
+- `1001..1850` (849 B): The fixed class-325 tail follows the 32-entry cage run.
+
+## `form_class_325_cage_entry`
+
+Spec §1.1.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to one entry's base; the entry repeats every 30 bytes from class-325 offset 41.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `cage_object_marker` | `u8` | little | spec | a marked u64 class-289 cage-object reference · value `1` |
+| 1 | 8 | `cage_object_record_index` | `u64` | little | spec | a marked u64 class-289 cage-object reference |
+| 9 | 2 | `cage_object_zero` | `u16` | little | spec | `u16 0` · value `0` |
+| 11 | 8 | `type_discriminator` | `u64` | little | spec | a u64 type discriminator |
+| 19 | 1 | `companion_marker` | `u8` | little | spec | a marked u64 class-273 companion reference · value `1` |
+| 20 | 8 | `companion_record_index` | `u64` | little | spec | a marked u64 class-273 companion reference |
+| 28 | 2 | `companion_zero` | `u16` | little | spec | `u16 0` · value `0` |
+
 ## `form_serializer_frame_132`
 
 Spec §1.1.1 · layout: byte offsets · size: 132 B

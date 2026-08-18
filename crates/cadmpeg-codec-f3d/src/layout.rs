@@ -2122,6 +2122,76 @@ pub(crate) mod form_compact_one_cage_list {
     pub(crate) const MEMBER_FLAGS: usize = 47;
 }
 
+/// Byte offsets for the `form_class_325_cage_table` record.
+///
+/// Spec §1.1.1. Record length 1850 B.
+///
+/// ```text
+/// Offsets are relative to the class-325 Form primary indexed header. The 32-entry run starts at offset 41; each entry is 30 bytes. The class-325 frame length is 890 plus 30 times its cage count.
+/// ```
+pub(crate) mod form_class_325_cage_table {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 1850;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §1.1.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `list_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const LIST_MARKER: usize = 20;
+    /// Stated value of `list_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const LIST_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_5: usize = 21;
+    /// Offset of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER: usize = 26;
+    /// Stated value of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
+    /// Offset of `owner_result_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const OWNER_RESULT_RECORD_INDEX: usize = 27;
+    /// Offset of `zero_run_2` (`bytes[2]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_2: usize = 35;
+    /// Offset of `cage_count` (`u32`, little-endian). Spec §1.1.1.
+    pub(crate) const CAGE_COUNT: usize = 37;
+    /// Stated value of `cage_count` (`u32`). Spec §1.1.1.
+    pub(crate) const CAGE_COUNT_VALUE: u32 = 0x0000_0020;
+    /// Offset of `cage_entries` (`bytes[960]`). Spec §1.1.1.
+    pub(crate) const CAGE_ENTRIES: usize = 41;
+}
+
+/// Byte offsets for the `form_class_325_cage_entry` record.
+///
+/// Spec §1.1.1. Record length 30 B.
+///
+/// ```text
+/// Offsets are relative to one entry's base; the entry repeats every 30 bytes from class-325 offset 41.
+/// ```
+pub(crate) mod form_class_325_cage_entry {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `cage_object_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const CAGE_OBJECT_MARKER: usize = 0;
+    /// Stated value of `cage_object_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const CAGE_OBJECT_MARKER_VALUE: u8 = 1;
+    /// Offset of `cage_object_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const CAGE_OBJECT_RECORD_INDEX: usize = 1;
+    /// Offset of `cage_object_zero` (`u16`, little-endian). Spec §1.1.1.
+    pub(crate) const CAGE_OBJECT_ZERO: usize = 9;
+    /// Stated value of `cage_object_zero` (`u16`). Spec §1.1.1.
+    pub(crate) const CAGE_OBJECT_ZERO_VALUE: u16 = 0x0000;
+    /// Offset of `type_discriminator` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const TYPE_DISCRIMINATOR: usize = 11;
+    /// Offset of `companion_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const COMPANION_MARKER: usize = 19;
+    /// Stated value of `companion_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const COMPANION_MARKER_VALUE: u8 = 1;
+    /// Offset of `companion_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const COMPANION_RECORD_INDEX: usize = 20;
+    /// Offset of `companion_zero` (`u16`, little-endian). Spec §1.1.1.
+    pub(crate) const COMPANION_ZERO: usize = 28;
+    /// Stated value of `companion_zero` (`u16`). Spec §1.1.1.
+    pub(crate) const COMPANION_ZERO_VALUE: u16 = 0x0000;
+}
+
 /// Byte offsets for the `form_serializer_frame_132` record.
 ///
 /// Spec §1.1.1. Record length 132 B.
