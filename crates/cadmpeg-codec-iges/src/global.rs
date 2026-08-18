@@ -80,6 +80,8 @@ fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
 }
 
+const SENDER_PRODUCT_FIELD: usize = 2;
+
 fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize)>, CodecError> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
@@ -298,9 +300,14 @@ impl Global {
         }
     }
 
-    fn string_field(&self, index: usize, name: &str, has_default: bool) -> Result<(), CodecError> {
+    fn string_field(
+        &self,
+        index: usize,
+        name: &str,
+        allow_omitted: bool,
+    ) -> Result<(), CodecError> {
         match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted if has_default => Ok(()),
+            Value::Omitted if allow_omitted => Ok(()),
             Value::Omitted => Err(malformed(format!(
                 "field {} ({name}) has no value",
                 index + 1
@@ -313,14 +320,14 @@ impl Global {
         }
     }
 
-    fn date_field(&self, index: usize, name: &str, has_default: bool) -> Result<(), CodecError> {
+    fn date_field(&self, index: usize, name: &str, allow_omitted: bool) -> Result<(), CodecError> {
         match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted if has_default => Ok(()),
+            Value::Omitted if allow_omitted => Ok(()),
             Value::Omitted => Err(malformed(format!(
                 "field {} ({name}) has no value",
                 index + 1
             ))),
-            Value::String(value) if has_default && value.is_empty() => Ok(()),
+            Value::String(value) if allow_omitted && value.is_empty() => Ok(()),
             Value::String(value) if date_value_is_valid(value) => Ok(()),
             Value::String(_) => Err(malformed(format!(
                 "field {} ({name}) is not a valid timestamp",
@@ -343,7 +350,7 @@ impl Global {
             (4, "native system ID"),
             (5, "preprocessor version"),
         ] {
-            self.string_field(index, name, false)?;
+            self.string_field(index, name, index == SENDER_PRODUCT_FIELD)?;
         }
         for (index, name) in [
             (6, "integer representation bits"),

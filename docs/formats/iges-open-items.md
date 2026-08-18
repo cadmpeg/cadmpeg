@@ -360,18 +360,6 @@ Type 510/514 evidence: the official [IGES 5.3 §§4.146–4.147](https://paulbou
 
 ## 8. Evidence
 
-### EV-01. No file authored by another system has ever been decoded
-
-**Question.** Does the decoder read IGES files that this project did not write?
-
-**Known.** `corpus/manifest.toml` holds eleven files and every one is `fcstd`. No IGES file exists in the corpus. `iges-fixture-charter.md` states that fixtures are generated from builders that "serialize the rules in `iges.md`" and "do not ingest, rewrite, minimize, or transform external files".
-
-**Conflict.** The decoder is tested only against bytes written by this project's own reading of the format. Agreement between a builder and a decoder that share one author proves that the two agree. It does not test the reading.
-
-**Note.** Nearly every item in sections 1 through 6 above is a rule that a self-authored fixture satisfies by construction and that a producer file may not. The items were found by reading, not by testing, because no test could have found them.
-
-**Need.** We need IGES files authored with at least two available exporters, under a license the repository admits, decoded and recorded. That measurement decides which of the tolerance items above are real and which are theoretical.
-
 ### EV-02. The independent-application gate cannot detect wrong geometry
 
 **Question.** What does FreeCAD acceptance prove about a generated file?

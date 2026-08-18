@@ -337,3 +337,17 @@ These records define CADIR choices where IGES defines the transfer data but does
 **Cost.** A positional failure retains native Type 112 data and charges the existing spline projection loss. No derivative loss is invented.
 
 **Reopens.** Reopen if NIST or IGES publishes a derivative tolerance or a producer witness requires derivative admission. The executable check is the named spline continuity test.
+
+## D-25. Omitted Global sender-product field
+
+**Question.** What does the reader do when a producer omits Global field 3 even though the IGES field is required?
+
+**Silence.** IGES 5.3 marks field 3 as required-no-default; it does not define a receiver extension for producer files that omit the value.
+
+**Rule.** Accept the omitted field during reader inspection and semantic decode, retain the sender-product value as NULL, and do not invent a default. Semantic writing always emits field 3.
+
+**Ground.** IGES 5.3 §§2.2.3 and 2.2.4.3.3; the public Autodesk Inventor sample [Cube 10x10 IGES sample](https://raw.githubusercontent.com/kovacsv/occt-import-js/main/test/testfiles/cube-10x10mm/Cube%2010x10.igs), SHA-256 `8bcbc86a044f592ba2a1a18f89a905358a85aa5093c0dd0756771b1b022b4c6f`; `global.rs::Global::validate`; test `global::tests::omitted_sender_product_is_retained_as_null_for_reader_compatibility`; rebuilt service-profile `cadmpeg inspect`, `dump`, and `check` runs.
+
+**Cost.** No loss is charged; the native source metadata retains a NULL sender-product value. A semantic writer supplies its own sender identity as required by its output profile.
+
+**Reopens.** Reopen if an authoritative producer rule requires a different field-3 recovery or if the reader extension creates an ambiguity with a valid sender-product value. The executable check is the named Global test plus a fresh service-profile decode of the cited public witness.
