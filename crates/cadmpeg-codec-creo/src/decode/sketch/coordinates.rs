@@ -31,6 +31,7 @@ use super::skamp::{
 };
 
 const EPS_SECTION_COORDINATE: f64 = 1e-9;
+const EPS_POINT_ON_LINE_COEFFICIENT: f64 = 1e-12;
 
 pub(crate) fn saved_section_coordinate_witnesses(
     definition: &crate::feature::FeatureDefinition,
@@ -66,6 +67,48 @@ pub(crate) fn saved_section_coordinate_witnesses(
             }),
     );
     witnesses
+}
+
+fn append_point_on_line_equations(
+    constraints: &[(u32, u32, u32)],
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    equations: &mut Vec<SectionCoordinateEquation>,
+) -> bool {
+    let mut appended = false;
+    for &(target, first, second) in constraints {
+        let (
+            Some([Some(first_u), Some(first_v)]),
+            Some([Some(second_u), Some(second_v)]),
+            Some(target_coordinates),
+        ) = (
+            coordinates.get(&first),
+            coordinates.get(&second),
+            coordinates.get(&target),
+        )
+        else {
+            continue;
+        };
+        let [target_u, target_v] = *target_coordinates;
+        if target_u.is_some() == target_v.is_some() {
+            continue;
+        }
+        let delta_u = second_u - first_u;
+        let delta_v = second_v - first_v;
+        let mut equation = SectionCoordinateEquation::default();
+        equation.add_point(target, 0, -delta_v);
+        equation.add_point(target, 1, delta_u);
+        equation.rhs = delta_u * first_v - delta_v * first_u;
+        let missing_coefficient = if target_u.is_none() {
+            delta_v.abs()
+        } else {
+            delta_u.abs()
+        };
+        if missing_coefficient > EPS_POINT_ON_LINE_COEFFICIENT {
+            equations.push(equation);
+            appended = true;
+        }
+    }
+    appended
 }
 
 pub(crate) fn resolved_section_coordinates(
@@ -338,36 +381,8 @@ pub(crate) fn resolved_section_coordinates(
             first, second, coordinate, 0.0,
         ));
     }
-    for (target, first, second) in
-        section_equation_point_on_line_constraints(definition, &ambiguous_point_ids)
-    {
-        let (
-            Some([Some(first_u), Some(first_v)]),
-            Some([Some(second_u), Some(second_v)]),
-            Some(target_coordinates),
-        ) = (points.get(&first), points.get(&second), points.get(&target))
-        else {
-            continue;
-        };
-        let [target_u, target_v] = *target_coordinates;
-        if target_u.is_some() == target_v.is_some() {
-            continue;
-        }
-        let delta_u = second_u - first_u;
-        let delta_v = second_v - first_v;
-        let mut equation = SectionCoordinateEquation::default();
-        equation.add_point(target, 0, -delta_v);
-        equation.add_point(target, 1, delta_u);
-        equation.rhs = delta_u * first_v - delta_v * first_u;
-        let missing_coefficient = if target_u.is_none() {
-            delta_v.abs()
-        } else {
-            delta_u.abs()
-        };
-        if missing_coefficient > 1e-12 {
-            equations.push(equation);
-        }
-    }
+    let point_on_line_constraints =
+        section_equation_point_on_line_constraints(definition, &ambiguous_point_ids);
     for constraint in &radial_constraints {
         if let Some(offset) = constraint.offset() {
             equations.push(SectionCoordinateEquation::point_difference(
@@ -464,6 +479,13 @@ pub(crate) fn resolved_section_coordinates(
     }
     let mut solved_coordinates =
         solve_section_coordinate_equations(&equations, &stored_coordinates);
+    if append_point_on_line_equations(
+        &point_on_line_constraints,
+        &solved_coordinates,
+        &mut equations,
+    ) {
+        solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    }
     for _ in 0..equal_length_constraints.len() {
         let equal_length_values =
             section_equal_length_coordinate_values(&equal_length_constraints, &solved_coordinates);
@@ -510,7 +532,8 @@ pub(crate) fn resolved_section_coordinates(
             point, coordinate, value,
         ));
     }
-    let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    let mut solved_coordinates =
+        solve_section_coordinate_equations(&equations, &stored_coordinates);
     for (variable, value) in
         section_equation_scalar_values_from_coordinates(definition, &solved_coordinates)
     {
@@ -522,7 +545,14 @@ pub(crate) fn resolved_section_coordinates(
         &stored_coordinates,
         &mut equations,
     );
-    let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    if append_point_on_line_equations(
+        &point_on_line_constraints,
+        &solved_coordinates,
+        &mut equations,
+    ) {
+        solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    }
     let arc_midpoint_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| {
             section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)
@@ -670,7 +700,7 @@ mod tests {
     use crate::feature::{
         FeatureDefinition, FeaturePointSegment, FeatureRelationTable, FeatureSectionPoint,
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
-        FeatureSolverTableHeader, FeatureVariableTable,
+        FeatureSolverTableHeader, FeatureVariableRow, FeatureVariableTable,
     };
 
     fn incomplete_segment_definition() -> FeatureDefinition {
@@ -875,6 +905,72 @@ mod tests {
                 &std::collections::BTreeSet::new(),
             ),
             None
+        );
+    }
+
+    #[test]
+    fn point_on_line_retries_after_auxiliary_reference_coordinates_resolve() {
+        let row = |variable_type, key, value| FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven: false,
+            offset: 0,
+        };
+        let mut body = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
+            .to_vec();
+        body.extend_from_slice(b"\x01\x23\xf8\x09\x00\x01\x02\x03\x04\x05\x06\x07\x08\xf6\xe2");
+        body.extend_from_slice(b"\x02\x1f\xf8\x04\x02\x03\x09\x0a\xf6\xe2");
+        body.extend_from_slice(b"\x03\x1f\xf8\x04\x04\x05\x0b\x0c\xf6\xe2");
+        let definition = FeatureDefinition {
+            id: 2,
+            owner_feature_id: None,
+            body,
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 13,
+                entity_ref: None,
+                rows: vec![
+                    row(1, 30, None),
+                    row(2, 30, Some(5.0)),
+                    row(1, 10, None),
+                    row(2, 10, None),
+                    row(1, 11, None),
+                    row(2, 11, None),
+                    row(4, 2, None),
+                    row(5, 3, Some(0.0)),
+                    row(5, 4, Some(0.0)),
+                    row(6, 100, Some(0.0)),
+                    row(6, 101, Some(0.0)),
+                    row(6, 102, Some(10.0)),
+                    row(6, 103, Some(10.0)),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+        assert_eq!(
+            resolved_section_points(&definition).get(&30),
+            Some(&[5.0, 5.0])
         );
     }
 }
