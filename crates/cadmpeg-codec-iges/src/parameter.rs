@@ -312,6 +312,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 128 Forms 0 through 9 define `K1`, `K2`, `M1`, `M2`, `A`, `B`, and `C`,
 /// so their groups start at token `16 + A + B + 4*C`, with
 /// `A = 1 + K1 + M1`, `B = 1 + K2 + M2`, and `C = (K1 + 1) * (K2 + 1)`.
+/// Type 144 Form 0 puts the inner-boundary count at index 3, so its groups
+/// start at token `5 + N2` after the entity type token.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -337,6 +339,7 @@ pub(crate) fn entity_primary_end(
         (123, 0) => Some(4),
         (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
         (128, 0..=9) => Some(rational_bspline_surface_primary_end(record)),
+        (144, 0) => Some(trimmed_surface_primary_end(record)),
         _ => None,
     }
 }
@@ -460,6 +463,14 @@ fn rational_bspline_surface_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|span| span.checked_add(16))
         .and_then(|span| span.checked_add(a))
         .and_then(|span| span.checked_add(b))
+        .unwrap_or(record.tokens.len())
+}
+
+fn trimmed_surface_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .and_then(|inner_count| inner_count.checked_add(5))
         .unwrap_or(record.tokens.len())
 }
 

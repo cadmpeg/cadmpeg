@@ -1840,3 +1840,202 @@ fn decode_uses_type128_entity_boundary_for_form7_association() {
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }
+
+#[test]
+fn type144_entity_table_boundary_uses_inner_boundary_count() {
+    for (inner_count, expected_start) in [(0_i64, 5_usize), (1, 6)] {
+        let association = directory_target(1, 212);
+        let surface = directory_target(3, 144);
+        let directory = BTreeMap::from([(1, &association), (3, &surface)]);
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 144;
+        values[1] = 1;
+        values[2] = i64::from(inner_count > 0);
+        values[3] = inner_count;
+        values[expected_start] = 1;
+        values[expected_start + 1] = 1;
+        values[expected_start + 2] = 0;
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: expected_start + 3,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 144 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type144_entity_table_boundary_precedes_valid_generic_alternative() {
+    let target_1 = directory_target(1, 212);
+    let target_3 = directory_target(3, 212);
+    let source = directory_target(5, 144);
+    let directory = BTreeMap::from([(1, &target_1), (3, &target_3), (5, &source)]);
+    let values = [144, 1, 1, 1, 3, 2, 1, 3, 0];
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: values.len(),
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 144 table boundary");
+    assert_eq!(groups.token_start, 6);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type144_malformed_inner_counts_do_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let source = directory_target(3, 144);
+    let directory = BTreeMap::from([(1, &association), (3, &source)]);
+    for values in [
+        vec![144, 1, 0, -1, 0, 1, 1, 0],
+        vec![144, 1, 0, 100, 0, 1, 1, 0],
+        vec![144, 1, 0],
+    ] {
+        let parameter_end = values.len();
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
+fn decode_uses_type144_entity_boundary_for_form0_association() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 108,
+                    form: 0,
+                    label: "PLANE".into(),
+                    status: "00010000",
+                    parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "OUTMODEL".into(),
+                    status: "00010000",
+                    parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "OUTPCURV".into(),
+                    status: "00010500",
+                    parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 142,
+                    form: 0,
+                    label: "OUTBOUND".into(),
+                    status: "00010000",
+                    parameters: "142,0,1,5,3,3;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "INMODEL".into(),
+                    status: "00010000",
+                    parameters: "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;"
+                        .into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "INPCURV".into(),
+                    status: "00010500",
+                    parameters: "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;"
+                        .into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 142,
+                    form: 0,
+                    label: "INBOUND".into(),
+                    status: "00010000",
+                    parameters: "142,0,1,11,9,3;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 144,
+                    form: 0,
+                    label: "TRIMMED".into(),
+                    status: "00000000",
+                    parameters: "144,1,1,1,7,13,1,17,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "TARGET1".into(),
+                    status: "00010100",
+                    parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    assert_eq!(result.ir().model.faces.len(), 1);
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#15")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#17")]
+    );
+}
