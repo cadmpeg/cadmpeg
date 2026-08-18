@@ -290,6 +290,9 @@ pub(crate) fn section_skamp_axis_symmetry(
     } else if let Some(segment) = unique_row {
         SectionSymmetryAxis::Point(segment.point_ids[0])
     } else {
+        if !saved_section_line_witness_allowed(definition, axis_item.entity_id) {
+            return None;
+        }
         let crate::feature::FeatureSavedEntity::Line(line) =
             section_saved_entity(definition, axis_item.entity_id)?
         else {
@@ -785,6 +788,21 @@ mod tests {
         assert!(matches!(first, SectionPointSource::Point(1)));
         assert!(matches!(second, SectionPointSource::Point(4)));
         assert_eq!(coordinate, 0);
+
+        let mut conflicting_saved_axis = definition.clone();
+        conflicting_saved_axis
+            .segments
+            .as_mut()
+            .expect("segments")
+            .reference_line_rows
+            .push(crate::feature::FeatureReferenceLineSegment {
+                directions: [None; 3],
+                point_ids: [None; 2],
+                vertical_horizontal: Some(0),
+                external_id: 99,
+                offset: 3,
+            });
+        assert!(section_skamp_axis_symmetry(&conflicting_saved_axis, &skamp).is_none());
 
         let mut duplicate = definition;
         duplicate
