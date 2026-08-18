@@ -434,6 +434,13 @@ mod tests {
     }
 
     #[test]
+    fn instance_preserves_optional_persistent_tail() {
+        let atoms = scan(&stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333));
+        assert_eq!(atoms.len(), 1);
+        assert_eq!(atoms[0].persistent_tail, vec![10, 8]);
+    }
+
+    #[test]
     fn payload_with_a_nonzero_guard_position_is_not_a_face_identity() {
         assert!(scan(&stream(&[74, 75, 1_390_698_820, 9, 3], 333)).is_empty());
     }
@@ -485,6 +492,17 @@ mod tests {
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body.extend(stream_with_list_node(
             &[74, 76, 1_390_698_820, 0, 4],
+            333,
+            310,
+        ));
+        assert!(scan(&body).is_empty());
+    }
+
+    #[test]
+    fn conflicting_persistent_tail_is_withheld() {
+        let mut body = stream(&[74, 75, 1_390_698_820, 0, 3, 10], 333);
+        body.extend(stream_with_list_node(
+            &[74, 75, 1_390_698_820, 0, 3, 11],
             333,
             310,
         ));

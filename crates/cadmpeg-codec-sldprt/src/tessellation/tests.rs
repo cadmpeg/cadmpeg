@@ -489,6 +489,61 @@ fn persistent_identity(source: u32, local: u32, trailing_fields: &[u32]) -> Pers
     }
 }
 
+fn framed_surface_reference(text: &str) -> Vec<u8> {
+    let units = text.encode_utf16().collect::<Vec<_>>();
+    let mut payload = vec![0xff, 0xfe, 0xff, units.len().try_into().unwrap()];
+    payload.extend(units.into_iter().flat_map(u16::to_le_bytes));
+    payload
+}
+
+#[test]
+fn persistent_surface_reference_decodes_signed_tail() {
+    let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
+    let references = persistent_surface_references(
+        &payload,
+        ByteRange {
+            start: 0,
+            end: payload.len(),
+        },
+    );
+    assert_eq!(
+        references,
+        vec![PersistentSurfaceReference::Complete(persistent_identity(
+            300,
+            4,
+            &[u32::MAX, 0],
+        ))]
+    );
+}
+
+#[test]
+fn opaque_surface_suffix_remains_source_only() {
+    let payload = framed_surface_reference("moFromSktEntSurfIdRep_c,7,3,opaque");
+    let references = persistent_surface_references(
+        &payload,
+        ByteRange {
+            start: 0,
+            end: payload.len(),
+        },
+    );
+    assert_eq!(
+        references,
+        vec![PersistentSurfaceReference::SourceOnly {
+            feature_source_id: 7,
+            local_surface_id: 3,
+        }]
+    );
+    let face = DisplayFace {
+        mesh: Mesh::default(),
+        table_index: 0,
+        table: ByteRange { start: 0, end: 1 },
+        metadata: ByteRange { start: 1, end: 2 },
+        surface_references: references,
+    };
+    assert_eq!(face.feature_source_id(), Some(7));
+    assert_eq!(face.persistent_surface_identity(), None);
+}
+
 #[test]
 fn persistent_surface_identity_requires_agreeing_duplicates() {
     let face = DisplayFace {
@@ -575,6 +630,29 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     ];
     assert!(assign_persistent_owners(&mut model, &face_identities, &bindings).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn persistent_surface_identity_distinguishes_trailing_path_fields() {
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-tail", 0.0);
+    let second = add_square_face(&mut model, "second-tail", 3.0);
+    model.shells[0].faces = vec![first.clone(), second.clone()];
+    model.tessellations.push(persistent_mesh("mesh"));
+    let face_identities = vec![
+        (first.0.clone(), persistent_identity(266, 2, &[0])),
+        (second.0.clone(), persistent_identity(266, 2, &[1])),
+    ];
+    let binding = PersistentFaceBinding {
+        tessellation: "mesh".into(),
+        identity: persistent_identity(266, 2, &[1]),
+    };
+
+    assert_eq!(
+        assign_persistent_owners(&mut model, &face_identities, &[binding]),
+        vec!["mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![second]);
 }
 
 #[test]
