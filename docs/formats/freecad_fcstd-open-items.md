@@ -445,6 +445,55 @@ without a refusal or loss.
 
 **Note.** New hostile-sweep finding.
 
+### DP-16. Sketch placement rotation admission
+
+**Question.** Which rotation admission rule applies to a sketch `Placement` or `AttachmentOffset`
+carrier: the settled placement rule, or a stricter sketch-only rule?
+
+**Known.** The specification gives one placement rotation rule for every carrier. `A` is the
+representation discriminator, a finite zero-length axis is valid and rotates about the positive Z
+axis, and every nonzero finite axis is normalized. `product.rs:999-1096` applies that rule;
+`attachment.rs` and `joint.rs` call the same function. `design.rs:1511-1573` keeps a second rotation
+decode for sketch `Placement` and `AttachmentOffset`. It gives no frame when the axis norm is not
+larger than machine epsilon and the angle is larger than machine epsilon, and
+`validate_sketch_placement` at `design.rs:1575-1603` turns that result into a malformed-document
+refusal. FreeCAD `Base::Rotation::setValue` keeps the positive Z axis for a null axis, and
+`Base::Vector3::Normalize` divides by every length that is not zero.
+
+**Need.** Use one rotation admission rule for every placement carrier, or state the sketch rule and
+its producer source in the specification. Show which documents each rule accepts and refuses.
+
+**Conflict.** A sketch `Placement` with `A=1.5707963`, `Ox=0`, `Oy=0`, and `Oz=0` is a quarter turn
+about the positive Z axis for the producer and for `product.rs`. `design.rs` refuses the whole
+document instead. An axis such as `Ox=1e-20` gets the same refusal, although the producer and
+`product.rs` both normalize it. `design.rs:282-290` discards the error from the same function, so
+an object that is not transferred as a sketch loses an extrusion profile normal in silence.
+
+**Note.** New hostile-sweep finding. `DP-12` records the opposite direction for the zero-angle case,
+and its Known still says the specification rejects an invalid axis-angle rotation as a sketch frame.
+
+### DP-17. Design enumeration label selection
+
+**Question.** Which direct `Enum` sequence supplies a design enumeration label such as a hole thread
+designation?
+
+**Known.** FreeCAD `PropertyEnumeration::Save` writes one direct `Integer` carrier, a
+`CustomEnum="true"` marker for a custom list, and one direct `CustomEnumList` whose `count` equals
+the number of its direct `Enum` children. `joint.rs:286-413` enforces that framing for `JointType`.
+`enumeration_label` at `design.rs:4637-4648` instead takes the `Enum` at the integer position from
+every descendant of the property, with no marker, root, count, or leaf check, and it accepts a
+`Value` attribute that the producer does not write. `design.rs:4362-4382` uses the result for the
+neutral hole thread designation, class, and fit.
+
+**Need.** Use the same direct-carrier framing for every enumeration label as for `JointType`.
+Refuse or retain a property whose framing does not match, instead of selecting by descendant order.
+
+**Conflict.** An `Enum` inside an extra nested wrapper joins the ordinal sequence, so a hole gets a
+neutral thread designation that the producer does not give it. An index outside the direct list
+leaves the designation absent with no refusal and no loss.
+
+**Note.** New hostile-sweep finding.
+
 ## 6. Semantic annotations
 
 ### SA-03. Annotation value-root framing and attribute selection
