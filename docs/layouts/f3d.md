@@ -1397,7 +1397,7 @@ Offsets are relative to `T = A + 133`, after the third GUID. The LP-UTF16 kind p
 | 18 | 4 | `history_state_id` | `u32` | little | spec | the current history-state identity at `T + 18` |
 | 22 | 4 | `kind_code_unit_count` | `u32` | little | spec | the LP-UTF16 scope kind at `T + 22` |
 
-## `split_face_class_418_prefix`
+## `split_face_compact_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 32 B
 

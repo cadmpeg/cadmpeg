@@ -4677,10 +4677,10 @@ source = "spec"
 anchor = "the LP-UTF16 scope kind at `T + 22`"
 
 [[record]]
-name = "split_face_class_418_prefix"
+name = "split_face_compact_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "The class-418 form paired with class 266 is `286 + 11(r - 1)` bytes"
+anchor = "The class-418/266 and class-277/258 forms are `286 + 11(r - 1)` bytes"
 size = 32
 note = "Offsets are relative to the primary SplitFace indexed header. The first marked construction reference follows this prefix at offset 32."
 

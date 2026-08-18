@@ -2032,14 +2032,14 @@ pub(crate) mod base_feature_body_snapshot_scope_prefix {
     pub(crate) const KIND_CODE_UNIT_COUNT: usize = 22;
 }
 
-/// Byte offsets for the `split_face_class_418_prefix` record.
+/// Byte offsets for the `split_face_compact_prefix` record.
 ///
 /// Spec §3.1. Record length 32 B.
 ///
 /// ```text
 /// Offsets are relative to the primary SplitFace indexed header. The first marked construction reference follows this prefix at offset 32.
 /// ```
-pub(crate) mod split_face_class_418_prefix {
+pub(crate) mod split_face_compact_prefix {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 32;
     /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
