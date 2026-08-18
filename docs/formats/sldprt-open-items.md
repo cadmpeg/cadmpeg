@@ -68,6 +68,34 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The NX extended form is a hypothesis for SolidWorks, not evidence. Do not invent the encoding without corpus bytes.
 
+### BC-06. Keyed forward chain layout identity
+
+**Question.** Which stored field identifies the layout of a keyed forward chain, so that a chain does not need an enumerated `disc` and `flo` sequence?
+
+**Known.** `sldprt.md` §6 "The disc22-disc20-disc1a-disc18-disc10-face layout" is one of 124 documented chain layouts. Each of those paragraphs states the same structural rule: the root record has a slot-1 sentinel, every chain record repeats the root key in slot 0, each successor names its predecessor in slot 1, and the terminal record has a slot-2 sentinel. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:9099-9136` walks a chain from those rules alone and needs no `disc` sequence. Nine call sites, among them `:8740-8756`, then reject each walked chain unless its length and its ordered `disc` and `flo` values are equal to a constant list. `:633-1280` holds 161 layout functions in source order and keeps the bodies of the first function that gives a result.
+
+**Need.** We must know the stored layout discriminator to decode a chain whose `disc` sequence is not in the constant lists, and to keep one layout function from hiding the bodies that a different site in the same stream supplies.
+
+**Conflict.** The specification gives a structural chain rule that the walk satisfies without a `disc` sequence. The decoder adds a constant `disc` sequence that the specification does not require.
+
+### BC-07. Keyed chain shell position and body kind
+
+**Question.** Which stored field identifies the shell record of a keyed forward chain, and which stored field gives the kind of the body that chain supplies?
+
+**Known.** `sldprt.md` §6 "The disc22-disc20-disc1a-disc18-disc10-face layout" names the shell root by its `disc` value. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:7370`, `:8628`, `:8956`, and `:9264` instead take the shell from a constant position in the walked chain. That position is a per-layout literal at 82 sites. The same constructors set the body kind to solid at 65 sites. `sldprt.md` §6 "In schema 33103, solid ownership follows" gives `0x1d/flo1` as the sheet-region discriminator, and `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:633-712` uses that record to separate a sheet body from a solid body on the explicit class-root route. No documented chain layout gives a body kind, and the chain constructors read no region record.
+
+**Need.** We must know the shell field and the kind field, because a sheet body that reaches the keyed chain route becomes a solid body with no recorded loss, and a chain whose shell is not at the expected position binds every face to the wrong shell.
+
+### BC-08. Truncated persistent face identity
+
+**Question.** Which consumers must compare the optional path tail of an `ATOM_ID_2001` persistent face identity, and when does that tail separate two faces of one producer?
+
+**Known.** `sldprt.md` §5 "`ATOM_ID_2001` is the persistent face-identity family" gives the complete persistent identity as value 1, value 4, and the ordered optional tail. `crates/cadmpeg-codec-sldprt/src/decode.rs:2417-2440` makes two projections of the same face atoms. The complete projection keeps the tail and goes to the tessellation owner assignment only. The truncated projection keeps value 1 and value 4 only and goes to four consumers: the topology selection binding, the mirror-plane binding, the generated hole-axis projection, and the configuration topology selection binding. The topology selection binding sets a face to unresolved when two faces share the truncated pair.
+
+**Need.** We must know whether the tail separates faces, because a truncated comparison binds no face where the complete identity binds one, and the hole-axis projection collects every face with the truncated pair.
+
+**Conflict.** The specification gives the tail as part of the identity. Four consumers compare identities without it, while a fifth consumer in the same function compares the complete identity.
+
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV
