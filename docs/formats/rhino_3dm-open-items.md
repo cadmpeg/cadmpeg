@@ -324,24 +324,3 @@ per-viewport setting, and a stale plugin-reference, material-texture,
 clipping-plane, detail-view, or SubD-proxy CRC can still produce its typed
 child. The generic userdata and parent record checks do not replace the nested
 checks because their CRC ranges exclude complete children.
-
-### QA-03. CADIR decision records for Rhino closures
-
-**Question.** Where are the CADIR policy decisions in the Rhino specification
-numbered and recorded with their required closure fields?
-
-**Known.** `docs/formats/rhino_3dm.md` contains unnumbered `CADIR decision:`
-and `CADIR typed-admission decision:` clauses at lines 951, 1024, 1077, 1609,
-2481, 3175, 3205, 3260, 3720, 3743, 4369, 5159, 5406, 5497, 5517, 5642,
-5916, 6125, 6210, 6252, 6371, 6575, 6982, 6988, and 6994. There is no
-`docs/formats/rhino_3dm-decisions.md`, and no `D-NN` record with Question,
-Silence, Rule, Ground, Cost, and Reopens fields.
-
-**Need.** Number each policy clause as `CADIR decision D-NN` and add its
-separate decision record with the required fields. Cost must bind every
-discard, withholding, or approximation to a named loss or finding, and
-Reopens must name an executable witness when one can exist.
-
-**Note.** This is a decision-record protocol gap. It does not make a new wire
-format question; it leaves the claimed CADIR closures unauditable under the
-decision protocol.
