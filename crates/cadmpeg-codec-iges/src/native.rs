@@ -19,6 +19,7 @@ pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
 const DEFAULT_DIMENSION_DISPLAY_CHARACTER_SET: i64 = 1;
 const DEFAULT_DIMENSION_DISPLAY_WITNESS_LINE_ANGLE_RAD: f64 = std::f64::consts::FRAC_PI_2;
+const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceLimits {
@@ -3713,7 +3714,7 @@ pub(crate) fn store(
                 28 => NativePropertyValue::DimensionUnits {
                     secondary_position: record.integer(2),
                     units_indicator: record.integer(3),
-                    character_set: record.integer(4),
+                    character_set: record.integer_or(4, DEFAULT_DIMENSION_UNITS_CHARACTER_SET),
                     suffix: record.string(5).map(<[u8]>::to_vec),
                     fraction_flag: record.integer(6),
                     precision: record.integer(7),

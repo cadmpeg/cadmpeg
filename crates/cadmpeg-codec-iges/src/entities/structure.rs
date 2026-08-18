@@ -9,6 +9,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
+
 #[derive(Clone)]
 struct SolidAssembly {
     form: i64,
@@ -442,7 +444,7 @@ fn property_fields_valid(
                 .integer(3)
                 .is_some_and(|value| matches!(value, 0..=11 | 100..=106));
             let charset_valid = record
-                .integer(4)
+                .integer_or(4, DEFAULT_DIMENSION_UNITS_CHARACTER_SET)
                 .is_some_and(|value| matches!(value, 1 | 1001..=1003));
             let fraction = record.integer(6);
             exact(6)

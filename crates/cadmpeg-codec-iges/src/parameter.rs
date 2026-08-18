@@ -336,6 +336,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// so its groups start at token `4 + NV`; `NP` is `2 + NV`.
 /// Type 406 Form 26 fixes `NP=3` at index 1 and stores three fixed values,
 /// so its groups start at token five.
+/// Type 406 Form 28 fixes `NP=6` at index 1 and stores `SPOS`, `UI`, `CHRSET`,
+/// `USTRING`, `FFLAG`, and `PREC` at indexes 2 through 7, so its groups start
+/// at token eight. `CHRSET` may be empty and then defaults to standard ASCII.
 /// Type 402 Form 13 fixes `ND` to one, puts the positive geometry count `NG` at
 /// index 2, and lists the dimension plus `NG` geometry pointers, so its groups
 /// start at token `4 + NG`.
@@ -421,6 +424,7 @@ pub(crate) fn entity_primary_end(
         (406, 24) => Some(level_to_lep_layer_map_primary_end(record)),
         (406, 25) => Some(lep_artwork_stackup_primary_end(record)),
         (406, 26) => Some(lep_drilled_hole_primary_end(record)),
+        (406, 28) => Some(dimension_units_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
@@ -692,6 +696,14 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
 fn lep_drilled_hole_primary_end(record: &ParameterRecord) -> usize {
     if record.integer(1) == Some(3) && record.tokens.len() >= 5 {
         5
+    } else {
+        record.tokens.len()
+    }
+}
+
+fn dimension_units_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) == Some(6) && record.tokens.len() >= 8 {
+        8
     } else {
         record.tokens.len()
     }
