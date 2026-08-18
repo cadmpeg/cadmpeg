@@ -710,6 +710,26 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-nx/src/container.rs:400-435` takes the first count after the `UGS::Solid::Topol` marker whose candidate span reaches the product record. A plausible earlier count inside the bounded range can win before the real membership table, and the closure tests only synthetic placement. The first-candidate rule is not yet verified by a corpus field or invalidation witness, so this item is reopened.
 
+### OM-39. Stream-level omission of unselected body images
+
+**Question.** Which serialized state permits the geometry decode to omit a complete Parasolid stream?
+
+**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the active object-id set, the independent assignment to each body image, and the retention rule for an image that has no active membership. `siemens_nx.md` §7.1 "Within one feature-history record area, operation records are stored in reverse" gives the reversed record order that supplies the terminal status of a body. Neither statement relates membership or terminal status to the contents of a stream, and neither permits the omission of a stream.
+
+**Need.** We must know the state. The decoder reads the stream ordinal from the text of each selected body identity and decodes only those streams. The carriers, topology, and intersections of every other Parasolid stream are then absent from the model, and no loss code reports the omission. The rules that select the images are open in OM-33 and OM-31.
+
+**Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:141-191` makes the selection before geometry construction, `build.rs:1283-1304` maps the selected identities to stream ordinals, and `build.rs:233-247` omits each other stream and keeps its bytes as opaque data. The commit that added the rule also changed two golden documents in the same change: one partition stream and fifty analytic surface carriers left the decoded output.
+
+### OM-40. Object-index namespace precedence in a body selection
+
+**Question.** Which namespace owns an operation object index that resolves both as a segment body alias and as an offset-store data block?
+
+**Known.** `siemens_nx.md` §2 "A primary feature body field in the object namespace reuses a segment body" states that a primary feature body field reuses a segment body image when its index equals either alias of exactly one partition or plain cached-body tuple, and that a field which resolves to an offset-store block can reuse a segment image only under the exact unique alias join. It gives no precedence to one namespace against the other.
+
+**Need.** We must know the owner to attach the operation output and lineage to the correct body image.
+
+**Conflict.** `feature_body_selection_with_offset_blocks` in `crates/cadmpeg-codec-nx/src/native/attach.rs:7199-7260` takes the offset-store data block for each index that resolves in both namespaces. The selection stays native only when the same operation also has an index that resolves as a segment alias alone. An operation whose indices all resolve in both namespaces binds its bodies to offset-store blocks, and the presence of the same integer in the two maps is the only condition of that choice. The related cross-store join is open in OM-07.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
