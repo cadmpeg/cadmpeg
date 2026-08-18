@@ -57,6 +57,17 @@ const SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART: usize = 8;
 /// for unusually large or adversarial inputs.
 pub(super) const MAX_SUPPORT_UV_COMPLETION_SAMPLES: usize = 65_536;
 
+/// Geometry work reserved for one support-UV sample before the lane slice is
+/// capped. A lane is admitted as a whole, so one difficult carrier cannot
+/// consume the model-wide budget before later carriers get a certified try.
+const SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE: usize = 256;
+
+/// Minimum geometry work available to a support-UV lane with a small chart.
+const MIN_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 16_384;
+
+/// Maximum geometry work available to one support-UV lane in one strategy.
+const MAX_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 262_144;
+
 pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
     chart_count
         .saturating_mul(SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART)
@@ -70,6 +81,16 @@ pub(super) type SupportUvBudget<'a> = WorkBudget<'a>;
 
 pub(super) fn support_uv_budget_exhausted(budget: &SupportUvBudget<'_>) -> bool {
     budget.exhausted() || budget.remaining() == 0
+}
+
+fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) -> usize {
+    sample_count
+        .saturating_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
+        .clamp(
+            MIN_SUPPORT_UV_LANE_GEOMETRY_WORK,
+            MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
+        )
+        .min(remaining)
 }
 
 #[cfg(test)]
@@ -444,17 +465,18 @@ pub(super) fn complete_support_uv_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> bool {
     // A failed fit can become solvable when its opposite lane is filled by an
     // earlier wave. Keep that dependency as the retry key; repeating the same
     // failed inverse after unrelated progress only burns the model-wide cap.
     let mut failed_attempts = BTreeMap::<(ProceduralCurveId, usize), Option<PcurveGeometry>>::new();
+    let mut lane_geometry_exhausted = false;
     loop {
         let before = pending_support_lanes_requiring_completion(ir, pending);
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
-        complete_support_uv_wave(
+        lane_geometry_exhausted |= complete_support_uv_wave(
             ir,
             pending,
             support_budget,
@@ -468,6 +490,7 @@ pub(super) fn complete_support_uv_with_budget(
             break;
         }
     }
+    lane_geometry_exhausted
 }
 
 #[cfg(test)]
@@ -595,149 +618,156 @@ fn complete_support_uv_wave(
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
     failed_attempts: &mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
-) {
-    if !coupled_geometry_budget.exhausted() {
-        complete_coupled_support_uv(ir, pending, coupled_support_budget, coupled_geometry_budget);
-    }
-    if support_uv_budget_exhausted(support_budget) || geometry_budget.exhausted() {
-        return;
-    }
-    let mut replacements = Vec::new();
-    let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
-    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
-        if support_uv_budget_exhausted(support_budget) {
-            break;
-        }
-        let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
-            continue;
-        };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
-            continue;
-        };
-        for side in 0..2 {
+) -> bool {
+    let mut lane_geometry_exhausted = false;
+    if !support_uv_budget_exhausted(support_budget) && !geometry_budget.exhausted() {
+        let mut replacements = Vec::new();
+        let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+        for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
             if support_uv_budget_exhausted(support_budget) {
                 break;
             }
-            if !pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
-                continue;
-            }
-            let Some(surface_id) = &context.sides[side].surface else {
+            let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
                 continue;
             };
-            let attempt_key = (procedural_id.clone(), side);
-            let source_pcurve = context.sides[1 - side].pcurve.as_ref();
-            let other_surface_id = context.sides[1 - side].surface.as_ref();
-            if failed_attempts
-                .get(&attempt_key)
-                .is_some_and(|previous| previous.as_ref() == source_pcurve)
-            {
-                continue;
-            }
-            let Some(surface) = model_index.surfaces(surface_id.0.as_str()) else {
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            else {
                 continue;
             };
-            let source_chart_available =
-                source_pcurve.is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)));
-            let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
-                &model_index,
-                surface_id,
-                *fit_tolerance,
-            );
-            let other_support = {
-                let other_side = &context.sides[1 - side];
-                other_side
-                    .surface
-                    .as_ref()
-                    .zip(other_side.pcurve.as_ref())
-                    .and_then(|(other_surface, other_pcurve)| {
-                        let geometry = model_index
-                            .surfaces(other_surface.0.as_str())
-                            .map(|surface| &surface.geometry)?;
-                        Some((other_surface, other_pcurve, geometry))
-                    })
-            };
-            let other_contact =
-                other_support.and_then(|(other_surface, other_pcurve, other_geometry)| {
-                    let (supports, spine, radius, _) =
-                        blend_surface_definition_with_index(&model_index, surface_id)?;
-                    let boundaries = supports
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, candidate)| {
-                            parameterization_equivalent_surfaces_with_index(
-                                &model_index,
-                                candidate,
-                                other_surface,
-                            )
-                        })
-                        .map(|(boundary, _)| boundary)
-                        .collect::<Vec<_>>();
-                    let [boundary] = boundaries.as_slice() else {
-                        return None;
-                    };
-                    let contact_pcurve = spine_contact_pcurve_with_index(
-                        &model_index,
-                        other_surface,
-                        &spine,
-                        radius,
-                        0,
-                    )?;
-                    Some((
-                        other_surface,
-                        other_pcurve,
-                        other_geometry,
-                        contact_pcurve,
-                        *boundary,
-                    ))
-                });
-            let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
-            let mut all_parameters_certified = true;
-            for (point_index, point) in points.iter().enumerate() {
-                if !support_budget.charge() {
-                    uv.clear();
+            for side in 0..2 {
+                if support_uv_budget_exhausted(support_budget) {
                     break;
                 }
-                let serialized_seeds =
-                    serialized_support_uv_seed_candidates(&surface.geometry, lanes, point_index);
-                let seed_candidates = [
-                    serialized_seeds[0],
-                    serialized_seeds[1],
-                    pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index),
-                    uv.last().copied(),
-                ];
-                let mut attempted_without_seed = false;
-                let mut solved = None;
-                for seed in seed_candidates {
-                    if seed.is_none() {
-                        if attempted_without_seed {
-                            continue;
-                        }
-                        attempted_without_seed = true;
+                if !pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+                    continue;
+                }
+                let Some(surface_id) = &context.sides[side].surface else {
+                    continue;
+                };
+                let attempt_key = (procedural_id.clone(), side);
+                let source_pcurve = context.sides[1 - side].pcurve.as_ref();
+                let other_surface_id = context.sides[1 - side].surface.as_ref();
+                if failed_attempts
+                    .get(&attempt_key)
+                    .is_some_and(|previous| previous.as_ref() == source_pcurve)
+                {
+                    continue;
+                }
+                let Some(surface) = model_index.surfaces(surface_id.0.as_str()) else {
+                    continue;
+                };
+                let source_chart_available =
+                    source_pcurve.is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)));
+                let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
+                    &model_index,
+                    surface_id,
+                    *fit_tolerance,
+                );
+                let other_support = {
+                    let other_side = &context.sides[1 - side];
+                    other_side
+                        .surface
+                        .as_ref()
+                        .zip(other_side.pcurve.as_ref())
+                        .and_then(|(other_surface, other_pcurve)| {
+                            let geometry = model_index
+                                .surfaces(other_surface.0.as_str())
+                                .map(|surface| &surface.geometry)?;
+                            Some((other_surface, other_pcurve, geometry))
+                        })
+                };
+                let other_contact =
+                    other_support.and_then(|(other_surface, other_pcurve, other_geometry)| {
+                        let (supports, spine, radius, _) =
+                            blend_surface_definition_with_index(&model_index, surface_id)?;
+                        let boundaries = supports
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, candidate)| {
+                                parameterization_equivalent_surfaces_with_index(
+                                    &model_index,
+                                    candidate,
+                                    other_surface,
+                                )
+                            })
+                            .map(|(boundary, _)| boundary)
+                            .collect::<Vec<_>>();
+                        let [boundary] = boundaries.as_slice() else {
+                            return None;
+                        };
+                        let contact_pcurve = spine_contact_pcurve_with_index(
+                            &model_index,
+                            other_surface,
+                            &spine,
+                            radius,
+                            0,
+                        )?;
+                        Some((
+                            other_surface,
+                            other_pcurve,
+                            other_geometry,
+                            contact_pcurve,
+                            *boundary,
+                        ))
+                    });
+                let parent_geometry_budget = geometry_budget;
+                let lane_geometry_budget =
+                    parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
+                        points.len(),
+                        parent_geometry_budget.remaining(),
+                    ));
+                let geometry_budget = &lane_geometry_budget;
+                let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
+                let mut all_parameters_certified = true;
+                for (point_index, point) in points.iter().enumerate() {
+                    if !support_budget.charge() {
+                        uv.clear();
+                        break;
                     }
-                    let candidate = match &surface.geometry {
-                        SurfaceGeometry::Nurbs(nurbs) => {
-                            nurbs_surface_parameter_within_tolerance_with_budget(
-                                nurbs,
-                                *point,
-                                seed,
-                                effective_fit_tolerance,
-                                geometry_budget,
-                            )
-                            .map(|parameters| (parameters, true))
+                    let serialized_seeds = serialized_support_uv_seed_candidates(
+                        &surface.geometry,
+                        lanes,
+                        point_index,
+                    );
+                    let seed_candidates = [
+                        serialized_seeds[0],
+                        serialized_seeds[1],
+                        pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index),
+                        uv.last().copied(),
+                    ];
+                    let mut attempted_without_seed = false;
+                    let mut solved = None;
+                    for seed in seed_candidates {
+                        if seed.is_none() {
+                            if attempted_without_seed {
+                                continue;
+                            }
+                            attempted_without_seed = true;
                         }
-                        SurfaceGeometry::Procedural { .. } => {
-                            let solve_blend_parameters = if source_chart_available {
-                                blend_surface_parameters_for_fit_with_source_continuation_and_budget
-                            } else {
-                                blend_surface_parameters_for_fit_with_grid_and_budget
-                            };
-                            let solve_grid_parameters = if source_chart_available {
-                                blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
-                            } else {
-                                blend_surface_parameters_from_grid_for_fit_and_budget
-                            };
-                            other_contact
+                        let candidate = match &surface.geometry {
+                            SurfaceGeometry::Nurbs(nurbs) => {
+                                nurbs_surface_parameter_within_tolerance_with_budget(
+                                    nurbs,
+                                    *point,
+                                    seed,
+                                    effective_fit_tolerance,
+                                    geometry_budget,
+                                )
+                                .map(|parameters| (parameters, true))
+                            }
+                            SurfaceGeometry::Procedural { .. } => {
+                                let solve_blend_parameters = if source_chart_available {
+                                    blend_surface_parameters_for_fit_with_source_continuation_and_budget
+                                } else {
+                                    blend_surface_parameters_for_fit_with_grid_and_budget
+                                };
+                                let solve_grid_parameters = if source_chart_available {
+                                    blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
+                                } else {
+                                    blend_surface_parameters_from_grid_for_fit_and_budget
+                                };
+                                other_contact
                                 .and_then(
                                     |(
                                         other_surface,
@@ -822,101 +852,123 @@ fn complete_support_uv_wave(
                                     )
                                     .map(|parameters| (parameters, true))
                                 })
+                            }
+                            geometry => analytic_surface_parameters(geometry, *point)
+                                .map(|parameters| (parameters, false)),
+                        };
+                        if candidate.is_some() {
+                            solved = candidate;
+                            break;
                         }
-                        geometry => analytic_surface_parameters(geometry, *point)
-                            .map(|parameters| (parameters, false)),
-                    };
-                    if candidate.is_some() {
-                        solved = candidate;
+                    }
+                    let Some((parameters, certified)) = solved else {
+                        uv.clear();
                         break;
+                    };
+                    all_parameters_certified &= certified;
+                    uv.push(parameters);
+                }
+                if uv.len() != points.len() {
+                    lane_geometry_exhausted |= lane_geometry_budget.exhausted();
+                    let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
+                    failed_attempts.insert(attempt_key, source_pcurve.cloned());
+                    continue;
+                }
+                if matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Cylinder { .. }
+                        | SurfaceGeometry::Cone { .. }
+                        | SurfaceGeometry::Sphere { .. }
+                        | SurfaceGeometry::Torus { .. }
+                ) {
+                    for index in 1..uv.len() {
+                        let turns =
+                            ((uv[index - 1].u - uv[index].u) / std::f64::consts::TAU).round();
+                        uv[index].u += turns * std::f64::consts::TAU;
                     }
                 }
-                let Some((parameters, certified)) = solved else {
-                    uv.clear();
-                    break;
-                };
-                all_parameters_certified &= certified;
-                uv.push(parameters);
+                let reproduces_chart = all_parameters_certified
+                    || uv.iter().zip(points).all(|(uv, point)| {
+                        decoded_surface_point_with_geometry_and_budget(
+                            &model_index,
+                            surface_id,
+                            &surface.geometry,
+                            uv.u,
+                            uv.v,
+                            0,
+                            geometry_budget,
+                        )
+                        .is_some_and(|actual| {
+                            point_distance(actual, *point) <= effective_fit_tolerance
+                        })
+                    });
+                if reproduces_chart {
+                    replacements.push((
+                        procedural_id.clone(),
+                        side,
+                        PcurveGeometry::Nurbs {
+                            degree: 1,
+                            knots: linear_knots(parameters),
+                            control_points: uv,
+                            weights: None,
+                            periodic: false,
+                        },
+                        effective_fit_tolerance,
+                    ));
+                } else {
+                    failed_attempts.insert(attempt_key, source_pcurve.cloned());
+                }
+                lane_geometry_exhausted |= lane_geometry_budget.exhausted();
+                let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
             }
-            if uv.len() != points.len() {
-                failed_attempts.insert(attempt_key, source_pcurve.cloned());
+        }
+        let cache_backed_curves = ir
+            .model
+            .curves
+            .iter()
+            .filter(|curve| !matches!(&curve.geometry, CurveGeometry::Procedural { .. }))
+            .map(|curve| curve.id.clone())
+            .collect::<BTreeSet<_>>();
+        for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
+            let Some(procedural) = ir
+                .model
+                .procedural_curves
+                .iter_mut()
+                .find(|procedural| procedural.id == procedural_id)
+            else {
                 continue;
-            }
-            if matches!(
-                surface.geometry,
-                SurfaceGeometry::Cylinder { .. }
-                    | SurfaceGeometry::Cone { .. }
-                    | SurfaceGeometry::Sphere { .. }
-                    | SurfaceGeometry::Torus { .. }
-            ) {
-                for index in 1..uv.len() {
-                    let turns = ((uv[index - 1].u - uv[index].u) / std::f64::consts::TAU).round();
-                    uv[index].u += turns * std::f64::consts::TAU;
+            };
+            let ProceduralCurveDefinition::Intersection { context, .. } =
+                &mut procedural.definition
+            else {
+                continue;
+            };
+            if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+                context.sides[side].pcurve = Some(pcurve);
+                if cache_backed_curves.contains(&procedural.curve) {
+                    procedural.cache_fit_tolerance = Some(
+                        procedural
+                            .cache_fit_tolerance
+                            .unwrap_or(0.0)
+                            .max(effective_fit_tolerance),
+                    );
                 }
             }
-            let reproduces_chart = all_parameters_certified
-                || uv.iter().zip(points).all(|(uv, point)| {
-                    decoded_surface_point_with_geometry_and_budget(
-                        &model_index,
-                        surface_id,
-                        &surface.geometry,
-                        uv.u,
-                        uv.v,
-                        0,
-                        geometry_budget,
-                    )
-                    .is_some_and(|actual| point_distance(actual, *point) <= effective_fit_tolerance)
-                });
-            if reproduces_chart {
-                replacements.push((
-                    procedural_id.clone(),
-                    side,
-                    PcurveGeometry::Nurbs {
-                        degree: 1,
-                        knots: linear_knots(parameters),
-                        control_points: uv,
-                        weights: None,
-                        periodic: false,
-                    },
-                    effective_fit_tolerance,
-                ));
-            } else {
-                failed_attempts.insert(attempt_key, source_pcurve.cloned());
-            }
         }
     }
-    let cache_backed_curves = ir
-        .model
-        .curves
-        .iter()
-        .filter(|curve| !matches!(&curve.geometry, CurveGeometry::Procedural { .. }))
-        .map(|curve| curve.id.clone())
-        .collect::<BTreeSet<_>>();
-    for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
-        let Some(procedural) = ir
-            .model
-            .procedural_curves
-            .iter_mut()
-            .find(|procedural| procedural.id == procedural_id)
-        else {
-            continue;
-        };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
-        else {
-            continue;
-        };
-        if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
-            context.sides[side].pcurve = Some(pcurve);
-            if cache_backed_curves.contains(&procedural.curve) {
-                procedural.cache_fit_tolerance = Some(
-                    procedural
-                        .cache_fit_tolerance
-                        .unwrap_or(0.0)
-                        .max(effective_fit_tolerance),
-                );
-            }
-        }
+
+    // Independent inverse admission is the cheapest certified route. Run
+    // coupled continuation only after this wave has had a chance to fill the
+    // same lanes, so difficult nested supports are reserved for residuals.
+    if !coupled_geometry_budget.exhausted() {
+        lane_geometry_exhausted |= complete_coupled_support_uv(
+            ir,
+            pending,
+            coupled_support_budget,
+            coupled_geometry_budget,
+        );
     }
+    lane_geometry_exhausted
 }
 
 #[cfg(test)]
@@ -1002,10 +1054,11 @@ fn complete_coupled_support_uv(
     pending: &[PendingExt11SupportUv],
     coupled_support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> bool {
     if geometry_budget.exhausted() {
-        return;
+        return false;
     }
+    let mut lane_geometry_exhausted = false;
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
@@ -1069,6 +1122,11 @@ fn complete_coupled_support_uv(
             .sides
             .each_ref()
             .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
+        let parent_geometry_budget = geometry_budget;
+        let lane_geometry_budget = parent_geometry_budget.child_slice(
+            support_uv_lane_geometry_work_limit(points.len(), parent_geometry_budget.remaining()),
+        );
+        let geometry_budget = &lane_geometry_budget;
         let lanes = complete_blend_boundary_support_uv_with_index_and_budget(
             &model_index,
             surfaces,
@@ -1088,6 +1146,8 @@ fn complete_coupled_support_uv(
                 &mut blend_parameter_grids,
             )
         });
+        lane_geometry_exhausted |= lane_geometry_budget.exhausted();
+        let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
         let Some(lanes) = lanes else {
             continue;
         };
@@ -1125,6 +1185,7 @@ fn complete_coupled_support_uv(
             context.sides[side].pcurve = Some(pcurve);
         }
     }
+    lane_geometry_exhausted
 }
 
 #[cfg(test)]
@@ -1465,5 +1526,29 @@ mod tests {
             &geometry_budget,
         ));
         assert_eq!(geometry_budget.remaining(), 1);
+    }
+
+    #[test]
+    fn support_uv_lane_geometry_slice_preserves_parent_fairness() {
+        let parent = WorkBudget::new(MAX_SUPPORT_UV_LANE_GEOMETRY_WORK * 2);
+        let lane_limit =
+            support_uv_lane_geometry_work_limit(MAX_SUPPORT_UV_SAMPLES, parent.remaining());
+        let lane = parent.child_slice(lane_limit);
+
+        assert_eq!(lane_limit, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+        assert!(lane.charge_by(lane_limit));
+        assert!(!lane.charge());
+        assert_eq!(parent.consumed(), 0);
+        assert!(!parent.exhausted());
+
+        assert!(parent.consume_child(&lane));
+        assert_eq!(parent.consumed(), MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+        assert!(!parent.exhausted());
+
+        let later_lane = parent.child_slice(support_uv_lane_geometry_work_limit(
+            MAX_SUPPORT_UV_SAMPLES,
+            parent.remaining(),
+        ));
+        assert!(later_lane.charge());
     }
 }

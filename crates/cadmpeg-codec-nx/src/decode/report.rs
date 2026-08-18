@@ -52,6 +52,7 @@ pub(crate) struct CompletionBudgetStatus {
     pub(crate) serialized_support_uv_geometry_exhausted: bool,
     pub(crate) support_uv_geometry_exhausted: bool,
     pub(crate) coupled_support_uv_geometry_exhausted: bool,
+    pub(crate) support_uv_lane_geometry_exhausted: bool,
     pub(crate) transfer_limit: usize,
     pub(crate) support_uv_validation_limit: usize,
     pub(crate) support_uv_limit: usize,
@@ -153,7 +154,8 @@ pub(crate) fn build_geometry_report(
             || completion_budget.completion_geometry_exhausted
             || completion_budget.serialized_support_uv_geometry_exhausted
             || completion_budget.support_uv_geometry_exhausted
-            || completion_budget.coupled_support_uv_geometry_exhausted)
+            || completion_budget.coupled_support_uv_geometry_exhausted
+            || completion_budget.support_uv_lane_geometry_exhausted)
     {
         let mut bounded_phases = Vec::new();
         if completion_budget.exact_boundary_exhausted {
@@ -182,6 +184,9 @@ pub(crate) fn build_geometry_report(
         }
         if completion_budget.coupled_support_uv_geometry_exhausted {
             bounded_phases.push("coupled support-UV geometry fitting");
+        }
+        if completion_budget.support_uv_lane_geometry_exhausted {
+            bounded_phases.push("support-UV lane geometry slices");
         }
         losses.push(NxLossCode::IntersectionPcurveCompletionBounded.note(format!(
             "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",

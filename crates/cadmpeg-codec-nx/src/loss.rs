@@ -35,7 +35,7 @@ pub enum NxLossCode {
     TopologyGraphNotReconstructed,
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
     IntersectionRecordsOpaque,
-    /// Geometric completion reached its model-wide work bound before all
+    /// Geometric completion reached a declared work bound before all
     /// intersection pcurve lanes were complete.
     IntersectionPcurveCompletionBounded,
     /// Adaptive geometry certification reached its model-wide work bound.

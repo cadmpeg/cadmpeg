@@ -222,6 +222,7 @@ pub(crate) fn try_decode_geometry(
         ctx.work_budget(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64);
     let serialized_support_uv_geometry_budget =
         ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64);
+    let mut support_uv_lane_geometry_exhausted = false;
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -857,7 +858,7 @@ pub(crate) fn try_decode_geometry(
             &serialized_support_uv_geometry_budget,
         );
         complete_parameterization_equivalent_support_uv(&mut ir);
-        complete_support_uv_with_budget(
+        support_uv_lane_geometry_exhausted |= complete_support_uv_with_budget(
             &mut ir,
             &pending_ext11_support_uv,
             &support_budget,
@@ -967,6 +968,7 @@ pub(crate) fn try_decode_geometry(
         serialized_support_uv_geometry_exhausted: serialized_support_uv_geometry_budget.exhausted(),
         support_uv_geometry_exhausted: support_uv_geometry_budget.exhausted(),
         coupled_support_uv_geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
+        support_uv_lane_geometry_exhausted,
         transfer_limit,
         support_uv_validation_limit: support_uv_limit,
         support_uv_limit,
