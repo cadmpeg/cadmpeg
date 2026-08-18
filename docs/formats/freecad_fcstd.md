@@ -446,11 +446,14 @@ present, that carrier supplies the local placement. Both carriers without a vali
 policy are ambiguous and are refused. Each named `LinkedObject`, `LinkPlacement`, `Placement`, and
 `LinkTransform` carrier occurs at most once in a product record. Each placement carrier has at most
 one `App::PropertyPlacement` property with at most one `PropertyPlacement` value. A value carries finite
-`Px`, `Py`, and `Pz` plus either finite
-quaternion components `Q0` through `Q3` or finite axis-angle components `Ox`, `Oy`, `Oz`, and `A`;
-when both representations are present, the quaternion components are authoritative.
-Missing components, non-finite components, duplicate values, invalid rotation norms, and zero
-quaternions are malformed.
+`Px`, `Py`, and `Pz`. When `A` is present, finite axis-angle components `Ox`, `Oy`, `Oz`, and
+`A` are authoritative; the quaternion attributes are ignored. When `A` is absent, finite
+quaternion components `Q0` through `Q3` are required and authoritative; axis-angle attributes
+are ignored. FreeCAD writes both representations, so `A` is the representation discriminator.
+A finite zero-length axis is valid. FreeCAD substitutes the positive Z axis for that axis; a zero
+angle is the identity and a nonzero angle rotates about Z. A nonzero finite axis is normalized.
+Missing or non-finite components in the selected representation, duplicate values, invalid
+rotation norms, and zero quaternions are malformed.
 For nested links, `prototype_transform` records the linked placement chain selected by
 `LinkTransform`; the evaluated occurrence is container × local × prototype, each exactly once.
 The chain resolves each local product target through its unique product record. A local target with
@@ -502,8 +505,8 @@ carrier or multiple targets is malformed. `Angle`, `AngleMin`, and `AngleMax` ar
 are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
 missing values, and duplicate values are malformed.
 Each connector-frame and connector-offset carrier is an `App::PropertyPlacement` property with at
-most one `PropertyPlacement` value and the same finite position and quaternion or axis-angle
-component rules as product placements.
+most one `PropertyPlacement` value and the same representation discriminator, null-axis fallback,
+and finite position and rotation-component rules as product placements.
 
 CADIR assembly joints resolve local connector objects to component ids while retaining exact
 object and persistent subelement paths. Fixed, revolute, slider, cylindrical, ball, distance,
@@ -608,8 +611,10 @@ elements; `App::PropertyIntegerList` contains `IntegerList` with a count and ord
 `App::PropertyVectorDistance`, `App::PropertyPosition`, and `App::PropertyDirection` contain
 `PropertyVector`; `App::PropertyPrecision` and every registered quantity subtype contain `Float`;
 `App::PropertyRotation` contains `PropertyRotation`; and `App::PropertyPlacement` contains
-`PropertyPlacement` with finite `Px`, `Py`, and `Pz` plus finite quaternion or axis-angle
-components. The quantity subtype suffixes are `Acceleration`, `AmountOfSubstance`, `Angle`, `Area`,
+`PropertyPlacement` with finite `Px`, `Py`, and `Pz`. If `A` is present, finite `Ox`, `Oy`, `Oz`,
+and `A` are authoritative and a zero-length axis uses the positive Z fallback; if `A` is absent,
+finite `Q0` through `Q3` are required and authoritative. The non-selected representation is
+ignored. The quantity subtype suffixes are `Acceleration`, `AmountOfSubstance`, `Angle`, `Area`,
 `CompressiveStrength`, `CurrentDensity`, `Density`, `DissipationRate`, `Distance`,
 `DynamicViscosity`, `ElectricalCapacitance`, `ElectricalConductance`, `ElectricalConductivity`,
 `ElectricalInductance`, `ElectricalResistance`, `ElectricCharge`, `SurfaceChargeDensity`,
@@ -957,8 +962,10 @@ CADIR decision: no separate neutral map-mode field is introduced. `AttachmentRec
 a native record field and retains the persisted zero-based index as decimal text; the fixed names
 are validation metadata, not a replacement value.
 Each placement carrier is an `App::PropertyPlacement` property with at most one
-`PropertyPlacement` value containing finite position and quaternion or axis-angle components.
-Duplicate carriers or values are malformed.
+`PropertyPlacement` value. Its finite position components are `Px`, `Py`, and `Pz`. When `A` is
+present, finite `Ox`, `Oy`, `Oz`, and `A` are authoritative and a zero-length axis uses the
+positive Z fallback; when `A` is absent, finite `Q0` through `Q3` are required and authoritative.
+The non-selected representation is ignored. Duplicate carriers or values are malformed.
 
 Native namespace version 12 adds one carrier-census record per exact-shape payload. Census records
 identify text versus binary framing, the declared topology version, recursive carrier-family

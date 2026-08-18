@@ -281,6 +281,87 @@ fn accepts_axis_angle_placement_values() {
 }
 
 #[test]
+fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="3" Pz="4" Q0="0" Q1="0" Q2="0" Q3="1" A="1.5707963267948966" Ox="0" Oy="0" Oz="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("source placement semantics");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert_eq!(matrix[0][3], 2.0);
+    assert_eq!(matrix[1][3], 3.0);
+    assert_eq!(matrix[2][3], 4.0);
+    assert!((matrix[0][0]).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn accepts_nonzero_axis_below_machine_epsilon() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" A="1.5707963267948966" Ox="1e-20" Oy="0" Oz="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("nonzero source axis");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][2] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[2][1] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[2][2]).abs() < f64::EPSILON * 16.0);
+}
+
+#[test]
 fn rejects_ambiguous_link_placement_without_policy() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">

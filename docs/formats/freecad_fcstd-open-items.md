@@ -579,24 +579,6 @@ refusal or loss.
 
 ## 8. Product structure
 
-### PR-04. Product placement zero-axis fallback
-
-**Question.** How does product placement admission handle an axis-angle value with a zero-length
-axis?
-
-**Known.** `product.rs:979-1079` accepts one `App::PropertyPlacement` value and converts an
-axis-angle carrier to a quaternion. When the axis norm is zero, `placement_matrix` substitutes the
-Z axis. The specification marks an invalid axis-angle rotation as malformed.
-
-**Need.** Reject a zero-length axis, including a zero axis with a nonzero angle, or establish a
-source-defined identity rule and apply it consistently to product, attachment, and joint frames.
-
-**Conflict.** `A=1, Ox=0, Oy=0, Oz=0` becomes a valid rotation about Z instead of a malformed
-placement. The product occurrence transform changes without a refusal or loss; a zero-axis,
-zero-angle value is also accepted despite the invalid-axis rule.
-
-**Note.** New hostile-sweep finding.
-
 ### PR-05. Product metadata value-root framing
 
 **Question.** Which direct value root and property carrier supply product labels, descriptions,
@@ -615,27 +597,6 @@ each product metadata carrier before projecting it into a definition or BOM fiel
 or value order and change a neutral label, description, part number, or BOM field. A wrong or
 malformed carrier is instead omitted silently, so product identity changes without native
 retention or a loss.
-
-**Note.** New hostile-sweep finding.
-
-### PR-06. Mixed placement-representation cardinality
-
-**Question.** Are partial quaternion or axis-angle representations malformed when the other
-representation is complete?
-
-**Known.** The specification requires complete position plus either complete quaternion or
-axis-angle components; missing components are malformed, and a complete quaternion is
-authoritative when both representations are present. `product.rs:1019-1070` selects axis-angle
-whenever `A` is present and otherwise selects quaternion whenever all four quaternion names are
-present, without checking the non-selected representation for partial components.
-
-**Need.** Validate both representation groups when their attributes are present. Accept a complete
-authoritative representation only when the other group is absent or complete, and reject partial
-or non-finite components consistently for product, attachment, and joint frames.
-
-**Conflict.** `Q0` plus complete `A/Ox/Oy/Oz` is accepted by the axis-angle branch, while complete
-`Q0..Q3` plus an incomplete axis group is accepted by the quaternion branch. Missing components
-therefore change product, attachment, or joint frames without a refusal or loss.
 
 **Note.** New hostile-sweep finding.
 

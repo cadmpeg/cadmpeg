@@ -1016,10 +1016,7 @@ pub(crate) fn placement_matrix(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let has_quaternion = ["Q0", "Q1", "Q2", "Q3"]
-        .into_iter()
-        .all(|name| value.attributes.contains_key(name));
-    let quaternion = if !has_quaternion && value.attributes.contains_key("A") {
+    let quaternion = if value.attributes.contains_key("A") {
         let axis = ["Ox", "Oy", "Oz"]
             .into_iter()
             .map(|name| {
@@ -1038,7 +1035,7 @@ pub(crate) fn placement_matrix(
             ))
         })?;
         let axis_norm = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
-        let (x, y, z) = if axis_norm.is_finite() && axis_norm > f64::EPSILON {
+        let (x, y, z) = if axis_norm.is_finite() && axis_norm > 0.0 {
             (
                 axis[0] / axis_norm,
                 axis[1] / axis_norm,
