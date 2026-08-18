@@ -327,6 +327,18 @@ The controlled writer is `/home/pcurve/side2/tmp/iges-l9/type402_form19_witnesse
 
 ## 2. Global metadata
 
+### GL-05. Publication of the Global minimum resolution to neutral tolerances
+
+**Question.** Must the decoded Global minimum resolution become `CadIr.tolerances.linear`, and must the write path use that value instead of a generated one?
+
+**Known.** `cadmpeg-ir/src/units.rs:47-61` gives `Tolerances` with a linear millimetre value and an angular radian value. The defaults are `1e-6` and `1e-10`. `cadmpeg-ir/src/document.rs:259` puts `tolerances` at the top level of the neutral document. The IGES codec does not read or write that field in any production module. The decoder decodes the Global minimum resolution and makes it the coincidence threshold for curve joins, composite concatenation, and Type 112 continuity. `writer.rs:3363-3379` makes a new minimum resolution from `cadmpeg_ir::units::COINCIDENCE_TOLERANCE`, the model edge and vertex tolerances, and the constant `WRITER_ENDPOINT_RELATIVE_TOLERANCE` at `writer.rs:41`. It does not use a decoded value. The Rhino codec sets `tolerances` in its decoder.
+
+**Need.** A neutral document must carry the resolution that its source declares. A conversion to a different format, and the IGES write path, use `1e-6` millimetres for a file that declares a different value. The decode and write paths must agree on which value is authoritative, and the write path must record a loss when it changes the declared resolution.
+
+**Conflict.** The Geometry section of `iges.md` makes the Global minimum resolution the authoritative admission threshold for Type 102 joins and Type 112 continuity. The neutral document does not contain that threshold. Two users of one document thus use different values: the IGES projectors use the declared resolution, and every other user gets the default.
+
+**Note.** WR-02 settled the relation between the generated resolution and the acceptance bound of the writer. It did not ask if the declared source value stays in the neutral document. The write path has no loss code for a changed resolution.
+
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ### DR-20. Root promotion of an instance in a rejected definition
