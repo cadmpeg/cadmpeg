@@ -45,6 +45,7 @@ const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
 const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
 const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
 const CYLINDER_PLANE_CONIC_TOLERANCE: f64 = 2e-3;
+const PERPENDICULAR_CYLINDER_CONIC_TOLERANCE: f64 = 2e-3;
 const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
 
 fn bind_consolidated_revolution_faces_and_seams(
@@ -6692,6 +6693,130 @@ fn standard_spline_cylinder_plane(
     })
 }
 
+fn standard_spline_perpendicular_cylinders(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    points: [usize; 2],
+) -> Option<CurveGeometry> {
+    let surfaces = support
+        .faces
+        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let [Some(left), Some(right)] = surfaces else {
+        return None;
+    };
+    let (first_axis, first_origin, first_radius, second_axis, second_origin, second_radius) =
+        match (&left.geometry, &right.geometry) {
+            (
+                SurfaceGeometry::Cylinder {
+                    axis,
+                    origin,
+                    radius,
+                    ..
+                },
+                SurfaceGeometry::Cylinder {
+                    axis: second_axis,
+                    origin: second_origin,
+                    radius: second_radius,
+                    ..
+                },
+            ) => (
+                *axis,
+                *origin,
+                *radius,
+                *second_axis,
+                *second_origin,
+                *second_radius,
+            ),
+            _ => return None,
+        };
+    let first_axis = unit_vector(first_axis)?;
+    let second_axis = unit_vector(second_axis)?;
+    let first_radius = first_radius.abs();
+    let second_radius = second_radius.abs();
+    if !first_radius.is_finite()
+        || !second_radius.is_finite()
+        || first_radius <= 0.0
+        || second_radius <= 0.0
+        || (first_radius - second_radius).abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+    {
+        return None;
+    }
+    let axis_dot = first_axis.dot(second_axis);
+    if !axis_dot.is_finite() || axis_dot.abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+        return None;
+    }
+    let denominator = 1.0 - axis_dot * axis_dot;
+    if !denominator.is_finite() || denominator <= 0.0 {
+        return None;
+    }
+    let axis_offset = second_origin.vector_from(first_origin);
+    let first_parameter =
+        (axis_offset.dot(first_axis) - axis_dot * axis_offset.dot(second_axis)) / denominator;
+    let second_parameter = axis_dot * first_parameter - axis_offset.dot(second_axis);
+    if !first_parameter.is_finite() || !second_parameter.is_finite() {
+        return None;
+    }
+    let first_center = first_origin.translated(first_axis, first_parameter);
+    let second_center = second_origin.translated(second_axis, second_parameter);
+    if first_center.distance(second_center) > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+        return None;
+    }
+    let center = Point3::new(
+        (first_center.x + second_center.x) * 0.5,
+        (first_center.y + second_center.y) * 0.5,
+        (first_center.z + second_center.z) * 0.5,
+    );
+    let start = ir.model.points.get(points[0])?.position;
+    let end = ir.model.points.get(points[1])?.position;
+    if !point_on_surface(start, &left.geometry)
+        || !point_on_surface(start, &right.geometry)
+        || !point_on_surface(end, &left.geometry)
+        || !point_on_surface(end, &right.geometry)
+    {
+        return None;
+    }
+    let minor_direction = unit_vector(first_axis.cross(second_axis))?;
+    let radius = (first_radius + second_radius) * 0.5;
+    let major_radius = radius * 2.0_f64.sqrt();
+    if !radius.is_finite() || !major_radius.is_finite() || major_radius <= 0.0 {
+        return None;
+    }
+    let branches = [
+        (first_axis - second_axis, first_axis + second_axis),
+        (first_axis + second_axis, first_axis - second_axis),
+    ]
+    .into_iter()
+    .filter_map(|(axis, major_direction)| {
+        let axis = unit_vector(axis)?;
+        let major_direction = unit_vector(major_direction)?;
+        let endpoint_is_on_branch = |point: Point3| {
+            let offset = point.vector_from(center);
+            let major = offset.dot(major_direction) / major_radius;
+            let minor = offset.dot(minor_direction) / radius;
+            let equation = major * major + minor * minor;
+            offset.dot(axis).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+                && equation.is_finite()
+                && (equation - 1.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+        };
+        (endpoint_is_on_branch(start) && endpoint_is_on_branch(end)).then_some(
+            CurveGeometry::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius: radius,
+            },
+        )
+    })
+    .collect::<Vec<_>>();
+    let [geometry] = branches.as_slice() else {
+        return None;
+    };
+    Some(geometry.clone())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
@@ -6837,14 +6962,23 @@ pub(crate) fn build_standard_edge_curve(
                                 points,
                             ) {
                                 Some(geometry) => (geometry, None),
-                                None => (
-                                    CurveGeometry::Unknown {
-                                        record: Some(UnknownId(
-                                            "catia:payload:unknown#brep-stream".to_string(),
-                                        )),
-                                    },
-                                    None,
-                                ),
+                                None => match standard_spline_perpendicular_cylinders(
+                                    ir,
+                                    bindings,
+                                    surface_indices,
+                                    support,
+                                    points,
+                                ) {
+                                    Some(geometry) => (geometry, None),
+                                    None => (
+                                        CurveGeometry::Unknown {
+                                            record: Some(UnknownId(
+                                                "catia:payload:unknown#brep-stream".to_string(),
+                                            )),
+                                        },
+                                        None,
+                                    ),
+                                },
                             },
                         }
                     }
