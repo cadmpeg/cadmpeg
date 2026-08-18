@@ -15,29 +15,30 @@ Each item has an identifier and these fields:
 
 ### GP-01. Other GUI property grammars
 
-**Question.** What value grammar remains for each non-link GUI property runtime type not yet
-covered by the specification?
+**Question.** What value grammar remains for each non-link GUI property runtime type outside the
+settled scalar, quantity, and custom branches?
 
 **Known.** View-provider properties use the shared application property persistence path. Every
 GUI link-family runtime type uses the exact direct carrier grammar defined for application links,
 including the `PropertyPlacementLink` subtype. The GUI validator checks the carrier root,
-cardinality, attributes, and leaf rule before neutral transfer or native admission. The current
-registry in `gui.rs:30-39` still classifies custom types and every non-Unknown `PropertyFamily` as
-registered.
+cardinality, attributes, and leaf rule before neutral transfer or native admission. Scalar and
+quantity GUI types use one direct `Bool`, `Integer`, or `Float` root; constraint subtypes admit the
+producer's optional numeric `min`, `max`, and `step` attributes. The current registry in
+`gui.rs:30-39` still classifies custom types and every non-Unknown `PropertyFamily` as registered.
 
-**Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type.
-Validate its direct value roots, cardinality, attributes, and side-entry references before neutral
-transfer or native admission. Provider-defined types without a registered grammar must remain
-opaque.
+**Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
+outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
+references before neutral transfer or native admission. Provider-defined types without a registered
+grammar must remain opaque.
 
 **Conflict.** A non-link GUI property such as `Mesh::PropertyMeshKernel` can enter the registered
 path without a complete value-grammar check. Its arbitrary descendant values can then be retained
 as if the registry had established their grammar, while the neutral presentation path silently
 withholds or misreads the value.
 
-**Note.** Partly settled. The link-family half is closed by the application writer inheritance
-rules and the shared direct-carrier validator. The remaining question is limited to non-link
-runtime types.
+**Note.** Partly settled. Link-family and scalar/quantity value grammars are closed by the
+application writer inheritance rules and shared direct-root validation. The remaining question is
+limited to list, custom, and side-entry runtime types.
 
 ### GP-02. Other GUI property semantics
 

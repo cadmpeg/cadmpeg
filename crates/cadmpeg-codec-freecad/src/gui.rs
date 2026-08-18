@@ -895,6 +895,9 @@ fn validate_gui_property(
                     "GUI property {property_name} has an invalid integer"
                 ))
             })?;
+            if is_gui_integer_constraint_type(type_name) {
+                validate_gui_constraint_attributes(root, property_name, true)?;
+            }
             if type_name == "App::PropertyEnumeration" {
                 validate_gui_enumeration(&roots, property_name)?;
                 return Ok(());
@@ -908,6 +911,9 @@ fn validate_gui_property(
                 return Err(CodecError::Malformed(format!(
                     "GUI property {property_name} has a non-finite float"
                 )));
+            }
+            if is_gui_float_constraint_type(type_name) {
+                validate_gui_constraint_attributes(root, property_name, false)?;
             }
         }
         "String" | "Python" | "ColorList" | "MaterialList" => {
@@ -1146,6 +1152,40 @@ fn gui_list_count(
         })
 }
 
+fn validate_gui_constraint_attributes(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    integer: bool,
+) -> Result<(), CodecError> {
+    for attribute in ["min", "max", "step"] {
+        let Some(value) = root.attribute(attribute) else {
+            continue;
+        };
+        if integer {
+            value.parse::<i64>().map_err(|_| {
+                gui_constraint_error(property_name, "an invalid integer", attribute)
+            })?;
+        } else {
+            let value = value
+                .parse::<f64>()
+                .map_err(|_| gui_constraint_error(property_name, "an invalid float", attribute))?;
+            if !value.is_finite() {
+                return Err(gui_constraint_error(
+                    property_name,
+                    "a non-finite",
+                    attribute,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn gui_constraint_error(property_name: &str, detail: &str, attribute: &str) -> CodecError {
+    let message = format!("GUI property {property_name} has {detail} {attribute}");
+    CodecError::Malformed(message)
+}
+
 fn validate_gui_placement(
     root: roxmltree::Node<'_, '_>,
     property_name: &str,
@@ -1284,6 +1324,26 @@ fn gui_value_tag(type_name: &str) -> Option<&'static str> {
         _ => return None,
     };
     Some(tag)
+}
+
+fn is_gui_integer_constraint_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyIntegerConstraint" | "App::PropertyPercent"
+    )
+}
+
+fn is_gui_float_constraint_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyAngle"
+            | "App::PropertyArea"
+            | "App::PropertyFloatConstraint"
+            | "App::PropertyLength"
+            | "App::PropertyPrecision"
+            | "App::PropertyQuantityConstraint"
+            | "App::PropertyVolume"
+    )
 }
 
 const GUI_QUANTITY_TYPES: &[&str] = &[

@@ -284,6 +284,46 @@ fn validates_gui_link_value_grammars() {
 }
 
 #[test]
+fn validates_gui_constraint_attribute_grammars() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="3">
+<Property name="IntegerConstraint" type="App::PropertyIntegerConstraint"><Integer value="4" min="0" max="10" step="2"/></Property>
+<Property name="FloatConstraint" type="App::PropertyFloatConstraint"><Float value="1.5" min="0" max="5" step="0.5"/></Property>
+<Property name="Length" type="App::PropertyLength"><Float value="12" min="0" max="25" step="0.5"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid GUI constraint attributes");
+
+    for invalid in [
+        r#"<Property name="IntegerConstraint" type="App::PropertyIntegerConstraint"><Integer value="4" min="zero"/></Property>"#,
+        r#"<Property name="FloatConstraint" type="App::PropertyFloatConstraint"><Float value="1.5" step="not-a-float"/></Property>"#,
+        r#"<Property name="Length" type="App::PropertyLength"><Float value="12" max="NaN"/></Property>"#,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid GUI constraint attribute");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn accepts_and_validates_gui_custom_enumerations() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">

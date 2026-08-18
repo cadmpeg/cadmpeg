@@ -109,6 +109,16 @@ A `Property` contains its runtime-type-specific value XML. A `_Property` has no 
 Status and dynamic-property metadata are optional record attributes. Property container dispatch
 does not depend on `SchemaVersion`, `FileVersion`, or `ProgramVersion`.
 
+`PropertyIntegerConstraint` and `PropertyPercent` use one `Integer` root. The root has a required
+`value` and may carry numeric `min`, `max`, and `step` attributes. `PropertyFloatConstraint`,
+`PropertyPrecision`, `PropertyQuantityConstraint`, and the `PropertyAngle`, `PropertyArea`,
+`PropertyLength`, and `PropertyVolume` subtypes use the same form with a `Float` root and finite
+floating-point attributes. The plain scalar and quantity writers serialize only the `value`
+attribute.
+When a dynamic constraint is written, the producer emits all three constraint attributes; restore
+accepts each independently, defaulting missing bounds and step. The format does not add a
+min/max/step ordering rule beyond numeric parsing.
+
 Link properties use a closed runtime-type and value-tag grammar. All runtime types in this
 grammar have the `App::` prefix. `PropertyLink` and its
 `Child`, `Global`, and `Hidden` variants contain one `Link` with a `value` object name.
