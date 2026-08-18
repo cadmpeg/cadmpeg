@@ -10,6 +10,7 @@ use super::super::sketch::{
     section_equation_function_forty_three_axis_distance_rows,
     section_equation_function_forty_two_midpoint_coordinate_rows,
     section_equation_function_six_distance_rows,
+    section_equation_function_sixteen_angle_difference_rows,
     section_equation_function_thirty_one_point_coordinate_rows,
     section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
@@ -26,7 +27,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair,
-    SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
+    SketchEntityId, SketchId, SketchLocus, SketchNativeOperand, SketchSolverScalar,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1036,6 +1037,44 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
     .collect()
 }
 
+pub(in super::super) fn section_equation_function_sixteen_angle_difference_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    section_equation_function_sixteen_angle_difference_rows(definition)
+        .into_iter()
+        .map(|equation| {
+            let scalar = |(variable_type, key)| SketchSolverScalar { variable_type, key };
+            (
+                SketchConstraint {
+                    id: sketch_constraint_id(
+                        sketch,
+                        format_args!("equation:{}", equation.equation_id),
+                    ),
+                    sketch: sketch.clone(),
+                    definition: SketchConstraintDefinition::AngleDifference {
+                        first: scalar(equation.first),
+                        second: scalar(equation.second),
+                        difference: scalar(equation.difference),
+                        value: Angle(equation.value),
+                    },
+                    name: None,
+                    driving: None,
+                    active: Some(equation.active),
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
+                    native_ref: Some(sketch_native_ref(sketch)),
+                },
+                equation.offset,
+            )
+        })
+        .collect()
+}
+
 pub(in super::super) fn section_equation_polar_distance_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -1930,10 +1969,88 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
 
 #[cfg(test)]
 mod tests {
-    use super::reconcile_section_dimension_constraint;
+    use super::{
+        reconcile_section_dimension_constraint,
+        section_equation_function_sixteen_angle_difference_constraints,
+    };
     use cadmpeg_ir::features::ParameterId;
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchId};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition, SketchEntityId, SketchId, SketchSolverScalar,
+    };
     use std::collections::BTreeSet;
+
+    #[test]
+    fn direct_angle_difference_transfers_solver_scalar_operands() {
+        let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: value.is_none(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven: value.is_none(),
+            offset: 0,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 40,
+            owner_feature_id: None,
+            body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                    \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                    \x01\x10\xf8\x04\x00\x01\x02\x03\xf6\xe2"
+                .to_vec(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 4,
+                entity_ref: None,
+                rows: vec![
+                    row(4, 10, Some(2.5)),
+                    row(4, 11, Some(1.0)),
+                    row(0, 20, Some(1.5)),
+                    row(5, 0, Some(0.0)),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId("synthetic:test:angle-difference".into());
+        let constraints =
+            section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].1, 28);
+        assert_eq!(constraints[0].0.active, Some(true));
+        assert_eq!(
+            constraints[0].0.definition,
+            SketchConstraintDefinition::AngleDifference {
+                first: SketchSolverScalar {
+                    variable_type: 4,
+                    key: 10,
+                },
+                second: SketchSolverScalar {
+                    variable_type: 4,
+                    key: 11,
+                },
+                difference: SketchSolverScalar {
+                    variable_type: 0,
+                    key: 20,
+                },
+                value: cadmpeg_ir::features::Angle(1.5),
+            }
+        );
+    }
 
     #[test]
     fn typed_dimension_relation_falls_back_to_native_when_references_are_not_emitted() {

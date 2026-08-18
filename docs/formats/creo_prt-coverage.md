@@ -63,9 +63,12 @@ fixtures, scores above L1 remain blocked.
   Function-forty-three equations transfer as
   typed horizontal- or vertical-distance constraints when their unique dimension
   parameter agrees with the solved one-axis coordinate difference and both point
-  keys resolve to emitted loci. Function-five scalar-equality rows join the scalar
-  equality graph when their type-five selector has a stored or independently
-  reconciled zero value.
+  keys resolve to emitted loci. Direct function-sixteen angle-difference rows
+  transfer as typed solver-scalar relations when both angle operands, the
+  type-zero result, and the zero type-five selector satisfy the settled direct
+  form; inactive rows retain their source activity. Function-five scalar-equality
+  rows join the scalar equality graph when their type-five selector has a stored
+  or independently reconciled zero value.
 - Function-two type-3/type-0 radius equations transfer as typed radius
   constraints when the radius key binds to a unique emitted arc or circle
   entity, including a complete row in an incomplete segment table, and the

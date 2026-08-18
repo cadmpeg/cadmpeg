@@ -32,6 +32,7 @@ pub(super) use constraints::{
     section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
     section_equation_function_six_distance_constraints,
+    section_equation_function_sixteen_angle_difference_constraints,
     section_equation_function_thirty_one_point_coordinate_constraints,
     section_equation_native_constraints, section_equation_point_on_line_constraints,
     section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,

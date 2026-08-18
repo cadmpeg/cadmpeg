@@ -1264,9 +1264,30 @@ pub(crate) fn resolved_section_scalar_values(
         .collect()
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct SectionFunctionSixteenAngleDifference {
+    pub(crate) first: SectionScalarVariable,
+    pub(crate) second: SectionScalarVariable,
+    pub(crate) difference: SectionScalarVariable,
+    pub(crate) value: f64,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
+}
+
 pub(crate) fn section_equation_function_sixteen_angle_difference_values(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<(SectionScalarVariable, f64)> {
+    section_equation_function_sixteen_angle_difference_rows(definition)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .map(|constraint| (constraint.difference, constraint.value))
+        .collect()
+}
+
+pub(crate) fn section_equation_function_sixteen_angle_difference_rows(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<SectionFunctionSixteenAngleDifference> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -1294,7 +1315,6 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_values(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter_map(|equation| {
             if equation.function_id != 16 || equation.arguments.len() != 4 {
                 return None;
@@ -1353,13 +1373,13 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_values(
             {
                 return None;
             }
-            let (Some(first), Some(second)) = (first_value, second_value) else {
+            let (Some(first_value), Some(second_value)) = (first_value, second_value) else {
                 return None;
             };
-            if !first.is_finite() || !second.is_finite() || first < second {
+            if !first_value.is_finite() || !second_value.is_finite() || first_value < second_value {
                 return None;
             }
-            let value = first - second;
+            let value = first_value - second_value;
             if !value.is_finite() || value > std::f64::consts::PI {
                 return None;
             }
@@ -1368,7 +1388,15 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_values(
             }) {
                 return None;
             }
-            Some(((difference.variable_type, difference.key), value))
+            Some(SectionFunctionSixteenAngleDifference {
+                first: (first.variable_type, first.key),
+                second: (second.variable_type, second.key),
+                difference: (difference.variable_type, difference.key),
+                value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+            })
         })
         .collect()
 }

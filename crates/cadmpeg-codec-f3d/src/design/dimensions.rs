@@ -1839,6 +1839,7 @@ pub(crate) fn constraint_parameters(
         | Definition::Midpoint { .. }
         | Definition::PointCoordinateValues { .. }
         | Definition::MidpointCoordinate { .. }
+        | Definition::AngleDifference { .. }
         | Definition::Concentric { .. }
         | Definition::Coradial { .. }
         | Definition::Collinear { .. }

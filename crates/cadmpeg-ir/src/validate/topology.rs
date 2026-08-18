@@ -1706,6 +1706,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
+            Definition::AngleDifference { .. } => (Vec::new(), None),
             Definition::EqualDistance { first, second } => (
                 vec![
                     locus_entity(&first.first).clone(),

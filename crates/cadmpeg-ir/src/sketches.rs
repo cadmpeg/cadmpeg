@@ -871,6 +871,20 @@ pub struct SketchDistancePair {
     pub second: SketchLocus,
 }
 
+/// One opaque scalar symbol in a sketch solver graph.
+///
+/// The identity is local to the owning sketch. `variable_type` preserves the
+/// solver's scalar class so relations can join only compatible symbols; it has
+/// no meaning outside that solver graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchSolverScalar {
+    /// Solver scalar class.
+    pub variable_type: u32,
+    /// Solver-local scalar key.
+    pub key: u32,
+}
+
 /// Meaning of an internal sketch alignment helper relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1221,6 +1235,17 @@ pub enum SketchConstraintDefinition {
         /// Driving distance parameter, when the source supplies one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         distance_parameter: Option<ParameterId>,
+    },
+    /// Direct difference between two angle-valued solver scalars.
+    AngleDifference {
+        /// First angle scalar in the subtraction.
+        first: SketchSolverScalar,
+        /// Second angle scalar in the subtraction.
+        second: SketchSolverScalar,
+        /// Scalar receiving `first - second`.
+        difference: SketchSolverScalar,
+        /// Source-evaluated non-negative angle difference in radians.
+        value: Angle,
     },
     /// Two explicit Euclidean locus pairs have equal separation.
     EqualDistance {

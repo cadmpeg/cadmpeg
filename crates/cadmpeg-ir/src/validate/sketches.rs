@@ -1573,6 +1573,18 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && angle_matches
                     && parameter_matches
             }
+            Constraint::AngleDifference {
+                first,
+                second,
+                difference,
+                value,
+            } => {
+                first.variable_type == 4
+                    && second.variable_type == 4
+                    && difference.variable_type == 0
+                    && value.0.is_finite()
+                    && (0.0..=std::f64::consts::PI).contains(&value.0)
+            }
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();
                 !measurements.is_empty()

@@ -117,7 +117,7 @@ pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
     SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
-    SketchPlacement, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
+    SketchPlacement, SketchSolverScalar, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{
