@@ -6643,7 +6643,10 @@ invokes this stream only after it has successfully read the preceding render
 settings record; otherwise it skips the record. Unknown nonzero child chunks
 are skipped. The class-end marker stops the stream, and any remaining bytes
 through the containing record boundary are a suffix. The anonymous payload is
-owned by the userdata class and has no common field grammar.
+owned by the userdata class and has no common field grammar. CADIR does not
+project these class-owned render-settings payloads into native fields. A
+successfully framed record remains a complete opaque settings record with its
+source bytes; malformed framing uses the same complete-record retention rule.
 
 The outer CRC excludes every complete child chunk through and including the
 class-end marker. Bytes after the class-end marker are direct suffix bytes and

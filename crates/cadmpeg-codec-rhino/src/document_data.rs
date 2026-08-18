@@ -611,7 +611,16 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
                 })
             } else if record.typecode == RENDER_USERDATA {
                 if render_settings_seen {
-                    render_userdata(scan.data, record, scan.archive).map(|_| ())
+                    match render_userdata(scan.data, record, scan.archive) {
+                        Ok(_) => {
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
+                            continue;
+                        }
+                        Err(error) => Err(error),
+                    }
                 } else {
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,

@@ -116,6 +116,10 @@ either bounded payload has an unsupported anonymous major, the parent
 tessellation remains typed, correspondence state is omitted, the complete
 mesh object record is retained, and the owner emits a decode warning naming
 the carrier.
+The render-settings owner is proven to retain a complete framed
+`TCODE_SETTINGS_RENDER_USERDATA` record when its registered class-owned
+anonymous payload has an unsupported major; the typed render-settings record
+remains, and no class-owned payload fields enter native data.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
