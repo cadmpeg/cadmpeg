@@ -488,6 +488,12 @@ fn decode_types_scalar_and_string_property_forms() {
     assert_eq!(property(18).fields()["percent"], 12.5);
     assert_eq!(property(20).fields()["highlighted"], true);
     assert_eq!(property(21).fields()["pickable"], true);
+    assert_eq!(property(10).fields()["line_font"], 1);
+    assert_eq!(property(10).fields()["view"], 0);
+    assert_eq!(property(10).fields()["level"], 1);
+    assert_eq!(property(10).fields()["blank"], 0);
+    assert_eq!(property(10).fields()["line_weight"], 1);
+    assert_eq!(property(10).fields()["color"], 0);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
