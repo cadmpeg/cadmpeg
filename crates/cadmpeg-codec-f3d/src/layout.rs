@@ -2578,6 +2578,42 @@ pub(crate) mod work_plane_legacy_class_256_matrix_frame {
     pub(crate) const MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `work_plane_legacy_class_337_325_matrix_frame` record.
+///
+/// Spec §3.1. Record length 325 B.
+///
+/// ```text
+/// Offsets are relative to the class-337 primary indexed placement header paired with class 266. The two-byte lane before the final zero pair is opaque.
+/// ```
+pub(crate) mod work_plane_legacy_class_337_325_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 325;
+    /// Offset of `opaque_u16` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_U16: usize = 45;
+    /// Offset of `zero_pair` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_PAIR: usize = 47;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 49;
+}
+
+/// Byte offsets for the `work_plane_legacy_321_opaque_matrix_frame` record.
+///
+/// Spec §3.1. Record length 321 B.
+///
+/// ```text
+/// Offsets are relative to the class-341 primary indexed placement header paired with class 261, or the class-346 primary indexed placement header paired with class 262. The two-byte lane before the final zero pair is opaque.
+/// ```
+pub(crate) mod work_plane_legacy_321_opaque_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 321;
+    /// Offset of `opaque_u16` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_U16: usize = 45;
+    /// Offset of `zero_pair` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_PAIR: usize = 47;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 49;
+}
+
 /// Byte offsets for the `work_plane_legacy_337_matrix_frame` record.
 ///
 /// Spec §3.1. Record length 337 B.

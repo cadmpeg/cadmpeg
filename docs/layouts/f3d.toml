@@ -6108,6 +6108,94 @@ size = 148
 note = "The placement carrier tail is retained as a named opaque carrier."
 
 [[record]]
+name = "work_plane_legacy_class_337_325_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The class-337/266 WorkPlane placement frame is 325 bytes"
+size = 325
+note = "Offsets are relative to the class-337 primary indexed placement header paired with class 266. The two-byte lane before the final zero pair is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 34
+note = "Bytes 11 through 44 are zero."
+
+[[record.field]]
+name = "opaque_u16"
+offset = 45
+type = "u16"
+source = "spec"
+anchor = "bytes 45 through 46 are an opaque little-endian u16"
+
+[[record.field]]
+name = "zero_pair"
+offset = 47
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes 47 through 48 are zero"
+
+[[record.field]]
+name = "matrix"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "The class-337/266 WorkPlane placement frame is 325 bytes and uses the same offsets"
+
+[[record.gap]]
+offset = 177
+size = 148
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
+name = "work_plane_legacy_321_opaque_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The class-341/261 and class-346/262 placement frames use a 321-byte form"
+size = 321
+note = "Offsets are relative to the class-341 primary indexed placement header paired with class 261, or the class-346 primary indexed placement header paired with class 262. The two-byte lane before the final zero pair is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 34
+note = "Bytes 11 through 44 are zero."
+
+[[record.field]]
+name = "opaque_u16"
+offset = 45
+type = "u16"
+source = "spec"
+anchor = "bytes 45 through 46 are an opaque little-endian u16"
+
+[[record.field]]
+name = "zero_pair"
+offset = 47
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes 47 through 48 are zero"
+
+[[record.field]]
+name = "matrix"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "The class-341/261 and class-346/262 placement frames use a 321-byte form"
+
+[[record.gap]]
+offset = 177
+size = 144
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
 name = "work_plane_legacy_337_matrix_frame"
 kind = "byte"
 section = "3.1"

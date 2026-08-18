@@ -1839,6 +1839,42 @@ Unstated regions:
 - `11..45` (34 B): Bytes 11 through 44 are zero.
 - `177..325` (148 B): The placement carrier tail is retained as a named opaque carrier.
 
+## `work_plane_legacy_class_337_325_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 325 B
+
+Offsets are relative to the class-337 primary indexed placement header paired with class 266. The two-byte lane before the final zero pair is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 45 | 2 | `opaque_u16` | `u16` | little | spec | bytes 45 through 46 are an opaque little-endian u16 |
+| 47 | 2 | `zero_pair` | `bytes[2]` | little | spec | bytes 47 through 48 are zero |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | The class-337/266 WorkPlane placement frame is 325 bytes and uses the same offsets |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..45` (34 B): Bytes 11 through 44 are zero.
+- `177..325` (148 B): The placement carrier tail is retained as a named opaque carrier.
+
+## `work_plane_legacy_321_opaque_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 321 B
+
+Offsets are relative to the class-341 primary indexed placement header paired with class 261, or the class-346 primary indexed placement header paired with class 262. The two-byte lane before the final zero pair is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 45 | 2 | `opaque_u16` | `u16` | little | spec | bytes 45 through 46 are an opaque little-endian u16 |
+| 47 | 2 | `zero_pair` | `bytes[2]` | little | spec | bytes 47 through 48 are zero |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | The class-341/261 and class-346/262 placement frames use a 321-byte form |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..45` (34 B): Bytes 11 through 44 are zero.
+- `177..321` (144 B): The placement carrier tail is retained as a named opaque carrier.
+
 ## `work_plane_legacy_337_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 337 B

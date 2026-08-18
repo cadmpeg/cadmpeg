@@ -8,10 +8,12 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
+use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 
 #[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
@@ -1754,6 +1756,85 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
     invalid.extend_from_slice(&71u32.to_le_bytes());
     let mut scope = DesignParameterScope::empty("f3d:test:scope#2", "WorkPlane", 2);
     scope.reference_members = vec![71];
+    assert_eq!(
+        exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
+        None
+    );
+}
+
+#[test]
+fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
+    type WorkPlaneOpaqueCase = (&'static [u8; 3], &'static [u8; 3], usize, [u8; 2], u32);
+
+    let transform: [[f64; 4]; 4] = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let cases: [WorkPlaneOpaqueCase; 3] = [
+        (b"341", b"261", work_plane_321_opaque::LEN, [0xea, 0x20], 81),
+        (b"346", b"262", work_plane_321_opaque::LEN, [0xae, 0x70], 82),
+        (
+            b"337",
+            b"266",
+            work_plane_class_337_325::LEN,
+            [0x6d, 0x00],
+            83,
+        ),
+    ];
+
+    for (class_tag, paired_class_tag, frame_length, opaque_u16, record_index) in cases {
+        let matrix = if frame_length == work_plane_321_opaque::LEN {
+            work_plane_321_opaque::MATRIX
+        } else {
+            work_plane_class_337_325::MATRIX
+        };
+        let opaque = if frame_length == work_plane_321_opaque::LEN {
+            work_plane_321_opaque::OPAQUE_U16
+        } else {
+            work_plane_class_337_325::OPAQUE_U16
+        };
+        let zero_pair = if frame_length == work_plane_321_opaque::LEN {
+            work_plane_321_opaque::ZERO_PAIR
+        } else {
+            work_plane_class_337_325::ZERO_PAIR
+        };
+        let mut bytes = vec![0; frame_length];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(class_tag);
+        bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
+        bytes[opaque..opaque + opaque_u16.len()].copy_from_slice(&opaque_u16);
+        assert_eq!(&bytes[zero_pair..zero_pair + 2], &[0, 0]);
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = matrix + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(paired_class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+
+        let mut scope = DesignParameterScope::empty("f3d:test:scope#opaque", "WorkPlane", 1);
+        scope.reference_members = vec![record_index];
+        let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .expect("opaque-prefix WorkPlane frame");
+        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform_offset, matrix as u64);
+        assert_eq!(decoded.reference, None);
+    }
+
+    let mut invalid = vec![0; work_plane_321_opaque::LEN];
+    invalid[0..4].copy_from_slice(&3u32.to_le_bytes());
+    invalid[4..7].copy_from_slice(b"341");
+    invalid[7..11].copy_from_slice(&84u32.to_le_bytes());
+    invalid[work_plane_321_opaque::OPAQUE_U16..work_plane_321_opaque::OPAQUE_U16 + 2]
+        .copy_from_slice(&[0xea, 0x20]);
+    invalid[work_plane_321_opaque::ZERO_PAIR] = 1;
+    invalid.extend_from_slice(&3u32.to_le_bytes());
+    invalid.extend_from_slice(b"262");
+    invalid.extend_from_slice(&84u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#invalid", "WorkPlane", 2);
+    scope.reference_members = vec![84];
     assert_eq!(
         exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
         None
