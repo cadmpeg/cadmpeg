@@ -634,6 +634,22 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (504, 1) => {
+            let Some(edge_count) = record.count(1).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = edge_count
+                .checked_mul(5)
+                .and_then(|width| width.checked_add(2))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (406, 5) => {
             if record.integer(1) != Some(5) {
                 return ParameterBoundary::Invalid;
