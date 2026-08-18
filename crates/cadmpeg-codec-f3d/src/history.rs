@@ -3476,6 +3476,15 @@ pub(crate) fn bind_face_operand_history_candidates(
                 operand.resolved_face_slots = vec![face];
             }
         }
+        if operand.resolved_face_slots.is_empty() && scope.kind == "Draft" {
+            if let Some(result) = state.topology.as_ref() {
+                if let Some(face) =
+                    resolve_draft_face_by_surface_transition(operand, topology, result)
+                {
+                    operand.resolved_face_slots = vec![face];
+                }
+            }
+        }
         if operand.resolved_face_slots.is_empty() {
             if let Some(candidates) = &legacy_face_candidates {
                 match select_legacy_extrude_face_candidate(
@@ -3496,6 +3505,153 @@ pub(crate) fn bind_face_operand_history_candidates(
         }
     }
     bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
+}
+
+/// Resolve a Draft face whose persistent selector lane is ambiguous in the
+/// active B-rep by following the surface carrier through the exact Draft
+/// transition.
+///
+/// Draft changes the selected face's actual surface geometry. The same
+/// transition may update tangent or context faces, so the transition is
+/// admissible only when exactly one face from the operand's alternate lane (or,
+/// when no alternate lane exists, its exact candidate lane) changes surface
+/// geometry. A missing, duplicate, or unchanged surface is not a selection
+/// proof. Carrier record identities are not compared: a history update may
+/// assign a new carrier record without changing the surface.
+#[derive(Clone, Copy, PartialEq)]
+enum DraftSurfaceGeometry {
+    Plane {
+        origin: cadmpeg_ir::math::Point3,
+        normal: cadmpeg_ir::math::Vector3,
+    },
+    Cylinder {
+        origin: cadmpeg_ir::math::Point3,
+        axis: cadmpeg_ir::math::Vector3,
+        radius: f64,
+    },
+    Axis {
+        origin: cadmpeg_ir::math::Point3,
+        direction: cadmpeg_ir::math::Vector3,
+        radius: Option<f64>,
+    },
+}
+
+fn draft_surface_geometry(
+    topology: &crate::history_records::AsmHistoricalTopology,
+    face: i64,
+) -> Option<DraftSurfaceGeometry> {
+    let mut bindings = topology
+        .face_surfaces
+        .iter()
+        .filter(|binding| binding.entity == face)
+        .map(|binding| binding.carrier);
+    let carrier = bindings.next()?;
+    if bindings.next().is_some() {
+        return None;
+    }
+    if let Some(plane) = topology
+        .surface_planes
+        .iter()
+        .find(|surface| surface.surface == carrier)
+    {
+        return Some(DraftSurfaceGeometry::Plane {
+            origin: plane.origin,
+            normal: plane.normal,
+        });
+    }
+    if let Some(cylinder) = topology
+        .surface_cylinders
+        .iter()
+        .find(|surface| surface.surface == carrier)
+    {
+        return Some(DraftSurfaceGeometry::Cylinder {
+            origin: cylinder.origin,
+            axis: cylinder.axis,
+            radius: cylinder.radius,
+        });
+    }
+    topology
+        .surface_axes
+        .iter()
+        .find(|surface| surface.surface == carrier)
+        .map(|axis| DraftSurfaceGeometry::Axis {
+            origin: axis.origin,
+            direction: axis.direction,
+            radius: topology
+                .surface_radii
+                .iter()
+                .find(|radius| radius.surface == carrier)
+                .map(|radius| radius.radius),
+        })
+}
+
+fn resolve_draft_face_by_surface_transition(
+    operand: &crate::records::DesignFaceOperand,
+    preceding: &crate::history_records::AsmHistoricalTopology,
+    result: &crate::history_records::AsmHistoricalTopology,
+) -> Option<i64> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+        || !matches!(
+            crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
+            Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. })
+        )
+        || operand.recipe_node_offsets.len() != operand.recipe_nodes.len()
+        || operand.recipe_nodes.is_empty()
+    {
+        return None;
+    }
+    let candidate_slots = operand
+        .candidate_faces
+        .iter()
+        .filter_map(|face| stable_ref(&face.0))
+        .collect::<HashSet<_>>();
+    if candidate_slots.is_empty() {
+        return None;
+    }
+    let alternate_slots = operand
+        .recipe_references
+        .iter()
+        .flat_map(|reference| &reference.alternate_selector_faces)
+        .filter_map(|face| stable_ref(&face.0))
+        .filter(|face| candidate_slots.contains(face))
+        .collect::<BTreeSet<_>>();
+    let exact_slots = operand
+        .recipe_references
+        .iter()
+        .flat_map(|reference| &reference.candidate_faces)
+        .filter_map(|face| stable_ref(&face.0))
+        .filter(|face| candidate_slots.contains(face))
+        .collect::<BTreeSet<_>>();
+    let has_alternates = !alternate_slots.is_empty();
+    let candidates = if has_alternates {
+        alternate_slots
+    } else {
+        exact_slots
+    };
+    if candidates.is_empty() {
+        return None;
+    }
+    if !has_alternates {
+        let mut faces = candidates.iter();
+        let face = *faces.next()?;
+        if faces.next().is_some() {
+            return None;
+        }
+        return (preceding.faces.contains(&face) && result.faces.contains(&face)).then_some(face);
+    }
+    let changed = candidates
+        .into_iter()
+        .filter(|face| preceding.faces.contains(face) && result.faces.contains(face))
+        .filter(|face| {
+            draft_surface_geometry(preceding, *face)
+                .zip(draft_surface_geometry(result, *face))
+                .is_some_and(|(before, after)| before != after)
+        })
+        .collect::<Vec<_>>();
+    let [face] = changed.as_slice() else {
+        return None;
+    };
+    Some(*face)
 }
 
 fn resolve_pattern_face_by_surface_radius(
