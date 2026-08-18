@@ -9248,3 +9248,152 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         }
     }
 }
+
+#[test]
+fn type420_entity_table_boundary_follows_connect_point_count() {
+    let association = directory_target(1, 212);
+    let source = directory_target(9, 420);
+    let directory = BTreeMap::from([(1, &association), (9, &source)]);
+
+    for (connect_count, expected_start) in [(0_i64, 12_usize), (1, 13), (2, 14)] {
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 420;
+        values[11] = connect_count;
+        values[expected_start] = 1;
+        values[expected_start + 1] = 1;
+        values[expected_start + 2] = 0;
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(9, &values), &directory);
+        assert_eq!(analysis.candidate_count, 1, "NC={connect_count}");
+        assert_eq!(analysis.valid_candidate_count, 1, "NC={connect_count}");
+        let groups = analysis.groups.expect("Type 420 table boundary");
+        assert_eq!(groups.token_start, expected_start, "NC={connect_count}");
+        assert_eq!(groups.associations, vec![1], "NC={connect_count}");
+        assert!(groups.properties.is_empty(), "NC={connect_count}");
+    }
+}
+
+#[test]
+fn type420_entity_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property_5 = directory_target(5, 406);
+    let property_7 = directory_target(7, 406);
+    let source = directory_target(9, 420);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property_5),
+        (7, &property_7),
+        (9, &source),
+    ]);
+    let values = [420, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0, 2, 1, 3, 2, 5, 7];
+    let record = integer_parameter_record(9, &values);
+    assert!(structural_pointer_group_candidates(&record)
+        .iter()
+        .any(|candidate| candidate.token_start == 13));
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 420 table boundary");
+    assert_eq!(groups.token_start, 14);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5, 7]);
+}
+
+#[test]
+fn type420_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recover() {
+    let association = directory_target(1, 212);
+    let property_5 = directory_target(5, 406);
+    let property_7 = directory_target(7, 406);
+    let source = directory_target(9, 420);
+    let directory = BTreeMap::from([
+        (1, &association),
+        (5, &property_5),
+        (7, &property_7),
+        (9, &source),
+    ]);
+    let wrong_fields = token_parameter_record(
+        9,
+        vec![
+            420.into(),
+            1.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            TokenValue::String(b"BAD".to_vec()),
+            0.into(),
+            0.into(),
+            0.into(),
+            TokenValue::String(b"R".to_vec()),
+            0.into(),
+            0.into(),
+            1.into(),
+            1.into(),
+            2.into(),
+            5.into(),
+            7.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(
+        analysis
+            .groups
+            .expect("Type 420 complete primary boundary")
+            .token_start,
+        12
+    );
+
+    let malformed = [
+        integer_parameter_record(9, &[420, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 1, 1, 2, 5, 7]),
+        token_parameter_record(
+            9,
+            vec![
+                420.into(),
+                1.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                TokenValue::String(b"BAD".to_vec()),
+                1.into(),
+                1.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+        ),
+        token_parameter_record(
+            9,
+            vec![
+                420.into(),
+                1.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                TokenValue::Omitted,
+                TokenValue::Omitted,
+                TokenValue::Omitted,
+                TokenValue::String(b"R".to_vec()),
+                0.into(),
+            ],
+        ),
+        integer_parameter_record(9, &[420, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1]),
+        integer_parameter_record(9, &[420, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 2, 5]),
+    ];
+    for record in malformed {
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}

@@ -406,6 +406,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// `LC` position numbers, so its groups start at token `13 + LC`.
 /// Type 414 Form 0 puts `LC` at index 9, followed by the fixed `DDF` flag and
 /// `LC` position numbers, so its groups start at token `11 + LC`.
+/// Type 420 Form 0 puts `NC` at index 11 and stores one connect-point pointer
+/// per count, so its groups start at token `12 + NC`.
 /// Type 408 Form 0 stores a definition pointer, three translation values, and
 /// an optional scale at indexes 1 through 5, so its groups start at token 6.
 /// Type 410 Form 0 stores eight view fields at indexes 1 through 8, so its
@@ -492,6 +494,7 @@ pub(crate) fn entity_primary_end(
         (412, 0) => Some(rectangular_array_primary_end(record)),
         (414, 0) => Some(circular_array_primary_end(record)),
         (408, 0) => Some(fixed_primary_end(record, 6)),
+        (420, 0) => Some(network_instance_primary_end(record)),
         (410, 0) => Some(fixed_primary_end(record, 9)),
         (410, 1) => Some(fixed_primary_end(record, 23)),
         (416, 0 | 2 | 4) => Some(fixed_primary_end(record, 3)),
@@ -952,6 +955,15 @@ fn network_subfigure_primary_end(record: &ParameterRecord) -> usize {
     member_count
         .checked_add(connect_count)
         .and_then(|count| count.checked_add(8))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn network_instance_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(11)
+        .and_then(|value| usize::try_from(value).ok())
+        .and_then(|count| count.checked_add(12))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
