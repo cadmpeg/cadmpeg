@@ -72,6 +72,16 @@ fn type132_connect_point_entity(label: &str) -> OwnedTestEntity {
     }
 }
 
+fn type406_form14_entity(label: &str, parameters: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 406,
+        form: 14,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    }
+}
+
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
@@ -1506,6 +1516,182 @@ fn type320_truncated_connect_point_list_suppresses_generic_suffix_candidate() {
         .find(|entity| entity.id() == "iges:entity:directory#1")
         .unwrap();
     assert!(network.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type406_form14_count_driven_boundary_follows_string_list() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form14_entity("POSITIVE", "406,2,4HMAIN,3HHOT,1,1,0;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let property = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        property.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    let fields = property.fields();
+    let reference = fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["parameter_index"] == 5)
+        .unwrap();
+    assert_eq!(reference["raw_pointer"], 1);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type406_form14_zero_count_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form14_entity("ZERO", "406,0,1,1,0;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let property = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert!(property.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!property.fields()["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reference| reference["parameter_index"] == 3));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type406_form14_negative_count_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form14_entity("NEGATIVE", "406,-1,1,1,0;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let property = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert!(property.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!property.fields()["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reference| reference["parameter_index"] == 3));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type406_form14_wrong_typed_value_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form14_entity("WRONGVAL", "406,2,4HMAIN,1,1,1,0;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let property = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        property.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    let fields = property.fields();
+    let reference = fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["parameter_index"] == 5)
+        .unwrap();
+    assert_eq!(reference["raw_pointer"], 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type406_form14_truncated_string_list_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[type406_form14_entity(
+                "TRUNCATE",
+                "406,2,4HMAIN;",
+            )])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let property = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#1")
+        .unwrap();
+    assert!(property.fields()["association_links"]
         .as_array()
         .unwrap()
         .is_empty());
