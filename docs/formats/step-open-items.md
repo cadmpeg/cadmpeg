@@ -54,6 +54,58 @@ because it lists the five names that give a root number. Give the rule that an
 unregistered root name obeys, or give the reason that a name and a number that
 both fail the root rule must not agree.
 
+### CE-10. Repeated forwarding of a root ANCHOR resource
+
+**Question.** How many times must a root `ANCHOR` forward a URI-valued binding
+before the archive member check?
+
+**Known.** `step.md` §7 "item is the referenced entity or value, and a
+URI-valued anchor forwards the" gives that a URI-valued anchor forwards the
+resolution again, and `step.md` §7 "central directory. Root ANCHOR forwarding is
+resolved before this member" puts the forwarding before the member check.
+`crates/cadmpeg-codec-step/src/archive.rs:158-171` removes one `#` prefix, finds
+that anchor one time, and gives the `Resource` value of the anchor. It does not
+repeat the step, and it gives the source URI back when the anchor value is not a
+resource. `crates/cadmpeg-codec-step/src/archive.rs:139-146` then resolves the
+result and refuses the exchange when the archive holds no such member.
+`crates/cadmpeg-codec-step/src/archive.rs:90-95` gives an internal target in the
+root member when the path is empty. For the bindings `<a>` to `<#b>` and `<b>` to
+`<parts/child.p21#target>`, one step gives `#b`. That result has an empty path,
+so it names the root member, the archive holds the root member, and the check
+passes. The absent member `parts/child.p21` does not stop the decode, and the
+note names the root member.
+
+**Conflict.** The specification repeats the forwarding. The decoder forwards one
+step only, so a chain of two or more anchors defeats the member check that the
+specification puts after the forwarding.
+
+**Need.** A missing subsidiary member must refuse the exchange, because the
+decode cannot give the target. The answer repeats the forwarding with a limit on
+the number of steps and a guard against a cycle, or gives the rule that one step
+is the complete forwarding. Add a witness with a chain of two anchors whose last
+URI names a member that the archive does not hold.
+
+### CE-11. Decode limits on the ZIP root member parse
+
+**Question.** Which decode limits apply to the parse of the ZIP root member?
+
+**Known.** `crates/cadmpeg-codec-step/src/archive.rs:130` parses the root member
+with `crate::parse::parse`, which takes no decode context.
+`crates/cadmpeg-codec-step/src/codec.rs:85` parses with
+`parse::parse_with_context` and gives it the context. Without a context the
+parser charges no work and no retained storage, and it counts no nested step, so
+the `max_recursion_depth` limit of the caller has no effect. The parser then
+uses its own limits only. `crates/cadmpeg-codec-step/src/archive.rs:126-155`
+uses this parse for the resource notes, and the reader parses the same member a
+second time with a context.
+
+**Need.** A caller that lowers its limits must get the same protection from each
+route into the parser. The ZIP route parses the complete root member one time
+outside the limits, so a root member that the limits refuse is fully parsed
+first. The answer gives the context to this parse, or gives the reason that the
+resource-note parse needs no limit. Add a witness with a lowered recursion limit
+and a ZIP root member that the limit refuses.
+
 ## 4. Signatures
 
 ## 5. Topology and pcurve decisions
