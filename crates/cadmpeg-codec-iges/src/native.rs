@@ -2877,7 +2877,7 @@ pub(crate) fn store(
                         let count = record
                             .and_then(|record| {
                                 record.count_with_stride_before(
-                                    1,
+                                    2,
                                     1,
                                     primary_end(entry.sequence, record),
                                 )
@@ -2886,13 +2886,13 @@ pub(crate) fn store(
                         NativeAssociativity::ViewList {
                             id,
                             source_entity,
-                            declared_visible_count: record.and_then(|record| record.integer(1)),
+                            declared_visible_count: record.and_then(|record| record.integer(2)),
                             view: record
-                                .and_then(|record| record.integer(2))
+                                .and_then(|record| record.integer(3))
                                 .and_then(|sequence| {
                                     parameter_resolver.resolve_type(
                                         entry.sequence,
-                                        2,
+                                        3,
                                         sequence,
                                         410,
                                         &[0, 1],
@@ -2900,7 +2900,7 @@ pub(crate) fn store(
                                 })
                                 .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             visible_entities: (0..count)
-                                .map(|offset| entity_link(3 + offset))
+                                .map(|offset| entity_link(4 + offset))
                                 .collect(),
                         }
                     }

@@ -366,6 +366,61 @@ fn decode_label_display_truncated_count_rejects_trailing_property_group() {
 }
 
 #[test]
+fn decode_view_list_uses_form6_class_entry_and_visible_count() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000200",
+            parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 6,
+            label: "VIEWLST".into(),
+            status: "00000200",
+            parameters: "402,1,1,1,5,1,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "VISIBLE".into(),
+            status: "00010100",
+            parameters: "116,1,2,3,0,1,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "ASSOC".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let associativity = native.arenas["associativities"]
+        .iter()
+        .find(|record| record.id() == "iges:structure:associativity#D3")
+        .unwrap();
+    let fields = associativity.fields();
+    assert_eq!(fields["declared_visible_count"], 1);
+    assert_eq!(fields["view"], "iges:entity:directory#1");
+    assert_eq!(fields["visible_entities"][0], "iges:entity:directory#5");
+
+    let source = native.arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"][0],
+        "iges:entity:directory#7"
+    );
+}
+
+#[test]
 fn decode_general_note_count_stops_before_trailing_property_group() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {

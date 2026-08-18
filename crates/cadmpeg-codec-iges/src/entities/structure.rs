@@ -575,14 +575,16 @@ fn predefined_associativity_valid(
                 })
         }
         6 => {
-            let visible_count = record.count(1);
-            let view = existing_pointer(record, 2, entries);
+            let visible_count = (record.integer(1) == Some(1))
+                .then(|| record.count(2))
+                .flatten();
+            let view = existing_pointer(record, 3, entries);
             let visible = visible_count.and_then(|count| {
                 (0..count)
-                    .map(|offset| existing_pointer(record, 3 + offset, entries))
+                    .map(|offset| existing_pointer(record, 4 + offset, entries))
                     .collect::<Option<Vec<_>>>()
             });
-            visible_count.is_some_and(|count| end == 3 + count)
+            visible_count.is_some_and(|count| end == 4 + count)
                 && view.is_some_and(|sequence| {
                     entries
                         .get(&sequence)

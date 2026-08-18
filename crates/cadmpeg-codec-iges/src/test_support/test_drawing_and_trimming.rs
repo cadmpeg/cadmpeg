@@ -403,7 +403,7 @@ pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
             form: 6,
             label: "VIEWLIST".into(),
             status: "00000200",
-            parameters: "402,1,1,5;".into(),
+            parameters: "402,1,1,1,5;".into(),
         },
         OwnedTestEntity {
             entity_type: 116,
