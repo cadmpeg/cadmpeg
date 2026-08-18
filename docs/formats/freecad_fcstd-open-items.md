@@ -579,28 +579,6 @@ refusal or loss.
 
 ## 9. Assembly joints
 
-### JN-05. Assembly joint value-root framing
-
-**Question.** Which direct value roots and child containers supply `JointType` and connector
-properties when nested lookalikes occur?
-
-**Known.** FreeCAD `PropertyEnumeration::Save` writes one direct `Integer` followed by an optional
-`CustomEnumList` containing direct `Enum` values. `PropertyXLink::Save` writes one `XLink` target
-whose `Sub` children belong to that target. `joint.rs:286-321` selects integers and enum values from
-the retained descendant list; `joint.rs:403-436` checks only the first value tag and parsed link
-cardinality.
-
-**Need.** Enforce direct-root and child-container cardinality for `JointType`, `Reference1`, and
-`Reference2`. Reject nested or extra carriers before selecting the neutral joint family or operand.
-
-**Conflict.** An `Enum` under an extra nested wrapper inside `CustomEnumList` is included in the
-ordinal sequence used by `enumeration_value`, so the selected joint family can differ from the
-producer's direct enum list. A nested `XLink` under the accepted root `XLink` is retained but
-ignored by `connector`, which still accepts one parsed target. The source order of an invalid
-nested carrier changes or silently omits joint state.
-
-**Note.** New hostile-sweep finding.
-
 ## 10. Attachment and assembly
 
 ## 11. Persistent graph admission

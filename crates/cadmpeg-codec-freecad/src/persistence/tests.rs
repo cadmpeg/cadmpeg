@@ -115,6 +115,41 @@ fn rejects_duplicate_property_names_for_one_owner() {
 }
 
 #[test]
+fn rejects_nested_xlink_value_children() {
+    let documents = [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target"><XLink file="" name="Nested"/></XLink></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target" sub="Face1"><Sub value="Face2"/></XLink></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target" count="1"><Sub value="Face1"><Sub value="Face2"/></Sub></XLink></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target" count="0"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+    ];
+    for document in documents {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
 pub(crate) fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts() {
     let cases = [
         r#"<Document SchemaVersion="2"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,

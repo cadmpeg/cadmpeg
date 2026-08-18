@@ -126,9 +126,10 @@ uses the `sub` attribute. Multiple subelements use `count` and the same number o
 each with a `value` attribute. `PropertyXLinkSubList` and `PropertyXLinkList` contain one
 `XLinkSubList`; its `count` equals the number of child `XLink` values. A `shadowed` attribute on a
 subelement carrier supplies the restored subelement value; the primary `sub` or `value` remains
-the compatibility name. Other carrier names and simultaneous `sub` and `count` carriers are
-invalid. A property type outside this registry retains its XML but does not infer link targets from
-nested tag names.
+the compatibility name. These counts and child rules apply to direct element children. An `XLink`
+has no other element children, and each direct `Sub` is a leaf. Other carrier names and simultaneous
+`sub` and `count` carriers are invalid. A property type outside this registry retains its XML but
+does not infer link targets from nested tag names.
 
 ## 4. Identity and retention
 
@@ -504,13 +505,18 @@ has exactly one kind carrier: `ObjectToGround` or `JointType`. Both carriers are
 canonical `ObjectToGround` runtime type is `App::PropertyLinkGlobal`. Legacy `App::PropertyLink`
 and `App::PropertyLinkSub` carriers are accepted only with one object target and no nonempty
 subelement; all other runtime types are invalid. `JointType` is exactly
-`App::PropertyEnumeration` and has exactly one selected `Integer`; its zero-based index selects the matching
-ordered `Enum` value when present, and an out-of-range index remains the numeric native family.
+`App::PropertyEnumeration` and has exactly one direct `Integer`. When the `Integer` has
+`CustomEnum="true"`, it is followed by exactly one direct `CustomEnumList`; its `count` equals the
+number of direct `Enum` children, and each `Enum` has a `value` attribute and no child elements.
+Without that marker, `CustomEnumList` is absent. The zero-based index selects the matching ordered
+`Enum` value when present, and an out-of-range index remains the numeric native family.
 `Reference1` and `Reference2` use `App::PropertyXLinkSub`; the migration form
 `App::PropertyXLinkSubHidden` is accepted for older Assembly-rooted records. Each connector
-property has exactly one `XLink` target. That target may have zero, one, or multiple ordered `Sub`
-values, and an empty `name` is an explicit null target occupying the connector slot. A link-list
-carrier or multiple targets is malformed. `Angle`, `AngleMin`, and `AngleMax` are
+property has exactly one direct `XLink` target. That target may have zero, one, or multiple ordered
+direct `Sub` values; a zero-sub target has neither `sub` nor `count`, one sub uses `sub`, and
+multiple subs use `count` with exactly that many direct leaf `Sub` elements. An empty `name` is an
+explicit null target occupying the connector slot. Nested or extra value roots, a link-list carrier,
+or multiple targets are malformed. `Angle`, `AngleMin`, and `AngleMax` are
 `App::PropertyAngle` properties with one `Float` value. `Distance`, `Distance2`, `LengthMin`, and
 `LengthMax` are `App::PropertyLength` properties with one `Float` value. `EnableAngleMin`,
 `EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`

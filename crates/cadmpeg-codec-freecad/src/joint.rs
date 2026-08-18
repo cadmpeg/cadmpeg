@@ -284,39 +284,130 @@ fn parse_bool(value: &str) -> Option<bool> {
 }
 
 fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
-    let integers = property
-        .values
-        .iter()
-        .filter(|value| value.tag == "Integer")
+    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        malformed(format!(
+            "joint enumeration property {} has invalid XML: {error}",
+            property.id
+        ))
+    })?;
+    let root = document.root_element();
+    if !root.has_tag_name("Property") {
+        return Err(malformed(format!(
+            "joint enumeration property {} has no Property root",
+            property.id
+        )));
+    }
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
-    let [integer] = integers.as_slice() else {
-        return Err(CodecError::Malformed(format!(
-            "joint enumeration property {} requires one Integer value",
+    let Some(integer) = values
+        .first()
+        .copied()
+        .filter(|value| value.has_tag_name("Integer"))
+    else {
+        return Err(malformed(format!(
+            "joint enumeration property {} requires one direct Integer value",
             property.id
         )));
     };
+    if integer.children().any(|value| value.is_element()) {
+        return Err(malformed(format!(
+            "joint enumeration property {} has nested Integer values",
+            property.id
+        )));
+    }
+    if values.len() > 2
+        || values
+            .get(1)
+            .is_some_and(|value| !value.has_tag_name("CustomEnumList"))
+    {
+        return Err(malformed(format!(
+            "joint enumeration property {} has extra direct value roots",
+            property.id
+        )));
+    }
+    let custom_list = values.get(1).copied();
+    let custom = match integer.attribute("CustomEnum") {
+        None => false,
+        Some("true") => true,
+        Some(_) => {
+            return Err(malformed(format!(
+                "joint enumeration property {} has an invalid CustomEnum marker",
+                property.id
+            )));
+        }
+    };
+    if custom != custom_list.is_some() {
+        return Err(malformed(format!(
+            "joint enumeration property {} has inconsistent custom enumeration carriers",
+            property.id
+        )));
+    }
     let index = integer
-        .attributes
-        .get("value")
+        .attribute("value")
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            malformed(format!(
                 "joint enumeration property {} has no Integer value",
                 property.id
             ))
         })?
         .parse::<usize>()
         .map_err(|_| {
-            CodecError::Malformed(format!(
+            malformed(format!(
                 "joint enumeration property {} has an invalid Integer value",
                 property.id
             ))
         })?;
-    Ok(property
-        .values
-        .iter()
-        .filter(|value| value.tag == "Enum")
-        .nth(index)
-        .and_then(|value| value.attributes.get("value"))
+    let enum_values = if let Some(custom_list) = custom_list {
+        let count = custom_list
+            .attribute("count")
+            .ok_or_else(|| {
+                malformed(format!(
+                    "joint enumeration property {} CustomEnumList has no count",
+                    property.id
+                ))
+            })?
+            .parse::<usize>()
+            .map_err(|_| {
+                malformed(format!(
+                    "joint enumeration property {} CustomEnumList count is invalid",
+                    property.id
+                ))
+            })?;
+        let values = custom_list
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect::<Vec<_>>();
+        if values.len() != count || values.iter().any(|value| !value.has_tag_name("Enum")) {
+            return Err(malformed(format!(
+                "joint enumeration property {} CustomEnumList count={count} but {} direct Enum values were found",
+                property.id,
+                values.len()
+            )));
+        }
+        values
+            .into_iter()
+            .map(|value| {
+                if value.children().any(|child| child.is_element()) {
+                    return Err(malformed(format!(
+                        "joint enumeration property {} has nested Enum values",
+                        property.id
+                    )));
+                }
+                value.attribute("value").map(str::to_owned).ok_or_else(|| {
+                    malformed(format!(
+                        "joint enumeration property {} Enum has no value",
+                        property.id
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
+    Ok(enum_values
+        .get(index)
         .cloned()
         .unwrap_or_else(|| index.to_string()))
 }
@@ -496,7 +587,7 @@ pub(crate) mod tests {
 <ObjectData Count="2">
  <Object name="Assembly"><Properties Count="0"/></Object>
  <Object name="Joint"><Properties Count="14">
-  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="A.Face1"/><Sub value="A.Edge2"/></XLink></Property>
   <Property name="Reference2" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="1"><Sub value="B.Edge3"/></XLink></Property>
   <Property name="Placement1" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
@@ -666,6 +757,39 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn rejects_nested_joint_enumeration_carriers() {
+        let cases = [
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Wrapper><Enum value="Fixed"/></Wrapper></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Wrapper><Integer value="0"/></Wrapper><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+        ];
+        for properties in cases {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="3">{properties}</Properties></Object></ObjectData>
+</Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
     fn rejects_wrong_joint_scalar_runtime_types_and_value_tags() {
         for property in [
             r#"<Property name="Angle" type="App::PropertyFloat"><Float value="15"/></Property>"#,
@@ -700,18 +824,18 @@ pub(crate) mod tests {
 <Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
 <ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="3">
 <Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="Base"/></Property>
-<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
 <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
 </Properties></Object></ObjectData></Document>"#,
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
 <ObjectData Count="1"><Object name="Joint"><Properties Count="1">
-<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
 </Properties></Object></ObjectData></Document>"#,
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
 <ObjectData Count="1"><Object name="Joint"><Properties Count="2">
-<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
 <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/><Bool value="false"/></Property>
 </Properties></Object></ObjectData></Document>"#,
             r#"<Document SchemaVersion="4" FileVersion="1">

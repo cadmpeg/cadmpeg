@@ -707,12 +707,44 @@ fn local_link(
 fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
     reject_link_aliases(node, &["name", "file", "sub"])?;
     let file = node.attribute("file").map(str::to_owned);
+    let children = node
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
     let subelements = match (node.attribute("sub"), node.attribute("count")) {
-        (Some(_), None) => vec![restored_subelement(node, "sub")?],
-        (None, Some(_)) => counted_children(node, "Sub", "App::PropertyXLink")?
-            .map(|child| restored_subelement(child, "value"))
-            .collect::<Result<Vec<_>, _>>()?,
-        (None, None) => Vec::new(),
+        (Some(_), None) if children.is_empty() => vec![restored_subelement(node, "sub")?],
+        (Some(_), None) => {
+            return Err(CodecError::Malformed(
+                "App::PropertyXLink sub carrier has nested values".into(),
+            ));
+        }
+        (None, Some(_)) => {
+            if node
+                .attribute("count")
+                .and_then(|count| count.parse::<usize>().ok())
+                == Some(0)
+            {
+                return Err(CodecError::Malformed(
+                    "App::PropertyXLink uses count only for one or more Sub values".into(),
+                ));
+            }
+            counted_children(node, "Sub", "App::PropertyXLink")?
+                .map(|child| {
+                    if child.children().any(|value| value.is_element()) {
+                        return Err(CodecError::Malformed(
+                            "App::PropertyXLink Sub carrier has nested values".into(),
+                        ));
+                    }
+                    restored_subelement(child, "value")
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        (None, None) if children.is_empty() => Vec::new(),
+        (None, None) => {
+            return Err(CodecError::Malformed(
+                "App::PropertyXLink has nested values without a sub carrier".into(),
+            ));
+        }
         (Some(_), Some(_)) => {
             return Err(CodecError::Malformed(
                 "App::PropertyXLink has both sub and count carriers".into(),
