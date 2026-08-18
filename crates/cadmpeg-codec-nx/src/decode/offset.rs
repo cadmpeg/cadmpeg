@@ -979,6 +979,142 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         .then(|| best.map(|(parameters, _)| parameters))?
 }
 
+/// Refine one caller-provided seed on an offset surface without starting a
+/// global closest-point search.
+///
+/// A serialized intersection chart or a bounded carrier grid can provide a
+/// local seed when the relation already proves which branch is required.  In
+/// that case a global NURBS search is both unnecessary and unsafe for the
+/// caller's work slice.  This helper therefore returns only a fit-certified
+/// result and never falls back to global patch subdivision.
+pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Point2,
+    fit_tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    if !point.x.is_finite()
+        || !point.y.is_finite()
+        || !point.z.is_finite()
+        || !fit_tolerance.is_finite()
+        || fit_tolerance < 0.0
+    {
+        return None;
+    }
+    let carrier = index.surfaces(surface.0.as_str())?;
+    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
+        return None;
+    };
+    let procedural = index
+        .procedural_surfaces(construction.0.as_str())
+        .filter(|candidate| &candidate.surface == surface)?;
+    if !matches!(
+        procedural.definition,
+        ProceduralSurfaceDefinition::Offset { .. }
+    ) {
+        return None;
+    }
+    let domain = surface_parameter_domain_with_index(index, surface);
+    let mut parameters = seed;
+    if !parameters.u.is_finite() || !parameters.v.is_finite() {
+        return None;
+    }
+    clamp_surface_parameters(&mut parameters, domain);
+
+    let squared_distance = |position: Point3| {
+        let delta = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        dot_vector(delta, delta)
+    };
+    for _ in 0..OFFSET_NEWTON_ITERATIONS {
+        let position = model_surface_point_by_id_with_budget(
+            index,
+            surface,
+            parameters.u,
+            parameters.v,
+            geometry_budget,
+        )?;
+        let current_distance = squared_distance(position);
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
+        let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
+        let du = model_surface_derivative(
+            index,
+            surface,
+            parameters,
+            u_step,
+            true,
+            domain,
+            [None, None],
+            geometry_budget,
+        )?;
+        let dv = model_surface_derivative(
+            index,
+            surface,
+            parameters,
+            v_step,
+            false,
+            domain,
+            [None, None],
+            geometry_budget,
+        )?;
+        let (step_u, step_v) = least_squares_step(du, dv, residual)?;
+        let mut accepted = None;
+        let mut scale = 1.0;
+        for _ in 0..8 {
+            if !geometry_budget.charge() {
+                return None;
+            }
+            let mut candidate =
+                Point2::new(parameters.u - scale * step_u, parameters.v - scale * step_v);
+            clamp_surface_parameters(&mut candidate, domain);
+            let candidate_position = model_surface_point_by_id_with_budget(
+                index,
+                surface,
+                candidate.u,
+                candidate.v,
+                geometry_budget,
+            )?;
+            let candidate_distance = squared_distance(candidate_position);
+            if candidate_distance.is_finite() && candidate_distance <= current_distance {
+                accepted = Some((candidate, candidate_distance));
+                break;
+            }
+            scale *= 0.5;
+        }
+        let Some((candidate, _)) = accepted else {
+            if current_distance.sqrt() <= fit_tolerance {
+                break;
+            }
+            return None;
+        };
+        parameters = candidate;
+        if scale * step_u.abs() <= OFFSET_PARAMETER_STEP_EPSILON * (1.0 + parameters.u.abs())
+            && scale * step_v.abs() <= OFFSET_PARAMETER_STEP_EPSILON * (1.0 + parameters.v.abs())
+        {
+            break;
+        }
+    }
+    let position = model_surface_point_by_id_with_budget(
+        index,
+        surface,
+        parameters.u,
+        parameters.v,
+        geometry_budget,
+    )?;
+    let distance = squared_distance(position).sqrt();
+    (distance <= fit_tolerance).then_some(parameters)
+}
+
 pub(crate) fn coarse_model_surface_parameters(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -987,13 +1123,14 @@ pub(crate) fn coarse_model_surface_parameters(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     let (u_domain, v_domain) = domain;
+    let [u_samples, v_samples] = coarse_surface_sample_counts(index, surface, 0);
     let mut best = None;
     let mut best_distance = f64::INFINITY;
-    for ui in 0..=8 {
-        for vi in 0..=8 {
+    for ui in 0..u_samples {
+        for vi in 0..v_samples {
             let parameters = Point2::new(
-                u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
-                v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
+                u_domain[0] + (u_domain[1] - u_domain[0]) * ui as f64 / (u_samples - 1) as f64,
+                v_domain[0] + (v_domain[1] - v_domain[0]) * vi as f64 / (v_samples - 1) as f64,
             );
             let Some(candidate) = model_surface_point_by_id_with_budget(
                 index,
@@ -1014,6 +1151,44 @@ pub(crate) fn coarse_model_surface_parameters(
         }
     }
     best
+}
+
+fn coarse_surface_sample_counts(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    depth: usize,
+) -> [usize; 2] {
+    if depth >= 32 {
+        return [9, 9];
+    }
+    let Some(carrier) = index.surfaces(surface.0.as_str()) else {
+        return [9, 9];
+    };
+    match &carrier.geometry {
+        SurfaceGeometry::Nurbs(nurbs) => {
+            let sample_count = |count| {
+                usize::try_from(count)
+                    .ok()
+                    .map_or(9, |count| count.saturating_add(1).clamp(3, 9))
+            };
+            [sample_count(nurbs.u_count), sample_count(nurbs.v_count)]
+        }
+        SurfaceGeometry::Procedural { construction } => {
+            let Some(procedural) = index
+                .procedural_surfaces(construction.0.as_str())
+                .filter(|candidate| &candidate.surface == surface)
+            else {
+                return [9, 9];
+            };
+            match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset { support, .. } => {
+                    coarse_surface_sample_counts(index, support, depth + 1)
+                }
+                _ => [9, 9],
+            }
+        }
+        _ => [9, 9],
+    }
 }
 
 pub(crate) fn initial_surface_parameters_with_index_and_budget(

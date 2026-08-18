@@ -3,13 +3,14 @@
 
 use super::blend::{
     blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget,
+    blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache,
     blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
     blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_parameters_for_fit_with_source_continuation_and_budget,
     blend_surface_parameters_from_grid_for_fit_and_budget,
     blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget,
     decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve_with_index,
-    BlendParameterGrid, BoundaryInverseTarget,
+    BlendContactSeedCache, BlendParameterGrid, BoundaryInverseTarget,
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
@@ -718,6 +719,7 @@ fn complete_support_uv_wave(
                         parent_geometry_budget.remaining(),
                     ));
                 let geometry_budget = &lane_geometry_budget;
+                let mut contact_seeds = BlendContactSeedCache::default();
                 let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
                 let mut all_parameters_certified = true;
                 for (point_index, point) in points.iter().enumerate() {
@@ -767,7 +769,30 @@ fn complete_support_uv_wave(
                                 } else {
                                     blend_surface_parameters_from_grid_for_fit_and_budget
                                 };
-                                other_contact
+                                source_chart_available
+                                    .then(|| {
+                                        source_pcurve
+                                            .zip(other_surface_id)
+                                            .and_then(|(source_pcurve, source_surface)| {
+                                                blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+                                                    &model_index,
+                                                    source_surface,
+                                                    surface_id,
+                                                    source_pcurve,
+                                                    parameters[point_index],
+                                                    BoundaryInverseTarget {
+                                                        point: *point,
+                                                        seed,
+                                                        tolerance: effective_fit_tolerance,
+                                                    },
+                                                    &mut contact_seeds,
+                                                    geometry_budget,
+                                                )
+                                            })
+                                    })
+                                    .flatten()
+                                .map(|parameters| (parameters, true))
+                                .or_else(|| other_contact
                                 .and_then(
                                     |(
                                         other_surface,
@@ -794,6 +819,7 @@ fn complete_support_uv_wave(
                                     },
                                 )
                                 .map(|parameters| (parameters, true))
+                                )
                                 .or_else(|| {
                                     other_surface_id.and_then(|other_surface| {
                                         blend_boundary_parameter_from_support_spine_with_index_and_budget(

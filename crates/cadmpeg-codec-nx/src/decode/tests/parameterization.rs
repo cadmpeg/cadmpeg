@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::{DecodeMode, InspectOptions, WorkBudget};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -145,6 +145,20 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     .unwrap();
 
     assert_eq!(actual, seed);
+
+    let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
+    let geometry_budget = WorkBudget::new(256);
+    let local = crate::decode::offset::refine_offset_surface_parameters_with_index_and_budget(
+        &index,
+        &surface,
+        point,
+        seed,
+        0.02,
+        &geometry_budget,
+    )
+    .expect("a local fit inside the relation tolerance is admissible");
+    assert!((local.u - seed.u).abs() <= 0.02);
+    assert!((local.v - seed.v).abs() <= 0.02);
 }
 
 #[test]

@@ -5,7 +5,10 @@ use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::offset_surface_parameters_with_tolerance_with_index_and_budget;
-use super::offset::{least_squares_step, parameter_derivative_step, point_distance};
+use super::offset::{
+    coarse_model_surface_parameters, least_squares_step, parameter_derivative_step, point_distance,
+    refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
+};
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 #[cfg(test)]
@@ -62,7 +65,12 @@ impl BlendSectionDomain {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlendSectionDomain, BLEND_SECTION_BOUNDARY_EPSILON};
+    use super::{
+        BlendContactSeed, BlendContactSeedCache, BlendSectionDomain,
+        BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_CONTACT_SEEDS,
+    };
+    use cadmpeg_ir::ids::{CurveId, SurfaceId};
+    use cadmpeg_ir::math::Point2;
 
     #[test]
     fn blend_section_boundary_clamps_only_nearby_roundoff() {
@@ -89,6 +97,30 @@ mod tests {
             BlendSectionDomain::Canonical
                 .clamp_near_boundary(1.0 + 2.0 * BLEND_SECTION_BOUNDARY_EPSILON),
             None
+        );
+    }
+
+    #[test]
+    fn blend_contact_seed_cache_is_bounded_and_uses_the_nearest_chart() {
+        let support = SurfaceId("synthetic:seed-support".into());
+        let spine = CurveId("synthetic:seed-spine".into());
+        let offset_surface = SurfaceId("synthetic:seed-offset".into());
+        let mut cache = BlendContactSeedCache::default();
+        for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
+            let parameter = parameter as f64;
+            cache.remember(BlendContactSeed {
+                support: support.clone(),
+                spine: spine.clone(),
+                parameter,
+                offset_surface: offset_surface.clone(),
+                parameters: Point2::new(parameter, -parameter),
+            });
+        }
+
+        assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
+        assert_eq!(
+            cache.seed_for(&support, &spine, 7.1, &offset_surface),
+            Some(Point2::new(7.0, -7.0))
         );
     }
 }
@@ -355,14 +387,14 @@ fn blend_surface_parameters_inner(
             return Some(parameters);
         }
     }
-    let angular = closest_spine_parameter_with_index_and_budget(
+    let angular_spine = closest_spine_parameter_with_index_and_budget(
         index,
         &spine,
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
-    )
-    .and_then(|u| {
+    );
+    let angular = angular_spine.and_then(|u| {
         let (center, tangent, first, second, _) = blend_surface_frame_with_index_and_budget(
             index,
             surface,
@@ -923,6 +955,88 @@ pub(crate) fn blend_surface_point_inner_with_index_and_budget(
 
 pub(crate) type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
 
+const MAX_BLEND_CONTACT_SEEDS: usize = 8;
+
+#[derive(Clone)]
+struct BlendContactSeed {
+    support: SurfaceId,
+    spine: CurveId,
+    parameter: f64,
+    offset_surface: SurfaceId,
+    parameters: Point2,
+}
+
+/// Bounded chart seeds for one continuous pcurve transfer.
+///
+/// Seeds are scoped by the target support, its spine, and the offset carrier.
+/// Keeping a small nearest-parameter set makes adaptive endpoint and midpoint
+/// sampling local without allowing a model-wide cache to select a branch from
+/// an unrelated intersection.
+pub(crate) struct BlendContactSeedCache {
+    entries: Vec<BlendContactSeed>,
+}
+
+impl Default for BlendContactSeedCache {
+    fn default() -> Self {
+        Self {
+            entries: Vec::with_capacity(MAX_BLEND_CONTACT_SEEDS),
+        }
+    }
+}
+
+impl BlendContactSeedCache {
+    fn seed_for(
+        &self,
+        support: &SurfaceId,
+        spine: &CurveId,
+        parameter: f64,
+        offset_surface: &SurfaceId,
+    ) -> Option<Point2> {
+        self.entries
+            .iter()
+            .filter(|seed| {
+                seed.support == *support
+                    && seed.spine == *spine
+                    && seed.offset_surface == *offset_surface
+                    && seed.parameter.is_finite()
+            })
+            .min_by(|first, second| {
+                (first.parameter - parameter)
+                    .abs()
+                    .total_cmp(&(second.parameter - parameter).abs())
+            })
+            .map(|seed| seed.parameters)
+    }
+
+    fn remember(&mut self, seed: BlendContactSeed) {
+        if let Some(existing) = self.entries.iter_mut().find(|existing| {
+            existing.support == seed.support
+                && existing.spine == seed.spine
+                && existing.offset_surface == seed.offset_surface
+                && existing.parameter.to_bits() == seed.parameter.to_bits()
+        }) {
+            *existing = seed;
+            return;
+        }
+        if self.entries.len() < MAX_BLEND_CONTACT_SEEDS {
+            self.entries.push(seed);
+            return;
+        }
+        let replacement = self
+            .entries
+            .iter()
+            .enumerate()
+            .max_by(|(_, first), (_, second)| {
+                (first.parameter - seed.parameter)
+                    .abs()
+                    .total_cmp(&(second.parameter - seed.parameter).abs())
+            })
+            .map(|(index, _)| index)
+            .expect("the bounded contact seed cache is non-empty");
+        self.entries[replacement] = seed;
+    }
+}
+
 pub(crate) fn blend_surface_point_from_frame(
     (center, tangent, first, second, radius): BlendSurfaceFrame,
     v: f64,
@@ -1134,11 +1248,32 @@ pub(crate) fn blend_surface_frame_with_index_and_budget(
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<BlendSurfaceFrame> {
+    let mut contact_seeds = BlendContactSeedCache::default();
+    blend_surface_frame_with_index_and_budget_and_options(
+        index,
+        surface,
+        u,
+        depth,
+        false,
+        &mut contact_seeds,
+        geometry_budget,
+    )
+}
+
+fn blend_surface_frame_with_index_and_budget_and_options(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    u: f64,
+    depth: usize,
+    allow_offset_contact: bool,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<BlendSurfaceFrame> {
     (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     let center = model_curve_point_with_index_and_budget(index, &spine, u, geometry_budget)?;
     let tangent = model_curve_tangent_with_index_and_budget(index, &spine, u, geometry_budget)?;
-    let first = spine_contact_direction_with_index_and_budget(
+    let first = spine_contact_direction_with_index_and_budget_and_options(
         index,
         &supports[0],
         &spine,
@@ -1146,6 +1281,8 @@ pub(crate) fn blend_surface_frame_with_index_and_budget(
         center,
         radius,
         depth + 1,
+        allow_offset_contact,
+        contact_seeds,
         geometry_budget,
     )
     .or_else(|| {
@@ -1157,8 +1294,9 @@ pub(crate) fn blend_surface_frame_with_index_and_budget(
             depth + 1,
             geometry_budget,
         )
-    })?;
-    let second = spine_contact_direction_with_index_and_budget(
+    });
+    let first = first?;
+    let second = spine_contact_direction_with_index_and_budget_and_options(
         index,
         &supports[1],
         &spine,
@@ -1166,6 +1304,8 @@ pub(crate) fn blend_surface_frame_with_index_and_budget(
         center,
         radius,
         depth + 1,
+        allow_offset_contact,
+        contact_seeds,
         geometry_budget,
     )
     .or_else(|| {
@@ -1177,12 +1317,15 @@ pub(crate) fn blend_surface_frame_with_index_and_budget(
             depth + 1,
             geometry_budget,
         )
-    })?;
+    });
+    let second = second?;
     Some((center, tangent, first, second, radius))
 }
 
+// Keep the frame inputs, recursion depth, contact policy, seed cache, and
+// caller-owned work slice explicit at this geometry boundary.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn spine_contact_direction_with_index_and_budget(
+fn spine_contact_direction_with_index_and_budget_and_options(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
     spine: &CurveId,
@@ -1190,15 +1333,19 @@ pub(crate) fn spine_contact_direction_with_index_and_budget(
     center: Point3,
     radius: f64,
     depth: usize,
+    allow_offset_contact: bool,
+    contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
-    let contact = spine_contact_point_with_index_and_budget(
+    let contact = spine_contact_point_with_index_and_budget_and_options(
         index,
         support,
         spine,
         parameter,
         radius,
         depth + 1,
+        allow_offset_contact,
+        contact_seeds,
         geometry_budget,
     )?;
     unit_vector(Vector3::new(
@@ -1352,6 +1499,241 @@ pub(crate) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_bud
     )
 }
 
+/// Transfer a source-chart sample from a blend boundary onto its declared
+/// support chart.
+///
+/// Nested blend supports are inverted from the source sample directly.  For
+/// analytic and offset supports, the serialized spine contact chart remains
+/// the fast path, with a bounded 3D closest-point fallback.  Every result is
+/// certified by reproducing the source sample on the target support.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    blend: &SurfaceId,
+    support: &SurfaceId,
+    source_pcurve: &PcurveGeometry,
+    curve_parameter: f64,
+    target: BoundaryInverseTarget,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    let (supports, _, _, _) = blend_surface_definition_with_index(index, blend)?;
+    let matches = supports
+        .iter()
+        .filter(|candidate| {
+            parameterization_equivalent_surfaces_with_index(index, candidate, support)
+        })
+        .count();
+    if matches != 1 {
+        return None;
+    }
+    let source_uv = pcurve_uv(source_pcurve, curve_parameter)?;
+    if !source_uv.u.is_finite()
+        || !source_uv.v.is_finite()
+        || !target.point.x.is_finite()
+        || !target.point.y.is_finite()
+        || !target.point.z.is_finite()
+        || !target.tolerance.is_finite()
+        || target.tolerance < 0.0
+    {
+        return None;
+    }
+
+    // A nested blend support does not use the source blend's spine contact
+    // chart.  Its completed boundary lane is a separate intersection whose
+    // pcurve is carried by the source blend.  Invert the already evaluated
+    // source sample on the declared support and require point reproduction;
+    // the support declaration is the relation proof and the fit is the
+    // geometric certificate.
+    if blend_surface_definition_with_index(index, support).is_some() {
+        if let Some(parameters) = nested_blend_surface_parameters_with_budget(
+            index,
+            support,
+            target.point,
+            target.seed,
+            target.tolerance,
+            contact_seeds,
+            geometry_budget,
+        ) {
+            return Some(parameters);
+        }
+    }
+
+    let (_, spine, radius, _) = blend_surface_definition_with_index(index, blend)?;
+    let contact_pcurve = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)?;
+    let certify = |parameter: f64| {
+        let uv = pcurve_uv(contact_pcurve, parameter)?;
+        let candidate = decoded_surface_point_inner_with_budget(
+            index,
+            support,
+            uv.u,
+            uv.v,
+            0,
+            geometry_budget,
+        )?;
+        (point_distance(candidate, target.point) <= target.tolerance).then_some(uv)
+    };
+    if let Some(uv) = certify(source_uv.u) {
+        return Some(uv);
+    }
+    let parameter = closest_contact_pcurve_parameter_with_geometry_and_budget(
+        index,
+        support,
+        contact_pcurve,
+        target.point,
+        Some(source_uv.u),
+        geometry_budget,
+    )?;
+    certify(parameter)
+}
+
+fn nested_blend_surface_parameters_with_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: f64,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    let (_, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
+    let parameter = closest_spine_parameter_with_index_and_budget(
+        index,
+        &spine,
+        point,
+        seed.map(|seed| seed.u),
+        geometry_budget,
+    )?;
+    let (center, tangent, first, second, _) =
+        blend_surface_frame_with_index_and_budget_and_options(
+            index,
+            surface,
+            parameter,
+            0,
+            true,
+            contact_seeds,
+            geometry_budget,
+        )?;
+    let radial = unit_vector(Vector3::new(
+        point.x - center.x,
+        point.y - center.y,
+        point.z - center.z,
+    ))?;
+    let alpha = signed_angle(first, second, tangent);
+    if !alpha.is_finite() || alpha.abs() <= 1.0e-12 {
+        return None;
+    }
+    let theta = signed_angle(first, radial, tangent);
+    (-2..=2)
+        .filter_map(|turn| {
+            let v = BlendSectionDomain::Canonical
+                .clamp_near_boundary((theta + f64::from(turn) * std::f64::consts::TAU) / alpha)?;
+            let candidate =
+                blend_surface_point_from_frame((center, tangent, first, second, radius), v);
+            let distance = point_distance(candidate, point);
+            (distance.is_finite() && distance <= fit_tolerance).then_some((
+                Point2::new(parameter, v),
+                seed.map_or(v.abs(), |seed| (v - seed.v).abs()),
+                distance,
+            ))
+        })
+        .min_by(|first, second| {
+            first
+                .2
+                .total_cmp(&second.2)
+                .then_with(|| first.1.total_cmp(&second.1))
+        })
+        .map(|(parameters, _, _)| parameters)
+}
+
+fn closest_contact_pcurve_parameter_with_geometry_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    support: &SurfaceId,
+    contact_pcurve: &PcurveGeometry,
+    point: Point3,
+    seed: Option<f64>,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<f64> {
+    let (domain, periodic) = pcurve_domain(contact_pcurve)?;
+    let normalize = |parameter: f64| {
+        if periodic {
+            canonical_periodic_parameter(domain, true, parameter)
+        } else {
+            parameter.clamp(domain[0], domain[1])
+        }
+    };
+    let squared_distance = |parameter: f64| {
+        let uv = pcurve_uv(contact_pcurve, parameter)?;
+        let candidate = decoded_surface_point_inner_with_budget(
+            index,
+            support,
+            uv.u,
+            uv.v,
+            0,
+            geometry_budget,
+        )?;
+        let distance = (candidate.x - point.x).powi(2)
+            + (candidate.y - point.y).powi(2)
+            + (candidate.z - point.z).powi(2);
+        distance.is_finite().then_some(distance)
+    };
+    let mut candidates = (0..=COARSE_CONTACT_PCURVE_SEARCH_INTERVALS)
+        .filter_map(|index| {
+            let parameter = domain[0]
+                + (domain[1] - domain[0]) * index as f64
+                    / COARSE_CONTACT_PCURVE_SEARCH_INTERVALS as f64;
+            Some((parameter, squared_distance(parameter)?))
+        })
+        .collect::<Vec<_>>();
+    if let Some(seed) = seed.filter(|seed| seed.is_finite()) {
+        let parameter = normalize(seed);
+        if let Some(distance) = squared_distance(parameter) {
+            candidates.push((parameter, distance));
+        }
+    }
+    let (mut parameter, mut best_distance) = candidates
+        .into_iter()
+        .min_by(|first, second| first.1.total_cmp(&second.1))?;
+    for _ in 0..LOCAL_CONTACT_PCURVE_SEARCH_STEPS {
+        let uv = pcurve_uv(contact_pcurve, parameter)?;
+        let uv_tangent = pcurve_tangent(contact_pcurve, parameter)?;
+        let partials =
+            model_surface_partials_by_id_with_budget(index, support, uv.u, uv.v, geometry_budget)?;
+        let tangent = Vector3::new(
+            partials.du.x * uv_tangent.u + partials.dv.x * uv_tangent.v,
+            partials.du.y * uv_tangent.u + partials.dv.y * uv_tangent.v,
+            partials.du.z * uv_tangent.u + partials.dv.z * uv_tangent.v,
+        );
+        let speed_squared = dot_vector(tangent, tangent);
+        if !speed_squared.is_finite() || speed_squared <= f64::EPSILON {
+            break;
+        }
+        let difference = Vector3::new(
+            partials.point.x - point.x,
+            partials.point.y - point.y,
+            partials.point.z - point.z,
+        );
+        let step = dot_vector(difference, tangent) / speed_squared;
+        if !step.is_finite() {
+            break;
+        }
+        let previous = parameter;
+        let next = normalize(parameter - step);
+        let Some(distance) = squared_distance(next) else {
+            break;
+        };
+        if distance >= best_distance {
+            break;
+        }
+        best_distance = distance;
+        parameter = next;
+        if (next - previous).abs() <= 64.0 * f64::EPSILON {
+            break;
+        }
+    }
+    Some(parameter)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
@@ -1393,6 +1775,8 @@ fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
 
 const LOCAL_PCURVE_SEARCH_STEPS: usize = 12;
 const COARSE_PCURVE_SEARCH_INTERVALS: usize = 16;
+const LOCAL_CONTACT_PCURVE_SEARCH_STEPS: usize = 12;
+const COARSE_CONTACT_PCURVE_SEARCH_INTERVALS: usize = 16;
 
 fn pcurve_domain(pcurve: &PcurveGeometry) -> Option<([f64; 2], bool)> {
     let PcurveGeometry::Nurbs {
@@ -2087,10 +2471,221 @@ pub(crate) fn spine_contact_point_with_index_and_budget(
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
+    let mut contact_seeds = BlendContactSeedCache::default();
+    spine_contact_point_with_index_and_budget_and_options(
+        index,
+        support,
+        spine,
+        parameter,
+        radius,
+        depth,
+        false,
+        &mut contact_seeds,
+        geometry_budget,
+    )
+}
+
+// Keep the support relation, recursion policy, bounded seed cache, and work
+// slice together so nested contact evaluation cannot hide an allocation.
+#[allow(clippy::too_many_arguments)]
+fn spine_contact_point_with_index_and_budget_and_options(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    support: &SurfaceId,
+    spine: &CurveId,
+    parameter: f64,
+    radius: f64,
+    depth: usize,
+    allow_offset_contact: bool,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let pcurve = spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)?;
-    let uv = pcurve_uv(pcurve, parameter)?;
-    decoded_surface_point_inner_with_budget(index, support, uv.u, uv.v, depth + 1, geometry_budget)
+    if let Some(pcurve) = spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)
+    {
+        let uv = pcurve_uv(pcurve, parameter)?;
+        return decoded_surface_point_inner_with_budget(
+            index,
+            support,
+            uv.u,
+            uv.v,
+            depth + 1,
+            geometry_budget,
+        );
+    }
+    if !allow_offset_contact {
+        return None;
+    }
+    if !index
+        .surfaces(support.0.as_str())
+        .is_some_and(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)))
+    {
+        return None;
+    }
+    spine_contact_point_from_offset_side_with_index_and_budget(
+        index,
+        support,
+        spine,
+        parameter,
+        radius,
+        depth + 1,
+        contact_seeds,
+        geometry_budget,
+    )
+}
+
+const BLEND_CONTACT_ANGULAR_TOLERANCE_FLOOR: f64 = 1.0e-8;
+
+#[allow(clippy::too_many_arguments)]
+fn spine_contact_point_from_offset_side_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    support: &SurfaceId,
+    spine: &CurveId,
+    parameter: f64,
+    radius: f64,
+    depth: usize,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point3> {
+    (depth < 32).then_some(())?;
+    let tolerance = index.ir().tolerances.linear;
+    if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
+        return None;
+    }
+    let center = model_curve_point_with_index_and_budget(index, spine, parameter, geometry_budget)?;
+    let tangent =
+        model_curve_tangent_with_index_and_budget(index, spine, parameter, geometry_budget)?;
+    let procedural = index
+        .procedural_curves_for_curve(spine.0.as_str())?
+        .iter()
+        .copied()
+        .find(|candidate| {
+            matches!(
+                candidate.definition,
+                ProceduralCurveDefinition::Intersection { .. }
+            )
+        })?;
+    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        unreachable!("definition selected above");
+    };
+    let contact_fit_tolerance = procedural
+        .cache_fit_tolerance
+        .filter(|fit| fit.is_finite() && *fit > 0.0)
+        .map_or(tolerance, |fit| tolerance.max(fit));
+    let offset_surfaces = context
+        .sides
+        .iter()
+        .filter_map(|side| {
+            let surface = side.surface.as_ref()?;
+            let (base, distance) = surface_offset_lineage_with_index(index, surface, depth + 1)?;
+            (base == *support && blend_contact_offset_matches(0.0, distance, radius))
+                .then_some((surface, distance.abs()))
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for side in &context.sides {
+        let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
+            continue;
+        };
+        let Some(side_uv) = pcurve_uv(pcurve, parameter) else {
+            continue;
+        };
+        let Some(side_point) = decoded_surface_point_inner_with_budget(
+            index,
+            side_surface,
+            side_uv.u,
+            side_uv.v,
+            depth + 1,
+            geometry_budget,
+        ) else {
+            continue;
+        };
+        for (offset_surface, offset_distance) in &offset_surfaces {
+            let cached_seed = contact_seeds.seed_for(support, spine, parameter, offset_surface);
+            let inverse_seed = cached_seed.or_else(|| {
+                surface_parameter_domain_with_index(index, offset_surface).and_then(|domain| {
+                    coarse_model_surface_parameters(
+                        index,
+                        offset_surface,
+                        side_point,
+                        domain,
+                        geometry_budget,
+                    )
+                })
+            });
+            let Some(inverse_seed) = inverse_seed else {
+                continue;
+            };
+            let Some(parameters) = refine_offset_surface_parameters_with_index_and_budget(
+                index,
+                offset_surface,
+                side_point,
+                inverse_seed,
+                contact_fit_tolerance,
+                geometry_budget,
+            ) else {
+                continue;
+            };
+            let Some(offset_point) = decoded_surface_point_inner_with_budget(
+                index,
+                offset_surface,
+                parameters.u,
+                parameters.v,
+                depth + 1,
+                geometry_budget,
+            ) else {
+                continue;
+            };
+            let offset_fit = point_distance(offset_point, side_point);
+            if offset_fit > contact_fit_tolerance {
+                continue;
+            }
+            let Some(reproduced) = decoded_surface_point_inner_with_budget(
+                index,
+                support,
+                parameters.u,
+                parameters.v,
+                depth + 1,
+                geometry_budget,
+            ) else {
+                continue;
+            };
+            let offset_error = (point_distance(side_point, reproduced) - offset_distance).abs();
+            if offset_error > contact_fit_tolerance {
+                continue;
+            }
+            let radial = Vector3::new(
+                reproduced.x - center.x,
+                reproduced.y - center.y,
+                reproduced.z - center.z,
+            );
+            let radial_length = radial.norm();
+            if !radial_length.is_finite() || (radial_length - radius).abs() > contact_fit_tolerance
+            {
+                continue;
+            }
+            let Some(radial) = unit_vector(radial) else {
+                continue;
+            };
+            let angular_tolerance =
+                (contact_fit_tolerance / radius).max(BLEND_CONTACT_ANGULAR_TOLERANCE_FLOOR);
+            if radial.dot(tangent).abs() > angular_tolerance {
+                continue;
+            }
+            let contact_seed = BlendContactSeed {
+                support: support.clone(),
+                spine: spine.clone(),
+                parameter,
+                offset_surface: (*offset_surface).clone(),
+                parameters,
+            };
+            candidates.push((reproduced, contact_seed));
+        }
+    }
+    let [(candidate, contact_seed)] = candidates.as_slice() else {
+        return None;
+    };
+    contact_seeds.remember(contact_seed.clone());
+    Some(*candidate)
 }
 
 pub(crate) fn spine_contact_pcurve_with_index<'a>(
@@ -2118,7 +2713,8 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
         let side_surface = side.surface.as_ref()?;
         let pcurve = side.pcurve.as_ref()?;
         let offset =
-            constant_surface_offset_between_with_index(index, support, side_surface, depth + 1)?;
+            constant_surface_offset_between_with_index(index, support, side_surface, depth + 1);
+        let offset = offset?;
         if !blend_contact_offset_matches(0.0, offset, radius) {
             return None;
         }

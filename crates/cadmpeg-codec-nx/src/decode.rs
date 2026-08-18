@@ -164,11 +164,10 @@ pub(crate) use blend::{
     insert_homogeneous_curve_knot, lift_periodic_parameters, polynomial_roots_in_unit_interval,
     polynomial_value, rational_squared_distance_derivative, real_polynomial_roots,
     rodrigues_rotate, scalar_bernstein_sign_variations, scalar_bezier_value, signed_angle,
-    spine_contact_direction_with_index_and_budget, spine_contact_point_with_index_and_budget,
-    stationary_rational_distance_candidates, subdivide_scalar_bezier_span,
-    subtract_bernstein_polynomials, sum_bernstein_polynomials, BezierSpan,
-    BlendContactDerivativeContext, BlendParameterGrid, BlendSurfaceFrame, BoundaryInverseTarget,
-    HomogeneousCurveSpans, ScalarBezierRoots, ScalarBezierSpan,
+    spine_contact_point_with_index_and_budget, stationary_rational_distance_candidates,
+    subdivide_scalar_bezier_span, subtract_bernstein_polynomials, sum_bernstein_polynomials,
+    BezierSpan, BlendContactDerivativeContext, BlendParameterGrid, BlendSurfaceFrame,
+    BoundaryInverseTarget, HomogeneousCurveSpans, ScalarBezierRoots, ScalarBezierSpan,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

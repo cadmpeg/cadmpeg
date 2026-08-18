@@ -823,6 +823,171 @@ fn blend_contact_matches_concentric_blend_carriers() {
 }
 
 #[test]
+fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
+    use cadmpeg_ir::geometry::{
+        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralSurface, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::math::Point3;
+
+    const FIT_TOLERANCE: f64 = 1.0e-10;
+
+    let support = SurfaceId("synthetic:reverse-contact-support".into());
+    let support_offset = SurfaceId("synthetic:reverse-contact-support-offset".into());
+    let other = SurfaceId("synthetic:reverse-contact-other".into());
+    let blend = SurfaceId("synthetic:reverse-contact-blend".into());
+    let spine = CurveId("synthetic:reverse-contact-spine".into());
+    let spine_procedural = ProceduralCurveId("synthetic:reverse-contact-spine-record".into());
+    let support_offset_construction =
+        ProceduralSurfaceId("synthetic:reverse-contact-support-offset-record".into());
+    let blend_construction = ProceduralSurfaceId("synthetic:reverse-contact-blend-record".into());
+    let plane = |id, origin, normal| Surface {
+        id,
+        geometry: SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.extend([
+        plane(
+            support.clone(),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        plane(
+            support_offset.clone(),
+            Point3::new(1.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        plane(
+            other.clone(),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ),
+        Surface {
+            id: blend.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: blend_construction.clone(),
+            },
+            source_object: None,
+        },
+    ]);
+    ir.model.procedural_surfaces.extend([
+        ProceduralSurface {
+            id: support_offset_construction.clone(),
+            surface: support_offset.clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: support.clone(),
+                distance: 1.0,
+                u_sense: None,
+                v_sense: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        },
+        ProceduralSurface {
+            id: blend_construction,
+            surface: blend.clone(),
+            definition: ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other.clone(),
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine.clone()),
+                radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        },
+    ]);
+    ir.model.curves.push(Curve {
+        id: spine.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    let contact_pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        weights: None,
+        periodic: false,
+    };
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: spine_procedural,
+        curve: spine,
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(support_offset),
+                        pcurve: Some(contact_pcurve.clone()),
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(other),
+                        pcurve: Some(contact_pcurve),
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+
+    let source_pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: [Point2::new(0.0, 1.0), Point2::new(1.0, 1.0)].to_vec(),
+        weights: None,
+        periodic: false,
+    };
+    let parameter = 0.35;
+    let expected = Point2::new(parameter, 0.0);
+    let point = Point3::new(0.0, 0.0, parameter);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    let geometry_budget = WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
+    let actual =
+        crate::decode::blend::blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+            &index,
+            &blend,
+            &support,
+            &source_pcurve,
+            parameter,
+            crate::decode::blend::BoundaryInverseTarget {
+                point,
+                seed: None,
+                tolerance: FIT_TOLERANCE,
+            },
+            &mut contact_seeds,
+            &geometry_budget,
+        )
+        .expect("reverse contact relation transfers the certified boundary");
+    assert!((actual.u - expected.u).abs() <= FIT_TOLERANCE);
+    assert!((actual.v - expected.v).abs() <= FIT_TOLERANCE);
+}
+
+#[test]
 fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     use cadmpeg_ir::geometry::Curve;
     use cadmpeg_ir::ids::CurveId;

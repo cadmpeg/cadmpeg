@@ -3,12 +3,14 @@
 
 use super::blend::{
     blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget,
-    blend_boundary_parameter_from_support_pcurve_with_budget, blend_surface_definition_with_index,
-    blend_surface_parameter_grid_with_index_and_budget,
+    blend_boundary_parameter_from_support_pcurve_with_budget,
+    blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache,
+    blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
     blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_point_inner_with_index_and_budget, closest_spine_parameter_with_index_and_budget,
     decoded_surface_point_inner_with_budget, decoded_surface_point_with_geometry_and_budget,
-    spine_contact_pcurve_with_index, BlendParameterGrid, BoundaryInverseTarget,
+    spine_contact_pcurve_with_index, BlendContactSeedCache, BlendParameterGrid,
+    BoundaryInverseTarget,
 };
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
@@ -1058,6 +1060,22 @@ fn blend_boundary_transfer_available(
     };
     supports.iter().any(|support| {
         parameterization_equivalent_surfaces_with_index(index, support, source_surface)
+    })
+}
+
+fn reverse_blend_boundary_transfer_available(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    source_surface: &SurfaceId,
+    target_surface: &SurfaceId,
+) -> bool {
+    let Some((supports, spine, radius, _)) =
+        blend_surface_definition_with_index(index, source_surface)
+    else {
+        return false;
+    };
+    supports.iter().any(|support| {
+        parameterization_equivalent_surfaces_with_index(index, support, target_surface)
+            && spine_contact_pcurve_with_index(index, target_surface, &spine, radius, 0).is_some()
     })
 }
 
@@ -2231,12 +2249,14 @@ fn transfer_intersection_pcurve_with_budget(
     // before it can be emitted.
     const BLEND_BOUNDARY_CONTINUATION_STEPS: usize = 1;
     let blend_boundary_transfer =
-        blend_boundary_transfer_available(index, source_surface, target_surface);
+        blend_boundary_transfer_available(index, source_surface, target_surface)
+            || reverse_blend_boundary_transfer_available(index, source_surface, target_surface);
     let continuation_steps = if blend_boundary_transfer {
         BLEND_BOUNDARY_CONTINUATION_STEPS
     } else {
         GENERAL_CONTINUATION_STEPS
     };
+    let mut contact_seeds = BlendContactSeedCache::default();
 
     (parameter_range[0].is_finite()
         && parameter_range[1].is_finite()
@@ -2258,6 +2278,7 @@ fn transfer_intersection_pcurve_with_budget(
         blend_contact,
         budget,
         geometry_budget,
+        &mut contact_seeds,
         blend_parameter_grids,
     )?;
     let mut coarse = Vec::with_capacity(continuation_steps + 1);
@@ -2280,6 +2301,7 @@ fn transfer_intersection_pcurve_with_budget(
             blend_contact,
             budget,
             geometry_budget,
+            &mut contact_seeds,
             blend_parameter_grids,
         )?;
         coarse.push(sample);
@@ -2302,6 +2324,7 @@ fn transfer_intersection_pcurve_with_budget(
             blend_contact,
             budget,
             geometry_budget,
+            &mut contact_seeds,
             blend_parameter_grids,
         )?;
     }
@@ -2331,6 +2354,7 @@ fn transferred_pcurve_sample_with_budget(
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
+    contact_seeds: &mut BlendContactSeedCache,
     blend_parameter_grids: &mut BlendParameterGridCache,
 ) -> Option<TransferredPcurveSample> {
     if !budget.charge() {
@@ -2383,7 +2407,20 @@ fn transferred_pcurve_sample_with_budget(
             geometry_budget,
         )
     });
-    let (target_uv, target_certified) = if contact_target_uv.is_some() {
+    let reverse_contact_target_uv =
+        blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+            index,
+            source_surface,
+            target_surface,
+            source_pcurve,
+            parameter,
+            target,
+            contact_seeds,
+            geometry_budget,
+        );
+    let (target_uv, target_certified) = if reverse_contact_target_uv.is_some() {
+        (reverse_contact_target_uv, true)
+    } else if contact_target_uv.is_some() {
         (contact_target_uv, true)
     } else if let Some(target_uv) = blend_boundary_parameter_from_support_pcurve_with_budget(
         index,
@@ -2622,6 +2659,7 @@ fn append_transferred_pcurve_segment_with_budget(
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
+    contact_seeds: &mut BlendContactSeedCache,
     blend_parameter_grids: &mut BlendParameterGridCache,
 ) -> Option<()> {
     let midpoint_parameter = f64::midpoint(first.0, last.0);
@@ -2643,6 +2681,7 @@ fn append_transferred_pcurve_segment_with_budget(
         blend_contact,
         budget,
         geometry_budget,
+        contact_seeds,
         blend_parameter_grids,
     )?;
     let fits = [0.25, 0.5, 0.75].into_iter().all(|fraction| {
@@ -2740,6 +2779,7 @@ fn append_transferred_pcurve_segment_with_budget(
         blend_contact,
         budget,
         geometry_budget,
+        contact_seeds,
         blend_parameter_grids,
     )?;
     append_transferred_pcurve_segment_with_budget(
@@ -2758,6 +2798,7 @@ fn append_transferred_pcurve_segment_with_budget(
         blend_contact,
         budget,
         geometry_budget,
+        contact_seeds,
         blend_parameter_grids,
     )
 }
