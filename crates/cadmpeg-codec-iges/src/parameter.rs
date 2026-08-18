@@ -410,6 +410,23 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (322, 0) => {
+            let Some(attribute_count) = record.count_with_stride(3, 3).filter(|count| *count > 0)
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = attribute_count
+                .checked_mul(3)
+                .and_then(|width| width.checked_add(4))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (406, 14) => {
             let Some(value_count) = record.count(1).filter(|count| *count > 0) else {
                 return ParameterBoundary::Invalid;

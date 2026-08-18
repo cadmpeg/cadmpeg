@@ -34,10 +34,10 @@ bare_tolerance_literals = 708
 nonliteral_vec_repeat = 152
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 1777
+test_line_debt = 1781
 production_line_debt = 0
 
 [reasons]
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"
+test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit; Type 322 Form 0 closure adds five owner tests and leaves iges parameter/tests.rs at 2004 lines, four over the 2000-line test-file limit"
 codec_error_malformed_format = "raised for FreeCAD exact persistence and topology validation: canonical aliases and sections, ObjectDeps ordering, duplicate property identities, exact application-geometry dispatch, duplicate edge endpoint orientations, duplicate edge representations, duplicate annotation carriers, duplicate product records, overlapping product parents, duplicate joint carriers, duplicate GUI shape associations, duplicate attachment carriers, duplicate product carriers or ambiguous dual placement carriers, noncanonical TechDraw page carriers, duplicate or invalid TechDraw scalar/vector/format carrier values, and invalid, multiply-valued, or noncanonical-runtime product, joint, or attachment placement carriers each reject ambiguous input instead of selecting by source order; this batch adds explicit malformed admission for duplicate document property containers, invalid GUI camera values, wrong-runtime-type product and joint carriers, wrong-runtime-type annotation and drawing carriers, drawing link cardinality conflicts, non-finite or geometrically invalid drawing values, direct-carrier root grammar including enumeration metadata, and propagation of malformed scalar/vector carrier errors into neutral transfer; the FreeCAD GUI registry closure adds explicit malformed admission for every standard GUI root, counted list and side-entry frame, VisualLayerList, expression, material, Part, and Sketcher custom carrier so unregistered values cannot be selected by plausibility"
