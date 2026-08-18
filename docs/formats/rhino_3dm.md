@@ -896,7 +896,9 @@ exactly to the corresponding f32 coordinate, the double array becomes the
 mesh's source-precision vertex array. Otherwise the double array is discarded
 and the float array remains authoritative. A mesh double array already loaded
 from the class-data payload has precedence over this userdata item. Later
-minor bytes are skipped at the anonymous boundary.
+minor bytes are skipped at the anonymous boundary. The CADIR reader requires
+anonymous major `1`; another major is an unsupported class-owned payload and
+cannot supply typed vertices.
 
 CADIR maps an accepted array to tessellation vertices before unit scaling. A
 rejected or malformed recognized item retains the mesh and its float vertices

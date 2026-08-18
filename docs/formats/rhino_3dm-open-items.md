@@ -145,6 +145,12 @@ while version 3 leaves the point and attributes typed, omits the modifier,
 emits the carrier-specific bounded diagnostic, and retains the complete object
 record.
 
+The mesh owner is proven for `ON_V5_MeshDoubleVertices`: a current major-1
+payload supplies the synchronized f64 vertex array, while an unsupported major,
+malformed child, or count mismatch leaves the float mesh typed, omits only the
+redundant array, emits the bounded repair diagnostic, and retains the complete
+object record.
+
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
 same change must state the field-specific loss or neutral mapping required by

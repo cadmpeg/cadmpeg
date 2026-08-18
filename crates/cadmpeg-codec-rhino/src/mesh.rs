@@ -1161,8 +1161,14 @@ fn read_v5_double_vertices(
         ));
     }
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    let _major = reader.i32()?;
+    let major = reader.i32()?;
     let _minor = reader.i32()?;
+    if major != 1 {
+        return Err(error(
+            reader.position() - 8,
+            "unsupported V5 mesh double-precision userdata version",
+        ));
+    }
     let _float_count = reader.i32()?;
     let _double_count = reader.i32()?;
     let _float_crc = reader.u32()?;
