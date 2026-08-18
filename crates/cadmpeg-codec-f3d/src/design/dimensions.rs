@@ -807,6 +807,7 @@ fn project_all_dimension_constraints(
                         &parameter.source_kind,
                         parameter.evaluated_value,
                         parameter_id.clone(),
+                        linear_tolerance,
                     ) {
                         return Some(SketchConstraint {
                             id: constraint_id,
@@ -2940,14 +2941,19 @@ pub(crate) fn null_locus_dimension_definition(
     source_kind: &str,
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
     };
 
-    if let Some(definition) =
-        radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
-    {
+    if let Some(definition) = radial_dimension_definition_at_tolerance(
+        entity,
+        source_kind,
+        evaluated_value,
+        parameter.clone(),
+        linear_tolerance,
+    ) {
         return Some(definition);
     }
     if source_kind != "Angular Dimension-2"
