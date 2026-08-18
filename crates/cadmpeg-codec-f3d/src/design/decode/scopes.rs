@@ -3386,6 +3386,7 @@ pub(crate) fn exact_base_feature_construction(
             result_fields: Vec::new(),
         });
     }
+    let legacy_290_261 = scope.class_tag == "290" && scope.paired_class_tag == "261";
     let legacy_409_262 = scope.class_tag == "409" && scope.paired_class_tag == "262";
     let legacy_444_263 = scope.class_tag == "444" && scope.paired_class_tag == "263";
     if legacy_409_262 && scope.frame_length == 258 {
@@ -3542,15 +3543,18 @@ pub(crate) fn exact_base_feature_construction(
         return None;
     }
     let body_count = combined_count / 2;
-    let expanded = matches!(
-        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-        ("384", "264") | ("409", "262")
-    );
+    let expanded = legacy_290_261
+        || matches!(
+            (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+            ("384", "264") | ("409", "262")
+        );
     let compact = matches!(
         (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
         ("420", "258") | ("452", "266")
     );
-    let base_length = if expanded || compact || legacy_444_263 {
+    let base_length = if legacy_290_261 {
+        261
+    } else if expanded || compact || legacy_444_263 {
         262
     } else {
         271

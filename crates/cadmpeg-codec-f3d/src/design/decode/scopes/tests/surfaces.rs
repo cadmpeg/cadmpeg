@@ -615,6 +615,74 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
 }
 
 #[test]
+fn base_feature_scope_decodes_class_290_261_result_body_variant() {
+    let body_count = 2;
+    let frame_length = 261 + 52 * body_count;
+    let mut bytes = vec![0u8; frame_length];
+    bytes[19] = 1;
+    bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+    let mut cursor = 24;
+    for value in [101u64, 102] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+        cursor += 15;
+    }
+    for value in [201u64, 202] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+        cursor += 15;
+    }
+    bytes[cursor] = 1;
+    bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+    cursor += 11;
+    for value in [201u32, 202] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
+        cursor += 11;
+    }
+    bytes[cursor] = 0;
+    cursor += 1;
+    bytes[cursor] = 1;
+    bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
+    cursor += 11;
+    bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+    cursor += 4;
+    for value in [401u32, 402] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
+        cursor += 11;
+    }
+    let mut scope =
+        DesignParameterScope::empty("f3d:scope#base-feature-290-261", "Base Feature", 74);
+    scope.class_tag = "290".into();
+    scope.paired_class_tag = "261".into();
+    scope.frame_length = frame_length as u64;
+    scope.kind_offset = (frame_length + 102) as u64;
+    scope.paired_byte_offset = frame_length as u64;
+    scope.reference_members = vec![301];
+    assert_eq!(cursor, 155);
+
+    let construction = exact_base_feature_construction(&bytes, &scope)
+        .expect("class-290/class-261 result-body frame is canonical");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        body_reference_records,
+        metadata_record,
+        result_records,
+        metadata_field,
+        ..
+    } = construction
+    else {
+        panic!("class-290/class-261 frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, [101, 102]);
+    assert_eq!(body_reference_records, [201, 202]);
+    assert_eq!(metadata_record, 301);
+    assert_eq!(result_records, [401, 402]);
+    assert_eq!(metadata_field, [0, 0]);
+}
+
+#[test]
 fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     fn frame(body_count: usize) -> (Vec<u8>, DesignParameterScope) {
         let frame_length = 262 + 52 * body_count;
