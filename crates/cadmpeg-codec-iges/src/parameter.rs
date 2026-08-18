@@ -332,6 +332,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// index 4 for `NP=3`, so its groups start at token four or five.
 /// Type 406 Form 15 fixes `NP=1` at index 1 and stores the name at index 2,
 /// so its groups start at token three.
+/// Type 406 Forms 16 and 17 fix `NP=2` at index 1 and store two drawing
+/// property fields at indexes 2 and 3, so their groups start at token four.
 /// Type 406 Form 24 puts `NLD` at index 2 and stores four fields per level
 /// definition, so its groups start at token `3 + 4*NLD`; `NP` is `1 + 4*NLD`.
 /// Type 406 Form 25 puts `NV` at index 3 and stores one level number per value,
@@ -432,6 +434,7 @@ pub(crate) fn entity_primary_end(
         (406, 12) => Some(external_reference_file_list_primary_end(record)),
         (406, 13) => Some(nominal_size_primary_end(record)),
         (406, 15) => Some(name_property_primary_end(record)),
+        (406, 16 | 17) => Some(drawing_property_primary_end(record)),
         (406, 24) => Some(level_to_lep_layer_map_primary_end(record)),
         (406, 25) => Some(lep_artwork_stackup_primary_end(record)),
         (406, 26) => Some(lep_drilled_hole_primary_end(record)),
@@ -661,6 +664,14 @@ fn nominal_size_primary_end(record: &ParameterRecord) -> usize {
 fn name_property_primary_end(record: &ParameterRecord) -> usize {
     if record.integer(1) == Some(1) && record.tokens.len() >= 3 {
         3
+    } else {
+        record.tokens.len()
+    }
+}
+
+fn drawing_property_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) == Some(2) && record.tokens.len() >= 4 {
+        4
     } else {
         record.tokens.len()
     }

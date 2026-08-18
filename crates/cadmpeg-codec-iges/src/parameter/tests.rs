@@ -1210,6 +1210,222 @@ fn type406_form1_malformed_np_or_span_does_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type406_drawing_properties_share_fixed_primary_boundary() {
+    let association = directory_target(3, 212);
+    for (form, values) in [
+        (
+            16_i64,
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(2),
+                TokenValue::Integer(10),
+                TokenValue::Integer(20),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+                TokenValue::Integer(0),
+            ],
+        ),
+        (
+            17_i64,
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(2),
+                TokenValue::Integer(2),
+                TokenValue::String(b"MM".to_vec()),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+                TokenValue::Integer(0),
+            ],
+        ),
+        (
+            16,
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(2),
+                TokenValue::String(b"X".to_vec()),
+                TokenValue::Integer(20),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+                TokenValue::Integer(0),
+            ],
+        ),
+        (
+            17,
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(2),
+                TokenValue::Integer(2),
+                TokenValue::Integer(1),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+                TokenValue::Integer(0),
+            ],
+        ),
+    ] {
+        let mut source = directory_target(1, 406);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &source), (3, &association)]);
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis
+            .groups
+            .expect("Type 406 drawing property table boundary");
+        assert_eq!(groups.token_start, 4, "Form {form}");
+        assert_eq!(groups.associations, vec![3], "Form {form}");
+        assert!(groups.properties.is_empty(), "Form {form}");
+    }
+}
+
+#[test]
+fn type406_drawing_property_boundary_precedes_generic_candidate() {
+    let association = directory_target(3, 212);
+    let property_a = directory_target(5, 406);
+    let property_b = directory_target(7, 406);
+    for (form, values) in [
+        (
+            16_i64,
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(2),
+                TokenValue::Integer(10),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+                TokenValue::Integer(2),
+                TokenValue::Integer(5),
+                TokenValue::Integer(7),
+            ],
+        ),
+        (
+            17_i64,
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(2),
+                TokenValue::Integer(2),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+                TokenValue::Integer(2),
+                TokenValue::Integer(5),
+                TokenValue::Integer(7),
+            ],
+        ),
+    ] {
+        let mut source = directory_target(1, 406);
+        source.form = form;
+        let directory = BTreeMap::from([
+            (1, &source),
+            (3, &association),
+            (5, &property_a),
+            (7, &property_b),
+        ]);
+        let record = token_parameter_record(1, values);
+        assert!(
+            structural_pointer_group_candidates(&record)
+                .iter()
+                .any(|candidate| candidate.token_start == 3),
+            "Form {form} generic candidate"
+        );
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 0, "Form {form}");
+        assert!(analysis.groups.is_none(), "Form {form}");
+    }
+}
+
+#[test]
+fn type406_drawing_property_malformed_np_or_span_does_not_enable_generic_recovery() {
+    let association = directory_target(3, 212);
+    let mut source = directory_target(1, 406);
+    for (form, cases) in [
+        (
+            16_i64,
+            vec![
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Real(2.0),
+                    TokenValue::Integer(10),
+                    TokenValue::Integer(20),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(0),
+                ],
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Omitted,
+                    TokenValue::Integer(10),
+                    TokenValue::Integer(20),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(0),
+                ],
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Integer(0),
+                    TokenValue::Integer(10),
+                    TokenValue::Integer(20),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(0),
+                ],
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Integer(2),
+                    TokenValue::Integer(10),
+                ],
+            ],
+        ),
+        (
+            17_i64,
+            vec![
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Real(2.0),
+                    TokenValue::Integer(2),
+                    TokenValue::String(b"MM".to_vec()),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(0),
+                ],
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Omitted,
+                    TokenValue::Integer(2),
+                    TokenValue::String(b"MM".to_vec()),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(0),
+                ],
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Integer(0),
+                    TokenValue::Integer(2),
+                    TokenValue::String(b"MM".to_vec()),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(0),
+                ],
+                vec![
+                    TokenValue::Integer(406),
+                    TokenValue::Integer(2),
+                    TokenValue::Integer(2),
+                ],
+            ],
+        ),
+    ] {
+        source.form = form;
+        let directory = BTreeMap::from([(1, &source), (3, &association)]);
+        for values in cases {
+            let record = token_parameter_record(1, values);
+            let analysis = analyze_trailing_pointer_groups(&record, &directory);
+            assert_eq!(analysis.candidate_count, 0, "Form {form}");
+            assert_eq!(analysis.valid_candidate_count, 0, "Form {form}");
+            assert!(analysis.groups.is_none(), "Form {form}");
+        }
+    }
+}
+
+#[test]
 fn type406_form2_entity_table_boundary_follows_fixed_values() {
     let mut source = directory_target(1, 406);
     source.form = 2;
