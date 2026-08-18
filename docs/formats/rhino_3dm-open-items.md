@@ -76,6 +76,10 @@ The material-table owner is proven to retain the complete record when the
 registered `ON_PhysicallyBasedMaterialUserData` payload has an unsupported
 anonymous major; independent material fields remain typed and the
 physically-based value is omitted.
+The V5 dimension-style owner is proven to retain the complete record when the
+registered `ON_DimStyleExtra` payload has an unsupported anonymous major;
+independent packed dimension-style fields remain typed and the extra value is
+omitted.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

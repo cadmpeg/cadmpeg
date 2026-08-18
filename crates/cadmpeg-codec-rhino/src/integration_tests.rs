@@ -635,6 +635,146 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
 }
 
 #[test]
+fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner() {
+    let archive = ArchiveVersion::V5;
+    let v5_dimstyle_class = crate::wire::Uuid::from_canonical([
+        0x81, 0xbd, 0x83, 0xd5, 0x71, 0x20, 0x41, 0xc4, 0x9a, 0x57, 0xc4, 0x49, 0x33, 0x6f, 0xf1,
+        0x2c,
+    ])
+    .to_wire();
+    let mut dimstyle_payload = vec![0x15];
+    dimstyle_payload.extend(7_i32.to_le_bytes());
+    dimstyle_payload.extend(crate::test_support::test_dump::utf16_bytes(
+        "legacy dimension style",
+    ));
+    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0] {
+        dimstyle_payload.extend(value.to_le_bytes());
+    }
+    dimstyle_payload.extend(6_u32.to_le_bytes());
+    dimstyle_payload.extend(7_i32.to_le_bytes());
+    dimstyle_payload.extend(8_i32.to_le_bytes());
+    dimstyle_payload.extend(9_u32.to_le_bytes());
+    dimstyle_payload.extend(10_u32.to_le_bytes());
+    dimstyle_payload.extend(11_i32.to_le_bytes());
+    dimstyle_payload.extend(12_i32.to_le_bytes());
+    dimstyle_payload.extend(13_i32.to_le_bytes());
+    dimstyle_payload.extend(14.0_f64.to_le_bytes());
+    dimstyle_payload.extend(15.0_f64.to_le_bytes());
+    dimstyle_payload.extend(crate::test_support::test_dump::utf16_bytes("<"));
+    dimstyle_payload.extend(crate::test_support::test_dump::utf16_bytes(">"));
+    dimstyle_payload.push(1);
+    dimstyle_payload.extend(16.0_f64.to_le_bytes());
+    dimstyle_payload.extend(17_u32.to_le_bytes());
+    dimstyle_payload.extend(18_i32.to_le_bytes());
+    dimstyle_payload.extend(19_u32.to_le_bytes());
+    dimstyle_payload.extend(20_i32.to_le_bytes());
+    dimstyle_payload.extend(crate::test_support::test_dump::utf16_bytes("["));
+    dimstyle_payload.extend(crate::test_support::test_dump::utf16_bytes("]"));
+    dimstyle_payload.extend(21_u32.to_le_bytes());
+    dimstyle_payload.extend([0x33; 16]);
+    dimstyle_payload.extend(22.0_f64.to_le_bytes());
+    dimstyle_payload.extend(23.0_f64.to_le_bytes());
+    dimstyle_payload.extend(24_i32.to_le_bytes());
+    dimstyle_payload.extend([1, 0]);
+
+    let future_extra_payload = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[
+            2_i32.to_le_bytes().as_slice(),
+            0_i32.to_le_bytes().as_slice(),
+            &[0xbe, 0xef],
+        ]
+        .concat(),
+    );
+    let userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::wire::Uuid::from_canonical([
+            0x51, 0x3f, 0xde, 0x53, 0x72, 0x84, 0x40, 0x65, 0x86, 0x01, 0x06, 0xce, 0xa8, 0xb2,
+            0x8d, 0x6f,
+        ])
+        .to_wire(),
+        crate::wire::Uuid::from_canonical([
+            0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc,
+            0x30, 0xd4,
+        ])
+        .to_wire(),
+        50,
+        0,
+        &future_extra_payload,
+    );
+    let mut uuid_body = v5_dimstyle_class.to_vec();
+    uuid_body.extend(crc32fast::hash(&v5_dimstyle_class).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data =
+        crate::test_support::test_dump::crc_chunk(archive, 0x0002_fffc, &dimstyle_payload);
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let dimstyle_class_wrapper = crate::test_support::test_dump::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[class_uuid, class_data, userdata, class_end].concat(),
+    );
+    let dimstyle_record = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_8075,
+        &dimstyle_class_wrapper,
+    );
+    let valid_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let mut units_body = 100_i32.to_le_bytes().to_vec();
+    units_body.extend(2_i32.to_le_bytes());
+    units_body.extend(0.01_f64.to_le_bytes());
+    units_body.extend(0.1_f64.to_le_bytes());
+    units_body.extend(0.001_f64.to_le_bytes());
+    let units = crate::test_support::test_dump::crc_chunk(archive, 0x2000_8031, &units_body);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[units]),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0020,
+                std::slice::from_ref(&dimstyle_record),
+            ),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[valid_point]),
+        ],
+    );
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let dimension_styles =
+        &result.ir().native.namespace("rhino").unwrap().arenas["dimension_styles"];
+    assert_eq!(dimension_styles.len(), 1);
+    assert_eq!(
+        dimension_styles[0]
+            .field("name")
+            .and_then(|value| value.as_str().map(str::to_owned)),
+        Some("legacy dimension style".to_owned())
+    );
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| {
+            record
+                .id
+                .starts_with("rhino:opaque:record#10000020-20008075-")
+        })
+        .expect("future dimension-style userdata record is retained");
+    assert_eq!(retained.data.as_deref(), Some(dimstyle_record.as_slice()));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("V5 dimension-style userdata")
+            && loss.message.contains("could not be transferred")
+    }));
+    assert_valid(&result);
+}
+
+#[test]
 fn future_settings_payload_is_retained_without_known_prefix() {
     let archive = ArchiveVersion::V5;
     let future_annotation =

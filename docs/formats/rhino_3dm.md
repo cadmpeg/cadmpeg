@@ -5800,6 +5800,11 @@ dimension-style UUID to the V5 style. It does not copy baseline spacing into
 the V5 style. The V5 reader retains the extra as a nested native source record;
 its valid-field bytes, tolerance values, mask bytes, dimension scale, and
 source UUID are not inferred from the packed class-data prefix.
+CADIR typed-admission decision: an unsupported inner major or malformed
+recognized extra payload supplies no extra fields; independently admitted V5
+dimension-style fields remain typed, the complete containing dimension-style
+record is retained for opaque fidelity, and the owner emits a presentation
+loss for the omitted extra value.
 When the mask gate is absent, its source default color is white with raw bytes
 `[255,255,255,0]`; absent dimension-scale fields default to `1.0` and source
 `0`.

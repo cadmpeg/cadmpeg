@@ -3902,6 +3902,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                 }
             } else if table_type == DIMSTYLE_TABLE {
                 if scan.archive.value() < 60 {
+                    let mut extra_requires_opaque = false;
                     if let Ok((range, userdata)) =
                         class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE)
                     {
@@ -3917,6 +3918,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                             ) {
                                 Ok(extra) => Some(extra),
                                 Err(error) => {
+                                    extra_requires_opaque = true;
                                     losses.push(RhinoLossCode::PresentationRecordDropped.note(
                                         format!(
                                             "V5 dimension-style userdata at offset {} could not be transferred: {error}",
@@ -3936,6 +3938,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                             extra,
                         ) {
                             dimension_styles.push(value);
+                            if extra_requires_opaque {
+                                opaque_records.push(OpaqueRecord {
+                                    table_typecode: table.typecode,
+                                    record: record.clone(),
+                                });
+                            }
                             parsed = true;
                         }
                     }
