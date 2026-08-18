@@ -2056,6 +2056,40 @@ pub(crate) mod split_face_class_418_prefix {
     pub(crate) const ZERO_RUN_3: usize = 29;
 }
 
+/// Byte offsets for the `form_legacy_one_cage_owner` record.
+///
+/// Spec §1.1.1. Record length 81 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The owner/paired/nested class triples are 335/262/328, 395/264/329, 448/258/276, and 295/258/274.
+/// ```
+pub(crate) mod form_legacy_one_cage_owner {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 81;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §1.1.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER: usize = 25;
+    /// Offset of `owner_scope_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const OWNER_SCOPE_RECORD_INDEX: usize = 26;
+    /// Offset of `zero_run_24` (`bytes[24]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_24: usize = 34;
+    /// Offset of `nested_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const NESTED_MARKER: usize = 58;
+    /// Offset of `nested_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const NESTED_RECORD_INDEX: usize = 59;
+    /// Offset of `nested_zero_run` (`bytes[3]`). Spec §1.1.1.
+    pub(crate) const NESTED_ZERO_RUN: usize = 67;
+    /// Offset of `owner_repeat_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_REPEAT_MARKER: usize = 70;
+    /// Offset of `owner_repeat_scope` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const OWNER_REPEAT_SCOPE: usize = 71;
+    /// Offset of `tail_zero_run` (`bytes[2]`). Spec §1.1.1.
+    pub(crate) const TAIL_ZERO_RUN: usize = 79;
+}
+
 /// Byte offsets for the `form_compact_one_cage_list` record.
 ///
 /// Spec §1.1.1. Record length 100 B.

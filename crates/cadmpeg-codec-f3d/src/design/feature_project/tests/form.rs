@@ -168,6 +168,60 @@ fn reads_compact_form_one_cage_envelope() {
 }
 
 #[test]
+fn reads_legacy_form_one_cage_owner_envelopes() {
+    for (owner_class, paired_class, nested_class) in [
+        (b"335", b"262", b"328"),
+        (b"395", b"264", b"329"),
+        (b"448", b"258", b"276"),
+        (b"295", b"258", b"274"),
+    ] {
+        let mut owner = indexed_frame(owner_class, 205, 81);
+        owner[25] = 1;
+        owner[26..34].copy_from_slice(&201u64.to_le_bytes());
+        owner[58] = 1;
+        owner[59..67].copy_from_slice(&211u64.to_le_bytes());
+        owner[70] = 1;
+        owner[71..79].copy_from_slice(&201u64.to_le_bytes());
+        let paired = indexed_frame(paired_class, 205, 15);
+        let nested = indexed_frame(nested_class, 211, 15);
+        let bytes = [owner, paired, nested].concat();
+        assert_eq!(
+            super::legacy_form_cage_count(
+                &bytes,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+                205,
+                201,
+            ),
+            Some(1),
+            "owner class {owner_class:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_legacy_form_owner_with_wrong_nested_class() {
+    let mut owner = indexed_frame(b"335", 205, 81);
+    owner[25] = 1;
+    owner[26..34].copy_from_slice(&201u64.to_le_bytes());
+    owner[58] = 1;
+    owner[59..67].copy_from_slice(&211u64.to_le_bytes());
+    owner[70] = 1;
+    owner[71..79].copy_from_slice(&201u64.to_le_bytes());
+    let paired = indexed_frame(b"262", 205, 15);
+    let nested = indexed_frame(b"329", 211, 15);
+    let bytes = [owner, paired, nested].concat();
+    assert_eq!(
+        super::legacy_form_cage_count(
+            &bytes,
+            &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+            205,
+            201,
+        ),
+        None
+    );
+}
+
+#[test]
 fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     let parameter = crate::records::DesignParameter {
         id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),

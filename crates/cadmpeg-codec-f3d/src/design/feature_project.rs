@@ -24,7 +24,9 @@ use crate::ids::{
     neutral_spatial_sketch_id,
 };
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
-use crate::layout::form_compact_one_cage_list as form_cage;
+use crate::layout::{
+    form_compact_one_cage_list as form_cage, form_legacy_one_cage_owner as legacy_form_cage,
+};
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
@@ -3960,18 +3962,20 @@ pub(crate) fn bind_form_cages(
     Ok(())
 }
 
-/// Read the one-cage envelope used by the compact Form record generation.
+/// Read the one-cage envelopes used by legacy Form record generations.
 ///
-/// This generation has no serializer-name record. Its 100-byte cage-list
-/// frame still identifies the Form scope and the sole cage object, so a
-/// document with exactly one Form and one T-spline entry has a unique neutral
-/// binding.
+/// The compact envelope identifies the sole cage object directly. The older
+/// owner envelope identifies one nested cage-object wrapper; its companion
+/// record carries generation-specific scalar data and is not a cage count.
 fn legacy_form_cage_count(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<usize> {
+    if let Some(count) = legacy_form_owner_count(bytes, records, record_index, scope_record_index) {
+        return Some(count);
+    }
     for (start, paired) in records.frames(record_index) {
         if paired.checked_sub(start)? != form_cage::LEN
             || bytes.get(start + form_cage::ZERO_RUN_10..start + form_cage::OWNER_MARKER)?
@@ -4005,6 +4009,64 @@ fn legacy_form_cage_count(
         return Some(count);
     }
     None
+}
+
+fn legacy_form_owner_count(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    scope_record_index: u32,
+) -> Option<usize> {
+    let frames = records.frames(record_index).collect::<Vec<_>>();
+    let [(start, paired)] = frames.as_slice() else {
+        return None;
+    };
+    let owner_class = bytes.get(start + 4..start + 7)?;
+    let paired_class = bytes.get(paired + 4..paired + 7)?;
+    let nested_class: &[u8] = if owner_class == b"335" && paired_class == b"262" {
+        b"328"
+    } else if owner_class == b"395" && paired_class == b"264" {
+        b"329"
+    } else if owner_class == b"448" && paired_class == b"258" {
+        b"276"
+    } else if owner_class == b"295" && paired_class == b"258" {
+        b"274"
+    } else {
+        return None;
+    };
+    if paired.checked_sub(*start)? != legacy_form_cage::LEN
+        || View::u64_le_at(bytes, start + 7)? != u64::from(record_index)
+        || bytes
+            .get(start + legacy_form_cage::ZERO_RUN_14..start + legacy_form_cage::OWNER_MARKER)?
+            != [0; 14]
+        || bytes.get(start + legacy_form_cage::OWNER_MARKER) != Some(&1)
+        || View::u64_le_at(bytes, start + legacy_form_cage::OWNER_SCOPE_RECORD_INDEX)?
+            != u64::from(scope_record_index)
+        || bytes
+            .get(start + legacy_form_cage::ZERO_RUN_24..start + legacy_form_cage::NESTED_MARKER)?
+            != [0; 24]
+        || bytes.get(start + legacy_form_cage::NESTED_MARKER) != Some(&1)
+        || bytes.get(
+            start + legacy_form_cage::NESTED_ZERO_RUN
+                ..start + legacy_form_cage::OWNER_REPEAT_MARKER,
+        )? != [0; 3]
+        || bytes.get(start + legacy_form_cage::OWNER_REPEAT_MARKER) != Some(&1)
+        || View::u64_le_at(bytes, start + legacy_form_cage::OWNER_REPEAT_SCOPE)?
+            != u64::from(scope_record_index)
+        || bytes.get(start + legacy_form_cage::TAIL_ZERO_RUN..start + legacy_form_cage::LEN)?
+            != [0; 2]
+    {
+        return None;
+    }
+    let nested_record = u32::try_from(View::u64_le_at(
+        bytes,
+        start + legacy_form_cage::NESTED_RECORD_INDEX,
+    )?)
+    .ok()?;
+    let [nested_at] = records.offsets(nested_record) else {
+        return None;
+    };
+    (bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)
 }
 
 fn form_cage_objects(
