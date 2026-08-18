@@ -202,6 +202,9 @@ pub(crate) fn decode(
             }
         }
     };
+    for mesh in &meshes {
+        warnings.extend(mesh.warnings.iter().cloned());
+    }
     finish_payload(data, &outer, reader, &payload_children, &mut warnings)?;
 
     let path_delta = path_to.vector_from(path_from);

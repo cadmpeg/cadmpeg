@@ -3807,6 +3807,12 @@ cache reader consumes these three slots and skips any remaining bytes through
 the bounded userdata payload end. The cache is display data and does not alter
 analytic extrusion geometry. A malformed cache is discarded while the
 extrusion remains admissible.
+If an admitted nested mesh has a recognized userdata item whose payload is
+rejected, the failure is local to that item: the mesh slot remains a typed
+tessellation, no n-gon grouping is admitted, and the cache remains admitted.
+CADIR retains the complete extrusion object record in source fidelity and
+forwards the nested mesh userdata warning. This does not reject the analytic
+extrusion.
 
 A present miter normal is unitized. The miter applies only when the unitized
 local Z component is greater than `1/64`. A normal that cannot be unitized or

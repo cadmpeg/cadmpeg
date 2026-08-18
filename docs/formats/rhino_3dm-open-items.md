@@ -100,6 +100,11 @@ The Brep nested-mesh owner is proven to retain the complete object record when
 the registered `ON_V4V5_MeshNgonUserData` payload has an unsupported anonymous
 major; the nested mesh tessellation remains typed, no n-gon grouping is
 admitted, and the owner emits the mesh userdata warning.
+The V5 extrusion display-mesh cache owner is proven to retain the complete
+extrusion object record when a cached mesh carries the same registered
+`ON_V4V5_MeshNgonUserData` payload with an unsupported anonymous major; the
+analytic extrusion and cached tessellation remain typed, and the owner emits
+the nested mesh userdata warning.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

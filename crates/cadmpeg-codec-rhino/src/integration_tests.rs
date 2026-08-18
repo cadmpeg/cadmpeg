@@ -1255,6 +1255,108 @@ fn brep_nested_mesh_userdata_future_payload_retains_parent_record() {
 }
 
 #[test]
+fn extrusion_display_mesh_cache_nested_userdata_future_payload_retains_parent_record() {
+    let archive = ArchiveVersion::V5;
+    let future_ngon_payload = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[
+            2_i32.to_le_bytes().as_slice(),
+            0_i32.to_le_bytes().as_slice(),
+        ]
+        .concat(),
+    );
+    let mesh_userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::mesh::V4V5_MESH_NGON_USERDATA.to_wire(),
+        crate::wire::Uuid::from_canonical([
+            0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe,
+            0x52, 0x0d,
+        ])
+        .to_wire(),
+        50,
+        0,
+        &future_ngon_payload,
+    );
+    let mut mesh_uuid_body = support::MESH_CLASS.to_vec();
+    mesh_uuid_body.extend(crc32fast::hash(&support::MESH_CLASS).to_le_bytes());
+    let mesh_uuid =
+        crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &mesh_uuid_body);
+    let mesh_class_data = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x0002_fffc,
+        &support::mesh_payload(3, 5, false, true),
+    );
+    let mesh_class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let render_mesh = crate::test_support::test_dump::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[mesh_uuid, mesh_class_data, mesh_userdata, mesh_class_end].concat(),
+    );
+    let null_uuid = crate::test_support::test_dump::crc_chunk(archive, 0x0002_fffb, &[0; 16]);
+    let null_mesh = crate::test_support::test_dump::long_chunk(archive, 0x0002_7ffa, &null_uuid);
+    let cache_payload = [render_mesh, null_mesh.clone(), null_mesh].concat();
+    let cache_userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::wire::Uuid::from_canonical([
+            0xa8, 0x13, 0x0a, 0x3e, 0xe4, 0xf3, 0x4c, 0xb0, 0xbb, 0x8a, 0xf1, 0x0a, 0x47, 0x39,
+            0x12, 0xd0,
+        ])
+        .to_wire(),
+        crate::wire::Uuid::from_canonical([
+            0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc,
+            0x30, 0xd4,
+        ])
+        .to_wire(),
+        50,
+        0,
+        &cache_payload,
+    );
+    let extrusion_payload =
+        crate::extrusion::tests::archive_payload(2, [false, false], false, false);
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 0x10);
+    let mut uuid_body = support::EXTRUSION_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&support::EXTRUSION_CLASS).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data =
+        crate::test_support::test_dump::crc_chunk(archive, 0x0002_fffc, &extrusion_payload);
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[class_uuid, class_data, cache_userdata, class_end].concat(),
+    );
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    let extrusion_record = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_8070 | crate::chunks::TCODE_CRC,
+        &[object_type, class, object_end].concat(),
+    );
+    let following_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let bytes = support::archive(&[extrusion_record.clone(), following_point]);
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("V4/V5 mesh n-gon userdata") && loss.message.contains("dropped")
+    }));
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| record.id == "rhino:object:record#000000")
+        .expect("extrusion cache object record is retained");
+    assert_eq!(retained.data.as_deref(), Some(extrusion_record.as_slice()));
+    assert_valid(&result);
+}
+
+#[test]
 fn future_settings_payload_is_retained_without_known_prefix() {
     let archive = ArchiveVersion::V5;
     let future_annotation =
