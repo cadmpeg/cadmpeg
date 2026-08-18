@@ -684,13 +684,25 @@ increasing. Nested elements in these roots or their value records are malformed.
 respectively, `FloatList`, `VectorList`, and `PlacementList` with one `file` attribute. Their named
 side entries begin with a little-endian `u32` count and contain, respectively, `f64` values,
 three `f64` values per vector, or position `x y z` followed by quaternion `Q0 Q1 Q2 Q3` as seven
-little-endian `f64` values per placement. The side entry has no trailing bytes. A Python-object
+little-endian `f64` values per placement. These side entries have no trailing bytes.
+`App::PropertyColorList` uses `ColorList` with the same
+direct `file` carrier; its side entry is a little-endian `u32` count followed by that many packed
+`u32` colors and no trailing bytes. `App::PropertyMaterialList` uses `MaterialList` with the same
+direct `file` carrier and an optional `version` from 0 through 3. Versions 0 through 2 contain a
+count followed by four packed `u32` colors and two `f32` scalars per material; version 3 then
+contains three length-prefixed UTF-8 strings per material. The material side entry has no trailing
+bytes. These five side-entry roots are direct leaves: a non-empty lowercase `file` on the direct
+root is their only side-entry reference, an empty `file` names no side entry, and nested elements
+or descendant file attributes are malformed. A `PropertyFileIncluded` value is a direct leaf with
+exactly one of `file` or `data`: `file` names a side entry, while `data` carries the basename of the
+inline binary payload between the root tags. An empty selected name is valid and both attributes or nested
+elements are malformed. A Python-object
 value is one inert `Python` value with its serialized attributes; decoding never executes it. A
 `PropertyExpressionEngine` value is one `ExpressionEngine` root whose `count` equals the ordered
 `Expression` children; each child has `path` and `expression` attributes and may have `comment`.
 An expression root may also carry the producer's cross-link records. `PropertyPath` uses `Path`
 with `value`; `PropertyUUID` uses `Uuid` with `value`; and `PropertyFileIncluded` uses
-`FileIncluded` with a named raw side entry. File properties use the string grammar.
+`FileIncluded` with the direct file/data grammar above. File properties use the string grammar.
 
 The loaded module registry adds `Materials::PropertyMaterial`, whose value is
 `PropertyMaterial` with a material `uuid`; `Part::PropertyPartShape`, whose value is `Part` and

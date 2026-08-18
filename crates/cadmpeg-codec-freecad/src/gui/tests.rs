@@ -568,6 +568,66 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
 }
 
 #[test]
+fn rejects_gui_side_entries_owned_by_nested_values() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let empty_count = 0_u32.to_le_bytes();
+    let valid_gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="7">
+<Property name="Floats" type="App::PropertyFloatList"><FloatList file="Floats"/></Property>
+<Property name="Vectors" type="App::PropertyVectorList"><VectorList file="Vectors"/></Property>
+<Property name="Placements" type="App::PropertyPlacementList"><PlacementList file="Placements"/></Property>
+<Property name="Colors" type="App::PropertyColorList"><ColorList file="Colors"/></Property>
+<Property name="Materials" type="App::PropertyMaterialList"><MaterialList file="Materials" version="3"/></Property>
+<Property name="Included" type="App::PropertyFileIncluded"><FileIncluded file="Included"/></Property>
+<Property name="Inline" type="App::PropertyFileIncluded"><FileIncluded data=""/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", valid_gui),
+                ("Floats", &empty_count),
+                ("Vectors", &empty_count),
+                ("Placements", &empty_count),
+                ("Colors", &empty_count),
+                ("Materials", &empty_count),
+                ("Included", b"direct-side-entry"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("direct GUI side-entry references");
+
+    for invalid in [
+        r#"<Property name="Floats" type="App::PropertyFloatList"><FloatList file=""><Nested file="Floats"/></FloatList></Property>"#,
+        r#"<Property name="Vectors" type="App::PropertyVectorList"><VectorList file=""><Nested file="Vectors"/></VectorList></Property>"#,
+        r#"<Property name="Placements" type="App::PropertyPlacementList"><PlacementList file=""><Nested file="Placements"/></PlacementList></Property>"#,
+        r#"<Property name="Colors" type="App::PropertyColorList"><ColorList file=""><Nested file="Colors"/></ColorList></Property>"#,
+        r#"<Property name="Materials" type="App::PropertyMaterialList"><MaterialList file="" version="3"><Nested file="Materials"/></MaterialList></Property>"#,
+        r#"<Property name="Included" type="App::PropertyFileIncluded"><FileIncluded file=""><Nested file="Included"/></FileIncluded></Property>"#,
+        r#"<Property name="Included" type="App::PropertyFileIncluded"><FileIncluded file="Included" data="inline"/></Property>"#,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                    ("Floats", &empty_count),
+                    ("Vectors", &empty_count),
+                    ("Placements", &empty_count),
+                    ("Colors", &empty_count),
+                    ("Materials", &empty_count),
+                    ("Included", b"nested-side-entry"),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("nested GUI side-entry reference");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn validates_the_complete_loaded_dynamic_gui_registry() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>

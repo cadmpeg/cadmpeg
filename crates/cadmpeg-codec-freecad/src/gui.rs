@@ -923,6 +923,10 @@ fn validate_gui_property(
                 "value"
             };
             scalar(attribute)?;
+            if matches!(expected_tag, "ColorList" | "MaterialList") && has_nested_gui_elements(root)
+            {
+                return Err(gui_nested_value_error(property_name, expected_tag));
+            }
             if type_name == "App::PropertyPersistentObject" {
                 if roots.len() != 2 || !roots[1].has_tag_name("PersistentObject") {
                     return Err(CodecError::Malformed(format!(
@@ -1023,12 +1027,21 @@ fn validate_gui_property(
         }
         "FloatList" | "VectorList" | "PlacementList" => {
             scalar("file")?;
+            if has_nested_gui_elements(root) {
+                return Err(gui_nested_value_error(property_name, expected_tag));
+            }
         }
         "FileIncluded" => {
-            if root.attribute("file").is_none() && root.attribute("data").is_none() {
-                return Err(CodecError::Malformed(format!(
-                    "GUI property {property_name} FileIncluded has no file or data attribute"
-                )));
+            let has_file = root.attribute("file").is_some();
+            let has_data = root.attribute("data").is_some();
+            if has_file == has_data {
+                let message = format!(
+                    "GUI property {property_name} FileIncluded requires exactly one file or data attribute"
+                );
+                return Err(CodecError::Malformed(message));
+            }
+            if has_nested_gui_elements(root) {
+                return Err(gui_nested_value_error(property_name, "FileIncluded"));
             }
         }
         _ => unreachable!("closed GUI value-tag registry"),

@@ -16,7 +16,7 @@ Each item has an identifier and these fields:
 ### GP-01. Other GUI property grammars
 
 **Question.** What value grammar remains for each non-link GUI property runtime type outside the
-settled scalar, quantity, and in-memory list branches?
+settled scalar, quantity, in-memory list, and standard side-entry branches?
 
 **Known.** View-provider properties use the shared application property persistence path. Every
 GUI link-family runtime type uses the exact direct carrier grammar defined for application links,
@@ -27,6 +27,10 @@ producer's optional numeric `min`, `max`, and `step` attributes. In-memory list 
 producer's direct `BoolList`, `StringList`, `IntegerList`, `IntegerSet`, or `Map` roots, with exact
 counts, direct leaf values, and the producer's ordering rules. The current registry in
 `gui.rs:30-39` still classifies custom types and every non-Unknown `PropertyFamily` as registered.
+Standard side-entry GUI types use direct leaf `FloatList`, `VectorList`, `PlacementList`,
+`ColorList`, `MaterialList`, or `FileIncluded` roots. The five list/material roots use only the
+direct root's lowercase `file`; `FileIncluded` instead admits exactly one `file` or `data` attribute.
+The GUI validator rejects nested side-entry carriers and the mutual `file`/`data` form.
 
 **Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
 outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
@@ -38,9 +42,10 @@ path without a complete value-grammar check. Its arbitrary descendant values can
 as if the registry had established their grammar, while the neutral presentation path silently
 withholds or misreads the value.
 
-**Note.** Partly settled. Link-family, scalar/quantity, and in-memory list value grammars are closed
-by the application writer inheritance rules and shared direct-root validation. The remaining
-question is limited to custom and side-entry runtime types.
+**Note.** Partly settled. Link-family, scalar/quantity, in-memory list, and standard side-entry
+value grammars are closed by the application writer inheritance rules and shared direct-root
+validation. The remaining question is limited to custom runtime types and their custom side-entry
+forms.
 
 ### GP-02. Other GUI property semantics
 
