@@ -88,8 +88,11 @@ const WINDOWS_BITMAP: Uuid = Uuid::from_canonical([
 const WINDOWS_BITMAP_EX: Uuid = Uuid::from_canonical([
     0x20, 0x3a, 0xfc, 0x17, 0xbc, 0xc9, 0x44, 0xfb, 0xa0, 0x7b, 0x7f, 0x5c, 0x31, 0xbd, 0x5e, 0xd9,
 ]);
-const TEXTURE_MAPPING: Uuid = Uuid::from_canonical([
+pub(crate) const TEXTURE_MAPPING: Uuid = Uuid::from_canonical([
     0x32, 0xec, 0x99, 0x7a, 0xc3, 0xbf, 0x4a, 0xe5, 0xab, 0x19, 0xfd, 0x57, 0x2b, 0x8a, 0xd5, 0x54,
+]);
+pub(crate) const MAPPING_CRC_CACHE: Uuid = Uuid::from_canonical([
+    0x5a, 0x49, 0x71, 0xf3, 0xaa, 0x73, 0x49, 0x3c, 0xa3, 0x85, 0x2f, 0x7e, 0xb4, 0x28, 0x89, 0x89,
 ]);
 const TEXT_STYLE: Uuid = Uuid::from_canonical([
     0x4f, 0x0f, 0x51, 0xfb, 0x35, 0xd0, 0x48, 0x65, 0x99, 0x98, 0x6d, 0x2c, 0x6a, 0x99, 0x72, 0x1d,
@@ -3336,12 +3339,31 @@ fn parse_windows_bitmap(
     })
 }
 
+struct ParsedTextureMapping {
+    value: TextureMappingRecord,
+    cache_requires_opaque: bool,
+}
+
+fn parse_mapping_crc_cache(data: &[u8], payload_range: Range<usize>) -> Result<(), FramingError> {
+    let mut reader = BoundedReader::new(data, payload_range.start, payload_range.end)?;
+    let version = reader.i32()?;
+    if version != 1 {
+        return Err(FramingError::structural(
+            payload_range.start,
+            "MappingCRCCache version is unsupported",
+        ));
+    }
+    let _mapping_crc = reader.i32()?;
+    reader.skip_remaining()?;
+    Ok(())
+}
+
 fn parse_texture_mapping(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
     source_offset: usize,
-) -> Result<TextureMappingRecord, FramingError> {
+) -> Result<ParsedTextureMapping, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -3356,12 +3378,18 @@ fn parse_texture_mapping(
     let uvw_transform = xform(&mut reader)?;
     let name = utf16(&mut reader)?;
     let object = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    let primitive_class_uuid = if object.short {
-        None
+    let (primitive_class_uuid, cache_requires_opaque) = if object.short {
+        (None, false)
     } else {
-        parse_class_wrapper(data, object.range(), archive, &mut Vec::new())
-            .ok()
-            .map(|value| value.class_uuid.to_string())
+        let mut warnings = Vec::new();
+        let (value, userdata) =
+            parse_class_wrapper_with_userdata(data, object.range(), archive, &mut warnings)?;
+        let cache_requires_opaque = userdata.iter().any(|value| {
+            value.class_uuid == MAPPING_CRC_CACHE
+                && value.item_uuid == MAPPING_CRC_CACHE
+                && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
+        });
+        (Some(value.class_uuid.to_string()), cache_requires_opaque)
     };
     reader.skip(object.next_offset - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
@@ -3372,18 +3400,21 @@ fn parse_texture_mapping(
     } else {
         id.to_string()
     };
-    Ok(TextureMappingRecord {
-        id: format!("rhino:presentation:texture_mapping#{key}"),
-        source_offset: source_offset as u64,
-        source_uuid: (!id.is_nil()).then(|| id.to_string()),
-        name,
-        mapping_type,
-        projection,
-        primitive_transform,
-        uvw_transform,
-        primitive_class_uuid,
-        texture_space,
-        capped,
+    Ok(ParsedTextureMapping {
+        value: TextureMappingRecord {
+            id: format!("rhino:presentation:texture_mapping#{key}"),
+            source_offset: source_offset as u64,
+            source_uuid: (!id.is_nil()).then(|| id.to_string()),
+            name,
+            mapping_type,
+            projection,
+            primitive_transform,
+            uvw_transform,
+            primitive_class_uuid,
+            texture_space,
+            capped,
+        },
+        cache_requires_opaque,
     })
 }
 
@@ -4033,7 +4064,17 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                     if let Ok(value) =
                         parse_texture_mapping(scan.data, range, scan.archive, record.range.start)
                     {
-                        texture_mappings.push(value);
+                        texture_mappings.push(value.value);
+                        if value.cache_requires_opaque {
+                            losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                                "MappingCRCCache userdata at offset {} could not be transferred",
+                                record.range.start
+                            )));
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
+                        }
                         parsed = true;
                     }
                 }
@@ -5748,12 +5789,22 @@ mod tests {
         let bytes = anonymous(1, &body);
 
         let mapping = parse_texture_mapping(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
-            .expect("texture mapping with primitive class wrapper");
+            .expect("texture mapping with primitive class wrapper")
+            .value;
         assert_eq!(mapping.mapping_type, 6);
         assert_eq!(
             mapping.primitive_class_uuid,
             Some(Uuid::from_wire(crate::test_support::MESH_CLASS).to_string())
         );
+    }
+
+    #[test]
+    fn mapping_crc_cache_reads_version_one_and_bounded_suffix() {
+        let mut bytes = 1_i32.to_le_bytes().to_vec();
+        bytes.extend((-17_i32).to_le_bytes());
+        bytes.extend([0xaa, 0xbb]);
+        parse_mapping_crc_cache(&bytes, 0..bytes.len())
+            .expect("version-one mapping cache with bounded suffix");
     }
 
     #[test]

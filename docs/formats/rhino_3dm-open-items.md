@@ -105,6 +105,11 @@ extrusion object record when a cached mesh carries the same registered
 `ON_V4V5_MeshNgonUserData` payload with an unsupported anonymous major; the
 analytic extrusion and cached tessellation remain typed, and the owner emits
 the nested mesh userdata warning.
+The texture-mapping owner is proven to retain the complete table record when a
+custom mapping primitive carries a registered `MappingCRCCache` payload with
+an unsupported anonymous major; the mapping fields and primitive class remain
+typed, no `mapping_crc` field is admitted, and the owner emits a presentation
+loss.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

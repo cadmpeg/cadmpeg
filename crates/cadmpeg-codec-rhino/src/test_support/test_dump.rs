@@ -523,6 +523,24 @@ pub(crate) fn class_wrapper(
     )
 }
 
+pub(crate) fn class_wrapper_with_userdata(
+    archive: ArchiveVersion,
+    class_uuid: [u8; 16],
+    payload: &[u8],
+    userdata: &[u8],
+) -> Vec<u8> {
+    let mut uuid_body = class_uuid.to_vec();
+    uuid_body.extend(crc32fast::hash(&uuid_body).to_le_bytes());
+    let uuid = long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crc_chunk(archive, 0x0002_fffc, payload);
+    let class_end = short_chunk(archive, 0x8002_7fff, 0);
+    long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[uuid, class_data, userdata.to_vec(), class_end].concat(),
+    )
+}
+
 pub(crate) fn class_userdata(
     archive: ArchiveVersion,
     class_uuid: [u8; 16],

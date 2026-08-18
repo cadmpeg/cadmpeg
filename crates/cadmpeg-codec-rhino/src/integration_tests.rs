@@ -1357,6 +1357,121 @@ fn extrusion_display_mesh_cache_nested_userdata_future_payload_retains_parent_re
 }
 
 #[test]
+fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
+    let archive = ArchiveVersion::V5;
+    let mapping_class = crate::presentation::TEXTURE_MAPPING.to_wire();
+    let mapping_cache_class = crate::presentation::MAPPING_CRC_CACHE.to_wire();
+    let opennurbs_application = crate::wire::Uuid::from_canonical([
+        0x94, 0x21, 0xee, 0x97, 0xe8, 0x95, 0x47, 0xbc, 0x99, 0xeb, 0x5f, 0xd1, 0xba, 0x35, 0xb3,
+        0x67,
+    ])
+    .to_wire();
+    let mut cache_payload = 2_i32.to_le_bytes().to_vec();
+    cache_payload.extend(0x1234_5678_i32.to_le_bytes());
+    cache_payload.extend([0xde, 0xad]);
+    let cache_userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        mapping_cache_class,
+        opennurbs_application,
+        50,
+        0,
+        &cache_payload,
+    );
+    let primitive = crate::test_support::test_dump::class_wrapper_with_userdata(
+        archive,
+        crate::test_support::MESH_CLASS,
+        &support::mesh_payload(3, 5, false, true),
+        &cache_userdata,
+    );
+    let mut mapping_payload = [0x11_u8; 16].to_vec();
+    mapping_payload.extend(6_u32.to_le_bytes());
+    mapping_payload.extend(1_u32.to_le_bytes());
+    for _ in 0..2 {
+        for index in 0..16 {
+            mapping_payload.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
+        }
+    }
+    mapping_payload.extend(crate::test_support::test_dump::utf16_bytes(
+        "custom mesh mapping",
+    ));
+    mapping_payload.extend(primitive);
+    mapping_payload.extend(3_u32.to_le_bytes());
+    mapping_payload.push(0);
+    mapping_payload.extend([0xaa, 0xbb]);
+    let mapping_class_wrapper = crate::test_support::test_dump::class_wrapper(
+        archive,
+        mapping_class,
+        &crate::test_support::test_dump::anonymous_chunk(archive, 1, &mapping_payload),
+    );
+    let mapping_record = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_807a,
+        &mapping_class_wrapper,
+    );
+    let valid_point = support::object_record(
+        1,
+        support::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let mut units_body = 100_i32.to_le_bytes().to_vec();
+    units_body.extend(2_i32.to_le_bytes());
+    units_body.extend(0.01_f64.to_le_bytes());
+    units_body.extend(0.1_f64.to_le_bytes());
+    units_body.extend(0.001_f64.to_le_bytes());
+    let units = crate::test_support::test_dump::crc_chunk(archive, 0x2000_8031, &units_body);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[units]),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0025,
+                std::slice::from_ref(&mapping_record),
+            ),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[valid_point]),
+        ],
+    );
+    let result = decode(bytes);
+
+    let texture_mappings =
+        &result.ir().native.namespace("rhino").unwrap().arenas["texture_mappings"];
+    assert_eq!(texture_mappings.len(), 1);
+    assert_eq!(
+        texture_mappings[0]
+            .field("name")
+            .and_then(|value| value.as_str().map(str::to_owned)),
+        Some("custom mesh mapping".to_owned())
+    );
+    assert_eq!(
+        texture_mappings[0]
+            .field("primitive_class_uuid")
+            .and_then(|value| value.as_str().map(str::to_owned)),
+        Some(crate::wire::Uuid::from_wire(crate::test_support::MESH_CLASS).to_string())
+    );
+    assert!(texture_mappings[0].field("mapping_crc").is_none());
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("MappingCRCCache")
+            && loss.message.contains("could not be transferred")));
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| {
+            record
+                .id
+                .starts_with("rhino:opaque:record#10000025-2000807a-")
+        })
+        .expect("future mapping cache record is retained");
+    assert_eq!(retained.data.as_deref(), Some(mapping_record.as_slice()));
+    assert_valid(&result);
+}
+
+#[test]
 fn future_settings_payload_is_retained_without_known_prefix() {
     let archive = ArchiveVersion::V5;
     let future_annotation =

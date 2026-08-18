@@ -1610,7 +1610,7 @@ class-data record unless the compatibility carrier above supplies it.
 `MappingCRCCache` uses class UUID and item UUID
 `5A4971F3-AA73-493C-A385-2F7EB4288989`. Its application UUID is
 `ON_opennurbs_id`; the current OpenNURBS source defines that value as
-`50EDE5C9-1487-4B4C-B3AA-6840B460E3CF`. The userdata is attached to the
+`9421EE97-E895-47BC-99EB-5FD1BA35B367`. The userdata is attached to the
 custom mapping primitive by `ON_TextureMapping::SetCustomMappingPrimitive`,
 not to the `ON_TextureMapping` record. `ON_TextureMapping::Write` writes the
 primitive as a complete polymorphic object after the mapping name, so the
@@ -1645,14 +1645,23 @@ the nested `MappingCRCCache` userdata and does not add `mapping_crc` to the
 native mapping record. CADIR treats this value as recomputable source cache
 state, not an independently authored mapping property.
 
+If the generic userdata wrapper and its bounded anonymous child are framed but
+the class-owned cache payload has an unsupported version or cannot supply both
+of its fields, the cache is not admitted. The texture mapping fields and the
+primitive class identity remain typed; CADIR creates no `mapping_crc` field.
+The complete texture-mapping table record remains in source fidelity and the
+owner emits a presentation loss naming the cache item. This is the
+class-owned cache boundary; malformed generic userdata framing follows the
+containing class-wrapper failure rule.
+
 #### 7.2.20 `CTtMappingMeshInfoUserData` and `CTtRenderMeshInfoUserData`
 
 The derived mesh-correspondence carriers use these class and item UUIDs:
 
 | userdata class | class UUID | item UUID | application UUID |
 | --- | --- | --- | --- |
-| `CTtMappingMeshInfoUserData` | `1706ADC5-52BF-4BE2-8402-4501EB2AE675` | `1706ADC5-52BF-4BE2-8402-4501EB2AE675` | `ON_opennurbs_id` (`50EDE5C9-1487-4B4C-B3AA-6840B460E3CF`) |
-| `CTtRenderMeshInfoUserData` | `4960A046-8201-4F0F-8F22-FCB6F91C765D` | `4960A046-8201-4F0F-8F22-FCB6F91C765D` | `ON_opennurbs_id` (`50EDE5C9-1487-4B4C-B3AA-6840B460E3CF`) |
+| `CTtMappingMeshInfoUserData` | `1706ADC5-52BF-4BE2-8402-4501EB2AE675` | `1706ADC5-52BF-4BE2-8402-4501EB2AE675` | `ON_opennurbs_id` (`9421EE97-E895-47BC-99EB-5FD1BA35B367`) |
+| `CTtRenderMeshInfoUserData` | `4960A046-8201-4F0F-8F22-FCB6F91C765D` | `4960A046-8201-4F0F-8F22-FCB6F91C765D` | `ON_opennurbs_id` (`9421EE97-E895-47BC-99EB-5FD1BA35B367`) |
 
 Each carrier is userdata on an `ON_Mesh`. Its class-owned payload is the
 bounded anonymous child of the generic class-userdata wrapper. Both writers
