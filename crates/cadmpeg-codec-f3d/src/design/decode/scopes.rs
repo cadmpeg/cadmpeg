@@ -72,6 +72,7 @@ use crate::layout::shifted_extrude_prologue as shifted_extrude;
 use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as shifted_reference_aware_323_symmetric;
 use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
+use crate::layout::thicken_class_347_scope_frame as thicken_347;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
@@ -4581,6 +4582,77 @@ fn exact_fixed_scalar(
     Some(*candidate)
 }
 
+/// Decode class-347/258 Thicken, whose group precedes its scalar. The class
+/// pair and 291-byte frame are part of admission for this distinct grammar.
+fn exact_legacy_thicken_class_347(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignDirectFaceOperation> {
+    if scope.class_tag != "347"
+        || scope.paired_class_tag != "258"
+        || scope.frame_length != u64::try_from(thicken_347::LEN).ok()?
+        || scope.reference_members.len() != 3
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if bytes.get(start + thicken_347::ZERO_RUN_10..start + thicken_347::FEATURE_FORM)
+        != Some(&[0; 10])
+        || View::u32_le_at(bytes, start + thicken_347::FEATURE_FORM)? != 4
+        || View::u32_le_at(bytes, start + thicken_347::GROUP_FORM)? != 1
+        || marked_record_reference(bytes, start + thicken_347::GROUP_REFERENCE)?
+            != scope.reference_members.first().copied()?
+        || bytes.get(start + thicken_347::SCALAR_PREFIX..start + thicken_347::SCALAR_REFERENCE)
+            != Some(&[1, 1])
+        || View::u32_le_at(bytes, start + thicken_347::AUXILIARY_COUNT)? != 1
+        || marked_record_reference(bytes, start + thicken_347::AUXILIARY_REFERENCE).is_none()
+        || bytes.get(start + thicken_347::ZERO_RUN_8..start + thicken_347::GUID_CODE_UNIT_COUNT)
+            != Some(&[0; 8])
+        || View::u32_le_at(bytes, start + thicken_347::GUID_CODE_UNIT_COUNT)? != 36
+        || bytes.get(start + thicken_347::ZERO_RUN_3..start + thicken_347::REFERENCE_COUNT)
+            != Some(&[0; 3])
+        || View::u32_le_at(bytes, start + thicken_347::REFERENCE_COUNT)? != 3
+        || View::u32_le_at(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT)? != 7
+    {
+        return None;
+    }
+    let (guid, guid_end) =
+        lp_utf16_bounded(bytes, start + thicken_347::GUID_CODE_UNIT_COUNT, 36..=36)?;
+    if guid_end != start + thicken_347::ZERO_RUN_3 || !is_guid_relaxed(&guid) {
+        return None;
+    }
+    let (kind, kind_end) =
+        lp_utf16_bounded(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, 7..=7)?;
+    if kind != "Thicken" || kind_end != start + thicken_347::FEATURE_ORDINAL {
+        return None;
+    }
+    let reference_entries = [
+        thicken_347::GROUP_REFERENCE_ENTRY,
+        thicken_347::MEMBER_REFERENCE_ENTRY,
+        thicken_347::SCALAR_REFERENCE_ENTRY,
+    ];
+    for (offset, expected) in reference_entries
+        .into_iter()
+        .zip(scope.reference_members.iter().copied())
+    {
+        if marked_record_reference(bytes, start + offset) != Some(expected) {
+            return None;
+        }
+    }
+    let thickness_record_index =
+        marked_record_reference(bytes, start + thicken_347::SCALAR_REFERENCE)?;
+    if scope.reference_members.last().copied()? != thickness_record_index {
+        return None;
+    }
+    let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
+    (scalar.value != 0.0).then_some(DesignDirectFaceOperation::Thicken {
+        signed_thickness: scalar.value,
+        thickness_record_index,
+        thickness_offset: scalar.value_offset,
+    })
+}
+
 pub(crate) fn exact_direct_face_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -4609,6 +4681,9 @@ pub(crate) fn exact_direct_face_operation(
             })
         }
         DesignFeatureFamily::Thicken if scope.reference_members.len() >= 3 => {
+            if let Some(operation) = exact_legacy_thicken_class_347(bytes, records, scope) {
+                return Some(operation);
+            }
             let (reference_offset, thickness_is_first) = match parameter_scope_payload_length(scope)
             {
                 Some(length)

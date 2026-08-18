@@ -280,6 +280,76 @@ pub(crate) mod design_parameter_owner_legacy_88 {
     pub(crate) const ZERO_RUN_6_TAIL: usize = 82;
 }
 
+/// Byte offsets for the `thicken_class_347_scope_frame` record.
+///
+/// Spec §3.1. Record length 291 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The paired class-258 header begins at offset 291; the class pair and frame length admit this form.
+/// ```
+pub(crate) mod thicken_class_347_scope_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 291;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `feature_form` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_FORM: usize = 21;
+    /// Stated value of `feature_form` (`u32`). Spec §3.1.
+    pub(crate) const FEATURE_FORM_VALUE: u32 = 0x0000_0004;
+    /// Offset of `group_form` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_FORM: usize = 25;
+    /// Stated value of `group_form` (`u32`). Spec §3.1.
+    pub(crate) const GROUP_FORM_VALUE: u32 = 0x0000_0001;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 29;
+    /// Offset of `scalar_prefix` (`bytes[2]`). Spec §3.1.
+    pub(crate) const SCALAR_PREFIX: usize = 40;
+    /// Stated value of `scalar_prefix` (`bytes[2]`). Spec §3.1.
+    pub(crate) const SCALAR_PREFIX_VALUE: [u8; 2] = [0x01, 0x01];
+    /// Offset of `scalar_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCALAR_REFERENCE: usize = 42;
+    /// Offset of `auxiliary_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const AUXILIARY_COUNT: usize = 53;
+    /// Stated value of `auxiliary_count` (`u32`). Spec §3.1.
+    pub(crate) const AUXILIARY_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AUXILIARY_REFERENCE: usize = 57;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 68;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 76;
+    /// Stated value of `guid_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0024;
+    /// Offset of `guid` (`bytes[72]`). Spec §3.1.
+    pub(crate) const GUID: usize = 80;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 152;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 155;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0003;
+    /// Offset of `group_reference_entry` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE_ENTRY: usize = 159;
+    /// Offset of `member_reference_entry` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MEMBER_REFERENCE_ENTRY: usize = 170;
+    /// Offset of `scalar_reference_entry` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCALAR_REFERENCE_ENTRY: usize = 181;
+    /// Offset of `history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID: usize = 192;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 196;
+    /// Stated value of `kind_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0007;
+    /// Offset of `kind` (`bytes[14]`). Spec §3.1.
+    pub(crate) const KIND: usize = 200;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 214;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 245;
+}
+
 /// Byte offsets for the `design_mirror_scope_class413_tail` record.
 ///
 /// Spec §3.1. Record length 77 B.

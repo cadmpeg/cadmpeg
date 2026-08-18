@@ -26,5 +26,6 @@ mod pattern;
 mod prelude;
 mod scale;
 mod surfaces;
+mod thicken;
 mod thread;
 mod work_point;
