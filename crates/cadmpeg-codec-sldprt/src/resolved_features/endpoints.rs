@@ -28,6 +28,7 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::SketchGeometry;
 use std::collections::{HashMap, HashSet};
 
+use crate::layout::compact_legacy_140_relation_display_curve as legacy_140_relation;
 use crate::layout::compact_legacy_68_profile_variant_curve as legacy_68;
 use crate::layout::compact_legacy_84_construction_line as legacy_84;
 use crate::layout::compact_legacy_84_coordinate_roster_curve as legacy_84_roster;
@@ -1267,6 +1268,94 @@ fn compact_complete_marker_roster_endpoints<'a>(
         return Vec::new();
     };
     endpoints.to_vec()
+}
+
+fn legacy_relation_continuation_body(payload: &[u8], offset: usize) -> bool {
+    let Some(record_end) = offset.checked_add(legacy_140_relation::LEN) else {
+        return false;
+    };
+    let Some(record) = payload.get(offset..record_end) else {
+        return false;
+    };
+    record.get(legacy_140_relation::MARKER..legacy_140_relation::HEADER)
+        == Some(LEGACY_SKETCH_MARKER)
+        && record.get(legacy_140_relation::HEADER..legacy_140_relation::SHARED_SELECTOR)
+            == Some(&legacy_140_relation::HEADER_VALUE[..])
+        && record.get(legacy_140_relation::SHARED_SELECTOR..legacy_140_relation::NATIVE_KIND)
+            == Some(&legacy_140_relation::SHARED_SELECTOR_VALUE[..])
+        && View::u32_le_at(payload, offset + legacy_140_relation::NATIVE_KIND)
+            == Some(legacy_140_relation::NATIVE_KIND_VALUE)
+        && record.get(legacy_140_relation::PROFILE_LOCUS..legacy_140_relation::ROLE)
+            == Some(&legacy_140_relation::PROFILE_LOCUS_VALUE[..])
+        && View::u16_le_at(payload, offset + legacy_140_relation::ROLE)
+            == Some(legacy_140_relation::ROLE_VALUE)
+        && View::u16_le_at(payload, offset + legacy_140_relation::STATE)
+            == Some(legacy_140_relation::STATE_VALUE)
+        && record.get(
+            legacy_140_relation::SELECTOR
+                ..legacy_140_relation::SELECTOR + legacy_140_relation::SELECTOR_VALUE.len(),
+        ) == Some(&legacy_140_relation::SELECTOR_VALUE[..])
+        && View::f64_le_at(payload, offset + legacy_140_relation::STATE_SCALAR)
+            == Some(legacy_140_relation::STATE_SCALAR_VALUE)
+        && View::u32_le_at(payload, offset + legacy_140_relation::ENDPOINT_SELECTOR)
+            == Some(legacy_140_relation::ENDPOINT_SELECTOR_VALUE)
+        && View::f64_le_at(payload, offset + legacy_140_relation::SIGNED_SELECTOR)
+            == Some(legacy_140_relation::SIGNED_SELECTOR_VALUE)
+        && record
+            .get(legacy_140_relation::CONTINUATION_PADDING..legacy_140_relation::CONTINUATION_KIND)
+            == Some(&[0; 48])
+        && View::u16_le_at(payload, offset + legacy_140_relation::CONTINUATION_KIND)
+            .is_some_and(|kind| kind != 0 && kind != u16::MAX)
+        && record
+            .get(
+                legacy_140_relation::CONTINUATION_SELECTOR
+                    ..legacy_140_relation::ZERO_SELECTOR_PREFIX,
+            )
+            .is_some_and(|selector| !matches!(selector, [0, 0] | [0xff, 0xff]))
+        && record
+            .get(legacy_140_relation::ZERO_SELECTOR_PREFIX..legacy_140_relation::RELATION_SELECTORS)
+            == Some(&legacy_140_relation::ZERO_SELECTOR_PREFIX_VALUE[..])
+        && record
+            .get(legacy_140_relation::RELATION_SELECTORS..legacy_140_relation::CONTINUATION_TAIL)
+            .is_some_and(|selectors| {
+                !matches!(&selectors[..2], [0, 0] | [0xff, 0xff])
+                    && !matches!(&selectors[2..], [0, 0] | [0xff, 0xff])
+                    && selectors[..2] != selectors[2..]
+            })
+        && record.get(legacy_140_relation::CONTINUATION_TAIL..legacy_140_relation::LEN)
+            == Some(&legacy_140_relation::CONTINUATION_TAIL_VALUE[..])
+}
+
+fn legacy_relation_continuation_marker_pair<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if !matches!(
+        curve.kind,
+        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+    ) || !legacy_relation_continuation_body(payload, offset)
+    {
+        return None;
+    }
+    let raw = [
+        View::u16_le_at(payload, offset + legacy_140_relation::ENDPOINT_FIRST)?,
+        View::u16_le_at(payload, offset + legacy_140_relation::ENDPOINT_SECOND)?,
+    ];
+    if raw[0] == raw[1] {
+        return None;
+    }
+    let mut owned = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref == curve.feature_ref)
+        .collect::<Vec<_>>();
+    owned.sort_unstable_by_key(|marker| marker.offset);
+    Some([
+        *owned.get(usize::from(raw[0]))?,
+        *owned.get(usize::from(raw[1]))?,
+    ])
 }
 
 fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
@@ -5455,6 +5544,14 @@ pub(super) fn relation_reference_curve_record(
     let Some(offset) = usize::try_from(curve.offset).ok() else {
         return false;
     };
+    if legacy_relation_continuation_body(payload, offset) {
+        return legacy_relation_continuation_marker_pair(payload, curve, markers).is_some_and(
+            |[first, second]| {
+                matches!(first.kind, SketchInputKind::Relation(_))
+                    || matches!(second.kind, SketchInputKind::Relation(_))
+            },
+        );
+    }
     if let Some([first_id, second_id]) = compact_indexed_curve_endpoint_indices(payload, offset) {
         if first_id != second_id {
             let resolve = |object_index| {

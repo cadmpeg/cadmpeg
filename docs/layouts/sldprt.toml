@@ -2267,6 +2267,171 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "compact_legacy_140_relation_display_curve"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+kind = "byte"
+section = "2"
+anchor = "A legacy-prefix 140-byte relation-display profile curve"
+size = 140
+endianness = "little"
+note = "The endpoint ordinals use the complete feature-local marker roster; relation endpoints make this a display carrier."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A legacy-prefix 140-byte relation-display profile curve"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "Its header at marker +5 is eight `ff` bytes"
+value = [255, 255, 255, 255, 255, 255, 255, 255]
+
+[[record.field]]
+name = "shared_selector"
+offset = 13
+type = "bytes[4]"
+source = "spec"
+anchor = "shared selector at marker +13 is `00 00 80 bf`"
+value = [0, 0, 128, 191]
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native code `1`"
+value = 1
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+value = [4, 0, 2, 0]
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 `1` at marker +27 and +29"
+value = 1
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 `1` at marker +27 and +29"
+value = 1
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 04 00` at marker +31"
+value = [0, 0, 128, 191, 0, 0, 4, 0]
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record.field]]
+name = "state_scalar"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+value = 1.0
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "distinct u16 endpoint ordinals at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "distinct u16 endpoint ordinals at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +60"
+value = 1
+
+[[record.field]]
+name = "signed_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +64"
+value = -1.0
+
+[[record.field]]
+name = "continuation_padding"
+offset = 72
+type = "bytes[48]"
+source = "spec"
+anchor = "zero bytes from marker +72 through +119"
+
+[[record.field]]
+name = "continuation_kind"
+offset = 120
+type = "u16"
+source = "spec"
+anchor = "nonzero, non-null u16 at marker +120"
+
+[[record.field]]
+name = "continuation_selector"
+offset = 122
+type = "bytes[2]"
+source = "spec"
+anchor = "nonzero, non-null two-byte selector at marker +122"
+
+[[record.field]]
+name = "zero_selector_prefix"
+offset = 124
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at marker +124"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "relation_selectors"
+offset = 128
+type = "bytes[4]"
+source = "spec"
+anchor = "two distinct nonzero, non-null two-byte selector tags at marker +128"
+
+[[record.field]]
+name = "continuation_tail"
+offset = 132
+type = "bytes[8]"
+source = "spec"
+anchor = "`ff fe ff 02 44 00 31 00` at marker +132"
+value = [255, 254, 255, 2, 68, 0, 49, 0]
+
+[[record]]
 name = "current_terminal_relation_carrier"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
 kind = "byte"

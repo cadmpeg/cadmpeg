@@ -735,6 +735,81 @@ pub(crate) mod compact_indexed_curve_continuation120 {
     pub(crate) const CONTINUATION_KIND: usize = 120;
 }
 
+/// Byte offsets for the `compact_legacy_140_relation_display_curve` record.
+///
+/// Spec §2. Record length 140 B.
+///
+/// ```text
+/// The endpoint ordinals use the complete feature-local marker roster; relation endpoints make this a display carrier.
+/// ```
+pub(crate) mod compact_legacy_140_relation_display_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 140;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Stated value of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    /// Offset of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Stated value of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR_VALUE: [u8; 4] = [0x00, 0x00, 0x80, 0xbf];
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Stated value of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS_VALUE: [u8; 4] = [0x04, 0x00, 0x02, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Stated value of `state` (`u16`). Spec §2.
+    pub(crate) const STATE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_SCALAR: usize = 48;
+    /// Stated value of `state_scalar` (`f64`). Spec §2.
+    pub(crate) const STATE_SCALAR_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `continuation_padding` (`bytes[48]`). Spec §2.
+    pub(crate) const CONTINUATION_PADDING: usize = 72;
+    /// Offset of `continuation_kind` (`u16`, little-endian). Spec §2.
+    pub(crate) const CONTINUATION_KIND: usize = 120;
+    /// Offset of `continuation_selector` (`bytes[2]`). Spec §2.
+    pub(crate) const CONTINUATION_SELECTOR: usize = 122;
+    /// Offset of `zero_selector_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_PREFIX: usize = 124;
+    /// Stated value of `zero_selector_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_PREFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `relation_selectors` (`bytes[4]`). Spec §2.
+    pub(crate) const RELATION_SELECTORS: usize = 128;
+    /// Offset of `continuation_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const CONTINUATION_TAIL: usize = 132;
+    /// Stated value of `continuation_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const CONTINUATION_TAIL_VALUE: [u8; 8] =
+        [0xff, 0xfe, 0xff, 0x02, 0x44, 0x00, 0x31, 0x00];
+}
+
 /// Byte offsets for the `current_terminal_relation_carrier` record.
 ///
 /// Spec §2. Record length 136 B.

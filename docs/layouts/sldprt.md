@@ -698,6 +698,42 @@ Unstated regions:
 - `21..23` (2 B): The locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_140_relation_display_curve`
+
+Spec §2 · layout: byte offsets · size: 140 B
+
+The endpoint ordinals use the complete feature-local marker roster; relation endpoints make this a display carrier.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 140-byte relation-display profile curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is eight `ff` bytes · value `[255, 255, 255, 255, 255, 255, 255, 255]` |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | shared selector at marker +13 is `00 00 80 bf` · value `[0, 0, 128, 191]` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `1` · value `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 `1` at marker +27 and +29 · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 `1` at marker +27 and +29 · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct u16 endpoint ordinals at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct u16 endpoint ordinals at marker +56 and +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 · value `1` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 48 | `continuation_padding` | `bytes[48]` | little | spec | zero bytes from marker +72 through +119 |
+| 120 | 2 | `continuation_kind` | `u16` | little | spec | nonzero, non-null u16 at marker +120 |
+| 122 | 2 | `continuation_selector` | `bytes[2]` | little | spec | nonzero, non-null two-byte selector at marker +122 |
+| 124 | 4 | `zero_selector_prefix` | `bytes[4]` | little | spec | four zero bytes at marker +124 · value `[0, 0, 0, 0]` |
+| 128 | 4 | `relation_selectors` | `bytes[4]` | little | spec | two distinct nonzero, non-null two-byte selector tags at marker +128 |
+| 132 | 8 | `continuation_tail` | `bytes[8]` | little | spec | `ff fe ff 02 44 00 31 00` at marker +132 · value `[255, 254, 255, 2, 68, 0, 49, 0]` |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `current_terminal_relation_carrier`
 
 Spec §2 · layout: byte offsets · size: 136 B

@@ -14,11 +14,52 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use super::super::*;
+use crate::layout::compact_legacy_140_relation_display_curve as legacy_140;
 use crate::records::{
     FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::math::Point2;
 use std::collections::HashMap;
+
+fn legacy_140_relation_payload(endpoints: [u16; 2]) -> Vec<u8> {
+    let mut payload = vec![0; legacy_140::LEN];
+    payload[legacy_140::MARKER..legacy_140::HEADER].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[legacy_140::HEADER..legacy_140::SHARED_SELECTOR]
+        .copy_from_slice(&legacy_140::HEADER_VALUE);
+    payload[legacy_140::SHARED_SELECTOR..legacy_140::NATIVE_KIND]
+        .copy_from_slice(&legacy_140::SHARED_SELECTOR_VALUE);
+    payload[legacy_140::NATIVE_KIND..legacy_140::NATIVE_KIND + std::mem::size_of::<u32>()]
+        .copy_from_slice(&legacy_140::NATIVE_KIND_VALUE.to_le_bytes());
+    payload[legacy_140::PROFILE_LOCUS..legacy_140::ROLE]
+        .copy_from_slice(&legacy_140::PROFILE_LOCUS_VALUE);
+    payload[legacy_140::ROLE..legacy_140::STATE]
+        .copy_from_slice(&legacy_140::ROLE_VALUE.to_le_bytes());
+    payload[legacy_140::STATE..legacy_140::SELECTOR]
+        .copy_from_slice(&legacy_140::STATE_VALUE.to_le_bytes());
+    payload[legacy_140::SELECTOR..legacy_140::SELECTOR + legacy_140::SELECTOR_VALUE.len()]
+        .copy_from_slice(&legacy_140::SELECTOR_VALUE);
+    payload[legacy_140::STATE_SCALAR..legacy_140::ENDPOINT_FIRST]
+        .copy_from_slice(&legacy_140::STATE_SCALAR_VALUE.to_le_bytes());
+    payload[legacy_140::ENDPOINT_FIRST..legacy_140::ENDPOINT_SECOND]
+        .copy_from_slice(&endpoints[0].to_le_bytes());
+    payload[legacy_140::ENDPOINT_SECOND..legacy_140::ENDPOINT_SELECTOR]
+        .copy_from_slice(&endpoints[1].to_le_bytes());
+    payload[legacy_140::ENDPOINT_SELECTOR..legacy_140::SIGNED_SELECTOR]
+        .copy_from_slice(&legacy_140::ENDPOINT_SELECTOR_VALUE.to_le_bytes());
+    payload[legacy_140::SIGNED_SELECTOR..legacy_140::CONTINUATION_PADDING]
+        .copy_from_slice(&legacy_140::SIGNED_SELECTOR_VALUE.to_le_bytes());
+    payload[legacy_140::CONTINUATION_KIND..legacy_140::CONTINUATION_SELECTOR]
+        .copy_from_slice(&22u16.to_le_bytes());
+    payload[legacy_140::CONTINUATION_SELECTOR..legacy_140::ZERO_SELECTOR_PREFIX]
+        .copy_from_slice(&[0x1e, 0x81]);
+    payload[legacy_140::ZERO_SELECTOR_PREFIX..legacy_140::RELATION_SELECTORS]
+        .copy_from_slice(&legacy_140::ZERO_SELECTOR_PREFIX_VALUE);
+    payload[legacy_140::RELATION_SELECTORS..legacy_140::CONTINUATION_TAIL]
+        .copy_from_slice(&[0x13, 0x81, 0x5f, 0x80]);
+    payload[legacy_140::CONTINUATION_TAIL..legacy_140::LEN]
+        .copy_from_slice(&legacy_140::CONTINUATION_TAIL_VALUE);
+    payload
+}
 
 #[test]
 fn legacy_compact_84_construction_line_uses_direct_point_ids() {
@@ -263,6 +304,119 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         legacy_compact_84_coordinate_roster_endpoint_indices(&rejected, 0),
         None
     );
+}
+
+#[test]
+fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
+    let payload = legacy_140_relation_payload([12, 13]);
+
+    let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", 0, Some(7), None, SketchInputKind::LineOrCircle);
+    let first = entity(
+        "first",
+        1,
+        Some(13),
+        Some([0.0, 0.0]),
+        SketchInputKind::Point,
+    );
+    let second = entity(
+        "second",
+        2,
+        Some(14),
+        Some([1.0, 0.0]),
+        SketchInputKind::Point,
+    );
+    let markers = [&curve, &first, &second];
+
+    assert_eq!(
+        compact_indexed_curve_endpoint_indices(&payload, 0),
+        Some([13, 14])
+    );
+    assert_eq!(
+        compact_indexed_curve_record_end(&payload, 0),
+        Some(CompactIndexedCurveRecordEnd::Continuation120)
+    );
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), *marker))
+        .collect::<HashMap<_, _>>();
+    assert_eq!(
+        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+
+    let mut relation_roster = vec![entity(
+        "relation-curve",
+        0,
+        None,
+        None,
+        SketchInputKind::LineOrCircle,
+    )];
+    for index in 1..12 {
+        relation_roster.push(entity(
+            &format!("point-{index}"),
+            index,
+            None,
+            Some([index as f64, 0.0]),
+            SketchInputKind::Point,
+        ));
+    }
+    relation_roster.push(entity(
+        "perpendicular",
+        12,
+        None,
+        None,
+        SketchInputKind::Relation(SketchRelationKind::Perpendicular),
+    ));
+    relation_roster.push(entity(
+        "endpoint-point",
+        13,
+        None,
+        Some([1.0, 0.0]),
+        SketchInputKind::Point,
+    ));
+    let relation_curve = &relation_roster[0];
+    let relation_markers = relation_roster.iter().collect::<Vec<_>>();
+    assert!(relation_reference_curve_record(
+        &payload,
+        relation_curve,
+        &relation_markers
+    ));
+
+    let mut point_roster = relation_roster.clone();
+    for marker in point_roster.iter_mut().skip(1) {
+        marker.kind = SketchInputKind::Point;
+        marker.coordinates_m = Some([0.0, 0.0]);
+    }
+    let point_markers = point_roster.iter().collect::<Vec<_>>();
+    assert!(!relation_reference_curve_record(
+        &payload,
+        &point_roster[0],
+        &point_markers
+    ));
 }
 
 #[test]
