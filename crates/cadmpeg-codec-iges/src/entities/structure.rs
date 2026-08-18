@@ -462,7 +462,9 @@ fn property_fields_valid(
             exact(8)
                 && integer_range(2, 0..=2)
                 && integer_range(3, 1..=10)
-                && integer_range(4, 1..=4)
+                && record
+                    .integer_or(4, 2)
+                    .is_some_and(|value| (1..=4).contains(&value))
                 && (5..=6).all(|index| record.number(index).is_some_and(f64::is_finite))
                 && integer_range(7, 0..=1)
                 && fraction.is_some_and(|value| matches!(value, 0..=2))

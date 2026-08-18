@@ -19,6 +19,7 @@ pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
 const DEFAULT_DIMENSION_DISPLAY_CHARACTER_SET: i64 = 1;
 const DEFAULT_DIMENSION_DISPLAY_WITNESS_LINE_ANGLE_RAD: f64 = std::f64::consts::FRAC_PI_2;
+const DEFAULT_DIMENSION_TOLERANCE_PLACEMENT: i64 = 2;
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3722,7 +3723,7 @@ pub(crate) fn store(
                 29 => NativePropertyValue::DimensionTolerance {
                     secondary_flag: record.integer(2),
                     tolerance_type: record.integer(3),
-                    placement: record.integer(4),
+                    placement: record.integer_or(4, DEFAULT_DIMENSION_TOLERANCE_PLACEMENT),
                     upper: record.number(5),
                     lower: record.number(6),
                     suppress_plus: binary_integer(record.integer(7)),

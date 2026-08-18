@@ -339,6 +339,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 406 Form 28 fixes `NP=6` at index 1 and stores `SPOS`, `UI`, `CHRSET`,
 /// `USTRING`, `FFLAG`, and `PREC` at indexes 2 through 7, so its groups start
 /// at token eight. `CHRSET` may be empty and then defaults to standard ASCII.
+/// Type 406 Form 29 fixes `NP=8` at index 1 and stores `SFLAG`, `TYP`, `TPFLAG`,
+/// `UTOL`, `LTOL`, `SSPFLG`, `FFLAG`, and `PREC` at indexes 2 through 9, so its
+/// groups start at token ten. `TPFLAG` may be omitted and then defaults to 2.
 /// Type 406 Form 36 permits `NP=1` for a curve or `NP=2` for a surface and
 /// stores `CLOSEDU` and, for a surface, `CLOSEDV`, so its groups start at
 /// token `2 + NP`.
@@ -428,6 +431,7 @@ pub(crate) fn entity_primary_end(
         (406, 25) => Some(lep_artwork_stackup_primary_end(record)),
         (406, 26) => Some(lep_drilled_hole_primary_end(record)),
         (406, 28) => Some(dimension_units_primary_end(record)),
+        (406, 29) => Some(dimension_tolerance_primary_end(record)),
         (406, 36) => Some(closure_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
@@ -708,6 +712,14 @@ fn lep_drilled_hole_primary_end(record: &ParameterRecord) -> usize {
 fn dimension_units_primary_end(record: &ParameterRecord) -> usize {
     if record.integer(1) == Some(6) && record.tokens.len() >= 8 {
         8
+    } else {
+        record.tokens.len()
+    }
+}
+
+fn dimension_tolerance_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) == Some(8) && record.tokens.len() >= 10 {
+        10
     } else {
         record.tokens.len()
     }

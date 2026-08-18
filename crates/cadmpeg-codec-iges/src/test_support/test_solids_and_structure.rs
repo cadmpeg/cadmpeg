@@ -1324,7 +1324,7 @@ pub(crate) fn dimension_property_forms_file() -> Vec<u8> {
             form: 29,
             label: "DIMTOL".into(),
             status: "00000000",
-            parameters: "406,8,0,2,2,0.1,-0.1,0,0,3;".into(),
+            parameters: "406,8,0,2,,0.1,-0.1,0,0,3;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
