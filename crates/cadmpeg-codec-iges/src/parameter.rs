@@ -328,6 +328,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 406 Form 13 permits `NP=2` or `NP=3` at index 1 and stores the
 /// nominal size and name at indexes 2 and 3, with the optional standard at
 /// index 4 for `NP=3`, so its groups start at token four or five.
+/// Type 406 Form 15 fixes `NP=1` at index 1 and stores the name at index 2,
+/// so its groups start at token three.
 /// Type 402 Form 13 fixes `ND` to one, puts the positive geometry count `NG` at
 /// index 2, and lists the dimension plus `NG` geometry pointers, so its groups
 /// start at token `4 + NG`.
@@ -409,6 +411,7 @@ pub(crate) fn entity_primary_end(
         (406, 11) => Some(tabular_data_primary_end(record)),
         (406, 12) => Some(external_reference_file_list_primary_end(record)),
         (406, 13) => Some(nominal_size_primary_end(record)),
+        (406, 15) => Some(name_property_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
@@ -625,6 +628,14 @@ fn nominal_size_primary_end(record: &ParameterRecord) -> usize {
         Some(2) if record.tokens.len() >= 4 => 4,
         Some(3) if record.tokens.len() >= 5 => 5,
         _ => record.tokens.len(),
+    }
+}
+
+fn name_property_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) == Some(1) && record.tokens.len() >= 3 {
+        3
+    } else {
+        record.tokens.len()
     }
 }
 
