@@ -45,6 +45,10 @@ const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
 const CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE: i32 = 2;
+const GENERATED_SENDER_PRODUCT: &str = "cadmpeg";
+const GENERATED_NATIVE_SYSTEM: &str = "cadmpeg";
+const GENERATED_FILE_NAME: &str = "generated.igs";
+const GENERATED_PREPROCESSOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Plan an IGES export, selecting replay only after checking the document
 /// baseline and retained source-image integrity.
@@ -4891,14 +4895,35 @@ fn encode_file(
 ) -> Result<Vec<u8>, CodecError> {
     let generation_timestamp = generation_timestamp(SystemTime::now())?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
-    let global = format!(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H{},{},{},6Hauthor,7Hcadmpeg,{},0,0H,0H;",
-        generation_timestamp,
+    let global_fields = [
+        global_string(","),
+        global_string(";"),
+        global_string(GENERATED_SENDER_PRODUCT),
+        global_string(GENERATED_FILE_NAME),
+        global_string(GENERATED_NATIVE_SYSTEM),
+        global_string(GENERATED_PREPROCESSOR_VERSION),
+        "32".into(),
+        "38".into(),
+        "6".into(),
+        "308".into(),
+        "17".into(),
+        global_string(""),
+        "1.0".into(),
+        "2".into(),
+        global_string("MM"),
+        "1".into(),
+        "1.0".into(),
+        global_string(&generation_timestamp),
         number(minimum_resolution),
         number(maximum_coordinate),
-        version.global_flag(),
-    )
-    .into_bytes();
+        global_string(""),
+        global_string(""),
+        version.global_flag().to_string(),
+        "0".into(),
+        global_string(""),
+        global_string(""),
+    ];
+    let global = format!("{};", global_fields.join(",")).into_bytes();
     let global_count = global.len().div_ceil(72);
     let mut expanded = Vec::with_capacity(entities.len() * 2);
     for entity in entities {
@@ -5014,6 +5039,10 @@ fn encode_file(
     );
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
+}
+
+fn global_string(value: &str) -> String {
+    format!("{}H{value}", value.len())
 }
 
 fn generated_maximum_coordinate(entities: &[Entity]) -> f64 {

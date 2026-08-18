@@ -369,16 +369,6 @@ Type 402 Form 21 evidence: [IGES 5.3 §4.95](https://paulbourke.net/dataformats/
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `46a71f68c` introduced the IR wording, accessor, writer use, and tests together. This is promotion to an IR invariant, not evidence that all producers supply the order.
 
-### WR-04. Global fields are a fixed string
-
-**Question.** Which Global values must a generated file compute from the model?
-
-**Known.** `writer.rs:4822-4835` writes fixed sender, file, author, organization, timestamp, resolution, and coordinate metadata. The current documentation records this as writer policy.
-
-**Need.** We need the fields that must be computed, the fields that may use project defaults, and the required treatment of timestamps and source identity.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `2b3306edc` made the fixed metadata explicit, but no interoperability evidence or settled project policy justifies the values.
-
 ### WR-05. The target version changes one digit only
 
 **Question.** What does `IgesWriteOptions::version` constrain?
