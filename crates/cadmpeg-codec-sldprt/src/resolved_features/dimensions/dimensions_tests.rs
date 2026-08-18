@@ -1,6 +1,6 @@
 //! Tests for the `dimensions` module.
 
-use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
+use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::*;
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
@@ -173,6 +173,160 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     .expect("explicit circular marker remains a carrier");
     assert_eq!(direct_carrier.marker.id, "wrong");
     assert_eq!(direct_carrier.construction, Some(false));
+}
+
+#[test]
+fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
+    use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
+
+    let kind = FeatureInputOperandKind::Native(0x69bd);
+    let operand = FeatureInputOperand {
+        offset: 100,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 0,
+        entity_ref: Some("carrier".into()),
+    };
+    let marker_offset = 4u64;
+    let record_len = arc_handle::LEN;
+    let mut native_payload = vec![0; marker_offset as usize + record_len + SKETCH_MARKER.len()];
+    native_payload[..marker_offset as usize].copy_from_slice(&11u32.to_le_bytes());
+    let offset = marker_offset as usize;
+    native_payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    native_payload[offset + arc_handle::HEADER..offset + arc_handle::SHARED_SELECTOR].fill(0xff);
+    native_payload[offset + arc_handle::SHARED_SELECTOR..offset + arc_handle::NATIVE_KIND]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    native_payload[offset + arc_handle::NATIVE_KIND..offset + arc_handle::ZERO_LOCUS_PREFIX]
+        .copy_from_slice(&0u32.to_le_bytes());
+    native_payload[offset + arc_handle::GEOMETRY_LOCUS..offset + arc_handle::ROLE]
+        .copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    native_payload[offset + arc_handle::ROLE..offset + arc_handle::ZERO_STATE]
+        .copy_from_slice(&1u16.to_le_bytes());
+    native_payload[offset + arc_handle::SELECTOR..offset + arc_handle::ZERO_BEFORE_STATE_VALUE]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    native_payload[offset + arc_handle::STATE_VALUE..offset + arc_handle::ZERO_BEFORE_COORDINATE]
+        .copy_from_slice(&1.0f64.to_le_bytes());
+    native_payload[offset + arc_handle::COORDINATE_TAG..offset + arc_handle::COORDINATE_FIRST]
+        .copy_from_slice(&[0x1e, 0x00]);
+    native_payload[offset + arc_handle::COORDINATE_FIRST..offset + arc_handle::COORDINATE_SECOND]
+        .copy_from_slice(&0.01f64.to_le_bytes());
+    native_payload[offset + arc_handle::COORDINATE_SECOND..offset + arc_handle::HANDLE_PREFIX]
+        .copy_from_slice(&0.02f64.to_le_bytes());
+    native_payload[offset + arc_handle::HANDLE_PREFIX..offset + arc_handle::CLASS_MARKER]
+        .copy_from_slice(&[0x02, 0x00, 0x02, 0x00]);
+    native_payload[offset + arc_handle::CLASS_MARKER..offset + arc_handle::CLASS_LENGTH]
+        .copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+    native_payload[offset + arc_handle::CLASS_LENGTH..offset + arc_handle::CLASS_NAME]
+        .copy_from_slice(&11u16.to_le_bytes());
+    native_payload[offset + arc_handle::CLASS_NAME..offset + arc_handle::HANDLE_ID]
+        .copy_from_slice(b"sgArcHandle");
+    native_payload
+        [offset + arc_handle::REFERENCE_SENTINEL..offset + arc_handle::ZERO_REFERENCE_TAIL]
+        .fill(0xff);
+    native_payload[offset + arc_handle::TERMINATOR..offset + arc_handle::ZERO_TRAILER]
+        .copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+    native_payload[offset + arc_handle::ZERO_TRAILER..offset + arc_handle::FOLLOWING_OBJECT_INDEX]
+        .fill(0);
+    native_payload[offset + arc_handle::FOLLOWING_OBJECT_INDEX
+        ..offset + arc_handle::FOLLOWING_OBJECT_INDEX + 4]
+        .copy_from_slice(&12u32.to_le_bytes());
+    native_payload[offset + record_len..].copy_from_slice(SKETCH_MARKER);
+
+    let marker = SketchInputEntity {
+        id: "carrier".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: marker_offset,
+        object_index: Some(11),
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: Some([0.01, 0.02]),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload,
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 200,
+            name: "sgEntHandle".into(),
+            role: FeatureInputClassRole::SketchEntity,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: operand.reference_ref.clone(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: operand.offset,
+            kind,
+            class_ref: Some("class".into()),
+            object_index: 0,
+        }],
+        sketch_entities: vec![marker],
+    };
+    let markers_by_id = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+
+    let carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&lane),
+        &markers_by_id,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .expect("explicit short arc-handle point carrier");
+    assert_eq!(carrier.marker.id, "carrier");
+    assert_eq!(carrier.center, [0.01, 0.02]);
+    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.construction, Some(false));
+
+    let mut unrelated_lane = lane.clone();
+    unrelated_lane.sketch_entities.push(SketchInputEntity {
+        id: "other".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 1,
+        offset: 1000,
+        object_index: None,
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: Some([0.03, 0.04]),
+        links: Vec::new(),
+        link_selector: None,
+    });
+    let unrelated_markers = unrelated_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let mut unrelated_operand = operand;
+    unrelated_operand.entity_ref = Some("other".into());
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&unrelated_lane),
+        &unrelated_markers,
+        "feature",
+        &unrelated_operand,
+        5.0,
+    )
+    .is_none());
 }
 
 #[test]

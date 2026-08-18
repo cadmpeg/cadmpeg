@@ -38,6 +38,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::layout::compact_current_spatial_marker_point as compact_spatial;
 use crate::layout::compact_legacy_142_profile_curve as legacy_142;
 use crate::layout::compact_legacy_code_two_profile_point as code_two;
+use crate::layout::current_geometry_locus_arc_handle_point as current_arc_handle;
+use crate::layout::current_geometry_locus_arc_handle_point_terminal as current_arc_handle_terminal;
 use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
 use crate::layout::legacy_144_single_incidence_profile_point as pt_144;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
@@ -734,6 +736,100 @@ pub(super) fn sketch_marker_prefix_at(payload: &[u8], offset: usize) -> bool {
     marker == Some(SKETCH_MARKER)
         || marker == Some(LEGACY_SKETCH_MARKER)
         || marker == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+}
+
+/// Recognize the short current-prefix point that declares an embedded
+/// `sgArcHandle` child. The following marker boundary is part of the form:
+/// a zero-based marker roster index precedes the next sketch marker.
+pub(super) fn current_geometry_locus_arc_handle_point(payload: &[u8], offset: usize) -> bool {
+    let common = payload.get(offset..offset + current_arc_handle::HEADER) == Some(SKETCH_MARKER)
+        && payload
+            .get(offset + current_arc_handle::HEADER..offset + current_arc_handle::SHARED_SELECTOR)
+            == Some(&[0xff; 8])
+        && payload.get(
+            offset + current_arc_handle::SHARED_SELECTOR..offset + current_arc_handle::NATIVE_KIND,
+        ) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && View::u32_le_at(payload, offset + current_arc_handle::NATIVE_KIND)
+            == Some(current_arc_handle::NATIVE_KIND_VALUE)
+        && payload.get(
+            offset + current_arc_handle::ZERO_LOCUS_PREFIX
+                ..offset + current_arc_handle::GEOMETRY_LOCUS,
+        ) == Some(&[0; 2])
+        && payload
+            .get(offset + current_arc_handle::GEOMETRY_LOCUS..offset + current_arc_handle::ROLE)
+            == Some(&[0x05, 0x00, 0x01, 0x00])
+        && View::u16_le_at(payload, offset + current_arc_handle::ROLE)
+            == Some(current_arc_handle::ROLE_VALUE)
+        && payload
+            .get(offset + current_arc_handle::ZERO_STATE..offset + current_arc_handle::SELECTOR)
+            == Some(&[0; 2])
+        && payload.get(
+            offset + current_arc_handle::SELECTOR
+                ..offset + current_arc_handle::ZERO_BEFORE_STATE_VALUE,
+        ) == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(
+            offset + current_arc_handle::ZERO_BEFORE_STATE_VALUE
+                ..offset + current_arc_handle::STATE_VALUE,
+        ) == Some(&[0; 9])
+        && View::f64_le_at(payload, offset + current_arc_handle::STATE_VALUE)
+            == Some(current_arc_handle::STATE_VALUE_VALUE)
+        && payload.get(
+            offset + current_arc_handle::ZERO_BEFORE_COORDINATE
+                ..offset + current_arc_handle::COORDINATE_TAG,
+        ) == Some(&[0; 8])
+        && payload.get(
+            offset + current_arc_handle::COORDINATE_TAG
+                ..offset + current_arc_handle::COORDINATE_FIRST,
+        ) == Some(&[0x1e, 0x00])
+        && finite_coordinate_pair(payload, offset + current_arc_handle::COORDINATE_FIRST).is_some()
+        && payload.get(
+            offset + current_arc_handle::HANDLE_PREFIX..offset + current_arc_handle::CLASS_MARKER,
+        ) == Some(&[0x02, 0x00, 0x02, 0x00])
+        && payload.get(
+            offset + current_arc_handle::CLASS_MARKER..offset + current_arc_handle::CLASS_LENGTH,
+        ) == Some(&[0xff, 0xff, 0x01, 0x00])
+        && View::u16_le_at(payload, offset + current_arc_handle::CLASS_LENGTH)
+            == Some(current_arc_handle::CLASS_LENGTH_VALUE)
+        && payload
+            .get(offset + current_arc_handle::CLASS_NAME..offset + current_arc_handle::HANDLE_ID)
+            == Some(b"sgArcHandle")
+        && View::u16_le_at(payload, offset + current_arc_handle::HANDLE_ID)
+            .is_some_and(|id| id != u16::MAX)
+        && payload.get(
+            offset + current_arc_handle::REFERENCE_SENTINEL
+                ..offset + current_arc_handle::ZERO_REFERENCE_TAIL,
+        ) == Some(&[0xff; 4])
+        && payload.get(
+            offset + current_arc_handle::ZERO_REFERENCE_TAIL
+                ..offset + current_arc_handle::TERMINATOR,
+        ) == Some(&[0; 8])
+        && payload.get(
+            offset + current_arc_handle::TERMINATOR..offset + current_arc_handle::ZERO_TRAILER,
+        ) == Some(&[0xfe, 0xff, 0xff, 0xff]);
+    if !common {
+        return false;
+    }
+    let following_index_is_valid = |index: usize, marker: usize| {
+        View::u32_le_at(payload, offset + index).is_some_and(|value| value != u32::MAX)
+            && sketch_marker_prefix_at(payload, offset + marker)
+    };
+    let ordinary = payload.get(
+        offset + current_arc_handle::ZERO_TRAILER
+            ..offset + current_arc_handle::FOLLOWING_OBJECT_INDEX,
+    ) == Some(&[0; 42])
+        && following_index_is_valid(
+            current_arc_handle::FOLLOWING_OBJECT_INDEX,
+            current_arc_handle::LEN,
+        );
+    let terminal = payload.get(
+        offset + current_arc_handle::ZERO_TRAILER
+            ..offset + current_arc_handle_terminal::FOLLOWING_OBJECT_INDEX,
+    ) == Some(&[0; 46])
+        && following_index_is_valid(
+            current_arc_handle_terminal::FOLLOWING_OBJECT_INDEX,
+            current_arc_handle_terminal::LEN,
+        );
+    ordinary || terminal
 }
 
 pub(crate) fn relation_bindings(

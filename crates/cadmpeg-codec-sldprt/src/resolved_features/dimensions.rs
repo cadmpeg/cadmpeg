@@ -3,7 +3,10 @@
 use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
 };
-use super::markers::{inline_arc_coordinates, marker_native_code, sketch_marker_prefix_at};
+use super::markers::{
+    current_geometry_locus_arc_handle_point, inline_arc_coordinates, marker_native_code,
+    sketch_marker_prefix_at,
+};
 use super::relation_geometry::{
     declared_entity_handle_circular_marker, declared_entity_handle_has_resolved_pair,
     declared_entity_handle_owner, implicit_circle_marker, owned_relation_parameters,
@@ -307,11 +310,24 @@ fn dimensioned_relation_carrier<'a>(
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
     });
+    let explicit_current_arc_handle_point = explicit_point_marker
+        && explicit.is_some_and(|marker| {
+            let Ok(offset) = usize::try_from(marker.offset) else {
+                return false;
+            };
+            lanes.iter().any(|lane| {
+                lane.sketch_entities.iter().any(|candidate| {
+                    candidate.id == marker.id && candidate.feature_ref.as_deref() == Some(feature)
+                }) && current_geometry_locus_arc_handle_point(&lane.native_payload, offset)
+            })
+        });
     let declared_owner = declared_entity_handle_owner(lanes, operand);
     let declared = declared_entity_handle_circular_marker(lanes, feature, operand, radius);
     let declared_entity_handle = !matches!(declared_owner, DeclaredEntityHandleOwner::Absent);
     let (marker, encoded_radius, fallback_curve) = if let Some((marker, radius)) = declared {
         (marker, Some(radius), None)
+    } else if declared_entity_handle && explicit_current_arc_handle_point {
+        (explicit?, None, None)
     } else if declared_entity_handle && !explicit_circular_marker {
         if explicit.is_none() || explicit_point_marker {
             let (marker, curve) = unique_unlinked_declared_entity_handle_circular_carrier(

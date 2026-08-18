@@ -1336,6 +1336,77 @@ The radial ordinal is zero-based in the feature-owned raw coordinate roster, inc
 | 108 | 2 | `class_length` | `u16` | little | spec | u16 length `11` |
 | 110 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` at marker +110 |
 
+## `current_geometry_locus_arc_handle_point`
+
+Spec §2 · layout: byte offsets · size: 167 B
+
+The record includes the following marker's object index at +163; the following marker begins at +167.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | current-prefix 167-byte geometry-locus arc-handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | `00 00 80 bf` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `0` at marker +17 · value `0` |
+| 21 | 2 | `zero_locus_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 through +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `zero_state` | `bytes[2]` | little | spec | zero bytes at marker +29 through +30 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes at marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 8 | `zero_before_coordinate` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 82 | 4 | `handle_prefix` | `bytes[4]` | little | spec | Marker +82 and marker +84 store `02 00` |
+| 86 | 4 | `class_marker` | `bytes[4]` | little | spec | class declaration marker `ff ff 01 00` |
+| 90 | 2 | `class_length` | `u16` | little | spec | marker +90 stores u16 class length `11` · value `11` |
+| 92 | 11 | `class_name` | `bytes[11]` | little | spec | marker +92 stores `sgArcHandle` |
+| 103 | 2 | `handle_id` | `u16` | little | spec | Marker +103 stores a u16 handle identifier |
+| 105 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | marker +105 stores `ff ff ff ff` |
+| 109 | 8 | `zero_reference_tail` | `bytes[8]` | little | spec | marker +109 through +116 are zero |
+| 117 | 4 | `terminator` | `bytes[4]` | little | spec | marker +117 stores `fe ff ff ff` |
+| 121 | 42 | `zero_trailer` | `bytes[42]` | little | spec | marker +121 through +162 are zero |
+| 163 | 4 | `following_object_index` | `u32` | little | spec | The following marker's object index is at marker +163 |
+
+## `current_geometry_locus_arc_handle_point_terminal`
+
+Spec §2 · layout: byte offsets · size: 171 B
+
+The record includes a four-byte zero separator at +163, the following marker's object index at +167, and the following marker begins at +171.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | current-prefix 167-byte geometry-locus arc-handle point |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | `00 00 80 bf` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `0` at marker +17 · value `0` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 82 | 4 | `handle_prefix` | `bytes[4]` | little | spec | Marker +82 and marker +84 store `02 00` |
+| 86 | 4 | `class_marker` | `bytes[4]` | little | spec | class declaration marker `ff ff 01 00` |
+| 90 | 2 | `class_length` | `u16` | little | spec | marker +90 stores u16 class length `11` · value `11` |
+| 92 | 11 | `class_name` | `bytes[11]` | little | spec | marker +92 stores `sgArcHandle` |
+| 103 | 2 | `handle_id` | `u16` | little | spec | Marker +103 stores a u16 handle identifier |
+| 105 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | marker +105 stores `ff ff ff ff` |
+| 109 | 8 | `zero_reference_tail` | `bytes[8]` | little | spec | marker +109 through +116 are zero |
+| 117 | 4 | `terminator` | `bytes[4]` | little | spec | marker +117 stores `fe ff ff ff` |
+| 121 | 46 | `zero_trailer` | `bytes[46]` | little | spec | marker +121 through +162 are zero |
+| 167 | 4 | `following_object_index` | `u32` | little | spec | stores the following object index at marker +167 |
+
+Unstated regions:
+
+- `5..13` (8 B): The fixed eight-byte header is the same as the non-terminal variant.
+- `21..23` (2 B): The zero prefix before the geometry locus is the same as the non-terminal variant.
+- `29..31` (2 B): The zero state before the selector is the same as the non-terminal variant.
+- `39..48` (9 B): The zero bytes before the state value are the same as the non-terminal variant.
+- `56..64` (8 B): The zero bytes before the coordinate tag are the same as the non-terminal variant.
+
 ## `reference_point_short_solved_cache`
 
 Spec §2 · layout: byte offsets · size: 277 B

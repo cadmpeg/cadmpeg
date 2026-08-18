@@ -402,11 +402,11 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which native field marks dimensioned circular geometry as construction geometry when absent from the selected profile stream?
 
-**Known.** The exact compact legacy and extended radial layouts, their native code and role fields, and the `sgSlot` relation identify the supported dimensioned-circle roster. The selected profile stream can omit construction circles.
+**Known.** The exact compact legacy and extended radial layouts, their native code and role fields, the `sgSlot` relation, and the current-prefix geometry-locus `sgArcHandle` point carrier identify supported dimensioned-circle records. A declared `sgEntHandle` operand that references the exact point carrier supplies its center even when no radial record is present. The selected profile stream can omit construction circles.
 
-**Need.** We must know the discriminator to prevent an omitted construction circle from becoming profile geometry.
+**Need.** We must know the discriminator for remaining dimensioned-circle operands that have no radial record and do not reference the exact geometry-locus `sgArcHandle` carrier.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs` now joins each omitted dimension center to the native radial-circle roster and propagates the radial record's role-2 construction state through dimension-carrier, point-witness, and circle-only-carrier projections. A non-empty lane with no unique radial role or with conflicting role matches remains native instead of becoming profile geometry. The remaining unknown is the native discriminator for a dimension carrier that has no recoverable radial record at all.
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs` joins each omitted dimension center to the native radial-circle roster and propagates the radial record's role-2 construction state through dimension-carrier, point-witness, and circle-only-carrier projections. It also admits the exact explicitly referenced current-prefix `sgArcHandle` point carrier without guessing from the class name. A non-empty lane with no unique radial role, with conflicting role matches, or with another unclassified dimension carrier remains native.
 
 ### DI-13. Marker-only profile placement
 
