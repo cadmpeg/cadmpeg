@@ -139,6 +139,11 @@ supplies the owning presentation's `custom_render_mesh` value, while an
 unsupported outer major or malformed nested child leaves the point class data
 and object attributes typed, omits that value, emits the bounded userdata
 diagnostic, and retains the complete `TCODE_OBJECT_RECORD`.
+The same object owner is proven across the five registered mesh-modifier XML
+carriers: current XML userdata version 2 reaches the matching native modifier,
+while version 3 leaves the point and attributes typed, omits the modifier,
+emits the carrier-specific bounded diagnostic, and retains the complete object
+record.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

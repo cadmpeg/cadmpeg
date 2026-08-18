@@ -1258,7 +1258,8 @@ if version = 2: i32 UTF-8 byte count; raw UTF-8 XML bytes
 The writer emits version 2. The reader accepts versions 1 and 2 and skips
 remaining bytes at the anonymous payload boundary. Version 1 uses the archive
 UTF-16 string grammar from section 7.3. Version 2 uses a byte count and does
-not require an archive string terminator.
+not require an archive string terminator. A version other than 1 or 2 fails
+before XML root parsing; the failure is local to the recognized userdata item.
 
 The XML document has root `xml` and a direct child named
 `new-displacement-object-data`. Parameter and property names are matched

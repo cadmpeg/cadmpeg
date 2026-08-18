@@ -19,6 +19,7 @@ use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
 mod hatch_userdata;
 mod layer_userdata;
+mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;
 mod settings_userdata;
@@ -28,7 +29,6 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("synthesized 3DM archive should decode")
 }
-
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
