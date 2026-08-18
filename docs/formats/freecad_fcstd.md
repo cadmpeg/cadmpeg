@@ -180,7 +180,8 @@ descendant, retains the exact property without selecting a side entry. An archiv
 role, or payload signature does not admit a second B-rep payload.
 When element-map metadata is present, one property owns one direct compatibility `ElementMap`
 marker and one direct `ElementMap2` carrier. An empty map is represented by direct `ElementMap`
-alone. A non-empty map uses `ElementMap new="1"` followed immediately by `ElementMap2`; a non-empty
+alone. A non-empty map uses one direct `ElementMap new="1"` marker followed immediately by one
+direct `ElementMap2`; a direct `ElementMap2` without that marker is malformed. A non-empty
 `ElementMap2 file` names that property's side entry, otherwise its inline bytes are the map payload.
 The marker and map carrier are direct sibling values after the `Part` carrier; nested map carriers
 are not admitted. Duplicate direct map carriers, a map without its compatibility marker, and a new

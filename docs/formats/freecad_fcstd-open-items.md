@@ -106,30 +106,6 @@ guards synthetic XML that the producer does not write.
 **Note.** Reopened. The camera cardinality fix does not bind to the producer's authoritative value
 carrier.
 
-## 3. Persistent topology identity
-
-### PT-06. Element-map compatibility-marker admission
-
-**Question.** Must a non-empty `ElementMap2` carrier have the compatibility `ElementMap` marker
-immediately before it, and what is the malformed result when that marker is absent?
-
-**Known.** The specification requires one compatibility `ElementMap` marker followed by one
-`ElementMap2` carrier for non-empty metadata, while an empty map uses the marker alone. The
-element-map transfer at `element_map.rs:86-141` finds one `Part` and one `ElementMap2` through
-descendant lookup, reads the `ElementMap` version attribute from `Part`, and never checks for the
-compatibility marker or its adjacency.
-
-**Need.** Bind the map to the direct shape property and require the marker-plus-carrier sequence
-for non-empty maps. Reject or retain a nested, missing, or non-adjacent marker without assigning
-the map to neutral topology.
-
-**Conflict.** A property containing `<Part .../><ElementMap2 ...>` is parsed into an
-`ElementMapRecord` and can supply persistent topology names even though the required
-compatibility marker is absent. Adding or removing that marker changes neutral identity without a
-refusal or loss.
-
-**Note.** New hostile-sweep finding.
-
 ## 4. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection

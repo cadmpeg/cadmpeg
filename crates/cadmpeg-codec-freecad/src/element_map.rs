@@ -1245,6 +1245,18 @@ Co 1001000 +2 0 *
     }
 
     #[test]
+    fn rejects_non_adjacent_element_map_successor() {
+        let non_adjacent_map = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper/><ElementMap2/></Property>"#,
+        );
+        assert!(matches!(
+            parse(b"<Document/>", &[non_adjacent_map], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
     fn rejects_element_map_without_compatibility_marker() {
         let unmarked_map = test_property(
             "Part::PropertyPartShape",
