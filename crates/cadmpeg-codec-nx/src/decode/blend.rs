@@ -35,6 +35,7 @@ const BLEND_SECTION_CANONICAL_DOMAIN: [f64; 2] = [0.0, 1.0];
 // before transferring the continuation back into the chart.
 const BLEND_SECTION_SOURCE_CONTINUATION_DOMAIN: [f64; 2] = [-1.0, 2.0];
 const BLEND_SECTION_BOUNDARY_EPSILON: f64 = 1.0e-12;
+const BLEND_INVERSE_MIN_SWEEP: f64 = 1.0e-12;
 
 #[derive(Clone, Copy)]
 enum BlendSectionDomain {
@@ -1546,7 +1547,7 @@ pub(crate) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     // the support declaration is the relation proof and the fit is the
     // geometric certificate.
     if blend_surface_definition_with_index(index, support).is_some() {
-        if let Some(parameters) = nested_blend_surface_parameters_with_budget(
+        if let Some(parameters) = blend_surface_parameters_from_point_with_index_and_budget(
             index,
             support,
             target.point,
@@ -1587,7 +1588,7 @@ pub(crate) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     certify(parameter)
 }
 
-fn nested_blend_surface_parameters_with_budget(
+pub(crate) fn blend_surface_parameters_from_point_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -1596,6 +1597,9 @@ fn nested_blend_surface_parameters_with_budget(
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
+    // A circular blend sample can lie on the finite continuation of either
+    // rail.  Keep both chart domains bounded and require point reproduction
+    // before admitting the recovered section parameter.
     let (_, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     let parameter = closest_spine_parameter_with_index_and_budget(
         index,
@@ -1620,23 +1624,34 @@ fn nested_blend_surface_parameters_with_budget(
         point.z - center.z,
     ))?;
     let alpha = signed_angle(first, second, tangent);
-    if !alpha.is_finite() || alpha.abs() <= 1.0e-12 {
+    if !alpha.is_finite() || alpha.abs() <= BLEND_INVERSE_MIN_SWEEP {
         return None;
     }
     let theta = signed_angle(first, radial, tangent);
-    (-2..=2)
-        .filter_map(|turn| {
-            let v = BlendSectionDomain::Canonical
-                .clamp_near_boundary((theta + f64::from(turn) * std::f64::consts::TAU) / alpha)?;
+    let mut candidates = Vec::new();
+    for section_domain in [
+        BlendSectionDomain::Canonical,
+        BlendSectionDomain::SourceContinuation,
+    ] {
+        for turn in -2..=2 {
+            let raw_v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
+            let Some(v) = section_domain.clamp_near_boundary(raw_v) else {
+                continue;
+            };
             let candidate =
                 blend_surface_point_from_frame((center, tangent, first, second, radius), v);
             let distance = point_distance(candidate, point);
-            (distance.is_finite() && distance <= fit_tolerance).then_some((
-                Point2::new(parameter, v),
-                seed.map_or(v.abs(), |seed| (v - seed.v).abs()),
-                distance,
-            ))
-        })
+            if distance.is_finite() && distance <= fit_tolerance {
+                candidates.push((
+                    Point2::new(parameter, v),
+                    seed.map_or(v.abs(), |seed| (v - seed.v).abs()),
+                    distance,
+                ));
+            }
+        }
+    }
+    candidates
+        .into_iter()
         .min_by(|first, second| {
             first
                 .2
@@ -2515,10 +2530,11 @@ fn spine_contact_point_with_index_and_budget_and_options(
     if !allow_offset_contact {
         return None;
     }
-    if !index
-        .surfaces(support.0.as_str())
-        .is_some_and(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)))
-    {
+    let support_has_nurbs_parameterization =
+        surface_offset_lineage_with_index(index, support, depth + 1)
+            .and_then(|(base, _)| index.surfaces(base.0.as_str()))
+            .is_some_and(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+    if !support_has_nurbs_parameterization {
         return None;
     }
     spine_contact_point_from_offset_side_with_index_and_budget(
@@ -2576,9 +2592,12 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         .iter()
         .filter_map(|side| {
             let surface = side.surface.as_ref()?;
-            let (base, distance) = surface_offset_lineage_with_index(index, surface, depth + 1)?;
-            (base == *support && blend_contact_offset_matches(0.0, distance, radius))
-                .then_some((surface, distance.abs()))
+            // The carrier pcurve may belong to a neighboring offset of the
+            // same base surface.  Compare relative lineage offsets so the
+            // stored pcurve remains usable after multiple offset operations.
+            let distance =
+                constant_surface_offset_between_with_index(index, support, surface, depth + 1)?;
+            blend_contact_offset_matches(0.0, distance, radius).then_some((surface, distance.abs()))
         })
         .collect::<Vec<_>>();
     let mut candidates = Vec::new();

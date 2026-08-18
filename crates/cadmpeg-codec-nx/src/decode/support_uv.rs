@@ -9,6 +9,7 @@ use super::blend::{
     blend_surface_parameters_for_fit_with_source_continuation_and_budget,
     blend_surface_parameters_from_grid_for_fit_and_budget,
     blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget,
+    blend_surface_parameters_from_point_with_index_and_budget,
     decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve_with_index,
     BlendContactSeedCache, BlendParameterGrid, BoundaryInverseTarget,
 };
@@ -16,7 +17,7 @@ use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
     offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
-    surface_parameters,
+    refine_offset_surface_parameters_with_index_and_budget, surface_parameters,
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
@@ -737,7 +738,9 @@ fn complete_support_uv_wave(
                         serialized_seeds[1],
                         pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index),
                         uv.last().copied(),
-                    ];
+                        None,
+                    ]
+                    .into_iter();
                     let mut attempted_without_seed = false;
                     let mut solved = None;
                     for seed in seed_candidates {
@@ -821,6 +824,18 @@ fn complete_support_uv_wave(
                                 .map(|parameters| (parameters, true))
                                 )
                                 .or_else(|| {
+                                    blend_surface_parameters_from_point_with_index_and_budget(
+                                        &model_index,
+                                        surface_id,
+                                        *point,
+                                        seed,
+                                        effective_fit_tolerance,
+                                        &mut contact_seeds,
+                                        geometry_budget,
+                                    )
+                                    .map(|parameters| (parameters, true))
+                                })
+                                .or_else(|| {
                                     other_surface_id.and_then(|other_surface| {
                                         blend_boundary_parameter_from_support_spine_with_index_and_budget(
                                             &model_index,
@@ -835,14 +850,28 @@ fn complete_support_uv_wave(
                                     })
                                 })
                                 .or_else(|| {
-                                    offset_surface_parameters_with_tolerance_with_index_and_budget(
-                                        &model_index,
-                                        surface_id,
-                                        *point,
-                                        seed,
-                                        Some(effective_fit_tolerance),
-                                        geometry_budget,
-                                    )
+                                    seed.and_then(|seed| {
+                                        refine_offset_surface_parameters_with_index_and_budget(
+                                            &model_index,
+                                            surface_id,
+                                            *point,
+                                            seed,
+                                            effective_fit_tolerance,
+                                            geometry_budget,
+                                        )
+                                    })
+                                    .or_else(|| {
+                                        seed.is_none().then(|| {
+                                            offset_surface_parameters_with_tolerance_with_index_and_budget(
+                                                &model_index,
+                                                surface_id,
+                                                *point,
+                                                None,
+                                                Some(effective_fit_tolerance),
+                                                geometry_budget,
+                                            )
+                                        })?
+                                    })
                                     .map(|parameters| (parameters, true))
                                 })
                                 .or_else(|| {
