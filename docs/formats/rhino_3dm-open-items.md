@@ -88,6 +88,10 @@ The object owner is proven to retain the complete object record when the
 registered `ON_UserStringList` payload has an unsupported anonymous major;
 independently admitted object geometry and attributes remain typed, the
 user-string fields are omitted, and the owner emits an object decode loss.
+The top-level mesh owner is proven to retain the complete object record when
+the registered `ON_SubDMeshProxyUserData` payload has an unsupported anonymous
+major; the parent tessellation remains typed, no SubD entity is admitted, and
+the owner emits a decode warning for the failed proxy.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

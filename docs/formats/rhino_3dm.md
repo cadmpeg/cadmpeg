@@ -1065,7 +1065,10 @@ a nested display or history mesh is not promoted because that mesh is a cache
 carrier, not the owning runtime object. A false validity flag, a nonidentity
 userdata transform, a count or hash mismatch, a malformed payload, or an
 embedded payload without a neutral control cage leaves the parent mesh as the
-admitted tessellation and does not create a second SubD entity.
+admitted tessellation and does not create a second SubD entity. An unsupported
+class-owned payload major follows the same fallback: the parent mesh remains
+typed, the complete containing object record remains in source fidelity, and
+the mesh owner emits a decode warning naming the failed proxy.
 
 #### 7.2.7 `ON_OBSOLETE_IDefAlternativePathUserData`
 

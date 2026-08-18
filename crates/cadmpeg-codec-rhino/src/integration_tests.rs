@@ -1013,6 +1013,76 @@ fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() 
 }
 
 #[test]
+fn mesh_subd_proxy_future_payload_retains_parent_mesh_record() {
+    let archive = ArchiveVersion::V5;
+    let future_proxy_payload = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[
+            2_i32.to_le_bytes().as_slice(),
+            0_i32.to_le_bytes().as_slice(),
+        ]
+        .concat(),
+    );
+    let userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::subd::SUBD_MESH_PROXY_USERDATA.to_wire(),
+        crate::wire::Uuid::from_canonical([
+            0x7b, 0x0b, 0x58, 0x5d, 0x7a, 0x31, 0x45, 0xd0, 0x92, 0x5e, 0xbd, 0xd7, 0xdd, 0xf3,
+            0xe4, 0xe3,
+        ])
+        .to_wire(),
+        50,
+        0,
+        &future_proxy_payload,
+    );
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 0x20);
+    let mut uuid_body = crate::test_support::test_dump::MESH_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&crate::test_support::test_dump::MESH_CLASS).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x0002_fffc,
+        &support::mesh_payload(3, 5, false, true),
+    );
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[class_uuid, class_data, userdata, class_end].concat(),
+    );
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    let mesh_record = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_8070 | crate::chunks::TCODE_CRC,
+        &[object_type, class, object_end].concat(),
+    );
+    let following_point = crate::test_support::test_dump::object_record_with_payload(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &support::point_payload([4.0, 5.0, 6.0]),
+    );
+    let bytes = support::archive_writer("50", 202_608_010, &[mesh_record.clone(), following_point]);
+    let result = decode(bytes);
+
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert!(result.ir().model.subds.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("SubD mesh proxy dropped")
+            && loss.message.contains("parent mesh retained")
+    }));
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| record.id == "rhino:object:record#000000")
+        .expect("future SubD proxy object record is retained");
+    assert_eq!(retained.data.as_deref(), Some(mesh_record.as_slice()));
+    assert_valid(&result);
+}
+
+#[test]
 fn future_settings_payload_is_retained_without_known_prefix() {
     let archive = ArchiveVersion::V5;
     let future_annotation =
