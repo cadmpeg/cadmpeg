@@ -822,6 +822,77 @@ pub(crate) fn resolved_historical_split_face_target_group(
     historical_face_selection(scope, group, faces)
 }
 
+/// Resolve a `SplitFace` target from the operation transition when the member
+/// recipes do not provide a complete per-member proof.
+///
+/// A `SplitFace` transition keeps each selected input face at the same stable
+/// slot and marks it `updated`. The target group is complete only when that
+/// updated-face set has the same cardinality as the group, every updated slot
+/// is present in at least one member's preceding candidate lane, and all
+/// members have a nonempty preceding lane. Members with no updated candidate
+/// are context records and do not add a target face.
+pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+    updated_face_slots: &[i64],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    if scope.kind != "SplitFace" || group.role != 0x0000_0010_0000_0000 {
+        return None;
+    }
+    resolved_historical_split_face_target_group(scope, group, operands).or_else(|| {
+        let faces = split_face_updated_target_slots(scope, group, operands, updated_face_slots)?;
+        historical_face_selection(scope, group, faces)
+    })
+}
+
+fn split_face_updated_target_slots(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+    updated_face_slots: &[i64],
+) -> Option<Vec<i64>> {
+    if scope.kind != "SplitFace"
+        || group.role != 0x0000_0010_0000_0000
+        || updated_face_slots.is_empty()
+        || updated_face_slots.len() != group.members.len()
+    {
+        return None;
+    }
+    let updated = updated_face_slots.iter().copied().collect::<HashSet<_>>();
+    if updated.len() != updated_face_slots.len() {
+        return None;
+    }
+    let stream = native_stream(&group.id)?;
+    let mut represented = HashSet::new();
+    let mut faces = Vec::new();
+    for (ordinal, record_index) in group.members.iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let mut matches = operands.iter().filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == group.scope_record_index
+                && operand.group_record_index == Some(group.record_index)
+                && operand.group_member_ordinal == Some(ordinal)
+                && operand.record_index == *record_index
+                && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+        });
+        let operand = matches.next()?;
+        if matches.next().is_some() || operand.preceding_candidate_faces.is_empty() {
+            return None;
+        }
+        for face in &operand.preceding_candidate_faces {
+            let slot = face
+                .0
+                .rsplit_once('#')
+                .and_then(|(_, slot)| slot.parse().ok())?;
+            if updated.contains(&slot) && represented.insert(slot) {
+                faces.push(slot);
+            }
+        }
+    }
+    (represented == updated).then_some(faces)
+}
+
 fn historical_face_group_slots(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
@@ -1826,6 +1897,137 @@ mod tests {
             .alternate_selector_faces
             .push(face(30));
         assert!(resolved_explicit_bounded_face_group(&group, &[operand]).is_none());
+    }
+
+    #[test]
+    fn split_face_updated_transition_resolves_legacy_target_group() {
+        fn operand(record_index: u32, ordinal: u32, preceding: &[i64]) -> DesignFaceOperand {
+            let preceding = preceding.iter().copied().map(face).collect::<Vec<_>>();
+            serde_json::from_value(serde_json::json!({
+                "id": format!("f3d:test:face-operand#{record_index}"),
+                "scope_record_index": 100,
+                "scope_reference_ordinal": 1,
+                "group_record_index": 150,
+                "group_member_ordinal": ordinal,
+                "record_index": record_index,
+                "byte_offset": 0,
+                "class_tag": "277",
+                "paired_byte_offset": 407,
+                "paired_class_tag": "258",
+                "recipe_record_index": record_index + 3,
+                "recipe_record_byte_offset": 0,
+                "recipe_id": format!("f3d:test:recipe#{record_index}"),
+                "recipe_prefix_offset": 0,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_kind": "bounded_face",
+                "recipe_program_offset": 0,
+                "recipe_program": [0, -1, 2],
+                "recipe_node_offsets": [],
+                "recipe_nodes": [],
+                "candidate_faces": preceding,
+                "preceding_candidate_faces": preceding,
+                "next_record_index": record_index + 4,
+                "next_byte_offset": 0
+            }))
+            .expect("legacy SplitFace target operand")
+        }
+
+        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:scope#100",
+            "byte_offset": 0,
+            "class_tag": "277",
+            "record_index": 100,
+            "frame_length": 407,
+            "kind": "SplitFace",
+            "kind_offset": 0,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 0,
+            "history_state_id": 50,
+            "history_state_id_offset": 0,
+            "previous_history_state_id": 49,
+            "previous_history_state_id_offset": 0,
+            "reference_count_offset": 0,
+            "reference_members": [150, 200, 201, 202],
+            "reference_member_offsets": [0, 0, 0, 0],
+            "paired_class_tag": "258",
+            "paired_byte_offset": 407
+        }))
+        .expect("legacy SplitFace scope");
+        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:construction-group#150",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 1,
+            "record_index": 150,
+            "byte_offset": 0,
+            "class_tag": "262",
+            "members": [200, 201, 202],
+            "member_offsets": [0, 0, 0],
+            "frame": {
+                "member_count_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 0,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 0,
+                "variant": false
+            },
+            "role": 0x0000_0010_0000_0000_u64,
+            "role_offset": 0,
+            "paired_class_tag": "258",
+            "paired_byte_offset": 0
+        }))
+        .expect("legacy SplitFace target group");
+        let operands = vec![
+            operand(200, 0, &[10, 20]),
+            operand(201, 1, &[20, 30]),
+            operand(202, 2, &[30]),
+        ];
+
+        let selection = resolved_historical_split_face_target_group_with_updated_faces(
+            &scope,
+            &group,
+            &operands,
+            &[10, 20, 30],
+        )
+        .expect("updated target transition proof");
+        let cadmpeg_ir::features::FaceSelection::Historical {
+            state,
+            faces,
+            native,
+        } = selection
+        else {
+            panic!("expected historical SplitFace target");
+        };
+        assert_eq!(
+            state,
+            feature_input_topology_id(&neutral_feature_id(&scope), 49)
+        );
+        assert_eq!(native, group.id);
+        assert_eq!(
+            faces
+                .iter()
+                .map(|face| face.0.rsplit_once(':').unwrap().1)
+                .collect::<Vec<_>>(),
+            ["10", "20", "30"]
+        );
+        assert!(
+            resolved_historical_split_face_target_group_with_updated_faces(
+                &scope,
+                &group,
+                &operands,
+                &[10, 20]
+            )
+            .is_none()
+        );
+        assert!(
+            resolved_historical_split_face_target_group_with_updated_faces(
+                &scope,
+                &group,
+                &operands,
+                &[10, 20, 40]
+            )
+            .is_none()
+        );
     }
 
     fn boundary(slot: i64, edge_count: usize) -> DesignHistoricalFaceBoundaryContext {

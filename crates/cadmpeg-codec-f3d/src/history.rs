@@ -1919,7 +1919,13 @@ pub(crate) fn bind_feature_face_selections(
         match &mut feature.definition {
             cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } => {
                 if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
-                    bind_face_selection(face, scope, groups, operands);
+                    bind_face_selection(
+                        face,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
                     bind_entity_face_selection(
                         face,
                         &feature_id,
@@ -1942,7 +1948,13 @@ pub(crate) fn bind_feature_face_selections(
                     if let cadmpeg_ir::features::Termination::ToFace { face, .. } =
                         &mut side.termination
                     {
-                        bind_face_selection(face, scope, groups, operands);
+                        bind_face_selection(
+                            face,
+                            scope,
+                            groups,
+                            operands,
+                            &transition.topology.faces.updated,
+                        );
                     }
                 }
             }
@@ -1951,7 +1963,13 @@ pub(crate) fn bind_feature_face_selections(
                     let cadmpeg_ir::features::PatternSeed::Faces(faces) = seed else {
                         continue;
                     };
-                    bind_face_selection(faces, scope, groups, operands);
+                    bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
                     bind_entity_face_selection(
                         faces,
                         &feature_id,
@@ -1965,10 +1983,22 @@ pub(crate) fn bind_feature_face_selections(
                 }
             }
             cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. } => {
-                bind_face_selection(faces, scope, groups, operands);
+                bind_face_selection(
+                    faces,
+                    scope,
+                    groups,
+                    operands,
+                    &transition.topology.faces.updated,
+                );
             }
             cadmpeg_ir::features::FeatureDefinition::Thicken { faces, .. } => {
-                bind_face_selection(faces, scope, groups, operands);
+                bind_face_selection(
+                    faces,
+                    scope,
+                    groups,
+                    operands,
+                    &transition.topology.faces.updated,
+                );
                 bind_body_recipe_face_selection(
                     faces,
                     &feature_id,
@@ -1979,7 +2009,13 @@ pub(crate) fn bind_feature_face_selections(
                 );
             }
             cadmpeg_ir::features::FeatureDefinition::SplitFace { targets, .. } => {
-                bind_face_selection(targets, scope, groups, operands);
+                bind_face_selection(
+                    targets,
+                    scope,
+                    groups,
+                    operands,
+                    &transition.topology.faces.updated,
+                );
             }
             cadmpeg_ir::features::FeatureDefinition::Hole {
                 face: Some(face), ..
@@ -5605,6 +5641,7 @@ fn bind_face_selection(
     scope: &crate::records::DesignParameterScope,
     groups: &[crate::records::DesignConstructionOperandGroup],
     operands: &[crate::records::DesignFaceOperand],
+    updated_face_slots: &[i64],
 ) {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
         return;
@@ -5629,9 +5666,14 @@ fn bind_face_selection(
     {
         return;
     }
-    if let Some(resolved) = crate::design::face_resolve::resolved_historical_split_face_target_group(
-        scope, group, operands,
-    ) {
+    if let Some(resolved) =
+        crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
+            scope,
+            group,
+            operands,
+            updated_face_slots,
+        )
+    {
         *selection = resolved;
         return;
     }

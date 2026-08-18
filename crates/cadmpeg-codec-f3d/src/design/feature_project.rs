@@ -15,7 +15,8 @@ use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
     resolved_body_recipe_selection, resolved_body_recipe_shape, resolved_direct_face_selection,
     resolved_extrude_profile_face_group, resolved_face_group, resolved_historical_face_group,
-    resolved_historical_face_operand, resolved_historical_split_face_target_group,
+    resolved_historical_face_operand,
+    resolved_historical_split_face_target_group_with_updated_faces,
     resolved_loft_edge_profile_group, resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
@@ -2908,8 +2909,26 @@ fn project_face_selection(
             if scope.previous_history_state_id != Some(previous_state_id) {
                 effective_scope.previous_history_state_id = Some(previous_state_id);
             }
+            let updated_face_slots = scope
+                .history_state_id
+                .and_then(|state_id| {
+                    crate::history::unique_history_state_pair(
+                        histories,
+                        state_id,
+                        previous_state_id,
+                    )
+                })
+                .and_then(|(_, state, _)| state.transition.as_ref())
+                .map_or(&[][..], |transition| {
+                    transition.topology.faces.updated.as_slice()
+                });
             resolved_historical_face_group(&effective_scope, group, face_operands).or_else(|| {
-                resolved_historical_split_face_target_group(&effective_scope, group, face_operands)
+                resolved_historical_split_face_target_group_with_updated_faces(
+                    &effective_scope,
+                    group,
+                    face_operands,
+                    updated_face_slots,
+                )
             })
         });
     historical
