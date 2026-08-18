@@ -337,6 +337,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 406 Form 13 permits `NP=2` or `NP=3` at index 1 and stores the
 /// nominal size and name at indexes 2 and 3, with the optional standard at
 /// index 4 for `NP=3`, so its groups start at token four or five.
+/// Type 406 Form 14 puts positive `NP` at index 1 and stores `NP` flow-line
+/// specification strings, so its groups start at token `2 + NP`.
 /// Type 406 Form 15 fixes `NP=1` at index 1 and stores the name at index 2,
 /// so its groups start at token three.
 /// Type 406 Forms 16 and 17 fix `NP=2` at index 1 and store two drawing
@@ -438,7 +440,7 @@ pub(crate) fn entity_primary_end(
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
         (402, 20) => Some(flow_associativity_primary_end(record, 1)),
-        (406, 1) => Some(counted_primary_end(record)),
+        (406, 1 | 14) => Some(counted_primary_end(record)),
         (406, 2) => Some(region_restriction_primary_end(record)),
         (406, 3) => Some(level_function_primary_end(record)),
         (406, 6) => Some(fixed_primary_end(record, 7)),
