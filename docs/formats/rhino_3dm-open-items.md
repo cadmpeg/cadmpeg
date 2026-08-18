@@ -162,6 +162,12 @@ carrier: its current anonymous major-1 child supplies the nil-parent, mask,
 color, and border fields; an unsupported major or malformed child leaves the
 legacy text annotation typed, omits `v5_text_extra`, emits the annotation
 userdata loss, and retains the complete object record.
+The obsolete custom-mesh owner is proven for the registered
+`ON_OBSOLETE_CCustomMeshUserData` carrier: its direct legacy fields transfer
+to the object presentation's `custom_render_mesh`; a bounded mesh-parameter
+failure leaves point geometry and attributes typed, omits that presentation
+field, emits the bounded userdata diagnostic, and retains the complete object
+record.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

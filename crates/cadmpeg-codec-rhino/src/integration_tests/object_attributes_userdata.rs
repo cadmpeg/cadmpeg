@@ -62,6 +62,27 @@ fn userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
     )
 }
 
+fn obsolete_custom_mesh_userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
+    support::test_dump::class_userdata_v2_with_direct_payload(
+        archive,
+        crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
+        [0; 16],
+        50,
+        2_348_836_140,
+        payload,
+    )
+}
+
+fn obsolete_custom_mesh_payload(archive: ArchiveVersion) -> Vec<u8> {
+    [
+        37_i32.to_le_bytes().as_slice(),
+        [1].as_slice(),
+        support::test_dump::mesh_parameters(archive).as_slice(),
+        [0xde, 0xad].as_slice(),
+    ]
+    .concat()
+}
+
 fn current_payload(archive: ArchiveVersion) -> Vec<u8> {
     let inner = support::test_dump::crc_chunk(
         archive,
@@ -192,6 +213,51 @@ fn malformed_per_object_mesh_userdata_keeps_point_and_attributes() {
         .is_none());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("per-object mesh userdata") && loss.message.contains("dropped")
+    }));
+    assert_valid(&result);
+}
+
+#[test]
+fn obsolete_custom_mesh_userdata_reaches_object_presentation() {
+    let archive = ArchiveVersion::V5;
+    let attributes = support::test_dump::tagged_attributes(&[], 0);
+    let userdata = obsolete_custom_mesh_userdata(archive, &obsolete_custom_mesh_payload(archive));
+    let record = object_record(archive, &userdata, &attributes);
+    let result = decode(support::archive_writer(
+        "50",
+        2_348_836_140,
+        std::slice::from_ref(&record),
+    ));
+
+    assert_point_and_retention(&result, &record);
+    let mesh = object_presentation(&result)
+        .field("custom_render_mesh")
+        .expect("obsolete custom mesh settings");
+    assert_eq!(mesh["version"], serde_json::json!([1, 5]));
+    assert_eq!(mesh["custom_settings"], serde_json::json!(true));
+    assert_eq!(mesh["custom_settings_enabled"], serde_json::json!(true));
+    assert_eq!(mesh["compute_curvature"], serde_json::json!(false));
+    assert_valid(&result);
+}
+
+#[test]
+fn malformed_obsolete_custom_mesh_userdata_keeps_point_and_attributes() {
+    let archive = ArchiveVersion::V5;
+    let attributes = support::test_dump::tagged_attributes(&[], 0);
+    let userdata = obsolete_custom_mesh_userdata(archive, &[7, 2]);
+    let record = object_record(archive, &userdata, &attributes);
+    let result = decode(support::archive_writer(
+        "50",
+        2_348_836_140,
+        std::slice::from_ref(&record),
+    ));
+
+    assert_point_and_retention(&result, &record);
+    assert!(object_presentation(&result)
+        .field("custom_render_mesh")
+        .is_none());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("obsolete custom mesh userdata") && loss.message.contains("dropped")
     }));
     assert_valid(&result);
 }

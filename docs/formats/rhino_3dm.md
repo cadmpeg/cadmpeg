@@ -1181,9 +1181,10 @@ curvature false. The first matching class/item UUID owns the conversion.
 CADIR stores the converted wire fields in the owning native object
 presentation's optional `custom_render_mesh` record. It does not create a
 second geometry or userdata identity. A malformed recognized carrier is
-discarded at its bounded payload, the object attributes remain admitted, and
-the decoder records the bounded diagnostic; a later duplicate does not replace
-the first matching item.
+discarded at its bounded payload, the object attributes and object class data
+remain admitted, the complete containing `TCODE_OBJECT_RECORD` remains in
+source fidelity, and the decoder records the bounded diagnostic; a later
+duplicate does not replace the first matching item.
 
 #### 7.2.10 `ON_PerObjectMeshParameters`
 
