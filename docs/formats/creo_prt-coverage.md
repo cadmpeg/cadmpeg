@@ -59,7 +59,8 @@ fixtures, scores above L1 remain blocked.
   typed horizontal- or vertical-distance constraints when their dimension
   ordinal resolves to one emitted parameter, their inline or scalar-equality-
   resolved value agrees with the magnitude of that dimension, and both point
-  keys resolve to emitted loci. Function-forty-three equations transfer as
+  keys resolve to emitted loci, including unique arc or circle centers.
+  Function-forty-three equations transfer as
   typed horizontal- or vertical-distance constraints when their unique dimension
   parameter agrees with the solved one-axis coordinate difference and both point
   keys resolve to emitted loci. Function-five scalar-equality rows join the scalar

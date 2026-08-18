@@ -738,6 +738,12 @@ pub(crate) fn section_linear_distance_coordinate(
                 && table.external_id_count(segment.external_id) == 1
         }) || table.point_rows.iter().any(|segment| {
             segment.point_id == point_id && table.external_id_count(segment.external_id) == 1
+        }) || table.rows.iter().any(|segment| {
+            segment.kind == crate::feature::FeatureSegmentKind::Arc
+                && segment.center_id == Some(point_id)
+                && table.external_id_count(segment.external_id) == 1
+        }) || table.circle_rows.iter().any(|segment| {
+            segment.center_id == point_id && table.external_id_count(segment.external_id) == 1
         }) || (matches!(point_id, 0 | 1)
             && table
                 .centered_line_rows
@@ -782,12 +788,14 @@ pub(crate) fn resolved_section_points(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
     use crate::feature::{
-        FeatureDefinition, FeatureDimension, FeatureDimensionTable, FeaturePointSegment,
-        FeatureRelation, FeatureRelationTable, FeatureSectionPoint, FeatureSegment,
-        FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
+        FeatureCircleSegment, FeatureDefinition, FeatureDimension, FeatureDimensionTable,
+        FeaturePointSegment, FeatureRelation, FeatureRelationTable, FeatureSectionPoint,
+        FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
         FeatureSolverTableHeader, FeatureVariableRow, FeatureVariableTable,
     };
 
@@ -993,6 +1001,78 @@ mod tests {
                 &std::collections::BTreeSet::new(),
             ),
             None
+        );
+    }
+
+    #[test]
+    fn unique_arc_center_supplies_distance_axis() {
+        let mut definition = incomplete_segment_definition();
+        {
+            let table = definition.segments.as_mut().expect("segments");
+            let mut arc = table.rows[0].clone();
+            arc.kind = FeatureSegmentKind::Arc;
+            arc.point_ids = [10, 11];
+            arc.center_id = Some(3);
+            arc.external_id = 7;
+            arc.vertical_horizontal = None;
+            let mut line = table.rows[0].clone();
+            line.kind = FeatureSegmentKind::Line;
+            line.point_ids = [4, 5];
+            line.center_id = None;
+            line.external_id = 8;
+            line.vertical_horizontal = None;
+            table.rows = vec![arc, line];
+            table.circle_rows.clear();
+            table.point_rows.clear();
+            table.centered_line_rows.clear();
+            table.reference_line_rows.clear();
+            table.bounded_curve_rows.clear();
+            table.conic_rows.clear();
+            table.opaque_rows.clear();
+        }
+        let table = definition.segments.as_ref().expect("segments");
+        let segments = table.rows.iter().collect::<Vec<_>>();
+        let coordinates =
+            BTreeMap::from([(3, [Some(1.0), Some(4.0)]), (4, [Some(1.0), Some(9.0)])]);
+
+        assert_eq!(
+            super::section_linear_distance_coordinate(
+                &definition,
+                &segments,
+                3,
+                4,
+                &coordinates,
+                &[],
+                &BTreeSet::new(),
+            ),
+            Some(1)
+        );
+
+        let mut circle_definition = definition;
+        {
+            let table = circle_definition.segments.as_mut().expect("segments");
+            let line = table.rows[1].clone();
+            table.rows = vec![line];
+            table.circle_rows = vec![FeatureCircleSegment {
+                center_id: 3,
+                radius_ref: 0,
+                external_id: 9,
+                offset: 2,
+            }];
+        }
+        let table = circle_definition.segments.as_ref().expect("segments");
+        let segments = table.rows.iter().collect::<Vec<_>>();
+        assert_eq!(
+            super::section_linear_distance_coordinate(
+                &circle_definition,
+                &segments,
+                3,
+                4,
+                &coordinates,
+                &[],
+                &BTreeSet::new(),
+            ),
+            Some(1)
         );
     }
 

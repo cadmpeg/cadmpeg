@@ -2084,12 +2084,14 @@ difference. Sign `1` defines `second-first=+value`; sign `f6` defines
 above and leaves its orientation to the complete section solve.
 Only a linear selected dimension contributes this section-coordinate equation;
 an angular or schema-defined dimension does not supply a length ordinate.
-The two point identifiers denote endpoint loci shared by every incident
-`segtab` entity. A segment spanning the pair is not required when each point
-has an incident unique entity and the two solved points agree on exactly one
-coordinate. Equal `u` selects a vertical distance and equal `v` selects a
-horizontal distance. The selected `dimtab_ptr` row is the driving parameter
-independently of whether both endpoint coordinates are evaluated.
+The two point identifiers denote endpoint or center loci owned by unique
+`segtab` entities. An arc or circle center is a valid locus when its carrier
+external identifier is unique. A segment spanning the pair is not required
+when each point has an incident unique entity and the two solved points agree
+on exactly one coordinate. Equal `u` selects a vertical distance and equal
+`v` selects a horizontal distance. The selected `dimtab_ptr` row is the
+driving parameter independently of whether both point coordinates are
+evaluated.
 A spanning segment's unique orientation component otherwise selects the neutral
 distance axis.
 A directly stored `verhor` selector and an orientation established through
