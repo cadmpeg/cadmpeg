@@ -374,6 +374,29 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (402, 3 | 4) => {
+            let Some(view_count) = record.count(1).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(entity_count) = record.count(2) else {
+                return ParameterBoundary::Invalid;
+            };
+            let block_width = if entry.form == 3 { 1 } else { 5 };
+            let Some(view_end) = view_count
+                .checked_mul(block_width)
+                .and_then(|width| width.checked_add(3))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = view_end.checked_add(entity_count) else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (402, 16) => {
             if record.integer(1) != Some(1) {
                 return ParameterBoundary::Invalid;
