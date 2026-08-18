@@ -311,6 +311,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// at token `4 + NC`.
 /// Type 230 Form 0 puts the island count at index 8 and consumes one pointer
 /// per island, so its groups start at token `9 + N`; zero islands is valid.
+/// Type 320 Form 0 puts `NA` at index 3 and `NC` after the fixed `TF`, `PRD`,
+/// and `DPTR` fields, so its groups start at token `8 + NA + NC` after the
+/// entity type token. Both counts may be zero when their lists fit.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -341,6 +344,7 @@ pub(crate) fn entity_primary_end(
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
+        (320, 0) => Some(network_subfigure_primary_end(record)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }
@@ -384,6 +388,29 @@ fn sectioned_area_primary_end(record: &ParameterRecord) -> usize {
         .integer(8)
         .and_then(|value| usize::try_from(value).ok())
         .and_then(|count| count.checked_add(9))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn network_subfigure_primary_end(record: &ParameterRecord) -> usize {
+    let Some(member_count) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(connect_count_index) = member_count.checked_add(7) else {
+        return record.tokens.len();
+    };
+    let Some(connect_count) = record
+        .integer(connect_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    member_count
+        .checked_add(connect_count)
+        .and_then(|count| count.checked_add(8))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
