@@ -5895,6 +5895,59 @@ pub(crate) type MeshEndpointRelationStateSignature = (
 type MeshEndpointSolutionPredicate<'a> = dyn Fn(&[Option<[usize; 2]>]) -> bool + 'a;
 type MeshFixedDirectionOption = (Vec<Vec<bool>>, MeshQuotient, Vec<Option<bool>>);
 
+fn raw_endpoint_relation_state_signature(
+    domains: &[Vec<MeshEndpointRelationChoice>],
+    assigned: &[Option<[usize; 2]>],
+) -> MeshEndpointRelationStateSignature {
+    let assigned = assigned
+        .iter()
+        .copied()
+        .map(|pair| {
+            pair.map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+        })
+        .collect();
+    let domains = domains
+        .iter()
+        .map(|choices| {
+            let mut choices = choices
+                .iter()
+                .map(|choice| {
+                    let mut assignments = choice.assignments.clone();
+                    assignments.sort_unstable();
+                    assignments.dedup();
+                    let mut edge_pairs = choice
+                        .edge_pairs
+                        .iter()
+                        .map(|&(edge, mut pair)| {
+                            pair.sort_unstable();
+                            (edge, pair)
+                        })
+                        .collect::<Vec<_>>();
+                    edge_pairs.sort_unstable();
+                    (assignments, edge_pairs)
+                })
+                .collect::<Vec<_>>();
+            choices.sort_unstable();
+            choices
+        })
+        .collect();
+    (assigned, domains)
+}
+
+fn endpoint_relation_state_signature(
+    domains: &[Vec<MeshEndpointRelationChoice>],
+    assigned: &[Option<[usize; 2]>],
+    candidate_gauge: Option<MeshCandidateGauge<'_>>,
+) -> Option<MeshEndpointRelationStateSignature> {
+    candidate_gauge.map_or_else(
+        || Some(raw_endpoint_relation_state_signature(domains, assigned)),
+        |gauge| canonicalize_endpoint_relation_state(domains, assigned, gauge),
+    )
+}
+
 #[derive(Clone)]
 struct MeshEndpointRelationArc {
     neighbor: usize,
@@ -6255,14 +6308,12 @@ where
     }
     let mut domains = domains;
     let mut assigned = assigned;
-    if let Some(gauge) = candidate_gauge {
-        if pre_state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-            if let Some(signature) =
-                canonicalize_endpoint_relation_state(&domains, &assigned, gauge)
-            {
-                if !pre_state_memo.insert(signature) {
-                    return false;
-                }
+    if pre_state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
+        if let Some(signature) =
+            endpoint_relation_state_signature(&domains, &assigned, candidate_gauge)
+        {
+            if !pre_state_memo.insert(signature) {
+                return false;
             }
         }
     }
@@ -6297,14 +6348,12 @@ where
             return false;
         }
     }
-    if let Some(gauge) = candidate_gauge {
-        if state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-            if let Some(signature) =
-                canonicalize_endpoint_relation_state(&domains, &assigned, gauge)
-            {
-                if !state_memo.insert(signature) {
-                    return false;
-                }
+    if state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
+        if let Some(signature) =
+            endpoint_relation_state_signature(&domains, &assigned, candidate_gauge)
+        {
+            if !state_memo.insert(signature) {
+                return false;
             }
         }
     }
@@ -9282,6 +9331,55 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
 
     assert_eq!(topology.faces.len(), 1);
     assert_eq!(point_assignment, vec![0, 1, 2]);
+}
+
+#[test]
+fn raw_endpoint_relation_state_signature_ignores_local_order() {
+    let left = vec![
+        vec![
+            MeshEndpointRelationChoice {
+                id: 7,
+                assignments: vec![2, 0, 2],
+                edge_pairs: vec![(1, [3, 2]), (0, [1, 0])],
+            },
+            MeshEndpointRelationChoice {
+                id: 3,
+                assignments: vec![4],
+                edge_pairs: vec![(2, [5, 4])],
+            },
+        ],
+        vec![MeshEndpointRelationChoice {
+            id: 9,
+            assignments: vec![3, 1],
+            edge_pairs: vec![(0, [1, 0])],
+        }],
+    ];
+    let right = vec![
+        vec![
+            MeshEndpointRelationChoice {
+                id: 30,
+                assignments: vec![4],
+                edge_pairs: vec![(2, [4, 5])],
+            },
+            MeshEndpointRelationChoice {
+                id: 70,
+                assignments: vec![0, 2],
+                edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+            },
+        ],
+        vec![MeshEndpointRelationChoice {
+            id: 90,
+            assignments: vec![1, 3],
+            edge_pairs: vec![(0, [0, 1])],
+        }],
+    ];
+    let left_assigned = vec![Some([3, 2]), None, Some([5, 4])];
+    let right_assigned = vec![Some([2, 3]), None, Some([4, 5])];
+
+    assert_eq!(
+        raw_endpoint_relation_state_signature(&left, &left_assigned),
+        raw_endpoint_relation_state_signature(&right, &right_assigned),
+    );
 }
 
 #[test]
