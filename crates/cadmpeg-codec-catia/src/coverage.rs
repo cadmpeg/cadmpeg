@@ -474,6 +474,8 @@ pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT: Cove
     CoverageKey("transferred_native_operation_definition_chain_value_count");
 pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT: CoverageKey =
     CoverageKey("transferred_native_operation_definition_value_count");
+pub(crate) const TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT: CoverageKey =
+    CoverageKey("transferred_native_operation_range_count");
 pub(crate) const TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_native_operation_parameter_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_FACE_COUNT: CoverageKey =
@@ -857,6 +859,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_NATIVE_OPERATION_COUNT,
     TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
     TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
+    TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
     TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
     TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
     TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,

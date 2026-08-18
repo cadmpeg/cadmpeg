@@ -338,6 +338,12 @@ current levels require those matrices and representative fixtures.
   properties. These values record generic feature inputs only; they do not
   assign operation roles, pattern seeds, an axis, an angle, or an instance
   count.
+- Exact source-schema `Range` fields whose entity record is linked through a
+  listed field object on a complete operation owner chain are copied to
+  `Feature.source_properties` under `catia_range_<ordinal>_*`. The projection
+  retains selectors, prefix, nullable slots, nominal framing, and incidence
+  counts. It does not assign an extent, parameter, PMI, sketch, or other
+  operation role; semantic ownership remains unresolved under DI-18.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral

@@ -20,6 +20,7 @@ use crate::object_graph::ObjectPayload;
 use crate::test_support::*;
 use crate::CatiaCodec;
 
+mod range;
 mod reference_planes;
 
 fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
