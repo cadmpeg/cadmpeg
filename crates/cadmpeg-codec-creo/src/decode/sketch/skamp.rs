@@ -135,21 +135,35 @@ pub(crate) fn section_skamp_point_on_line(
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
+    let selected_point_id = |item: &crate::feature::FeatureSkampItem| {
+        section_skamp_selected_point_id(definition, item).or_else(|| {
+            section_skamp_selected_point_id_with_ordinary_segment(
+                definition,
+                item,
+                unique_decoded_section_segment(definition, item.entity_id),
+            )
+        })
+    };
+    let line_for_item = |item: &crate::feature::FeatureSkampItem| {
+        unique_section_skamp_segment(definition, item.entity_id).or_else(|| {
+            unique_decoded_section_segment(definition, item.entity_id).filter(|segment| {
+                segment.kind == crate::feature::FeatureSegmentKind::Line
+                    && matches!(segment.vertical_horizontal, Some(0 | 1))
+            })
+        })
+    };
     let pair = match skamp.kind {
         3 => [(first, second), (second, first)]
             .into_iter()
             .find_map(|(line_item, point_item)| {
-                let line = unique_section_skamp_segment(definition, line_item.entity_id)?;
+                let line = line_for_item(line_item)?;
                 (line_item.sense == 0 && line.kind == crate::feature::FeatureSegmentKind::Line)
-                    .then_some((
-                        line,
-                        section_skamp_selected_point_id(definition, point_item)?,
-                    ))
+                    .then_some((line, selected_point_id(point_item)?))
             }),
         9 => [(first, second), (second, first)]
             .into_iter()
             .find_map(|(line_item, point_item)| {
-                let line = unique_section_skamp_segment(definition, line_item.entity_id)?;
+                let line = line_for_item(line_item)?;
                 if line_item.sense != 0
                     || point_item.sense != 0
                     || line.kind != crate::feature::FeatureSegmentKind::Line
@@ -157,14 +171,19 @@ pub(crate) fn section_skamp_point_on_line(
                 {
                     return None;
                 }
-                Some((
-                    line,
-                    section_skamp_selected_point_id(definition, point_item)?,
-                ))
+                Some((line, selected_point_id(point_item)?))
             }),
         _ => None,
     }?;
-    let coordinate = section_line_fixed_coordinate(definition, pair.0)?;
+    let coordinate = if definition.segments.as_ref()?.is_complete() {
+        section_line_fixed_coordinate(definition, pair.0)?
+    } else {
+        match unique_decoded_section_segment(definition, pair.0.external_id)?.vertical_horizontal {
+            Some(0) => 0,
+            Some(1) => 1,
+            _ => return None,
+        }
+    };
     Some((pair.0.point_ids[0], pair.1, coordinate))
 }
 
@@ -457,8 +476,8 @@ pub(crate) fn saved_section_point(
 #[cfg(test)]
 mod tests {
     use super::{
-        section_skamp_axis_symmetry, section_skamp_point_entity_id, section_skamp_point_symmetry,
-        section_skamp_selected_point_id, SectionPointSource,
+        section_skamp_axis_symmetry, section_skamp_point_entity_id, section_skamp_point_on_line,
+        section_skamp_point_symmetry, section_skamp_selected_point_id, SectionPointSource,
     };
 
     fn point_definition(
@@ -755,5 +774,106 @@ mod tests {
             .rows
             .push(line(10, [5, 6]));
         assert!(section_skamp_axis_symmetry(&duplicate, &skamp).is_none());
+    }
+
+    #[test]
+    fn incomplete_unique_rows_supply_point_on_line_sources() {
+        let line = |external_id, point_ids, vertical_horizontal| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids,
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        };
+        let definition = point_definition(
+            4,
+            vec![line(10, [1, 2], Some(1)), line(20, [3, 4], None)],
+            vec![crate::feature::FeaturePointSegment {
+                point_id: 5,
+                external_id: 30,
+                offset: 30,
+            }],
+        );
+        assert!(!definition
+            .segments
+            .as_ref()
+            .expect("segments")
+            .is_complete());
+
+        let type_three = crate::feature::FeatureSkamp {
+            id: 3,
+            kind: 3,
+            flags: 0,
+            status: 1,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 10,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 20,
+                    sense: 2,
+                },
+            ],
+            offset: 0,
+        };
+        assert_eq!(
+            section_skamp_point_on_line(&definition, &type_three),
+            Some((1, 3, 1))
+        );
+
+        let type_nine = crate::feature::FeatureSkamp {
+            id: 9,
+            kind: 9,
+            flags: 0,
+            status: 1,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 10,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 30,
+                    sense: 0,
+                },
+            ],
+            offset: 0,
+        };
+        assert_eq!(
+            section_skamp_point_on_line(&definition, &type_nine),
+            Some((1, 5, 1))
+        );
+
+        let mut duplicate = definition.clone();
+        duplicate
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(line(20, [6, 7], None));
+        assert!(section_skamp_point_on_line(&duplicate, &type_three).is_none());
+
+        let mut cross_family = definition.clone();
+        cross_family
+            .segments
+            .as_mut()
+            .expect("segments")
+            .point_rows
+            .push(crate::feature::FeaturePointSegment {
+                point_id: 8,
+                external_id: 20,
+                offset: 31,
+            });
+        assert!(section_skamp_point_on_line(&cross_family, &type_three).is_none());
+
+        let mut missing_selector = definition;
+        missing_selector.segments.as_mut().expect("segments").rows[0].vertical_horizontal = None;
+        assert!(section_skamp_point_on_line(&missing_selector, &type_three).is_none());
     }
 }

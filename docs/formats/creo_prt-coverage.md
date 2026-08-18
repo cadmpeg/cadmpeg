@@ -405,6 +405,10 @@ fixtures, scores above L1 remain blocked.
 - Active axis-symmetry equations use selected endpoint or center point
   identities from unique ordinary line or arc rows in an incomplete segment
   table when the fixed axis has an independent saved or complete proof.
+- Type-three and type-nine point-on-line equations accept a unique ordinary
+  line row from an incomplete segment table when its stored `verhor` selector
+  supplies the held coordinate; selected unique ordinary endpoint rows are
+  also admitted. Duplicate or selector-less rows remain unresolved.
 - Signed type-zero linear dimensions select their measured coordinate from a
   unique spanning line, or from one equal endpoint coordinate on uniquely
   incident section entities when no segment spans the pair. Standalone type-1
