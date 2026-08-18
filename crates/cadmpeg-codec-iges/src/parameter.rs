@@ -321,6 +321,11 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// description at indexes 2 and 3, so its groups start at token four.
 /// Type 406 Form 6 fixes `NP=5` at index 1 and stores five fixed values, so its
 /// groups start at token seven.
+/// Type 406 Forms 18, 20, and 21 fix `NP=1` at index 1 and store one fixed
+/// value at index 2, so their groups start at token three. Form 22 fixes
+/// `NP=9` and stores its nine fixed values at indexes 2 through 10, so its
+/// groups start at token eleven. Form 23 fixes `NP=2` and stores `TYPE` and
+/// `NAME` at indexes 2 and 3, so its groups start at token four.
 /// Type 406 Form 8 fixes `NP=1` at index 1 and stores its pin number at index
 /// 2, so its groups start at token three.
 /// Type 406 Form 9 fixes `NP=4` at index 1 and stores four part-number strings
@@ -437,6 +442,9 @@ pub(crate) fn entity_primary_end(
         (406, 2) => Some(region_restriction_primary_end(record)),
         (406, 3) => Some(level_function_primary_end(record)),
         (406, 6) => Some(fixed_primary_end(record, 7)),
+        (406, 18 | 20 | 21) => Some(fixed_primary_end(record, 3)),
+        (406, 22) => Some(fixed_primary_end(record, 11)),
+        (406, 23) => Some(fixed_primary_end(record, 4)),
         (406, 8) => Some(pin_number_primary_end(record)),
         (406, 9) => Some(part_number_primary_end(record)),
         (406, 10) => Some(hierarchy_primary_end(record)),
