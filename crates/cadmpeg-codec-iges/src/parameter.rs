@@ -309,6 +309,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
+/// Type 128 Forms 0 through 9 define `K1`, `K2`, `M1`, `M2`, `A`, `B`, and `C`,
+/// so their groups start at token `16 + A + B + 4*C`, with
+/// `A = 1 + K1 + M1`, `B = 1 + K2 + M2`, and `C = (K1 + 1) * (K2 + 1)`.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -333,6 +336,7 @@ pub(crate) fn entity_primary_end(
         (116, 0) => Some(5),
         (123, 0) => Some(4),
         (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
+        (128, 0..=9) => Some(rational_bspline_surface_primary_end(record)),
         _ => None,
     }
 }
@@ -409,6 +413,53 @@ fn parametric_spline_surface_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|block_span| block_span.checked_add(7))
         .and_then(|start| start.checked_add(u_segments))
         .and_then(|start| start.checked_add(v_segments))
+        .unwrap_or(record.tokens.len())
+}
+
+fn rational_bspline_surface_primary_end(record: &ParameterRecord) -> usize {
+    let Some(k1) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(k2) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(m1) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(m2) = record
+        .integer(4)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    if k1 < m1 || k2 < m2 {
+        return record.tokens.len();
+    }
+    let Some(a) = k1.checked_add(m1).and_then(|value| value.checked_add(1)) else {
+        return record.tokens.len();
+    };
+    let Some(b) = k2.checked_add(m2).and_then(|value| value.checked_add(1)) else {
+        return record.tokens.len();
+    };
+    let Some(c) = k1.checked_add(1).and_then(|u_count| {
+        k2.checked_add(1)
+            .and_then(|v_count| u_count.checked_mul(v_count))
+    }) else {
+        return record.tokens.len();
+    };
+    c.checked_mul(4)
+        .and_then(|span| span.checked_add(16))
+        .and_then(|span| span.checked_add(a))
+        .and_then(|span| span.checked_add(b))
         .unwrap_or(record.tokens.len())
 }
 

@@ -1662,3 +1662,181 @@ fn decode_uses_type114_entity_boundary_for_form7_association() {
         &[serde_json::json!("iges:entity:directory#1")]
     );
 }
+
+#[test]
+fn type128_entity_table_boundary_uses_surface_indices() {
+    for ((k1, k2, m1, m2), expected_start) in
+        [((1_i64, 1_i64, 1_i64, 1_i64), 38_usize), ((2, 1, 1, 0), 46)]
+    {
+        let association = directory_target(1, 212);
+        let mut surface = directory_target(3, 128);
+        surface.form = 9;
+        let directory = BTreeMap::from([(1, &association), (3, &surface)]);
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 128;
+        values[1] = k1;
+        values[2] = k2;
+        values[3] = m1;
+        values[4] = m2;
+        values[expected_start] = 1;
+        values[expected_start + 1] = 1;
+        values[expected_start + 2] = 0;
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: expected_start + 3,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 128 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type128_entity_table_boundary_precedes_valid_generic_alternative() {
+    let target_1 = directory_target(1, 212);
+    let target_3 = directory_target(3, 212);
+    let mut surface = directory_target(5, 128);
+    surface.form = 0;
+    let directory = BTreeMap::from([(1, &target_1), (3, &target_3), (5, &surface)]);
+    let values = [
+        128, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 3, 4, 0, 1, 3, 4, 21, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1, 0,
+    ];
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 41,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 128 table boundary");
+    assert_eq!(groups.token_start, 38);
+    assert_eq!(groups.associations, vec![1]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type128_malformed_indices_do_not_enable_generic_recovery() {
+    let target_1 = directory_target(1, 212);
+    let target_3 = directory_target(3, 212);
+    let mut surface = directory_target(5, 128);
+    surface.form = 0;
+    let directory = BTreeMap::from([(1, &target_1), (3, &target_3), (5, &surface)]);
+    for (k1, k2, m1, m2) in [(0_i64, 1_i64, 1_i64, 1_i64), (-1, 1, 0, 0), (1, 0, 2, 0)] {
+        let mut values = [
+            128, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 3, 4, 0, 1, 3, 4, 21, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1, 0,
+        ];
+        values[1] = k1;
+        values[2] = k2;
+        values[3] = m1;
+        values[4] = m2;
+        let record = ParameterRecord {
+            directory_sequence: 5,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: 41,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(
+            analysis.candidate_count, 0,
+            "K1={k1}, K2={k2}, M1={m1}, M2={m2}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 0,
+            "K1={k1}, K2={k2}, M1={m1}, M2={m2}"
+        );
+        assert!(
+            analysis.groups.is_none(),
+            "K1={k1}, K2={k2}, M1={m1}, M2={m2}"
+        );
+    }
+}
+
+#[test]
+fn decode_uses_type128_entity_boundary_for_form7_association() {
+    let values = [
+        "128", "1", "1", "1", "1", "1", "1", "0", "0", "0", "0", "1", "3", "4", "0", "1", "3", "4",
+        "21", "1", "1", "1", "1", "1", "1", "1", "1", "1", "1", "1", "1", "1", "1", "1", "1", "3",
+        "1", "3", "1", "1", "0",
+    ]
+    .join(",");
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "TARGET1".into(),
+                    status: "00010100",
+                    parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "TARGET3".into(),
+                    status: "00010100",
+                    parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 128,
+                    form: 0,
+                    label: "NURBS".into(),
+                    status: "00000000",
+                    parameters: format!("{values};"),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#1")]
+    );
+}
