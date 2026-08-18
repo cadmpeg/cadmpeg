@@ -79,6 +79,37 @@ Both changes are in `cadmpeg-ir` and reach each codec that writes exactness.
 
 ## 6. Units and measures
 
+### UM-06. Unresolved uncertainty measure with a transferred projection
+
+**Question.** Which channel reports a linear uncertainty measure that does not
+resolve, when the document projection transfers a value?
+
+**Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:3333-3387` counts
+each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` measure that does not resolve. A
+measure does not resolve when its record is absent, when it holds no number,
+when it holds no unit reference, when its unit is not a length unit and not a
+plane-angle unit, or when its scaled value is not finite or is not more than
+zero. `crates/cadmpeg-codec-step/src/reader/geometry.rs:3400-3427` adds these
+counts across all contexts and gives `LinearUncertainty::Value`, `Empty`, or
+`Ambiguous`. Only `Empty` and `Ambiguous` keep the count.
+`crates/cadmpeg-codec-step/src/reader/geometry.rs:333-354` reports
+`geometry.uncertainty-length-unresolved` for `Empty`, and names the count in the
+`geometry.uncertainty-length-ambiguous` note for `Ambiguous`. The `Value` arm
+writes `ir.tolerances.linear` and reports nothing. `step.md` §8 "CADIR decision:
+`Tolerances.linear` is the document projection of the" gives the same rule: it
+asks for a note only when no candidate resolves.
+
+**Need.** A measure that does not resolve is a candidate that cannot compete.
+One distinct resolved value therefore does not show that the contexts agree. A
+document that declares one value in one context, and a measure that does not
+resolve in a second context, transfers the first value and keeps no record of
+the second measure. `step.md` §8 "Geometric-consistency checks use the selected
+document tolerance as their" makes `Tolerances.linear` the baseline of the
+consistency checks, so a caller that repairs or examines the document must know
+that a declared measure was dropped. The answer gives the count of measures that
+do not resolve to the transferred-value result, or gives the reason that a
+dropped measure needs no record.
+
 ## 7. Annotation, presentation, and tessellation
 
 ## 8. Product structure and placement
