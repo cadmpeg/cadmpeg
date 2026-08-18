@@ -503,6 +503,61 @@ pub(crate) fn section_equation_scalar_seed_values(
     values
 }
 
+pub(crate) fn propagate_section_equation_scalar_equality_values(
+    definition: &crate::feature::FeatureDefinition,
+    values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
+) -> bool {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return false;
+    };
+    let components = section_equation_scalar_equality_components(definition);
+    let mut changed = false;
+    for component in components {
+        let mut component_value = None;
+        let mut conflicting = false;
+        for variable in &component {
+            let invalid_row = variables.rows.iter().any(|row| {
+                (row.variable_type, row.key) == *variable
+                    && row.value.is_some_and(|value| !value.is_finite())
+            });
+            if invalid_row {
+                conflicting = true;
+                break;
+            }
+            let Some(Some(value)) = values.get(variable) else {
+                continue;
+            };
+            if !value.is_finite()
+                || component_value.is_some_and(|stored| !approximately_equal(stored, *value))
+            {
+                conflicting = true;
+                break;
+            }
+            component_value = Some(*value);
+        }
+        if conflicting {
+            for variable in component {
+                if values.get(&variable) != Some(&None) {
+                    values.insert(variable, None);
+                    changed = true;
+                }
+            }
+        } else if let Some(value) = component_value {
+            for variable in component {
+                if values.get(&variable) != Some(&Some(value)) {
+                    values.insert(variable, Some(value));
+                    changed = true;
+                }
+            }
+        }
+    }
+    changed
+}
+
 pub(crate) fn append_section_equation_auxiliary_coordinate_constraints(
     constraints: &SectionEquationAuxiliaryConstraints,
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
@@ -1064,6 +1119,7 @@ pub(crate) fn resolved_section_scalar_values(
             merge_scalar_value_candidate(&mut values, variable, value);
         }
     }
+    propagate_section_equation_scalar_equality_values(definition, &mut values);
     values
         .into_iter()
         .filter_map(|(variable, value)| Some((variable, value?)))
