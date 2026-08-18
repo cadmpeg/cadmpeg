@@ -581,6 +581,36 @@ retains no depth-to-tip state.
 have equal bore-radius and blind-depth envelopes, and identify the depth
 endpoint to set `HoleBottom::Angled`.
 
+### SP-40. `var_arr` scalar classes
+
+**Question.** What scalar class does each `var_arr` row `type` value outside
+`1`, `2`, and `3` denote?
+
+**Known.** `creo_prt.md` §5 "| `var_arr` | Solver-variable table keyed by `key`;"
+gives point `u` for type `1`, point `v` for type `2`, and radius for type `3`.
+`creo_prt.md` §5 "Function `0` has exactly six argument slots" gives type `4` or
+type `6` as an angle in that form. `creo_prt.md` §5 "Function `42` has three
+argument slots" gives type `6` as a coordinate mean in that form.
+`creo_prt.md` §5 "Function `16` has a direct four-slot form" gives type `4` as an
+angle operand and type `0` as a result. The argument position in the equation
+row, and not the row `type`, selects the role.
+
+**Need.** We must know each class to bind a solver row to its equation role
+without argument position.
+
+### SP-41. Drilled hole form declaration
+
+**Question.** Which field declares the form of a class-911 drilled hole?
+
+**Known.** `creo_prt.md` §6 "A cylindrical stepped entry has two source section
+entities" selects counterbore form from the paired generated-surface structure.
+`creo_prt.md` §6 "A split-patch class-29 counterbore table has exactly five
+unique" selects the same form from a second generated-surface shape. No known
+field declares the form, and counterbore is the only recognized stepped form.
+
+**Need.** We must know the declared form to separate a counterbore from a
+countersink and from other stepped forms, and to set the neutral hole kind.
+
 ## 4. Topology and appearance
 
 ### TP-01. DEPDB recipe-to-body binding
