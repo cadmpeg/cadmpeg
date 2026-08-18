@@ -596,6 +596,22 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Note.** The change that deleted this item added a test module only. It changed no decoder code and no specification text, so the question stays unanswered. `crates/cadmpeg-codec-sldprt/src/swift.rs:121-131` divides the identifier at the last colon, tests that the left part is not empty, and then discards it. The topology kind comes from the arena that holds the numeric suffix, not from any field of the identifier. The identifier resolves to no object when two arenas hold that suffix, so the gate withholds but decodes nothing. `crates/cadmpeg-codec-sldprt/src/swift.rs:54-58` records that the numeric suffix is a lane-local identity, while the lookup is global to the document.
 
+### DI-38. Compact and wide spatial marker point boundary
+
+**Question.** Which stored field separates the 82-byte compact spatial marker point from the 90-byte wide spatial marker point?
+
+**Known.** `sldprt.md` §2 "A current-prefix compact profile-locus spatial point" gives the compact record with the coordinate tag `0e 00` at marker +56 and three f64 coordinates at marker +58. The wide record holds the same tag at marker +64 and its coordinates at marker +66. For native kind `0`, profile locus `04 00 02 00`, and profile role `1`, the two forms agree in every field the decoder tests. `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:273-425` tests the compact tag position first and accepts the first form whose tag position holds `0e 00`. `crates/cadmpeg-codec-sldprt/src/layout.rs:2491-2545` declares a length for each of the two records, and no site in the crate reads either length. The legacy profile-point decoders in the same file separate their 140-byte and 144-byte forms with a sketch-marker test at the declared length.
+
+**Need.** We must know the discriminator, or apply the next-marker test the sibling decoders use, because a wide record that holds `0e 00` at marker +56 gives three finite coordinates from marker +58 and no loss is recorded.
+
+### DI-39. `moTempAxisRef_w` carrier end and middle triple
+
+**Question.** What fixes the end of a `moTempAxisRef_w` nine-scalar carrier, and what do its scalars at `+263`, `+271`, and `+279` hold?
+
+**Known.** `sldprt.md` §2 "An `moCirPattern_c` interval retains its repeated seed" gives the carrier at offsets `+0` through `+311`, the axis origin at `+239`, the axis direction at `+287`, and zero padding of at most 24 bytes before the next class declaration. `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:786-863` searches that 24-byte window for the next class marker and rejects the carrier when the search fails. The specification gives no stored field that fixes the padding length. The decoder reads the three scalars between the origin and the direction, tests them for a finite value, and then discards them.
+
+**Need.** We must know the field that ends the carrier, so the record does not need a tuned search window, and the middle triple, so the complete axis frame is decoded.
+
 ## 6. Write-path evidence
 
 ### EV-03. Regenerated `SWObjects` record content
