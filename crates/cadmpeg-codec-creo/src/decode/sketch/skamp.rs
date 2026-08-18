@@ -262,9 +262,21 @@ pub(crate) fn section_skamp_axis_symmetry(
         return None;
     };
     (axis_item.sense == 0 && section_skamp_is_line(definition, axis_item)).then_some(())?;
-    let coordinate = section_line_entity_fixed_coordinate(definition, axis_item.entity_id)?;
+    let unique_row = unique_decoded_section_segment(definition, axis_item.entity_id);
+    let coordinate = section_line_entity_fixed_coordinate(definition, axis_item.entity_id)
+        .or_else(|| {
+            let segment = unique_row?;
+            (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+            match segment.vertical_horizontal {
+                Some(0) => Some(0),
+                Some(1) => Some(1),
+                _ => None,
+            }
+        })?;
     let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id)
     {
+        SectionSymmetryAxis::Point(segment.point_ids[0])
+    } else if let Some(segment) = unique_row {
         SectionSymmetryAxis::Point(segment.point_ids[0])
     } else {
         let crate::feature::FeatureSavedEntity::Line(line) =
@@ -774,6 +786,33 @@ mod tests {
             .rows
             .push(line(10, [5, 6]));
         assert!(section_skamp_axis_symmetry(&duplicate, &skamp).is_none());
+
+        let mut incomplete_axis = point_definition(
+            4,
+            vec![line(99, [8, 9]), line(10, [1, 2]), line(11, [3, 4])],
+            Vec::new(),
+        );
+        incomplete_axis.segments.as_mut().expect("segments").rows[0].vertical_horizontal = Some(0);
+        let Some((axis, first, second, coordinate)) =
+            section_skamp_axis_symmetry(&incomplete_axis, &skamp)
+        else {
+            panic!("incomplete axis-symmetry sources");
+        };
+        assert!(matches!(axis, super::SectionSymmetryAxis::Point(8)));
+        assert!(matches!(first, SectionPointSource::Point(1)));
+        assert!(matches!(second, SectionPointSource::Point(4)));
+        assert_eq!(coordinate, 0);
+
+        let mut duplicate_axis = incomplete_axis.clone();
+        duplicate_axis
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(line(99, [10, 11]));
+        let mut duplicate_axis_skamp = skamp.clone();
+        duplicate_axis_skamp.items[0].entity_id = 99;
+        assert!(section_skamp_axis_symmetry(&duplicate_axis, &duplicate_axis_skamp).is_none());
     }
 
     #[test]

@@ -404,7 +404,8 @@ fixtures, scores above L1 remain blocked.
   table; duplicate ordinary or cross-family identifiers withhold the equation.
 - Active axis-symmetry equations use selected endpoint or center point
   identities from unique ordinary line or arc rows in an incomplete segment
-  table when the fixed axis has an independent saved or complete proof.
+  table when the fixed axis has an independent stored-selector, saved, or
+  complete proof.
 - Type-three and type-nine point-on-line equations accept a unique ordinary
   line row from an incomplete segment table when its stored `verhor` selector
   supplies the held coordinate; selected unique ordinary endpoint rows are
