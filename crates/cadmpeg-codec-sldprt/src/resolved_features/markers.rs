@@ -1201,7 +1201,9 @@ fn legacy_144_profile_point_variant_coordinates(payload: &[u8], offset: usize) -
         || code != pt_144::NATIVE_KIND_VALUE
         || !matches!(link_state, 1..=3)
         || payload.get(offset + pt_144::HEADER..offset + pt_144::SENTINEL) != Some(&[0xff; 8])
-        || payload.get(offset + pt_144::ZERO_PREFIX..offset + pt_144::ZERO_STATE)
+        || payload.get(offset + pt_144::ZERO_PREFIX..offset + pt_144::PROFILE_LOCUS)
+            != Some(&[0; 2])
+        || payload.get(offset + pt_144::PROFILE_LOCUS..offset + pt_144::ZERO_STATE)
             != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
         || payload.get(offset + pt_144::ZERO_STATE..offset + pt_144::SELECTOR) != Some(&[0; 2])
         || payload.get(offset + pt_144::SELECTOR..offset + pt_144::ZERO_STATE_PREFIX)
