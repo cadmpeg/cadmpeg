@@ -134,16 +134,39 @@ struct DerivedGripConnectivity {
     grip_indices: Vec<i64>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SymmetryMode {
+    Correspondence,
+    Radial,
+}
+
+#[derive(Debug)]
 struct SymmetryBlock {
+    mode: SymmetryMode,
     plane: Option<[f64; 12]>,
-    map_kinds: BTreeSet<String>,
+    record_kinds: BTreeSet<String>,
     face_forward: BTreeMap<usize, usize>,
     face_reverse: BTreeMap<usize, usize>,
     edge_forward: BTreeMap<usize, usize>,
     edge_reverse: BTreeMap<usize, usize>,
     vertex_forward: BTreeMap<usize, usize>,
     vertex_reverse: BTreeMap<usize, usize>,
+}
+
+impl SymmetryBlock {
+    fn new(mode: SymmetryMode) -> Self {
+        Self {
+            mode,
+            plane: None,
+            record_kinds: BTreeSet::new(),
+            face_forward: BTreeMap::new(),
+            face_reverse: BTreeMap::new(),
+            edge_forward: BTreeMap::new(),
+            edge_reverse: BTreeMap::new(),
+            vertex_forward: BTreeMap::new(),
+            vertex_reverse: BTreeMap::new(),
+        }
+    }
 }
 
 fn parse_pairs<'a>(
@@ -391,11 +414,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             }
             Some("105sym") => {
-                if parse_i64(name, fields.next(), "symmetry flags")? != 0 {
-                    return Err(malformed(name, "unsupported symmetry flags"));
-                }
+                let mode = match parse_i64(name, fields.next(), "symmetry flags")? {
+                    0 => SymmetryMode::Correspondence,
+                    1 => SymmetryMode::Radial,
+                    _ => return Err(malformed(name, "unsupported symmetry flags")),
+                };
                 require_end(name, fields, "symmetry header")?;
-                if let Some(block) = current_symmetry.replace(SymmetryBlock::default()) {
+                if let Some(block) = current_symmetry.replace(SymmetryBlock::new(mode)) {
                     symmetry_blocks.push(block);
                 }
             }
@@ -421,7 +446,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 let block = current_symmetry
                     .as_mut()
                     .ok_or_else(|| malformed(name, "symmetry map has no header"))?;
-                if !block.map_kinds.insert(kind.into()) {
+                if block.mode != SymmetryMode::Correspondence {
+                    return Err(malformed(
+                        name,
+                        "correspondence map belongs to a radial symmetry block",
+                    ));
+                }
+                if !block.record_kinds.insert(kind.into()) {
                     return Err(malformed(name, format!("duplicate {kind} symmetry map")));
                 }
                 let target = match kind {
@@ -434,6 +465,50 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     _ => return Err(malformed(name, "unknown symmetry map kind")),
                 };
                 *target = pairs;
+            }
+            Some("105r") => {
+                let kind = fields
+                    .next()
+                    .ok_or_else(|| malformed(name, "missing radial symmetry record kind"))?;
+                let block = current_symmetry
+                    .as_mut()
+                    .ok_or_else(|| malformed(name, "radial symmetry record has no header"))?;
+                if block.mode != SymmetryMode::Radial {
+                    return Err(malformed(
+                        name,
+                        "radial symmetry record belongs to a correspondence block",
+                    ));
+                }
+                if !block.record_kinds.insert(kind.into()) {
+                    return Err(malformed(
+                        name,
+                        format!("duplicate {kind} radial symmetry record"),
+                    ));
+                }
+                match kind {
+                    "segments" => {
+                        if parse_usize(name, fields.next(), "radial symmetry segments")? == 0 {
+                            return Err(malformed(
+                                name,
+                                "radial symmetry segments is not positive",
+                            ));
+                        }
+                        require_end(name, fields, "radial symmetry segments")?;
+                    }
+                    "sweep" => {
+                        parse_f64(name, fields.next(), "radial symmetry sweep")?;
+                        require_end(name, fields, "radial symmetry sweep")?;
+                    }
+                    "ef" | "er" | "ff" | "fr" | "vf" | "vr" => {
+                        parse_pairs(name, fields, "radial symmetry map")?;
+                    }
+                    _ => {
+                        return Err(malformed(
+                            name,
+                            format!("unknown radial symmetry record {kind}"),
+                        ));
+                    }
+                }
             }
             Some(declaration @ ("tol" | "geom-tol")) => {
                 let tolerance = parse_f64(name, fields.next(), declaration)?;
@@ -800,6 +875,29 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let cage = parse_cage(source.as_bytes()).expect("typed metadata");
         assert_eq!(cage.unknown_records, 0);
         assert_quad(&cage.surface);
+    }
+
+    #[test]
+    fn parses_radial_symmetry_metadata() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             105sym 1\n105plane 0 0 0 1 0 1 0 0 0 0 1 0\n\
+             105r segments 4\n105r sweep 1\n\
+             105r ef 0 1\n105r er 1 0\n105r ff 0 1\n105r fr 1 0\n\
+             105r vf 0 1\n105r vr 1 0\n\
+             tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("radial symmetry metadata");
+        assert_eq!(cage.unknown_records, 0);
+        assert_quad(&cage.surface);
+
+        let unsupported = source.replace("105sym 1", "105sym 2");
+        let error = parse_cage(unsupported.as_bytes()).expect_err("unsupported symmetry mode");
+        assert!(
+            error.to_string().contains("unsupported symmetry flags"),
+            "unexpected error: {error}"
+        );
     }
 
     /// A bare topology token is a deleted slot: it consumes an index and
