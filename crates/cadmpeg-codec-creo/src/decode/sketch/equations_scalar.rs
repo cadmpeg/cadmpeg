@@ -681,6 +681,31 @@ pub(crate) fn section_equation_scalar_values_from_coordinates(
             }
         }
     }
+    for (variable, value) in
+        section_equation_function_six_distance_values(definition, coordinates, &ambiguous_point_ids)
+    {
+        merge_scalar_value_candidate(&mut derived, variable, value);
+    }
+    for (variable, value) in section_equation_function_forty_three_axis_distance_values(
+        definition,
+        coordinates,
+        &ambiguous_point_ids,
+    ) {
+        merge_scalar_value_candidate(&mut derived, variable, value);
+    }
+    for constraint in
+        section_equation_radial_constraints(definition, coordinates, &ambiguous_point_ids)
+    {
+        for (variable, value) in [
+            (constraint.radius, constraint.radius_value),
+            (constraint.angle, constraint.angle_value),
+        ] {
+            let Some(value) = value else {
+                continue;
+            };
+            merge_scalar_value_candidate(&mut derived, variable, value);
+        }
+    }
     derived
         .into_iter()
         .filter_map(|(variable, value)| Some((variable, value?)))

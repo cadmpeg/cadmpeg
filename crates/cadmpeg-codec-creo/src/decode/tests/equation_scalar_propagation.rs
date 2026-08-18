@@ -2,15 +2,17 @@
 //! Tests for scalar equality propagation into equation consumers.
 
 use crate::decode::sketch::{
+    merge_scalar_value_candidate, propagate_section_equation_scalar_equality_values,
     resolved_section_coordinates, resolved_section_scalar_values,
     section_equation_coordinate_equality_rows, section_equation_equal_length_constraint_rows,
     section_equation_function_forty_three_axis_distance_values,
     section_equation_function_sixteen_angle_difference_values,
     section_equation_point_on_line_constraint_rows, section_equation_radius_dimensions,
     section_equation_scalar_equalities, section_equation_scalar_equality_components,
+    section_equation_scalar_seed_values, section_equation_scalar_values_from_coordinates,
     section_equation_unsigned_coordinate_distance_rows,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn row(variable_type: u32, key: u32, value: Option<f64>) -> crate::feature::FeatureVariableRow {
     crate::feature::FeatureVariableRow {
@@ -134,6 +136,41 @@ fn function_forty_three_reconciles_scalar_equality_consumers() {
         ],
     );
     assert!(axis_distance_values(&invalid_auxiliary).is_empty());
+}
+
+#[test]
+fn coordinate_derived_axis_distance_propagates_through_scalar_equality() {
+    let body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+            \x01\x2b\xf8\x08\x00\x01\x02\x03\x04\x05\x06\x07\xf6\xe2\
+            \x02\x02\xf8\x02\x06\x08\xf6\xe2";
+    let definition = definition(
+        body,
+        vec![
+            row(1, 10, Some(0.0)),
+            row(2, 10, Some(0.0)),
+            row(1, 11, Some(4.0)),
+            row(2, 11, Some(0.0)),
+            row(4, 2, Some(0.0)),
+            row(5, 0, Some(0.0)),
+            row(0, 20, None),
+            row(5, 1, Some(0.0)),
+            row(0, 21, None),
+        ],
+    );
+    let coordinates = BTreeMap::from([(10, [Some(0.0), Some(0.0)]), (11, [Some(4.0), Some(0.0)])]);
+    let derived = section_equation_scalar_values_from_coordinates(&definition, &coordinates);
+    assert_eq!(derived.get(&(0, 20)), Some(&4.0));
+
+    let mut values = section_equation_scalar_seed_values(&definition);
+    for (variable, value) in derived {
+        merge_scalar_value_candidate(&mut values, variable, value);
+    }
+    assert!(propagate_section_equation_scalar_equality_values(
+        &definition,
+        &mut values,
+    ));
+    assert_eq!(values.get(&(0, 21)), Some(&Some(4.0)));
 }
 
 #[test]
