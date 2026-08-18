@@ -729,6 +729,22 @@ equals the number of direct `CosmeticVertex` records, each with
 between `CosmeticTag` and `PermaPoint`. The producer writes no `VertexTag`. Nested, out-of-order, or
 count-mismatched records are malformed.
 
+`TechDraw::PropertyCosmeticEdgeList` uses one direct `CosmeticEdgeList` root. Its `count` equals the
+number of direct `CosmeticEdge` records, each with `type="TechDraw::CosmeticEdge"`. A record has
+direct `Style`, `Weight`, `Color`, `Visible`, and `GeometryType` fields, followed by the ten direct
+`BaseGeom` fields `GeomType`, `ExtractType`, `EdgeClass`, `HLRVisible`, `Reversed`, `Ref3D`,
+`Cosmetic`, `Source`, `SourceIndex`, and `CosmeticTag`. `Style`, the BaseGeom integer fields, and
+an optional `LineNumber` are signed integers; `Weight` is finite; `Visible` and the BaseGeom state
+fields are Boolean; and `Color` is `#RRGGBB` or `#RRGGBBAA`. `GeometryType` and `GeomType` match:
+`1` selects a circle, `2` an arc of a circle, and `7` generic geometry. Circle geometry adds a
+direct `Center` with finite `X`, `Y`, and `Z` coordinates and finite `Radius`. Arc geometry adds
+direct `Center`, `Start`, `End`, and `Middle` fields with finite `X`, `Y`, and `Z` coordinates,
+finite `Radius`, finite `StartAngle` and `EndAngle`, and Boolean `Clockwise` and `Large`. Generic
+geometry adds one `Points` element whose `PointsCount` equals its direct finite `Point` coordinate
+records. `LineNumber` may be omitted; the legacy `ISOLineNumber` spelling is not a CosmeticEdge
+field. Nested or out-of-order fields, unsupported geometry selectors, branch field mismatches,
+extra records, and count mismatches are malformed.
+
 The loaded module registry adds `Materials::PropertyMaterial`, whose value is
 `PropertyMaterial` with a material `uuid`; `Part::PropertyPartShape`, whose value is `Part` and
 may carry `ElementMap` records and one exact-shape side entry; `Part::PropertyGeometryList`, whose

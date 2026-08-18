@@ -845,6 +845,9 @@ fn validate_gui_property(
         "TechDraw::PropertyCosmeticVertexList" => {
             return validate_gui_cosmetic_vertex_list(property, property_name);
         }
+        "TechDraw::PropertyCosmeticEdgeList" => {
+            return validate_gui_cosmetic_edge_list(property, property_name);
+        }
         "App::PropertyExpressionEngine" => {
             return validate_gui_expression_engine(property, property_name);
         }
@@ -1750,6 +1753,324 @@ fn validate_gui_cosmetic_vertex_list(
     Ok(())
 }
 
+fn validate_gui_cosmetic_edge_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires exactly one CosmeticEdgeList value",
+        ));
+    };
+    if !root.has_tag_name("CosmeticEdgeList") {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires a leading CosmeticEdgeList value",
+        ));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticEdgeList has no count"))?
+        .parse::<usize>()
+        .map_err(|_| gui_techdraw_error(property_name, "CosmeticEdgeList has an invalid count"))?;
+    let records = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdgeList count does not match its records",
+        ));
+    }
+    for record in records {
+        if !record.has_tag_name("CosmeticEdge")
+            || record.attribute("type") != Some("TechDraw::CosmeticEdge")
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdgeList has an invalid record type",
+            ));
+        }
+        validate_gui_cosmetic_edge_record(record, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_edge_record(
+    record: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let fields = record
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if fields.len() < 16 {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdge has an incomplete field sequence",
+        ));
+    }
+    let format_fields = ["Style", "Weight", "Color", "Visible", "GeometryType"];
+    for (field, expected_tag) in fields.iter().take(format_fields.len()).zip(format_fields) {
+        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge has a nested or out-of-order format field",
+            ));
+        }
+        if field.attribute("value").is_none() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge format field has no value",
+            ));
+        }
+    }
+    parse_gui_techdraw_integer_named(fields[0], property_name, "Style")?;
+    parse_gui_techdraw_finite(fields[1], property_name)?;
+    validate_gui_techdraw_color(fields[2], property_name)?;
+    validate_gui_techdraw_boolean(fields[3], property_name)?;
+    let geometry_type = fields[4]
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticEdge GeometryType has no value"))?
+        .parse::<i64>()
+        .map_err(|_| {
+            gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
+        })?;
+
+    let mut cursor = format_fields.len();
+    if fields.len() < cursor + 10 {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdge has no complete BaseGeom sequence",
+        ));
+    }
+    validate_gui_cosmetic_edge_base_geom(
+        &fields[cursor..cursor + 10],
+        property_name,
+        geometry_type,
+    )?;
+    cursor += 10;
+
+    let required_fields = match geometry_type {
+        1 => 17,
+        2 => 24,
+        7 => 16,
+        _ => {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge has an unsupported GeometryType",
+            ));
+        }
+    };
+    if fields.len() != required_fields && fields.len() != required_fields + 1 {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdge has an invalid branch field sequence",
+        ));
+    }
+
+    match geometry_type {
+        1 => {
+            validate_gui_techdraw_point(fields[cursor], property_name)?;
+            if !fields[cursor].has_tag_name("Center") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "CosmeticEdge circle has an invalid center field",
+                ));
+            }
+            cursor += 1;
+            if !fields[cursor].has_tag_name("Radius") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "CosmeticEdge circle has an invalid radius field",
+                ));
+            }
+            parse_gui_techdraw_finite(fields[cursor], property_name)?;
+            if fields[cursor].children().any(|node| node.is_element()) {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "CosmeticEdge circle has a nested radius field",
+                ));
+            }
+            cursor += 1;
+        }
+        2 => {
+            for expected_tag in ["Center", "Start", "End", "Middle"] {
+                if !fields[cursor].has_tag_name(expected_tag) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "CosmeticEdge arc has an out-of-order point field",
+                    ));
+                }
+                validate_gui_techdraw_point(fields[cursor], property_name)?;
+                cursor += 1;
+                if expected_tag == "Center" {
+                    if !fields[cursor].has_tag_name("Radius") {
+                        return Err(gui_techdraw_error(
+                            property_name,
+                            "CosmeticEdge arc has an invalid radius field",
+                        ));
+                    }
+                    parse_gui_techdraw_finite(fields[cursor], property_name)?;
+                    if fields[cursor].children().any(|node| node.is_element()) {
+                        return Err(gui_techdraw_error(
+                            property_name,
+                            "CosmeticEdge arc has a nested radius field",
+                        ));
+                    }
+                    cursor += 1;
+                }
+            }
+            for expected_tag in ["StartAngle", "EndAngle"] {
+                if !fields[cursor].has_tag_name(expected_tag) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "CosmeticEdge arc has an out-of-order angle field",
+                    ));
+                }
+                parse_gui_techdraw_finite(fields[cursor], property_name)?;
+                if fields[cursor].children().any(|node| node.is_element()) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "CosmeticEdge arc has a nested angle field",
+                    ));
+                }
+                cursor += 1;
+            }
+            for expected_tag in ["Clockwise", "Large"] {
+                if !fields[cursor].has_tag_name(expected_tag) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "CosmeticEdge arc has an out-of-order Boolean field",
+                    ));
+                }
+                validate_gui_techdraw_boolean(fields[cursor], property_name)?;
+                cursor += 1;
+            }
+        }
+        7 => {
+            if !fields[cursor].has_tag_name("Points") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "CosmeticEdge generic geometry has no Points field",
+                ));
+            }
+            validate_gui_techdraw_points(fields[cursor], property_name)?;
+            cursor += 1;
+        }
+        _ => unreachable!("unsupported GeometryType checked above"),
+    }
+
+    if cursor < fields.len() {
+        if cursor + 1 != fields.len() || !fields[cursor].has_tag_name("LineNumber") {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge has an invalid trailing field",
+            ));
+        }
+        parse_gui_techdraw_integer_named(fields[cursor], property_name, "LineNumber")?;
+        if fields[cursor].children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge LineNumber is nested",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_edge_base_geom(
+    fields: &[roxmltree::Node<'_, '_>],
+    property_name: &str,
+    expected_geometry_type: i64,
+) -> Result<(), CodecError> {
+    let expected = [
+        "GeomType",
+        "ExtractType",
+        "EdgeClass",
+        "HLRVisible",
+        "Reversed",
+        "Ref3D",
+        "Cosmetic",
+        "Source",
+        "SourceIndex",
+        "CosmeticTag",
+    ];
+    for (field, expected_tag) in fields.iter().zip(expected) {
+        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge BaseGeom has a nested or out-of-order field",
+            ));
+        }
+        if field.attribute("value").is_none() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge BaseGeom field has no value",
+            ));
+        }
+    }
+    let geometry_type = fields[0]
+        .attribute("value")
+        .expect("validated GeomType value")
+        .parse::<i64>()
+        .map_err(|_| {
+            gui_techdraw_error(property_name, "CosmeticEdge GeomType is not an integer")
+        })?;
+    if geometry_type != expected_geometry_type {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdge GeometryType and GeomType disagree",
+        ));
+    }
+    for index in [1, 2, 5, 7, 8] {
+        parse_gui_techdraw_integer_named(fields[index], property_name, expected[index])?;
+    }
+    for index in [3, 4, 6] {
+        validate_gui_techdraw_boolean(fields[index], property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_techdraw_points(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let count = field
+        .attribute("PointsCount")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticEdge Points has no count"))?
+        .parse::<usize>()
+        .map_err(|_| {
+            gui_techdraw_error(property_name, "CosmeticEdge Points has an invalid count")
+        })?;
+    let points = field
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if points.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdge Points count does not match its records",
+        ));
+    }
+    for point in points {
+        if !point.has_tag_name("Point") || point.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge Points has an invalid point record",
+            ));
+        }
+        validate_gui_techdraw_point(point, property_name)?;
+    }
+    Ok(())
+}
+
 fn validate_gui_cosmetic_vertex_record(
     record: roxmltree::Node<'_, '_>,
     property_name: &str,
@@ -1855,6 +2176,12 @@ fn validate_gui_techdraw_point(
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
+    if field.children().any(|node| node.is_element()) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw point has a nested field",
+        ));
+    }
     for attribute in ["X", "Y", "Z"] {
         let value = field
             .attribute(attribute)

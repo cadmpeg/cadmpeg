@@ -776,6 +776,81 @@ fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
 }
 
 #[test]
+fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let generic = r##"<CosmeticEdge type="TechDraw::CosmeticEdge"><Style value="2"/><Weight value="0.5"/><Color value="#000000"/><Visible value="1"/><GeometryType value="7"/><GeomType value="7"/><ExtractType value="0"/><EdgeClass value="5"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="1"/><Source value="1"/><SourceIndex value="-1"/><CosmeticTag value="0fbf303f-73ae-4c0f-875c-8298b16ec5b0"/><Points PointsCount="2"><Point X="0" Y="0" Z="0"/><Point X="5" Y="-3" Z="0"/></Points><LineNumber value="2"/></CosmeticEdge>"##;
+    let circle = r##"<CosmeticEdge type="TechDraw::CosmeticEdge"><Style value="2"/><Weight value="0.5"/><Color value="#11223344"/><Visible value="false"/><GeometryType value="1"/><GeomType value="1"/><ExtractType value="0"/><EdgeClass value="5"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="1"/><Source value="1"/><SourceIndex value="-1"/><CosmeticTag value="d5801935-889a-4e16-87a7-f8ad58dc7de3"/><Center X="2" Y="-2" Z="0"/><Radius value="1.5"/></CosmeticEdge>"##;
+    let arc = r##"<CosmeticEdge type="TechDraw::CosmeticEdge"><Style value="2"/><Weight value="0.5"/><Color value="#AABBCC"/><Visible value="1"/><GeometryType value="2"/><GeomType value="2"/><ExtractType value="0"/><EdgeClass value="0"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="0"/><Source value="0"/><SourceIndex value="-1"/><CosmeticTag value=""/><Center X="6" Y="2" Z="0"/><Radius value="1.25"/><Start X="7.1746" Y="2.4275" Z="0"/><End X="4.8254" Y="2.4275" Z="0"/><Middle X="6" Y="3.25" Z="0"/><StartAngle value="0.3491"/><EndAngle value="2.7925"/><Clockwise value="1"/><Large value="0"/><LineNumber value="2"/></CosmeticEdge>"##;
+    let gui = format!(
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="CosmeticEdges" type="TechDraw::PropertyCosmeticEdgeList"><CosmeticEdgeList count="3">{generic}{circle}{arc}</CosmeticEdgeList></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+    );
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui.as_bytes()),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid TechDraw CosmeticEdgeList");
+
+    let property = |value: &str| {
+        format!(
+            r#"<Property name="CosmeticEdges" type="TechDraw::PropertyCosmeticEdgeList">{value}</Property>"#
+        )
+    };
+    let invalid = vec![
+        property(r#"<Wrong count="0"/>"#),
+        property(&format!(
+            r#"<CosmeticEdgeList count="2">{generic}</CosmeticEdgeList>"#
+        )),
+        property(&format!(
+            r#"<CosmeticEdgeList count="1"><Other type="TechDraw::CosmeticEdge">{generic}</Other></CosmeticEdgeList>"#
+        )),
+        property(&generic.replace(
+            "type=\"TechDraw::CosmeticEdge\"",
+            "type=\"App::PropertyString\"",
+        )),
+        property(&generic.replace("<Style value=\"2\"/><Weight", "<Wrong value=\"2\"/><Weight")),
+        property(&generic.replacen(
+            "<GeometryType value=\"7\"/>",
+            "<GeometryType value=\"3\"/>",
+            1,
+        )),
+        property(&generic.replace("<GeomType value=\"7\"/>", "<GeomType value=\"1\"/>")),
+        property(&generic.replace("PointsCount=\"2\"", "PointsCount=\"3\"")),
+        property(&generic.replace("X=\"0\" Y=\"0\"", "X=\"nan\" Y=\"0\"")),
+        property(&generic.replace("<Weight value=\"0.5\"", "<Weight value=\"nan\"")),
+        property(&generic.replace("<Color value=\"#000000\"", "<Color value=\"red\"")),
+        property(&generic.replace("<Visible value=\"1\"", "<Visible value=\"maybe\"")),
+        property(&generic.replace("<LineNumber value=\"2\"/>", "<ISOLineNumber value=\"2\"/>")),
+        property(&generic.replace(
+            "<Point X=\"0\" Y=\"0\" Z=\"0\"/>",
+            "<Point X=\"0\" Y=\"0\" Z=\"0\"><Nested/></Point>",
+        )),
+        property(&generic.replace(
+            "<LineNumber value=\"2\"/>",
+            "<LineNumber value=\"2\"/><Extra/>",
+        )),
+    ];
+    for invalid in invalid {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid TechDraw CosmeticEdgeList");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn validates_the_complete_loaded_dynamic_gui_registry() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>

@@ -40,6 +40,12 @@ TechDraw `PropertyCosmeticVertexList` uses one direct `CosmeticVertexList` root 
 record count and typed `CosmeticVertex` records. Each record has the producer's ordered direct
 vertex and cosmetic fields, finite point coordinates and size, integer and Boolean values, a
 hexadecimal color, and a UUID tag; `VertexTag` is an optional legacy field in its source position.
+TechDraw `PropertyCosmeticEdgeList` uses one direct `CosmeticEdgeList` root with exact direct record
+count and typed `CosmeticEdge` records. Each record has the producer's format fields, ten direct
+`BaseGeom` fields, and one of the Generic, Circle, or ArcOfCircle geometry branches selected by
+matching `GeometryType` and `GeomType` values. Branch counts, direct point records, finite scalars,
+integer and Boolean values, hexadecimal colors, and optional `LineNumber` are validated; the
+legacy `ISOLineNumber` spelling is not admitted for CosmeticEdge.
 
 **Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
 outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
@@ -52,9 +58,9 @@ retained as if the registry had established their grammar, while the neutral pre
 silently withholds or misreads the value.
 
 **Note.** Partly settled. Link-family, scalar/quantity, in-memory list, standard side-entry,
-Mesh/Points, and TechDraw GeomFormatList and CosmeticVertexList value grammars are closed by the
-application writer inheritance rules and shared direct-root validation. The remaining question is
-limited to other custom runtime types and their custom side-entry forms.
+Mesh/Points, and TechDraw GeomFormatList, CosmeticVertexList, and CosmeticEdgeList value grammars
+are closed by the application writer inheritance rules and shared direct-root validation. The
+remaining question is limited to other custom runtime types and their custom side-entry forms.
 
 ### GP-02. Other GUI property semantics
 
