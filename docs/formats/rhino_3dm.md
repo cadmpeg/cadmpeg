@@ -4967,6 +4967,15 @@ Boolean is false and the relative-path slot when it is true. The optional
 class-userdata carrier can fill the other slot without replacing a nonempty
 slot.
 
+The registered `ON_OBSOLETE_IDefAlternativePathUserData` carrier uses generic
+class-userdata version 2.2 and an anonymous class-owned payload with major 1:
+UTF-16 alternate path followed by a Boolean selecting the relative-path slot.
+The linked-definition owner trims the path, fills only an empty selected slot,
+and ignores the carrier for static definitions. A class-owned major other than
+1 or a malformed payload is not admitted; the linked definition remains typed,
+the carrier is discarded, and CADIR retains the complete containing
+`TCODE_INSTANCE_DEFINITION_RECORD` in source fidelity.
+
 The anonymous V6 writer emits outer and linked-type chunks at minor 0. Their
 readers require major version 1 and consume the fixed prefix without a minor
 gate. The linked-type child has the same major-version rule and bounded suffix

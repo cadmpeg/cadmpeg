@@ -280,6 +280,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert_eq!(external.fields()["full_path"], "/full/source.3dm");
     assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
     assert_eq!(external.fields()["relative_path_preferred"], true);
+    assert!(result.source_fidelity().retained_records.is_empty());
 
     let full_carrier = class_userdata(
         archive,
@@ -369,13 +370,10 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     );
     let malformed_record =
         definition_record_with_userdata(archive, &malformed_payload, &malformed_carrier);
-    let scan = crate::container::scan_owned(document_with_definitions(
-        "50",
-        archive,
-        &[malformed_record],
-        &[],
-    ))
-    .expect("malformed optional carrier remains framed");
+    let malformed_document = document_with_definitions("50", archive, &[malformed_record], &[]);
+    let malformed_source_bytes = malformed_document.clone();
+    let mut scan = crate::container::scan_owned(malformed_document)
+        .expect("malformed optional carrier remains framed");
     let parsed = &scan.definitions.definitions[0];
     assert_eq!(parsed.legacy_linked_path, "/retained/source.3dm");
     assert!(parsed.legacy_relative_linked_path.is_empty());
@@ -387,6 +385,96 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
             |diagnostic| diagnostic.message.contains("alternate-path userdata")
                 && diagnostic.message.contains("was dropped")
         ));
+    let malformed_range = scan
+        .opaque_records
+        .iter()
+        .find(|source| source.record.typecode == 0x2000_8076)
+        .map(|source| source.record.range.clone())
+        .expect("malformed definition record is retained");
+    assert_eq!(
+        &scan.data[malformed_range.clone()],
+        &malformed_source_bytes[malformed_range.clone()]
+    );
+    set_test_units(&mut scan, 1.0);
+    let malformed_result = crate::decode::decode_for_test(&scan);
+    let malformed_retained = malformed_result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|source| source.offset == malformed_range.start as u64)
+        .expect("malformed definition fidelity");
+    assert_eq!(
+        malformed_retained.data.as_deref(),
+        Some(&malformed_source_bytes[malformed_range])
+    );
+
+    let future_body = [
+        utf16_bytes(" relative/future.3dm ").as_slice(),
+        [1].as_slice(),
+    ]
+    .concat();
+    let future_carrier = class_userdata_with_anonymous_payload(
+        archive,
+        class_uuid,
+        application_uuid,
+        2,
+        &future_body,
+    );
+    let future_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x46; 16],
+        &[],
+        true,
+        "/future/full.3dm",
+        false,
+    );
+    let future_record = definition_record_with_userdata(archive, &future_payload, &future_carrier);
+    let future_document =
+        document_with_definitions("50", archive, std::slice::from_ref(&future_record), &[]);
+    let mut future_scan = crate::container::scan_owned(future_document)
+        .expect("future optional carrier remains framed");
+    let future_definition = &future_scan.definitions.definitions[0];
+    assert_eq!(future_definition.legacy_linked_path, "/future/full.3dm");
+    assert!(future_definition.legacy_relative_linked_path.is_empty());
+    assert!(future_scan
+        .definitions
+        .diagnostics
+        .iter()
+        .any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("unsupported instance-definition alternate-path version")
+        }));
+    let future_range = future_scan
+        .opaque_records
+        .iter()
+        .find(|source| source.record.typecode == 0x2000_8076)
+        .map(|source| source.record.range.clone())
+        .expect("future definition record is retained");
+    assert_eq!(
+        &future_scan.data[future_range.clone()],
+        future_record.as_slice()
+    );
+    set_test_units(&mut future_scan, 1.0);
+    let future_result = crate::decode::decode_for_test(&future_scan);
+    let future_external = &future_result
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("Rhino native namespace")
+        .arenas["external_references"][0];
+    assert_eq!(future_external.fields()["relative_path"], "");
+    let future_retained = future_result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|source| source.offset == future_range.start as u64)
+        .expect("future definition fidelity");
+    assert_eq!(
+        future_retained.data.as_deref(),
+        Some(future_record.as_slice())
+    );
 }
 
 #[test]

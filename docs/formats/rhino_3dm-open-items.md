@@ -151,6 +151,13 @@ malformed child, or count mismatch leaves the float mesh typed, omits only the
 redundant array, emits the bounded repair diagnostic, and retains the complete
 object record.
 
+The instance-definition owner is proven for the registered
+`ON_OBSOLETE_IDefAlternativePathUserData` carrier: its current major-1 payload
+trims the UTF-16 path and fills only the selected empty linked-definition slot;
+an unsupported major or malformed payload leaves the linked definition typed,
+omits the alternate path, emits the bounded diagnostic, and retains the
+complete definition record in source fidelity.
+
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
 same change must state the field-specific loss or neutral mapping required by

@@ -217,7 +217,16 @@ pub(crate) const REV_SURFACE_CLASS: [u8; 16] = [
 ];
 
 pub(crate) fn anonymous_chunk(archive: ArchiveVersion, minor: i32, body: &[u8]) -> Vec<u8> {
-    let mut payload = 1_i32.to_le_bytes().to_vec();
+    versioned_anonymous_chunk(archive, 1, minor, body)
+}
+
+fn versioned_anonymous_chunk(
+    archive: ArchiveVersion,
+    major: i32,
+    minor: i32,
+    body: &[u8],
+) -> Vec<u8> {
+    let mut payload = major.to_le_bytes().to_vec();
     payload.extend(minor.to_le_bytes());
     payload.extend(body);
     crc_chunk(archive, 0x4000_8000, &payload)
@@ -550,7 +559,7 @@ pub(crate) fn class_userdata(
 ) -> Vec<u8> {
     let mut userdata_body = utf16_bytes(path);
     userdata_body.push(u8::from(relative));
-    class_userdata_with_payload(archive, class_uuid, application_uuid, &userdata_body)
+    class_userdata_with_anonymous_payload(archive, class_uuid, application_uuid, 1, &userdata_body)
 }
 
 pub(crate) fn class_userdata_with_payload(
@@ -559,7 +568,17 @@ pub(crate) fn class_userdata_with_payload(
     application_uuid: [u8; 16],
     userdata_body: &[u8],
 ) -> Vec<u8> {
-    let userdata_payload = anonymous_chunk(archive, 0, userdata_body);
+    class_userdata_with_anonymous_payload(archive, class_uuid, application_uuid, 1, userdata_body)
+}
+
+pub(crate) fn class_userdata_with_anonymous_payload(
+    archive: ArchiveVersion,
+    class_uuid: [u8; 16],
+    application_uuid: [u8; 16],
+    major: i32,
+    userdata_body: &[u8],
+) -> Vec<u8> {
+    let userdata_payload = versioned_anonymous_chunk(archive, major, 0, userdata_body);
     let mut transform = Vec::with_capacity(16 * 8);
     for index in 0..16 {
         let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };

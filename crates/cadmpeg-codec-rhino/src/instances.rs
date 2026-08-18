@@ -905,14 +905,15 @@ fn apply_idef_alternative_path(
     archive: ArchiveVersion,
     definition: &mut InstanceDefinition,
     warnings: &mut Vec<String>,
-) {
+) -> bool {
     if !matches!(
         definition.kind,
         DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
     ) {
-        return;
+        return false;
     }
 
+    let mut degraded = false;
     for item in userdata.iter().filter(|item| {
         item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
             && item.item_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
@@ -922,6 +923,7 @@ fn apply_idef_alternative_path(
         let (path, relative) = match parse_idef_alternative_path(data, item, archive, warnings) {
             Ok(value) => value,
             Err(error) => {
+                degraded = true;
                 warnings.push(format!(
                     "instance-definition alternate-path userdata at offset {} was dropped: {error}",
                     item.range.start
@@ -950,6 +952,7 @@ fn apply_idef_alternative_path(
             path.clone_into(&mut definition.legacy_linked_path);
         }
     }
+    degraded
 }
 
 /// Parses all instance-definition records without losing framing after a bad record.
@@ -1004,37 +1007,50 @@ pub(crate) fn parse_definitions(
                     &mut warnings,
                 )
             }?;
-            apply_idef_alternative_path(data, &userdata, archive, &mut definition, &mut warnings);
+            let userdata_degraded = apply_idef_alternative_path(
+                data,
+                &userdata,
+                archive,
+                &mut definition,
+                &mut warnings,
+            );
             for warning in warnings {
                 result.scan.diagnostics.push(DefinitionDiagnostic {
                     message: warning,
                     source_range: record.range.clone(),
                 });
             }
-            Ok(definition)
+            Ok((definition, userdata_degraded))
         })();
         match parsed {
-            Ok(definition) if seen.insert(definition.id) => {
-                result
-                    .scan
-                    .member_object_ids
-                    .extend(definition.members.iter().copied());
-                result.scan.definitions.push(definition);
-            }
-            Ok(definition) => {
-                result
-                    .scan
-                    .member_object_ids
-                    .extend(definition.members.iter().copied());
-                result.scan.ambiguous_ids.insert(definition.id);
-                result
-                    .scan
-                    .definitions
-                    .retain(|value| value.id != definition.id);
-                result.scan.diagnostics.push(DefinitionDiagnostic {
-                    message: format!("duplicate instance definition UUID {}", definition.id),
-                    source_range: record.range.clone(),
-                });
+            Ok((definition, userdata_degraded)) => {
+                if userdata_degraded {
+                    result.opaque_records.push(OpaqueRecord {
+                        table_typecode,
+                        record: record.clone(),
+                    });
+                }
+                if seen.insert(definition.id) {
+                    result
+                        .scan
+                        .member_object_ids
+                        .extend(definition.members.iter().copied());
+                    result.scan.definitions.push(definition);
+                } else {
+                    result
+                        .scan
+                        .member_object_ids
+                        .extend(definition.members.iter().copied());
+                    result.scan.ambiguous_ids.insert(definition.id);
+                    result
+                        .scan
+                        .definitions
+                        .retain(|value| value.id != definition.id);
+                    result.scan.diagnostics.push(DefinitionDiagnostic {
+                        message: format!("duplicate instance definition UUID {}", definition.id),
+                        source_range: record.range.clone(),
+                    });
+                }
             }
             Err(error) => {
                 result.scan.diagnostics.push(DefinitionDiagnostic {
