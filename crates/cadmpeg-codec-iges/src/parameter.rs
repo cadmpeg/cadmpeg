@@ -374,6 +374,22 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (402, 16) => {
+            if record.integer(1) != Some(1) {
+                return ParameterBoundary::Invalid;
+            }
+            let Some(entity_count) = record.count(2).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = entity_count.checked_add(4) else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (308, 0) => {
             let Some(member_count) = record.count(3) else {
                 return ParameterBoundary::Invalid;
