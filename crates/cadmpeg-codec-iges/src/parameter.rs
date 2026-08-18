@@ -793,6 +793,7 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (216, 0..=2) => ParameterBoundary::Known(6),
         (110, 0..=2) => ParameterBoundary::Known(7),
         (116, 0) => ParameterBoundary::Known(5),
         _ => ParameterBoundary::Unknown,
