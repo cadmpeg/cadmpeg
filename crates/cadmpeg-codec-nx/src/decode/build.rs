@@ -331,7 +331,7 @@ pub(crate) fn try_decode_geometry(
                 surfaces_by_xmt.insert(node.xmt, id);
             }
         }
-        for (fi, surf) in crate::nurbs::surfaces(semantic).into_iter().enumerate() {
+        for (fi, surf) in view.nurbs.surfaces.iter().cloned().enumerate() {
             counts.nurbs_surfaces += 1;
             let id = SurfaceId(format!("nx:s{si}:nurbs-surf#{fi}"));
             annotations
@@ -523,7 +523,7 @@ pub(crate) fn try_decode_geometry(
                 curves_by_xmt.insert(node.xmt, id);
             }
         }
-        for (ci, crv) in crate::nurbs::curves(semantic).into_iter().enumerate() {
+        for (ci, crv) in view.nurbs.curves.iter().cloned().enumerate() {
             counts.nurbs_curves += 1;
             let id = CurveId(format!("nx:s{si}:nurbs-crv#{ci}"));
             annotations
@@ -540,7 +540,7 @@ pub(crate) fn try_decode_geometry(
             }
         }
 
-        for (pi, pcurve) in crate::nurbs::pcurves(semantic).into_iter().enumerate() {
+        for (pi, pcurve) in view.nurbs.pcurves.iter().cloned().enumerate() {
             let id = PcurveId(format!("nx:s{si}:pcurve#{pi}"));
             annotations
                 .note(&id, source_stream, pcurve.pos as u64)
@@ -753,7 +753,6 @@ pub(crate) fn try_decode_geometry(
             };
             *slot = Some(spine);
         }
-
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();
         let surface_curves = &view.surface_curves;

@@ -54,7 +54,17 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
     let descriptors = surface_descriptors(bytes);
-    Graph::parse(bytes)
+    let graph = Graph::parse(bytes);
+    decode_surfaces(&graph, &arrays, &payloads, &descriptors)
+}
+
+fn decode_surfaces(
+    graph: &Graph,
+    arrays: &Arrays,
+    payloads: &BTreeMap<u32, Payload>,
+    descriptors: &BTreeMap<u32, SurfaceDescriptor>,
+) -> Vec<Surface> {
+    graph
         .of_kind(124)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
@@ -126,7 +136,17 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
-    Graph::parse(bytes)
+    let graph = Graph::parse(bytes);
+    decode_pcurves(&graph, &arrays, &controls, &descriptors)
+}
+
+fn decode_pcurves(
+    graph: &Graph,
+    arrays: &Arrays,
+    controls: &BTreeMap<u32, Payload>,
+    descriptors: &BTreeMap<u32, CurveDescriptor>,
+) -> Vec<Pcurve> {
+    graph
         .of_kind(134)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
@@ -186,7 +206,17 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
-    Graph::parse(bytes)
+    let graph = Graph::parse(bytes);
+    decode_curves(&graph, &arrays, &controls, &descriptors)
+}
+
+fn decode_curves(
+    graph: &Graph,
+    arrays: &Arrays,
+    controls: &BTreeMap<u32, Payload>,
+    descriptors: &BTreeMap<u32, CurveDescriptor>,
+) -> Vec<Curve> {
+    graph
         .of_kind(134)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
@@ -238,6 +268,31 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
             })
         })
         .collect()
+}
+
+/// All NURBS geometry families decoded from one graph and one byte view.
+///
+/// The descriptor, payload, and array lanes are shared across the three
+/// family decoders. Callers that already own the parsed topology graph use
+/// this entry point to avoid rescanning the same byte view for each family.
+#[derive(Debug, Default)]
+pub(crate) struct Parsed {
+    pub(crate) surfaces: Vec<Surface>,
+    pub(crate) curves: Vec<Curve>,
+    pub(crate) pcurves: Vec<Pcurve>,
+}
+
+pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
+    let arrays = arrays(bytes);
+    let surface_payloads = surface_payloads(bytes);
+    let curve_payloads = curve_payloads(bytes);
+    let surface_descriptors = surface_descriptors(bytes);
+    let curve_descriptors = curve_descriptors(bytes);
+    Parsed {
+        surfaces: decode_surfaces(graph, &arrays, &surface_payloads, &surface_descriptors),
+        curves: decode_curves(graph, &arrays, &curve_payloads, &curve_descriptors),
+        pcurves: decode_pcurves(graph, &arrays, &curve_payloads, &curve_descriptors),
+    }
 }
 
 fn weighted_mm_point(pole: &[f64], weight: f64) -> Option<Point3> {

@@ -260,6 +260,10 @@ impl RejectionCounts {
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
 pub struct CurveScan {
+    /// Every structurally valid construction found in the source graph before
+    /// chart enrichment filters it. Native record extraction reuses this lane
+    /// so it does not parse the same graph a second time.
+    pub(crate) source_constructions: Vec<CompositeCurve>,
     /// Structurally valid constructions with a solved chart or a typed inbound
     /// curve reference.
     pub constructions: Vec<CompositeCurve>,
@@ -313,14 +317,19 @@ pub(crate) fn scan_with_graph(
     point_layout: ChartPointLayout,
 ) -> CurveScan {
     let (uv, uv_markers) = uv_records(stream);
+    let constructions = graph
+        .composite_curves()
+        .into_iter()
+        .chain(topology::intersection_data_curves(stream))
+        .collect();
     scan_with_auxiliaries(
-        stream,
         &chart_records(stream, point_layout),
         &term_records(stream),
         &uv,
         &uv_markers,
         &blend_bound_records(stream),
         graph,
+        constructions,
     )
 }
 
@@ -353,25 +362,34 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         uv_markers.extend(replacement_markers);
         bridges.extend(blend_bound_records(replacement_stream));
     }
-    scan_with_auxiliaries(stream, &charts, &terms, &uv, &uv_markers, &bridges, graph)
+    let constructions = graph
+        .composite_curves()
+        .into_iter()
+        .chain(topology::intersection_data_curves(stream))
+        .collect();
+    scan_with_auxiliaries(
+        &charts,
+        &terms,
+        &uv,
+        &uv_markers,
+        &bridges,
+        graph,
+        constructions,
+    )
 }
 
 fn scan_with_auxiliaries(
-    stream: &[u8],
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
     uv: &BTreeMap<u32, SupportUv>,
     uv_markers: &BTreeMap<u32, u8>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
+    constructions: Vec<CompositeCurve>,
 ) -> CurveScan {
     let referenced_curves = graph.referenced_curve_xmts();
     let mut result = CurveScan::default();
-    for construction in graph
-        .composite_curves()
-        .into_iter()
-        .chain(topology::intersection_data_curves(stream))
-    {
+    for construction in constructions.iter().copied() {
         match enrich(construction, charts, terms, uv, uv_markers, bridges, graph) {
             Ok(curve) => {
                 result.constructions.push(construction);
@@ -409,6 +427,7 @@ fn scan_with_auxiliaries(
             Err(_) => {}
         }
     }
+    result.source_constructions = constructions;
     result
 }
 

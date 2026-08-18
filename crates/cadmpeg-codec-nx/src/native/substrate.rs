@@ -108,6 +108,8 @@ pub(crate) struct StreamView {
     pub(crate) trimmed_curves: Vec<TrimmedCurve>,
     /// Type-137 surface curves.
     pub(crate) surface_curves: Vec<SurfaceCurve>,
+    /// NURBS surfaces, curves, and pcurves decoded from this byte view.
+    pub(crate) nurbs: crate::nurbs::Parsed,
     /// Intersection-construction scan.
     pub(crate) intersections: CurveScan,
 }
@@ -121,6 +123,7 @@ impl StreamView {
             blend_surfaces: Vec::new(),
             trimmed_curves: Vec::new(),
             surface_curves: Vec::new(),
+            nurbs: crate::nurbs::Parsed::default(),
             intersections: CurveScan::default(),
         }
     }
@@ -128,13 +131,23 @@ impl StreamView {
     /// Parse every cached family from a single byte buffer with the plain
     /// intersection scan. This is the raw view (`stream.inflated`); it is also the
     /// semantic view whenever the semantic bytes equal the raw bytes.
-    fn parse_uniform(bytes: &[u8], point_layout: crate::intersection::ChartPointLayout) -> Self {
+    fn parse_uniform(
+        bytes: &[u8],
+        point_layout: crate::intersection::ChartPointLayout,
+        include_nurbs: bool,
+    ) -> Self {
         let graph = Graph::parse(bytes);
+        let nurbs = if include_nurbs {
+            crate::nurbs::parse_with_graph(bytes, &graph)
+        } else {
+            crate::nurbs::Parsed::default()
+        };
         StreamView {
             offset_surfaces: graph.offset_surfaces(),
             blend_surfaces: graph.blend_surfaces(),
             trimmed_curves: graph.trimmed_curves(),
             surface_curves: graph.surface_curves(),
+            nurbs,
             intersections: intersection::scan_with_graph(bytes, &graph, point_layout),
             graph,
         }
@@ -154,6 +167,7 @@ impl StreamView {
         let semantic_graph =
             (semantic_bytes != topology_bytes).then(|| Graph::parse(semantic_bytes));
         let scan_graph = semantic_graph.as_ref().unwrap_or(&graph);
+        let nurbs = crate::nurbs::parse_with_graph(semantic_bytes, scan_graph);
         let intersections = if let Some(delta_indices) = paired_deltas {
             let replacement_streams = delta_indices
                 .iter()
@@ -173,6 +187,7 @@ impl StreamView {
             blend_surfaces: scan_graph.blend_surfaces(),
             trimmed_curves: scan_graph.trimmed_curves(),
             surface_curves: scan_graph.surface_curves(),
+            nurbs,
             intersections,
             graph,
         }
@@ -208,10 +223,11 @@ pub(crate) struct ParsedStreams<'a> {
 }
 
 impl<'a> ParsedStreams<'a> {
-    /// Prepare the semantic and topology byte views, then parse every family once per
-    /// byte view. Non-Parasolid streams get empty views. A stream's raw and semantic
-    /// views share one parse when the topology-merged and delta-extended byte views
-    /// both equal `stream.inflated` and the stream has no auxiliary-replacement deltas.
+    /// Prepare the semantic and topology byte views, then parse each family needed by
+    /// its consumer once per byte view. Non-Parasolid streams get empty views. A
+    /// stream's raw and semantic views share one parse when the topology-merged and
+    /// delta-extended byte views both equal `stream.inflated` and the stream has no
+    /// auxiliary-replacement deltas; only that shared view needs NURBS geometry.
     pub(crate) fn parse(scan: &'a Scan) -> Self {
         let topology_streams = topology_streams(scan);
         let delta_pairs = paired_delta_streams(scan);
@@ -240,7 +256,6 @@ impl<'a> ParsedStreams<'a> {
                 .kind
                 .chart_point_layout()
                 .expect("Parasolid stream has a chart point layout");
-            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated, point_layout));
             let paired = delta_pairs.get(&si);
             let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated;
             let mut residual = Vec::new();
@@ -255,6 +270,11 @@ impl<'a> ParsedStreams<'a> {
                 }
             }
             let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
+            let raw = Rc::new(StreamView::parse_uniform(
+                &stream.inflated,
+                point_layout,
+                identical,
+            ));
             let semantic = if identical {
                 Rc::clone(&raw)
             } else {

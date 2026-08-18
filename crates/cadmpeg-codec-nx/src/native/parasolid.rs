@@ -4,7 +4,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-use super::substrate::StreamView;
+use super::substrate::{ParsedStreams, StreamView};
 
 /// One completely bounded record in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1380,25 +1380,22 @@ pub struct ParasolidIntersectionRecord {
 
 /// Decode complete typed source records for retained intersection constructions.
 pub(crate) fn parasolid_intersection_records(
-    streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Vec<ParasolidIntersectionRecord> {
-    per_parasolid_scan::<ParasolidIntersectionRecord>(streams)
+    per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)
 }
 
-impl ParasolidScanRecords for ParasolidIntersectionRecord {
+impl ParasolidStreamRecords for ParasolidIntersectionRecord {
     type Row = crate::topology::CompositeCurve;
     type Record = ParasolidIntersectionRecord;
     const ID_STEM: &'static str = "intersection-record";
-    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
-        crate::topology::composite_curves(bytes)
-            .into_iter()
-            .chain(crate::topology::intersection_data_curves(bytes))
-            .collect()
+    fn rows(view: &StreamView) -> &[Self::Row] {
+        &view.intersections.source_constructions
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.xmt
     }
-    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
+    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
         ParasolidIntersectionRecord {
             id,
             stream_ordinal,

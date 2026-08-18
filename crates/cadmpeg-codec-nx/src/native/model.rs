@@ -439,7 +439,7 @@ impl NativeModel {
         let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
         let parasolid_trimmed_curve_records = parasolid_trimmed_curve_records(parsed);
         let parasolid_surface_curve_records = parasolid_surface_curve_records(parsed);
-        let parasolid_intersection_records = parasolid_intersection_records(streams);
+        let parasolid_intersection_records = parasolid_intersection_records(parsed);
         let parasolid_term_use_records = parasolid_term_use_records(streams);
         let parasolid_support_uv_records = parasolid_support_uv_records(streams);
         let parasolid_chart_records = parasolid_chart_records(streams);
@@ -960,7 +960,6 @@ impl NativeModel {
             &object_uuid_values,
         );
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
-
         NativeModel {
             display_jt: DisplayJtRecords {
                 display_jt_indices,
