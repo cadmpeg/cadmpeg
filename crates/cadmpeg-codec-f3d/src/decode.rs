@@ -884,6 +884,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     .any(|group| !edge_selection_is_resolved(&group.edges))
         }
         FeatureDefinition::DeleteFace { faces, .. } => !face_selection_is_resolved(faces),
+        FeatureDefinition::ReplaceFace {
+            targets,
+            replacements,
+        } => !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements),
         FeatureDefinition::OffsetSurface {
             faces, distance, ..
         } => !face_selection_is_resolved(faces) || distance.is_none(),
@@ -1673,6 +1677,13 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             FeatureDefinition::Decal { faces, .. } => face_selection(faces),
             FeatureDefinition::DeleteFace { faces, .. }
             | FeatureDefinition::OffsetSurface { faces, .. } => face_selection(faces),
+            FeatureDefinition::ReplaceFace {
+                targets,
+                replacements,
+            } => {
+                face_selection(targets);
+                face_selection(replacements);
+            }
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
                 gaps.profile_selections += usize::from(!profile_ref_is_resolved(profile));
             }

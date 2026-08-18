@@ -35,6 +35,7 @@ pub(crate) enum DesignFeatureFamily {
     Chamfer,
     Combine,
     Draft,
+    ReplaceFace,
     CircularPattern,
     RectangularPattern,
     Mirror,
@@ -71,6 +72,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
         "Combine" => Some(DesignFeatureFamily::Combine),
         "Draft" => Some(DesignFeatureFamily::Draft),
+        "ReplaceFace" => Some(DesignFeatureFamily::ReplaceFace),
         "C-Pattern" | "Circular Pattern" | "Réseau C" => {
             Some(DesignFeatureFamily::CircularPattern)
         }

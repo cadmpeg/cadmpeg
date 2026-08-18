@@ -110,6 +110,32 @@ fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
 }
 
 #[test]
+fn replace_face_requires_resolved_target_and_replacement_faces() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::ids::FaceId;
+
+    let resolved = |name: &str| FaceSelection::Faces(vec![FaceId(name.to_owned())]);
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::ReplaceFace {
+            targets: resolved("target"),
+            replacements: resolved("replacement"),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::ReplaceFace {
+            targets: FaceSelection::Native("native:target".into()),
+            replacements: resolved("replacement"),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::ReplaceFace {
+            targets: resolved("target"),
+            replacements: FaceSelection::Native("native:replacement".into()),
+        }
+    ));
+}
+
+#[test]
 fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
     use cadmpeg_ir::ids::BodyId;

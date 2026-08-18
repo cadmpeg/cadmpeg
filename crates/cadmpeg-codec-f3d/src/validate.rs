@@ -4456,6 +4456,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::ReplaceFace) => {
+                        matches!(group.role, 0x0000_0009_0000_0000 | 0x0000_0010_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(design::DesignFeatureFamily::Revolve) => {
                         matches!(
                             group.role,
@@ -6821,6 +6826,11 @@ fn validate_face_operands<'a>(
                                     | design::DesignFeatureFamily::Thicken
                                     | design::DesignFeatureFamily::Split,
                                 ) => true,
+                                Some(design::DesignFeatureFamily::ReplaceFace) => {
+                                    group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::BoundedFace
+                                }
                                 Some(design::DesignFeatureFamily::Loft) => {
                                     group.is_some_and(|group| {
                                         matches!(

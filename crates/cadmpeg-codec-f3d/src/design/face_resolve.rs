@@ -153,18 +153,15 @@ pub(crate) fn resolved_direct_face_selection(
     })
 }
 
-/// Resolve the complete input-state body boundaries selected by an Extrude
-/// target-shape group. Persistent-reference candidate faces identify each
-/// body; they do not define a partial target boundary.
-pub(crate) fn resolved_body_recipe_shape(
+/// Resolve the complete input-state body boundaries selected by a body-recipe
+/// group. Persistent-reference candidate faces identify each body; they do
+/// not define a partial target boundary.
+pub(crate) fn resolved_body_recipe_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if crate::design::design_feature_family(&scope.kind)
-        != Some(crate::design::DesignFeatureFamily::Extrude)
-        || group.scope_record_index != scope.record_index
-        || group.role != 0x0000_0005_0000_0000
+    if group.scope_record_index != scope.record_index
         || group.extrude_role.is_some()
         || group.extrude_face_role.is_some()
         || group.members.is_empty()
@@ -210,6 +207,23 @@ pub(crate) fn resolved_body_recipe_shape(
         }
     }
     historical_face_selection_in_state(scope, group, state_id?, faces)
+}
+
+/// Resolve the complete input-state body boundaries selected by an Extrude
+/// target-shape group. Persistent-reference candidate faces identify each
+/// body; they do not define a partial target boundary.
+pub(crate) fn resolved_body_recipe_shape(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignBodyRecipeOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    if crate::design::design_feature_family(&scope.kind)
+        != Some(crate::design::DesignFeatureFamily::Extrude)
+        || group.role != 0x0000_0005_0000_0000
+    {
+        return None;
+    }
+    resolved_body_recipe_selection(scope, group, operands)
 }
 
 pub(crate) fn resolved_profile_face_group(

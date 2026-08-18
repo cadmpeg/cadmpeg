@@ -87,6 +87,10 @@ fn feature_family_tokens_are_localized() {
         Some(DesignFeatureFamily::OffsetFaces)
     );
     assert_eq!(
+        design_feature_family("ReplaceFace"),
+        Some(DesignFeatureFamily::ReplaceFace)
+    );
+    assert_eq!(
         design_feature_family("Schale"),
         Some(DesignFeatureFamily::Shell)
     );

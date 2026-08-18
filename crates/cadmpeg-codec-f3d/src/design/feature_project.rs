@@ -13,7 +13,7 @@ use crate::design::edge_resolve::{
 };
 use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
-    resolved_body_recipe_shape, resolved_direct_face_selection,
+    resolved_body_recipe_selection, resolved_body_recipe_shape, resolved_direct_face_selection,
     resolved_extrude_profile_face_group, resolved_face_group, resolved_historical_face_group,
     resolved_historical_split_face_target_group, resolved_loft_edge_profile_group,
     resolved_profile_face_group, valid_chamfer_spec,
@@ -656,6 +656,22 @@ pub fn project_parameter_design_with_edge_identities(
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: scope.kind.clone(),
                     parameters: BTreeMap::new(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
+                Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
+                    scope,
+                    construction_groups,
+                    face_operands,
+                    body_recipe_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
+                        .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
@@ -6117,6 +6133,55 @@ fn project_hole(
         taper_angle: None,
         specification: None,
         allow_multi_profile_faces: None,
+    })
+}
+
+fn project_replace_face(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    body_recipe_operands: &[DesignBodyRecipeOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    if scope.kind != "ReplaceFace"
+        || scope.class_tag != "301"
+        || scope.paired_class_tag != "258"
+        || scope.frame_length != 290
+        || scope.reference_members.len() != 4
+    {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let [replacement_group, target_group] = groups.as_slice() else {
+        return None;
+    };
+    let references = scope.reference_members.as_slice();
+    if replacement_group.scope_reference_ordinal != 0
+        || replacement_group.record_index != references[0]
+        || replacement_group.role != ROLE_0X9
+        || replacement_group.members.as_slice() != &references[1..2]
+        || target_group.scope_reference_ordinal != 2
+        || target_group.record_index != references[2]
+        || target_group.role != ROLE_0X10
+        || target_group.members.as_slice() != &references[3..4]
+    {
+        return None;
+    }
+    let replacements =
+        resolved_body_recipe_selection(scope, replacement_group, body_recipe_operands)?;
+    let targets = resolved_historical_face_group(scope, target_group, face_operands)?;
+    Some(FeatureDefinition::ReplaceFace {
+        targets,
+        replacements,
     })
 }
 

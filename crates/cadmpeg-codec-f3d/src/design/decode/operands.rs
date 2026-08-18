@@ -607,6 +607,9 @@ pub fn decode_face_operands(
         let is_hole_face = scope.kind == "Hole" && group.role == 0x0000_0004_0000_0000;
         let is_draft_operand =
             design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
+        let is_replace_face_operand = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::ReplaceFace)
+            && group.role == 0x0000_0010_0000_0000;
         let is_surface_offset_operand = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role == 0x0000_0041_0000_0000;
@@ -625,6 +628,7 @@ pub fn decode_face_operands(
             && !is_thread_face
             && !is_hole_face
             && !is_draft_operand
+            && !is_replace_face_operand
             && !is_surface_offset_operand
         {
             continue;
@@ -691,6 +695,7 @@ pub fn decode_face_operands(
                     | DesignFeatureFamily::Shell
                     | DesignFeatureFamily::Thicken
                     | DesignFeatureFamily::Split
+                    | DesignFeatureFamily::ReplaceFace
             )
         ) || matches!(scope.kind.as_str(), "SplitFace" | "Hole")
     }) {
@@ -964,6 +969,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::ReplaceFace)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceOffset)
             || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
