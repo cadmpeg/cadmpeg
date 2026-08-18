@@ -460,6 +460,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the endpoint-occurrence identity to bind a curve that has separated candidates instead of retaining it natively.
 
+### SN-29. Standard topology gauge representative
+
+**Question.** Which byte relation selects one standard topology when the mesh search admits more than one gauge-equivalent solution?
+
+**Known.** `catia.md` §5.4 "An evidence-free topology automorphism is another quotient choice." defines the automorphism quotient and says that each admitted orbit keeps its lexicographically first topology signature. `SN-10` records that the coordinate-row allocation relation is unknown, so an orbit can contain more than one member. In `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9399-9415` the search keeps the first solution it reaches and drops each later solution that the gauge makes equivalent to it. `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9437-9439` returns that first solution. `crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs:952-961` makes the canonical form only to compare two candidates, and `canonicalize_mesh_vertex_labels` is a test-only entry point. The production gauge is always active: `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9219-9226` gives every comparison a coordinate gauge.
+
+**Need.** We must know the selector to give each logical vertex its serialized coordinate row and to write the topology back.
+
+**Conflict.** `catia.md` §5.4 "An evidence-free topology automorphism is another quotient choice." says the canonical representative is the lexicographically first topology signature. `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9410-9414` keeps the representative that the search reaches first. Search order and lexicographic order select different members of an orbit that has more than one member.
+
+**Note.** `crates/cadmpeg-codec-catia/src/loss.rs` gives `TopologyE5GaugeSubstituted`, `TopologyB5GaugeSubstituted`, and `TopologyZeroEntityGaugeSubstituted`. The E5, B5, and zero-entity routes charge one of these codes when a topology gauge replaces an unresolved source field. The standard route has no equivalent code, and `crates/cadmpeg-codec-catia/src/solve/` emits no loss code. A standard topology that rests on the automorphism quotient is thus not distinguishable in the report from a fully determined decode.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
