@@ -9742,6 +9742,7 @@ mod tests {
     mod disc20_disc1e_disc1c_disc16_disc14_disc10_disc04;
     mod disc20_disc1e_disc1c_disc16_disc14_disc12;
     mod disc20_disc1e_disc1c_disc16_disc14_disc12_disc10_disc04;
+    mod disc20_disc1e_disc1c_disc18_disc14_disc10_disc0e;
     mod disc20_disc1e_disc1c_disc18_disc16;
     mod disc20_disc1e_disc1c_disc18_disc16_disc10;
     mod disc20_disc1e_disc1c_disc18_disc16_disc12;
