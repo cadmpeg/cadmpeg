@@ -819,9 +819,7 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1e_disc1a_disc18_disc14_disc12_disc10_direct_face_root_body(&by_attr));
     }
     if out.is_empty() {
-        out.extend(disc28_disc26_disc24_disc1a_disc18_disc16_disc06_face_root_body(
-            &by_attr,
-        ));
+        out.extend(disc28_disc26_disc24_disc1a_disc18_disc16_disc06_face_root_body(&by_attr));
     }
     if out.is_empty() {
         out.extend(disc22_disc1a_disc20_disc1e_disc04_face_root_body(&by_attr));
