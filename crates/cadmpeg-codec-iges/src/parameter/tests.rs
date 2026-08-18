@@ -6463,6 +6463,192 @@ fn type408_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
 }
 
 #[test]
+fn type402_form19_entity_table_boundary_follows_segment_blocks() {
+    for (block_count, expected_start) in [(1_i64, 8_usize), (2, 14)] {
+        let association = directory_target(3, 212);
+        let mut source = directory_target(11, 402);
+        source.form = 19;
+        let directory = BTreeMap::from([(3, &association), (11, &source)]);
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 402;
+        values[1] = block_count;
+        values[expected_start] = 1;
+        values[expected_start + 1] = 3;
+        values[expected_start + 2] = 0;
+
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(11, &values), &directory);
+        assert_eq!(analysis.candidate_count, 1, "block_count={block_count}");
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "block_count={block_count}"
+        );
+        let groups = analysis.groups.expect("Type 402 Form 19 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![3]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type402_form19_entity_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property_5 = directory_target(5, 406);
+    let property_7 = directory_target(7, 406);
+    let mut source = directory_target(11, 402);
+    source.form = 19;
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property_5),
+        (7, &property_7),
+        (11, &source),
+    ]);
+    let record = integer_parameter_record(11, &[402, 1, 9, 0, 0, 0, 0, 2, 1, 3, 2, 5, 7]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 402 Form 19 table boundary");
+    assert_eq!(groups.token_start, 8);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5, 7]);
+}
+
+#[test]
+fn type402_form19_malformed_count_or_span_does_not_enable_generic_recovery() {
+    let association = directory_target(3, 212);
+    let mut source = directory_target(11, 402);
+    source.form = 19;
+    let directory = BTreeMap::from([(3, &association), (11, &source)]);
+
+    let wrong_fields = token_parameter_record(
+        11,
+        vec![
+            402.into(),
+            1.into(),
+            TokenValue::String(b"bad".to_vec()),
+            TokenValue::Real(0.5),
+            0.into(),
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            2.into(),
+            1.into(),
+            3.into(),
+            0.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 402 Form 19 table boundary");
+    assert_eq!(groups.token_start, 8);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+
+    let malformed = vec![
+        token_parameter_record(
+            11,
+            vec![
+                402.into(),
+                0.into(),
+                9.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            11,
+            vec![
+                402.into(),
+                (-1_i64).into(),
+                9.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            11,
+            vec![
+                402.into(),
+                i64::MAX.into(),
+                9.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            11,
+            vec![
+                402.into(),
+                TokenValue::Real(1.0),
+                9.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            11,
+            vec![
+                402.into(),
+                1.into(),
+                9.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            11,
+            vec![
+                402.into(),
+                1.into(),
+                9.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                3.into(),
+            ],
+        ),
+    ];
+    for record in malformed {
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type402_form18_entity_table_boundary_follows_all_class_lists() {
     for (counts, expected_start) in [
         (vec![0_i64; 6], 10_usize),

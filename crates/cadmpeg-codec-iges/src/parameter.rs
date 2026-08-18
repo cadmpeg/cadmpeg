@@ -408,6 +408,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// `LC` position numbers, so its groups start at token `11 + LC`.
 /// Type 408 Form 0 stores a definition pointer, three translation values, and
 /// an optional scale at indexes 1 through 5, so its groups start at token 6.
+/// Type 402 Form 19 puts the block count at index 1 and stores six fields per
+/// view/segment block, so its groups start at token `2 + 6*N`.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -443,6 +445,7 @@ pub(crate) fn entity_primary_end(
         (402, 12) => Some(external_reference_index_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
+        (402, 19) => Some(segmented_visibility_primary_end(record)),
         (402, 20) => Some(flow_associativity_primary_end(record, 1)),
         (406, 1 | 14) => Some(counted_primary_end(record)),
         (406, 2) => Some(region_restriction_primary_end(record)),
@@ -513,6 +516,17 @@ fn fixed_primary_end(record: &ParameterRecord, end: usize) -> usize {
     } else {
         record.tokens.len()
     }
+}
+
+fn segmented_visibility_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_mul(6))
+        .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
 }
 
 fn boolean_tree_primary_end(record: &ParameterRecord) -> usize {
