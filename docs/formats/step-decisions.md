@@ -113,6 +113,52 @@ the test pins the warning, not fidelity.
 
 **From.** TP-09.
 
+## Units and measures
+
+### D-04. Document projection of per-context uncertainty
+
+**Question.** Which linear tolerance does a document transfer when several
+representation contexts each assign an uncertainty?
+
+**Silence.** ISO 10303-43 defines uncertainty at three scopes — global
+context, representation, and qualified item — with item, then
+representation, then global-context precedence; ISO 10303-45 supplies the
+qualified item. Each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` uncertainty holds
+inside its own context. No clause defines a document-level uncertainty
+aggregate, and no clause gives a precedence between independent contexts.
+`Tolerances.linear` is a CADIR field, not a STEP attribute.
+
+**Rule.** `step.md` §8 "CADIR decision D-04: `Tolerances.linear` is the".
+Each context selects one value from its own measures. The projection removes
+duplicate candidates by exact numeric equality. One distinct value becomes
+`Tolerances.linear`; more than one keeps the default.
+
+**Ground.** Transfer the tolerance the file declares. Contexts that declare
+one equal value corroborate each other, so the projection keeps that value
+instead of a default that is coarser than the file. Exact equality keeps the
+comparison free of an invented tolerance window, because every candidate
+comes from one file.
+
+**Cost.** A document whose contexts disagree transfers no declared tolerance:
+`Tolerances.linear` keeps the default and the decode charges one
+`geometry.uncertainty-length-ambiguous` note. That note names each distinct
+candidate value and the kept default; the values are the operand a reader
+needs, so the count alone is not sufficient. A context that selects no value
+gives all of its resolvable length measures to the projection, so one
+undecided context makes the whole document ambiguous. Per-context tolerances
+are not transferred, because CADIR holds one linear baseline.
+
+**Reopens.** A normative ISO rule that defines a document-level uncertainty
+aggregate, or a precedence between independent contexts. This condition is
+documentary; no executable witness can watch for it. Witnesses in the
+`reader/geometry` tests:
+`decode_reports_distinct_context_uncertainties_as_ambiguous`
+pins the default retention, the one note, and the named candidate values;
+`decode_resolves_agreeing_context_uncertainties_without_ambiguity`
+pins the value that agreeing contexts project.
+
+**From.** UM-05.
+
 ## Product structure and presentation
 
 ### D-02. Product-definition view identity and projection order

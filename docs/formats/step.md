@@ -1101,21 +1101,29 @@ not STEP unit ownership. It does not identify or select a unit occurrence,
 and entity-id or source order never selects the scale. Conflicting contexts,
 unresolved units, or a non-unique set leave unscoped values in source numeric
 units and produce a document-unit unresolved error.
-CADIR decision: `Tolerances.linear` stores one document-wide baseline. It is
-projected only from resolvable positive length measures in
-`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`. A candidate whose `name` is
-`distance_accuracy_value` (case-insensitive) is preferred when exactly one
-such candidate exists; this name is a CADIR convention, not a STEP precedence
-rule. Otherwise exactly one resolvable length candidate is required. Angular
-measures do not compete with length measures. Multiple candidates without a
-unique named candidate leave the default linear tolerance and produce
-`geometry.uncertainty-length-ambiguous`; no resolvable length candidate with
-an unresolved candidate produces `geometry.uncertainty-length-unresolved`.
-An empty candidate set leaves the default without a selection. The optional
-description does not participate in name selection, and source order never
-selects a candidate. Representation-scoped and qualified-item uncertainties
-remain retained as source-native records because one document baseline cannot
-encode their scopes; they do not replace `Tolerances.linear`.
+ISO 10303-43 scopes each uncertainty measure to the representation context that
+assigns it. It defines no document-wide uncertainty aggregate.
+CADIR decision D-04: `Tolerances.linear` is the document projection of the
+per-context linear uncertainties. Each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`
+selects one value from its own measures. The candidate whose `name` is
+`distance_accuracy_value` (case-insensitive) wins when exactly one such
+candidate exists; otherwise the single resolvable length measure of that
+context wins. This name is a CADIR convention, not a STEP precedence rule. A
+context that selects no value gives each of its resolvable length measures to
+the projection. Only resolvable positive length measures are candidates.
+Angular measures do not compete with length measures. The optional description
+does not participate in name selection, and source order never selects a
+candidate. The projection removes duplicate candidates by exact numeric
+equality, and no tolerance window applies to that comparison. One distinct
+value becomes `Tolerances.linear`; equal values from different contexts agree
+and are not ambiguous. More than one distinct value keeps the default linear
+tolerance and produces one `geometry.uncertainty-length-ambiguous` note. That
+note names each distinct candidate value and the kept default. No candidate
+with an unresolved measure produces `geometry.uncertainty-length-unresolved`.
+An empty candidate set leaves the default without a selection.
+Representation-scoped and qualified-item uncertainties remain retained as
+source-native records because one document baseline cannot encode their scopes;
+they do not replace `Tolerances.linear`.
 Geometric-consistency checks use the selected document tolerance as their
 baseline. Entity and solved-carrier tolerances can widen that baseline.
 

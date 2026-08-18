@@ -59,8 +59,9 @@ finite admission witness accepted?
 for each admitted non-seam pcurve, and pins the strict floor of that code to
 warning. `cadmpeg dump --no-salvage` therefore stops at the first admitted
 pcurve. The `Idf/Idflibs/VC0603_SMD.stp` sample admits 418 pcurves, and strict
-decode refuses it. A FreeCAD 1.1.1 export of two solids also fails strict
-decode, for the different reason given in UM-05.
+decode refuses it. A FreeCAD 1.1.1 export of two solids holds no `PCURVE`, so
+strict decode accepts it: the refusal follows an admitted pcurve, not a
+producer.
 
 **Need.** Decide what strict mode means. One reading refuses every unproved
 fidelity claim. A different reading refuses only salvage substitutions and
@@ -91,34 +92,6 @@ how many distinct problems exist.
 
 
 ## 6. Units and measures
-
-### UM-05. Uncertainty measures from several contexts
-
-**Question.** How must the decoder resolve the document linear tolerance when
-the file holds more than one `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`?
-
-**Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:3305-3366`
-collects the uncertainty measures of every
-`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` in the document into one list. It gives a
-value only when exactly one measure has the name `distance_accuracy_value`, or
-when the list holds exactly one measure. For more than one measure it reports
-`geometry.uncertainty-length-ambiguous` and gives no value. The test compares
-the number of measures, not their values. A FreeCAD 1.1.1 export of two solids
-has three contexts, and each context declares `LENGTH_MEASURE(1.E-07)`. The
-decode reports the ambiguity loss and transfers `linear` as `1e-06`.
-
-**Need.** Decide if measures with equal value are ambiguous. Decide if the
-uncertainty belongs to one context or to the document. The specification gives
-item, then representation, then global-context precedence, so one pooled
-document list loses the context association. The present result gives a linear
-tolerance ten times coarser than the file declares, and the loss text does not
-name the substituted value.
-
-**Conflict.** The specification makes uncertainty a property of one context.
-The decoder pools the measures of all contexts into one document decision.
-
-**Note.** This loss also makes strict decode refuse the file. See TP-11.
-
 
 ## 7. Annotation, presentation, and tessellation
 

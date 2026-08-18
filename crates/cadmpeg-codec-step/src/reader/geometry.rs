@@ -330,7 +330,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
-    if let Some(uncertainty) = linear_uncertainty(exchange, &mut losses) {
+    if let Some(uncertainty) = linear_uncertainty(exchange, ir.tolerances.linear, &mut losses) {
         ir.tolerances.linear = uncertainty;
     }
 
@@ -3302,47 +3302,56 @@ fn si_prefix(prefix: &str) -> Option<f64> {
     })
 }
 
-fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option<f64> {
+/// Resolve one `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` to the linear uncertainty
+/// candidates it contributes, in millimetres.
+///
+/// STEP scopes an uncertainty to its representation context, so each context
+/// selects for itself. A unique `distance_accuracy_value` name selects the
+/// value. Every other context gives each of its resolvable length measures to
+/// the document projection, which selects a lone measure, merges equal
+/// declarations, and decides what a disagreement means.
+fn context_length_uncertainties(
+    context: &RawRecord,
+    exchange: &Exchange,
+    unresolved_measure_count: &mut usize,
+) -> Vec<f64> {
+    let Some(references) = context
+        .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
+        .and_then(|partial| partial.parameters.first())
+        .and_then(Value::list)
+    else {
+        return Vec::new();
+    };
     let mut measures = Vec::new();
-    let mut unresolved_measure_count = 0;
-    for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
-        let Some(references) = context
-            .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
-            .and_then(|partial| partial.parameters.first())
-            .and_then(Value::list)
-        else {
+    for uncertainty_id in references.iter().filter_map(Value::reference) {
+        let Some(measure) = exchange.records.get(&uncertainty_id) else {
+            *unresolved_measure_count += 1;
             continue;
         };
-        for uncertainty_id in references.iter().filter_map(Value::reference) {
-            let Some(measure) = exchange.records.get(&uncertainty_id) else {
-                unresolved_measure_count += 1;
+        let Some(value) = record_values(measure).find_map(measure_number) else {
+            *unresolved_measure_count += 1;
+            continue;
+        };
+        let Some(unit) = record_values(measure).find_map(Value::reference) else {
+            *unresolved_measure_count += 1;
+            continue;
+        };
+        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
+            let result = value * scale;
+            if !result.is_finite() || result <= 0.0 {
+                *unresolved_measure_count += 1;
                 continue;
-            };
-            let Some(value) = record_values(measure).find_map(measure_number) else {
-                unresolved_measure_count += 1;
-                continue;
-            };
-            let Some(unit) = record_values(measure).find_map(Value::reference) else {
-                unresolved_measure_count += 1;
-                continue;
-            };
-            if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
-                let result = value * scale;
-                if !result.is_finite() || result <= 0.0 {
-                    unresolved_measure_count += 1;
-                    continue;
-                }
-                // The CADIR convention applies to the name attribute, not
-                // the optional description attribute.
-                let named_distance_accuracy = measure
-                    .partial("UNCERTAINTY_MEASURE_WITH_UNIT")
-                    .and_then(|partial| partial.parameters.get(2))
-                    .and_then(string_value)
-                    .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
-                measures.push((named_distance_accuracy, result));
-            } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
-                unresolved_measure_count += 1;
             }
+            // The CADIR convention applies to the name attribute, not
+            // the optional description attribute.
+            let named_distance_accuracy = measure
+                .partial("UNCERTAINTY_MEASURE_WITH_UNIT")
+                .and_then(|partial| partial.parameters.get(2))
+                .and_then(string_value)
+                .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
+            measures.push((named_distance_accuracy, result));
+        } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
+            *unresolved_measure_count += 1;
         }
     }
 
@@ -3352,22 +3361,54 @@ fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option
         .map(|(_, value)| *value)
         .collect::<Vec<_>>();
     if named.len() == 1 {
-        return named.first().copied();
+        return named;
     }
-    if measures.len() == 1 {
-        return measures.first().map(|(_, value)| *value);
+    measures.into_iter().map(|(_, value)| value).collect()
+}
+
+fn linear_uncertainty(
+    exchange: &Exchange,
+    default_linear: f64,
+    losses: &mut Vec<LossNote>,
+) -> Option<f64> {
+    let mut candidates: Vec<f64> = Vec::new();
+    let mut unresolved_measure_count = 0;
+    for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
+        for candidate in
+            context_length_uncertainties(context, exchange, &mut unresolved_measure_count)
+        {
+            // Exact equality: the candidates come from one file, so equal
+            // declarations corroborate each other and are not a conflict.
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
     }
-    if measures.len() > 1 {
-        losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
-                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has {} resolvable length measure(s) and {} unresolved measure(s); the linear tolerance is ambiguous",
-                measures.len(), unresolved_measure_count
+    candidates.sort_by(f64::total_cmp);
+
+    match candidates.as_slice() {
+        [value] => Some(*value),
+        [] => {
+            if unresolved_measure_count > 0 {
+                losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
+                    "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved_measure_count} unresolved measure(s); the linear tolerance was not transferred"
+                )));
+            }
+            None
+        }
+        values => {
+            let listed = values
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
+                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved_measure_count} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
+                values.len()
             )));
-    } else if measures.is_empty() && unresolved_measure_count > 0 {
-        losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
-                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved_measure_count} unresolved measure(s); the linear tolerance was not transferred"
-            )));
+            None
+        }
     }
-    None
 }
 
 fn string_value(value: &Value) -> Option<String> {
