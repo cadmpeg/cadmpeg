@@ -6390,7 +6390,6 @@ fn walk_endpoint_relation_domains<F>(
     constraints: &MeshEndpointRelationConstraints,
     point_count: usize,
     budget: &WorkBudget<'_>,
-    pre_state_memo: &mut HashSet<MeshEndpointRelationStateSignature>,
     state_memo: &mut HashSet<MeshEndpointRelationStateSignature>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
     priority_edges: Option<&[bool]>,
@@ -6407,15 +6406,6 @@ where
     }
     let mut domains = domains;
     let mut assigned = assigned;
-    if pre_state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-        // The raw key avoids canonicalizing the broad pre-propagation state.
-        // The post-propagation key below applies the evidence-preserving
-        // gauge once the state has been reduced.
-        let signature = raw_endpoint_relation_state_signature(&domains, &assigned);
-        if !pre_state_memo.insert(signature) {
-            return false;
-        }
-    }
     let propagated = domains.iter().all(|choices| choices.len() == 1)
         || propagate_endpoint_relation_domains(&mut domains, &mut assigned, constraints, budget);
     if !propagated {
@@ -6619,7 +6609,6 @@ where
             constraints,
             point_count,
             budget,
-            pre_state_memo,
             state_memo,
             candidate_gauge,
             priority_edges,
@@ -6743,7 +6732,6 @@ fn resolve_endpoint_configuration_relation_streaming(
     let mut resolved = None;
     let mut relation_state_memo =
         HashSet::<(MeshEndpointRelationSelections, Vec<[usize; 2]>)>::new();
-    let mut relation_pre_state_memo = HashSet::<MeshEndpointRelationStateSignature>::new();
     let mut relation_walk_state_memo = HashSet::<MeshEndpointRelationStateSignature>::new();
     let coordinate_budget =
         coordinate_domains.map(|_| budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS));
@@ -6878,7 +6866,6 @@ fn resolve_endpoint_configuration_relation_streaming(
         &constraints,
         vertex_points.len(),
         budget,
-        &mut relation_pre_state_memo,
         &mut relation_walk_state_memo,
         candidate_gauge,
         priority_edges,
