@@ -254,6 +254,8 @@ Native edge records and the vertex roster may cover only a subset of the physica
 
 After exact local-tag bindings consume their native edge records, a remaining native edge may bind an unmatched standard row by endpoint incidence. Map its two native vertex identities through the positional roster, require both coordinate rows to belong to that standard row's surface-constrained endpoint domain, and compare unordered pairs. The row binds only when all matching unused native edges reduce to one distinct unordered coordinate-row pair. Zero or multiple distinct pairs leave the row unresolved.
 
+When an exact native support pcurve evaluates to the endpoints of a row, its two coordinate rows corroborate the native endpoint identity as an unordered pair. The support-pcurve wrapper order does not replace an already selected native identity direction; a reversed wrapper order is the same endpoint identity, while a different unordered pair conflicts.
+
 The co-stored `b5 03 5d` identity graph supplies a world-space locus for a native endpoint identity when its parameter incidences lift through their carriers. That locus binds a `05 08 01` coordinate row only when exactly one row lies within the identity's stored tolerance, with a `2e-3` mm floor. Bound identities seed the global port-to-coordinate fixpoint; ambiguous or absent locus matches remain unbound.
 
 Resolved physical-edge endpoint pairs constrain the port namespace. For every

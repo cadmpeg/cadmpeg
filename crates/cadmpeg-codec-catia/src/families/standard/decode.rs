@@ -3291,7 +3291,7 @@ fn attach_standard_topology(
                 )
             });
         let Some(pair) = native_pair else { continue };
-        if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
         }
         if let Some(options) = &mut endpoint_options {
@@ -5814,6 +5814,27 @@ fn merge_ordered_endpoint_pair(
     };
     match slot {
         Some(previous) => *previous == pair,
+        None => {
+            *slot = Some(pair);
+            true
+        }
+    }
+}
+
+/// Merge endpoint coordinates derived from support geometry without replacing
+/// the direction selected by a native identity source. Support pcurves
+/// corroborate the endpoint identity, but their wrapper order is not a second
+/// directed edge-identity source.
+pub(crate) fn merge_derived_endpoint_pair(
+    ordered_pairs: &mut [Option<[usize; 2]>],
+    edge: usize,
+    pair: [usize; 2],
+) -> bool {
+    let Some(slot) = ordered_pairs.get_mut(edge) else {
+        return false;
+    };
+    match slot {
+        Some(previous) => missing_edge::same_unordered_pair(*previous, pair),
         None => {
             *slot = Some(pair);
             true

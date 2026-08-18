@@ -556,6 +556,14 @@ fn native_endpoint_evidence_rejects_directed_pair_conflicts() {
 }
 
 #[test]
+fn derived_endpoint_pair_accepts_reversed_support_geometry() {
+    let mut pairs = vec![Some([34, 33])];
+    assert!(merge_derived_endpoint_pair(&mut pairs, 0, [33, 34]));
+    assert_eq!(pairs, [Some([34, 33])]);
+    assert!(!merge_derived_endpoint_pair(&mut pairs, 0, [33, 35]));
+}
+
+#[test]
 fn complete_vertex_roster_supersedes_partial_graph_coordinates() {
     let graph = [Some([4, 5]), None];
     let roster = [Some([0, 1]), Some([2, 3])];

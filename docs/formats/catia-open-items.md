@@ -328,11 +328,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a standard `0x60` row local allocation tag bind to its native edge record when no edge node has the same curve identity?
 
-**Known.** `catia.md` §5.5 `edge_support_row` defines exact identity binding and the endpoint-incidence fallback.
+**Known.** `catia.md` §5.5 `edge_support_row` defines exact identity binding and the endpoint-incidence fallback. An evaluated exact support pcurve corroborates the row's unordered endpoint pair. Its wrapper order does not override the direction selected by a native endpoint identity source; a distinct unordered pair remains a conflict.
 
 **Need.** We must know the remaining binding to transfer the native edge carrier.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `5f6cb0666` adds a unique-unused-native-edge fallback from endpoint incidence and synthetic endpoint maps. Standard-path corpus files have not yet verified that this fallback is the native `0x60` binding rule; the current spec records the decoder policy only. Read `0x60` rows and their native edge records in corpus standard-path parts to fix the binding.
+**Note.** The endpoint-incidence fallback does not establish the remaining `0x60` carrier binding. It only selects an endpoint identity when one unused native edge has one distinct unordered pair in the row's geometric domain. A repeated pair remains unresolved.
 
 ### SN-14. Multiple FBB face groups
 
