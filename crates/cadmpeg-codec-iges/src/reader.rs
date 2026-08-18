@@ -121,6 +121,10 @@ fn decode_with_occurrence_limits(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
+    let parameter_by_sequence = parameters
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
     let mut references = graph::build(&directory);
     let mut source_fidelity = SourceFidelity::default();
     source_fidelity.retained_records.push(RetainedSourceRecord {
@@ -174,9 +178,10 @@ fn decode_with_occurrence_limits(
     let mut losses = projection.losses;
     losses.extend(graph::losses(&references, &scan, &parameters));
     losses.extend(parameters.iter().filter_map(|record| {
-        let count = parameter::ambiguous_trailing_pointer_group_count(
+        let count = parameter::ambiguous_trailing_pointer_group_count_with_records(
             record,
             &directory_by_sequence,
+            &parameter_by_sequence,
         )?;
         let entry = directory_by_sequence.get(&record.directory_sequence)?;
         Some(

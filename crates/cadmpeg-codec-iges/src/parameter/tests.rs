@@ -92,6 +92,16 @@ fn type322_entity(form: i64, label: &str, parameters: &str) -> OwnedTestEntity {
     }
 }
 
+fn type422_entity(form: i64, label: &str, parameters: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 422,
+        form,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    }
+}
+
 fn type312_template_entity(label: &str) -> OwnedTestEntity {
     OwnedTestEntity {
         entity_type: 312,
@@ -2005,6 +2015,211 @@ fn type322_forms12_invalid_value_width_suppresses_generic_suffix_candidate() {
             .iter()
             .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
     }
+}
+
+#[test]
+fn type422_forms_use_referenced_definition_width_for_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_structures(
+                &[
+                    type322_form0_entity("ATTRDEF", "322,3HDEF,1,2,10,1,2,11,1,1;"),
+                    type422_entity(0, "ATTRONE", "422,42,43,44,1,7,0;"),
+                    type422_entity(1, "ATTRTAB", "422,2,42,43,44,45,46,47,1,7,0;"),
+                    type212_note_entity("TARGET"),
+                ],
+                &[(3, -1), (5, -1)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    for (sequence, parameter_index, row_count) in [(3, 5, 1), (5, 9, 2)] {
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#7"])
+        );
+        assert!(entity.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reference| reference["parameter_index"] == parameter_index));
+        let instance = native.arenas["attribute_table_instances"]
+            .iter()
+            .find(|instance| {
+                instance.fields()["source_entity"] == format!("iges:entity:directory#{sequence}")
+            })
+            .unwrap();
+        assert_eq!(
+            instance.fields()["rows"].as_array().unwrap().len(),
+            row_count
+        );
+    }
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn type422_wrong_typed_values_keep_definition_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_structures(
+                &[
+                    type322_form0_entity("ATTRDEF", "322,3HDEF,1,2,10,1,2,11,1,1;"),
+                    type422_entity(0, "WRONGONE", "422,5Hwrong,43,44,1,7,0;"),
+                    type422_entity(1, "WRONGTAB", "422,1,5Hwrong,43,44,1,7,0;"),
+                    type212_note_entity("TARGET"),
+                ],
+                &[(3, -1), (5, -1)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    for (sequence, parameter_index) in [(3, 5), (5, 6)] {
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#7"])
+        );
+        assert!(entity.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reference| reference["parameter_index"] == parameter_index));
+    }
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count(),
+        2
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type422_zero_definition_width_keeps_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_structures(
+                &[
+                    type322_form0_entity("ZERODEF", "322,3HDEF,1,2,10,1,0,11,1,0;"),
+                    type422_entity(0, "ZEROONE", "422,1,7,0;"),
+                    type422_entity(1, "ZEROTAB", "422,1,1,7,0;"),
+                    type212_note_entity("TARGET"),
+                ],
+                &[(3, -1), (5, -1)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    for (sequence, parameter_index) in [(3, 2), (5, 3)] {
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#7"])
+        );
+        assert!(entity.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reference| reference["parameter_index"] == parameter_index));
+    }
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn type422_invalid_context_suppresses_generic_suffix_candidate() {
+    let assert_suppressed =
+        |entities: Vec<OwnedTestEntity>, structures: &[(u32, i64)], sequence: u32| {
+            let result = IgesCodec
+                .decode(
+                    &mut Cursor::new(owned_test_file_with_structures(&entities, structures)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            let native = result.ir().native.namespace("iges").unwrap();
+            let entity = native.arenas["entities"]
+                .iter()
+                .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+                .unwrap();
+            assert!(entity.fields()["association_links"]
+                .as_array()
+                .unwrap()
+                .is_empty());
+            assert!(!entity.fields()["references"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|reference| reference["kind"] == "parameter"));
+            assert!(!result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+        };
+
+    assert_suppressed(
+        vec![
+            type422_entity(0, "NODEF", "422,1,3,0;"),
+            type212_note_entity("TARGET"),
+        ],
+        &[(1, -99)],
+        1,
+    );
+    assert_suppressed(
+        vec![
+            type322_entity(1, "WRNGFORM", "322,3HDEF,1,1,10,1,1,42;"),
+            type422_entity(0, "WRONGREF", "422,1,3,0;"),
+            type212_note_entity("TARGET"),
+        ],
+        &[(3, -1)],
+        3,
+    );
+    assert_suppressed(
+        vec![
+            type322_form0_entity("BADAVC", "322,3HDEF,1,2,10,1,2.5,11,1,1;"),
+            type422_entity(0, "BADDEF", "422,1,5,0;"),
+            type212_note_entity("TARGET"),
+        ],
+        &[(3, -1)],
+        3,
+    );
+    assert_suppressed(
+        vec![
+            type322_form0_entity("ATTRDEF", "322,3HDEF,1,2,10,1,2,11,1,1;"),
+            type422_entity(1, "BADROW", "422,1,42,43,1,5,0;"),
+            type212_note_entity("TARGET"),
+        ],
+        &[(3, -1)],
+        3,
+    );
+    assert_suppressed(
+        vec![
+            type322_form0_entity("ATTRDEF", "322,3HDEF,1,2,10,1,2,11,1,1;"),
+            type422_entity(1, "BADCOUNT", "422,1.5,1,5,0;"),
+            type212_note_entity("TARGET"),
+        ],
+        &[(3, -1)],
+        3,
+    );
 }
 
 #[test]

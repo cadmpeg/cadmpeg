@@ -183,8 +183,17 @@ pub(crate) fn trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TrailingPointerGroups> {
-    let specified_end = specified_parameter_end(record, directory);
-    let candidates = trailing_pointer_group_candidates(record, directory);
+    let records = BTreeMap::new();
+    trailing_pointer_groups_with_records(record, directory, &records)
+}
+
+pub(crate) fn trailing_pointer_groups_with_records(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<TrailingPointerGroups> {
+    let specified_end = specified_parameter_end(record, directory, records);
+    let candidates = trailing_pointer_group_candidates_with_records(record, directory, records);
     let valid = candidates
         .iter()
         .filter(|groups| groups.fully_valid)
@@ -199,22 +208,24 @@ pub(crate) fn trailing_pointer_groups(
     }
 }
 
-pub(crate) fn ambiguous_trailing_pointer_group_count(
+pub(crate) fn ambiguous_trailing_pointer_group_count_with_records(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Option<usize> {
-    let count = trailing_pointer_group_candidates(record, directory)
+    let count = trailing_pointer_group_candidates_with_records(record, directory, records)
         .into_iter()
         .filter(|groups| groups.fully_valid)
         .count();
     (count > 1).then_some(count)
 }
 
-pub(crate) fn trailing_pointer_group_candidates(
+pub(crate) fn trailing_pointer_group_candidates_with_records(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Vec<TrailingPointerGroups> {
-    let boundary = specified_parameter_end(record, directory);
+    let boundary = specified_parameter_end(record, directory, records);
     if matches!(boundary, ParameterBoundary::Invalid) {
         return Vec::new();
     }
@@ -300,6 +311,7 @@ pub(crate) fn trailing_pointer_group_candidates(
 fn specified_parameter_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
 ) -> ParameterBoundary {
     let Some(entry) = directory.get(&record.directory_sequence) else {
         return ParameterBoundary::Unknown;
@@ -464,6 +476,85 @@ fn specified_parameter_end(
                 cursor = end;
             }
             ParameterBoundary::Known(cursor)
+        }
+        (422, 0 | 1) => {
+            let Some(definition_sequence) = entry
+                .structure
+                .checked_neg()
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|sequence| sequence % 2 == 1)
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(_) = directory
+                .get(&definition_sequence)
+                .filter(|entry| entry.entity_type == 322 && entry.form == 0)
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(definition_record) = records.get(&definition_sequence).copied() else {
+                return ParameterBoundary::Invalid;
+            };
+            if !matches!(
+                definition_record.tokens.get(1).map(|token| &token.value),
+                Some(TokenValue::String(_) | TokenValue::Omitted)
+            ) || !definition_record
+                .integer(2)
+                .is_some_and(|value| (0..=9999).contains(&value))
+            {
+                return ParameterBoundary::Invalid;
+            }
+            let Some(attribute_count) = definition_record
+                .count_with_stride(3, 3)
+                .filter(|count| *count > 0)
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let mut cursor = 4_usize;
+            let mut values_per_row = 0_usize;
+            for _ in 0..attribute_count {
+                if definition_record.integer(cursor).is_none()
+                    || !definition_record
+                        .integer(cursor + 1)
+                        .is_some_and(|value| (1..=6).contains(&value))
+                {
+                    return ParameterBoundary::Invalid;
+                }
+                let Some(value_count) = definition_record
+                    .integer_or(cursor + 2, 1)
+                    .and_then(|value| usize::try_from(value).ok())
+                else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(next_cursor) = cursor.checked_add(3) else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(next_width) = values_per_row.checked_add(value_count) else {
+                    return ParameterBoundary::Invalid;
+                };
+                cursor = next_cursor;
+                values_per_row = next_width;
+            }
+            let value_start = if entry.form == 0 { 1_usize } else { 2 };
+            let row_count = if entry.form == 0 {
+                1
+            } else {
+                let Some(count) = record.count(1).filter(|count| *count > 0) else {
+                    return ParameterBoundary::Invalid;
+                };
+                count
+            };
+            let Some(end) = row_count
+                .checked_mul(values_per_row)
+                .and_then(|value_count| value_start.checked_add(value_count))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
         }
         (302, 5001..=9999) => {
             let Some(class_count) = record.count(1).filter(|count| *count > 0) else {

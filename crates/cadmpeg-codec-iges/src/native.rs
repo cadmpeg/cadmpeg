@@ -9,7 +9,8 @@ use crate::entities::structure::array_base_type;
 use crate::global::{Global, RealPrecision};
 use crate::graph::{ParameterResolver, ReferenceEdge};
 use crate::parameter::{
-    trailing_pointer_group_candidates, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
+    trailing_pointer_group_candidates_with_records, trailing_pointer_groups_with_records,
+    ParameterRecord, Token, TokenValue,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -1361,12 +1362,18 @@ pub(crate) fn store(
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
-            let trailing = parameters.and_then(|record| trailing_pointer_groups(record, &entries));
+            let trailing = parameters.and_then(|record| {
+                trailing_pointer_groups_with_records(record, &entries, &by_directory)
+            });
             let invalid_trailing = (trailing.is_none()
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
                 parameters.and_then(|record| {
-                    let candidates = trailing_pointer_group_candidates(record, &entries);
+                    let candidates = trailing_pointer_group_candidates_with_records(
+                        record,
+                        &entries,
+                        &by_directory,
+                    );
                     if candidates.iter().any(|groups| groups.fully_valid) {
                         return None;
                     }
@@ -3112,8 +3119,12 @@ pub(crate) fn store(
                     .iter()
                     .filter(|(sequence, owner_record)| {
                         **sequence != entry.sequence
-                            && trailing_pointer_groups(owner_record, &entries)
-                                .is_some_and(|groups| groups.properties.contains(&entry.sequence))
+                            && trailing_pointer_groups_with_records(
+                                owner_record,
+                                &entries,
+                                &by_directory,
+                            )
+                            .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -3414,7 +3425,7 @@ pub(crate) fn store(
                     .iter()
                     .filter(|(sequence, owner)| {
                         **sequence != entry.sequence
-                            && trailing_pointer_groups(owner, &entries)
+                            && trailing_pointer_groups_with_records(owner, &entries, &by_directory)
                                 .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3434,7 +3445,7 @@ pub(crate) fn store(
             let owners = by_directory
                 .iter()
                 .filter(|(_, owner)| {
-                    trailing_pointer_groups(owner, &entries)
+                    trailing_pointer_groups_with_records(owner, &entries, &by_directory)
                         .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                 })
                 .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3703,7 +3714,9 @@ pub(crate) fn store(
             let annotation_count = record
                 .and_then(|record| record.count(annotation_count_index))
                 .unwrap_or_default();
-            let trailing = record.and_then(|record| trailing_pointer_groups(record, &entries));
+            let trailing = record.and_then(|record| {
+                trailing_pointer_groups_with_records(record, &entries, &by_directory)
+            });
             let property = |form| {
                 trailing.as_ref().and_then(|groups| {
                     groups.properties.iter().find_map(|sequence| {
