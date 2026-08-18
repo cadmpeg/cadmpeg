@@ -673,6 +673,46 @@ fn validates_gui_mesh_and_points_value_grammars() {
 }
 
 #[test]
+fn validates_gui_techdraw_geom_format_list_grammar() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br##"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="3"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"/><Style value="2"/><Weight value="0.7"/><Color value="#FF0000"/><Visible value="1"/><LineNumber value="2"/></GeomFormat><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="1"/><Style value="1"/><Weight value="0.5"/><Color value="#000000"/><Visible value="0"/></GeomFormat><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="2"/><Style value="1"/><Weight value="0.5"/><Color value="#000000"/><Visible value="1"/><ISOLineNumber value="3"/></GeomFormat></GeomFormatList></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"##;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid TechDraw GeomFormatList");
+
+    for invalid in [
+        r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><Wrong count="0"/></Property>"#,
+        r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"/></Property>"#,
+        r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><Other type="TechDraw::GeomFormat"/></GeomFormatList></Property>"#,
+        r##"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="App::PropertyString"><GeomIndex value="0"/><Style value="2"/><Weight value="0.7"/><Color value="#FF0000"/><Visible value="1"/></GeomFormat></GeomFormatList></Property>"##,
+        r##"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"><Nested/></GeomIndex><Style value="2"/><Weight value="0.7"/><Color value="#FF0000"/><Visible value="1"/></GeomFormat></GeomFormatList></Property>"##,
+        r##"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"/><Style value="2"/><Weight value="nan"/><Color value="#FF0000"/><Visible value="1"/></GeomFormat></GeomFormatList></Property>"##,
+        r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"/><Style value="2"/><Weight value="0.7"/><Color value="red"/><Visible value="1"/></GeomFormat></GeomFormatList></Property>"#,
+        r##"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"/><Style value="2"/><Weight value="0.7"/><Color value="#FF0000"/><Visible value="1"/><Unexpected value="2"/></GeomFormat></GeomFormatList></Property>"##,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid TechDraw GeomFormatList");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn validates_the_complete_loaded_dynamic_gui_registry() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>

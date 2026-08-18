@@ -33,6 +33,9 @@ direct root's lowercase `file`; `FileIncluded` instead admits exactly one `file`
 The GUI validator rejects nested side-entry carriers and the mutual `file`/`data` form.
 GUI Mesh and Points properties use one direct `Mesh` or `Points` root, bind a non-empty side entry
 only from that root, and validate the optional Points `mtrx` as sixteen finite scalars.
+TechDraw `PropertyGeomFormatList` uses one direct `GeomFormatList` root with exact direct record
+count and typed `GeomFormat` records. Each record has direct integer `GeomIndex` and `Style`, finite
+`Weight`, non-empty `Color`, Boolean `Visible`, and an optional `LineNumber` or `ISOLineNumber`.
 
 **Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
 outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
@@ -44,10 +47,10 @@ registered path without a complete value-grammar check. Its arbitrary descendant
 retained as if the registry had established their grammar, while the neutral presentation path
 silently withholds or misreads the value.
 
-**Note.** Partly settled. Link-family, scalar/quantity, in-memory list, standard side-entry, and
-Mesh/Points value grammars are closed by the application writer inheritance rules and shared
-direct-root validation. The remaining question is limited to other custom runtime types and their
-custom side-entry forms.
+**Note.** Partly settled. Link-family, scalar/quantity, in-memory list, standard side-entry,
+Mesh/Points, and TechDraw GeomFormatList value grammars are closed by the application writer
+inheritance rules and shared direct-root validation. The remaining question is limited to other
+custom runtime types and their custom side-entry forms.
 
 ### GP-02. Other GUI property semantics
 

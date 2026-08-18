@@ -839,6 +839,9 @@ fn validate_gui_property(
         "Points::PropertyPointKernel" => {
             return validate_gui_geometry_value(property, property_name, "Points");
         }
+        "TechDraw::PropertyGeomFormatList" => {
+            return validate_gui_geom_format_list(property, property_name);
+        }
         "App::PropertyExpressionEngine" => {
             return validate_gui_expression_engine(property, property_name);
         }
@@ -1566,6 +1569,148 @@ fn validate_gui_points_transform(
         return Err(CodecError::Malformed(message));
     }
     Ok(())
+}
+
+fn validate_gui_geom_format_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires exactly one GeomFormatList value",
+        ));
+    };
+    if !root.has_tag_name("GeomFormatList") {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires a leading GeomFormatList value",
+        ));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormatList has no count"))?
+        .parse::<usize>()
+        .map_err(|_| gui_techdraw_error(property_name, "GeomFormatList has an invalid count"))?;
+    let records = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormatList count does not match its records",
+        ));
+    }
+    for record in records {
+        if !record.has_tag_name("GeomFormat")
+            || record.attribute("type") != Some("TechDraw::GeomFormat")
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormatList has an invalid record type",
+            ));
+        }
+        validate_gui_geom_format_record(record, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_geom_format_record(
+    record: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let fields = record
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if !(5..=6).contains(&fields.len()) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has an invalid field sequence",
+        ));
+    }
+    for (field, expected_tag) in
+        fields
+            .iter()
+            .zip(["GeomIndex", "Style", "Weight", "Color", "Visible"])
+    {
+        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormat has a nested or out-of-order field",
+            ));
+        }
+        if field.attribute("value").is_none() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormat field has no value",
+            ));
+        }
+    }
+    if let Some(line_number) = fields.get(5) {
+        if !(line_number.has_tag_name("LineNumber") || line_number.has_tag_name("ISOLineNumber"))
+            || line_number.children().any(|node| node.is_element())
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormat has an invalid line-number field",
+            ));
+        }
+        parse_gui_techdraw_integer(*line_number, property_name)?;
+    }
+    parse_gui_techdraw_integer(fields[0], property_name)?;
+    parse_gui_techdraw_integer(fields[1], property_name)?;
+    let weight = fields[2]
+        .attribute("value")
+        .and_then(|value| value.parse::<f64>().ok())
+        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat has an invalid weight"))?;
+    if !weight.is_finite() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has a non-finite weight",
+        ));
+    }
+    let Some(color) = fields[3].attribute("value") else {
+        return Err(gui_techdraw_error(property_name, "GeomFormat has no color"));
+    };
+    if !(color.len() == 7 || color.len() == 9)
+        || !color.starts_with('#')
+        || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has an invalid color",
+        ));
+    }
+    if parse_bool(fields[4].attribute("value").unwrap_or_default()).is_none() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has an invalid visibility",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_gui_techdraw_integer(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat field has no value"))?
+        .parse::<i64>()
+        .map(|_| ())
+        .map_err(|_| gui_techdraw_error(property_name, "GeomFormat has an invalid integer"))
+}
+
+fn gui_techdraw_error(property_name: &str, detail: &str) -> CodecError {
+    let message = format!("GUI property {property_name} {detail}");
+    CodecError::Malformed(message)
 }
 
 fn validate_visual_layer_list(

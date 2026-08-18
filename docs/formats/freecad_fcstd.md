@@ -709,6 +709,15 @@ side-entry ownership rules as their application properties. A `Mesh` root withou
 `file` retains inline XML mesh data natively. A `Points` root may omit `mtrx`, which means identity;
 when present, `mtrx` contains sixteen finite row-major scalars.
 
+`TechDraw::PropertyGeomFormatList` uses one direct `GeomFormatList` root. Its `count` equals the
+number of direct `GeomFormat` records, and each record has `type="TechDraw::GeomFormat"` and the
+direct leaf fields `GeomIndex`, `Style`, `Weight`, `Color`, and `Visible`, each with a `value`
+attribute. `GeomIndex` and `Style` are signed integers; `Weight` is a finite floating-point value;
+`Color` is `#RRGGBB` as written by the producer, and Restore also accepts `#RRGGBBAA`; `Visible` is
+Boolean. A record may end with one `LineNumber` integer, or the legacy `ISOLineNumber` integer; it
+may also omit that field. Nested or out-of-order fields, extra records, and count mismatches are
+malformed.
+
 The loaded module registry adds `Materials::PropertyMaterial`, whose value is
 `PropertyMaterial` with a material `uuid`; `Part::PropertyPartShape`, whose value is `Part` and
 may carry `ElementMap` records and one exact-shape side entry; `Part::PropertyGeometryList`, whose
