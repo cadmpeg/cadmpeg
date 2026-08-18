@@ -377,6 +377,25 @@ fn decode_rejects_transform_roundoff_beyond_its_declared_precision() {
 }
 
 #[test]
+fn decode_rejects_occt_rounded_transform_under_declared_single_precision() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(transformed_circular_arc_file_with_single_significance(
+                b"124,1.0000049,0,0,0,0,1,0,0,0,0,1,0;",
+                b"100,0,0,0,1,0,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("not orthonormal within its declared numeric precision")
+    }));
+}
+
+#[test]
 fn decode_applies_declared_double_precision_to_transform_coefficients() {
     let result = IgesCodec
         .decode(

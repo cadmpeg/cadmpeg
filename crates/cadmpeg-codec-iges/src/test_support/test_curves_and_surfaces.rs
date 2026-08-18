@@ -107,12 +107,33 @@ pub(crate) fn transformed_circular_arc_file(matrix: &[u8], arc: &[u8]) -> Vec<u8
     transformed_circular_arc_file_with_form(0, matrix, arc)
 }
 
+pub(crate) fn transformed_circular_arc_file_with_single_significance(
+    matrix: &[u8],
+    arc: &[u8],
+) -> Vec<u8> {
+    transformed_circular_arc_file_with_form_and_global(
+        0,
+        matrix,
+        arc,
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,308,15,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
 pub(crate) fn transformed_circular_arc_file_with_form(
     form: i64,
     matrix: &[u8],
     arc: &[u8],
 ) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    transformed_circular_arc_file_with_form_and_global(form, matrix, arc, global)
+}
+
+fn transformed_circular_arc_file_with_form_and_global(
+    form: i64,
+    matrix: &[u8],
+    arc: &[u8],
+    global: &[u8],
+) -> Vec<u8> {
     let form = form.to_string();
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);

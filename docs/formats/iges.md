@@ -20,6 +20,8 @@ The Terminate data area contains four eight-byte fields: `S` plus the seven-digi
 
 ## Global section
 
+In the Global stream, CADIR ignores ASCII blanks after a field delimiter and before the next field token, including blanks at a Fixed ASCII card boundary. Those blanks are not part of the typed Global value. A Hollerith count starts at the first nonblank byte; every byte in its counted payload, including spaces, remains string data. The physical-card arena retains the original padding bytes ([IGES 5.3 §2.2.3](https://paulbourke.net/dataformats/iges/IGES.pdf)).
+
 The Global data stream is the concatenation of bytes 1 through 72 from its cards. Its first value defines the parameter delimiter and its second value defines the record delimiter. Each is a one-character Hollerith string. Omitted first and second values select comma and semicolon respectively.
 
 A Hollerith value is an unsigned decimal byte count, the byte `H` or `h`, and exactly that many following bytes. Delimiters inside the counted payload are data. The count and payload may cross card boundaries. Integer values are signed decimal integers. Real values accept a decimal point and an exponent introduced by `E`, `e`, `D`, or `d`. An empty or blank-only field between delimiters is omitted. The record delimiter terminates the Global record.
@@ -83,6 +85,8 @@ An entity retains its type, form, Directory Entry fields, status fields, ordered
 Model-space lengths equal native values divided by the Global model-space scale and converted from the declared unit to millimetres. Dimensionless values, parameter coordinates, weights, and unit direction vectors are not length-scaled. Angles convert to radians when projected to neutral IR. A transformation matrix is a 3-by-3 linear part plus translation. Translation is length-valued. Entity transforms compose from the entity definition toward model space exactly once. Definition, subfigure-instance, and occurrence transforms remain separate native relationships.
 
 ## Geometry
+
+IGES 5.3 §4.21 defines the Type 124 linear-part invariants and provides no numeric receiver tolerance or matrix-equality or repair algorithm. Global fields 8 through 11 describe the sending system's real representation; they do not define a receiver epsilon. CADIR decision: the interval admission and canonicalization stated below are the comparison rule for this codec ([IGES 5.3 §§2.2.2.2, 2.2.4.3.8–11, 4.21](https://paulbourke.net/dataformats/iges/IGES.pdf)).
 
 CADIR decision: resource ceilings bound semantic materialization and recovery work. They are not IGES validity rules. A Type 112 projection accepts at most 100,000 segments (`iges_spline_segments`); a Type 106 projection accepts at most 1,000,000 tuples (`iges_copious_tuples`); a Type 102 projection accepts at most 100,000 direct children (`iges_composite_children`); a Type 114 projection accepts at most 1,000,000 poles (`iges_spline_surface_poles`); and a Type 128 projection or Type 120 surface of revolution accepts at most 1,000,000 poles (`iges_surface_poles` or `iges_revolution_poles`). A request above one of these per-entity bounds returns a terminal `CodecError::ResourceLimit` before the corresponding semantic allocation. It does not return a partial neutral result.
 

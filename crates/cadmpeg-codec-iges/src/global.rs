@@ -129,21 +129,26 @@ fn delimited_value(
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
 ) -> Result<(Value, Range<usize>, usize, bool), CodecError> {
-    if bytes.get(start) == Some(&parameter_delimiter) {
-        return Ok((Value::Omitted, start..start, start + 1, false));
+    let value_start = start
+        + bytes[start..]
+            .iter()
+            .position(|byte| *byte != b' ')
+            .ok_or_else(|| malformed("record delimiter is missing"))?;
+    if bytes.get(value_start) == Some(&parameter_delimiter) {
+        return Ok((Value::Omitted, start..start, value_start + 1, false));
     }
-    if record_delimiter.is_some_and(|delimiter| bytes.get(start) == Some(&delimiter)) {
-        return Ok((Value::Omitted, start..start, start + 1, true));
+    if record_delimiter.is_some_and(|delimiter| bytes.get(value_start) == Some(&delimiter)) {
+        return Ok((Value::Omitted, start..start, value_start + 1, true));
     }
-    let (value, end) = if let Some((payload, end)) = hollerith(bytes, start)? {
+    let (value, end) = if let Some((payload, end)) = hollerith(bytes, value_start)? {
         (Value::String(payload), end)
     } else {
-        let end = bytes[start..]
+        let end = bytes[value_start..]
             .iter()
             .position(|byte| *byte == parameter_delimiter || record_delimiter == Some(*byte))
-            .and_then(|relative| start.checked_add(relative))
+            .and_then(|relative| value_start.checked_add(relative))
             .ok_or_else(|| malformed("record delimiter is missing"))?;
-        let atom = &bytes[start..end];
+        let atom = &bytes[value_start..end];
         if atom.iter().all(u8::is_ascii_whitespace) {
             (Value::Omitted, end)
         } else {
@@ -152,10 +157,10 @@ fn delimited_value(
     };
     match bytes.get(end).copied() {
         Some(separator) if separator == parameter_delimiter => {
-            Ok((value, start..end, end + 1, false))
+            Ok((value, value_start..end, end + 1, false))
         }
         Some(separator) if record_delimiter == Some(separator) => {
-            Ok((value, start..end, end + 1, true))
+            Ok((value, value_start..end, end + 1, true))
         }
         _ => Err(malformed("value is not followed by a delimiter")),
     }

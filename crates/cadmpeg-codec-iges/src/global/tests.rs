@@ -100,6 +100,25 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
 }
 
 #[test]
+fn inspect_ignores_fixed_card_padding_before_global_values() {
+    let sender = "S".repeat(55);
+    let global = format!(
+        "1H,,1H;,{}H{},8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+        sender.len(),
+        sender,
+    );
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(fixed_ascii_with_global(global.as_bytes())),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+
+    assert!(summary.notes.contains(&format!("sender_product={sender}")));
+    assert!(summary.notes.contains(&"units=MM".into()));
+}
+
+#[test]
 fn global_strings_admit_printable_ascii_and_retain_invalid_bytes() {
     for invalid in [0xff, 0x1f, 0x7f] {
         let mut global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;".to_vec();

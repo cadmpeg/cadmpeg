@@ -193,16 +193,6 @@ Type 402 Form 21 evidence: [IGES 5.3 §4.95](https://paulbourke.net/dataformats/
 
 ## 4. Geometry carriers and tolerances
 
-### GE-01. The Type 124 transformation tolerance
-
-**Question.** What tolerance applies when a Type 124 transformation is compared with the canonical transform?
-
-**Known.** The reader uses intervals derived from Global real precision in `transform.rs`, and commit `40b1687ea` replaced a fixed tolerance with that calculation. The fixture perturbs a transform near the same project-selected boundary.
-
-**Need.** We need the IGES specification rule, or exporter-authored witness files, for transform equality and the accepted precision. Internal interval arithmetic proves only the implementation's chosen criterion.
-
-**Note.** Closure audit 2026-08-10: reopened. The code, fixture, and documentation were authored together; this is the promotion-to-spec pattern described by the QA plan.
-
 ### GE-02. Unit-vector acceptance
 
 **Question.** What deviation from unit length is valid for a direction vector?
