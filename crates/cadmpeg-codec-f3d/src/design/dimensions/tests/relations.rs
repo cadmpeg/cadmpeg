@@ -556,7 +556,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         &parameter,
         &parameter_id,
         stream,
-        &[source_curve, result_curve],
+        &[source_curve.clone(), result_curve.clone()],
         &projected,
         1.0e-6,
     )
@@ -574,6 +574,55 @@ fn single_curve_annotation_projects_parameterized_offset() {
             source_reversed: true,
         }] && (distance - 2.0).abs() <= 1.0e-9
             && actual_parameter == parameter_id
+    ));
+
+    let explicit_frame = DesignDimensionAnnotationFrame {
+        operands: vec![
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: 0,
+                geometry_reference_offset: 0,
+                role: 3,
+                role_offset: 0,
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: 11,
+                geometry_reference_offset: 0,
+                role: 1,
+                role_offset: 0,
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: 10,
+                geometry_reference_offset: 0,
+                role: 2,
+                role_offset: 0,
+            },
+        ],
+        return_members: vec![10, 11],
+        return_member_offsets: vec![0, 0],
+        ..frame.clone()
+    };
+    let explicit_definition = crate::design::dimensions::annotation_offset_dimension_definition(
+        &explicit_frame,
+        &parameter,
+        &parameter_id,
+        stream,
+        &[source_curve.clone(), result_curve.clone()],
+        &projected,
+        1.0e-6,
+    )
+    .expect("explicit two-curve annotation offset");
+    assert!(matches!(
+        explicit_definition,
+        SketchConstraintDefinition::Offset {
+            pairs,
+            parameter: Some(actual_parameter),
+            parameter_factor: Some(1.0),
+            ..
+        } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+            source_reversed: true,
+        }] && actual_parameter == parameter_id
     ));
 
     let duplicate_curve_id = format!("{stream}:sketch-curve#12");
@@ -605,6 +654,41 @@ fn single_curve_annotation_projects_parameterized_offset() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn mixed_circle_arc_offset_uses_concentric_radius_difference() {
+    let circle = SketchGeometry::Circle {
+        center: Point2::new(0.0, 0.0),
+        radius: Length(20.0),
+    };
+    let arc = SketchGeometry::Arc {
+        center: Point2::new(0.0, 0.0),
+        radius: Length(22.0),
+        start_angle: Angle(-0.2),
+        end_angle: Angle(0.1),
+    };
+    let distance = crate::design::dimensions::sketch_curve_offset(&circle, &arc)
+        .expect("concentric circle-to-arc offset");
+    assert!((distance + 2.0).abs() <= 1.0e-9);
+
+    let clockwise_arc = SketchGeometry::Arc {
+        center: Point2::new(0.0, 0.0),
+        radius: Length(22.0),
+        start_angle: Angle(0.1),
+        end_angle: Angle(-0.2),
+    };
+    let distance = crate::design::dimensions::sketch_curve_offset(&clockwise_arc, &circle)
+        .expect("concentric arc-to-circle offset");
+    assert!((distance + 2.0).abs() <= 1.0e-9);
+
+    let displaced_arc = SketchGeometry::Arc {
+        center: Point2::new(1.0e-6, 0.0),
+        radius: Length(22.0),
+        start_angle: Angle(0.1),
+        end_angle: Angle(-0.2),
+    };
+    assert!(crate::design::dimensions::sketch_curve_offset(&circle, &displaced_arc).is_none());
 }
 
 #[test]

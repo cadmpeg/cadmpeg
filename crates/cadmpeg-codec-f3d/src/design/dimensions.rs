@@ -3032,14 +3032,15 @@ fn radial_dimension_definition_at_tolerance(
     })
 }
 
-/// Resolve a single-curve linear annotation that governs an offset pair.
+/// Resolve a parameterized linear annotation that governs an offset pair.
 ///
 /// Fusion stores this form without a generic sketch-relation record. The
-/// source curve has a null secondary identity, the generated result has a
-/// non-null secondary identity, and the annotation's evaluated parameter
-/// selects the unique parallel or concentric offset result. Requiring all
-/// three facts avoids assigning an arbitrary offset when the sketch contains
-/// several generated curves.
+/// explicit form returns both curves; the single-source form returns the
+/// source and requires a unique generated result. In both forms, the source
+/// curve has a null secondary identity, the generated result has a non-null
+/// secondary identity, and the annotation's evaluated parameter selects the
+/// parallel or concentric offset. Requiring all three facts avoids assigning
+/// an arbitrary offset when the sketch contains several generated curves.
 pub(crate) fn annotation_offset_dimension_definition(
     frame: &DesignDimensionAnnotationFrame,
     parameter: &DesignParameter,
@@ -3056,54 +3057,108 @@ pub(crate) fn annotation_offset_dimension_definition(
         || !design_dimension_unit(parameter)
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
-        || frame.operands.len() != 2
-        || frame.return_members.len() != 1
     {
         return None;
     }
-    let [source_operand, other_operand] = frame.operands.as_slice() else {
-        return None;
+
+    let curve_for_index = |record_index| {
+        let mut matches = curves.iter().filter(|curve| {
+            native_stream(&curve.id) == Some(scope)
+                && curve.record_index == record_index
+                && curve.owner_reference == Some(frame.owner_reference)
+        });
+        let curve = matches.next()?;
+        matches.next().is_none().then_some(curve)
     };
-    let source_record_index = match (
-        source_operand.geometry_record_index,
-        other_operand.geometry_record_index,
-    ) {
-        (0, result) | (result, 0) if result != 0 => result,
-        _ => return None,
+    let non_null_indices = frame
+        .operands
+        .iter()
+        .filter_map(|operand| {
+            (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+        })
+        .collect::<Vec<_>>();
+    let null_locus_count = frame
+        .operands
+        .iter()
+        .filter(|operand| operand.geometry_record_index == 0)
+        .count();
+
+    let explicit_pair = match (non_null_indices.as_slice(), frame.return_members.as_slice()) {
+        ([first_index, second_index], [first_return, second_return])
+            if frame.operands.len() == 3
+                && null_locus_count == 1
+                && first_return != second_return
+                && non_null_indices.contains(first_return)
+                && non_null_indices.contains(second_return) =>
+        {
+            let first_curve = curve_for_index(*first_index)?;
+            let second_curve = curve_for_index(*second_index)?;
+            let (source_curve, result_curve) = match (
+                first_curve.secondary_id == 0,
+                second_curve.secondary_id == 0,
+            ) {
+                (true, false) => (first_curve, second_curve),
+                (false, true) => (second_curve, first_curve),
+                _ => return None,
+            };
+            Some((source_curve.record_index, Some(result_curve.record_index)))
+        }
+        _ => None,
     };
-    if frame.return_members != [source_record_index] {
-        return None;
-    }
-    curves.iter().find(|curve| {
-        native_stream(&curve.id) == Some(scope)
-            && curve.record_index == source_record_index
-            && curve.owner_reference == Some(frame.owner_reference)
-            && curve.secondary_id == 0
-    })?;
+    let (source_record_index, explicit_result_record_index) = if let Some(pair) = explicit_pair {
+        pair
+    } else {
+        match (non_null_indices.as_slice(), frame.return_members.as_slice()) {
+            ([source_record_index], [returned_record_index])
+                if frame.operands.len() == 2
+                    && null_locus_count == 1
+                    && source_record_index == returned_record_index =>
+            {
+                let source_curve = curve_for_index(*source_record_index)?;
+                (source_curve.secondary_id == 0).then_some((*source_record_index, None))?
+            }
+            _ => return None,
+        }
+    };
+
     let source = projected.get(&(scope, source_record_index))?;
     let expected = parameter.evaluated_value * 10.0;
     if !expected.is_finite() {
         return None;
     }
-    let matches = curves
-        .iter()
-        .filter(|curve| {
-            native_stream(&curve.id) == Some(scope)
-                && curve.record_index != source_record_index
-                && curve.owner_reference == Some(frame.owner_reference)
-                && curve.secondary_id != 0
-        })
-        .filter_map(|curve| {
-            let result = projected.get(&(scope, curve.record_index))?;
-            let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
-            let tolerance =
-                linear_tolerance.max(1.0e-9 * (1.0 + distance.abs().max(expected.abs())));
-            (distance.abs() > 1.0e-9 && (distance.abs() - expected.abs()).abs() <= tolerance)
-                .then_some((result, distance))
-        })
-        .collect::<Vec<_>>();
-    let [(result, distance)] = matches.as_slice() else {
-        return None;
+
+    let (result, distance) = if let Some(result_record_index) = explicit_result_record_index {
+        let result_curve = curve_for_index(result_record_index)?;
+        if result_curve.secondary_id == 0 {
+            return None;
+        }
+        let result = projected.get(&(scope, result_record_index))?;
+        let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
+        let tolerance = linear_tolerance.max(1.0e-9 * (1.0 + distance.abs().max(expected.abs())));
+        (distance.abs() > 1.0e-9 && (distance.abs() - expected.abs()).abs() <= tolerance)
+            .then_some((result, distance))?
+    } else {
+        let matches = curves
+            .iter()
+            .filter(|curve| {
+                native_stream(&curve.id) == Some(scope)
+                    && curve.record_index != source_record_index
+                    && curve.owner_reference == Some(frame.owner_reference)
+                    && curve.secondary_id != 0
+            })
+            .filter_map(|curve| {
+                let result = projected.get(&(scope, curve.record_index))?;
+                let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
+                let tolerance =
+                    linear_tolerance.max(1.0e-9 * (1.0 + distance.abs().max(expected.abs())));
+                (distance.abs() > 1.0e-9 && (distance.abs() - expected.abs()).abs() <= tolerance)
+                    .then_some((result, distance))
+            })
+            .collect::<Vec<_>>();
+        let [(result, distance)] = matches.as_slice() else {
+            return None;
+        };
+        (*result, *distance)
     };
     let parameter_factor = offset_parameter_factor(distance.abs(), expected)?;
     Some(Definition::Offset {
@@ -4423,6 +4478,7 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
 }
 
 const EPS_CENTERED_RELATION: f64 = 1.0e-9;
+const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
 
 fn exact_centered_entity_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
@@ -4975,6 +5031,64 @@ fn sketch_curve_offset(
                 .then_some(source_radius.0 - result_radius.0)
         }
         (
+            SketchGeometry::Circle {
+                center: source_center,
+                radius: source_radius,
+            },
+            SketchGeometry::Arc {
+                center: result_center,
+                radius: result_radius,
+                start_angle: result_start,
+                end_angle: result_end,
+            },
+        ) => {
+            let scale = 1.0
+                + source_center
+                    .u
+                    .abs()
+                    .max(source_center.v.abs())
+                    .max(result_center.u.abs())
+                    .max(result_center.v.abs())
+                    .max(source_radius.0)
+                    .max(result_radius.0);
+            let result_sweep = result_end.0 - result_start.0;
+            (source_radius.0 > 0.0
+                && result_radius.0 > 0.0
+                && result_sweep.abs() > EPS_OFFSET_SWEEP
+                && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
+                && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
+                .then_some(source_radius.0 - result_radius.0)
+        }
+        (
+            SketchGeometry::Arc {
+                center: source_center,
+                radius: source_radius,
+                start_angle: source_start,
+                end_angle: source_end,
+            },
+            SketchGeometry::Circle {
+                center: result_center,
+                radius: result_radius,
+            },
+        ) => {
+            let scale = 1.0
+                + source_center
+                    .u
+                    .abs()
+                    .max(source_center.v.abs())
+                    .max(result_center.u.abs())
+                    .max(result_center.v.abs())
+                    .max(source_radius.0)
+                    .max(result_radius.0);
+            let source_sweep = source_end.0 - source_start.0;
+            (source_radius.0 > 0.0
+                && result_radius.0 > 0.0
+                && source_sweep.abs() > EPS_OFFSET_SWEEP
+                && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
+                && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
+                .then_some(source_sweep.signum() * (source_radius.0 - result_radius.0))
+        }
+        (
             SketchGeometry::Arc {
                 center: source_center,
                 radius: source_radius,
@@ -5007,8 +5121,8 @@ fn sketch_curve_offset(
                     .any(|angle| angle_in_sweep(angle, source_start.0, source_end.0, 1.0e-9));
             (source_radius.0 > 0.0
                 && result_radius.0 > 0.0
-                && source_sweep.abs() > 1.0e-12
-                && result_sweep.abs() > 1.0e-12
+                && source_sweep.abs() > EPS_OFFSET_SWEEP
+                && result_sweep.abs() > EPS_OFFSET_SWEEP
                 && source_sweep.signum() == result_sweep.signum()
                 && angular_overlap
                 && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
