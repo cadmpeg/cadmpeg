@@ -427,6 +427,44 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (322, 1 | 2) => {
+            let Some(attribute_count) = record.count_with_stride(3, 3).filter(|count| *count > 0)
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let value_stride = if entry.form == 2 { 2 } else { 1 };
+            let mut cursor = 4_usize;
+            for _ in 0..attribute_count {
+                let Some(value_count_index) = cursor.checked_add(2) else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(value_width) =
+                    record
+                        .tokens
+                        .get(value_count_index)
+                        .and_then(|token| match &token.value {
+                            TokenValue::Omitted => Some(value_stride),
+                            TokenValue::Integer(value) => usize::try_from(*value)
+                                .ok()
+                                .and_then(|count| count.checked_mul(value_stride)),
+                            TokenValue::Real(_) | TokenValue::String(_) => None,
+                        })
+                else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(end) = cursor
+                    .checked_add(3)
+                    .and_then(|index| index.checked_add(value_width))
+                else {
+                    return ParameterBoundary::Invalid;
+                };
+                if end > record.tokens.len() {
+                    return ParameterBoundary::Invalid;
+                }
+                cursor = end;
+            }
+            ParameterBoundary::Known(cursor)
+        }
         (302, 5001..=9999) => {
             let Some(class_count) = record.count(1).filter(|count| *count > 0) else {
                 return ParameterBoundary::Invalid;

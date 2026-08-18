@@ -1116,11 +1116,15 @@ pub(super) fn project(
             let data_type = record
                 .integer(cursor + 1)
                 .filter(|value| matches!(value, 1..=6));
+            let value_stride = if entry.form == 2 { 2 } else { 1 };
             let value_count = match record.tokens.get(cursor + 2).map(|token| &token.value) {
-                None | Some(TokenValue::Omitted) => Some(1),
+                None | Some(TokenValue::Omitted) => (entry.form == 0
+                    || value_stride <= record.tokens.len().saturating_sub(cursor + 3))
+                .then_some(1),
                 Some(TokenValue::Integer(value)) => {
                     usize::try_from(*value).ok().and_then(|count| {
-                        (entry.form == 0 || count <= record.tokens.len().saturating_sub(cursor + 3))
+                        let width = count.checked_mul(value_stride)?;
+                        (entry.form == 0 || width <= record.tokens.len().saturating_sub(cursor + 3))
                             .then_some(count)
                     })
                 }
