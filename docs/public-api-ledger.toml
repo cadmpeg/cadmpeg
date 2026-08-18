@@ -453,3 +453,10 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::View::utf16_le"
 reason = "sequential UTF-16LE reader paired with View::utf16le_at"
+
+[[change]]
+commit = "ad3eb0048"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::{SketchSolverScalar,SketchConstraintDefinition::AngleDifference}"
+reason = "Creo direct Function 16 angle differences transfer as typed solver-scalar sketch relations"
