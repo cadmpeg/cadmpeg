@@ -352,6 +352,11 @@ fn flag_three_requires_a_nonempty_name() {
 #[test]
 fn unknown_flag_three_unit_name_is_inspectable_but_not_projected() {
     let bytes = global_with_units(3, "3HFOO");
+    let scan = crate::card::scan(&bytes).unwrap();
+    let parsed = crate::global::parse(&scan).unwrap();
+    assert_eq!(parsed.units_name().as_deref(), Some("FOO"));
+    assert!(!parsed.has_supported_length_factor());
+
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes.clone()),

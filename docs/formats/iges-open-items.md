@@ -187,18 +187,6 @@ Type 510/514 evidence: the official [IGES 5.3 §§4.146–4.147](https://paulbou
 
 ## 2. Global metadata
 
-### GL-02. The units-name comparison rule
-
-**Question.** How is the Global units name compared with the standard unit codes?
-
-**Known.** IGES 5.3 §2.2.4.3.14 makes field 14 authoritative unless it is `3`. Section 2.2.4.3.15 makes field 15 redundant for the other flags and lists the exact table payloads `IN`, `INCH`, `MM`, `FT`, `MI`, `M`, `KM`, `MIL`, `UM`, `CM`, and `UIN`. When field 14 is `3`, the same section delegates the desired-unit name to MIL-STD-12 or IEEE 260 rather than defining a closed list. Section 4.77 makes Type 316 a per-data-entity property-pointer attachment whose scale applies to that entity's real data; it does not provide a Global flag-3 factor. `global.rs:271-284` now requires a nonempty flag-3 name without claiming that the canonical table is exhaustive. `reader.rs:97-101` refuses semantic projection when the name has no known millimetre factor, while inspection retains the name. `native.rs:3418-3452` retains Type 316 entries and owner identities.
-
-**Need.** We need the complete admissible flag-3 byte namespace from the referenced standards, including case, padding, aliases, and length units. We also need to establish whether any external application contract supplies a file-wide millimetre factor for a custom Global flag-3 name.
-
-**Conflict.** The earlier exact-eleven-name rule was contradicted by the IGES flag-3 cross-reference and by Open CASCADE `IGESData_BasicEditor::SetUnitName`, which accepts a user-defined name when the flag is `3`. The codec cannot assign a neutral millimetre scale to an unresolved name without risking silent geometric rescaling.
-
-**Note.** Closure audit 2026-08-10 reopened the prior exact-list closure because it had no independent format or producer evidence. This pass settles field-14 precedence, the ordinary-flag table, nonempty flag-3 storage, the per-data-entity scope of Type 316, and the CADIR refusal boundary; the flag-3 namespace and any external file-wide factor source remain open. A code-built witness with Type 316 attached to a data entity retains the Type 316 scale and owner but still refuses full semantic projection for the unresolved Global flag-3 name.
-
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ## 4. Geometry carriers and tolerances
