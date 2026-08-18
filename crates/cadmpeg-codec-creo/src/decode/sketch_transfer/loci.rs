@@ -3,7 +3,7 @@
 
 use super::super::feature_history::feature_skamp_table_complete;
 use super::super::sketch::{
-    resolved_section_points, section_skamp_selected_point,
+    resolved_section_points, section_skamp_incidence_point,
     section_skamp_selected_point_id_with_ordinary_segment, unique_decoded_section_segment,
     SectionPointSource,
 };
@@ -610,7 +610,7 @@ pub(in super::super) fn section_skamp_same_coordinate_sources(
         };
         (item.sense == 0 && section_skamp_is_arc(definition, item)).then_some(())?;
         let endpoint = |sense| {
-            section_skamp_selected_point(
+            section_skamp_incidence_point(
                 definition,
                 &crate::feature::FeatureSkampItem {
                     entity_id: item.entity_id,
@@ -629,8 +629,8 @@ pub(in super::super) fn section_skamp_same_coordinate_sources(
     let coordinate = section_skamp_same_coordinate_axis(skamp)?;
     Some((
         [
-            section_skamp_selected_point(definition, first)?,
-            section_skamp_selected_point(definition, second)?,
+            section_skamp_incidence_point(definition, first)?,
+            section_skamp_incidence_point(definition, second)?,
         ],
         coordinate,
     ))
@@ -943,7 +943,7 @@ pub(in super::super) fn section_skamp_line_midpoint_sources(
             ])
     };
     let point =
-        |item: &crate::feature::FeatureSkampItem| section_skamp_selected_point(definition, item);
+        |item: &crate::feature::FeatureSkampItem| section_skamp_incidence_point(definition, item);
     let candidates = [(first, second), (second, first)]
         .into_iter()
         .filter_map(|(target_item, point_item)| Some((target(target_item)?, point(point_item)?)))
@@ -967,7 +967,7 @@ pub(in super::super) fn section_skamp_arc_midpoint_source(
         .filter_map(|(target, point)| {
             (target.sense == 0 && section_skamp_is_arc(definition, target)).then_some(())?;
             Some((
-                section_skamp_selected_point(definition, point)?,
+                section_skamp_incidence_point(definition, point)?,
                 section_skamp_arc_midpoint(definition, target, coordinates)?,
             ))
         })
@@ -1645,5 +1645,187 @@ mod tests {
                 )),
             ])
         );
+    }
+
+    #[test]
+    fn incomplete_unique_rows_supply_solver_incidence_point_sources() {
+        let segment =
+            |kind: crate::feature::FeatureSegmentKind,
+             external_id: u32,
+             point_ids: [u32; 2],
+             center_id: Option<u32>,
+             arc_orientation: Option<u32>| crate::feature::FeatureSegment {
+                kind,
+                directions: [None; 3],
+                point_ids,
+                center_id,
+                arc_orientation,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id,
+                body: Vec::new(),
+                offset: external_id as usize,
+            };
+        let item = |entity_id, sense| crate::feature::FeatureSkampItem { entity_id, sense };
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 4,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![
+                    segment(
+                        crate::feature::FeatureSegmentKind::Line,
+                        10,
+                        [1, 2],
+                        None,
+                        None,
+                    ),
+                    segment(
+                        crate::feature::FeatureSegmentKind::Line,
+                        20,
+                        [3, 4],
+                        None,
+                        None,
+                    ),
+                    segment(
+                        crate::feature::FeatureSegmentKind::Arc,
+                        30,
+                        [5, 6],
+                        Some(7),
+                        Some(0),
+                    ),
+                ],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        assert!(!definition
+            .segments
+            .as_ref()
+            .expect("segments")
+            .is_complete());
+
+        let same_coordinate = crate::feature::FeatureSkamp {
+            id: 15,
+            kind: 15,
+            flags: 1,
+            status: 1,
+            items: vec![item(10, 2), item(20, 3)],
+            offset: 0,
+        };
+        let Some(([first, second], coordinate)) =
+            section_skamp_same_coordinate_sources(&definition, &same_coordinate)
+        else {
+            panic!("same-coordinate sources");
+        };
+        assert!(matches!(first, SectionPointSource::Point(1)));
+        assert!(matches!(second, SectionPointSource::Point(4)));
+        assert_eq!(coordinate, 0);
+
+        let arc_alignment = crate::feature::FeatureSkamp {
+            id: 12,
+            kind: 12,
+            flags: 0,
+            status: 1,
+            items: vec![item(30, 0)],
+            offset: 0,
+        };
+        let Some(([first, second], coordinate)) =
+            section_skamp_same_coordinate_sources(&definition, &arc_alignment)
+        else {
+            panic!("arc alignment sources");
+        };
+        assert!(matches!(first, SectionPointSource::Point(5)));
+        assert!(matches!(second, SectionPointSource::Point(6)));
+        assert_eq!(coordinate, 1);
+
+        let line_midpoint = crate::feature::FeatureSkamp {
+            id: 35,
+            kind: 35,
+            flags: 0,
+            status: 1,
+            items: vec![item(10, 0), item(20, 2)],
+            offset: 0,
+        };
+        let Some(([first, second], point)) =
+            section_skamp_line_midpoint_sources(&definition, &line_midpoint)
+        else {
+            panic!("line midpoint sources");
+        };
+        assert!(matches!(first, SectionPointSource::Point(1)));
+        assert!(matches!(second, SectionPointSource::Point(2)));
+        assert!(matches!(point, SectionPointSource::Point(3)));
+
+        let arc_midpoint = crate::feature::FeatureSkamp {
+            id: 35,
+            kind: 35,
+            flags: 0,
+            status: 1,
+            items: vec![item(30, 0), item(20, 2)],
+            offset: 0,
+        };
+        let coordinates = BTreeMap::from([
+            (5, [Some(1.0), Some(0.0)]),
+            (6, [Some(0.0), Some(1.0)]),
+            (7, [Some(0.0), Some(0.0)]),
+        ]);
+        let (point, midpoint) =
+            section_skamp_arc_midpoint_source(&definition, &arc_midpoint, &coordinates)
+                .expect("arc midpoint");
+        assert!(matches!(point, SectionPointSource::Point(3)));
+        assert!(midpoint[0] < 0.0 && midpoint[1] < 0.0);
+
+        let mut duplicate = definition.clone();
+        duplicate
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(segment(
+                crate::feature::FeatureSegmentKind::Line,
+                20,
+                [8, 9],
+                None,
+                None,
+            ));
+        assert!(section_skamp_same_coordinate_sources(&duplicate, &same_coordinate).is_none());
+        assert!(section_skamp_line_midpoint_sources(&duplicate, &line_midpoint).is_none());
+        assert!(
+            section_skamp_arc_midpoint_source(&duplicate, &arc_midpoint, &coordinates).is_none()
+        );
+
+        let mut cross_family = definition.clone();
+        cross_family
+            .segments
+            .as_mut()
+            .expect("segments")
+            .point_rows
+            .push(crate::feature::FeaturePointSegment {
+                point_id: 99,
+                external_id: 20,
+                offset: 99,
+            });
+        assert!(section_skamp_same_coordinate_sources(&cross_family, &same_coordinate).is_none());
     }
 }

@@ -24,7 +24,7 @@ use super::equations_scalar::{
 use super::geometry::{saved_section_circle_values, saved_section_segment_point_coordinates};
 use super::radii::section_relation_length_dimension;
 use super::skamp::{
-    section_line_fixed_coordinate, section_skamp_axis_symmetry, section_skamp_coincidence_point,
+    section_line_fixed_coordinate, section_skamp_axis_symmetry, section_skamp_incidence_point,
     section_skamp_point_entity_id, section_skamp_point_on_line, section_skamp_point_symmetry,
     section_skamp_saved_point_on_line, SectionPointSource, SectionSymmetryAxis,
 };
@@ -100,8 +100,8 @@ pub(crate) fn resolved_section_coordinates(
             };
             let pair = match skamp.kind {
                 0 => Some([
-                    section_skamp_coincidence_point(definition, first)?,
-                    section_skamp_coincidence_point(definition, second)?,
+                    section_skamp_incidence_point(definition, first)?,
+                    section_skamp_incidence_point(definition, second)?,
                 ]),
                 3 => {
                     let first_point = section_skamp_point_entity_id(definition, first);
@@ -113,10 +113,10 @@ pub(crate) fn resolved_section_coordinates(
                         ]),
                         (Some(point), None) => Some([
                             SectionPointSource::Point(point),
-                            section_skamp_coincidence_point(definition, second)?,
+                            section_skamp_incidence_point(definition, second)?,
                         ]),
                         (None, Some(point)) => Some([
-                            section_skamp_coincidence_point(definition, first)?,
+                            section_skamp_incidence_point(definition, first)?,
                             SectionPointSource::Point(point),
                         ]),
                         _ => None,

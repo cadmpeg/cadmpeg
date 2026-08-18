@@ -395,6 +395,10 @@ fixtures, scores above L1 remain blocked.
   incomplete segment table. This includes type-12 bounded-curve and type-25
   reference-line endpoints and the two-sense-zero-point form of type three;
   contradictory components retain stored non-conflicting coordinates.
+- Same-coordinate incidences and type-35 line or arc midpoint equations use
+  selected endpoint or center point identities from unique ordinary line or arc
+  rows in an incomplete segment table. Duplicate ordinary or cross-family
+  identifiers withhold the affected affine source.
 - Signed type-zero linear dimensions select their measured coordinate from a
   unique spanning line, or from one equal endpoint coordinate on uniquely
   incident section entities when no segment spans the pair. Standalone type-1

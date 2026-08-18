@@ -406,7 +406,7 @@ pub(crate) fn section_skamp_selected_point(
         .or_else(|| saved_section_point(definition, item).map(SectionPointSource::Value))
 }
 
-pub(crate) fn section_skamp_coincidence_point(
+pub(crate) fn section_skamp_incidence_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SectionPointSource> {
