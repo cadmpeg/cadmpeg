@@ -472,7 +472,8 @@ fn property_fields_valid(
             .count(13)
             .filter(|count| *count <= end)
             .is_some_and(|count| {
-                exact(i64::try_from(12 + count * 3).unwrap_or_default())
+                record.integer(1) == Some(14)
+                    && count.checked_mul(3).and_then(|span| span.checked_add(14)) == Some(end)
                     && integer_range(2, 0..=2)
                     && integer_range(3, 0..=4)
                     && record

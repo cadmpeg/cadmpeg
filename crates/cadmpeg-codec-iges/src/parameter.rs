@@ -323,6 +323,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 406 Forms 34 and 35 put `NP = 1 + 3*ND` at index 1, `ND` at index 2,
 /// and one three-integer text-score range per specification, so their groups
 /// start at token `3 + 3*ND`.
+/// Type 406 Form 30 fixes `NP = 14`, puts `K` at index 13, and appends three
+/// supplemental-note fields per `K`, so its groups start at token `14 + 3*K`.
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
@@ -370,6 +372,7 @@ pub(crate) fn entity_primary_end(
         (402, 12) => Some(external_reference_index_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record)),
+        (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
@@ -486,6 +489,23 @@ fn text_score_primary_end(record: &ParameterRecord) -> usize {
     range_count
         .checked_mul(3)
         .and_then(|span| span.checked_add(3))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn dimension_display_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(14) {
+        return record.tokens.len();
+    }
+    let Some(note_count) = record
+        .integer(13)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    note_count
+        .checked_mul(3)
+        .and_then(|span| span.checked_add(14))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
@@ -1148,13 +1168,14 @@ pub(crate) fn assemble_with_context(
                 "first parameter does not match the Directory Entry entity type",
             ));
         }
+        let parameter_end = tokens.len();
         let mut record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: actual_start..actual_end,
             comment: bytes[record_end..].to_vec(),
             bytes,
             tokens,
-            parameter_end: 0,
+            parameter_end,
         };
         record.parameter_end = trailing_pointer_groups(&record, &entries)
             .map_or(record.tokens.len(), |groups| groups.token_start);

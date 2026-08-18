@@ -1731,6 +1731,161 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type406_form30_entity_table_boundary_follows_fixed_np_and_note_count() {
+    let association = directory_target(1, 212);
+    let units = directory_target(5, 316);
+    let mut source = directory_target(3, 406);
+    source.form = 30;
+    let directory = BTreeMap::from([(1, &association), (3, &source), (5, &units)]);
+    let make_record = |values: Vec<TokenValue>| {
+        let tokens = values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect::<Vec<_>>();
+        let parameter_end = tokens.len();
+        ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens,
+            parameter_end,
+            comment: Vec::new(),
+        }
+    };
+    let cases = [
+        (
+            vec![406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, 0, 0, 1, 5],
+            14,
+            Vec::new(),
+            vec![5],
+        ),
+        (
+            vec![
+                406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, 1, 1, 1, 1, 1, 1, 1, 5,
+            ],
+            17,
+            vec![1],
+            vec![5],
+        ),
+    ];
+    for (values, expected_start, associations, properties) in cases {
+        let record = make_record(
+            values
+                .into_iter()
+                .map(TokenValue::Integer)
+                .collect::<Vec<_>>(),
+        );
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Form 30 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, associations);
+        assert_eq!(groups.properties, properties);
+    }
+}
+
+#[test]
+fn type406_form30_complete_counted_span_keeps_boundary_with_wrong_note_type() {
+    let association = directory_target(1, 212);
+    let units = directory_target(5, 316);
+    let mut source = directory_target(3, 406);
+    source.form = 30;
+    let directory = BTreeMap::from([(1, &association), (3, &source), (5, &units)]);
+    let values = vec![
+        TokenValue::Integer(406),
+        TokenValue::Integer(14),
+        TokenValue::Integer(0),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(3),
+        TokenValue::Integer(0),
+        TokenValue::Integer(0),
+        TokenValue::Integer(1),
+        TokenValue::Integer(0),
+        TokenValue::Integer(0),
+        TokenValue::Integer(0),
+        TokenValue::Integer(12),
+        TokenValue::Integer(1),
+        TokenValue::String(b"bad".to_vec()),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(1),
+        TokenValue::Integer(5),
+    ];
+    let tokens = values
+        .into_iter()
+        .map(|value| Token { value, span: 0..0 })
+        .collect::<Vec<_>>();
+    let record = ParameterRecord {
+        directory_sequence: 3,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        parameter_end: tokens.len(),
+        tokens,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(
+        analysis.groups.expect("Form 30 table boundary").token_start,
+        17
+    );
+}
+
+#[test]
+fn type406_form30_malformed_np_or_note_count_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let units = directory_target(5, 316);
+    let mut source = directory_target(3, 406);
+    source.form = 30;
+    let directory = BTreeMap::from([(1, &association), (3, &source), (5, &units)]);
+    let integers = |values: &[i64]| {
+        values
+            .iter()
+            .copied()
+            .map(TokenValue::Integer)
+            .collect::<Vec<_>>()
+    };
+    let cases = vec![
+        integers(&[406, 15, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, 0, 0, 1, 5]),
+        integers(&[406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, -1, 0, 1, 5]),
+        vec![
+            integers(&[406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12]),
+            vec![TokenValue::String(b"1".to_vec())],
+            integers(&[0, 1, 5]),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
+        integers(&[406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, 1, 1, 1]),
+        integers(&[406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12]),
+    ];
+    for values in cases {
+        let tokens = values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect::<Vec<_>>();
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            parameter_end: tokens.len(),
+            tokens,
+            comment: Vec::new(),
+        };
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type402_form6_entity_table_boundary_follows_view_list() {
     for (visible_count, expected_start) in [(0_i64, 4_usize), (1, 5), (2, 6)] {
         let association = directory_target(1, 212);

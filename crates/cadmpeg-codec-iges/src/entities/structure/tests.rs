@@ -782,7 +782,7 @@ fn decode_preserves_property_defaults_without_coercing_non_boolean_flags() {
             form: 30,
             label: "DISPLAY".into(),
             status: "00000000",
-            parameters: "406,15,2,1,,3HDIA,0,,1,0,0,0,12.5,1,1,1,1;".into(),
+            parameters: "406,14,2,1,,3HDIA,0,,1,0,0,0,12.5,1,1,1,1;".into(),
         },
     ]);
     let result = IgesCodec
