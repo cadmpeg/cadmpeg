@@ -1203,9 +1203,12 @@ pub fn decode_fillet_radius_groups(
         let ([start], [end]) = (start.as_slice(), end.as_slice()) else {
             continue;
         };
-        let variable_parameter_count = 2 + middle_radii.len() + middle_parameters.len() + 1;
+        // TangencyWeight is optional for the variable-radius law. Older
+        // records carry only the endpoint and midpoint radius parameters.
+        let variable_parameter_count =
+            2 + middle_radii.len() + middle_parameters.len() + weights.len();
         if middle_radii.len() != middle_parameters.len()
-            || weights.len() != 1
+            || weights.len() > 1
             || owned_parameters.len() != variable_parameter_count
         {
             continue;
@@ -1222,7 +1225,9 @@ pub fn decode_fillet_radius_groups(
                 middle_radius_parameter_record_indices: middle_radii,
                 middle_parameter_record_indices: middle_parameters,
             },
-            tangency_weight_parameter_record_index: Some(weights[0].record_index),
+            tangency_weight_parameter_record_index: weights
+                .first()
+                .map(|parameter| parameter.record_index),
         });
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));

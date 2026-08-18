@@ -4534,14 +4534,14 @@ fn project_variable_fillet(
                 None,
             ),
             radius: RadiusSpec::Variable { points },
-            tangency_weight: Some(tangency_weight),
+            tangency_weight,
         }],
     })
 }
 
 pub(crate) fn variable_fillet_law(
     parameters: &[(u32, &DesignParameter)],
-) -> Option<(Vec<cadmpeg_ir::features::VariableRadius>, f64)> {
+) -> Option<(Vec<cadmpeg_ir::features::VariableRadius>, Option<f64>)> {
     use cadmpeg_ir::features::VariableRadius;
 
     let unique_parameter = |kind: &str| {
@@ -4556,10 +4556,23 @@ pub(crate) fn variable_fillet_law(
     if start.0 < 0.0 || end.0 < 0.0 {
         return None;
     }
-    let tangency_weight = unique_parameter("TangencyWeight")?.evaluated_value;
-    if !tangency_weight.is_finite() {
-        return None;
-    }
+    let tangency_weight = {
+        let mut matches = parameters.iter().filter_map(|(_, parameter)| {
+            (parameter.source_kind == "TangencyWeight").then_some(*parameter)
+        });
+        match (matches.next(), matches.next()) {
+            (None, None) => None,
+            (Some(parameter), None) => {
+                if parameter.evaluated_value.is_finite() {
+                    Some(parameter.evaluated_value)
+                } else {
+                    return None;
+                }
+            }
+            (None, Some(_)) => return None,
+            (Some(_), Some(_)) => return None,
+        }
+    };
     let mut middle_radii = parameters
         .iter()
         .filter_map(|(ordinal, parameter)| {

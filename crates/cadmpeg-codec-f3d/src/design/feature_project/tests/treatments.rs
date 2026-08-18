@@ -809,7 +809,73 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
             },
         ]
     );
-    assert_eq!(tangency_weight, 0.75);
+    assert_eq!(tangency_weight, Some(0.75));
+}
+
+#[test]
+fn variable_fillet_law_accepts_omitted_tangency_weight() {
+    use cadmpeg_ir::features::Length;
+
+    let parameter = |record_index, source_kind: &str, unit, value| {
+        let mut parameter = parse_design_parameter(&parameter_record(
+            Some(record_index + 100),
+            "value",
+            source_kind,
+            unit,
+            "d1",
+            value,
+        ))
+        .expect("variable Fillet parameter");
+        parameter.record_index = record_index;
+        parameter
+    };
+    let start = parameter(1, "StartRadius", Some("mm"), 0.2);
+    let end = parameter(2, "EndRadius", Some("mm"), 0.4);
+    let (points, tangency_weight) =
+        crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)])
+            .expect("variable Fillet law without an explicit weight");
+    assert_eq!(
+        points,
+        [
+            cadmpeg_ir::features::VariableRadius {
+                parameter: 0.0,
+                radius: Length(2.0),
+            },
+            cadmpeg_ir::features::VariableRadius {
+                parameter: 1.0,
+                radius: Length(4.0),
+            },
+        ]
+    );
+    assert_eq!(tangency_weight, None);
+}
+
+#[test]
+fn variable_fillet_law_rejects_duplicate_tangency_weights() {
+    let parameter = |record_index, source_kind: &str, unit, value| {
+        let mut parameter = parse_design_parameter(&parameter_record(
+            Some(record_index + 100),
+            "value",
+            source_kind,
+            unit,
+            "d1",
+            value,
+        ))
+        .expect("variable Fillet parameter");
+        parameter.record_index = record_index;
+        parameter
+    };
+    let start = parameter(1, "StartRadius", Some("mm"), 0.2);
+    let end = parameter(2, "EndRadius", Some("mm"), 0.4);
+    let weight_one = parameter(3, "TangencyWeight", None, 0.5);
+    let weight_two = parameter(4, "TangencyWeight", None, 0.75);
+    assert!(crate::design::feature_project::variable_fillet_law(&[
+        (0, &start),
+        (1, &end),
+        (2, &weight_one),
+        (3, &weight_two),
+    ])
+    .is_none());
 }
 
 #[test]
@@ -1049,6 +1115,29 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert_eq!(
         variable_assignments[0].tangency_weight_parameter_record_index,
         Some(91)
+    );
+    let variable_without_weight_parameters = [
+        parameter(50, 51, "StartRadius", Some("mm"), 0.2),
+        parameter(60, 61, "EndRadius", Some("mm"), 0.6),
+        parameter(70, 71, "MidRadius", Some("mm"), 0.4),
+        parameter(80, 81, "MidParams", None, 0.25),
+    ];
+    let variable_without_weight_owners = [
+        owner(50, 51, 0),
+        owner(60, 61, 1),
+        owner(70, 71, 2),
+        owner(80, 81, 3),
+    ];
+    let variable_without_weight_assignments = decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups[..1],
+        &variable_without_weight_owners,
+        &variable_without_weight_parameters,
+    );
+    assert_eq!(variable_without_weight_assignments.len(), 1);
+    assert_eq!(
+        variable_without_weight_assignments[0].tangency_weight_parameter_record_index,
+        None
     );
     let mut incomplete_parameters = variable_parameters.to_vec();
     incomplete_parameters.push(parameter(100, 101, "UnknownLawInput", None, 1.0));
