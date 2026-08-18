@@ -226,18 +226,6 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Note.** The change that deleted this item changed only `f3d.md` and this document. It added no code and no test. It wrote the decoder's current policy into `f3d.md` §3.1 "All complete construction-recipe records in one non-locus dimension companion". That paragraph gives `recipe_ordinal` the authority to order the records, but `recipe_ordinal` is not a stored field: `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs` numbers the records with `enumerate()`, and `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs` builds that list from the recipes whose byte offsets fall inside the companion payload span, sorted by byte offset. The paragraph therefore records byte order as the format's operation order. The second sentence of the paragraph repeats the measurement rule that `f3d.md` §3.1 "A recipe-backed linear dimension" already gives.
 
-### DR-23. `Draft` outward convention
-
-**Question.** Which stored carrier fixes the outward-material convention of a `Draft` scope?
-
-**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is a finite signed draft angle in radians, including zero, and the second reserves the opposite-side angle at zero. A neutral-plane draft has one role-`0x0000002100000000` face-recipe group. A parting-line draft has two such groups: one single-member entity-selection group names the WorkPlane at primary identity plus one, and the other carries the parting-tool face recipes. The WorkPlane's third matrix column supplies the pull direction and its feature is the pull-plane dependency.
-
-The signed angle and the WorkPlane pull direction are independent fields. The outward-material convention has no identified carrier, so the neutral model leaves `outward` unset.
-
-**Need.** Identify the stored carrier for the outward-material convention without deriving it from the angle sign or pull direction.
-
-**Note.** The change that deleted this item derives the value from the angle sign, which the Need excludes. `crates/cadmpeg-codec-f3d/src/design/feature_project.rs` `draft_outward` returns `angle < 0.0` and every `Draft` branch now calls it. The commit body carries no reasoning, `f3d.md` §3.1 "F3D stores no independent material-side bit for Draft." marks no decision, and no loss code and no finding charges the substitution. The clause `outward.is_none()` in the incomplete-feature test in `crates/cadmpeg-codec-f3d/src/decode.rs` can no longer fire, so a `Draft` with no material-side evidence now reports as a complete feature. The added test asserts the same rule that the helper holds.
-
 ### DR-32A. Component records that share one component GUID
 
 **Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
