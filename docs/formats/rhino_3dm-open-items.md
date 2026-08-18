@@ -124,6 +124,10 @@ The viewport owner is proven to retain the complete containing named-view list
 record when a framed `TCODE_VIEW_VIEWPORT_USERDATA` stream has a registered
 class-owned anonymous payload with an unsupported major; the typed view and
 viewport remain, and no viewport-userdata fields enter native data.
+The layer owner is proven to retain the complete `TCODE_LAYER_RECORD` when a
+framed `ON__LayerExtensions` payload has an unsupported outer anonymous major
+or cannot be parsed; the typed layer remains, its per-viewport array is empty,
+and no class-owned userdata fields enter native data.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

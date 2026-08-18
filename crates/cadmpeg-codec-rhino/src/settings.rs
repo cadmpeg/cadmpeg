@@ -2117,7 +2117,7 @@ fn parse_layer(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
-) -> Result<LayerRecord, FramingError> {
+) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
         parse_class_wrapper_with_userdata(data, record.body.clone(), archive, warnings)?;
     if class.class_uuid != ON_LAYER_UUID {
@@ -2239,15 +2239,19 @@ fn parse_layer(
         embedded_section_style: None,
         per_viewport_settings: Vec::new(),
     };
+    let mut userdata_degraded = false;
     if let Some(descriptor) = userdata.iter().find(|descriptor| {
         descriptor.class_uuid == LAYER_EXTENSIONS && descriptor.item_uuid == LAYER_EXTENSIONS
     }) {
         match parse_layer_extensions(data, descriptor, archive, layer.parent_id) {
             Ok(settings) => layer.per_viewport_settings = settings,
-            Err(error) => warnings.push(format!(
-                "layer per-viewport userdata at offset {} could not be transferred: {error}",
-                descriptor.range.start
-            )),
+            Err(error) => {
+                userdata_degraded = true;
+                warnings.push(format!(
+                    "layer per-viewport userdata at offset {} could not be transferred: {error}",
+                    descriptor.range.start
+                ));
+            }
         }
     }
     if version.1 >= 10 {
@@ -2336,7 +2340,7 @@ fn parse_layer(
         }
     }
     finish(&mut reader, "layer payload")?;
-    Ok(layer)
+    Ok((layer, userdata_degraded))
 }
 
 /// Decodes all metadata records while preserving scan framing.
@@ -2413,7 +2417,7 @@ pub(crate) fn parse_metadata(
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(data, record, archive, writer_version, warnings) {
-                    Ok(layer) => {
+                    Ok((layer, userdata_degraded)) => {
                         if let Some(id) = layer.id {
                             if !ids.insert(id) {
                                 warnings.push(format!(
@@ -2422,6 +2426,12 @@ pub(crate) fn parse_metadata(
                             }
                         }
                         metadata.layers.push(layer);
+                        if userdata_degraded {
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
+                        }
                         Ok(())
                     }
                     Err(error) => Err(error),

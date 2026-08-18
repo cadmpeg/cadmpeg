@@ -2350,8 +2350,12 @@ An empty extension is not archived.
 CADIR stores the source-normalized entries in the owning layer's
 `per_viewport_settings` array with the viewport UUID, effective mask, RGBA
 colors, plot weight, and raw visibility values. A malformed recognized payload
-is omitted from that typed array while the layer record is retained with a
-decode diagnostic.
+is omitted from that typed array while the typed layer remains. If the generic
+class-userdata framing succeeds but the recognized outer anonymous payload has
+an unsupported major or cannot be parsed, the complete `TCODE_LAYER_RECORD`
+remains opaque source data and the decoder reports the layer per-viewport
+userdata transfer diagnostic. No class-owned userdata field is admitted when
+this fallback applies.
 
 The archive layer index is the object-reference key. If two layer records use
 one archive index, component registration keeps the original index on the
