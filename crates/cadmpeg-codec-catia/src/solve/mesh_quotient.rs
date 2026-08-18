@@ -17,7 +17,6 @@ use crate::families::standard::topology::{
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_cycle_matches,
-    labeled_assignment_endpoint_cycles_viable,
     visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy, CoordinateRootPolicy,
     IncidenceRejection, IncidenceSolve,
 };
@@ -1433,7 +1432,7 @@ impl MeshQuotient {
             edges: &[[usize; 2]],
             domains: &[Vec<usize>],
             assigned: &[Option<usize>],
-            candidate: (usize, usize),
+            candidate: Option<(usize, usize)>,
             budget: Option<&WorkBudget<'_>>,
         ) -> bool {
             let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
@@ -1444,16 +1443,15 @@ impl MeshQuotient {
                 let local = *local_edge_by_id.get(&use_.edge)?;
                 Some(edges[local][usize::from(if end { !reversed } else { reversed })])
             };
-            let compatible = |left: usize, right: usize| {
-                if budget.is_some_and(|budget| !budget.charge()) {
+            let compatible = |left: usize, right: usize, charge: bool| {
+                if charge && budget.is_some_and(|budget| !budget.charge()) {
                     return false;
                 }
                 let value = |root| {
-                    if root == candidate.0 {
-                        Some(candidate.1)
-                    } else {
-                        assigned[root]
-                    }
+                    candidate
+                        .filter(|(candidate_root, _)| *candidate_root == root)
+                        .map(|(_, point)| point)
+                        .or_else(|| assigned.get(root).copied().flatten())
                 };
                 match (value(left), value(right)) {
                     (Some(left), Some(right)) => left == right,
@@ -1487,7 +1485,7 @@ impl MeshQuotient {
                                     else {
                                         return false;
                                     };
-                                    compatible(left, right)
+                                    compatible(left, right, true)
                                 }) {
                                     next.push(direction);
                                 }
@@ -1508,8 +1506,56 @@ impl MeshQuotient {
                             let Some(right) = port_root(first, first_direction, false) else {
                                 return false;
                             };
-                            compatible(left, right)
+                            compatible(left, right, false)
                         })
+                    })
+            })
+        }
+
+        fn complete_ordered_assignment_viable(
+            assignment: &MeshFaceBoundaryAssignment,
+            edge_points: &[Option<[usize; 2]>],
+            budget: Option<&WorkBudget<'_>>,
+        ) -> bool {
+            let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
+                Some(reversed) => [Some(reversed), None],
+                None => [Some(false), Some(true)],
+            };
+            assignment.boundaries.iter().all(|boundary| {
+                let Some(first) = boundary.first().copied() else {
+                    return false;
+                };
+                directions(first)
+                    .into_iter()
+                    .flatten()
+                    .any(|first_reversed| {
+                        let Some(first_points) = edge_points.get(first.edge).copied().flatten()
+                        else {
+                            return false;
+                        };
+                        let first_start = first_points[usize::from(first_reversed)];
+                        let mut ends = HashSet::from([first_points[usize::from(!first_reversed)]]);
+                        for use_ in &boundary[1..] {
+                            let Some(points) = edge_points.get(use_.edge).copied().flatten() else {
+                                return false;
+                            };
+                            let mut next = HashSet::new();
+                            for current in ends {
+                                for reversed in directions(*use_).into_iter().flatten() {
+                                    if budget.is_some_and(|budget| !budget.charge()) {
+                                        return false;
+                                    }
+                                    if points[usize::from(reversed)] == current {
+                                        next.insert(points[usize::from(!reversed)]);
+                                    }
+                                }
+                            }
+                            if next.is_empty() {
+                                return false;
+                            }
+                            ends = next;
+                        }
+                        ends.contains(&first_start)
                     })
             })
         }
@@ -1921,7 +1967,7 @@ impl MeshQuotient {
                                                         edges,
                                                         domains,
                                                         assigned,
-                                                        (root, *point),
+                                                        Some((root, *point)),
                                                         work_budget,
                                                     )
                                                 })
@@ -2313,7 +2359,7 @@ impl MeshQuotient {
                             .all(|(face, _)| match &boundary_domains[face] {
                                 MeshFaceBoundaryDomain::Ordered(assignments) => {
                                     assignments.iter().any(|assignment| {
-                                        labeled_assignment_endpoint_cycles_viable(
+                                        complete_ordered_assignment_viable(
                                             assignment, &selected, budget,
                                         )
                                     })
@@ -6770,6 +6816,7 @@ fn resolve_endpoint_configuration_relation_streaming(
                 &candidates,
                 assignment_domains,
                 port_identities,
+                None,
                 &endpoint_resolution_budget,
                 partial_solution_valid,
                 complete_solution_valid,
@@ -8449,6 +8496,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
         edge_candidates,
         assignments,
         &port_identities,
+        None,
         &budget,
         None,
         None,
@@ -8920,6 +8968,7 @@ fn resolve_standard_mesh_endpoint_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
     mut assignments: Vec<Vec<MeshFaceBoundaryAssignment>>,
     port_identities: &[[u32; 2]],
+    prepared_quotient: Option<&MeshQuotient>,
     budget: &WorkBudget<'_>,
     partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
     complete_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
@@ -8932,8 +8981,9 @@ fn resolve_standard_mesh_endpoint_candidates(
     if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
         return MeshEndpointResolve::Rejected;
     }
-    let Some(quotient) =
-        initial_mesh_quotient(&edge_candidates, vertex_points.len(), port_identities)
+    let Some(quotient) = prepared_quotient
+        .cloned()
+        .or_else(|| initial_mesh_quotient(&edge_candidates, vertex_points.len(), port_identities))
     else {
         return MeshEndpointResolve::Rejected;
     };
@@ -9320,6 +9370,7 @@ where
                     &singleton,
                     mesh_assignments,
                     &port_identities,
+                    None,
                     &endpoint_resolution_budget,
                     Some(&constrained_partial_solution_valid),
                     Some(&constrained_complete_solution_valid),
@@ -9403,18 +9454,20 @@ where
                 | MeshFaceBoundaryDomain::DeferredValidation(_) => None,
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(resolve_standard_mesh_endpoint_candidates(
+        let resolution = resolve_standard_mesh_endpoint_candidates(
             &edge_rows,
             &vertex_points,
             edge_candidates,
             assignments,
             &port_identities,
+            Some(&mesh_quotient),
             &endpoint_budget,
             Some(&constrained_partial_solution_valid),
             Some(&constrained_complete_solution_valid),
             candidate_gauge,
             priority_edges,
-        ))
+        );
+        Some(resolution)
     })();
     match fallback {
         Some(MeshEndpointResolve::Solved(topology, assignment)) => {
@@ -9841,27 +9894,23 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
         quotient.merge(1, 3).expect("shared right endpoint");
         quotient
     };
-    let refused_budget = WorkBudget::new(40);
-    assert_eq!(
-        make_quotient().coordinate_root_closure_outcome(
-            2,
-            &edge_candidates,
-            Some((&edge_faces, &boundary_domains)),
-            Some(&refused_budget),
-        ),
-        CoordinateRootClosure::Exhausted
+    let refused_budget = WorkBudget::new(38);
+    let refused = make_quotient().coordinate_root_closure_outcome(
+        2,
+        &edge_candidates,
+        Some((&edge_faces, &boundary_domains)),
+        Some(&refused_budget),
     );
+    assert_eq!(refused, CoordinateRootClosure::Exhausted);
     assert!(refused_budget.exhausted());
-    let complete_budget = WorkBudget::new(41);
-    assert!(matches!(
-        make_quotient().coordinate_root_closure_outcome(
-            2,
-            &edge_candidates,
-            Some((&edge_faces, &boundary_domains)),
-            Some(&complete_budget),
-        ),
-        CoordinateRootClosure::Solved(_)
-    ));
+    let complete_budget = WorkBudget::new(39);
+    let complete = make_quotient().coordinate_root_closure_outcome(
+        2,
+        &edge_candidates,
+        Some((&edge_faces, &boundary_domains)),
+        Some(&complete_budget),
+    );
+    assert!(matches!(complete, CoordinateRootClosure::Solved(_)));
     assert!(!complete_budget.exhausted());
 }
 

@@ -947,6 +947,63 @@ fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
 }
 
 #[test]
+fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
+    let singleton = |point| Arc::new(HashSet::from([point]));
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(6),
+        domains: [
+            singleton(1),
+            singleton(2),
+            singleton(1),
+            singleton(0),
+            singleton(0),
+            singleton(2),
+        ]
+        .into(),
+        members: (0..6).map(|node| vec![node]).collect(),
+    };
+    quotient.merge(4, 3).expect("first fixed-direction corner");
+    quotient.merge(2, 0).expect("second fixed-direction corner");
+    quotient.merge(1, 5).expect("third boundary corner");
+    let candidates = vec![vec![[1, 2]], vec![[0, 1]], vec![[0, 2]]];
+    let domain = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 2,
+                    start: 0,
+                    end: 0,
+                    reversed: Some(true),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 0,
+                    end: 0,
+                    reversed: Some(true),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 0,
+                    reversed: None,
+                },
+            ]],
+        },
+    ])];
+
+    assert!(quotient
+        .close_coordinate_roots_for_incidence_with_budget(
+            3,
+            &candidates,
+            &[[0, 0]; 3],
+            1,
+            &domain,
+            Some(&WorkBudget::new(10_000)),
+        )
+        .is_some());
+}
+
+#[test]
 fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
     let dense = (0..10)
         .flat_map(|left| ((left + 1)..10).map(move |right| [left, right]))
