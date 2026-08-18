@@ -4,7 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::{coincident_distance, Global};
-use crate::parameter::ParameterRecord;
+use crate::parameter::{copious_tuple_width, ParameterRecord};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
@@ -27,12 +27,9 @@ pub(super) struct CopiousProjection {
 }
 
 fn expected_interpretation(form: i64) -> Option<i64> {
-    match form {
-        1 | 11 | 20 | 21 | 31..=38 | 40 | 63 => Some(1),
-        2 | 12 => Some(2),
-        3 | 13 => Some(3),
-        _ => None,
-    }
+    [1, 2, 3]
+        .into_iter()
+        .find(|interpretation| copious_tuple_width(form, *interpretation).is_some())
 }
 
 fn presentation_form(form: i64) -> bool {
@@ -330,20 +327,18 @@ pub(super) fn project(
                 continue;
             }
         };
-        let (tuple_start, tuple_width, common_z) = match interpretation {
-            1 => {
-                let Some(z) = record.number(3).filter(|value| value.is_finite()) else {
-                    losses.push(entity_loss(entry, "common z coordinate is invalid"));
-                    continue;
-                };
-                (4_usize, 2_usize, Some(z))
-            }
-            2 => (3, 3, None),
-            3 => (3, 6, None),
-            _ => {
-                losses.push(entity_loss(entry, "copious-data interpretation is invalid"));
+        let Some(tuple_width) = copious_tuple_width(entry.form, interpretation) else {
+            losses.push(entity_loss(entry, "copious-data interpretation is invalid"));
+            continue;
+        };
+        let (tuple_start, common_z) = if tuple_width == 2 {
+            let Some(z) = record.number(3).filter(|value| value.is_finite()) else {
+                losses.push(entity_loss(entry, "common z coordinate is invalid"));
                 continue;
-            }
+            };
+            (4_usize, Some(z))
+        } else {
+            (3, None)
         };
         let Some(value_count) = tuple_count.checked_mul(tuple_width) else {
             losses.push(entity_loss(entry, "tuple value count overflows"));

@@ -71,6 +71,15 @@ impl ParameterBoundary {
     }
 }
 
+pub(crate) fn copious_tuple_width(form: i64, interpretation: i64) -> Option<usize> {
+    match (form, interpretation) {
+        (1 | 11 | 20 | 21 | 31..=38 | 40 | 63, 1) => Some(2),
+        (2 | 12, 2) => Some(3),
+        (3 | 13, 3) => Some(6),
+        _ => None,
+    }
+}
+
 impl ParameterRecord {
     pub(crate) fn integer(&self, index: usize) -> Option<i64> {
         match self.tokens.get(index).map(|token| &token.value)? {
@@ -305,6 +314,33 @@ fn specified_parameter_end(
                 return ParameterBoundary::Invalid;
             };
             let Some(end) = child_count.checked_add(2) else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
+        (106, form) => {
+            let Some(interpretation) = record.integer(1) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(tuple_width) = copious_tuple_width(form, interpretation) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(tuple_count) = record
+                .integer(2)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0)
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            let tuple_start: usize = if tuple_width == 2 { 4 } else { 3 };
+            let Some(end) = tuple_count
+                .checked_mul(tuple_width)
+                .and_then(|value_count| tuple_start.checked_add(value_count))
+            else {
                 return ParameterBoundary::Invalid;
             };
             if end <= record.tokens.len() {
