@@ -309,6 +309,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
+/// Type 230 Form 0 puts the island count at index 8 and consumes one pointer
+/// per island, so its groups start at token `9 + N`; zero islands is valid.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -338,6 +340,7 @@ pub(crate) fn entity_primary_end(
     match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
+        (230, 0) => Some(sectioned_area_primary_end(record)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }
@@ -373,6 +376,15 @@ fn single_parent_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(4))
+        .unwrap_or(record.tokens.len())
+}
+
+fn sectioned_area_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(8)
+        .and_then(|value| usize::try_from(value).ok())
+        .and_then(|count| count.checked_add(9))
+        .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
 
