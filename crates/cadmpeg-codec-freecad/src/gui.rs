@@ -833,6 +833,12 @@ fn validate_gui_property(
         return crate::persistence::validate_link_property(property, type_name);
     }
     match type_name {
+        "Mesh::PropertyMeshKernel" => {
+            return validate_gui_geometry_value(property, property_name, "Mesh");
+        }
+        "Points::PropertyPointKernel" => {
+            return validate_gui_geometry_value(property, property_name, "Points");
+        }
         "App::PropertyExpressionEngine" => {
             return validate_gui_expression_engine(property, property_name);
         }
@@ -1488,6 +1494,78 @@ fn is_gui_custom_type(type_name: &str) -> bool {
             | "Part::PropertyTopoShapeList"
             | "Sketcher::PropertyConstraintList"
     )
+}
+
+fn validate_gui_geometry_value(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    expected_tag: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        let message =
+            format!("GUI property {property_name} requires exactly one {expected_tag} value");
+        return Err(CodecError::Malformed(message));
+    };
+    if !root.has_tag_name(expected_tag) {
+        let message =
+            format!("GUI property {property_name} requires a leading {expected_tag} value");
+        return Err(CodecError::Malformed(message));
+    }
+
+    let side_references = property
+        .descendants()
+        .filter(roxmltree::Node::is_element)
+        .flat_map(|node| {
+            node.attributes()
+                .filter(|attribute| matches!(attribute.name(), "file" | "File"))
+                .map(move |attribute| (node, attribute.value()))
+        })
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(node, _)| node)
+        .collect::<Vec<_>>();
+    let direct_file = root
+        .attribute("file")
+        .is_some_and(|value| !value.is_empty());
+    if side_references.len() != usize::from(direct_file)
+        || side_references.first().is_some_and(|node| *node != *root)
+    {
+        let message = format!(
+            "GUI property {property_name} {expected_tag} has an unowned side-entry reference"
+        );
+        return Err(CodecError::Malformed(message));
+    }
+    if expected_tag == "Points" {
+        validate_gui_points_transform(*root, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_points_transform(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let Some(text) = root.attribute("mtrx") else {
+        return Ok(());
+    };
+    let values = text
+        .split_whitespace()
+        .map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>();
+    let Ok(values) = values else {
+        let message =
+            format!("GUI property {property_name} Points transform has an invalid scalar");
+        return Err(CodecError::Malformed(message));
+    };
+    if values.len() != 16 || values.iter().any(|value| !value.is_finite()) {
+        let message =
+            format!("GUI property {property_name} Points transform must contain 16 finite scalars");
+        return Err(CodecError::Malformed(message));
+    }
+    Ok(())
 }
 
 fn validate_visual_layer_list(

@@ -628,6 +628,51 @@ fn rejects_gui_side_entries_owned_by_nested_values() {
 }
 
 #[test]
+fn validates_gui_mesh_and_points_value_grammars() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="2">
+<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshPayload"/></Property>
+<Property name="Points" type="Points::PropertyPointKernel"><Points file="PointsPayload" mtrx="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+                ("MeshPayload", b"mesh"),
+                ("PointsPayload", b"points"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid GUI mesh and points roots");
+
+    for invalid in [
+        r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file=""><Nested file="MeshPayload"/></Mesh></Property>"#,
+        r#"<Property name="Points" type="Points::PropertyPointKernel"><Points file="PointsPayload"><Nested file="Other"/></Points></Property>"#,
+        r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshPayload"/><Mesh file="Other"/></Property>"#,
+        r#"<Property name="Points" type="Points::PropertyPointKernel"><Mesh file="PointsPayload"/></Property>"#,
+        r#"<Property name="Points" type="Points::PropertyPointKernel"><Points file="PointsPayload" mtrx="1 0 0"/></Property>"#,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                    ("MeshPayload", b"mesh"),
+                    ("PointsPayload", b"points"),
+                    ("Other", b"other"),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid GUI mesh or points root");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn validates_the_complete_loaded_dynamic_gui_registry() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>

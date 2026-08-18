@@ -31,21 +31,23 @@ Standard side-entry GUI types use direct leaf `FloatList`, `VectorList`, `Placem
 `ColorList`, `MaterialList`, or `FileIncluded` roots. The five list/material roots use only the
 direct root's lowercase `file`; `FileIncluded` instead admits exactly one `file` or `data` attribute.
 The GUI validator rejects nested side-entry carriers and the mutual `file`/`data` form.
+GUI Mesh and Points properties use one direct `Mesh` or `Points` root, bind a non-empty side entry
+only from that root, and validate the optional Points `mtrx` as sixteen finite scalars.
 
 **Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
 outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
 references before neutral transfer or native admission. Provider-defined types without a registered
 grammar must remain opaque.
 
-**Conflict.** A non-link GUI property such as `Mesh::PropertyMeshKernel` can enter the registered
-path without a complete value-grammar check. Its arbitrary descendant values can then be retained
-as if the registry had established their grammar, while the neutral presentation path silently
-withholds or misreads the value.
+**Conflict.** A non-link GUI property such as `TechDraw::PropertyCenterLineList` can enter the
+registered path without a complete value-grammar check. Its arbitrary descendant values can then be
+retained as if the registry had established their grammar, while the neutral presentation path
+silently withholds or misreads the value.
 
-**Note.** Partly settled. Link-family, scalar/quantity, in-memory list, and standard side-entry
-value grammars are closed by the application writer inheritance rules and shared direct-root
-validation. The remaining question is limited to custom runtime types and their custom side-entry
-forms.
+**Note.** Partly settled. Link-family, scalar/quantity, in-memory list, standard side-entry, and
+Mesh/Points value grammars are closed by the application writer inheritance rules and shared
+direct-root validation. The remaining question is limited to other custom runtime types and their
+custom side-entry forms.
 
 ### GP-02. Other GUI property semantics
 

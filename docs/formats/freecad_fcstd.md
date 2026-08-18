@@ -704,6 +704,11 @@ An expression root may also carry the producer's cross-link records. `PropertyPa
 with `value`; `PropertyUUID` uses `Uuid` with `value`; and `PropertyFileIncluded` uses
 `FileIncluded` with the direct file/data grammar above. File properties use the string grammar.
 
+GUI `Mesh::PropertyMeshKernel` and `Points::PropertyPointKernel` use the same direct-root and
+side-entry ownership rules as their application properties. A `Mesh` root without a non-empty
+`file` retains inline XML mesh data natively. A `Points` root may omit `mtrx`, which means identity;
+when present, `mtrx` contains sixteen finite row-major scalars.
+
 The loaded module registry adds `Materials::PropertyMaterial`, whose value is
 `PropertyMaterial` with a material `uuid`; `Part::PropertyPartShape`, whose value is `Part` and
 may carry `ElementMap` records and one exact-shape side entry; `Part::PropertyGeometryList`, whose
