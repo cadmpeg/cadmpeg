@@ -10376,6 +10376,7 @@ mod tests {
     mod disc28_disc26_disc24_disc1a_disc18_disc16_disc06;
     mod disc2a_disc26_disc24_disc1e_disc1c_disc18_keyed_population;
     mod merged_stream_bodies;
+    mod record_lattice;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
@@ -10617,7 +10618,6 @@ mod tests {
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
         assert_eq!(compact_root_body(&without_companion).len(), 1);
-
         let sentinel_upper_and_lower = [
             flo2(30, 0x1a, [3, 1, 31, 1, 1, 1]),
             flo2(31, 0x18, [3, 30, 32, 1, 1, 1]),
