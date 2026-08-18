@@ -196,6 +196,10 @@ fn function_sixteen_reconciles_scalar_equality_consumers() {
         ],
     );
     assert_eq!(
+        section_equation_scalar_seed_values(&propagated).get(&(0, 20)),
+        Some(&Some(1.5))
+    );
+    assert_eq!(
         section_equation_function_sixteen_angle_difference_values(&propagated),
         vec![((0, 20), 1.5)]
     );
@@ -380,6 +384,17 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].value, 5.0);
 
+    let mut dimension_driven = coordinate_definition.clone();
+    let variables = dimension_driven.variables.as_mut().expect("variables");
+    for row in &mut variables.rows[2..] {
+        row.value = None;
+        row.dimension_driven = true;
+    }
+    assert_eq!(
+        section_equation_scalar_seed_values(&dimension_driven).get(&(0, 0)),
+        Some(&Some(5.0))
+    );
+
     let mut conflicting = coordinate_definition;
     conflicting.variables.as_mut().expect("variables").rows[2].value = Some(4.0);
     assert!(
@@ -435,6 +450,9 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
     dimension_driven.dimensions = radius_definition.dimensions.clone();
     let dimensions = section_equation_radius_dimensions(&dimension_driven);
     assert_eq!(dimensions.len(), 1);
+    let seeds = section_equation_scalar_seed_values(&dimension_driven);
+    assert_eq!(seeds.get(&(3, 42)), Some(&Some(5.0)));
+    assert_eq!(seeds.get(&(0, 0)), Some(&Some(5.0)));
     assert_eq!(
         resolved_section_scalar_values(&dimension_driven)
             .get(&(3, 42))

@@ -481,6 +481,7 @@ pub(crate) fn section_equation_scalar_seed_values(
     else {
         return BTreeMap::new();
     };
+    let ambiguous_point_ids = variables.reconciled_points().1;
     let mut values = BTreeMap::new();
     for row in &variables.rows {
         if matches!(row.variable_type, 1 | 2) {
@@ -498,6 +499,21 @@ pub(crate) fn section_equation_scalar_seed_values(
         }
     }
     for (variable, value) in section_equation_scalar_equalities(definition) {
+        merge_scalar_value_candidate(&mut values, variable, value);
+    }
+    for constraint in
+        section_equation_unsigned_coordinate_distances(definition, &ambiguous_point_ids)
+    {
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+    }
+    for constraint in section_equation_radius_dimensions(definition)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+    {
+        merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+    }
+    for (variable, value) in section_equation_function_sixteen_angle_difference_values(definition) {
         merge_scalar_value_candidate(&mut values, variable, value);
     }
     values

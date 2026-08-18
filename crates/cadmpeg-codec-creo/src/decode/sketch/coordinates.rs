@@ -784,9 +784,10 @@ pub(crate) fn resolved_section_points(
 mod tests {
     use super::resolved_section_points;
     use crate::feature::{
-        FeatureDefinition, FeaturePointSegment, FeatureRelationTable, FeatureSectionPoint,
-        FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
-        FeatureSolverTableHeader, FeatureVariableRow, FeatureVariableTable,
+        FeatureDefinition, FeatureDimension, FeatureDimensionTable, FeaturePointSegment,
+        FeatureRelationTable, FeatureSectionPoint, FeatureSegment, FeatureSegmentKind,
+        FeatureSegmentTable, FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader,
+        FeatureVariableRow, FeatureVariableTable,
     };
 
     fn incomplete_segment_definition() -> FeatureDefinition {
@@ -1361,6 +1362,89 @@ mod tests {
         assert_eq!(
             resolved_section_points(&definition).get(&40),
             Some(&[5.0, 1.0])
+        );
+    }
+
+    #[test]
+    fn dimension_driven_radius_feeds_polar_constraint() {
+        let row = |variable_type, key, value| FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven: false,
+            offset: 0,
+        };
+        let mut body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
+            .to_vec();
+        let mut equation = |id, function, arguments: &[u8]| {
+            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(arguments);
+            body.extend_from_slice(b"\xf6\xe2");
+        };
+        equation(1, 0x02, &[0, 1]);
+        equation(2, 0x00, &[2, 3, 4, 5, 1, 6]);
+        let mut definition = FeatureDefinition {
+            id: 7,
+            owner_feature_id: None,
+            body,
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 7,
+                entity_ref: None,
+                rows: vec![
+                    row(3, 42, None),
+                    row(0, 0, None),
+                    row(1, 30, Some(1.0)),
+                    row(2, 30, Some(1.0)),
+                    row(1, 40, None),
+                    row(2, 40, None),
+                    row(4, 3, Some(0.0)),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: Some(FeatureDimensionTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![FeatureDimension {
+                    dimension_type: 3,
+                    value: Some(2.0),
+                    value_body: Vec::new(),
+                    unresolved_value_token: None,
+                    value_unit: crate::feature::DimensionUnit::Millimeters,
+                    direction_byte: 0,
+                    auxiliary_value: None,
+                    auxiliary_body: Vec::new(),
+                    external_id: 1,
+                    references: None,
+                    offset: 0,
+                }],
+                offset: 0,
+            }),
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+        definition.variables.as_mut().expect("variables").rows[1].dimension_driven = true;
+
+        assert_eq!(
+            resolved_section_points(&definition).get(&40),
+            Some(&[3.0, 1.0])
         );
     }
 }
