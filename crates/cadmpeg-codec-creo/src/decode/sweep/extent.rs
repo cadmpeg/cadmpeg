@@ -4,7 +4,7 @@
 use super::super::analytic::{
     canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
 };
-use super::super::holes::{extrusion_span, ExtrusionSpan};
+use super::super::holes::{extrusion_extent_and_direction, extrusion_span, ExtrusionSpan};
 use super::super::sketch::normalized;
 use super::planes::{
     feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
@@ -14,6 +14,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
+
+const EPS_PLANE_PARALLEL: f64 = 1e-10;
+const EPS_STATION_RELATIVE: f64 = 1e-9;
 
 pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) starts: Vec<[f64; 3]>,
@@ -496,6 +499,90 @@ pub(in super::super) struct RectilinearPlaneFamily {
     pub(in super::super) stations: Vec<RectilinearPlaneStation>,
 }
 
+#[derive(Clone, Copy)]
+enum SectionPlaneEvidence {
+    Missing,
+    Ambiguous,
+    Resolved(PlaneEquation),
+}
+
+fn normalized_plane(normal: [f64; 3], distance: f64) -> Option<PlaneEquation> {
+    let magnitude = dot(normal, normal).sqrt();
+    (magnitude.is_finite() && magnitude > 0.0 && distance.is_finite()).then_some(())?;
+    let normal = normal.map(|component| component / magnitude);
+    let distance = distance / magnitude;
+    Some(PlaneEquation {
+        origin: normal.map(|component| component * distance),
+        normal,
+    })
+}
+
+fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence {
+    let datums = scan
+        .planes
+        .datums
+        .iter()
+        .filter(|datum| datum.id == id)
+        .collect::<Vec<_>>();
+    let model_planes = scan
+        .planes
+        .local_systems
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    let model_equation = match model_planes.as_slice() {
+        [plane] => plane
+            .normal
+            .zip(plane.origin)
+            .and_then(|(normal, origin)| normalized_plane(normal, dot(normal, origin))),
+        _ => None,
+    };
+    let outline_planes = if scan
+        .planes
+        .outlines
+        .iter()
+        .any(|plane| plane.surface_id == id)
+    {
+        scan.planes
+            .outlines
+            .iter()
+            .filter(|plane| plane.surface_id == id)
+            .collect::<Vec<_>>()
+    } else {
+        scan.planes
+            .positional_frames
+            .iter()
+            .filter(|plane| plane.surface_id == id)
+            .collect::<Vec<_>>()
+    };
+    let outline_equation = match outline_planes.as_slice() {
+        [plane] => normalized_plane(plane.normal, dot(plane.normal, plane.origin)),
+        _ => None,
+    };
+
+    if datums.len() > 1
+        || (datums.len() == 1 && (model_equation.is_some() || outline_equation.is_some()))
+    {
+        return SectionPlaneEvidence::Ambiguous;
+    }
+    if let [datum] = datums.as_slice() {
+        return normalized_plane(datum.normal, datum.offset).map_or(
+            SectionPlaneEvidence::Ambiguous,
+            SectionPlaneEvidence::Resolved,
+        );
+    }
+    if let Some(equation) = model_equation {
+        return SectionPlaneEvidence::Resolved(equation);
+    }
+    if model_planes.len() > 1 || outline_planes.len() > 1 {
+        return SectionPlaneEvidence::Ambiguous;
+    }
+    outline_equation.map_or(
+        SectionPlaneEvidence::Missing,
+        SectionPlaneEvidence::Resolved,
+    )
+}
+
 pub(in super::super) fn rectilinear_family_extent(
     family: &RectilinearPlaneFamily,
     start_reversed: bool,
@@ -529,6 +616,34 @@ pub(in super::super) fn rectilinear_family_extent(
     (signed_length.abs() > station_tolerance).then_some((direction, signed_length.abs()))
 }
 
+pub(in super::super) fn rectilinear_extent_from_section_plane(
+    family: &RectilinearPlaneFamily,
+    section_origin: [f64; 3],
+    section_normal: [f64; 3],
+    start_reversed: bool,
+    station_tolerance: f64,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let (cap_direction, _) = rectilinear_family_extent(family, start_reversed, station_tolerance)?;
+    let section_normal = normalized(section_normal)?;
+    (dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL).then_some(())?;
+    let planes = family.stations.iter().map(|station| {
+        (
+            family
+                .normal
+                .map(|component| component * station.coordinate),
+            family.normal,
+        )
+    });
+    let (extent, direction) =
+        extrusion_extent_and_direction(section_origin, section_normal, planes)?;
+    if matches!(extent, ExtrudeExtent::OneSided { .. })
+        && dot(cap_direction, direction) < 1.0 - EPS_PLANE_PARALLEL
+    {
+        return None;
+    }
+    Some((extent, direction))
+}
+
 pub(in super::super) fn generated_rectilinear_plane_extent(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -537,8 +652,14 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let section = section?;
     section.sketch_plane_entity_id?;
-    let plane_flip = section.sketch_plane_flip == Some(crate::feature::BinaryFlag::Set);
-    let section_flip = section.orientation.section_flip == Some(crate::feature::BinaryFlag::Set);
+    let plane_flip = match section.sketch_plane_flip? {
+        crate::feature::BinaryFlag::Clear => false,
+        crate::feature::BinaryFlag::Set => true,
+    };
+    let section_flip = match section.orientation.section_flip? {
+        crate::feature::BinaryFlag::Clear => false,
+        crate::feature::BinaryFlag::Set => true,
+    };
     let start_reversed = plane_flip ^ section_flip;
     let rows = scan
         .surfaces
@@ -591,7 +712,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         .flat_map(|(plane, _)| plane.origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let station_tolerance = 1e-9 * coordinate_scale;
+    let station_tolerance = EPS_STATION_RELATIVE * coordinate_scale;
     let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
     for (plane, reversed) in planes {
         let station = dot(plane.origin, plane.normal);
@@ -601,7 +722,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 .normal
                 .iter()
                 .zip(plane.normal)
-                .all(|(left, right)| (left - right).abs() <= 1e-10)
+                .all(|(left, right)| (left - right).abs() <= EPS_PLANE_PARALLEL)
         }) {
             if let Some(known) = family
                 .stations
@@ -618,7 +739,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         } else {
             families
                 .iter()
-                .all(|family| dot(family.normal, plane.normal).abs() <= 1e-10)
+                .all(|family| dot(family.normal, plane.normal).abs() <= EPS_PLANE_PARALLEL)
                 .then_some(())?;
             families.push(RectilinearPlaneFamily {
                 normal: plane.normal,
@@ -636,6 +757,36 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .count()
             >= 2)
         .then_some(())?;
+
+    match section_plane_evidence(scan, section.sketch_plane_entity_id?) {
+        SectionPlaneEvidence::Ambiguous => return None,
+        SectionPlaneEvidence::Resolved(section_plane) => {
+            let mut section_normal = section_plane.normal;
+            if plane_flip {
+                section_normal = section_normal.map(|component| -component);
+            }
+            if section_flip {
+                section_normal = section_normal.map(|component| -component);
+            }
+            let axial_families = families
+                .iter()
+                .filter(|family| {
+                    dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL
+                })
+                .collect::<Vec<_>>();
+            let [family] = axial_families.as_slice() else {
+                return None;
+            };
+            return rectilinear_extent_from_section_plane(
+                family,
+                section_plane.origin,
+                section_normal,
+                start_reversed,
+                station_tolerance,
+            );
+        }
+        SectionPlaneEvidence::Missing => {}
+    }
 
     let candidates = families
         .iter()
