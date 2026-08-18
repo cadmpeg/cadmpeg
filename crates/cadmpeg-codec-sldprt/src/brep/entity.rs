@@ -973,6 +973,13 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(
+            disc24_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc10_dangling_terminal_reciprocal_face_root_body(
+                &by_attr,
+            ),
+        );
+    }
+    if out.is_empty() {
         out.extend(disc22_disc20_disc1e_disc18_disc16_disc0e_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -7244,6 +7251,77 @@ fn disc1c_disc1a_disc16_disc14_disc12_disc10_tail_reciprocal_face_root_body(
     )
 }
 
+fn disc24_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc10_dangling_terminal_reciprocal_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    let chain_shape = &[
+        (0x0024, 2),
+        (0x0020, 2),
+        (0x001e, 2),
+        (0x001a, 1),
+        (0x0018, 2),
+        (0x0016, 2),
+        (0x0014, 2),
+        (0x0012, 2),
+        (0x0010, 2),
+    ];
+    let matching_chains = keyed_forward_chain_candidates_with_missing_terminal(by_attr)
+        .into_iter()
+        .filter(|chain| {
+            chain.len() == chain_shape.len()
+                && chain
+                    .first()
+                    .is_some_and(|root| root.refs.get(1) == Some(&1))
+                && chain_shape
+                    .iter()
+                    .copied()
+                    .zip(chain.iter())
+                    .all(|((disc, flo), record)| record.disc == disc && record.flo() == flo)
+        })
+        .collect::<Vec<_>>();
+    let [chain] = matching_chains.as_slice() else {
+        return Vec::new();
+    };
+    let Some(terminal) = chain.last().copied() else {
+        return Vec::new();
+    };
+    let Some(dangling_attr) = terminal.refs.get(2).copied().filter(|attr| *attr > 1) else {
+        return Vec::new();
+    };
+    if by_attr.contains_key(&dangling_attr) {
+        return Vec::new();
+    }
+    let mut records = by_attr.values().copied().cloned().collect::<Vec<_>>();
+    let Some(normalized_terminal) = records
+        .iter_mut()
+        .find(|record| record.attr == terminal.attr)
+    else {
+        return Vec::new();
+    };
+    let Some(next) = normalized_terminal.refs.get_mut(2) else {
+        return Vec::new();
+    };
+    *next = 1;
+    let normalized_by_attr = records
+        .iter()
+        .map(|record| (record.attr, record))
+        .collect::<HashMap<_, _>>();
+    keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
+        &normalized_by_attr,
+        chain_shape,
+        0x0004,
+        0x001c,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 5,
+            require_exact_use_population: false,
+        },
+        false,
+    )
+}
+
 fn keyed_population_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
     chain_shape: &[(u16, u8)],
@@ -9057,6 +9135,44 @@ fn keyed_forward_chain_candidates<'a>(
     candidates
 }
 
+fn keyed_forward_chain_candidates_with_missing_terminal<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+) -> Vec<Vec<&'a EntityRecord>> {
+    let mut candidates = Vec::new();
+    for root in by_attr.values().copied().filter(|record| {
+        record.flo() == 2
+            && record.refs.first().is_some_and(|key| *key > 1)
+            && record.refs.get(1).is_none_or(|attr| *attr <= 1)
+            && record.refs.get(2).is_some_and(|attr| *attr > 1)
+    }) {
+        let key = root.refs[0];
+        let mut chain = vec![root];
+        let mut previous = root.attr;
+        let mut next = root.refs[2];
+        let mut seen = HashSet::from([root.attr]);
+        let mut missing_terminal = false;
+        while next > 1 {
+            let Some(record) = by_attr.get(&next).copied() else {
+                missing_terminal = true;
+                break;
+            };
+            if !seen.insert(record.attr)
+                || record.refs.first() != Some(&key)
+                || record.refs.get(1) != Some(&previous)
+            {
+                break;
+            }
+            chain.push(record);
+            previous = record.attr;
+            next = record.refs.get(2).copied().unwrap_or(0);
+        }
+        if missing_terminal && chain.len() >= 5 {
+            candidates.push(chain);
+        }
+    }
+    candidates
+}
+
 fn keyed_direct_face_use_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
     chain_shape: &[(u16, u8)],
@@ -9885,7 +10001,6 @@ fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     if regions.is_empty() {
         return Vec::new();
     }
-
     let canonical_faces = by_attr
         .values()
         .copied()
@@ -9922,7 +10037,6 @@ fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
             }
         }
     }
-
     let mut region_records = Vec::new();
     for region in regions {
         let shells = reachable_records(by_attr, region, 0x0016)
@@ -9968,7 +10082,6 @@ fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
         })
         .collect()
 }
-
 fn reachable_records<'a>(
     by_attr: &HashMap<u16, &'a EntityRecord>,
     root: &'a EntityRecord,
@@ -9993,7 +10106,6 @@ fn reachable_records<'a>(
     found.sort_by_key(|record| record.offset);
     found
 }
-
 fn shell_face_ring(
     by_attr: &HashMap<u16, &EntityRecord>,
     shell: &EntityRecord,
@@ -10018,7 +10130,6 @@ fn shell_face_ring(
     }
     (!faces.is_empty()).then_some(faces)
 }
-
 fn face_from_face_use(
     by_attr: &HashMap<u16, &EntityRecord>,
     face_use: &EntityRecord,
@@ -10033,7 +10144,6 @@ fn face_from_face_use(
     }
     None
 }
-
 fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) -> usize {
     let faces = entities
         .iter()
