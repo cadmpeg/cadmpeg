@@ -27,7 +27,8 @@ use super::geometry::{
     saved_section_circle_values,
 };
 use super::skamp::{
-    section_line_entity_fixed_coordinate, section_segment_rows, unique_decoded_section_segment,
+    section_line_entity_fixed_coordinate_with_unique_rows, section_segment_rows,
+    unique_decoded_section_segment,
 };
 
 pub(crate) fn resolved_section_radii(
@@ -489,7 +490,7 @@ pub(crate) fn section_proven_axis_line_carrier(
         section_fixed_coordinate_line_carrier(
             variable_points,
             segment,
-            section_line_entity_fixed_coordinate(definition, segment.external_id)?,
+            section_line_entity_fixed_coordinate_with_unique_rows(definition, segment.external_id)?,
         )
     }
 }
@@ -621,7 +622,81 @@ pub(crate) fn trim_segment_id(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolved_section_radii, section_skamp_radius_source, SectionRadiusSource};
+    use super::{
+        resolved_section_radii, section_proven_axis_line_carrier, section_skamp_radius_source,
+        SectionRadiusSource,
+    };
+
+    #[test]
+    fn unique_incomplete_axis_row_supplies_unbounded_carrier() {
+        let line = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: Some(0),
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 10,
+            body: Vec::new(),
+            offset: 0,
+        };
+        let variable_points =
+            std::collections::BTreeMap::from([(1, [Some(0.0), None]), (2, [Some(0.0), None])]);
+        let definition = crate::feature::FeatureDefinition {
+            id: 916,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 2,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![line.clone()],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+        assert_eq!(
+            section_proven_axis_line_carrier(&definition, &variable_points, &line,),
+            Some(cadmpeg_ir::sketches::SketchGeometry::ReferenceLine {
+                origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            })
+        );
+
+        let mut duplicate = definition;
+        duplicate
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(line);
+        assert!(section_proven_axis_line_carrier(
+            &duplicate,
+            &variable_points,
+            &duplicate.segments.as_ref().expect("segments").rows[0],
+        )
+        .is_none());
+    }
 
     #[test]
     fn unique_arc_rows_remain_radius_sources_in_incomplete_segment_tables() {
