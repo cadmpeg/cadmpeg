@@ -113,6 +113,37 @@ pub(crate) fn curve_expression_helix_definition(
     })
 }
 
+fn curve_expression_helix_feature_definition(
+    helix: &crate::curve::CurveExpressionHelix,
+    procedural: &ProceduralCurveDefinition,
+) -> Option<IrFeatureDefinition> {
+    let ProceduralCurveDefinition::Helix {
+        center,
+        pitch,
+        axis,
+        ..
+    } = procedural
+    else {
+        return None;
+    };
+    let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
+    axial_pitch
+        .is_finite()
+        .then_some(IrFeatureDefinition::Helix {
+            axis_origin: *center,
+            axis_direction: *axis,
+            radius: Length(helix.radius),
+            pitch: Length(axial_pitch),
+            revolutions: helix.revolutions,
+            start_angle: Angle(helix.start_angle),
+            clockwise: helix.clockwise,
+            radial_growth: None,
+            cone_angle: None,
+            segment_turns: None,
+            construction_style: None,
+        })
+}
+
 pub(crate) fn expression_dependency_reaches(
     dependencies: &[Vec<usize>],
     start: usize,
@@ -456,6 +487,13 @@ pub(crate) fn transfer_curve_expression_features(
         );
         let helix = crate::curve::expression_helix(record);
         let placed_helix = curve_expression_helix_definition(record);
+        let neutral_helix =
+            helix
+                .as_ref()
+                .zip(placed_helix.as_ref())
+                .and_then(|(helix, procedural)| {
+                    curve_expression_helix_feature_definition(helix, procedural)
+                });
         if let Some(procedural_definition) = placed_helix {
             let curve_id = CurveId(format!(
                 "creo:depdb:curve_expression_curve#{}-{}",
@@ -493,8 +531,16 @@ pub(crate) fn transfer_curve_expression_features(
                 cache_fit_tolerance: None,
             });
         }
-        let definition = helix.map_or_else(
-            || IrFeatureDefinition::Native {
+        let definition = match helix {
+            Some(helix) => neutral_helix.unwrap_or_else(|| IrFeatureDefinition::HelixNativeAxis {
+                axis_native_ref: curve_expression_record_id(record),
+                axial_rise: Length(helix.height),
+                pitch: Length(helix.height / helix.revolutions),
+                revolutions: helix.revolutions,
+                start_angle: Angle(helix.start_angle),
+                clockwise: helix.clockwise,
+            }),
+            None => IrFeatureDefinition::Native {
                 kind: "CurveFromEquation".to_string(),
                 parameters: BTreeMap::from([
                     ("entity_id".to_string(), record.entity_id.to_string()),
@@ -505,15 +551,7 @@ pub(crate) fn transfer_curve_expression_features(
                 ]),
                 properties: BTreeMap::new(),
             },
-            |helix| IrFeatureDefinition::HelixNativeAxis {
-                axis_native_ref: curve_expression_record_id(record),
-                axial_rise: Length(helix.height),
-                pitch: Length(helix.height / helix.revolutions),
-                revolutions: helix.revolutions,
-                start_angle: Angle(helix.start_angle),
-                clockwise: helix.clockwise,
-            },
-        );
+        };
         ir.model.features.push(Feature {
             id: feature_id,
             ordinal,

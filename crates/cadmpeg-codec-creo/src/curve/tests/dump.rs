@@ -14,6 +14,8 @@ use crate::surface::TorusRadius2Encoding;
 use crate::test_support::*;
 use crate::CreoCodec;
 
+const EPS_HELIX_FEATURE: f64 = f64::EPSILON;
+
 #[test]
 fn decode_preserves_counted_curve_expression_programs() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x89\x4c\
@@ -53,30 +55,43 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(records[0].fields()["assignments"][0]["value"], 5.0);
     assert_eq!(records[0].fields()["local_system"]["dimensions"], 4);
     assert_eq!(result.ir().model.features.len(), 1);
-    assert!(matches!(
-        &result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::HelixNativeAxis {
-            axial_rise: cadmpeg_ir::features::Length(71.0),
-            pitch: cadmpeg_ir::features::Length(71.0),
-            revolutions: 1.0,
-            start_angle: cadmpeg_ir::features::Angle(0.0),
-            clockwise: false,
-            ..
-        }
-    ));
+    let cadmpeg_ir::features::FeatureDefinition::Helix {
+        axis_origin,
+        axis_direction,
+        radius,
+        pitch,
+        revolutions,
+        start_angle,
+        clockwise,
+        ..
+    } = &result.ir().model.features[0].definition
+    else {
+        panic!("complete curve-equation frame transfers a neutral helix");
+    };
+    assert!(axis_origin.x.abs() <= EPS_HELIX_FEATURE);
+    assert!(axis_origin.y.abs() <= EPS_HELIX_FEATURE);
+    assert!(axis_origin.z.abs() <= EPS_HELIX_FEATURE);
+    assert!(axis_direction.x.abs() <= EPS_HELIX_FEATURE);
+    assert!(axis_direction.y.abs() <= EPS_HELIX_FEATURE);
+    assert!((axis_direction.z + 1.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((radius.0 - 5.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((pitch.0 - 71.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((*revolutions - 1.0).abs() <= EPS_HELIX_FEATURE);
+    assert!(start_angle.0.abs() <= EPS_HELIX_FEATURE);
+    assert!(!clockwise);
     assert_eq!(
         result
             .report()
             .coverage_count(crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT),
-        1
+        0
     );
     assert_eq!(
         result.report().coverage_count(
             crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT
         ),
-        1
+        0
     );
-    assert!(result
+    assert!(!result
         .report()
         .losses
         .iter()

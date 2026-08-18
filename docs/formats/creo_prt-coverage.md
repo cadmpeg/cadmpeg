@@ -579,8 +579,10 @@ fixtures, scores above L1 remain blocked.
    incomplete surface construction raises a decode loss note. Section-shape
    coverage counts operations and operations with unresolved input shape sets.
    Pattern coverage partitions unresolved seed selections and transform
-   operands. Analytic helices whose axis remains source-native are counted
-   separately. Each incomplete construction raises a decode loss note.
+   operands. Affine cylindrical curve-equation programs with complete local
+   frames transfer neutral helix axes and exact procedural helix carriers;
+   programs without a complete frame retain native-axis semantics. Each
+   incomplete construction raises a decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
