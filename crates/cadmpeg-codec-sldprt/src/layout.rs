@@ -697,6 +697,44 @@ pub(crate) mod extended_geometry_116_indexed_arc {
     pub(crate) const FOLLOWING_OBJECT_INDEX: usize = 112;
 }
 
+/// Byte offsets for the `compact_indexed_curve_continuation120` record.
+///
+/// Spec §2. Record length 122 B.
+///
+/// ```text
+/// A valid class declaration may begin at the record boundary +122.
+/// ```
+pub(crate) mod compact_indexed_curve_continuation120 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 122;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `locus` (`bytes[4]`). Spec §2.
+    pub(crate) const LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Offset of `continuation_padding` (`bytes[48]`). Spec §2.
+    pub(crate) const CONTINUATION_PADDING: usize = 72;
+    /// Offset of `continuation_kind` (`u16`, little-endian). Spec §2.
+    pub(crate) const CONTINUATION_KIND: usize = 120;
+}
+
 /// Byte offsets for the `current_terminal_relation_carrier` record.
 ///
 /// Spec §2. Record length 136 B.

@@ -667,6 +667,37 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_indexed_curve_continuation120`
+
+Spec §2 · layout: byte offsets · size: 122 B
+
+A valid class declaration may begin at the record boundary +122.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended- or current-prefix compact indexed curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster ordinals at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster ordinals at marker +56 and +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +64 |
+| 72 | 48 | `continuation_padding` | `bytes[48]` | little | spec | 48 zero bytes from marker +72 through +119 |
+| 120 | 2 | `continuation_kind` | `u16` | little | spec | Marker +120 stores a nonzero, non-null u16 continuation discriminator |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this indexed curve layout.
+- `21..23` (2 B): The locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `current_terminal_relation_carrier`
 
 Spec §2 · layout: byte offsets · size: 136 B

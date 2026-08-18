@@ -2151,6 +2151,122 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "compact_indexed_curve_continuation120"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+kind = "byte"
+section = "2"
+anchor = "An extended- or current-prefix compact indexed curve may end at marker +120 before a typed continuation"
+size = 122
+endianness = "little"
+note = "A valid class declaration may begin at the record boundary +122."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An extended- or current-prefix compact indexed curve"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind u32 `0`, `1`, or `2`"
+
+[[record.field]]
+name = "locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster ordinals at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster ordinals at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +60"
+
+[[record.field]]
+name = "signed_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +64"
+
+[[record.field]]
+name = "continuation_padding"
+offset = 72
+type = "bytes[48]"
+source = "spec"
+anchor = "48 zero bytes from marker +72 through +119"
+
+[[record.field]]
+name = "continuation_kind"
+offset = 120
+type = "u16"
+source = "spec"
+anchor = "Marker +120 stores a nonzero, non-null u16 continuation discriminator"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this indexed curve layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
 name = "current_terminal_relation_carrier"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
 kind = "byte"
