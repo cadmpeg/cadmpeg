@@ -8942,3 +8942,309 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         assert!(analysis.groups.is_none());
     }
 }
+
+#[test]
+fn type416_entity_table_boundaries_follow_external_reference_fields() {
+    let association = directory_target(3, 212);
+    let mut source = directory_target(9, 416);
+    for (form, values, expected_start) in [
+        (
+            0_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"ONE".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            3_usize,
+        ),
+        (
+            1_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"FILE01".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            2,
+        ),
+        (
+            2_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"LOG".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            3,
+        ),
+        (
+            3_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"NAT".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            2,
+        ),
+        (
+            4_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"LIBRARY".to_vec()),
+                TokenValue::String(b"NAT".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            3,
+        ),
+    ] {
+        source.form = form;
+        let directory = BTreeMap::from([(3, &association), (9, &source)]);
+        let record = token_parameter_record(9, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis.groups.expect("Type 416 table boundary");
+        assert_eq!(groups.token_start, expected_start, "Form {form}");
+        assert_eq!(groups.associations, vec![3], "Form {form}");
+        assert!(groups.properties.is_empty(), "Form {form}");
+    }
+}
+
+#[test]
+fn type416_entity_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property_5 = directory_target(5, 406);
+    let property_7 = directory_target(7, 406);
+    let mut source = directory_target(9, 416);
+
+    for (form, values, expected_start) in [
+        (
+            0_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"FILE01".to_vec()),
+                2.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+            3_usize,
+        ),
+        (
+            1_i64,
+            vec![
+                416.into(),
+                2.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+            2,
+        ),
+        (
+            2_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"FILE01".to_vec()),
+                2.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+            3,
+        ),
+        (
+            3_i64,
+            vec![
+                416.into(),
+                2.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+            2,
+        ),
+        (
+            4_i64,
+            vec![
+                TokenValue::Integer(416),
+                TokenValue::String(b"LIBRARY".to_vec()),
+                2.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+            3,
+        ),
+    ] {
+        source.form = form;
+        let directory = BTreeMap::from([
+            (1, &association_1),
+            (3, &association_3),
+            (5, &property_5),
+            (7, &property_7),
+            (9, &source),
+        ]);
+        let record = token_parameter_record(9, values);
+        let generic = structural_pointer_group_candidates(&record);
+        assert!(generic
+            .iter()
+            .any(|candidate| candidate.token_start != expected_start));
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis.groups.expect("Type 416 table boundary");
+        assert_eq!(groups.token_start, expected_start, "Form {form}");
+        assert_eq!(groups.associations, vec![3], "Form {form}");
+        assert_eq!(groups.properties, vec![5, 7], "Form {form}");
+    }
+}
+
+#[test]
+fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let association = directory_target(3, 212);
+    let mut source = directory_target(9, 416);
+
+    for (form, wrong_values, expected_start, truncated_primary, truncated_group) in [
+        (
+            0_i64,
+            vec![
+                416.into(),
+                TokenValue::String(b"BAD".to_vec()),
+                TokenValue::String(b"NAME".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            3_usize,
+            vec![416.into(), TokenValue::String(b"FILE01".to_vec())],
+            vec![
+                416.into(),
+                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"NAME".to_vec()),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            1_i64,
+            vec![
+                416.into(),
+                TokenValue::String(b"BAD".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            2,
+            vec![416.into()],
+            vec![
+                416.into(),
+                TokenValue::String(b"FILE01".to_vec()),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            2_i64,
+            vec![
+                416.into(),
+                TokenValue::String(b"BAD".to_vec()),
+                TokenValue::String(b"LOG".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            3,
+            vec![416.into(), TokenValue::String(b"FILE01".to_vec())],
+            vec![
+                416.into(),
+                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"LOG".to_vec()),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            3_i64,
+            vec![
+                416.into(),
+                TokenValue::String(b"BAD".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            2,
+            vec![416.into()],
+            vec![
+                416.into(),
+                TokenValue::String(b"FILE01".to_vec()),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            4_i64,
+            vec![
+                416.into(),
+                TokenValue::String(b"LIB".to_vec()),
+                TokenValue::String(b"BAD".to_vec()),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+            3,
+            vec![416.into(), TokenValue::String(b"LIBRARY".to_vec())],
+            vec![
+                416.into(),
+                TokenValue::String(b"LIBRARY".to_vec()),
+                TokenValue::String(b"NAT".to_vec()),
+                1.into(),
+                3.into(),
+            ],
+        ),
+    ] {
+        source.form = form;
+        let directory = BTreeMap::from([(3, &association), (9, &source)]);
+        let wrong = token_parameter_record(9, wrong_values);
+        let analysis = analyze_trailing_pointer_groups(&wrong, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        assert_eq!(
+            analysis
+                .groups
+                .expect("Type 416 complete boundary")
+                .token_start,
+            expected_start,
+            "Form {form}"
+        );
+
+        for values in [truncated_primary, truncated_group] {
+            let analysis =
+                analyze_trailing_pointer_groups(&token_parameter_record(9, values), &directory);
+            assert_eq!(analysis.candidate_count, 0, "Form {form}");
+            assert_eq!(analysis.valid_candidate_count, 0, "Form {form}");
+            assert!(analysis.groups.is_none(), "Form {form}");
+        }
+    }
+}

@@ -411,6 +411,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 410 Form 0 stores eight view fields at indexes 1 through 8, so its
 /// groups start at token 9; Form 1 stores twenty-two perspective fields, so
 /// its groups start at token 23.
+/// Type 416 Forms 0, 2, and 4 store two identifier strings at indexes 1 and 2,
+/// so their groups start at token 3; Forms 1 and 3 store one identifier string
+/// at index 1, so their groups start at token 2.
 /// Type 132 Form 0 stores fourteen fixed primary fields, so its groups start
 /// at token 15.
 /// Type 402 Form 19 puts the block count at index 1 and stores six fields per
@@ -491,6 +494,8 @@ pub(crate) fn entity_primary_end(
         (408, 0) => Some(fixed_primary_end(record, 6)),
         (410, 0) => Some(fixed_primary_end(record, 9)),
         (410, 1) => Some(fixed_primary_end(record, 23)),
+        (416, 0 | 2 | 4) => Some(fixed_primary_end(record, 3)),
+        (416, 1 | 3) => Some(fixed_primary_end(record, 2)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }
