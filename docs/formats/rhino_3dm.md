@@ -4342,6 +4342,13 @@ gradient type name and numeric value, scaled start and end points, repeat, and
 ordered RGBA stops. The hatch fill is still not rendered as neutral fill
 geometry; the source object record remains retained for native fidelity.
 
+If a registered gradient userdata item has an unsupported outer anonymous
+major or fails its bounded field grammar, the hatch class data and loop curves
+remain typed. The `gradient` parameter is omitted, the codec emits the existing
+`hatch userdata extension failed` diagnostic, and the complete containing
+`TCODE_OBJECT_RECORD` remains retained. No field from the failed gradient
+payload enters typed native data.
+
 ### 18.3 Detail views
 
 `ON_DetailView` writers emit an outer anonymous chunk packed version 1.1. The

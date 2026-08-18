@@ -17,7 +17,7 @@ use cadmpeg_ir::Encoder;
 use crate::chunks::ArchiveVersion;
 use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
-
+mod hatch_userdata;
 mod layer_userdata;
 mod mesh_userdata;
 mod settings_userdata;

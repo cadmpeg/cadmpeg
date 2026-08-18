@@ -128,6 +128,11 @@ The layer owner is proven to retain the complete `TCODE_LAYER_RECORD` when a
 framed `ON__LayerExtensions` payload has an unsupported outer anonymous major
 or cannot be parsed; the typed layer remains, its per-viewport array is empty,
 and no class-owned userdata fields enter native data.
+The hatch owner is proven for the registered `ON_GradientColorData` carrier:
+its current major-1 grammar supplies the native gradient parameter, while an
+unsupported or malformed gradient payload leaves the hatch class data and loop
+curves typed, omits that parameter, emits the hatch-userdata diagnostic, and
+retains the complete `TCODE_OBJECT_RECORD`.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
