@@ -20,32 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Containers and other encodings
 
-### CE-08. Header schema object identifier
-
-**Question.** Which `FILE_SCHEMA` object identifier forms must the header
-parser accept?
-
-**Known.** ISO 10303-21 gives a schema name with an optional object
-identifier. The parser refuses the complete file when one component of that
-identifier is negative. The `Idf/Idflibs/VC0603_SMD.stp` sample that installs
-with FreeCAD declares `AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }`. Its
-SHA-256 is
-`ddb12bc22a94b3ce2837f4a3e75fa37b47824363c54f491c853b80d6cc6b06a0`. `cadmpeg
-inspect` stops with `malformed container: FILE_SCHEMA has invalid or duplicate
-schema identifiers at byte 358`. A copy that changes only that one component
-from `-1` to `1` decodes, transfers 418 pcurve uses, and passes `cadmpeg
-check`.
-
-**Need.** Decide if a negative object identifier component is a container
-error or a recoverable header loss. Open CASCADE 6.3 wrote this file in 2010,
-so the form occurs in exchange. A refusal in the header stops all later work
-on the file, and the geometry after the header is good.
-
-**Note.** Operator verification of commit `ba62cfb87` found this. That commit
-used the sample as independent evidence. It normalized the header in a scratch
-copy, recorded both hashes in its notebook, and filed no item.
-
-
 ## 4. Signatures
 
 ## 5. Topology and pcurve decisions
@@ -89,7 +63,6 @@ document. The note count grows with the model, so a large assembly gives a
 report that is large and hard to read. If the per-relation form stays, give
 the rule in the specification, because a reader cannot see from the note count
 how many distinct problems exist.
-
 
 ## 6. Units and measures
 

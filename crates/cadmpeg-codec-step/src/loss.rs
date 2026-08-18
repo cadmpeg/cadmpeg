@@ -32,6 +32,8 @@ pub enum StepLossCode {
     OpaqueRecordPreserved,
     /// A metadata string field failed to decode.
     MetadataStringInvalid,
+    /// A `FILE_SCHEMA` object identifier has a negative component number.
+    SchemaObjectIdentifierOutOfRange,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
     /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
@@ -301,6 +303,7 @@ impl StepLossCode {
         Self::ByteAccountingUnclassified,
         Self::OpaqueRecordPreserved,
         Self::MetadataStringInvalid,
+        Self::SchemaObjectIdentifierOutOfRange,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
         Self::ConflictingRepresentationUnits,
@@ -441,6 +444,9 @@ impl StepLossCode {
             Self::ByteAccountingUnclassified => "decode.byte-accounting-unclassified",
             Self::OpaqueRecordPreserved => "decode.opaque-record-preserved",
             Self::MetadataStringInvalid => "metadata.string-invalid",
+            Self::SchemaObjectIdentifierOutOfRange => {
+                "metadata.schema-object-identifier-out-of-range"
+            }
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
             Self::ConflictingRepresentationUnits => "geometry.conflicting-representation-units",
@@ -657,6 +663,7 @@ impl StepLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::MetadataStringInvalid
+            | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
             | Self::PresentationAnnotationPlacementAmbiguous
             | Self::DimensionalNominalAmbiguous
@@ -837,6 +844,7 @@ mod tests {
                 "decode.byte-accounting-unclassified",
                 "decode.opaque-record-preserved",
                 "metadata.string-invalid",
+                "metadata.schema-object-identifier-out-of-range",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
                 "geometry.conflicting-representation-units",

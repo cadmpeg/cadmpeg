@@ -28,6 +28,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -176,9 +177,14 @@ fn parser_rejects_noncanonical_or_invalid_schema_identifiers() {
         ("'9AP242'", "'9AP242'", "leading digit"),
         ("'_AP242'", "'_AP242'", "leading underscore"),
         (
-            "'AP242 { 1 0 10303 442 -1 1 4 }'",
+            "'AP242 { 1 0 10303 442 invalid_ 1 4 }'",
             "'AP242'",
-            "negative OID component",
+            "unparseable OID component",
+        ),
+        (
+            "'AP242 { 1 0 10303 442 -01 1 4 }'",
+            "'AP242'",
+            "negative OID component with a leading zero",
         ),
     ];
     let mut admitted = Vec::new();
@@ -199,6 +205,105 @@ fn parser_rejects_noncanonical_or_invalid_schema_identifiers() {
     assert!(
         admitted.is_empty(),
         "admitted invalid identifiers: {admitted:?}"
+    );
+}
+
+#[test]
+fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) =
+        crate::parse::parse(source).expect("an out-of-range component is recoverable");
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange
+    );
+    assert_eq!(
+        diagnostics[0].offset,
+        source
+            .windows(11)
+            .position(|window| window == b"FILE_SCHEMA")
+            .unwrap()
+    );
+    assert_eq!(
+        diagnostics[0].message,
+        "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
+    );
+    assert_eq!(exchange.header[2].name, "FILE_SCHEMA");
+    assert_eq!(
+        crate::reader::schema_identifiers(&exchange),
+        ["AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"]
+    );
+}
+
+#[test]
+fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("an out-of-range component does not refuse the file");
+
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::SchemaObjectIdentifierOutOfRange.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(
+        losses[0].message,
+        "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
+    );
+    let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(provenance.format, "step");
+    assert_eq!(
+        provenance.offset,
+        source.find("FILE_SCHEMA").unwrap() as u64
+    );
+    assert_eq!(provenance.tag.as_deref(), Some("schema_identifier"));
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["schema"],
+        "AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"
+    );
+}
+
+#[test]
+fn parser_admits_a_valid_schema_object_identifier_without_a_loss() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (_, diagnostics) =
+        crate::parse::parse(source.as_bytes()).expect("valid schema object identifier");
+    assert!(diagnostics.is_empty());
+
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("valid schema object identifier");
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::SchemaObjectIdentifierOutOfRange.kind()));
+}
+
+#[test]
+fn parser_does_not_admit_a_recovered_object_identifier_as_an_identifier() {
+    let header = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;";
+    let by_name = format!(
+        "{header}DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+    );
+    crate::parse::parse(by_name.as_bytes()).expect("a DATA section names the schema name");
+
+    let by_identifier = format!(
+        "{header}DATA('main',('AUTOMOTIVE_DESIGN_CC2 {{ 1 2 10303 214 -1 1 5 4 }}'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+    );
+    let error = crate::parse::parse(by_identifier.as_bytes())
+        .expect_err("the object identifier is not an admitted identifier");
+    assert!(
+        error
+            .to_string()
+            .contains("DATA section schema is not listed in FILE_SCHEMA"),
+        "unexpected error: {error}"
     );
 }
 

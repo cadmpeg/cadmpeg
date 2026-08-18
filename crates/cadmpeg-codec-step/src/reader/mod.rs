@@ -104,21 +104,24 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 .collect(),
         };
         report.losses.extend(diagnostics.iter().map(|diagnostic| {
-            StepLossCode::ParseNoncanonicalSyntax
-                .note(diagnostic.message.clone())
+            let (code, tag) = match diagnostic.kind {
+                crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
+                    (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
+                }
+                crate::parse::ParseDiagnosticKind::OmittedEntityName => {
+                    (StepLossCode::ParseNoncanonicalSyntax, "entity_name")
+                }
+                crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange => (
+                    StepLossCode::SchemaObjectIdentifierOutOfRange,
+                    "schema_identifier",
+                ),
+            };
+            code.note(diagnostic.message.clone())
                 .with_provenance(cadmpeg_ir::SourceProvenance {
                     format: "step".into(),
                     stream: String::new(),
                     offset: diagnostic.offset as u64,
-                    tag: Some(
-                        match diagnostic.kind {
-                            crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
-                                "complex_entity"
-                            }
-                            crate::parse::ParseDiagnosticKind::OmittedEntityName => "entity_name",
-                        }
-                        .into(),
-                    ),
+                    tag: Some(tag.into()),
                 })
         }));
 

@@ -358,6 +358,8 @@ pub enum ParseDiagnosticKind {
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
     OmittedEntityName,
+    /// A `FILE_SCHEMA` object identifier has a negative component number.
+    SchemaObjectIdentifierOutOfRange,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -587,20 +589,32 @@ impl Parser<'_, '_, '_> {
         self.name("HEADER")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut header = Vec::new();
+        let mut schema_record_offset = 0;
         while !self.peek_name("ENDSEC") {
+            let record_offset = self.current_offset();
             let name = self.take_name()?;
             self.charge_string_storage(&name, "step_parse_name_storage")?;
             let parameters = self.parameters()?;
             self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
             self.punct(&TokenKind::Semicolon)?;
+            if name == "FILE_SCHEMA" {
+                schema_record_offset = record_offset;
+            }
             header.push(HeaderRecord { name, parameters });
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let implementation_level = match validate_header(&header) {
-            Ok(level) => level,
+        let (implementation_level, schema_recoveries) = match validate_header(&header) {
+            Ok(validated) => validated,
             Err(message) => return self.err(message),
         };
+        for message in schema_recoveries {
+            self.diagnostics.push(ParseDiagnostic {
+                offset: schema_record_offset,
+                kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
+                message,
+            });
+        }
         let schema_identifiers = schema_identifiers(&header, implementation_level);
         if let Err(message) =
             validate_header_sections(implementation_level, &header, &schema_identifiers)
@@ -1359,7 +1373,13 @@ fn value_storage_bytes(value: &Value) -> u64 {
     })
 }
 
-fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'static str> {
+/// Validate the three required header records.
+///
+/// The second result value holds one recovery message for each `FILE_SCHEMA`
+/// identifier that the header admits under its schema name alone.
+fn validate_header(
+    header: &[HeaderRecord],
+) -> Result<(ImplementationLevel, Vec<String>), &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if header.len() < REQUIRED.len()
         || header
@@ -1503,6 +1523,7 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
         return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
     }
     let mut normalized_identifiers = BTreeSet::new();
+    let mut recoveries = Vec::new();
     for value in identifiers {
         let Value::String(bytes) = value else {
             unreachable!("FILE_SCHEMA identifiers were checked as strings");
@@ -1510,14 +1531,22 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
         let Ok(identifier) = decode_string(bytes, implementation_level) else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        if !valid_schema_identifier(&identifier) {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        match schema_identifier_form(&identifier) {
+            SchemaIdentifierForm::Valid => {}
+            SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component } => {
+                recoveries.push(format!(
+                    "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
+                ));
+            }
+            SchemaIdentifierForm::Invalid => {
+                return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+            }
         }
         if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
     }
-    Ok(implementation_level)
+    Ok((implementation_level, recoveries))
 }
 
 fn validate_header_sections(
@@ -1933,24 +1962,55 @@ fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<
     Ok(cms)
 }
 
-fn valid_schema_identifier(identifier: &str) -> bool {
+/// The admission form of one schema identifier.
+enum SchemaIdentifierForm<'a> {
+    /// The schema name and the optional object identifier are both valid.
+    Valid,
+    /// The object identifier parses, and one component number is negative.
+    ObjectIdentifierOutOfRange {
+        /// The schema name, without the object identifier.
+        name: &'a str,
+        /// The first component in source order whose number is negative.
+        component: &'a str,
+    },
+    /// The identifier does not parse.
+    Invalid,
+}
+
+fn schema_identifier_form(identifier: &str) -> SchemaIdentifierForm<'_> {
     let identifier = identifier.trim();
     if identifier.is_empty() || identifier.chars().count() > 1024 {
-        return false;
+        return SchemaIdentifierForm::Invalid;
     }
     let (name, object_identifier) = match identifier.split_once('{') {
         Some((name, object_identifier)) => {
             let Some(object_identifier) = object_identifier.strip_suffix('}') else {
-                return false;
+                return SchemaIdentifierForm::Invalid;
             };
             (name.trim_end(), Some(object_identifier))
         }
         None => (identifier, None),
     };
     if !valid_schema_name(name) {
-        return false;
+        return SchemaIdentifierForm::Invalid;
     }
-    object_identifier.is_none_or(valid_schema_object_identifier)
+    let Some(object_identifier) = object_identifier else {
+        return SchemaIdentifierForm::Valid;
+    };
+    match schema_object_identifier_form(object_identifier) {
+        ObjectIdentifierForm::Valid => SchemaIdentifierForm::Valid,
+        ObjectIdentifierForm::ComponentOutOfRange(component) => {
+            SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component }
+        }
+        ObjectIdentifierForm::Invalid => SchemaIdentifierForm::Invalid,
+    }
+}
+
+fn valid_schema_identifier(identifier: &str) -> bool {
+    matches!(
+        schema_identifier_form(identifier),
+        SchemaIdentifierForm::Valid
+    )
 }
 
 fn valid_schema_oid_component(component: &str) -> bool {
@@ -1973,21 +2033,61 @@ fn valid_schema_name(name: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
-fn valid_schema_object_identifier(value: &str) -> bool {
+/// The admission form of one object identifier.
+enum ObjectIdentifierForm<'a> {
+    /// Every component is valid, and the root components hold their rule.
+    Valid,
+    /// Every component parses, and this component's number is negative.
+    ComponentOutOfRange(&'a str),
+    /// The object identifier does not parse.
+    Invalid,
+}
+
+fn schema_object_identifier_form(value: &str) -> ObjectIdentifierForm<'_> {
     let mut components = value.split_whitespace();
     let Some(first) = components.next() else {
-        return false;
+        return ObjectIdentifierForm::Invalid;
     };
     let Some(second) = components.next() else {
+        return ObjectIdentifierForm::Invalid;
+    };
+    let mut out_of_range = None;
+    for component in [first, second].into_iter().chain(components) {
+        if valid_schema_oid_component(component) {
+            continue;
+        }
+        if negative_schema_oid_component(component) {
+            out_of_range = out_of_range.or(Some(component));
+            continue;
+        }
+        return ObjectIdentifierForm::Invalid;
+    }
+    if !valid_schema_oid_root(first, second) {
+        return ObjectIdentifierForm::Invalid;
+    }
+    out_of_range.map_or(ObjectIdentifierForm::Valid, |component| {
+        ObjectIdentifierForm::ComponentOutOfRange(component)
+    })
+}
+
+/// Return whether one component has the shape of a component whose number
+/// carries a minus sign. An object identifier component is a non-negative
+/// number, so the number is out of range.
+fn negative_schema_oid_component(component: &str) -> bool {
+    if negative_schema_oid_number(component) {
+        return true;
+    }
+    let Some((name, number)) = component.split_once('(') else {
         return false;
     };
-    if !valid_schema_oid_component(first)
-        || !valid_schema_oid_component(second)
-        || !components.all(valid_schema_oid_component)
-    {
+    let Some(number) = number.strip_suffix(')') else {
         return false;
-    }
-    valid_schema_oid_root(first, second)
+    };
+    valid_schema_oid_name(name) && negative_schema_oid_number(number)
+}
+
+fn negative_schema_oid_number(value: &str) -> bool {
+    value.strip_prefix('-').is_some_and(valid_schema_oid_number)
 }
 
 fn valid_schema_oid_number(value: &str) -> bool {

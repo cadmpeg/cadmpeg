@@ -686,6 +686,14 @@ trailing or consecutive hyphens. Numeric root components are `0`, `1`, or `2`;
 when the first numeric root is `0` or `1`, a numeric second component is in
 `0..=39`. CADIR decision: leading and trailing whitespace around an identifier
 is ignored for validation, matching, and uniqueness.
+CADIR decision: an object identifier component with a negative number is a
+recoverable defect. The header parse continues, and the header uses the schema
+name as it uses the name of a valid identifier. The object identifier is not
+admitted: it stays invalid for a DATA section schema name, for a
+`FILE_POPULATION` governing schema, and for the AP242 edition report. The
+decode reports one `metadata.schema-object-identifier-out-of-range` warning
+that names the schema and the component. Each other identifier defect refuses
+the exchange structure.
 The schema name in a parameterized DATA section compares with the
 identifier's schema-name portion when the identifier has an object identifier.
 The writer's supported schema identifiers are:
