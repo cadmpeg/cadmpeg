@@ -8432,37 +8432,16 @@ fn exact_shifted_reference_aware_extrude_prologue(
         trailing_reference_is_ordered,
         symmetric_through_all,
     ) = match primary_class {
-        b"357" => (
+        b"357" | b"275" | b"361" | b"349" => (
             538,
             shifted_reference_aware::REFERENCE_COUNT,
             13,
-            &b"258"[..],
-            shifted_reference_aware::BODY_GROUP_COUNT,
-            shifted_reference_aware::BODY_GROUP_REFERENCE,
-            shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
-            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-            shifted_reference_aware::SECOND_SIDE_EXTENT,
-            true,
-            false,
-        ),
-        b"275" => (
-            538,
-            shifted_reference_aware::REFERENCE_COUNT,
-            13,
-            &b"262"[..],
-            shifted_reference_aware::BODY_GROUP_COUNT,
-            shifted_reference_aware::BODY_GROUP_REFERENCE,
-            shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
-            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-            shifted_reference_aware::SECOND_SIDE_EXTENT,
-            true,
-            false,
-        ),
-        b"361" => (
-            538,
-            shifted_reference_aware::REFERENCE_COUNT,
-            13,
-            &b"262"[..],
+            match primary_class {
+                b"357" => &b"258"[..],
+                b"275" | b"361" => &b"262"[..],
+                b"349" => &b"266"[..],
+                _ => unreachable!(),
+            },
             shifted_reference_aware::BODY_GROUP_COUNT,
             shifted_reference_aware::BODY_GROUP_REFERENCE,
             shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
@@ -8513,7 +8492,6 @@ fn exact_shifted_reference_aware_extrude_prologue(
         }
         _ => return None,
     };
-
     if reference_count_at.checked_sub(start)? != reference_count_offset
         || reference_members.len() != reference_member_count
         || View::u32_le_at(
@@ -8596,7 +8574,6 @@ fn exact_shifted_reference_aware_extrude_prologue(
     {
         return None;
     }
-
     let mut slot_offset = start.checked_add(shifted_reference_aware::REFERENCE_SLOTS)?;
     for expected_present in [false, false, false, true, true, true, true] {
         let present = match bytes.get(slot_offset)? {
@@ -8763,9 +8740,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     let expected_guid_end = if symmetric_through_all {
         start.checked_add(guid_prefix_offset)?.checked_add(76)?
     } else {
-        start
-            .checked_add(second_side_extent_offset)?
-            .checked_add(1)?
+        second_side_extent_offset.checked_add(1)?
     };
     if !is_guid_relaxed(&guid)
         || guid_end != expected_guid_end

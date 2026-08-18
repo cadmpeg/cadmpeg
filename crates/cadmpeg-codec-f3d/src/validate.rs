@@ -3203,6 +3203,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 records::DesignExtrudeExtent::TwoSidedToFaces,
                                 288_u64,
                             )),
+                            ("349", "266") => Some((
+                                538_u64,
+                                292_u64,
+                                13_usize,
+                                [2, 1],
+                                [2, 0],
+                                records::DesignExtrudeExtent::TwoSidedToFaces,
+                                288_u64,
+                            )),
                             ("323", "263")
                                 if scope.reference_count_offset
                                     == scope.byte_offset.saturating_add(292) =>
