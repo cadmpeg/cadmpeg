@@ -454,6 +454,49 @@ fn decode_types_scalar_and_string_property_forms() {
 }
 
 #[test]
+fn decode_form6_layer_range_admits_equal_and_retains_descending() {
+    let decode = |parameters: &str, label: &str| {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                    entity_type: 406,
+                    form: 6,
+                    label: label.into(),
+                    status: "00000000",
+                    parameters: parameters.into(),
+                }])),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    for (parameters, label, lower, upper, projected) in [
+        ("406,5,0.5,0.45,1,2,8;", "ASCEND", 2, 8, true),
+        ("406,5,0.5,0.45,1,4,4;", "EQUAL", 4, 4, true),
+        ("406,5,0.5,0.45,1,8,2;", "DESCEND", 8, 2, false),
+    ] {
+        let result = decode(parameters, label);
+        let properties = &result.ir().native.namespace("iges").unwrap().arenas["properties"];
+        assert_eq!(properties.len(), 1);
+        let property = &properties[0];
+        assert_eq!(property.fields()["lower_layer"], lower);
+        assert_eq!(property.fields()["upper_layer"], upper);
+        if projected {
+            assert!(
+                result.report().losses.is_empty(),
+                "{:#?}",
+                result.report().losses
+            );
+        } else {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        }
+    }
+}
+
+#[test]
 fn decode_types_grid_group_and_lep_property_forms() {
     let decode = |bytes| {
         IgesCodec

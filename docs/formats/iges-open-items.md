@@ -375,16 +375,6 @@ Type 402 Form 16 evidence: [IGES 5.3 §4.91](https://paulbourke.net/dataformats/
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `9d0164b00` added a file-global uniqueness rule and self-authored duplicates, but did not establish that scope.
 
-### PS-08. Type 406 Form 6 requires an ordered layer pair
-
-**Question.** Must the Type 406 Form 6 layer numbers be in ascending order?
-
-**Known.** `structure.rs:320-324` requires `upper >= lower`. The current documentation calls this an ordered pair.
-
-**Need.** We need the field definitions and order rule for the Form 6 layer pair.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `7d7a4c288` added the check and fixture, but did not establish the ordering requirement from the specification.
-
 ## 7. Write path
 
 ### WR-01. An unclassified loop is written as an inner loop
