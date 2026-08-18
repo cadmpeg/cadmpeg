@@ -153,6 +153,26 @@ pub(crate) fn resolved_direct_face_selection(
     })
 }
 
+/// Resolve a face operand whose exact preceding topology proves one face.
+///
+/// This path is for single-face operands whose recipe carries the selected face
+/// in its persistent-reference lane but whose active candidate lane is not a
+/// current-face slot. The caller must still admit the operand's exact recipe
+/// form; this helper only applies the unique historical-face proof.
+pub(crate) fn resolved_historical_face_operand(
+    scope: &DesignParameterScope,
+    operand: &DesignFaceOperand,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let previous_state_id = scope.previous_history_state_id?;
+    let face_slot = resolve_face_operand_history_candidates(operand)?;
+    historical_face_selection_with_native(
+        scope,
+        previous_state_id,
+        vec![face_slot],
+        operand.id.clone(),
+    )
+}
+
 /// Resolve the complete input-state body boundaries selected by a body-recipe
 /// group. Persistent-reference candidate faces identify each body; they do
 /// not define a partial target boundary.
@@ -750,6 +770,15 @@ fn historical_face_selection_in_state(
     previous_state_id: i64,
     faces: Vec<i64>,
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
+    historical_face_selection_with_native(scope, previous_state_id, faces, group.id.clone())
+}
+
+fn historical_face_selection_with_native(
+    scope: &DesignParameterScope,
+    previous_state_id: i64,
+    faces: Vec<i64>,
+    native: String,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
     use cadmpeg_ir::features::FaceSelection;
 
     if faces.is_empty() {
@@ -771,7 +800,7 @@ fn historical_face_selection_in_state(
                 )
             })
             .collect(),
-        native: group.id.clone(),
+        native,
     })
 }
 

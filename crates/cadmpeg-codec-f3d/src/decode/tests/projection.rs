@@ -948,6 +948,42 @@ fn body_copy_features_require_resolved_body_selection() {
 }
 
 #[test]
+fn split_body_requires_resolved_target_and_tool_selections() {
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::ids::{BodyId, FaceId};
+
+    let resolved_target = BodySelection::Resolved {
+        bodies: vec![BodyId("body:target".into())],
+        native: "native:target".into(),
+    };
+    let resolved_tool = FaceSelection::Resolved {
+        faces: vec![FaceId("face:tool".into())],
+        native: "native:tool".into(),
+    };
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::SplitBody {
+            targets: resolved_target.clone(),
+            tools: resolved_tool,
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::SplitBody {
+            targets: resolved_target.clone(),
+            tools: FaceSelection::Native("native:tool".into()),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::SplitBody {
+            targets: BodySelection::Native("native:target".into()),
+            tools: FaceSelection::Resolved {
+                faces: vec![FaceId("face:tool".into())],
+                native: "native:tool".into(),
+            },
+        }
+    ));
+}
+
+#[test]
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
     let mut native = F3dNative::default();

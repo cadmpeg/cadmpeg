@@ -15,8 +15,8 @@ use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
     resolved_body_recipe_selection, resolved_body_recipe_shape, resolved_direct_face_selection,
     resolved_extrude_profile_face_group, resolved_face_group, resolved_historical_face_group,
-    resolved_historical_split_face_target_group, resolved_loft_edge_profile_group,
-    resolved_profile_face_group, valid_chamfer_spec,
+    resolved_historical_face_operand, resolved_historical_split_face_target_group,
+    resolved_loft_edge_profile_group, resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -6522,7 +6522,8 @@ pub(crate) fn project_split(
             let [tool] = matching_tools.as_slice() else {
                 return None;
             };
-            let mut tools = direct_face_selection(scope, face_operands)
+            let mut tools = resolved_historical_face_operand(scope, tool)
+                .or_else(|| direct_face_selection(scope, face_operands))
                 .unwrap_or_else(|| FaceSelection::Native(tool.id.clone()));
             match &mut tools {
                 FaceSelection::Resolved { native, .. }

@@ -888,6 +888,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             targets,
             replacements,
         } => !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements),
+        FeatureDefinition::SplitBody { targets, tools } => {
+            !body_selection_is_resolved(targets) || !face_selection_is_resolved(tools)
+        }
         FeatureDefinition::OffsetSurface {
             faces, distance, ..
         } => !face_selection_is_resolved(faces) || distance.is_none(),

@@ -586,6 +586,34 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }) if targets.ends_with("#400") && tool.ends_with("#200")
     ));
 
+    let mut historical_split_scope = split_body_scope.clone();
+    historical_split_scope.previous_history_state_id = Some(7);
+    let mut historical_split_tool = split_tool.clone();
+    historical_split_tool.preceding_candidate_faces = vec![FaceId(crate::ids::brep_entity_id(7))];
+    historical_split_tool.recipe_references = vec![DesignRecipeReference {
+        selector: 1,
+        selector_offset: 0,
+        token: "23".into(),
+        token_offset: 0,
+        design_reference: 332,
+        design_reference_offset: 0,
+        candidate_faces: Vec::new(),
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+        alternate_selector_edges: Vec::new(),
+    }];
+    assert!(matches!(
+        project_split(
+            &historical_split_scope,
+            &split_groups,
+            std::slice::from_ref(&historical_split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody {
+            tools: FaceSelection::Historical { faces, native, .. },
+            ..
+        }) if faces.len() == 1 && native == historical_split_tool.id
+    ));
+
     let mut multiple_targets_scope = split_body_scope.clone();
     multiple_targets_scope.frame_length = 358;
     multiple_targets_scope.reference_members = vec![100, 200, 400, 500, 501];
