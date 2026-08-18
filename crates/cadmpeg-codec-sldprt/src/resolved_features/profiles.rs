@@ -2663,7 +2663,11 @@ fn legacy_config_collinear_sketch(
 #[cfg(test)]
 mod detached_legacy_sketch_tests {
     use super::*;
-    use crate::records::{Feature, FeatureHistory};
+    use crate::layout::current_terminal_relation_carrier as terminal;
+    use crate::records::{
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+        FeatureInputRelationFamily, FeatureInputRelationInstance,
+    };
 
     fn feature() -> Feature {
         Feature {
@@ -2722,6 +2726,110 @@ mod detached_legacy_sketch_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    fn current_terminal_relation_payload() -> Vec<u8> {
+        const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
+        const CLASS: &[u8] = b"sgCircleDim";
+        let mut payload = vec![0; terminal::LEN];
+        payload[terminal::MARKER..terminal::MARKER + super::super::SKETCH_MARKER.len()]
+            .copy_from_slice(super::super::SKETCH_MARKER);
+        payload[terminal::NATIVE_KIND..terminal::NATIVE_KIND + 4]
+            .copy_from_slice(&2u32.to_le_bytes());
+        payload[terminal::GEOMETRY_LOCUS..terminal::GEOMETRY_LOCUS + 4]
+            .copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[terminal::ROLE..terminal::ROLE + 2].copy_from_slice(&1u16.to_le_bytes());
+        payload[terminal::STATE..terminal::STATE + 2].copy_from_slice(&1u16.to_le_bytes());
+        payload[terminal::SELECTOR..terminal::SELECTOR + 8]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[terminal::STATE_VALUE..terminal::STATE_VALUE + 8]
+            .copy_from_slice(&1.0f64.to_le_bytes());
+        payload[terminal::TERMINAL_HEADER..terminal::TERMINAL_HEADER + 4]
+            .copy_from_slice(&[1, 0, 1, 0]);
+        payload[terminal::ENDPOINT_SELECTOR..terminal::ENDPOINT_SELECTOR + 4]
+            .copy_from_slice(&1u32.to_le_bytes());
+        payload[terminal::SIGNED_SELECTOR..terminal::SIGNED_SELECTOR + 8]
+            .copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[terminal::TERMINAL_SELECTOR..terminal::TERMINAL_SELECTOR + 4]
+            .copy_from_slice(&1u32.to_le_bytes());
+        for relative in
+            (terminal::REFERENCE_SENTINELS..terminal::REFERENCE_SENTINELS + 16).step_by(4)
+        {
+            payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[terminal::TERMINAL_TAG..terminal::TERMINAL_TAG + 2]
+            .copy_from_slice(&3u16.to_le_bytes());
+        let class_offset = payload.len();
+        payload.resize(class_offset + 6 + CLASS.len(), 0);
+        payload[class_offset..class_offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);
+        payload[class_offset + 4..class_offset + 6]
+            .copy_from_slice(&(CLASS.len() as u16).to_le_bytes());
+        payload[class_offset + 6..class_offset + 6 + CLASS.len()].copy_from_slice(CLASS);
+        payload
+    }
+
+    #[test]
+    fn terminal_relation_display_carrier_requires_same_feature_and_class() {
+        let lane_id = "lane";
+        let feature_id = "feature";
+        let class_id = "class";
+        let mut carrier = marker(0, None, SketchInputKind::LineOrCircle, None);
+        carrier.offset = 0;
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: current_terminal_relation_payload(),
+            classes: vec![FeatureInputClass {
+                id: class_id.into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: terminal::LEN as u64,
+                name: "sgCircleDim".into(),
+                role: FeatureInputClassRole::SketchConstraint,
+            }],
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: vec![FeatureInputRelationInstance {
+                id: "relation".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 200,
+                family: FeatureInputRelationFamily::CircleDiameter,
+                class_ref: class_id.into(),
+                feature_ref: feature_id.into(),
+                scalar_refs: Vec::new(),
+                parameter_scalar_ref: None,
+                display_scalar_ref: None,
+                operands: Vec::new(),
+            }],
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        assert!(terminal_relation_display_carrier(&lane, &carrier));
+
+        let mut wrong_feature = lane.relation_instances[0].clone();
+        wrong_feature.feature_ref = "other-feature".into();
+        let mut wrong_feature_lane = lane.clone();
+        wrong_feature_lane.relation_instances = vec![wrong_feature];
+        assert!(!terminal_relation_display_carrier(
+            &wrong_feature_lane,
+            &carrier
+        ));
+
+        let mut wrong_class = lane.relation_instances[0].clone();
+        wrong_class.class_ref = "other-class".into();
+        let mut wrong_class_lane = lane;
+        wrong_class_lane.relation_instances = vec![wrong_class];
+        assert!(!terminal_relation_display_carrier(
+            &wrong_class_lane,
+            &carrier
+        ));
     }
 
     #[test]

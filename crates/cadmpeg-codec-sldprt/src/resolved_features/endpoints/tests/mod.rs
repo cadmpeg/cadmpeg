@@ -25,3 +25,4 @@ mod circles;
 mod compact;
 mod extended;
 mod profile_lines;
+mod terminals;
