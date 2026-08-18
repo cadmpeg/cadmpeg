@@ -558,6 +558,16 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
 
+### DI-33. SWIFT feature-to-topology identity
+
+**Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid body, face, edge, or vertex identity?
+
+**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature can own a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. An empty identifier supplies no topology identity. The annotation target remains the stable GDT-analysis feature identity when that identifier does not resolve to one neutral topology object.
+
+**Need.** We must know the identity conversion to attach semantic PMI to the exact neutral topology object.
+
+**Note.** The change that deleted this item added a test module only. It changed no decoder code and no specification text, so the question stays unanswered. `crates/cadmpeg-codec-sldprt/src/swift.rs:121-131` divides the identifier at the last colon, tests that the left part is not empty, and then discards it. The topology kind comes from the arena that holds the numeric suffix, not from any field of the identifier. The identifier resolves to no object when two arenas hold that suffix, so the gate withholds but decodes nothing. `crates/cadmpeg-codec-sldprt/src/swift.rs:54-58` records that the numeric suffix is a lane-local identity, while the lookup is global to the document.
+
 ## 6. Write-path evidence
 
 ### EV-03. Regenerated `SWObjects` record content
