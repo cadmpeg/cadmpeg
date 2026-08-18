@@ -171,9 +171,13 @@ The exact-shape runtime type is `Part::PropertyPartShape`. Other runtime types d
 exact-shape or persistent element-map parsing. Part shape properties reference text or binary
 B-rep entries. Shape records retain native table
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
-An exact-shape property has at most one `Part` carrier and at most one `ElementMap2` carrier. Each
-carrier belongs to its enclosing property. Duplicate carriers are malformed. A missing carrier
-retains the exact property without selecting a different property or side entry.
+The direct `Part` carrier is the only exact-shape side-entry admission point. A non-empty `Part
+file` attribute names that property's one text or binary B-rep entry; an inline `brep` or `binary`
+carrier has no side entry. An exact-shape property has at most one `Part` carrier and at most one
+`ElementMap2` carrier. Each direct carrier belongs to its enclosing property. Duplicate direct
+`Part` carriers are malformed. A missing direct `Part` carrier, or a file attribute on another
+descendant, retains the exact property without selecting a side entry. An archive extension, entry
+role, or payload signature does not admit a second B-rep payload.
 When element-map metadata is present, one property owns one compatibility `ElementMap` marker and
 one `ElementMap2` carrier. An empty map is represented by `ElementMap` alone; a non-empty map uses
 the compatibility marker followed by `ElementMap2`, inline or in one named side entry. Multiple
@@ -950,9 +954,9 @@ SHA-256 digests. Zero-length entries are represented by an empty partition and s
 
 Native namespace version 20 gives a zero-byte exact-shape side entry the typed `empty` payload
 form. This is FreeCAD's persisted representation of a null or suppressed `PropertyPartShape`, not
-a malformed text B-rep. Only side entries classified as B-rep payloads are parsed as shapes;
-element-map, placement-list, scale-list, and other side entries owned by the same property remain
-in their own typed or named-opaque carrier.
+a malformed text B-rep. Only the side entry named by the direct `Part` carrier is parsed as a
+shape; element-map, placement-list, scale-list, and other side entries owned by the same property
+remain in their own typed or named-opaque carrier.
 
 Native namespace version 22 separates side-entry byte ownership from semantic references. A
 logical side-entry span has its `EntryRecord` as its single owner. `EntryRecord.referenced_by` is

@@ -535,46 +535,68 @@ pub fn parse_payloads(
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
-        for name in &property.side_entries {
-            let entry = entries.get(name.as_str()).ok_or_else(|| {
-                CodecError::Malformed(format!("missing exact-shape entry {name}"))
-            })?;
-            let is_shape_entry = entry.role == "brep"
-                || roxmltree::Document::parse(&property.raw_xml)
-                    .ok()
-                    .and_then(|xml| {
-                        xml.descendants()
-                            .find(|node| node.has_tag_name("Part"))
-                            .and_then(|node| node.attribute("file"))
-                            .map(|file| file == name)
-                    })
-                    .unwrap_or(false);
-            if !is_shape_entry {
-                continue;
-            }
-            let form = if entry.data.is_empty() {
-                ShapePayloadForm::Empty
-            } else if name.to_ascii_lowercase().ends_with(".bin") {
-                ShapePayloadForm::Binary
-            } else {
-                ShapePayloadForm::Text
-            };
-            let (text, binary) = match form {
-                ShapePayloadForm::Empty => (None, None),
-                ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
-                ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
-            };
-            payloads.push(ShapePayloadRecord {
-                id: crate::native::native_child_id("shape-payload", &property.id, name),
-                property: property.id.clone(),
-                entry: entry.id.clone(),
-                form,
-                text,
-                binary,
-            });
-        }
+        let Some(name) = direct_shape_entry(property)? else {
+            continue;
+        };
+        let entry = entries
+            .get(name.as_str())
+            .ok_or_else(|| CodecError::Malformed(format!("missing exact-shape entry {name}")))?;
+        let form = if entry.data.is_empty() {
+            ShapePayloadForm::Empty
+        } else if name.to_ascii_lowercase().ends_with(".bin") {
+            ShapePayloadForm::Binary
+        } else {
+            ShapePayloadForm::Text
+        };
+        let (text, binary) = match form {
+            ShapePayloadForm::Empty => (None, None),
+            ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
+            ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
+        };
+        payloads.push(ShapePayloadRecord {
+            id: crate::native::native_child_id("shape-payload", &property.id, &name),
+            property: property.id.clone(),
+            entry: entry.id.clone(),
+            form,
+            text,
+            binary,
+        });
     }
     Ok(payloads)
+}
+
+fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::Malformed(format!(
+            "invalid exact-shape property XML {}: {error}",
+            property.id
+        ))
+    })?;
+    let root = document.root_element();
+    if !matches!(root.tag_name().name(), "Property" | "_Property") {
+        return Err(CodecError::Malformed(format!(
+            "exact-shape property {} has no property record root",
+            property.id
+        )));
+    }
+    let parts = root
+        .children()
+        .filter(|node| node.has_tag_name("Part"))
+        .collect::<Vec<_>>();
+    let part = match parts.as_slice() {
+        [] => return Ok(None),
+        [part] => *part,
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "exact-shape property {} has multiple direct Part carriers",
+                property.id
+            )));
+        }
+    };
+    Ok(part
+        .attribute("file")
+        .filter(|file| !file.is_empty())
+        .map(str::to_owned))
 }
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
@@ -4307,7 +4329,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn retains_zero_byte_null_shape_as_typed_empty_payload() {
+    fn binds_only_the_direct_shape_entry_as_typed_payload() {
         let property = PropertyRecord {
             id: crate::native::native_id("property", "Shape:SuppressedShape"),
             owner: crate::native::native_id("object", "Shape"),
@@ -4321,7 +4343,8 @@ pub(crate) mod tests {
             values: Vec::new(),
             links: Vec::new(),
             side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
-            raw_xml: String::new(),
+            raw_xml: r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#
+                .into(),
             byte_start: 0,
             byte_end: 0,
         };
@@ -4345,11 +4368,82 @@ pub(crate) mod tests {
         };
         let payloads =
             parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
-        assert_eq!(payloads.len(), 2);
-        assert_ne!(payloads[0].id, payloads[1].id);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].entry, "fcstd:native:entry#empty.brp");
         assert_eq!(payloads[0].form, ShapePayloadForm::Empty);
         assert!(payloads[0].text.is_none());
         assert!(payloads[0].binary.is_none());
+    }
+
+    #[test]
+    fn ignores_nested_shape_part_carriers() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:Nested"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Nested".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["nested.brp".into()],
+            raw_xml: r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let payloads = parse_payloads(&[property], &[]).expect("nested carrier is ignored");
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn rejects_duplicate_direct_shape_part_carriers() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:Duplicate"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Duplicate".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["first.brp".into(), "second.brp".into()],
+            raw_xml: r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#
+                .into(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        assert!(parse_payloads(&[property], &[]).is_err());
+    }
+
+    #[test]
+    fn retains_transient_shape_without_a_carrier() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:PreviewShape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "PreviewShape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: Some(152),
+            transient: true,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            raw_xml:
+                r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#
+                    .into(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let payloads = parse_payloads(&[property], &[]).expect("transient shape is retained");
+        assert!(payloads.is_empty());
     }
 
     #[test]

@@ -13,28 +13,6 @@ Each item has an identifier and these fields:
 
 ## 1. Application-specific side entries
 
-### BR-02. Exact-shape side-entry admission
-
-**Question.** Which exact XML value owns each B-rep side entry for a
-`Part::PropertyPartShape` property?
-
-**Known.** FreeCAD `PropertyTopoShape::Save` emits a direct `Part file="..."` carrier.
-Persistence collects every descendant `file` or `File` attribute into `PropertyRecord.side_entries`.
-`container.rs:147-160` classifies every `.brp` or `.brep` archive member as `brep`, and
-`brep.rs:525-551` parses every side entry with that role or with a matching descendant `Part`
-file attribute.
-
-**Need.** Bind each exact-shape payload to the registered direct `Part` carrier and its owning
-property, and derive payload admission from the property/value grammar rather than the archive
-extension.
-
-**Conflict.** A shape property containing `<Part file="shape.brp"/><Extra file="other.brp"/>`
-causes both entries to enter exact-shape parsing. The second entry can add a payload or fail on
-arbitrary bytes even though no direct `Part` carrier names it. The specification states that a
-file extension or payload signature does not select an application grammar.
-
-**Note.** New hostile-sweep finding.
-
 ### AG-02. Typed geometry side-entry ownership
 
 **Question.** Which direct `Mesh` or `Points` value root owns a binary side entry for a typed
@@ -132,23 +110,22 @@ carrier.
 
 ### PT-03. Element-map carrier and owner selection
 
-**Question.** Which `Part`, `ElementMap2`, and property carrier belong to one persistent element
+**Question.** Which direct `ElementMap2` and property carrier belong to one persistent element
 map when a shape XML contains more than one candidate?
 
 **Known.** FreeCAD's exact-shape writer emits direct `Part` and `ElementMap2` carriers under the
-owning property and associates their file references with that property. The decoder retains the
-property XML and map bytes but uses `element_map.rs:86-141` and `unique_descendant` at
-`element_map.rs:213-227` to find carriers anywhere below the property.
+owning property. The direct `Part` carrier is the only B-rep side-entry admission point; its
+file attribute belongs to that property. The decoder retains the property XML and map bytes but
+uses `element_map.rs:86-141` and `unique_descendant` at `element_map.rs:213-227` to find map
+carriers anywhere below the property.
 
-**Need.** Establish direct-root framing, exact property ownership, and the discriminator that binds
-the B-rep side entry to its shape carrier. Reject or retain nested and duplicate candidates without
-a source-order choice.
+**Need.** Establish direct-root framing and exact property ownership for `ElementMap2`, including
+its compatibility-marker sequence and inline or side-entry discriminator. Reject or retain nested
+and duplicate candidates without a source-order choice.
 
-**Conflict.** `<Wrapper><Part file="shape.brp"/></Wrapper>` or a similarly nested `ElementMap2`
-passes the descendant lookup even though the producer writes the direct child. `brep.rs:542-550`
-also selects the first descendant `Part` file attribute when associating a side entry. A nested
-lookalike can therefore become the selected carrier or side-entry owner without an explicit
-framing result.
+**Conflict.** A nested `ElementMap2` passes the descendant lookup even though the producer writes
+the direct child. A nested lookalike can therefore become the selected map carrier without an
+explicit framing result.
 
 **Note.** Reopened. The closure established source cardinality and duplicate rejection but did not
 enforce the producer's direct-root framing or nested-lookalike boundary.
