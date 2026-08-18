@@ -306,6 +306,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 123 §4.20 has three primary values, so its groups start at token four.
 /// Type 402 Forms 1, 7, 14, and 15 use `N` plus `N` member pointers, so their
 /// groups start at token `N + 2`.
+/// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
+/// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
+/// at token `4 + NC`.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -334,6 +337,7 @@ pub(crate) fn entity_primary_end(
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
+        (402, 9) => Some(single_parent_primary_end(record)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }
@@ -357,6 +361,18 @@ fn counted_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(2))
+        .unwrap_or(record.tokens.len())
+}
+
+fn single_parent_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(1) {
+        return record.tokens.len();
+    }
+    record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_add(4))
         .unwrap_or(record.tokens.len())
 }
 

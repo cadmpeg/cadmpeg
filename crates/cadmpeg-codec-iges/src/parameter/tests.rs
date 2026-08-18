@@ -627,6 +627,121 @@ fn type402_malformed_member_count_does_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type402_single_parent_boundary_follows_child_count() {
+    for (values, expected_start) in [
+        (vec![402, 1, 1, 3, 5, 1, 9, 0], 5),
+        (vec![402, 1, 2, 3, 5, 7, 1, 9, 0], 6),
+    ] {
+        let mut source = directory_target(1, 402);
+        source.form = 9;
+        let parent = directory_target(3, 212);
+        let child = directory_target(5, 212);
+        let second_child = directory_target(7, 212);
+        let trailing_association = directory_target(9, 212);
+        let directory = BTreeMap::from([
+            (1, &source),
+            (3, &parent),
+            (5, &child),
+            (7, &second_child),
+            (9, &trailing_association),
+        ]);
+        let parameter_end = values.len();
+        let record = ParameterRecord {
+            directory_sequence: 1,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 402 Form 9 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![9]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type402_single_parent_boundary_precedes_valid_generic_alternative() {
+    let mut source = directory_target(5, 402);
+    source.form = 9;
+    let parent = directory_target(1, 212);
+    let child = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &parent), (3, &child), (5, &source)]);
+    let values = [402, 1, 2, 1, 1, 2, 1, 3, 0];
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: values.len(),
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 402 Form 9 table boundary");
+    assert_eq!(groups.token_start, 6);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type402_single_parent_malformed_counts_do_not_enable_generic_recovery() {
+    let mut source = directory_target(5, 402);
+    source.form = 9;
+    let target = directory_target(1, 212);
+    let directory = BTreeMap::from([(1, &target), (5, &source)]);
+    let cases = [
+        vec![402, 0, 1, 1, 1, 1, 1, 0],
+        vec![402, 1, 0, 1, 1, 1, 1, 0],
+        vec![402, 1, -1, 1, 1, 1, 1, 0],
+        vec![402, 1, 100, 1, 1, 1, 1, 0],
+        vec![402, 1, 1],
+    ];
+
+    for values in cases {
+        let parameter_end = values.len();
+        let record = ParameterRecord {
+            directory_sequence: 5,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type126_entity_table_boundary_uses_k_and_degree() {
     for (form, k, degree) in [(0_i64, 0_i64, 0_i64), (0, 1, 1), (3, 2, 1), (5, 3, 2)] {
         let association = directory_target(1, 402);
