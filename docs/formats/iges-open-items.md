@@ -203,16 +203,6 @@ Type 510/514 evidence: the official [IGES 5.3 §§4.146–4.147](https://paulbou
 
 ## 4. Geometry carriers and tolerances
 
-### GE-02. Unit-vector acceptance
-
-**Question.** What deviation from unit length is valid for a direction vector?
-
-**Known.** `geometry.rs` derives an interval from Global real precision and accepts a vector when the squared length interval contains one. The threshold is exercised by project-generated data.
-
-**Need.** We need the specification rule, or a corpus of exporter-authored witness files, that establishes the accepted numeric deviation and whether a decoder should normalize or reject it.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `8d4e832c4` replaced the old threshold with a more principled calculation, but did not establish the format tolerance from the specification or witness files.
-
 ### GE-03. Type 112 segment continuity
 
 **Question.** What continuity tolerance applies between adjacent Type 112 segments?

@@ -27,11 +27,59 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use super::enforce_transform_depth;
+use crate::global::RealPrecision;
 use crate::loss::IgesLossCode;
+use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 const EPS_DOMAIN_REANCHOR: f64 = f64::EPSILON * 64.0;
+
+#[test]
+fn declared_unit_vector_uses_real_token_significance_as_its_interval() {
+    for (token, expected) in [
+        (".9999995", true),
+        (".99999949", false),
+        (".9999999D0", false),
+    ] {
+        let bytes = format!("{token},0,0").into_bytes();
+        let first_end = token.len();
+        let value = token.replace(['D', 'd'], "E").parse().unwrap();
+        let record = ParameterRecord {
+            directory_sequence: 1,
+            line_range: 0..0,
+            bytes,
+            tokens: vec![
+                Token {
+                    value: TokenValue::Real(value),
+                    span: 0..first_end,
+                },
+                Token {
+                    value: TokenValue::Integer(0),
+                    span: first_end + 1..first_end + 2,
+                },
+                Token {
+                    value: TokenValue::Integer(0),
+                    span: first_end + 3..first_end + 4,
+                },
+            ],
+            comment: Vec::new(),
+        };
+        assert_eq!(
+            super::declared_unit_vector(
+                &record,
+                0,
+                Vector3::new(value, 0.0, 0.0),
+                RealPrecision {
+                    single_significance: 6,
+                    double_significance: 15,
+                },
+            ),
+            expected,
+            "{token}"
+        );
+    }
+}
 
 #[test]
 fn transform_depth_overflow_is_a_structured_resource_refusal() {
