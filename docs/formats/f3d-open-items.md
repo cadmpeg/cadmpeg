@@ -258,16 +258,6 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 **Need.** A parallel-line or concentric-circle dimension whose solved separation agrees with its parameter inside the document linear tolerance, but not inside the fixed bound, does not match. The dimension keeps its native retention and the neutral model gets no constraint. The two rules must be one rule, and the specification must state which one.
 
-### DR-66. Terminator of a face-recipe envelope with no `N+4` or `N+5` header
-
-**Question.** Which header terminates a face-recipe envelope when neither the `N+4` header nor the `N+5` header is present after the recipe payload?
-
-**Known.** `f3d.md` §3.1 "A face-recipe continuation header carries" states that the ordinary envelope carries `N+4`, that a serialized envelope can omit `N+4` and carry `N+5` instead, and that header-shaped scalar bytes with another record index remain recipe payload and do not terminate the envelope.
-
-`crates/cadmpeg-codec-f3d/src/design/decode/operands.rs` `face_recipe_next_boundary` first looks for the `N+4` and `N+5` headers and takes the one at the lower byte offset. When neither is present, or when both lie after the supplied limit, it falls back to `next_indexed_record_offset` and accepts the following header whatever its record index. `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs` `indexed_record_offsets` finds that header with a raw scan for the four bytes `03 00 00 00` filtered by a header-shape test. The fallback therefore terminates the envelope at bytes the specification calls recipe payload. The function's own comment states that the recipe payload can contain byte sequences that look like indexed headers with unrelated record indexes.
-
-**Need.** A wrong terminator changes the retained recipe program and the parsed node run, so the face operand carries a different candidate lane and selects a different face. The result is a complete feature with the wrong face. We must know which header closes an envelope that carries neither `N+4` nor `N+5`, or that no such envelope exists.
-
 ### DR-67. Design streams that retain more than one envelope for one record index
 
 **Question.** Which stored field selects the authoritative envelope when one Design stream retains more than one complete scope envelope for one record index?

@@ -1888,4 +1888,20 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
         crate::design::decode::operands::face_recipe_next_boundary(&omitted, position, 100, None),
         Some((next, 105))
     );
+
+    let mut arbitrary = Vec::new();
+    for record_index in 100..=103 {
+        header(&mut arbitrary, *b"306", record_index);
+    }
+    let arbitrary_position = arbitrary.len();
+    header(&mut arbitrary, *b"124", 205);
+    assert_eq!(
+        crate::design::decode::operands::face_recipe_next_boundary(
+            &arbitrary,
+            arbitrary_position,
+            100,
+            None,
+        ),
+        Some((arbitrary_position, 205))
+    );
 }

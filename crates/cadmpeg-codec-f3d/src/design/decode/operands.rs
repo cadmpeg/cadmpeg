@@ -4203,10 +4203,10 @@ fn edge_recipe_topology_triplet(
 /// Find the indexed header that terminates a face-recipe member.
 ///
 /// The ordinary envelope terminates at `N+4`. One serialized generation
-/// omits that header and terminates at `N+5`; its recipe payload can contain
-/// byte sequences that look like indexed headers with unrelated record
-/// indexes. Select the first expected continuation index before falling back
-/// to the historical immediate-header behavior used by synthetic frames.
+/// omits that header and terminates at `N+5`. When neither expected index is
+/// present within the enclosing boundary, the first following valid indexed
+/// header terminates the envelope; its record index has no fixed delta from
+/// `N`. Select an expected continuation before applying that fallback.
 fn face_recipe_next_boundary(
     bytes: &[u8],
     position: usize,
