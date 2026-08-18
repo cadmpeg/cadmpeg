@@ -1084,6 +1084,91 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     ));
 }
 
+#[test]
+fn mesh_candidate_comparison_collapses_seam_row_coordinate_automorphism() {
+    let edge_rows = vec![
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![20, 21],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+    ];
+    let edge_faces = vec![[0, 1], [0, 1]];
+    let edge_classes = vec![0, 0];
+    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
+    let edge_identity_evidence = vec![false, false];
+    let coordinate_gauge = build_mesh_coordinate_gauge(
+        4,
+        &edge_rows,
+        &edge_faces,
+        &edge_classes,
+        &edge_candidates,
+        &edge_identity_evidence,
+    );
+    let coordinate_swap = vec![1, 0, 3, 2];
+    assert!(coordinate_gauge
+        .components
+        .iter()
+        .any(|component| component.contains(&coordinate_swap)));
+    let gauge = MeshCandidateGauge {
+        edge_rows: &edge_rows,
+        edge_faces: &edge_faces,
+        edge_classes: &edge_classes,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: Some(&coordinate_gauge),
+    };
+
+    let topology = |swapped: bool| {
+        let endpoints = if swapped {
+            [[1, 2], [0, 3]]
+        } else {
+            [[0, 3], [1, 2]]
+        };
+        let face = || crate::families::standard::topology::FaceTopology {
+            boundaries: vec![crate::families::standard::topology::Boundary {
+                coedges: endpoints
+                    .into_iter()
+                    .enumerate()
+                    .map(|(edge_row, [start_vertex, end_vertex])| CoedgeUse {
+                        edge_row,
+                        reversed: false,
+                        start_vertex,
+                        end_vertex,
+                    })
+                    .collect(),
+            }],
+        };
+        StandardTopology {
+            faces: vec![face(), face()],
+            edge_rows: edge_rows.clone(),
+            vertex_points: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+            ],
+            logical_vertex_count: 4,
+        }
+    };
+    let left = (topology(false), vec![0, 1, 2, 3]);
+    let right = (topology(true), vec![0, 1, 2, 3]);
+
+    assert!(!mesh_candidates_equivalent_with_context(
+        &left, &right, None
+    ));
+    assert!(mesh_candidates_equivalent_with_context(
+        &left,
+        &right,
+        Some(gauge)
+    ));
+}
+
 pub(crate) fn canonicalize_endpoint_relation_state(
     domains: &[Vec<MeshEndpointRelationChoice>],
     assigned: &[Option<[usize; 2]>],
