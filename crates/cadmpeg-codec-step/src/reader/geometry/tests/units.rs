@@ -581,9 +581,12 @@ fn decode_resolves_agreeing_context_uncertainties_without_ambiguity() {
         .all(|loss| { loss.code != StepLossCode::UncertaintyLengthAmbiguous.kind() }));
 }
 
+/// Two representation contexts that declare different length uncertainties.
+const DISTINCT_CONTEXT_UNCERTAINTY_SOURCE: &str = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('distinct context uncertainty'),'2;1');FILE_NAME('distinct-context-uncertainty','2026-08-18T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'distance_accuracy_value','');#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('coarse','3D'));#5=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#6=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#5)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('fine','3D'));#7=CARTESIAN_POINT('coarse point',(1.,0.,0.));#8=SHAPE_REPRESENTATION('coarse',(#7),#4);#9=CARTESIAN_POINT('fine point',(2.,0.,0.));#10=SHAPE_REPRESENTATION('fine',(#9),#6);ENDSEC;END-ISO-10303-21;";
+
 #[test]
 fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
-    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('distinct context uncertainty'),'2;1');FILE_NAME('distinct-context-uncertainty','2026-08-18T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'distance_accuracy_value','');#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('coarse','3D'));#5=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#6=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#5)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('fine','3D'));#7=CARTESIAN_POINT('coarse point',(1.,0.,0.));#8=SHAPE_REPRESENTATION('coarse',(#7),#4);#9=CARTESIAN_POINT('fine point',(2.,0.,0.));#10=SHAPE_REPRESENTATION('fine',(#9),#6);ENDSEC;END-ISO-10303-21;";
+    let source = DISTINCT_CONTEXT_UNCERTAINTY_SOURCE;
     let result = StepCodec::default()
         .decode(
             &mut Cursor::new(source.as_bytes()),
@@ -594,6 +597,22 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
     let default_linear = cadmpeg_ir::units::Tolerances::default().linear;
     assert!((result.ir().tolerances.linear - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
+}
+
+/// A kept default replaces the source value, so strict decode refuses the
+/// substitution. Strict decode keeps a faithfully transferred source relation.
+#[test]
+fn strict_decode_rejects_a_substituted_length_uncertainty() {
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let error = StepCodec::default()
+        .decode(
+            &mut Cursor::new(DISTINCT_CONTEXT_UNCERTAINTY_SOURCE.as_bytes()),
+            &options,
+        )
+        .expect_err("strict mode rejects a substituted default tolerance");
+
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]

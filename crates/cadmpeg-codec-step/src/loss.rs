@@ -801,12 +801,10 @@ impl StepLossCode {
     /// Strict floor pinned from this local code (independent of taxonomy remap).
     ///
     /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection; list only intentional overrides here.
+    /// silently change rejection; list only intentional overrides here. No STEP
+    /// code overrides its taxonomy floor.
     const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::PcurveGlobalFidelityUnproved => Some(Severity::Warning),
-            other => other.shared_taxonomy().strict_floor(),
-        }
+        self.shared_taxonomy().strict_floor()
     }
 
     /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
@@ -1008,9 +1006,19 @@ mod tests {
         }
     }
 
+    /// The admission warning reports transferred source data and its
+    /// verification status, so strict decode keeps it.
     #[test]
-    fn globally_unproved_pcurve_admission_is_strictly_lossy() {
+    fn globally_unproved_pcurve_admission_does_not_refuse_strict_decode() {
         let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
+        assert_eq!(note.severity, Severity::Warning);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+    }
+
+    /// A kept default replaces a source value, so strict decode refuses it.
+    #[test]
+    fn substituted_length_uncertainty_refuses_strict_decode() {
+        let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
         assert_eq!(note.severity, Severity::Warning);
         assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
     }

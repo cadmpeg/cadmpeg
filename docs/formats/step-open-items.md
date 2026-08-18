@@ -24,29 +24,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Topology and pcurve decisions
 
-### TP-11. Strict mode and unproved pcurve fidelity
-
-**Question.** Must strict decode refuse a file that carries a pcurve which the
-finite admission witness accepted?
-
-**Known.** Commit `ba62cfb87` reports `topology.pcurve-global-fidelity-unproved`
-for each admitted non-seam pcurve, and pins the strict floor of that code to
-warning. `cadmpeg dump --no-salvage` therefore stops at the first admitted
-pcurve. The `Idf/Idflibs/VC0603_SMD.stp` sample admits 418 pcurves, and strict
-decode refuses it. A FreeCAD 1.1.1 export of two solids holds no `PCURVE`, so
-strict decode accepts it: the refusal follows an admitted pcurve, not a
-producer.
-
-**Need.** Decide what strict mode means. One reading refuses every unproved
-fidelity claim. A different reading refuses only salvage substitutions and
-malformed input. Record the decision in the specification. The present rule
-makes strict decode refuse each real file that carries pcurves, so the mode
-gives no usable result for STEP.
-
-**Note.** The refusal class is also wrong. `CodecError::Malformed` gives the
-text `malformed container`, but a fidelity warning does not make the container
-malformed.
-
 ### TP-12. Report granularity for unproved admission
 
 **Question.** At which granularity must the decoder report an unproved pcurve
@@ -63,6 +40,31 @@ document. The note count grows with the model, so a large assembly gives a
 report that is large and hard to read. If the per-relation form stays, give
 the rule in the specification, because a reader cannot see from the note count
 how many distinct problems exist.
+
+### TP-13. Error class of a strict-mode refusal
+
+**Question.** Which error class must a strict-mode refusal use?
+
+**Known.** `crates/cadmpeg-ir/src/codec.rs:274-286` returns
+`CodecError::Malformed` for the first loss whose `strict_consequence` is
+`Reject`. That code is the generic `impl<C: CodecBackend + ?Sized> Codec for C`,
+so each codec gives the same class. `cadmpeg_core::CodecError`
+(`crates/cadmpeg-core/src/error.rs:12-48`) writes that variant as
+`malformed container: {0}` and holds no variant for a policy refusal.
+`crates/cadmpeg-codec-iges/src/reader.rs:212-222` holds a second strict gate
+with the same class. These tests pin the variant with
+`matches!(error, CodecError::Malformed(_))`:
+`crates/cadmpeg-codec-step/src/parse/tests/complex_order.rs:118`,
+`crates/cadmpeg-codec-step/src/parse/tests/omitted.rs:147`,
+`crates/cadmpeg-codec-step/src/reader/topology/tests/shells.rs:346` and `:731`,
+and `strict_decode_rejects_a_substituted_length_uncertainty` in
+`crates/cadmpeg-codec-step/src/reader/geometry/tests/units.rs`.
+
+**Need.** A strict refusal reports a mode decision, not a defect in the bytes.
+The text `malformed container` tells a reader that the container is
+inconsistent, so a caller cannot separate a damaged file from a policy stop.
+The answer adds a `CodecError` variant in `cadmpeg-core` and changes each codec
+and test that pins `Malformed` for a strict refusal.
 
 ## 6. Units and measures
 

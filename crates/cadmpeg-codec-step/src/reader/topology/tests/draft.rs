@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::*;
+use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
@@ -246,6 +247,45 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
         .find(|loss| loss.code == StepLossCode::PcurveGlobalFidelityUnproved.kind())
         .expect("finite admission loss");
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+}
+
+/// Strict decode keeps a finitely admitted pcurve: the relation transfers the
+/// source data with its verification status, and strict decode refuses only
+/// CADIR-introduced substitution, salvage, and malformed structure.
+#[test]
+fn strict_decode_accepts_a_finitely_admitted_pcurve() {
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp09_unsampled_divergence.p21")),
+            &options,
+        )
+        .expect("strict decode accepts an admitted pcurve");
+
+    let edge_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#10")
+        .expect("unsampled-divergence edge use");
+    assert_eq!(edge_use.pcurves.len(), 1);
+    let admissions = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::PcurveGlobalFidelityUnproved.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(admissions.len(), 1);
+    assert_eq!(
+        admissions[0].severity,
+        cadmpeg_ir::report::Severity::Warning
+    );
+    assert_eq!(
+        admissions[0].strict_consequence(),
+        cadmpeg_ir::report::StrictConsequence::Tolerate
+    );
 }
 
 #[test]
