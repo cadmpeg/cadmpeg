@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 const EPS_CYLINDER_FIT: f64 = 1e-8;
 const EPS_ROUND_CAP_GAP: f64 = 1e-9;
 const EPS_ROUND_CAP_PARALLEL: f64 = 1e-10;
+const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1e-9;
 
 pub(in super::super) fn parallel_support_radius(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
@@ -532,6 +533,14 @@ pub(in super::super) fn round_support_radius(
         .iter()
         .map(|id| reconciled_model_plane(&local_planes, ir, *id))
         .collect::<Option<Vec<_>>>()?;
+    support_planes
+        .iter()
+        .all(|plane| {
+            normalized(plane.normal).is_some_and(|normal| {
+                dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
+            })
+        })
+        .then_some(())?;
     parallel_support_radius(
         support_planes
             .into_iter()

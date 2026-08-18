@@ -412,6 +412,10 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
 
     assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
 
+    scan.planes.positional_frames[2].normal = [0.0, 1.0, 0.0];
+    scan.planes.positional_frames[3].normal = [0.0, 1.0, 0.0];
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+
     scan.features.affected_ids[0].ids[0] = 3;
     assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
 
