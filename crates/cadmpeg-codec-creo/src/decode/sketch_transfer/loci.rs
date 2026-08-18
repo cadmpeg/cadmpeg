@@ -797,6 +797,22 @@ pub(in super::super) fn section_skamp_midpoint(
                 .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
         })
     };
+    let centered_target = |item: &crate::feature::FeatureSkampItem| {
+        item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some()
+    };
+    if centered_target(first) || centered_target(second) {
+        let candidates = [(first, second), (second, first)]
+            .into_iter()
+            .filter(|(target, point)| centered_target(target) && point.sense == 0)
+            .filter_map(|(target_item, point_item)| {
+                Some((point(point_item)?, target(target_item)?))
+            })
+            .collect::<Vec<_>>();
+        let [candidate] = candidates.as_slice() else {
+            return None;
+        };
+        return Some(candidate.clone());
+    }
     let candidate = |target, point| Some((point?, target?));
     match (
         candidate(target(first), point(second)),
