@@ -107,7 +107,7 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
 fn inspect_reports_sections_and_physical_line_endings() {
     let mut bytes = card_with_ending(b"original fixture", b'S', 1, b"\r\n");
     bytes.extend(card_with_ending(
-        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,1,1,1,1,1,,1,2,1HX,1,1,13H240714.000000,0,0,,,1;",
         b'G',
         1,
         b"\n",
@@ -180,7 +180,7 @@ fn inspect_rejects_terminate_count_mismatch() {
 fn inspect_accepts_space_padded_terminate_counts() {
     let mut bytes = card(b"original fixture", b'S', 1);
     bytes.extend(card(
-        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,1,1,1,1,1,,1,2,1HX,1,1,13H240714.000000,0,0,,,1;",
         b'G',
         1,
     ));

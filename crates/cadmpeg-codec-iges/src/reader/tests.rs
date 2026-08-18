@@ -140,7 +140,7 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
 
 #[test]
 fn container_only_retains_unknown_flag_three_units_without_projection() {
-    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;";
+    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;";
     let options = DecodeOptions {
         container_only: true,
         ..DecodeOptions::default()
@@ -165,7 +165,7 @@ fn container_only_retains_unknown_flag_three_units_without_projection() {
 
 #[test]
 fn container_only_retains_invalid_global_units_name_as_hex() {
-    let mut global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;".to_vec();
+    let mut global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,3HFOO,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;".to_vec();
     let name = global
         .windows(5)
         .position(|window| window == b"3HFOO")

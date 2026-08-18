@@ -187,16 +187,6 @@ Type 402 Form 21 evidence: [IGES 5.3 §4.95](https://paulbourke.net/dataformats/
 
 ## 2. Global metadata
 
-### GL-01. Global defaults, and defaults applied to unparseable fields
-
-**Question.** Which Global fields have defaults, what are they, and what does an unparseable Global field mean?
-
-**Known.** `global.rs` supplies defaults for model scale, units flag, maximum line-weight gradations, and version flag in addition to the delimiter defaults. The same conversion path maps blank, omitted, and malformed values to `None`, after which callers apply defaults. `global.rs:228-249` now preserves some omitted-versus-malformed distinctions, but the complete default table and error policy are not settled.
-
-**Need.** We need the Global-field default table from the IGES specification and a rule that separates an omitted field from a malformed field. A wrong units default rescales the complete model.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` promoted project defaults and synthetic fixtures; agreement with those fixtures is not independent evidence. The external material checked supports some defaults, not the full current table or malformed-field behavior.
-
 ### GL-02. The units-name comparison rule
 
 **Question.** How is the Global units name compared with the standard unit codes?
