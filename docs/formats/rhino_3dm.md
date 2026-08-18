@@ -1142,7 +1142,11 @@ per-viewport state is a separate `ON__LayerExtensions` userdata item.
 CADIR assigns no neutral field to either obsolete class. A well-framed
 class-userdata item is consumed and discarded; the owning layer or instance
 definition remains admitted and its typed state is unchanged. The decoder does
-not interpret the obsolete child bytes.
+not interpret the obsolete child bytes. If the generic userdata wrapper is
+framed but the obsolete class child is absent or malformed, the source reader
+discards that userdata item and continues reading the owning layer or instance
+definition; CADIR leaves the owner unchanged and emits no typed obsolete-layer
+field.
 
 #### 7.2.9 `ON_OBSOLETE_CCustomMeshUserData`
 

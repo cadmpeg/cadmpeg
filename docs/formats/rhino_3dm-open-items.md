@@ -188,6 +188,15 @@ truncated coordinate retains the complete object record, keeps the hatch and
 loop curve typed, leaves the base point at `[0,0]`, and emits the bounded hatch
 userdata diagnostic. The class and item UUID must both match before the base
 point is applied.
+The obsolete layer-settings owner is proven for both
+`ON_OBSOLETE_IDefLayerSettingsUserData` and
+`ON_OBSOLETE_LayerSettingsUserData`: their shared reader consumes one
+anonymous child without reading fields and deletes the userdata after reading.
+A well-framed child leaves the typed layer unchanged, creates no
+per-viewport-settings field, and emits no layer-userdata loss, including when
+the child major is later than the current writer major. If the generic wrapper
+is framed but the obsolete child is absent or malformed, the userdata item is
+discarded and the typed layer remains unchanged.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

@@ -12,6 +12,10 @@ use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
 
+const OBSOLETE_IDEF_LAYER_SETTINGS: Uuid = Uuid::from_canonical([
+    0x11, 0xee, 0x2c, 0x1f, 0xf9, 0x0d, 0x4c, 0x6a, 0xa7, 0xcd, 0xec, 0x85, 0x32, 0xe1, 0xe3, 0x2d,
+]);
+
 #[test]
 fn parent_child_composition_uses_column_point_order() {
     let mut parent = Transform::identity();
@@ -234,6 +238,79 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
         .expect("future file-reference suffix is bounded");
     assert_eq!(parsed.full_path, "/full/source.3dm");
     assert_eq!(reader.remaining(), 0);
+}
+
+#[test]
+fn obsolete_idef_layer_settings_are_consumed_without_definition_fields() {
+    let archive = ArchiveVersion::V5;
+    let application_uuid = super::OPENNURBS5_APPLICATION.to_wire();
+    for major in [1, 2] {
+        let definition_id = [0x51; 16];
+        let payload = v5_definition_payload_with_paths(
+            archive,
+            6,
+            definition_id,
+            &[],
+            true,
+            "/full/source.3dm",
+            false,
+        );
+        let userdata = class_userdata_with_anonymous_payload(
+            archive,
+            OBSOLETE_IDEF_LAYER_SETTINGS.to_wire(),
+            application_uuid,
+            major,
+            &[0xde, 0xad],
+        );
+        let record = definition_record_with_userdata(archive, &payload, &userdata);
+        let scan = crate::container::scan_owned(document_with_definitions(
+            "50",
+            archive,
+            std::slice::from_ref(&record),
+            &[],
+        ))
+        .expect("obsolete instance-definition userdata witness");
+        assert_eq!(scan.definitions.definitions.len(), 1);
+        let definition = &scan.definitions.definitions[0];
+        assert_eq!(definition.kind, super::DefinitionKind::Linked);
+        assert_eq!(definition.legacy_linked_path, "/full/source.3dm");
+        assert!(scan.definitions.diagnostics.is_empty());
+        assert!(scan.opaque_records.is_empty());
+    }
+
+    let definition_id = [0x52; 16];
+    let payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        definition_id,
+        &[],
+        true,
+        "/full/source.3dm",
+        false,
+    );
+    let malformed = class_userdata_v2_with_direct_payload(
+        archive,
+        OBSOLETE_IDEF_LAYER_SETTINGS.to_wire(),
+        application_uuid,
+        50,
+        202_608_010,
+        &[0xde, 0xad],
+    );
+    let record = definition_record_with_userdata(archive, &payload, &malformed);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        std::slice::from_ref(&record),
+        &[],
+    ))
+    .expect("malformed obsolete instance-definition userdata witness");
+    assert_eq!(scan.definitions.definitions.len(), 1);
+    assert_eq!(
+        scan.definitions.definitions[0].kind,
+        super::DefinitionKind::Linked
+    );
+    assert!(scan.definitions.diagnostics.is_empty());
+    assert!(scan.opaque_records.is_empty());
 }
 
 #[test]
