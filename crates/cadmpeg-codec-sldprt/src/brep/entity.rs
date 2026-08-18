@@ -9,6 +9,8 @@ use std::collections::{HashMap, HashSet};
 use crate::layout::class_root_directory_prefix as class_root;
 use crate::layout::entity_common_header as entity_hdr;
 
+mod record_lattice;
+
 #[derive(Debug, Clone)]
 pub struct BodyRecord {
     pub attr: u16,
@@ -90,7 +92,6 @@ impl EntityRecord {
         (self.flags & 0xff) as u8
     }
 }
-
 fn slot_count(schema: &str, disc: u16, flo: u8) -> Option<usize> {
     let revision = schema.split('_').nth(2)?.parse::<u32>().ok()?;
     if !matches!(
@@ -161,7 +162,6 @@ fn slot_count(schema: &str, disc: u16, flo: u8) -> Option<usize> {
         _ => None,
     }
 }
-
 fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16>, usize)> {
     if prefixed {
         if body.get(at) != Some(&1) {
@@ -182,7 +182,6 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16
         .collect::<Option<Vec<_>>>()?;
     Some((refs, at.checked_add(count.checked_mul(2)?)?))
 }
-
 fn scan_entities(body: &[u8], schema: &str, prefixed: bool) -> Vec<EntityRecord> {
     let mut out = Vec::new();
     for off in 0..body.len().saturating_sub(25) {
@@ -232,7 +231,6 @@ fn scan_entities(body: &[u8], schema: &str, prefixed: bool) -> Vec<EntityRecord>
     }
     out
 }
-
 fn class_root_attrs_at(body: &[u8], offset: usize) -> Option<Vec<u16>> {
     let token_at = offset.checked_add(class_root::CLASS_TOKEN)?;
     let token = View::u16_be_at(body, token_at)?;
@@ -258,7 +256,6 @@ fn class_root_attrs_at(body: &[u8], offset: usize) -> Option<Vec<u16>> {
     }
     Some(roots)
 }
-
 fn class_root_attrs(body: &[u8], entity_attrs: &HashSet<u16>) -> Option<HashSet<u16>> {
     let mut candidates = body
         .windows(CLASS_ROOT_INDEX_PREFIX.len())
@@ -274,7 +271,6 @@ fn class_root_attrs(body: &[u8], entity_attrs: &HashSet<u16>) -> Option<HashSet<
     };
     Some(roots.iter().copied().collect())
 }
-
 fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
     if body.get(off..off + 2) != Some(&[0x00, 0x53]) {
         return None;
@@ -317,7 +313,6 @@ struct FramedColor {
     offset: usize,
     parent_seq: u32,
 }
-
 fn linked_colors(body: &[u8], entities: &[EntityRecord]) -> HashMap<(u16, u16), Vec<FramedColor>> {
     let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
     for parent in entities {
@@ -341,7 +336,6 @@ fn linked_colors(body: &[u8], entities: &[EntityRecord]) -> HashMap<(u16, u16), 
     }
     colors
 }
-
 fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
     let current_seq = candidates
         .iter()
@@ -364,7 +358,6 @@ pub fn scan(body: &[u8], schema: &str) -> Facts {
 pub fn scan_deltas(body: &[u8], schema: &str) -> Facts {
     scan_with_framing(body, schema, true)
 }
-
 fn scan_with_framing(body: &[u8], schema: &str, prefixed: bool) -> Facts {
     let entities = scan_entities(body, schema, prefixed);
     let entity_attrs = entities.iter().map(|record| record.attr).collect();
@@ -527,7 +520,6 @@ fn scan_combined_body_entities(streams: &[(&[u8], &str, bool)]) -> Vec<EntityRec
     );
     partition_entities
 }
-
 fn scan_stream_entities(streams: &[(&[u8], &str, bool)]) -> (Vec<EntityRecord>, bool) {
     let mut entities = Vec::new();
     let mut has_deltas_body_root = false;
@@ -633,7 +625,6 @@ fn cluster_chain_bodies(
     out.sort_by_key(|record| record.attr);
     out
 }
-
 fn is_explicit_body_root(record: &EntityRecord) -> bool {
     (record.flags == 2 || record.flags & 0xff00_0000 == 0xff00_0000) && record.disc == 0x0017
 }
@@ -980,6 +971,17 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(
+            record_lattice::disc1e_disc1c_disc1a_disc18_disc16_shared_use_root_body(entities),
+        );
+    }
+    if out.is_empty() {
+        out.extend(record_lattice::disc1e_disc1c_disc18_disc10_reciprocal_root_body(entities));
+    }
+    if out.is_empty() {
+        out.extend(record_lattice::disc20_disc1e_disc1c_disc18_disc16_disc12_root_body(entities));
+    }
+    if out.is_empty() {
         out.extend(disc22_disc20_disc1e_disc18_disc16_disc0e_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -1276,7 +1278,6 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     out.sort_by_key(|record| record.attr);
     (out, ambiguous_body_assignments)
 }
-
 fn disc1c_compact_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let regions = by_attr
         .values()
@@ -1343,7 +1344,6 @@ fn disc1c_compact_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -
         }],
     }]
 }
-
 fn disc1e_direct_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let regions = by_attr
         .values()
