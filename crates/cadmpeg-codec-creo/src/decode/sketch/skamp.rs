@@ -257,8 +257,8 @@ pub(crate) fn section_skamp_axis_symmetry(
     };
     Some((
         axis,
-        section_skamp_selected_point(definition, first_item)?,
-        section_skamp_selected_point(definition, second_item)?,
+        section_skamp_incidence_point(definition, first_item)?,
+        section_skamp_incidence_point(definition, second_item)?,
         coordinate,
     ))
 }
@@ -457,7 +457,7 @@ pub(crate) fn saved_section_point(
 #[cfg(test)]
 mod tests {
     use super::{
-        section_skamp_point_entity_id, section_skamp_point_symmetry,
+        section_skamp_axis_symmetry, section_skamp_point_entity_id, section_skamp_point_symmetry,
         section_skamp_selected_point_id, SectionPointSource,
     };
 
@@ -669,5 +669,91 @@ mod tests {
                 offset: 99,
             });
         assert!(section_skamp_point_symmetry(&cross_family, &skamp).is_none());
+    }
+
+    #[test]
+    fn incomplete_unique_rows_supply_axis_symmetry_sources() {
+        let line = |external_id, point_ids| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids,
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        };
+        let mut definition =
+            point_definition(3, vec![line(10, [1, 2]), line(11, [3, 4])], Vec::new());
+        definition.order_table = Some(crate::feature::FeatureOrderTable {
+            declared_count: 1,
+            has_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureOrderRow {
+                external_id: 99,
+                internal_id: 20,
+                bitmask: 0,
+                offset: 1,
+            }],
+            offset: 0,
+        });
+        definition.saved_section = Some(crate::feature::FeatureSavedSection {
+            entities: vec![crate::feature::FeatureSavedEntity::Line(
+                crate::feature::FeatureSavedLine {
+                    entity_id: 20,
+                    references: Vec::new(),
+                    attributes: Vec::new(),
+                    endpoints: [
+                        [Some(0.0), Some(0.0), Some(0.0)],
+                        [Some(0.0), Some(2.0), Some(0.0)],
+                    ],
+                    body: Vec::new(),
+                    offset: 2,
+                },
+            )],
+            offset: 2,
+        });
+        let skamp = crate::feature::FeatureSkamp {
+            id: 14,
+            kind: 14,
+            flags: 0,
+            status: 1,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 10,
+                    sense: 2,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 11,
+                    sense: 3,
+                },
+            ],
+            offset: 0,
+        };
+        let Some((axis, first, second, coordinate)) =
+            section_skamp_axis_symmetry(&definition, &skamp)
+        else {
+            panic!("axis-symmetry sources");
+        };
+        assert!(matches!(axis, super::SectionSymmetryAxis::Value(0.0)));
+        assert!(matches!(first, SectionPointSource::Point(1)));
+        assert!(matches!(second, SectionPointSource::Point(4)));
+        assert_eq!(coordinate, 0);
+
+        let mut duplicate = definition;
+        duplicate
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(line(10, [5, 6]));
+        assert!(section_skamp_axis_symmetry(&duplicate, &skamp).is_none());
     }
 }
