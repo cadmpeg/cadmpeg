@@ -259,3 +259,89 @@ before typed admission.
 **Note.** The current producer inventory and bounded retention policy do not
 settle future suffix field semantics. Opaque retention and refusal are settled
 CADIR decisions, not evidence that a future suffix has been characterized.
+
+### QA-01. Named construction-plane child CRC admission
+
+**Question.** How does the named-construction-plane owner validate the CRC of
+each counted `TCODE_VIEW_CPLANE` child before admitting its typed fields?
+
+**Known.** Section 4.1 defines a CRC-bearing leaf as covering its direct body,
+and section 20.4 states that the named-construction-plane list CRC excludes
+each complete child while each `TCODE_VIEW_CPLANE` child has its own CRC.
+`views.rs:1235-1248` frames and parses each child but does not call
+`direct_view_child_checksum_warning`. `container.rs:211-219` validates only
+the parent list's direct ranges. OpenNURBS reads each child through
+`EndRead3dmChunk` after `BeginRead3dmBigChunk` at
+`opennurbs_3dm_settings.cpp:5663-5672`.
+
+**Need.** The owner must validate each child CRC and apply the documented
+recoverable integrity-warning or retention policy before transferring the
+construction plane.
+
+**Note.** If a child body changes while its child CRC is stale and the parent
+list CRC is recomputed over its unchanged direct fields, the current parser
+admits the changed `parse_cplane` result into `construction_planes` without an
+integrity finding.
+
+### QA-02. Nested anonymous CRC admission
+
+**Question.** Which owner validates each CRC-bearing nested anonymous chunk
+before transferring its fields?
+
+**Known.** Section 4.1 gives nested CRC-bearing chunks independent boundaries.
+The generic userdata reader checks its header and wrapper ranges but excludes
+the anonymous payload child at `objects.rs:550-557`. The user-string owner at
+`objects.rs:581-620` parses the list and each entry without validating either
+anonymous chunk. The layer-extension owner at `settings.rs:752-884` likewise
+parses the outer and per-viewport anonymous chunks without validation. The
+shared settings helper at `settings.rs:1193-1210` admits anonymous plugin,
+earth-anchor, IO-settings, SubD-display, and settings-attributes children
+without validating the returned chunk; the shared presentation helper at
+`presentation.rs:1013-1027` does the same for material, texture, linetype,
+dimension-style, and other class-data children. Source readers close these
+`TCODE_ANONYMOUS_CHUNK` records with `EndRead3dmChunk`, including
+`ON_UserStringList` at `opennurbs_userdata.cpp:761-820`,
+`ON__LayerExtensions` at `opennurbs_layer.cpp:1299-1363`, `1368-1446`, and
+`1593-1668`, plugin references at `opennurbs_pluginlist.cpp:50-80` and
+`117-168`, and settings children at
+`opennurbs_3dm_settings.cpp:4178-4261` and `5110-5135`.
+The same omission is present in the clipping-plane surface and detail-view
+anonymous readers at `surfaces.rs:156-192` and `detail.rs:25-70`, and in the
+SubD proxy reader at `subd.rs:250-296`; their source writers and readers also
+use the anonymous chunk API and close the chunk.
+The rendering-attributes reader records mapping-channel ranges for the parent
+CRC at `settings.rs:1761-1790` but never validates each channel chunk; the
+source `ON_MappingChannel` reader closes the same anonymous chunk at
+`opennurbs_material.cpp:7536-7567`.
+
+**Need.** Each registered nested-chunk reader must validate the CRC-bearing
+anonymous chunks it admits and route a mismatch through that owner's warning,
+drop, or opaque-retention rule.
+
+**Note.** A stale user-string entry CRC can still produce a typed user-string
+record, a stale layer-extension entry CRC can still produce a typed
+per-viewport setting, and a stale plugin-reference, material-texture,
+clipping-plane, detail-view, or SubD-proxy CRC can still produce its typed
+child. The generic userdata and parent record checks do not replace the nested
+checks because their CRC ranges exclude complete children.
+
+### QA-03. CADIR decision records for Rhino closures
+
+**Question.** Where are the CADIR policy decisions in the Rhino specification
+numbered and recorded with their required closure fields?
+
+**Known.** `docs/formats/rhino_3dm.md` contains unnumbered `CADIR decision:`
+and `CADIR typed-admission decision:` clauses at lines 951, 1024, 1077, 1609,
+2481, 3175, 3205, 3260, 3720, 3743, 4369, 5159, 5406, 5497, 5517, 5642,
+5916, 6125, 6210, 6252, 6371, 6575, 6982, 6988, and 6994. There is no
+`docs/formats/rhino_3dm-decisions.md`, and no `D-NN` record with Question,
+Silence, Rule, Ground, Cost, and Reopens fields.
+
+**Need.** Number each policy clause as `CADIR decision D-NN` and add its
+separate decision record with the required fields. Cost must bind every
+discard, withholding, or approximation to a named loss or finding, and
+Reopens must name an executable witness when one can exist.
+
+**Note.** This is a decision-record protocol gap. It does not make a new wire
+format question; it leaves the claimed CADIR closures unauditable under the
+decision protocol.
