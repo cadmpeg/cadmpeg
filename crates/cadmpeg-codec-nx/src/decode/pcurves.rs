@@ -62,6 +62,39 @@ pub(crate) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
     Some(range)
 }
 
+fn vertex_point_positions(ir: &CadIr) -> BTreeMap<VertexId, Point3> {
+    let point_positions = ir
+        .model
+        .points
+        .iter()
+        .fold(BTreeMap::new(), |mut positions, point| {
+            positions.entry(point.id.clone()).or_insert(point.position);
+            positions
+        });
+    ir.model
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            point_positions
+                .get(&vertex.point)
+                .copied()
+                .map(|position| (vertex.id.clone(), position))
+        })
+        .collect()
+}
+
+fn edge_indices_by_curve(ir: &CadIr) -> BTreeMap<CurveId, Vec<usize>> {
+    ir.model
+        .edges
+        .iter()
+        .enumerate()
+        .filter_map(|(index, edge)| Some((edge.curve.clone()?, index)))
+        .fold(BTreeMap::new(), |mut indices, (curve, index)| {
+            indices.entry(curve).or_default().push(index);
+            indices
+        })
+}
+
 pub(crate) fn complete_intersection_supports_from_edge_incidence(ir: &mut CadIr) {
     let loop_faces = ir
         .model
@@ -266,20 +299,16 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
         }
     }
 
-    let vertex_points = ir
-        .model
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let point = ir
-                .model
-                .points
-                .iter()
-                .find(|point| point.id == vertex.point)?;
-            Some((vertex.id.clone(), point.position))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let vertex_points = vertex_point_positions(ir);
     let replacements = {
+        let edges_by_curve = edge_indices_by_curve(ir);
+        let pcurves_by_id = ir.model.pcurves.iter().enumerate().fold(
+            BTreeMap::<PcurveId, usize>::new(),
+            |mut indices, (index, pcurve)| {
+                indices.entry(pcurve.id.clone()).or_insert(index);
+                indices
+            },
+        );
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut replacements = Vec::new();
         for procedural in &ir.model.procedural_curves {
@@ -292,13 +321,13 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
             else {
                 continue;
             };
-            let edges = ir
-                .model
-                .edges
-                .iter()
-                .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
-                .collect::<Vec<_>>();
-            let [edge] = edges.as_slice() else {
+            let Some(edge_indices) = edges_by_curve.get(&procedural.curve) else {
+                continue;
+            };
+            let [edge_index] = edge_indices.as_slice() else {
+                continue;
+            };
+            let Some(edge) = ir.model.edges.get(*edge_index) else {
                 continue;
             };
             let Some(endpoint_tolerance) = edge
@@ -334,10 +363,9 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
                 continue;
             };
             let carriers = [first_id, second_id].map(|id| {
-                ir.model
-                    .pcurves
-                    .iter()
-                    .find(|candidate| &candidate.id == id)
+                pcurves_by_id
+                    .get(id)
+                    .and_then(|index| ir.model.pcurves.get(*index))
             });
             let [Some(first), Some(second)] = carriers else {
                 continue;
@@ -1103,19 +1131,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let vertex_points = ir
-        .model
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let point = ir
-                .model
-                .points
-                .iter()
-                .find(|point| point.id == vertex.point)?;
-            Some((vertex.id.clone(), point.position))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let vertex_points = vertex_point_positions(ir);
+    let edges_by_curve = edge_indices_by_curve(ir);
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     let replacements = ir
         .model
@@ -1123,15 +1140,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         .iter()
         .skip(procedural_start)
         .filter_map(|procedural| {
-            let edges = ir
-                .model
-                .edges
-                .iter()
-                .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
-                .collect::<Vec<_>>();
-            let [edge] = edges.as_slice() else {
+            let edge_indices = edges_by_curve.get(&procedural.curve)?;
+            let [edge_index] = edge_indices.as_slice() else {
                 return None;
             };
+            let edge = ir.model.edges.get(*edge_index)?;
             let (supports, endpoints, range, tolerance, tolerant) = match &procedural.definition {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
                     if !context
