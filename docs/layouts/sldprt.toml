@@ -6779,7 +6779,7 @@ anchor = "an unaligned xyz unit vector occupies +129, +137, and +145"
 name = "compact_current_spatial_marker_point"
 kind = "byte"
 section = "2"
-anchor = "A current-prefix compact profile-locus spatial point has native kind u32 `1`"
+anchor = "A current-prefix compact profile-locus spatial point has native kind u32 `0` or `1`"
 size = 82
 endianness = "little"
 note = "The fixed point prefix ends after the third coordinate; any marker-specific trailer follows outside this prefix."
@@ -6810,7 +6810,7 @@ name = "native_kind"
 offset = 17
 type = "u32"
 source = "spec"
-anchor = "native kind u32 `1`"
+anchor = "native kind u32 `0` or `1`"
 
 [[record.gap]]
 offset = 21

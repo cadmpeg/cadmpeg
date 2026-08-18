@@ -1851,7 +1851,7 @@ The fixed point prefix ends after the third coordinate; any marker-specific trai
 | 0 | 5 | `marker` | `bytes[5]` | little | spec | A current-prefix compact profile-locus spatial point |
 | 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes |
 | 13 | 4 | `sentinel` | `f32` | little | spec | little-endian f32 `-1.0` |
-| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `1` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `0` or `1` |
 | 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
 | 27 | 2 | `profile_role` | `u16` | little | spec | profile role u16 `1` |
 | 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |

@@ -277,6 +277,16 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
         return offset.checked_add(50);
     }
     let locus = payload.get(offset + 23..offset + 27)?;
+    if payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
+        && marker_native_code(payload, offset) == Some(0)
+        && locus == [0x04, 0x00, 0x02, 0x00]
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload
+            .get(offset + compact_spatial::COORDINATE_TAG..offset + compact_spatial::COORDINATES)
+            == Some(&[0x0e, 0x00])
+    {
+        return offset.checked_add(compact_spatial::COORDINATES);
+    }
     let (coordinate_offset, requires_profile_role) =
         match payload.get(offset..offset + SKETCH_MARKER.len())? {
             prefix
