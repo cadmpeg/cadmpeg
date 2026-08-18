@@ -11,6 +11,8 @@ use crate::sketches::SketchGeometry;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
+
 #[test]
 fn trimmed_concentric_arcs_validate_as_offsets() {
     let arc = |radius, start, end| SketchGeometry::Arc {
@@ -34,6 +36,39 @@ fn trimmed_concentric_arcs_validate_as_offsets() {
         &disjoint_result,
         -3.0,
         1.0e-6,
+    ));
+}
+
+#[test]
+fn full_concentric_circles_validate_as_offsets() {
+    let circle = |radius| SketchGeometry::Circle {
+        center: Point2::new(3.0, -4.0),
+        radius: Length(radius),
+    };
+    let source = circle(5.0);
+    let result = circle(3.5);
+    let displaced = SketchGeometry::Circle {
+        center: Point2::new(3.0, -3.9),
+        radius: Length(3.5),
+    };
+
+    assert!(sketch_curve_offset_matches(
+        &source,
+        &result,
+        1.5,
+        TEST_LINEAR_TOLERANCE,
+    ));
+    assert!(sketch_curve_offset_matches(
+        &result,
+        &source,
+        -1.5,
+        TEST_LINEAR_TOLERANCE,
+    ));
+    assert!(!sketch_curve_offset_matches(
+        &source,
+        &displaced,
+        1.5,
+        TEST_LINEAR_TOLERANCE,
     ));
 }
 

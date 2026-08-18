@@ -111,12 +111,46 @@ fn spatial_oriented_endpoints(
     })
 }
 
+const EPS_FULL_CIRCLE_OFFSET: f64 = 1.0e-9;
+
 fn sketch_curve_offset_matches(
     source: &SketchGeometry,
     result: &SketchGeometry,
     expected: f64,
     linear_tolerance: f64,
 ) -> bool {
+    if let (
+        SketchGeometry::Circle {
+            center: source_center,
+            radius: source_radius,
+        },
+        SketchGeometry::Circle {
+            center: result_center,
+            radius: result_radius,
+        },
+    ) = (source, result)
+    {
+        let scale = 1.0
+            + source_center
+                .u
+                .abs()
+                .max(source_center.v.abs())
+                .max(result_center.u.abs())
+                .max(result_center.v.abs())
+                .max(source_radius.0.abs())
+                .max(result_radius.0.abs())
+                .max(expected.abs());
+        return expected.is_finite()
+            && source_radius.0.is_finite()
+            && result_radius.0.is_finite()
+            && source_radius.0 > 0.0
+            && result_radius.0 > 0.0
+            && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
+            && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
+            && (source_radius.0 - result_radius.0 - expected).abs()
+                <= EPS_FULL_CIRCLE_OFFSET * scale;
+    }
+
     if let (
         SketchGeometry::Arc {
             center: source_center,

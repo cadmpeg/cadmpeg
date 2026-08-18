@@ -8,6 +8,10 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::sketches::SketchOffsetPair;
+
+const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;
 
 #[test]
 fn counted_offset_return_run_pairs_sources_and_results() {
@@ -254,6 +258,79 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
         &entities,
         &HashMap::new(),
         1.0e-6,
+    )
+    .is_none());
+}
+
+#[test]
+fn counted_offset_accepts_concentric_full_circles() {
+    let circle = |id: &str, radius| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(3.0, -4.0),
+            radius: Length(radius),
+        },
+    };
+    let source = circle("generated:circle#source", 5.0);
+    let result = circle("generated:circle#result", 3.5);
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 7), (2, 0)],
+            &[1, 2],
+            &entities,
+            &HashMap::new(),
+            TEST_LINEAR_TOLERANCE,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.as_slice() == [SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+            source_reversed: false,
+        }] && (distance - 1.5).abs() <= TEST_DISTANCE_EPSILON
+    ));
+
+    let reversed_entities = HashMap::from([(1, &result), (2, &source)]);
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 7), (2, 0)],
+            &[1, 2],
+            &reversed_entities,
+            &HashMap::new(),
+            TEST_LINEAR_TOLERANCE,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.as_slice() == [SketchOffsetPair {
+            source: result.id.clone(),
+            result: source.id.clone(),
+            source_reversed: true,
+        }] && (distance - 1.5).abs() <= TEST_DISTANCE_EPSILON
+    ));
+
+    let mut displaced = result.clone();
+    displaced.geometry = SketchGeometry::Circle {
+        center: Point2::new(3.0, -3.9),
+        radius: Length(3.5),
+    };
+    let entities = HashMap::from([(1, &source), (2, &displaced)]);
+    assert!(exact_counted_offset(
+        &[(1, 7), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        TEST_LINEAR_TOLERANCE,
     )
     .is_none());
 }

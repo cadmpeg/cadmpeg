@@ -4944,6 +4944,31 @@ fn sketch_curve_offset(
 
     match (source, result) {
         (
+            SketchGeometry::Circle {
+                center: source_center,
+                radius: source_radius,
+            },
+            SketchGeometry::Circle {
+                center: result_center,
+                radius: result_radius,
+            },
+        ) => {
+            let scale = 1.0
+                + source_center
+                    .u
+                    .abs()
+                    .max(source_center.v.abs())
+                    .max(result_center.u.abs())
+                    .max(result_center.v.abs())
+                    .max(source_radius.0)
+                    .max(result_radius.0);
+            (source_radius.0 > 0.0
+                && result_radius.0 > 0.0
+                && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
+                && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
+                .then_some(source_radius.0 - result_radius.0)
+        }
+        (
             SketchGeometry::Arc {
                 center: source_center,
                 radius: source_radius,
