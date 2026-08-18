@@ -359,6 +359,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// corners at indexes 2 through 9, so its groups start at token ten.
 /// Type 406 Form 32 fixes `NP=3` at index 1 and stores `NAME`, `ORG`, and
 /// `DATE` at indexes 2 through 4, so its groups start at token five.
+/// Type 406 Form 33 fixes `NP=2` at index 1 and stores `SNUM` and `SID` at
+/// indexes 2 and 3, so its groups start at token four.
 /// Type 406 Form 36 permits `NP=1` for a curve or `NP=2` for a surface and
 /// stores `CLOSEDU` and, for a surface, `CLOSEDV`, so its groups start at
 /// token `2 + NP`.
@@ -454,7 +456,7 @@ pub(crate) fn entity_primary_end(
         (406, 12) => Some(external_reference_file_list_primary_end(record)),
         (406, 13) => Some(nominal_size_primary_end(record)),
         (406, 15) => Some(name_property_primary_end(record)),
-        (406, 16 | 17) => Some(drawing_property_primary_end(record)),
+        (406, 16 | 17 | 33) => Some(drawing_property_primary_end(record)),
         (406, 24) => Some(level_to_lep_layer_map_primary_end(record)),
         (406, 25) => Some(lep_artwork_stackup_primary_end(record)),
         (406, 26) => Some(lep_drilled_hole_primary_end(record)),
