@@ -20,7 +20,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
@@ -49,9 +49,18 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
+        let mut emitted_record_indices = HashSet::new();
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
             if let Some(mut parameter) = parse_design_parameter(&bytes[at..end]) {
+                // The Design primary index exposes one live header for each
+                // logical record index. Keep the first serialized parameter
+                // frame so stale copies cannot create duplicate owner
+                // bindings or duplicate neutral parameter identities.
+                if !emitted_record_indices.insert(parameter.record_index) {
+                    position = end;
+                    continue;
+                }
                 parameter.id = ids::native_design_parameter_id(&entry.name, at);
                 parameter.byte_offset = at as u64;
                 parameter.family_discriminator_offset = parameter

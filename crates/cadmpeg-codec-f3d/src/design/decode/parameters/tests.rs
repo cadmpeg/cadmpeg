@@ -12,8 +12,8 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::{
-    parse_design_parameter, parse_legacy_parameter_owner_68, parse_legacy_parameter_owner_88,
-    parse_parameter_companion, parse_parameter_owner,
+    decode_parameters, parse_design_parameter, parse_legacy_parameter_owner_68,
+    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
 use crate::records::DesignParameterKind;
@@ -318,6 +318,30 @@ fn parameter_record_rejects_noncanonical_tail() {
     );
     *record.last_mut().unwrap() = 1;
     assert!(parse_design_parameter(&record).is_none());
+}
+
+#[test]
+fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut bulk = parameter_record(Some(44), "first", "AlongDistance", Some("mm"), "d71", 1.0);
+    let second = parameter_record(Some(44), "second", "AlongDistance", Some("mm"), "d71", 2.0);
+    bulk.extend_from_slice(&second);
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let parameters = with_scan(&archive, decode_parameters).unwrap();
+    let [parameter] = parameters.as_slice() else {
+        panic!("expected one canonical parameter");
+    };
+    assert_eq!(parameter.record_index, 71);
+    assert_eq!(parameter.byte_offset, 0);
+    assert_eq!(parameter.expression, "first");
+    assert_eq!(parameter.evaluated_value, 1.0);
 }
 
 fn compact_parameter_owner_frame() -> Vec<u8> {
