@@ -4566,6 +4566,9 @@ pub(crate) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
     if parameter.source_kind.starts_with("Angular Dimension") {
         return unit.is_some_and(design_angle_unit);
     }
+    if parameter.source_kind.starts_with("Tangent Dimension") {
+        return unit.is_some_and(design_length_unit);
+    }
     false
 }
 

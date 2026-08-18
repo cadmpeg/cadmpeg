@@ -426,7 +426,12 @@ fn project_all_dimension_constraints(
             }
         }
         if group.state == 0 && group.unknown_constraint_bits == 0 {
-            if let Some(definition) = counted_role_relation(&locus_entities, group.owner_role) {
+            let counted_definition = counted_role_relation_at_tolerance(
+                &locus_entities,
+                group.owner_role,
+                linear_tolerance,
+            );
+            if let Some(definition) = counted_definition {
                 return Some(definition);
             }
             if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
@@ -4350,9 +4355,18 @@ pub(crate) fn two_locus_distance_dimension(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn counted_role_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_role: u32,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    counted_role_relation_at_tolerance(entities, owner_role, 0.0)
+}
+
+pub(crate) fn counted_role_relation_at_tolerance(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    owner_role: u32,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
@@ -4382,9 +4396,12 @@ pub(crate) fn counted_role_relation(
                 _ => None,
             }
         }
-        0x100 if exact_line_arc_tangency(entities) => {
+        0x100
+            if exact_line_arc_tangency(entities, linear_tolerance)
+                || exact_circular_tangency(entities, linear_tolerance) =>
+        {
             let [first, second] = entities else {
-                unreachable!("exact line-arc tangency requires two entities")
+                unreachable!("exact curve tangency requires two entities")
             };
             Some(Definition::Tangent {
                 first: first.id.clone(),
@@ -4404,7 +4421,10 @@ pub(crate) fn counted_role_relation(
     }
 }
 
-fn exact_line_arc_tangency(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
+fn exact_line_arc_tangency(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    linear_tolerance: f64,
+) -> bool {
     use cadmpeg_ir::sketches::SketchGeometry as Geometry;
 
     let [first, second] = entities else {
@@ -4466,15 +4486,117 @@ fn exact_line_arc_tangency(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> 
                     .max(arc_point.u.abs())
                     .max(arc_point.v.abs())
                     .max(radius);
+            let point_tolerance = linear_tolerance.max(EPS_CIRCULAR_TANGENCY * scale.max(1.0));
             let radius_direction = Point2::new(arc_point.u - center.u, arc_point.v - center.v);
-            (line_point.u - arc_point.u).abs() <= 1.0e-9 * scale
-                && (line_point.v - arc_point.v).abs() <= 1.0e-9 * scale
+            (line_point.u - arc_point.u).abs() <= point_tolerance
+                && (line_point.v - arc_point.v).abs() <= point_tolerance
                 && (line_direction.u * radius_direction.u + line_direction.v * radius_direction.v)
                     .abs()
                     <= 1.0e-9 * line_length * radius
         })
     })
 }
+
+fn exact_circular_tangency(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    linear_tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+
+    let [first, second] = entities else {
+        return false;
+    };
+    if first.id == second.id {
+        return false;
+    }
+    let circular = |geometry: &Geometry| match geometry {
+        Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {
+            (radius.0.is_finite() && radius.0 > 0.0).then_some((*center, radius.0))
+        }
+        _ => None,
+    };
+    let Some((first_center, first_radius)) = circular(&first.geometry) else {
+        return false;
+    };
+    let Some((second_center, second_radius)) = circular(&second.geometry) else {
+        return false;
+    };
+    let center_delta = Point2::new(
+        second_center.u - first_center.u,
+        second_center.v - first_center.v,
+    );
+    let center_distance = center_delta.u.hypot(center_delta.v);
+    if !center_distance.is_finite() || center_distance <= EPS_CIRCULAR_TANGENCY_LENGTH {
+        return false;
+    }
+    let tangent_tolerance =
+        linear_tolerance.max(EPS_CIRCULAR_TANGENCY * (1.0 + first_radius.max(second_radius)));
+    let close = |left: f64, right: f64| (left - right).abs() <= tangent_tolerance;
+    if !close(center_distance, first_radius + second_radius)
+        && !close(center_distance, (first_radius - second_radius).abs())
+    {
+        return false;
+    }
+    let unit = Point2::new(
+        center_delta.u / center_distance,
+        center_delta.v / center_distance,
+    );
+    let candidate_points = [
+        Point2::new(
+            first_center.u + first_radius * unit.u,
+            first_center.v + first_radius * unit.v,
+        ),
+        Point2::new(
+            first_center.u - first_radius * unit.u,
+            first_center.v - first_radius * unit.v,
+        ),
+    ];
+    candidate_points.iter().any(|point| {
+        let second_radius_error =
+            (point.u - second_center.u).hypot(point.v - second_center.v) - second_radius;
+        if second_radius_error.abs() > tangent_tolerance {
+            return false;
+        }
+        circular_entity_contains_point(&first.geometry, *point, linear_tolerance)
+            && circular_entity_contains_point(&second.geometry, *point, linear_tolerance)
+    })
+}
+
+fn circular_entity_contains_point(
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+    point: Point2,
+    linear_tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+
+    match geometry {
+        Geometry::Circle { .. } => true,
+        Geometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let relative = Point2::new(point.u - center.u, point.v - center.v);
+            let scale = 1.0 + radius.0.abs().max(point.u.abs().max(point.v.abs()));
+            let point_tolerance = linear_tolerance.max(EPS_CIRCULAR_TANGENCY * scale.max(1.0));
+            let angular_tolerance = (point_tolerance / radius.0.abs()).max(EPS_CIRCULAR_TANGENCY);
+            let angle = relative.v.atan2(relative.u);
+            let angle_close = |left: f64, right: f64| {
+                let distance = (left - right).abs().rem_euclid(std::f64::consts::TAU);
+                distance.min(std::f64::consts::TAU - distance) <= angular_tolerance
+            };
+            (relative.u.hypot(relative.v) - radius.0).abs() <= point_tolerance
+                && (angle_close(angle, start_angle.0)
+                    || angle_close(angle, end_angle.0)
+                    || angle_in_sweep(angle, start_angle.0, end_angle.0, angular_tolerance))
+        }
+        _ => false,
+    }
+}
+
+const EPS_CIRCULAR_TANGENCY: f64 = 1.0e-9;
+const EPS_CIRCULAR_TANGENCY_LENGTH: f64 = 1.0e-12;
 
 fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
     use cadmpeg_ir::sketches::SketchGeometry as Geometry;

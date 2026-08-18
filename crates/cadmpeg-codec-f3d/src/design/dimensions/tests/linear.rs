@@ -34,6 +34,12 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     assert!(crate::design::feature_project::design_dimension_unit(
         &dimension("Angular Dimension-2", "rad")
     ));
+    assert!(crate::design::feature_project::design_dimension_unit(
+        &dimension("Tangent Dimension-2", "mm")
+    ));
+    assert!(!crate::design::feature_project::design_dimension_unit(
+        &dimension("Tangent Dimension-2", "deg")
+    ));
     assert!(!crate::design::feature_project::design_dimension_unit(
         &dimension("Angular Dimension-2", "mm")
     ));
