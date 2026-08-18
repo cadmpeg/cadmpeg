@@ -889,6 +889,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(
+            disc1f_disc1d_disc1b_disc17_disc15_disc13_disc11_disc0f_direct_face_root_body(&by_attr),
+        );
+    }
+    if out.is_empty() {
         out.extend(disc1c_disc14_disc1a_disc18_disc10_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -6327,6 +6332,38 @@ fn disc1b_disc1d_disc19_disc15_disc13_disc11_disc0f_direct_face_root_body(
     )
 }
 
+fn disc1f_disc1d_disc1b_disc17_disc15_disc13_disc11_disc0f_direct_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_with_multiple_matching_chains(
+        by_attr,
+        &[
+            (0x001f, 2),
+            (0x001d, 2),
+            (0x001b, 2),
+            (0x0017, 1),
+            (0x0015, 2),
+            (0x0013, 2),
+            (0x0011, 2),
+            (0x000f, 2),
+        ],
+        0x0004,
+        0x0019,
+        0x0021,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 3,
+            require_exact_use_population: true,
+        },
+        None,
+        KeyedLinkPolicy::Reciprocal,
+        false,
+        false,
+        false,
+    )
+}
+
 fn disc21_disc1f_disc1b_disc19_disc15_disc13_disc11_disc04_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -6941,6 +6978,12 @@ enum KeyedLinkPolicy {
     ForwardKeyed,
 }
 
+#[derive(Clone, Copy)]
+enum ChainMultiplicity {
+    Single,
+    AllComplete,
+}
+
 fn keyed_companion_by_key<'a>(
     by_attr: &HashMap<u16, &'a EntityRecord>,
     face: &EntityRecord,
@@ -7513,6 +7556,36 @@ fn keyed_face_root_body_with_keyed_face_links_with_population_policy(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Each argument identifies an independent layout role or link policy.
+fn keyed_face_root_body_with_keyed_face_links_with_multiple_matching_chains(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    options: KeyedFaceRootOptions,
+    companion_use_bridge: Option<KeyedFaceBridge>,
+    link_policy: KeyedLinkPolicy,
+    allow_keyed_companion_fallback: bool,
+    allow_unselected_companions: bool,
+    allow_keyed_use_fallback: bool,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_companion_use_bridge_and_fallback_with_chain_policy(
+        by_attr,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        options,
+        companion_use_bridge,
+        link_policy,
+        allow_keyed_companion_fallback,
+        allow_unselected_companions,
+        allow_keyed_use_fallback,
+        ChainMultiplicity::AllComplete,
+    )
+}
+
 fn keyed_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
     chain_shape: &[(u16, u8)],
@@ -7570,6 +7643,37 @@ fn keyed_face_root_body_with_companion_use_bridge_and_fallback(
     allow_unselected_companions: bool,
     allow_keyed_use_fallback: bool,
 ) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_companion_use_bridge_and_fallback_with_chain_policy(
+        by_attr,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        options,
+        companion_use_bridge,
+        link_policy,
+        allow_keyed_companion_fallback,
+        allow_unselected_companions,
+        allow_keyed_use_fallback,
+        ChainMultiplicity::Single,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Each argument identifies an independent layout role or link policy.
+fn keyed_face_root_body_with_companion_use_bridge_and_fallback_with_chain_policy(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    options: KeyedFaceRootOptions,
+    companion_use_bridge: Option<KeyedFaceBridge>,
+    link_policy: KeyedLinkPolicy,
+    allow_keyed_companion_fallback: bool,
+    allow_unselected_companions: bool,
+    allow_keyed_use_fallback: bool,
+    chain_multiplicity: ChainMultiplicity,
+) -> Vec<BodyRecord> {
     let matching_chains = keyed_forward_chain_candidates(by_attr)
         .into_iter()
         .filter(|chain| {
@@ -7587,9 +7691,41 @@ fn keyed_face_root_body_with_companion_use_bridge_and_fallback(
                     .all(|((disc, flo), record)| record.disc == disc && record.flo() == flo)
         })
         .collect::<Vec<_>>();
-    let [chain] = matching_chains.as_slice() else {
+    if matching_chains.is_empty()
+        || (matches!(chain_multiplicity, ChainMultiplicity::Single) && matching_chains.len() != 1)
+    {
         return Vec::new();
-    };
+    }
+    if matches!(chain_multiplicity, ChainMultiplicity::AllComplete) {
+        let chain_root_attrs = by_attr
+            .values()
+            .copied()
+            .filter(|record| {
+                chain_shape
+                    .first()
+                    .is_some_and(|(disc, flo)| record.disc == *disc && record.flo() == *flo)
+                    && record.refs.first().is_some_and(|key| *key > 1)
+                    && record.refs.get(1).is_none_or(|attr| *attr <= 1)
+            })
+            .map(|record| record.attr)
+            .collect::<HashSet<_>>();
+        let matching_root_attrs = matching_chains
+            .iter()
+            .filter_map(|chain| chain.first().map(|record| record.attr))
+            .collect::<HashSet<_>>();
+        if chain_root_attrs != matching_root_attrs {
+            return Vec::new();
+        }
+    }
+    let mut matching_chains = matching_chains;
+    matching_chains.sort_unstable_by_key(|chain| {
+        chain
+            .first()
+            .map_or((usize::MAX, u16::MAX), |root| (root.offset, root.attr))
+    });
+    let chain = matching_chains
+        .first()
+        .expect("matching_chains was checked to be non-empty");
     let canonical_faces = by_attr
         .values()
         .copied()
