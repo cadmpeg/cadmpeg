@@ -1542,10 +1542,14 @@ near the interpolated directed endpoint parameters, and evaluates that curve
 again. Every evaluated separation must be finite and at most
 `max(STEP coincidence tolerance, document linear tolerance)`. This finite
 model-space locus and direction witness is the CADIR admission rule.
-Successful admission transfers the optional relation and reports the warning
-`topology.pcurve-global-fidelity-unproved`. The report means that the finite
-witness did not establish the ISO global point-set and same-direction
-invariants. CADIR does not claim global pcurve fidelity for this relation.
+Successful admission transfers the optional relation. The document reports one
+warning `topology.pcurve-global-fidelity-unproved` for all admitted relations.
+The warning gives the count of admitted relations, then names the first 8
+relations in decode order by their curve, their surface, and their coedge use,
+then gives the number of admitted relations that it does not name. The report
+means that the finite witness did not establish the ISO global point-set and
+same-direction invariants. CADIR does not claim global pcurve fidelity for
+these relations.
 Strict decode does not refuse this warning, because the relation transfers the
 source data with its verification status. Strict decode refuses
 CADIR-introduced substitution, salvage, and malformed structure. A finite

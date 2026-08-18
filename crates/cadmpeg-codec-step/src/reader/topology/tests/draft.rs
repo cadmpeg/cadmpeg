@@ -288,6 +288,133 @@ fn strict_decode_accepts_a_finitely_admitted_pcurve() {
     );
 }
 
+/// The document reports one admission warning for all admitted relations. The
+/// fixture has two edges whose surface curve carries one exact pcurve on the
+/// face plane, so the one warning counts two relations and names both.
+#[test]
+fn one_document_warning_counts_every_admitted_pcurve_relation() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp12_two_admissions.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode two-admission witness");
+
+    for edge in ["step:data:edge#44", "step:data:edge#45"] {
+        let edge_use = decoded
+            .ir()
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| coedge.edge.as_str() == edge)
+            .expect("admitted edge use");
+        assert_eq!(edge_use.pcurves.len(), 1);
+    }
+
+    let admissions = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::PcurveGlobalFidelityUnproved.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(admissions.len(), 1);
+    assert_eq!(
+        admissions[0].severity,
+        cadmpeg_ir::report::Severity::Warning
+    );
+    let message = admissions[0].message.as_str();
+    assert!(message.contains("admits 2 pcurve relation(s)"), "{message}");
+    assert!(
+        message.contains("curve #42 on surface #11 at coedge use #48"),
+        "{message}"
+    );
+    assert!(
+        message.contains("curve #43 on surface #11 at coedge use #49"),
+        "{message}"
+    );
+    assert!(!message.contains("more"), "{message}");
+}
+
+/// The warning names the first `PCURVE_UNPROVED_NOTE_EXEMPLARS` relations in
+/// decode order and gives the number of relations it does not name.
+#[test]
+fn admission_warning_names_the_bounded_exemplars_and_counts_the_rest() {
+    let mut admissions = PcurveAdmissions::default();
+    let extra = 4;
+    for index in 0..(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra) as u64 {
+        admissions.record(index, 100 + index, 200 + index);
+    }
+    let note = admissions
+        .note()
+        .expect("recorded admissions give a warning");
+    let message = note.message.as_str();
+
+    assert!(
+        message.contains(&format!(
+            "admits {} pcurve relation(s)",
+            PCURVE_UNPROVED_NOTE_EXEMPLARS + extra
+        )),
+        "{message}"
+    );
+    for index in 0..PCURVE_UNPROVED_NOTE_EXEMPLARS as u64 {
+        assert!(
+            message.contains(&format!(
+                "curve #{index} on surface #{} at coedge use #{}",
+                100 + index,
+                200 + index
+            )),
+            "{message}"
+        );
+    }
+    for index in
+        PCURVE_UNPROVED_NOTE_EXEMPLARS as u64..(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra) as u64
+    {
+        assert!(
+            !message.contains(&format!("curve #{index} on surface")),
+            "{message}"
+        );
+    }
+    assert!(
+        message.ends_with(&format!(", and {extra} more")),
+        "{message}"
+    );
+}
+
+/// A count at the exemplar bound names every relation and counts no remainder.
+#[test]
+fn admission_warning_at_the_exemplar_bound_names_every_relation() {
+    let mut admissions = PcurveAdmissions::default();
+    for index in 0..PCURVE_UNPROVED_NOTE_EXEMPLARS as u64 {
+        admissions.record(index, 100 + index, 200 + index);
+    }
+    let note = admissions
+        .note()
+        .expect("recorded admissions give a warning");
+    let message = note.message.as_str();
+
+    assert!(
+        message.contains(&format!(
+            "admits {PCURVE_UNPROVED_NOTE_EXEMPLARS} pcurve relation(s)"
+        )),
+        "{message}"
+    );
+    assert!(
+        message.ends_with(&format!(
+            "curve #{} on surface #{} at coedge use #{}",
+            PCURVE_UNPROVED_NOTE_EXEMPLARS - 1,
+            100 + PCURVE_UNPROVED_NOTE_EXEMPLARS - 1,
+            200 + PCURVE_UNPROVED_NOTE_EXEMPLARS - 1
+        )),
+        "{message}"
+    );
+}
+
+/// A document with no admitted relation reports no admission warning.
+#[test]
+fn no_admitted_relation_reports_no_admission_warning() {
+    assert!(PcurveAdmissions::default().note().is_none());
+}
+
 #[test]
 fn divergent_interior_pcurve_is_omitted_from_coedge() {
     let decoded = crate::StepCodec::default()

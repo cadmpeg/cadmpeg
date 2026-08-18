@@ -390,6 +390,7 @@ pub(super) fn decode(
     let scope_distinct_roots = distinct_root_count > 1;
     let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
     let mut representation_cache = BTreeMap::new();
+    let mut admissions = PcurveAdmissions::default();
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
             result.warnings.push(format!(
@@ -429,6 +430,7 @@ pub(super) fn decode(
             scope_root,
             &mut result.warnings,
             &mut result.losses,
+            &mut admissions,
         );
         let failure_message = outcome.failure.as_ref().map(BuildFailure::message);
         let mut body_ids = Vec::new();
@@ -487,6 +489,9 @@ pub(super) fn decode(
             }
         }
     }
+    // Every admitted relation shares one class of unproved invariant, so the
+    // document reports the class once with its count and named examples.
+    result.losses.extend(admissions.note());
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
@@ -1741,6 +1746,7 @@ fn build(
     scope_root: bool,
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
+    admissions: &mut PcurveAdmissions,
 ) -> BuildOutcome {
     let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions) else {
         return BuildOutcome {
@@ -1779,6 +1785,7 @@ fn build(
             scope_root,
             warnings,
             losses,
+            admissions,
             &mut failure,
         );
         let failed = usize::from(built.is_none());
@@ -1841,6 +1848,7 @@ fn build(
             scope_root,
             warnings,
             losses,
+            admissions,
             &mut failure,
         ) {
             built.push(value);
@@ -1875,6 +1883,7 @@ fn build_one(
     scope_root: bool,
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
+    admissions: &mut PcurveAdmissions,
     failure: &mut Option<BuildFailure>,
 ) -> Option<Built> {
     let solid = has_type(root, "MANIFOLD_SOLID_BREP")
@@ -2346,13 +2355,7 @@ fn build_one(
                                                 "successful pcurve selection has one curve and surface"
                                             )
                                         };
-                                        losses.push(
-                                            StepLossCode::PcurveGlobalFidelityUnproved.note(
-                                                format!(
-                                                    "curve #{curve} has one pcurve on surface #{surface} admitted to coedge use #{use_step} by a finite endpoint and locus witness; global model-space point-set equality and direction are unproved"
-                                                ),
-                                            ),
-                                        );
+                                        admissions.record(curve, surface, use_step);
                                         vec![(selected.id, selected.parameter_range)]
                                     }
                                     Some(Err(PcurveSelectionFailure::Locus)) => {
@@ -3107,6 +3110,72 @@ enum PcurveSelectionFailure {
     Carrier,
     Endpoint,
     Locus,
+}
+
+/// Number of admitted relations that the document admission warning names.
+const PCURVE_UNPROVED_NOTE_EXEMPLARS: usize = 8;
+
+/// One admitted pcurve relation, by the three source records that locate it.
+struct PcurveAdmission {
+    curve: u64,
+    surface: u64,
+    coedge_use: u64,
+}
+
+/// Document tally of pcurve relations that the finite witness admits.
+///
+/// The tally holds a counter and at most [`PCURVE_UNPROVED_NOTE_EXEMPLARS`]
+/// relations, so its memory does not grow with the model.
+#[derive(Default)]
+struct PcurveAdmissions {
+    count: usize,
+    exemplars: Vec<PcurveAdmission>,
+}
+
+impl PcurveAdmissions {
+    /// Counts one admitted relation and keeps it while the exemplar bound holds.
+    fn record(&mut self, curve: u64, surface: u64, coedge_use: u64) {
+        if self.exemplars.len() < PCURVE_UNPROVED_NOTE_EXEMPLARS {
+            self.exemplars.push(PcurveAdmission {
+                curve,
+                surface,
+                coedge_use,
+            });
+        }
+        self.count += 1;
+    }
+
+    /// The one document warning, or `None` when no relation is admitted.
+    fn note(&self) -> Option<LossNote> {
+        (self.count > 0).then(|| {
+            StepLossCode::PcurveGlobalFidelityUnproved
+                .note(pcurve_admission_message(self.count, &self.exemplars))
+        })
+    }
+}
+
+/// Formats the document admission warning: the count, the named relations in
+/// decode order, and the number of relations the warning does not name.
+fn pcurve_admission_message(count: usize, exemplars: &[PcurveAdmission]) -> String {
+    let named = exemplars
+        .iter()
+        .map(|admission| {
+            format!(
+                "curve #{} on surface #{} at coedge use #{}",
+                admission.curve, admission.surface, admission.coedge_use
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let unnamed = count.saturating_sub(exemplars.len());
+    let more = if unnamed == 0 {
+        String::new()
+    } else {
+        format!(", and {unnamed} more")
+    };
+    format!(
+        "a finite endpoint and locus witness admits {count} pcurve relation(s); global model-space point-set equality and direction are unproved: {named}{more}"
+    )
 }
 
 const PCURVE_ENDPOINT_GRID_DIVISIONS: usize = 64;

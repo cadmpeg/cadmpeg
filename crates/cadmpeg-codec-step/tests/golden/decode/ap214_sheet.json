@@ -380,7 +380,7 @@
           "kind": "decode_diagnostic",
           "namespace": "step"
         },
-        "message": "curve #57 has one pcurve on surface #28 admitted to coedge use #22 by a finite endpoint and locus witness; global model-space point-set equality and direction are unproved",
+        "message": "a finite endpoint and locus witness admits 1 pcurve relation(s); global model-space point-set equality and direction are unproved: curve #57 on surface #28 at coedge use #22",
         "severity": "warning"
       },
       {
