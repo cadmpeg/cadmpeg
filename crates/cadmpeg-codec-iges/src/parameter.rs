@@ -328,6 +328,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 406 Form 27 puts `NV` at index 3 and stores `NV` `(TYP, VAL)` pairs
 /// from index 4, so its groups start at token `4 + 2*NV`; `NP` must equal
 /// `2 + 2*NV`.
+/// Type 406 Form 11 puts `ND` and `NI` at indexes 3 and 4, followed by `NI`
+/// type slots, `NI` count slots, the concatenated independent values, and
+/// `ND` values at every Cartesian point, so its groups start after that
+/// complete nested span.
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
@@ -375,6 +379,7 @@ pub(crate) fn entity_primary_end(
         (402, 12) => Some(external_reference_index_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record)),
+        (406, 11) => Some(tabular_data_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
@@ -435,6 +440,70 @@ fn generic_data_primary_end(record: &ParameterRecord) -> usize {
         .checked_add(4)
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
+}
+
+fn tabular_data_primary_end(record: &ParameterRecord) -> usize {
+    let Some(dependent_count) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(independent_count) = record
+        .integer(4)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(count_start) = 5usize.checked_add(independent_count) else {
+        return record.tokens.len();
+    };
+    let Some(value_start) = count_start.checked_add(independent_count) else {
+        return record.tokens.len();
+    };
+    if value_start > record.tokens.len() {
+        return record.tokens.len();
+    }
+
+    let mut independent_value_count = 0_usize;
+    let mut point_count = 1_usize;
+    for offset in 0..independent_count {
+        let Some(count_index) = count_start.checked_add(offset) else {
+            return record.tokens.len();
+        };
+        let Some(value_count) = record
+            .integer(count_index)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            return record.tokens.len();
+        };
+        let Some(next_count) = independent_value_count.checked_add(value_count) else {
+            return record.tokens.len();
+        };
+        independent_value_count = next_count;
+        let Some(next_point_count) = point_count.checked_mul(value_count) else {
+            return record.tokens.len();
+        };
+        point_count = next_point_count;
+    }
+    let Some(dependent_value_start) = value_start.checked_add(independent_value_count) else {
+        return record.tokens.len();
+    };
+    let Some(dependent_value_count) = dependent_count.checked_mul(point_count) else {
+        return record.tokens.len();
+    };
+    let Some(end) = dependent_value_start
+        .checked_add(dependent_value_count)
+        .filter(|end| *end <= record.tokens.len())
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != i64::try_from(end.saturating_sub(2)).ok() {
+        return record.tokens.len();
+    }
+    end
 }
 
 fn label_display_primary_end(record: &ParameterRecord) -> usize {

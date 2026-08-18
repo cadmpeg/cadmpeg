@@ -300,6 +300,32 @@ fn decode_type_406_form_11_does_not_expose_a_partial_independent_prefix() {
 }
 
 #[test]
+fn decode_type_406_form_11_does_not_expose_zero_count_independent_values() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 406,
+        form: 11,
+        label: "ZCOUNT".into(),
+        status: "00000200",
+        parameters: "406,5,5,1,1,1,0,1,1,1,3;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let property = &native.arenas["properties"][0];
+
+    assert_eq!(property.fields()["declared_dependent_count"], 1);
+    assert!(property.fields()["independent_variables"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(property.fields()["dependent_values"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_definition_levels_stop_before_trailing_property_group() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {

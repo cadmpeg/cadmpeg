@@ -3545,7 +3545,9 @@ pub(crate) fn store(
                         .and_then(|value| usize::try_from(value).ok());
                     let (independent_variables, dependent_values) =
                         match (dependent_count, independent_count) {
-                            (Some(dependent_count), Some(independent_count)) => {
+                            (Some(dependent_count), Some(independent_count))
+                                if dependent_count > 0 =>
+                            {
                                 let header_end = independent_count
                                     .checked_mul(2)
                                     .and_then(|width| 5_usize.checked_add(width))
@@ -3563,6 +3565,7 @@ pub(crate) fn store(
                                                 record.integer(count_start + offset);
                                             let Some(value_count) = declared_value_count
                                                 .and_then(|value| usize::try_from(value).ok())
+                                                .filter(|value_count| *value_count > 0)
                                             else {
                                                 valid = false;
                                                 break;
