@@ -841,3 +841,11 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 **Note.** The closure removed the `1..=64` ceiling and scans until a unique vertex-header agreement in `crates/cadmpeg-codec-nx/src/native/display_jt.rs:817-911`, but a corpus JT representation has not yet verified that the packet stream has no count field or maximum. The regression fixture was constructed with sixty-five lanes to exercise the new scan. The lane-count rule remains unsupported, so this item is reopened.
 
 ## 4. Test evidence
+
+### TE-01. Golden coverage of the native arenas named by open items
+
+**Question.** Which native arenas does the golden fixture set populate, and which fields therefore have no snapshot witness?
+
+**Known.** `crates/cadmpeg-codec-nx/src/golden_tests.rs` names two hundred and thirty-three arenas and asserts that the fixture set populates at least one hundred and twenty-two of them. The golden documents serialize the complete decoded document, so a changed field of a populated arena moves a golden. The fixture set populates one hundred and twenty-seven arenas. One hundred and six arenas are populated by no fixture.
+
+**Need.** We must have a snapshot witness for the fields that carry open items. `feature_operation_tagged_references`, `feature_operation_data_block_references`, and `feature_pattern_counted_reference_lanes` received new §7.1 grammars, and no fixture populates them. `feature_body_data_block_uses`, `feature_body_segment_uses`, `feature_operation_body_members`, and `feature_operation_body_operands` carry the relations of OM-07, OM-08, and OM-40. `feature_hole_package_construction_group_lanes` and `feature_simple_hole_construction_groups` carry the relation of OM-30. `display_jt_topology_packet_sequences`, `display_jt_vertex_records_headers`, and `display_jt_coordinate_array_headers` carry the lane rule of AM-11. `saved_toggle_streams` carries AM-03 and the `fast_load_component_*` arenas carry AM-01 and AM-07. A change to any of these fields moves no golden, so the unit tests written with each change are the only evidence.
