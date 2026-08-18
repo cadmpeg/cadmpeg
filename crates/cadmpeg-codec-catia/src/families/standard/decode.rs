@@ -48,6 +48,8 @@ const SPHERE_CENTER_COINCIDENCE_TOLERANCE: f64 = 2e-3;
 const CYLINDER_PLANE_CONIC_TOLERANCE: f64 = 2e-3;
 const PERPENDICULAR_CYLINDER_CONIC_TOLERANCE: f64 = 2e-3;
 const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
+const ANALYTIC_CURVE_ENDPOINT_TOLERANCE: f64 = 2e-3;
+const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -4361,7 +4363,6 @@ pub(crate) fn standard_native_support_endpoint_pair(
     candidates: &[usize],
     required_pair: Option<[usize; 2]>,
 ) -> Option<[usize; 2]> {
-    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
     let lifted = support
@@ -6839,6 +6840,139 @@ fn standard_spline_perpendicular_cylinders(
     Some(geometry.clone())
 }
 
+fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point3> {
+    let parameter = 0.5 * (native.parameter_range[0] + native.parameter_range[1]);
+    let lifted = native
+        .carriers
+        .iter()
+        .zip(&native.pcurves)
+        .map(|(carrier, pcurve)| {
+            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
+            else {
+                return None;
+            };
+            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
+            cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = <[Point3; 2]>::try_from(lifted).ok()?;
+    (first.distance_squared(second).sqrt() <= SUPPORT_AGREEMENT_TOLERANCE).then_some(first)
+}
+
+fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Option<f64> {
+    let (center, first, second) = match geometry {
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => (
+            *center,
+            ref_direction.scale(*radius),
+            axis.cross(*ref_direction).scale(*radius),
+        ),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            *center,
+            major_direction.scale(*major_radius),
+            axis.cross(*major_direction).scale(*minor_radius),
+        ),
+        _ => return None,
+    };
+    let offset = point.vector_from(center);
+    let first_length = first.norm();
+    let second_length = second.norm();
+    if !first_length.is_finite()
+        || !second_length.is_finite()
+        || first_length <= 0.0
+        || second_length <= 0.0
+    {
+        return None;
+    }
+    let first_component = offset.dot(first) / first_length.powi(2);
+    let second_component = offset.dot(second) / second_length.powi(2);
+    let residual = first_component * first_component + second_component * second_component - 1.0;
+    (residual.is_finite() && residual.abs() <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE)
+        .then(|| second_component.atan2(first_component))
+}
+
+fn standard_analytic_curve_parameter_range(
+    geometry: &CurveGeometry,
+    start: Point3,
+    end: Point3,
+    witness: Option<Point3>,
+) -> Option<[f64; 2]> {
+    if start.distance_squared(end).sqrt() <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE {
+        return Some([0.0, std::f64::consts::TAU]);
+    }
+    let start = standard_analytic_curve_angle(geometry, start)?;
+    let short_end = unwrap_angle(standard_analytic_curve_angle(geometry, end)?, start);
+    let end = witness.map_or(Some(short_end), |witness| {
+        witness_arc_end(
+            start,
+            short_end,
+            standard_analytic_curve_angle(geometry, witness)?,
+        )
+    })?;
+    crate::nurbs::canonical_periodic_range([start, end])
+}
+
+fn standard_oriented_analytic_curve_parameter_range(
+    geometry: &mut CurveGeometry,
+    start: Point3,
+    end: Point3,
+    witness: Option<Point3>,
+) -> Option<[f64; 2]> {
+    if let Some(range) = standard_analytic_curve_parameter_range(geometry, start, end, witness) {
+        return Some(range);
+    }
+    let witness = witness?;
+    let original_axis = match geometry {
+        CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => *axis,
+        _ => return None,
+    };
+    match geometry {
+        CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
+            *axis = axis.scale(-1.0);
+        }
+        _ => unreachable!("analytic orientation was checked above"),
+    }
+    let range = standard_analytic_curve_parameter_range(geometry, start, end, Some(witness));
+    if range.is_none() {
+        match geometry {
+            CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
+                *axis = original_axis;
+            }
+            _ => unreachable!("analytic orientation was checked above"),
+        }
+    }
+    range
+}
+
+fn standard_oriented_native_support_pcurves(
+    native: &StandardEdgeSupport,
+    points: &[Point],
+    endpoint_pair: [usize; 2],
+) -> Option<[PcurveGeometry; 2]> {
+    let Some(native_pair) =
+        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))
+    else {
+        return Some(native.pcurves.clone());
+    };
+    if native_pair == endpoint_pair {
+        return Some(native.pcurves.clone());
+    }
+    Some([
+        crate::nurbs::reverse_pcurve_geometry(&native.pcurves[0], native.parameter_range)?,
+        crate::nurbs::reverse_pcurve_geometry(&native.pcurves[1], native.parameter_range)?,
+    ])
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
@@ -6851,7 +6985,7 @@ pub(crate) fn build_standard_edge_curve(
     native_support: Option<&StandardEdgeSupport>,
     limit_curve: Option<(&NurbsCurve, [f64; 2])>,
 ) -> (Option<CurveId>, Option<[f64; 2]>) {
-    let (geometry, mut param_range) = match &support.geometry {
+    let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
@@ -7010,6 +7144,39 @@ pub(crate) fn build_standard_edge_curve(
             }
         }
     };
+    if param_range.is_none()
+        && matches!(
+            geometry,
+            CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+        )
+    {
+        let endpoints = [
+            ir.model.points[points[0]].position,
+            ir.model.points[points[1]].position,
+        ];
+        param_range = standard_oriented_analytic_curve_parameter_range(
+            &mut geometry,
+            endpoints[0],
+            endpoints[1],
+            native_support.and_then(standard_native_support_witness),
+        );
+    }
+    let oriented_native_support_pcurves = if matches!(
+        &support.geometry,
+        crate::families::standard::records::StandardCurveGeometry::Bspline
+    ) {
+        match native_support {
+            Some(native) => {
+                match standard_oriented_native_support_pcurves(native, &ir.model.points, points) {
+                    Some(pcurves) => Some(pcurves),
+                    None => return (None, None),
+                }
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
     let id = CurveId(format!("catia:standard:curve#{}", support.pos));
     annotate(
         annotations,
@@ -7071,6 +7238,9 @@ pub(crate) fn build_standard_edge_curve(
         crate::families::standard::records::StandardCurveGeometry::Bspline
     ) {
         let sides = if let Some(native) = native_support {
+            let Some(pcurves) = oriented_native_support_pcurves.as_ref() else {
+                return (None, None);
+            };
             let mut surfaces = Vec::with_capacity(2);
             for side in 0..2 {
                 surfaces.push(ensure_native_edge_support_surface(
@@ -7082,7 +7252,7 @@ pub(crate) fn build_standard_edge_curve(
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
-                pcurve: Some(native.pcurves[side].clone()),
+                pcurve: Some(pcurves[side].clone()),
                 pcurve_parameter_range: Some(native.parameter_range),
             })
         } else {
@@ -7100,9 +7270,10 @@ pub(crate) fn build_standard_edge_curve(
         if sides.iter().all(|side| side.surface.is_some())
             && (native_support.is_some() || sides[0].surface != sides[1].surface)
         {
-            let curve_parameter_range = param_range
-                .or_else(|| native_support.map(|native| native.parameter_range))
-                .or_else(|| geometry_is_unknown.then_some([0.0, 1.0]));
+            let curve_parameter_range = param_range.or_else(|| {
+                geometry_is_unknown
+                    .then(|| native_support.map_or([0.0, 1.0], |native| native.parameter_range))
+            });
             if let Some(curve_parameter_range) = curve_parameter_range {
                 let procedural_id =
                     ProceduralCurveId(format!("catia:standard:intersection#{}", support.pos));
@@ -7489,7 +7660,6 @@ pub(crate) fn native_support_circle_param_range(
     start: Point3,
     end: Point3,
 ) -> Option<[f64; 2]> {
-    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
     const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
     let parameters = [

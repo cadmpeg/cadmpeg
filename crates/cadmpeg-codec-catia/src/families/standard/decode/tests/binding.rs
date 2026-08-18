@@ -1428,3 +1428,28 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
     assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     assert!(direction.v.abs() < 1e-12);
 }
+
+#[test]
+fn generated_analytic_curve_ranges_use_angular_parameters() {
+    const ANGLE_TOLERANCE: f64 = 1e-12;
+
+    let geometry = CurveGeometry::Ellipse {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 4.0,
+        minor_radius: 2.0,
+    };
+    let start = curve_point(&geometry, 0.0).expect("ellipse start");
+    let end = curve_point(&geometry, std::f64::consts::FRAC_PI_2).expect("ellipse end");
+    let witness = curve_point(&geometry, 0.75 * std::f64::consts::PI).expect("ellipse witness");
+    let short = standard_analytic_curve_parameter_range(&geometry, start, end, None)
+        .expect("short angular range");
+    let mut oriented = geometry.clone();
+    let long =
+        standard_oriented_analytic_curve_parameter_range(&mut oriented, start, end, Some(witness))
+            .expect("witnessed angular range");
+    assert!((short[0] - 0.0).abs() < ANGLE_TOLERANCE);
+    assert!((short[1] - std::f64::consts::FRAC_PI_2).abs() < ANGLE_TOLERANCE);
+    assert!((long[1] - 1.5 * std::f64::consts::PI).abs() < ANGLE_TOLERANCE);
+}

@@ -823,6 +823,19 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         Some([0, 1])
     );
     assert_eq!(
+        standard_oriented_native_support_pcurves(&native, &points, [1, 0]),
+        Some([
+            PcurveGeometry::Line {
+                origin: Point2::new(5.0, 0.0),
+                direction: Point2::new(-1.0, 0.0),
+            },
+            PcurveGeometry::Line {
+                origin: Point2::new(5.0, 0.0),
+                direction: Point2::new(-1.0, 0.0),
+            },
+        ])
+    );
+    assert_eq!(
         standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2])),
         None
     );

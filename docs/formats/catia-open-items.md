@@ -314,6 +314,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `catia.md` §6.3 "A complete consolidated edge run is" defines exact two-surface constructions from class-`0x20` pcurve jets, their supports, and their shared parameter interval. A sphere-plane standard spline with a secant plane and endpoints on the exact section is a full-circle carrier, an oblique cylinder-plane standard spline is a full-ellipse carrier, and a perpendicular-cylinder standard spline with radii equal within tolerance is the full ellipse branch selected by its endpoints; none has an edge interval or pcurve unless a branch witness or native parameter incidence exists. The separate 3D cache remains an opaque carrier.
 
+**Note.** Generated analytic circles and ellipses use canonical angular edge parameters. Their intcurve contexts map those parameters to the native support-pcurve interval and reverse the support pcurves when endpoint order requires it.
+
 **Need.** We must know the cache program to read a spline when the exact construction is unavailable and to write the cache.
 
 ### SN-12. Consolidated persistent-tag namespace
