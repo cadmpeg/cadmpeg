@@ -112,6 +112,7 @@ fn spatial_oriented_endpoints(
 }
 
 const EPS_FULL_CIRCLE_OFFSET: f64 = 1.0e-9;
+const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
 
 fn sketch_curve_offset_matches(
     source: &SketchGeometry,
@@ -148,6 +149,78 @@ fn sketch_curve_offset_matches(
             && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_radius.0 - result_radius.0 - expected).abs()
+                <= EPS_FULL_CIRCLE_OFFSET * scale;
+    }
+
+    if let (
+        SketchGeometry::Circle {
+            center: source_center,
+            radius: source_radius,
+        },
+        SketchGeometry::Arc {
+            center: result_center,
+            radius: result_radius,
+            start_angle: result_start,
+            end_angle: result_end,
+        },
+    ) = (source, result)
+    {
+        let scale = 1.0
+            + source_center
+                .u
+                .abs()
+                .max(source_center.v.abs())
+                .max(result_center.u.abs())
+                .max(result_center.v.abs())
+                .max(source_radius.0.abs())
+                .max(result_radius.0.abs())
+                .max(expected.abs());
+        let result_sweep = result_end.0 - result_start.0;
+        return expected.is_finite()
+            && source_radius.0.is_finite()
+            && result_radius.0.is_finite()
+            && source_radius.0 > 0.0
+            && result_radius.0 > 0.0
+            && result_sweep.abs() > EPS_OFFSET_SWEEP
+            && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
+            && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
+            && (source_radius.0 - result_radius.0 - expected).abs()
+                <= EPS_FULL_CIRCLE_OFFSET * scale;
+    }
+
+    if let (
+        SketchGeometry::Arc {
+            center: source_center,
+            radius: source_radius,
+            start_angle: source_start,
+            end_angle: source_end,
+        },
+        SketchGeometry::Circle {
+            center: result_center,
+            radius: result_radius,
+        },
+    ) = (source, result)
+    {
+        let scale = 1.0
+            + source_center
+                .u
+                .abs()
+                .max(source_center.v.abs())
+                .max(result_center.u.abs())
+                .max(result_center.v.abs())
+                .max(source_radius.0.abs())
+                .max(result_radius.0.abs())
+                .max(expected.abs());
+        let source_sweep = source_end.0 - source_start.0;
+        return expected.is_finite()
+            && source_radius.0.is_finite()
+            && result_radius.0.is_finite()
+            && source_radius.0 > 0.0
+            && result_radius.0 > 0.0
+            && source_sweep.abs() > EPS_OFFSET_SWEEP
+            && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
+            && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
+            && (source_sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
                 <= EPS_FULL_CIRCLE_OFFSET * scale;
     }
 
@@ -197,8 +270,8 @@ fn sketch_curve_offset_matches(
                 .any(|angle| angle_in_sweep(angle, source_start.0, source_end.0));
         return source_radius.0 > 0.0
             && result_radius.0 > 0.0
-            && source_sweep.abs() > 1.0e-12
-            && result_sweep.abs() > 1.0e-12
+            && source_sweep.abs() > EPS_OFFSET_SWEEP
+            && result_sweep.abs() > EPS_OFFSET_SWEEP
             && source_sweep.signum() == result_sweep.signum()
             && angular_overlap
             && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale

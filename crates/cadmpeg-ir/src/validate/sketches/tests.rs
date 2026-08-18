@@ -73,6 +73,45 @@ fn full_concentric_circles_validate_as_offsets() {
 }
 
 #[test]
+fn mixed_full_circle_arc_validate_as_offsets() {
+    let circle = SketchGeometry::Circle {
+        center: Point2::new(3.0, -4.0),
+        radius: Length(5.0),
+    };
+    let arc = SketchGeometry::Arc {
+        center: Point2::new(3.0, -4.0),
+        radius: Length(3.5),
+        start_angle: Angle(0.1),
+        end_angle: Angle(1.4),
+    };
+    let displaced = SketchGeometry::Arc {
+        center: Point2::new(3.1, -4.0),
+        radius: Length(3.5),
+        start_angle: Angle(0.1),
+        end_angle: Angle(1.4),
+    };
+
+    assert!(sketch_curve_offset_matches(
+        &circle,
+        &arc,
+        1.5,
+        TEST_LINEAR_TOLERANCE,
+    ));
+    assert!(sketch_curve_offset_matches(
+        &arc,
+        &circle,
+        -1.5,
+        TEST_LINEAR_TOLERANCE,
+    ));
+    assert!(!sketch_curve_offset_matches(
+        &circle,
+        &displaced,
+        1.5,
+        TEST_LINEAR_TOLERANCE,
+    ));
+}
+
+#[test]
 fn malformed_sketch_geometry_and_constraints_are_rejected() {
     use crate::features::Length;
     use crate::math::{Point2, Point3, Vector3};
