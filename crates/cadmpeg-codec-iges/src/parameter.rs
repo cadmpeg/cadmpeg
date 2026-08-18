@@ -325,6 +325,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// start at token `3 + 3*ND`.
 /// Type 406 Form 30 fixes `NP = 14`, puts `K` at index 13, and appends three
 /// supplemental-note fields per `K`, so its groups start at token `14 + 3*K`.
+/// Type 406 Form 27 puts `NV` at index 3 and stores `NV` `(TYP, VAL)` pairs
+/// from index 4, so its groups start at token `4 + 2*NV`; `NP` must equal
+/// `2 + 2*NV`.
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
@@ -374,6 +377,7 @@ pub(crate) fn entity_primary_end(
         (402, 18) => Some(flow_associativity_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
+        (406, 27) => Some(generic_data_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
@@ -403,6 +407,33 @@ fn counted_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(2))
+        .unwrap_or(record.tokens.len())
+}
+
+fn generic_data_primary_end(record: &ParameterRecord) -> usize {
+    let Some(value_count) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(pair_span) = value_count.checked_mul(2) else {
+        return record.tokens.len();
+    };
+    let Some(expected_np) = pair_span.checked_add(2) else {
+        return record.tokens.len();
+    };
+    if record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        != Some(expected_np)
+    {
+        return record.tokens.len();
+    }
+    pair_span
+        .checked_add(4)
+        .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
 
