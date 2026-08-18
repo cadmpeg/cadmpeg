@@ -156,6 +156,16 @@ fn decode_with_occurrence_limits(
         charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
         entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)?
     };
+    let structure_decoded = projection
+        .decoded
+        .iter()
+        .filter(|sequence| {
+            directory_by_sequence
+                .get(sequence)
+                .is_some_and(|entry| matches!(entry.entity_type, 308 | 320 | 408 | 420))
+        })
+        .copied()
+        .collect::<BTreeSet<_>>();
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let product_occurrence_expansion = native::store(
         &mut ir,
@@ -164,6 +174,7 @@ fn decode_with_occurrence_limits(
         &parameters,
         &mut references,
         &global,
+        (!options.container_only).then_some(&structure_decoded),
         native::ProductOccurrenceLimits::new(
             product_occurrence_output_limit,
             product_occurrence_depth_limit,
@@ -211,9 +222,17 @@ fn decode_with_occurrence_limits(
             ),
         );
     }
-    if product_occurrence_expansion.root_inference_blocked {
+    if product_occurrence_expansion
+        .diagnostics
+        .root_inference_blocked()
+    {
         losses.push(IgesLossCode::OccurrenceRootInferenceBlocked.note(
             "IGES product occurrence root inference was suppressed because a definition member list is malformed",
+        ));
+    }
+    if product_occurrence_expansion.diagnostics.invalid_structure() {
+        losses.push(IgesLossCode::OccurrenceInvalidStructure.note(
+            "IGES product occurrence expansion omitted a definition or instance rejected by structure validation",
         ));
     }
     if !options.container_only {

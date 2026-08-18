@@ -33,6 +33,8 @@ pub enum IgesLossCode {
     OccurrenceExpansionDepthTruncated,
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked,
+    /// Product-occurrence expansion omitted a definition or instance rejected by structure validation.
+    OccurrenceInvalidStructure,
     /// An envelope-admitted entity was retained without a neutral projection.
     EntityRetainedUnprojected,
     /// An entity type/form is outside the Fixed ASCII mechanical/document envelope.
@@ -62,6 +64,7 @@ impl IgesLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::OccurrenceRootInferenceBlocked,
+        Self::OccurrenceInvalidStructure,
         Self::EntityRetainedUnprojected,
         Self::EntityOutsideEnvelope,
         Self::EntityNotProjected,
@@ -81,6 +84,7 @@ impl IgesLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
+            Self::OccurrenceInvalidStructure => "occurrence.invalid-structure",
             Self::EntityRetainedUnprojected => "entity.retained-unprojected",
             Self::EntityOutsideEnvelope => "entity.outside-envelope",
             Self::EntityNotProjected => "entity.not-projected",
@@ -103,6 +107,7 @@ impl IgesLossCode {
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
+            | Self::OccurrenceInvalidStructure
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
@@ -119,7 +124,8 @@ impl IgesLossCode {
         match self {
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked => LossTaxonomy::DecodeDiagnostic,
+            | Self::OccurrenceRootInferenceBlocked
+            | Self::OccurrenceInvalidStructure => LossTaxonomy::DecodeDiagnostic,
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
@@ -173,6 +179,7 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
+                "occurrence.invalid-structure",
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",

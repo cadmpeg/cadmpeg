@@ -680,6 +680,77 @@ pub(crate) fn malformed_occurrence_definition_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn invalid_top_level_subfigure_definition_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "DEFN".into(),
+            status: "00000000",
+            parameters: "308,0,3HDEF,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "INSTANCE".into(),
+            status: "00000000",
+            parameters: "408,1,0,0,0,1;".into(),
+        },
+    ])
+}
+
+pub(crate) fn invalid_top_level_subfigure_instance_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "DEFN".into(),
+            status: "00000200",
+            parameters: "308,0,3HDEF,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "INSTANCE".into(),
+            status: "00000000",
+            parameters: "408,1,0,0,0,-1;".into(),
+        },
+    ])
+}
+
+pub(crate) fn mixed_top_level_subfigure_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "VALID".into(),
+            status: "00000200",
+            parameters: "308,0,3HDEF,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "VALIDINS".into(),
+            status: "00000000",
+            parameters: "408,1,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "BADDEF".into(),
+            status: "00000000",
+            parameters: "308,0,3HDEF,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "BADINS".into(),
+            status: "00000000",
+            parameters: "408,5,0,0,0,1;".into(),
+        },
+    ])
+}
+
 pub(crate) fn invalid_subfigure_depth_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

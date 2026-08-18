@@ -1348,6 +1348,62 @@ fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
 }
 
 #[test]
+fn decode_omits_occurrences_for_invalid_top_level_subfigure_structure() {
+    for bytes in [
+        invalid_top_level_subfigure_definition_file(),
+        invalid_top_level_subfigure_instance_file(),
+    ] {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+
+        assert_eq!(native.arenas["subfigure_definitions"].len(), 1);
+        assert_eq!(native.arenas["subfigure_instances"].len(), 1);
+        assert!(native.arenas["product_occurrences"].is_empty());
+        let expansion = &native.arenas["product_occurrence_expansion"][0];
+        assert_eq!(expansion.fields()["emitted"], 0);
+        assert_eq!(expansion.fields()["truncated"], true);
+        assert_eq!(expansion.fields()["issues"][0], "invalid_structure");
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| { loss.code == IgesLossCode::OccurrenceInvalidStructure.kind() }));
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    }
+}
+
+#[test]
+fn decode_keeps_valid_occurrences_beside_invalid_top_level_subfigures() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(mixed_top_level_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["product_occurrences"].len(), 1);
+    assert_eq!(
+        native.arenas["product_occurrences"][0].id(),
+        "iges:product:occurrence#3"
+    );
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 1);
+    assert_eq!(expansion.fields()["issues"][0], "invalid_structure");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::OccurrenceInvalidStructure.kind() }));
+}
+
+#[test]
 fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
     let result = IgesCodec
         .decode(

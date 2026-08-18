@@ -16,7 +16,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
@@ -795,13 +795,37 @@ enum ProductOccurrenceIssue {
     OutputLimit,
     DepthLimit,
     MalformedDefinition,
+    InvalidStructure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProductOccurrenceDiagnostics(u8);
+
+impl ProductOccurrenceDiagnostics {
+    const ROOT_INFERENCE_BLOCKED: u8 = 1 << 0;
+    const INVALID_STRUCTURE: u8 = 1 << 1;
+
+    const fn from_flags(root_inference_blocked: bool, invalid_structure: bool) -> Self {
+        Self(
+            ((root_inference_blocked as u8) * Self::ROOT_INFERENCE_BLOCKED)
+                | ((invalid_structure as u8) * Self::INVALID_STRUCTURE),
+        )
+    }
+
+    pub(crate) const fn root_inference_blocked(self) -> bool {
+        self.0 & Self::ROOT_INFERENCE_BLOCKED != 0
+    }
+
+    pub(crate) const fn invalid_structure(self) -> bool {
+        self.0 & Self::INVALID_STRUCTURE != 0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) output_truncated: bool,
     pub(crate) depth_truncated: bool,
-    pub(crate) root_inference_blocked: bool,
+    pub(crate) diagnostics: ProductOccurrenceDiagnostics,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1179,6 +1203,7 @@ struct OccurrenceExpansion<'a, 'ctx> {
     records: &'a BTreeMap<u32, &'a ParameterRecord>,
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
     neutral_links: &'a BTreeMap<u32, Vec<String>>,
+    valid_structure: Option<&'a BTreeSet<u32>>,
     length_factor: f64,
     precision: RealPrecision,
     output_limit: usize,
@@ -1194,6 +1219,7 @@ impl OccurrenceExpansion<'_, '_> {
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
         depth_truncated: &mut bool,
+        invalid_structure: &mut bool,
     ) -> Result<bool, CodecError> {
         let _depth = self
             .ctx
@@ -1207,6 +1233,13 @@ impl OccurrenceExpansion<'_, '_> {
             return Ok(false);
         }
         if path.contains(&instance_sequence) {
+            return Ok(false);
+        }
+        if self
+            .valid_structure
+            .is_some_and(|valid| !valid.contains(&instance_sequence))
+        {
+            *invalid_structure = true;
             return Ok(false);
         }
         let (Some(instance), Some(record)) = (
@@ -1226,6 +1259,13 @@ impl OccurrenceExpansion<'_, '_> {
         ) else {
             return Ok(false);
         };
+        if self
+            .valid_structure
+            .is_some_and(|valid| !valid.contains(&definition_sequence))
+        {
+            *invalid_structure = true;
+            return Ok(false);
+        }
         let Some(definition) = self.definitions.get(&definition_sequence) else {
             return Ok(false);
         };
@@ -1263,7 +1303,14 @@ impl OccurrenceExpansion<'_, '_> {
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if self.expand(*member, world, path, occurrences, depth_truncated)? {
+                if self.expand(
+                    *member,
+                    world,
+                    path,
+                    occurrences,
+                    depth_truncated,
+                    invalid_structure,
+                )? {
                     path.pop();
                     return Ok(true);
                 }
@@ -1312,6 +1359,7 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
+    valid_structure: Option<&BTreeSet<u32>>,
     limits: ProductOccurrenceLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ProductOccurrenceExpansion, CodecError> {
@@ -4329,8 +4377,9 @@ pub(crate) fn store(
         })
         .collect::<BTreeMap<_, _>>();
     let contained_instances = occurrence_definitions
-        .values()
-        .flat_map(|definition| definition.members.iter().copied())
+        .iter()
+        .filter(|(sequence, _)| valid_structure.is_none_or(|valid| valid.contains(sequence)))
+        .flat_map(|(_, definition)| definition.members.iter().copied())
         .filter(|sequence| {
             entries
                 .get(sequence)
@@ -4385,6 +4434,7 @@ pub(crate) fn store(
     let mut product_occurrences = Vec::new();
     let mut output_truncated = false;
     let mut depth_truncated = false;
+    let mut invalid_structure = false;
     if let Some(length_factor) = global
         .has_supported_length_factor()
         .then(|| global.length_factor_mm())
@@ -4394,6 +4444,7 @@ pub(crate) fn store(
             records: &by_directory,
             definitions: &occurrence_definitions,
             neutral_links: &occurrence_neutral_links,
+            valid_structure,
             length_factor,
             precision: global.real_precision(),
             output_limit: limits.output,
@@ -4412,6 +4463,7 @@ pub(crate) fn store(
                     &mut Vec::new(),
                     &mut product_occurrences,
                     &mut depth_truncated,
+                    &mut invalid_structure,
                 )? {
                     output_truncated = true;
                     break;
@@ -4423,6 +4475,7 @@ pub(crate) fn store(
         output_truncated.then_some(ProductOccurrenceIssue::OutputLimit),
         depth_truncated.then_some(ProductOccurrenceIssue::DepthLimit),
         root_inference_blocked.then_some(ProductOccurrenceIssue::MalformedDefinition),
+        invalid_structure.then_some(ProductOccurrenceIssue::InvalidStructure),
     ]
     .into_iter()
     .flatten()
@@ -4496,7 +4549,10 @@ pub(crate) fn store(
     Ok(ProductOccurrenceExpansion {
         output_truncated,
         depth_truncated,
-        root_inference_blocked,
+        diagnostics: ProductOccurrenceDiagnostics::from_flags(
+            root_inference_blocked,
+            invalid_structure,
+        ),
     })
 }
 
