@@ -9681,6 +9681,7 @@ mod tests {
     mod disc18_disc1a_disc20_disc16_disc14;
     mod disc1a_disc14_disc12_disc10_disc0e_disc0c_disc04;
     mod disc1a_disc18_disc14_disc12;
+    mod disc1a_disc18_disc16_disc12_disc10_disc04_auxiliary;
     mod disc1a_linked;
     mod disc1b_disc1d_disc19_disc15_disc13_disc11_disc0f;
     mod disc1c_disc14_linked;
