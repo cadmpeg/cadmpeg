@@ -19,6 +19,7 @@ mod parameters;
 mod prelude;
 mod replace_face;
 mod sheet_metal;
+mod split;
 mod surface;
 mod timeline;
 mod treatments;

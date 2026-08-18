@@ -6560,7 +6560,10 @@ fn project_split_face(
     let reference_tail_length =
         11_u64.checked_mul(u64::try_from(reference_count.checked_sub(1)?).ok()?)?;
     let frame_base = scope.frame_length.checked_sub(reference_tail_length)?;
-    let compact = scope.class_tag == "418" && scope.paired_class_tag == "266";
+    let compact = matches!(
+        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+        ("418", "266") | ("277", "258")
+    );
     if !(matches!(frame_base, 290 | 291) || compact && frame_base == 286) {
         return None;
     }
