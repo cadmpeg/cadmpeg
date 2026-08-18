@@ -108,28 +108,6 @@ carrier.
 
 ## 3. Persistent topology identity
 
-### PT-03. Element-map carrier and owner selection
-
-**Question.** Which direct `ElementMap2` and property carrier belong to one persistent element
-map when a shape XML contains more than one candidate?
-
-**Known.** FreeCAD's exact-shape writer emits direct `Part` and `ElementMap2` carriers under the
-owning property. The direct `Part` carrier is the only B-rep side-entry admission point; its
-file attribute belongs to that property. The decoder retains the property XML and map bytes but
-uses `element_map.rs:86-141` and `unique_descendant` at `element_map.rs:213-227` to find map
-carriers anywhere below the property.
-
-**Need.** Establish direct-root framing and exact property ownership for `ElementMap2`, including
-its compatibility-marker sequence and inline or side-entry discriminator. Reject or retain nested
-and duplicate candidates without a source-order choice.
-
-**Conflict.** A nested `ElementMap2` passes the descendant lookup even though the producer writes
-the direct child. A nested lookalike can therefore become the selected map carrier without an
-explicit framing result.
-
-**Note.** Reopened. The closure established source cardinality and duplicate rejection but did not
-enforce the producer's direct-root framing or nested-lookalike boundary.
-
 ### PT-04. Source topology index provenance
 
 **Question.** What OCCT identity and traversal rules determine whether repeated placed roots or

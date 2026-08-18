@@ -178,11 +178,15 @@ carrier has no side entry. An exact-shape property has at most one `Part` carrie
 `Part` carriers are malformed. A missing direct `Part` carrier, or a file attribute on another
 descendant, retains the exact property without selecting a side entry. An archive extension, entry
 role, or payload signature does not admit a second B-rep payload.
-When element-map metadata is present, one property owns one compatibility `ElementMap` marker and
-one `ElementMap2` carrier. An empty map is represented by `ElementMap` alone; a non-empty map uses
-the compatibility marker followed by `ElementMap2`, inline or in one named side entry. Multiple
-exact-shape properties emit independent `Part` and element-map carriers and independent side-entry
-requests; no carrier is shared across properties.
+When element-map metadata is present, one property owns one direct compatibility `ElementMap`
+marker and one direct `ElementMap2` carrier. An empty map is represented by direct `ElementMap`
+alone. A non-empty map uses `ElementMap new="1"` followed immediately by `ElementMap2`; a non-empty
+`ElementMap2 file` names that property's side entry, otherwise its inline bytes are the map payload.
+The marker and map carrier are direct sibling values after the `Part` carrier; nested map carriers
+are not admitted. Duplicate direct map carriers, a map without its compatibility marker, and a new
+marker without its direct successor are malformed. Multiple exact-shape properties emit independent
+`Part` and element-map carriers and independent side-entry requests; no carrier is shared across
+properties.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
 For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and

@@ -94,7 +94,7 @@ pub(crate) fn parse(
                 property.id
             ))
         })?;
-        let Some(part) = unique_descendant(property_xml.root_element(), "Part")? else {
+        let Some((part, map_node)) = direct_element_map(property_xml.root_element())? else {
             continue;
         };
         let version = part.attribute("ElementMap").unwrap_or("").to_owned();
@@ -102,9 +102,6 @@ pub(crate) fn parse(
             .attribute("HasherIndex")
             .map(|value| parse_usize(value, "HasherIndex"))
             .transpose()?;
-        let Some(map_node) = unique_descendant(property_xml.root_element(), "ElementMap2")? else {
-            continue;
-        };
         let declared_count = map_node
             .attribute("count")
             .map(|count| parse_usize(count, "ElementMap count"))
@@ -210,20 +207,84 @@ fn owning_property(
     Ok(Some(owner.id.clone()))
 }
 
-fn unique_descendant<'a, 'input>(
+fn direct_element_map<'a, 'input>(
     root: roxmltree::Node<'a, 'input>,
-    tag: &str,
-) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
-    let mut matches = root.descendants().filter(|node| node.has_tag_name(tag));
-    let Some(first) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
+) -> Result<Option<(roxmltree::Node<'a, 'input>, roxmltree::Node<'a, 'input>)>, CodecError> {
+    let children = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let part_indices = children
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| node.has_tag_name("Part").then_some(index))
+        .collect::<Vec<_>>();
+    if part_indices.len() > 1 {
         return Err(CodecError::Malformed(
-            "shape property has multiple carrier elements".into(),
+            "shape property has multiple direct Part carriers".into(),
         ));
     }
-    Ok(Some(first))
+    let Some(part_index) = part_indices.first().copied() else {
+        return Ok(None);
+    };
+    let marker_indices = children
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| node.has_tag_name("ElementMap").then_some(index))
+        .collect::<Vec<_>>();
+    if marker_indices.len() > 1 {
+        return Err(CodecError::Malformed(
+            "shape property has multiple direct ElementMap markers".into(),
+        ));
+    }
+    let map_indices = children
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| node.has_tag_name("ElementMap2").then_some(index))
+        .collect::<Vec<_>>();
+    if map_indices.len() > 1 {
+        return Err(CodecError::Malformed(
+            "shape property has multiple direct ElementMap2 carriers".into(),
+        ));
+    }
+    let Some(marker_index) = marker_indices.first().copied() else {
+        if !map_indices.is_empty() {
+            return Err(CodecError::Malformed(
+                "ElementMap2 has no direct ElementMap marker".into(),
+            ));
+        }
+        return Ok(None);
+    };
+    if marker_index <= part_index {
+        return Err(CodecError::Malformed(
+            "ElementMap marker precedes the direct Part carrier".into(),
+        ));
+    }
+    let marker = children[marker_index];
+    let is_new = marker
+        .attribute("new")
+        .map(parse_bool)
+        .transpose()?
+        .unwrap_or(false);
+    let Some(map_index) = map_indices.first().copied() else {
+        if is_new {
+            return Err(CodecError::Malformed(
+                "new ElementMap marker has no direct ElementMap2 successor".into(),
+            ));
+        }
+        return Ok(None);
+    };
+    if !is_new {
+        return Err(CodecError::Malformed(
+            "ElementMap2 requires a new ElementMap marker".into(),
+        ));
+    }
+    if map_index != marker_index + 1 {
+        return Err(CodecError::Malformed(
+            "ElementMap2 is not the direct successor of ElementMap".into(),
+        ));
+    }
+    Ok(Some((children[part_index], children[map_index])))
 }
 
 fn string_hasher_successor<'a, 'input>(
@@ -999,6 +1060,30 @@ Co 1001000 +2 0 *
         );
         assert!(matches!(
             parse(b"<Document/>", &[duplicate_map], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_nested_element_map_successor() {
+        let nested_map = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper><ElementMap2/></Wrapper></Property>"#,
+        );
+        assert!(matches!(
+            parse(b"<Document/>", &[nested_map], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_element_map_without_compatibility_marker() {
+        let unmarked_map = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap2/></Property>"#,
+        );
+        assert!(matches!(
+            parse(b"<Document/>", &[unmarked_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
