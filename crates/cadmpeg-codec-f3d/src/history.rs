@@ -26,6 +26,10 @@ const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 /// Relative tolerance for matching independently decoded millimetre point carriers.
 const WORK_POINT_POSITION_TOLERANCE: f64 = 1.0e-9;
+/// Relative tolerance for admitting an oriented planar Hole support face.
+const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1.0e-9;
+/// Relative tolerance for the Hole point lying on its support plane.
+const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if history.states.is_empty()
@@ -6271,7 +6275,164 @@ pub(crate) fn bind_hole_selection_history(
         selection.historical_face_candidates.clear();
         selection.historical_face_candidates =
             entity_selection_face_candidates(selection.primary_identity, histories);
+        if selection.historical_face_candidates.is_empty() {
+            if let Some(candidate) = hole_transition_face_candidate(
+                selection.primary_identity,
+                selection.secondary_identity,
+                construction.position,
+                construction.direction,
+                scope.history_state_id,
+                scope.previous_history_state_id,
+                histories,
+            ) {
+                selection.historical_face_candidates.push(candidate);
+            }
+        }
     }
+}
+
+/// Resolve the support face of an edge-backed Hole selection from its exact
+/// feature transition. Fusion can serialize the support selector as an edge
+/// even when the operation changes a planar support face: the transition then
+/// inserts the drill cylinder and updates the support boundary. The admission
+/// requires one coaxial inserted cylinder and one updated preceding plane whose
+/// oriented normal agrees with the Hole direction. Generic edge-to-face
+/// selection remains intentionally ambiguous outside this Hole-specific proof.
+fn hole_transition_face_candidate(
+    primary_identity: u64,
+    secondary_identity: Option<u64>,
+    position: [f64; 3],
+    direction: [f64; 3],
+    state_id: Option<i64>,
+    previous_state_id: Option<i64>,
+    histories: &[AsmHistory],
+) -> Option<crate::records::DesignEntitySelectionFaceCandidate> {
+    use crate::records::{AsmHistoricalEntityKind, DesignEntitySelectionFaceCandidate};
+
+    if secondary_identity.is_some() {
+        return None;
+    }
+    let (state_id, previous_state_id) = (state_id?, previous_state_id?);
+    let (kind, entity_ref, identity_states) =
+        historical_selection_identity_kind(histories, primary_identity)?;
+    if kind != AsmHistoricalEntityKind::Edge || !identity_states.contains(&previous_state_id) {
+        return None;
+    }
+    let (history, result_state, preceding_state) =
+        unique_history_state_pair(histories, state_id, previous_state_id)?;
+    let transition = result_state.transition.as_ref()?;
+    if transition.previous_state_id != Some(previous_state_id) {
+        return None;
+    }
+    let result_topology = result_state.topology.as_ref()?;
+    let preceding_topology = preceding_state.topology.as_ref()?;
+    let point = cadmpeg_ir::math::Point3::new(position[0], position[1], position[2]);
+    if position.iter().any(|coordinate| !coordinate.is_finite()) {
+        return None;
+    }
+    let direction = cadmpeg_ir::math::Vector3::new(direction[0], direction[1], direction[2]);
+    let direction = direction.unit()?;
+
+    let mut cylinder_surfaces = HashSet::new();
+    let mut cylinders = Vec::new();
+    for face in &transition.topology.faces.inserted {
+        let mut bindings = result_topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == *face);
+        let Some(binding) = bindings.next() else {
+            continue;
+        };
+        if bindings.next().is_some() || !cylinder_surfaces.insert(binding.carrier) {
+            continue;
+        }
+        let mut carriers = result_topology
+            .surface_cylinders
+            .iter()
+            .filter(|surface| surface.surface == binding.carrier);
+        let Some(cylinder) = carriers.next() else {
+            continue;
+        };
+        if carriers.next().is_some() {
+            return None;
+        }
+        cylinders.push(cylinder);
+    }
+    if cylinders.is_empty()
+        || cylinders.iter().any(|cylinder| {
+            let axis = cylinder.axis.unit();
+            axis.is_none_or(|axis| !same_axis_line((cylinder.origin, axis), (point, direction)))
+        })
+    {
+        return None;
+    }
+
+    let preceding_faces = preceding_topology
+        .faces
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    let scale = [
+        point.x.abs(),
+        point.y.abs(),
+        point.z.abs(),
+        preceding_topology
+            .surface_planes
+            .iter()
+            .flat_map(|plane| {
+                [
+                    plane.origin.x.abs(),
+                    plane.origin.y.abs(),
+                    plane.origin.z.abs(),
+                ]
+            })
+            .fold(0.0, f64::max),
+    ]
+    .into_iter()
+    .fold(1.0, f64::max);
+    let mut candidates = transition
+        .topology
+        .faces
+        .updated
+        .iter()
+        .copied()
+        .filter(|face| preceding_faces.contains(face))
+        .filter_map(|face| {
+            let mut bindings = preceding_topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.entity == face);
+            let binding = bindings.next()?;
+            if bindings.next().is_some() {
+                return None;
+            }
+            let mut planes = preceding_topology
+                .surface_planes
+                .iter()
+                .filter(|plane| plane.surface == binding.carrier);
+            let plane = planes.next()?;
+            if planes.next().is_some() {
+                return None;
+            }
+            let normal = plane.normal.unit()?;
+            let point_distance = point.vector_from(plane.origin).dot(normal).abs();
+            ((normal.dot(direction) - 1.0).abs() <= HOLE_SUPPORT_NORMAL_TOLERANCE
+                && point_distance <= HOLE_SUPPORT_POINT_TOLERANCE * scale)
+                .then_some(face)
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    let [face_slot] = candidates.as_slice() else {
+        return None;
+    };
+    Some(DesignEntitySelectionFaceCandidate {
+        history_id: history.id.clone(),
+        historical_entity_kind: kind,
+        historical_entity_ref: entity_ref,
+        historical_state_ids: vec![previous_state_id],
+        face_slot: *face_slot,
+    })
 }
 
 /// Resolve persistent circular-pattern axis identities in the feature input topology.

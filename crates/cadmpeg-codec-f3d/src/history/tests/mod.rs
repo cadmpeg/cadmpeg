@@ -2,6 +2,7 @@
 //! History-module unit tests.
 
 mod draft;
+mod hole;
 mod mirror;
 mod recipes;
 mod selections;
