@@ -745,7 +745,31 @@ The ordered reference table is followed by the common scope tail: current histor
 
 The shifted Extrude prologue stores u32 `1` at primary-header offset 20 and three zero bytes at offsets 24 through 26. It stores the result-operation u32 at offset 27, the travel direction at offset 31, the face-extend option at offset 35, the direction-reversal Boolean at offset 39, the geometry-kind Boolean at offset 40, and the start-support byte at offset 41. A one-sided or symmetric form uses one of three extent lanes. A scope reference-count field at primary-header offset 252, 262, or 263 selects the compact lane, whose first-side extent is at offset 106 and second-side extent is at offset 110. An offset-profile form with its reference-count field at offset 262 instead uses the widened extent lane at offsets 116 and 130. A reference-count field at offset 272 selects the same widened lane. A reference-count field at offset 283 uses the same widened extent lane for one-sided and symmetric forms. A long-reference form with its reference-count field at offset 692 uses the compact extent lane at offsets 106 and 110. A symmetric through-all form with its reference-count field at offset 294 stores the first-side extent at offset 116 and the second-side extent at offset 129. Values in the unselected lanes have no extent semantics. A to-entity first side stores its selected-entity payload after the first-side value and stores the second-side extent four bytes before the scope reference-count field in either lane. The ordinary two-sided distance form stores its first-side and second-side extent values at offsets 155 and 178. Its marked parameter references begin at offsets 139, 159, and 182; five zero bytes separate the first reference from the first-side extent, and eight zero bytes separate the second reference from the second-side extent. The offset-283 two-sided form stores the side extents at offsets 166 and 181, with marked parameter references at offsets 139 and 170, a trailing marked entity reference at offset 185, and eight zero bytes at offsets 196 through 203. Every field uses the same enum as the current prologue. Because the two u32 after the operation are the direction and the face-extend option, neither of them selects an extent form; the later per-side values select it, and the stored parameter set follows those.
 
-The shifted reference-aware two-sided face-target `Extrude` form uses class-keyed frame lengths. Its primary header anchors the frame, and the paired header begins at the class-specific frame offset. The form has five scope-class generations:
+The class-keyed `397 / 262` shifted form is a symmetric-distance variant with a 473-byte primary frame. Its extent pair is `[1, 1]`; this pair is admitted only for this class and frame because the common symmetric tuple is `[1, 0]`. The primary frame is:
+
+| Relative offset | Type | Discriminant or invariant |
+| ---: | --- | --- |
+| `+20` | u32 | `1` |
+| `+24..+26` | bytes[3] | zero |
+| `+27` | u32 | result operation: `1 = join`, `2 = cut`, `3 = intersect`, `4 = new body` |
+| `+31` | u32 | travel direction `3` (symmetric) |
+| `+35` | u32 | face-extend value `2` |
+| `+39` | u8 | direction reversal: `0` or `1` |
+| `+40` | u8 | geometry kind: `0` or `1` |
+| `+41` | u8 | start support: `0 = profile plane`, `1 = offset profile plane`, `2 = selected face` |
+| `+42..+44` | bytes[3] | zero |
+| `+45..+68` | f64[3] | finite unit profile normal |
+| `+69..+125` | bytes[57] | seven nullable slots: present, present, present, present, absent, present, absent; a present slot is `01 + u32 record index + six zero bytes` |
+| `+126` | u32 | first-side extent `1` (distance) |
+| `+130..+138` | bytes[9] | zero |
+| `+139` | u32 | second-side extent `1` (distance) |
+| `+203..+278` | bytes[76] | LP-UTF16 GUID: 36 code units |
+| `+279..+281` | bytes[3] | zero |
+| `+282` | u32 | ordered reference count `8` |
+
+The paired `262` header begins at `+473`. The bytes between the extent pair and the GUID are the class-local parameter/reference envelope; the ordered reference table follows the count. The `397 / 262` frame length, reference-count offset, ordered count, class pair, and extent-lane offsets are admission keys.
+
+The shifted reference-aware two-sided face-target `Extrude` form uses class-keyed frame lengths. Its primary header anchors the frame, and the paired header begins at the class-specific frame offset. The form has six scope-class generations:
 
 | Scope primary / paired class | Frame length | Reference-count offset | Ordered reference count |
 | --- | ---: | ---: | ---: |
@@ -753,9 +777,10 @@ The shifted reference-aware two-sided face-target `Extrude` form uses class-keye
 | `275 / 262` | 538 | `+292` | 13 |
 | `361 / 262` | 538 | `+292` | 13 |
 | `349 / 266` | 538 | `+292` | 13 |
+| `397 / 262` | 538 | `+292` | 13 |
 | `323 / 263` | 516 | `+292` | 11 |
 
-The 538-byte class pairs use these owner and parameter classes:
+The class-397 row uses this 538-byte grammar only when its first-side parameter discriminator at `+135` is `1`; the class-local `+135 = 2` envelope is not this face-target form. The 538-byte class pairs use these owner and parameter classes:
 
 | Scope primary / paired class | Owner class / length | Parameter class |
 | --- | --- | --- |
@@ -763,6 +788,7 @@ The 538-byte class pairs use these owner and parameter classes:
 | `275 / 262` | `312 / 103` | `342` |
 | `361 / 262` | `279 / 103` | `283` |
 | `349 / 266` | `282 / 103` | `323` |
+| `397 / 262` | `297 / 103` | `281` |
 
 The fixed frame is:
 

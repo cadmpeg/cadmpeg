@@ -118,6 +118,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
+pub(crate) mod legacy_class_397;
 pub(crate) mod legacy_class_415;
 
 /// Decode every canonical sketch or construction-operation scope, including
@@ -7930,6 +7931,17 @@ fn exact_extrude_prologue(
         )
     })
     .or_else(|| {
+        legacy_class_397::exact_symmetric_extrude_prologue(
+            bytes,
+            start,
+            paired_at,
+            class_tag,
+            paired_class_tag,
+            reference_count_at,
+            reference_members,
+        )
+    })
+    .or_else(|| {
         exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
     })
     .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at))
@@ -8449,7 +8461,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
         trailing_reference_is_ordered,
         symmetric_through_all,
     ) = match primary_class {
-        b"357" | b"275" | b"361" | b"349" => (
+        b"357" | b"275" | b"361" | b"349" | b"397" => (
             538,
             shifted_reference_aware::REFERENCE_COUNT,
             13,
@@ -8457,6 +8469,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
                 b"357" => &b"258"[..],
                 b"275" | b"361" => &b"262"[..],
                 b"349" => &b"266"[..],
+                b"397" => &b"262"[..],
                 _ => unreachable!(),
             },
             shifted_reference_aware::BODY_GROUP_COUNT,
@@ -8923,8 +8936,8 @@ fn exact_legacy_shifted_extrude_prologue(
             View::u32_le_at(bytes, offsets[0])?,
             View::u32_le_at(bytes, offsets[1])?,
         ];
-        exact_extrude_extent(direction_face_extend_values[0], discriminators)
-            .map(|extent| (offsets, discriminators, extent))
+        let extent = exact_extrude_extent(direction_face_extend_values[0], discriminators)?;
+        Some((offsets, discriminators, extent))
     };
     let (side_extent_discriminator_offsets, side_extent_discriminators, extent) =
         if direction_face_extend_values[0] == 2 {
@@ -8948,17 +8961,12 @@ fn exact_legacy_shifted_extrude_prologue(
                         offset_lane::SECOND_SIDE_EXTENT,
                     )
                 }
-                252 | 262 | 263 => (106, 110),
-                272 => (
-                    offset_lane::FIRST_SIDE_EXTENT,
-                    offset_lane::SECOND_SIDE_EXTENT,
-                ),
-                283 => (
+                252 | 262 | 263 | 692 => (106, 110),
+                272 | 283 => (
                     offset_lane::FIRST_SIDE_EXTENT,
                     offset_lane::SECOND_SIDE_EXTENT,
                 ),
                 294 => (116, 129),
-                692 => (106, 110),
                 _ => return None,
             };
             candidate(

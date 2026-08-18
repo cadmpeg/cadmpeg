@@ -1484,9 +1484,11 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
             .expect("shifted reference-aware Extrude scope")
     };
 
-    for (class_tag, primary_class, paired_class) in
-        [("357", b"357", b"258"), ("349", b"349", b"266")]
-    {
+    for (class_tag, primary_class, paired_class) in [
+        ("357", b"357", b"258"),
+        ("349", b"349", b"266"),
+        ("397", b"397", b"262"),
+    ] {
         let scope = parse(&make_bytes(primary_class, paired_class, 2), class_tag);
         assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
         assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
@@ -1509,6 +1511,21 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
             })
         );
     }
+
+    let mut invalid_class_397 = make_bytes(b"397", b"262", 2);
+    invalid_class_397[135..139].copy_from_slice(&2u32.to_le_bytes());
+    let invalid_scope = parse_parameter_scope(
+        &invalid_class_397,
+        &IndexedRecordOffsets::build(&invalid_class_397),
+        &DesignRecordHeader {
+            id: "generated:scope-header#class-397-variant".into(),
+            record_index: RECORD_INDEX,
+            class_tag: "397".into(),
+            byte_offset: 0,
+        },
+    )
+    .expect("class-397 scope envelope remains parseable");
+    assert!(invalid_scope.extrude_prologue.is_none());
 
     let mut invalid_tail = make_bytes(b"357", b"258", 2);
     invalid_tail[135..139].copy_from_slice(&0u32.to_le_bytes());

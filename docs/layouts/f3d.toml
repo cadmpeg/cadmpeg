@@ -6905,13 +6905,153 @@ source = "spec"
 anchor = "the start-support byte at offset 41"
 
 [[record]]
+name = "legacy_class_397_symmetric_extrude_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The class-keyed `397 / 262` shifted form is a symmetric-distance variant"
+size = 473
+note = "Offsets are relative to the class-397 primary indexed header. The paired class-262 header begins at offset 473. The class-local parameter/reference envelope is retained between the extent pair and the GUID; the fixed extent and reference-count fields are the admission fields."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and preceding shifted-operation envelope are outside this fixed frame prefix."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "stores u32 `1` at primary-header offset 20"
+value = 1
+
+[[record.gap]]
+offset = 24
+size = 3
+note = "Three zero bytes separate the prefix constant from the result operation."
+
+[[record.field]]
+name = "operation"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "stores the result-operation u32 at offset 27"
+
+[[record.field]]
+name = "direction"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "travel direction `3` (symmetric)"
+value = 3
+
+[[record.field]]
+name = "face_extend"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "face-extend value `2`"
+value = 2
+
+[[record.field]]
+name = "direction_reversed"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "direction reversal"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "geometry kind"
+
+[[record.field]]
+name = "start_support"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "start support"
+
+[[record.gap]]
+offset = 42
+size = 3
+note = "Three zero bytes precede the profile normal."
+
+[[record.field]]
+name = "profile_normal"
+offset = 45
+type = "f64[3]"
+source = "spec"
+anchor = "finite unit profile normal"
+
+[[record.field]]
+name = "reference_slots"
+offset = 69
+type = "bytes[57]"
+source = "spec"
+anchor = "seven nullable slots"
+
+[[record.field]]
+name = "first_side_extent"
+offset = 126
+type = "u32"
+source = "spec"
+anchor = "first-side extent `1` (distance)"
+value = 1
+
+[[record.gap]]
+offset = 130
+size = 9
+note = "Nine zero bytes separate the two extent values."
+
+[[record.field]]
+name = "second_side_extent"
+offset = 139
+type = "u32"
+source = "spec"
+anchor = "second-side extent `1` (distance)"
+value = 1
+
+[[record.gap]]
+offset = 143
+size = 60
+note = "The class-local parameter/reference envelope precedes the GUID."
+
+[[record.field]]
+name = "guid"
+offset = 203
+type = "bytes[76]"
+source = "spec"
+anchor = "LP-UTF16 GUID: 36 code units"
+
+[[record.gap]]
+offset = 279
+size = 3
+note = "Three zero bytes separate the GUID from the ordered reference count."
+
+[[record.field]]
+name = "reference_count"
+offset = 282
+type = "u32"
+source = "spec"
+anchor = "ordered reference count `8`"
+value = 8
+
+[[record.gap]]
+offset = 286
+size = 187
+note = "The ordered reference entries and common scope tail precede the paired indexed header at offset 473."
+
+[[record]]
 name = "shifted_reference_aware_extrude_scope_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
 anchor = "The shifted reference-aware two-sided face-target `Extrude` form uses class-keyed frame lengths"
 size = 296
-note = "Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the ordered reference table has 13 entries for the 538-byte class pairs 357/258, 275/262, 361/262, and 349/266, and 11 entries for class pair 323/263, and the scope tail follows it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane."
+note = "Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the ordered reference table has 13 entries for the 538-byte class pairs 357/258, 275/262, 361/262, 349/266, and 397/262, and 11 entries for class pair 323/263, and the scope tail follows it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane."
 
 [[record.gap]]
 offset = 0

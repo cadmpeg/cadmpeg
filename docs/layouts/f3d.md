@@ -2132,11 +2132,43 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
 
+## `legacy_class_397_symmetric_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 473 B
+
+Offsets are relative to the class-397 primary indexed header. The paired class-262 header begins at offset 473. The class-local parameter/reference envelope is retained between the extent pair and the GUID; the fixed extent and reference-count fields are the admission fields.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | stores u32 `1` at primary-header offset 20 · value `1` |
+| 27 | 4 | `operation` | `u32` | little | spec | stores the result-operation u32 at offset 27 |
+| 31 | 4 | `direction` | `u32` | little | spec | travel direction `3` (symmetric) · value `3` |
+| 35 | 4 | `face_extend` | `u32` | little | spec | face-extend value `2` · value `2` |
+| 39 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal |
+| 40 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind |
+| 41 | 1 | `start_support` | `u8` | little | spec | start support |
+| 45 | 24 | `profile_normal` | `f64[3]` | little | spec | finite unit profile normal |
+| 69 | 57 | `reference_slots` | `bytes[57]` | little | spec | seven nullable slots |
+| 126 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent `1` (distance) · value `1` |
+| 139 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `1` (distance) · value `1` |
+| 203 | 76 | `guid` | `bytes[76]` | little | spec | LP-UTF16 GUID: 36 code units |
+| 282 | 4 | `reference_count` | `u32` | little | spec | ordered reference count `8` · value `8` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding shifted-operation envelope are outside this fixed frame prefix.
+- `24..27` (3 B): Three zero bytes separate the prefix constant from the result operation.
+- `42..45` (3 B): Three zero bytes precede the profile normal.
+- `130..139` (9 B): Nine zero bytes separate the two extent values.
+- `143..203` (60 B): The class-local parameter/reference envelope precedes the GUID.
+- `279..282` (3 B): Three zero bytes separate the GUID from the ordered reference count.
+- `286..473` (187 B): The ordered reference entries and common scope tail precede the paired indexed header at offset 473.
+
 ## `shifted_reference_aware_extrude_scope_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 296 B
 
-Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the ordered reference table has 13 entries for the 538-byte class pairs 357/258, 275/262, 361/262, and 349/266, and 11 entries for class pair 323/263, and the scope tail follows it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane.
+Offsets are relative to the primary indexed header. The fixed prefix ends at the u32 reference count; the ordered reference table has 13 entries for the 538-byte class pairs 357/258, 275/262, 361/262, 349/266, and 397/262, and 11 entries for class pair 323/263, and the scope tail follows it. The final zero high byte of the 36-code-unit GUID is shared with the second-side extent lane.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
