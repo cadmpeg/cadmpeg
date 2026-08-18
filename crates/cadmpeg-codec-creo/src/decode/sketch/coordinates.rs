@@ -24,9 +24,10 @@ use super::equations_scalar::{
 use super::geometry::{saved_section_circle_values, saved_section_segment_point_coordinates};
 use super::radii::section_relation_length_dimension;
 use super::skamp::{
-    section_line_fixed_coordinate, section_skamp_axis_symmetry, section_skamp_incidence_point,
-    section_skamp_point_entity_id, section_skamp_point_on_line, section_skamp_point_symmetry,
-    section_skamp_saved_point_on_line, SectionPointSource, SectionSymmetryAxis,
+    section_line_entity_fixed_coordinate_with_unique_rows, section_line_fixed_coordinate,
+    section_skamp_axis_symmetry, section_skamp_incidence_point, section_skamp_point_entity_id,
+    section_skamp_point_on_line, section_skamp_point_symmetry, section_skamp_saved_point_on_line,
+    SectionPointSource, SectionSymmetryAxis,
 };
 
 const EPS_SECTION_COORDINATE: f64 = 1e-9;
@@ -590,7 +591,9 @@ pub(crate) fn section_linear_distance_coordinate(
             .ok_or(())
     };
     if let [segment] = matching_segments.as_slice() {
-        if let Some(fixed_coordinate) = section_line_fixed_coordinate(definition, segment) {
+        if let Some(fixed_coordinate) =
+            section_line_entity_fixed_coordinate_with_unique_rows(definition, segment.external_id)
+        {
             let Ok(first_coordinate) = point_coordinate(first, fixed_coordinate) else {
                 return None;
             };
@@ -817,5 +820,61 @@ mod tests {
                 offset: 2,
             });
         assert!(!resolved_section_points(&duplicate_family).contains_key(&2));
+    }
+
+    #[test]
+    fn incomplete_unique_spanning_line_selector_supplies_distance_axis() {
+        let mut definition = incomplete_segment_definition();
+        definition.segments.as_mut().expect("segments").rows[0].vertical_horizontal = Some(0);
+        let segments = definition
+            .segments
+            .as_ref()
+            .expect("segments")
+            .rows
+            .iter()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            super::section_linear_distance_coordinate(
+                &definition,
+                &segments,
+                1,
+                2,
+                &std::collections::BTreeMap::new(),
+                &[],
+                &std::collections::BTreeSet::new(),
+            ),
+            Some(1)
+        );
+
+        let mut duplicate = definition;
+        let duplicate_row = duplicate.segments.as_ref().expect("segments").rows[0].clone();
+        duplicate
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(FeatureSegment {
+                offset: 2,
+                ..duplicate_row
+            });
+        let duplicate_segments = duplicate
+            .segments
+            .as_ref()
+            .expect("segments")
+            .rows
+            .iter()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            super::section_linear_distance_coordinate(
+                &duplicate,
+                &duplicate_segments,
+                1,
+                2,
+                &std::collections::BTreeMap::new(),
+                &[],
+                &std::collections::BTreeSet::new(),
+            ),
+            None
+        );
     }
 }
