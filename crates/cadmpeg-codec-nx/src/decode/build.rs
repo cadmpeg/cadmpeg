@@ -760,12 +760,37 @@ pub(crate) fn try_decode_geometry(
         }
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();
+        let mut invalid_pcurves = BTreeSet::new();
+        let curve_indices: BTreeMap<_, _> = ir
+            .model
+            .curves
+            .iter()
+            .enumerate()
+            .map(|(index, curve)| (curve.id.clone(), index))
+            .collect();
+        let surface_indices: BTreeMap<_, _> = ir
+            .model
+            .surfaces
+            .iter()
+            .enumerate()
+            .map(|(index, surface)| (surface.id.clone(), index))
+            .collect();
+        let pcurve_indices: BTreeMap<_, _> = ir
+            .model
+            .pcurves
+            .iter()
+            .enumerate()
+            .map(|(index, pcurve)| (pcurve.id.clone(), index))
+            .collect();
         let surface_curves = &view.surface_curves;
         loop {
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
             for trim in trimmed_curves {
                 if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
-                    let parameters = canonical_trim_range(&ir, &basis, trim.parameters);
+                    let parameters = curve_indices
+                        .get(&basis)
+                        .and_then(|index| ir.model.curves.get(*index))
+                        .and_then(|curve| canonical_trim_range(&curve.geometry, trim.parameters));
                     curves_by_xmt.insert(trim.xmt, basis);
                     if let Some(parameters) = parameters {
                         trim_ranges.insert(trim.xmt, parameters);
@@ -784,16 +809,14 @@ pub(crate) fn try_decode_geometry(
                     if !normalized_pcurves.contains(&pcurve) {
                         let support = surfaces_by_xmt
                             .get(&surface_curve.surface)
-                            .and_then(|id| {
-                                ir.model.surfaces.iter().find(|surface| surface.id == *id)
-                            })
+                            .and_then(|id| surface_indices.get(id))
+                            .and_then(|index| ir.model.surfaces.get(*index))
                             .map(|surface| surface.geometry.clone());
                         let normalized = if let (Some(support), Some(carrier)) = (
                             support,
-                            ir.model
-                                .pcurves
-                                .iter_mut()
-                                .find(|candidate| candidate.id == pcurve),
+                            pcurve_indices
+                                .get(&pcurve)
+                                .and_then(|index| ir.model.pcurves.get_mut(*index)),
                         ) {
                             normalize_pcurve_parameters(&mut carrier.geometry, &support).is_some()
                         } else {
@@ -801,12 +824,15 @@ pub(crate) fn try_decode_geometry(
                         };
                         if !normalized {
                             pcurves_by_xmt.remove(&surface_curve.pcurve);
-                            ir.model.pcurves.retain(|candidate| candidate.id != pcurve);
+                            invalid_pcurves.insert(pcurve.clone());
                             continue;
                         }
                         normalized_pcurves.insert(pcurve.clone());
                     }
-                    if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
+                    if let Some(carrier) = pcurve_indices
+                        .get(&pcurve)
+                        .and_then(|index| ir.model.pcurves.get_mut(*index))
+                    {
                         carrier.fit_tolerance = decoded_tolerance(surface_curve.tolerance);
                     }
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
@@ -821,6 +847,11 @@ pub(crate) fn try_decode_geometry(
             if curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len() == mapped {
                 break;
             }
+        }
+        if !invalid_pcurves.is_empty() {
+            ir.model
+                .pcurves
+                .retain(|candidate| !invalid_pcurves.contains(&candidate.id));
         }
         retain_unresolved_topology_carriers(
             &mut ir,

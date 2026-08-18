@@ -878,9 +878,8 @@ pub(crate) fn synthesize_closed_edge_vertex_with_budget(
     Some(vertex)
 }
 
-pub(crate) fn canonical_trim_range(ir: &CadIr, basis: &CurveId, raw: [f64; 2]) -> Option<[f64; 2]> {
-    let curve = ir.model.curves.iter().find(|curve| curve.id == *basis)?;
-    match &curve.geometry {
+pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
+    match geometry {
         CurveGeometry::Line { .. } => {
             let range = [raw[0] * 1000.0, raw[1] * 1000.0];
             range.into_iter().all(f64::is_finite).then_some(range)
