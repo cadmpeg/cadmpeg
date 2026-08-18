@@ -324,6 +324,50 @@ fn validates_gui_constraint_attribute_grammars() {
 }
 
 #[test]
+fn validates_gui_in_memory_list_grammars() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="5">
+<Property name="Flags" type="App::PropertyBoolList"><BoolList value="101"/></Property>
+<Property name="Names" type="App::PropertyStringList"><StringList count="2"><String value="alpha"/><String value="beta"/></StringList></Property>
+<Property name="Values" type="App::PropertyIntegerList"><IntegerList count="2"><I v="2"/><I v="4"/></IntegerList></Property>
+<Property name="UniqueValues" type="App::PropertyIntegerSet"><IntegerSet count="2"><I v="1"/><I v="4"/></IntegerSet></Property>
+<Property name="Mapping" type="App::PropertyMap"><Map count="2"><Item key="alpha" value="one"/><Item key="beta" value="two"/></Map></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid GUI in-memory lists");
+
+    for invalid in [
+        r#"<Property name="Flags" type="App::PropertyBoolList"><BoolList value="101"><Nested/></BoolList></Property>"#,
+        r#"<Property name="Names" type="App::PropertyStringList"><StringList count="1"><String value="alpha"><Nested/></String></StringList></Property>"#,
+        r#"<Property name="Values" type="App::PropertyIntegerList"><IntegerList count="1"><I v="2"><Nested/></I></IntegerList></Property>"#,
+        r#"<Property name="UniqueValues" type="App::PropertyIntegerSet"><IntegerSet count="1"><I v="1"><Nested/></I></IntegerSet></Property>"#,
+        r#"<Property name="Mapping" type="App::PropertyMap"><Map count="1"><Item key="alpha" value="one"><Nested/></Item></Map></Property>"#,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("nested GUI list value");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn accepts_and_validates_gui_custom_enumerations() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">

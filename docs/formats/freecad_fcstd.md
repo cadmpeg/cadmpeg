@@ -673,6 +673,13 @@ ignored. The quantity subtype suffixes are `Acceleration`, `AmountOfSubstance`, 
 `YoungsModulus`. Each suffix is prefixed by `App::Property`. `App::PropertyPlacementLink` uses the
 link grammar.
 
+`BoolList` is a direct leaf root whose `value` is the ordered string of `0` and `1` values.
+`StringList`, `IntegerList`, and `IntegerSet` are direct roots whose `count` equals the number of
+direct leaf children: `String` children carry `value`, and `I` children carry `v`. `IntegerSet`
+children are strictly increasing by integer value. `Map` is a direct root whose `count` equals the
+number of direct leaf `Item` children; each item carries `key` and `value`, and keys are strictly
+increasing. Nested elements in these roots or their value records are malformed.
+
 `App::PropertyFloatList`, `App::PropertyVectorList`, and `App::PropertyPlacementList` contain,
 respectively, `FloatList`, `VectorList`, and `PlacementList` with one `file` attribute. Their named
 side entries begin with a little-endian `u32` count and contain, respectively, `f64` values,

@@ -16,14 +16,16 @@ Each item has an identifier and these fields:
 ### GP-01. Other GUI property grammars
 
 **Question.** What value grammar remains for each non-link GUI property runtime type outside the
-settled scalar, quantity, and custom branches?
+settled scalar, quantity, and in-memory list branches?
 
 **Known.** View-provider properties use the shared application property persistence path. Every
 GUI link-family runtime type uses the exact direct carrier grammar defined for application links,
 including the `PropertyPlacementLink` subtype. The GUI validator checks the carrier root,
 cardinality, attributes, and leaf rule before neutral transfer or native admission. Scalar and
 quantity GUI types use one direct `Bool`, `Integer`, or `Float` root; constraint subtypes admit the
-producer's optional numeric `min`, `max`, and `step` attributes. The current registry in
+producer's optional numeric `min`, `max`, and `step` attributes. In-memory list GUI types use the
+producer's direct `BoolList`, `StringList`, `IntegerList`, `IntegerSet`, or `Map` roots, with exact
+counts, direct leaf values, and the producer's ordering rules. The current registry in
 `gui.rs:30-39` still classifies custom types and every non-Unknown `PropertyFamily` as registered.
 
 **Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
@@ -36,9 +38,9 @@ path without a complete value-grammar check. Its arbitrary descendant values can
 as if the registry had established their grammar, while the neutral presentation path silently
 withholds or misreads the value.
 
-**Note.** Partly settled. Link-family and scalar/quantity value grammars are closed by the
-application writer inheritance rules and shared direct-root validation. The remaining question is
-limited to list, custom, and side-entry runtime types.
+**Note.** Partly settled. Link-family, scalar/quantity, and in-memory list value grammars are closed
+by the application writer inheritance rules and shared direct-root validation. The remaining
+question is limited to custom and side-entry runtime types.
 
 ### GP-02. Other GUI property semantics
 

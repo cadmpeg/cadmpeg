@@ -978,6 +978,9 @@ fn validate_gui_property(
                     "GUI property {property_name} has an invalid Boolean list"
                 )));
             }
+            if has_nested_gui_elements(root) {
+                return Err(gui_nested_value_error(property_name, "BoolList"));
+            }
         }
         "StringList" => validate_gui_string_list(root, property_name)?,
         "IntegerList" => validate_gui_integer_list(root, property_name, false)?,
@@ -1056,6 +1059,9 @@ fn validate_gui_string_list(
             "GUI property {property_name} StringList count or value is invalid"
         )));
     }
+    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+        return Err(gui_nested_value_error(property_name, "StringList value"));
+    }
     Ok(())
 }
 
@@ -1078,6 +1084,9 @@ fn validate_gui_integer_list(
         return Err(CodecError::Malformed(format!(
             "GUI property {property_name} {tag} count or value is invalid"
         )));
+    }
+    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+        return Err(gui_nested_value_error(property_name, tag));
     }
     let mut previous = None;
     for value in values {
@@ -1115,6 +1124,9 @@ fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Resul
             "GUI property {property_name} Map count or item tag is invalid"
         )));
     }
+    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+        return Err(gui_nested_value_error(property_name, "Map item"));
+    }
     let mut previous_key = None;
     for value in values {
         let key = value.attribute("key").ok_or_else(|| {
@@ -1150,6 +1162,15 @@ fn gui_list_count(
                 "GUI property {property_name} {tag} has an invalid count"
             ))
         })
+}
+
+fn has_nested_gui_elements(node: roxmltree::Node<'_, '_>) -> bool {
+    node.children().any(|child| child.is_element())
+}
+
+fn gui_nested_value_error(property_name: &str, value_name: &str) -> CodecError {
+    let message = format!("GUI property {property_name} {value_name} has nested element values");
+    CodecError::Malformed(message)
 }
 
 fn validate_gui_constraint_attributes(
