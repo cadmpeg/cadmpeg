@@ -202,12 +202,19 @@ unregistered class, item, and application UUID in generic userdata 2.2 retains
 typed point geometry and its complete object record without typed userdata
 fields; a later generic userdata header has the same result.
 
+The current built-in class-userdata inventory is complete. The registered
+object, table, geometry, presentation, view, layer, and render-settings
+carriers are covered by the owner rules above. `ON_AnnotationTextFormula` is
+not an archived carrier: its source class forbids `Write` and `Read`, and the
+formula is the direct minor-2 UTF-16 field in the legacy annotation record.
+No current OpenNURBS writer defines another class-owned userdata major or
+unlisted carrier.
+
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The
 same change must state the field-specific loss or neutral mapping required by
-the section-20.6 admission rule. The remaining CADIR audit must cover the other
-class-owned userdata carriers and their object, table, settings, and embedded
-geometry owners.
+the section-20.6 admission rule. The current-producer audit is complete; only a
+future class-owned grammar can answer the remaining format question.
 
 **Note.** No current later producer is evidence that future class-specific
 payload semantics are settled. Opaque retention and refusal are settled CADIR
