@@ -1556,6 +1556,8 @@ The class-root directory has this fixed prefix and variable root vector:
 
 ---
 
+The disc1e-disc1c-disc1a-disc16-disc10-disc0e-disc04 face layout uses one keyed `0x1e/flo2` root with a slot-1 sentinel and the exact chain `0x1e.slot2 -> 0x1c/flo2 -> 0x1a/flo2 -> 0x16/flo2 -> 0x10/flo2 -> 0x0e/flo2 -> 0x04/flo1`; the root key is greater than one, every chain record repeats it in slot 0, each successor names its predecessor in slot 1, and the terminal `0x04` slot 2 is a sentinel. The `0x1a` record is the shell root. The site contains compatible canonical `0x12/flo1` faces, `0x18/flo1` companions, and `0x20/flo4` use nodes. Canonical records from another relation form can coexist in the site without belonging to this layout. A selected canonical face names its companion directly in slot 1 when the companion names the face in slot 2, through a forward same-key slot-1 link, or through the unique same-key companion whose slot 1 is nonsentinel. Each selected companion names its use node in slot 1; the use node either names that companion in slot 2 or forms the same-key forward link. Selected face, companion, and use links are one-to-one. The companion population and use population can contain additional unselected records, and the selected use population can be smaller than the use population. A complete chain and these links assign every selected canonical face in the site to that shell.
+
 ## 7. Geometry carriers
 
 All length fields are metres. Directions, normals, axes, reference directions, knots, and weights are dimensionless.
