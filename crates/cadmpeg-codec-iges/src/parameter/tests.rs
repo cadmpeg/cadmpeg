@@ -1303,6 +1303,105 @@ fn type406_form8_malformed_np_or_span_does_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type406_form9_entity_table_boundary_follows_fixed_values() {
+    let mut source = directory_target(1, 406);
+    source.form = 9;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for first_number in [
+        TokenValue::String(b"GENERIC".to_vec()),
+        TokenValue::Integer(1),
+    ] {
+        let record = token_parameter_record(
+            1,
+            vec![
+                TokenValue::Integer(406),
+                TokenValue::Integer(4),
+                first_number,
+                TokenValue::String(b"MIL123".to_vec()),
+                TokenValue::String(b"VEND42".to_vec()),
+                TokenValue::String(b"INT99".to_vec()),
+                TokenValue::Integer(1),
+                TokenValue::Integer(3),
+                TokenValue::Integer(0),
+            ],
+        );
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 406 Form 9 table boundary");
+        assert_eq!(groups.token_start, 6);
+        assert_eq!(groups.associations, vec![3]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type406_form9_table_boundary_precedes_generic_candidate() {
+    let mut source = directory_target(1, 406);
+    source.form = 9;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    let record = token_parameter_record(
+        1,
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(4),
+            TokenValue::String(b"GENERIC".to_vec()),
+            TokenValue::String(b"MIL123".to_vec()),
+            TokenValue::String(b"VEND42".to_vec()),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+    );
+
+    let generic = structural_pointer_group_candidates(&record);
+    assert!(generic.iter().any(|candidate| candidate.token_start == 5));
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
+fn type406_form9_malformed_np_or_span_does_not_enable_generic_recovery() {
+    let mut source = directory_target(1, 406);
+    source.form = 9;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for values in [
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(3),
+            TokenValue::String(b"GENERIC".to_vec()),
+            TokenValue::String(b"MIL123".to_vec()),
+            TokenValue::String(b"VEND42".to_vec()),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(4),
+            TokenValue::String(b"GENERIC".to_vec()),
+            TokenValue::String(b"MIL123".to_vec()),
+            TokenValue::String(b"VEND42".to_vec()),
+        ],
+    ] {
+        let generic_count =
+            structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
+        let record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "generic_count={generic_count}");
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type184_entity_table_boundary_follows_item_and_transform_lists() {
     for (form, item_count, expected_start) in [(0_i64, 1_i64, 4), (0, 2, 6), (1, 3, 8)] {
         let association = directory_target(1, 212);
