@@ -347,6 +347,7 @@ pub(crate) fn legacy_annotation(
 ) -> Result<LegacyAnnotation, FramingError> {
     let (mut annotation, next, minor) = anonymous(data, reader.position(), reader.end(), archive)?;
     let value = legacy_annotation_fields(&mut annotation, scale, minor, false)?;
+    annotation.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(value)
 }
@@ -365,7 +366,9 @@ pub(crate) fn legacy_annotation_direct(
             "unsupported direct legacy annotation version",
         ));
     }
-    legacy_annotation_fields(reader, scale, 0, true)
+    let value = legacy_annotation_fields(reader, scale, 0, true)?;
+    reader.skip_remaining()?;
+    Ok(value)
 }
 
 fn legacy_annotation_fields(
@@ -439,7 +442,6 @@ fn legacy_annotation_fields(
     } else {
         initial_style_index
     };
-    annotation.skip_remaining()?;
     let (plane, justification) = if kind == 7 && justification == 0 {
         (shifted_plane(plane, [0.0, text_height]), (1 << 18) | 1)
     } else {
@@ -607,19 +609,51 @@ fn decode_legacy(
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
-    // The class reader closes the family child and the enclosing class-data
-    // reader owns any direct suffix after that child.
-    let (mut outer, _next, minor) = anonymous(data, range.start, range.end, archive)?;
-    let annotation = if class == V5_ORDINATE {
-        let (mut wrapper, wrapper_next, _wrapper_minor) =
-            anonymous(data, outer.position(), outer.end(), archive)?;
-        let annotation = legacy_annotation(data, &mut wrapper, scale, archive)?;
-        wrapper.skip_remaining()?;
-        outer.skip(wrapper_next - outer.position())?;
-        annotation
+    // V2–V4 linear, radial, and angular classes call the common writer
+    // directly; their ordinate class still has the always-present outer 1.1
+    // family wrapper.
+    // Every V5+ class uses the bounded anonymous family wrapper.
+    let direct_legacy_common = matches!(
+        archive,
+        ArchiveVersion::V2 | ArchiveVersion::V3 | ArchiveVersion::V4
+    );
+    let direct_legacy_family = direct_legacy_common && class != V5_ORDINATE;
+    let (mut outer, minor, mut annotation) = if direct_legacy_family {
+        let mut reader = BoundedReader::new(data, range.start, range.end)?;
+        let version = reader.u8()?;
+        if version >> 4 != 1 || version & 0x0f != 0 {
+            return Err(FramingError::structural(
+                range.start,
+                "unsupported direct legacy dimension version",
+            ));
+        }
+        let annotation = legacy_annotation_fields(&mut reader, scale, 0, true)?;
+        (reader, 0, annotation)
     } else {
-        legacy_annotation(data, &mut outer, scale, archive)?
+        // The class reader closes the family child and the enclosing class-data
+        // reader owns any direct suffix after that child.
+        let (mut outer, _next, minor) = anonymous(data, range.start, range.end, archive)?;
+        let annotation = if class == V5_ORDINATE {
+            let (mut wrapper, wrapper_next, _wrapper_minor) =
+                anonymous(data, outer.position(), outer.end(), archive)?;
+            let annotation = if direct_legacy_common {
+                legacy_annotation_direct(&mut wrapper, scale)?
+            } else {
+                legacy_annotation(data, &mut wrapper, scale, archive)?
+            };
+            wrapper.skip_remaining()?;
+            outer.skip(wrapper_next - outer.position())?;
+            annotation
+        } else {
+            legacy_annotation(data, &mut outer, scale, archive)?
+        };
+        (outer, minor, annotation)
     };
+    // The V5 radial writer appends a fifth copy of the dimension-line point
+    // for old readers; the source reader removes exactly that fifth point.
+    if class == V5_RADIAL && annotation.points.len() == 5 {
+        annotation.points.truncate(4);
+    }
     let stored_angular = if class == V5_ANGULAR {
         let angle = outer.f64()?;
         let radius = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
@@ -1674,6 +1708,13 @@ pub(crate) mod tests {
         crc_chunk(ANONYMOUS, &body)
     }
 
+    fn anonymous_v4(version: i32, suffix: &[u8]) -> Vec<u8> {
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(version.to_le_bytes());
+        body.extend(suffix);
+        crate::test_support::test_dump::crc_chunk(ArchiveVersion::V4, ANONYMOUS, &body)
+    }
+
     fn plane() -> Vec<u8> {
         plane_bytes(
             [0.0, 0.0, 0.0],
@@ -1963,6 +2004,26 @@ pub(crate) mod tests {
             outer.extend(value.to_le_bytes());
         }
         anonymous(0, &outer)
+    }
+
+    fn direct_legacy_payload(kind: i32, points: &[[f64; 2]], family: &[f64]) -> Vec<u8> {
+        let mut bytes = vec![0x10];
+        bytes.extend(kind.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend(plane());
+        bytes.extend((points.len() as i32).to_le_bytes());
+        for point in points {
+            bytes.extend(point[0].to_le_bytes());
+            bytes.extend(point[1].to_le_bytes());
+        }
+        bytes.extend(utf16("<>"));
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend(4_i32.to_le_bytes());
+        bytes.extend(1.5_f64.to_le_bytes());
+        for value in family {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes
     }
 
     #[test]
@@ -2343,6 +2404,80 @@ pub(crate) mod tests {
             Definition::Angular {
                 first_extension_offset: 25.0,
                 second_extension_offset: 40.0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn v4_legacy_dimension_writer_bands_match_source() {
+        let archive = ArchiveVersion::V4;
+        let linear_bytes = direct_legacy_payload(
+            1,
+            &[[0.0, 0.0], [0.0, 5.0], [3.0, 0.0], [3.0, 5.0], [1.0, 5.0]],
+            &[],
+        );
+        let linear = decode(
+            &linear_bytes,
+            V5_LINEAR,
+            0..linear_bytes.len(),
+            10.0,
+            archive,
+        )
+        .expect("V4 linear common payload is direct");
+        assert_eq!(linear.measurement, 30.0);
+
+        let radial_bytes = direct_legacy_payload(
+            4,
+            &[[1.0, 2.0], [4.0, 6.0], [7.0, 8.0], [6.0, 8.0], [7.0, 8.0]],
+            &[],
+        );
+        let radial = decode(
+            &radial_bytes,
+            V5_RADIAL,
+            0..radial_bytes.len(),
+            10.0,
+            archive,
+        )
+        .expect("V4 radial common payload is direct");
+        assert_eq!(radial.measurement, 100.0);
+
+        let angular_bytes = direct_legacy_payload(
+            3,
+            &[[2.0, 2.0], [2.0, 0.0], [0.0, 3.0], [1.0, 1.0]],
+            &[std::f64::consts::FRAC_PI_2, 5.0],
+        );
+        let angular = decode(
+            &angular_bytes,
+            V5_ANGULAR,
+            0..angular_bytes.len(),
+            10.0,
+            archive,
+        )
+        .expect("V4 angular common payload and suffix are direct");
+        assert_eq!(angular.measurement, std::f64::consts::FRAC_PI_2);
+
+        let direct_common = direct_legacy_payload(8, &[[4.0, -7.0], [4.0, 2.0]], &[]);
+        let inner = anonymous_v4(0, &direct_common);
+        let mut ordinate_body = inner;
+        ordinate_body.extend((-1_i32).to_le_bytes());
+        ordinate_body.extend(1.25_f64.to_le_bytes());
+        ordinate_body.extend(0.5_f64.to_le_bytes());
+        let ordinate_outer = anonymous_v4(1, &ordinate_body);
+        let ordinate = decode(
+            &ordinate_outer,
+            V5_ORDINATE,
+            0..ordinate_outer.len(),
+            10.0,
+            archive,
+        )
+        .expect("V4 ordinate keeps its outer wrapper and direct common child");
+        assert_eq!(ordinate.measurement, 40.0);
+        assert!(matches!(
+            ordinate.definition,
+            Definition::Ordinate {
+                measured_direction: 1,
+                kink_offsets: [12.5, 5.0],
                 ..
             }
         ));

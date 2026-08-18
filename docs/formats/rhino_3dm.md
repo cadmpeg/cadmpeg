@@ -4139,10 +4139,11 @@ All points and distance-valued fields use document length conversion.
 Directions, angles, and distance scale are unscaled. Coordinates, scales, and
 computed measurements are finite; distance scale is positive.
 
-The legacy V5 linear, angular, and radial dimension classes use an anonymous
-version 1.0 family chunk. Linear and radial families contain one common legacy
-annotation child. Angular dimensions append an `f64` angle and `f64` radius.
-The common annotation is anonymous version 1.0 through 1.3:
+For archive versions 5 and later, the legacy V5 linear, angular, and radial
+dimension classes use an anonymous version 1.0 family chunk. Linear and radial
+families contain one common legacy annotation child. Angular dimensions append
+an `f64` angle and `f64` radius. The common annotation is anonymous version 1.0
+through 1.3:
 
 ```text
 i32 annotation type
@@ -4161,6 +4162,17 @@ if minor >= 3:
   i32 archive dimension-style index
 ```
 
+For archive versions 2 through 4, the linear, radial, and angular class data
+has no family chunk. It begins with packed version `1.0` followed directly by
+the common fields through `f64` text height. The direct form has no
+justification, text-scaling, formula, text-style, or dimension-style suffix;
+model-space text scaling is false, and the displayed text is also the user
+text. Angular angle and radius follow the direct common fields without an
+additional wrapper. V4 ordinate class data keeps its outer anonymous major-1,
+minor-1 family chunk and its anonymous major-1, minor-0 child, but the child
+contains the same direct packed `1.0` common payload. Archive versions 5 and
+later use the anonymous common annotation child shown above.
+
 Linear annotation type 1 is rotated and type 2 is aligned. Its five points are
 the first extension endpoint, first arrow, second extension endpoint, second
 arrow, and user text point. The first extension endpoint becomes the defining
@@ -4174,10 +4186,13 @@ the stored angle and radius. The first direction is `(1,0)`, the second is
 the angle. The stored angle is the measurement. Its neutral annotation type is
 2.
 
-Radial annotation type 4 is diameter and type 5 is radius. Its four points are
-center, arrow, tail, and knee. The center becomes the defining plane origin;
-arrow and tail become relative radius and dimension-line points. Their neutral
-annotation types are 3 and 4 respectively.
+Radial annotation type 4 is diameter and type 5 is radius. Its semantic points
+are four values: center, arrow, tail, and knee. The source writer appends a
+fifth copy of the dimension-line point when it writes a four-point radial
+annotation. The source reader removes exactly that fifth point before
+validation. The center becomes the defining plane origin; arrow and tail
+become relative radius and dimension-line points. Their neutral annotation
+types are 3 and 4 respectively.
 
 When the common annotation has no scaling field, model-space text scaling is
 false. Minor 3 selects the dimension-style index from the dimension-style slot
@@ -4187,9 +4202,11 @@ justification becomes top-left, and its plane origin moves by one text height
 along the plane y axis. V5 text, leader, and ordinate annotation types map to
 neutral types 9, 10, and 6.
 
-The legacy V5 ordinate class has an anonymous version 1.0 or 1.1 family chunk.
-Its first child is an anonymous version 1.0 wrapper containing the common
-legacy annotation. The suffix is:
+The legacy V5 ordinate writer emits an anonymous major-1, minor-1 family
+chunk. Its first child is an anonymous major-1, minor-0 wrapper containing the
+common legacy annotation. The common child is direct packed version `1.0` in
+archive versions 2 through 4 and is the anonymous common annotation child
+shown above in archive version 5 and later. The suffix is:
 
 ```text
 i32 measured direction
