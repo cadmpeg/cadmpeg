@@ -10018,6 +10018,7 @@ mod tests {
     mod disc1c_disc14_linked;
     mod disc1c_disc16_disc0e;
     mod disc1c_disc18_disc16_disc14_disc12_disc0e_disc04_chain;
+    mod disc1d_disc1b_disc19_disc13_disc11_disc04;
     mod disc1e_disc04;
     mod disc1e_disc12_disc1a_disc18_disc10_direct_face_use;
     mod disc1e_disc18_disc16_disc14_disc0e_disc04;
