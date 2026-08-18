@@ -713,6 +713,69 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
 }
 
 #[test]
+fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let record = r##"<CosmeticVertex type="TechDraw::CosmeticVertex"><Point X="1" Y="-2" Z="0"/><Extract value="0"/><HLRVisible value="1"/><Ref3D value="-1"/><IsCenter value="0"/><Cosmetic value="1"/><CosmeticLink value="-1"/><CosmeticTag value="58140d97-21b3-402f-9449-9ab33eaf2ac7"/><PermaPoint X="1" Y="-2" Z="0"/><LinkGeom value="4"/><Color value="#000000"/><Size value="2.1"/><Style value="1"/><Visible value="1"/><Tag value="58140d97-21b3-402f-9449-9ab33eaf2ac7"/></CosmeticVertex>"##;
+    let legacy_record = r##"<CosmeticVertex type="TechDraw::CosmeticVertex"><Point X="2" Y="3" Z="4"/><Extract value="2"/><HLRVisible value="0"/><Ref3D value="7"/><IsCenter value="1"/><Cosmetic value="1"/><CosmeticLink value="3"/><CosmeticTag value="01234567-89ab-cdef-0123-456789abcdef"/><VertexTag value="01234567-89ab-cdef-0123-456789abcdef"/><PermaPoint X="2" Y="3" Z="4"/><LinkGeom value="8"/><Color value="#11223344"/><Size value="0.5"/><Style value="2"/><Visible value="false"/><Tag value="01234567-89ab-cdef-0123-456789abcdef"/></CosmeticVertex>"##;
+    let gui = format!(
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="CosmeticVertexes" type="TechDraw::PropertyCosmeticVertexList"><CosmeticVertexList count="2">{record}{legacy_record}</CosmeticVertexList></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+    );
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui.as_bytes()),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid TechDraw CosmeticVertexList");
+
+    let property = |value: &str| {
+        format!(
+            r#"<Property name="CosmeticVertexes" type="TechDraw::PropertyCosmeticVertexList">{value}</Property>"#
+        )
+    };
+    let invalid = [
+        property(r#"<Wrong count="0"/>"#),
+        property(r#"<CosmeticVertexList count="1"/>"#),
+        property(
+            r#"<CosmeticVertexList count="1"><Other type="TechDraw::CosmeticVertex"/></CosmeticVertexList>"#,
+        ),
+        property(
+            r#"<CosmeticVertexList count="1"><CosmeticVertex type="App::PropertyString"/></CosmeticVertexList>"#,
+        ),
+        property(
+            r#"<CosmeticVertexList count="1"><CosmeticVertex type="TechDraw::CosmeticVertex"><Point X="1" Y="-2" Z="0"><Nested/></Point></CosmeticVertex></CosmeticVertexList>"#,
+        ),
+        property(&record.replace("<Extract", "<Wrong/><Extract")),
+        property(&record.replace("X=\"1\" Y=\"-2\"", "X=\"nan\" Y=\"-2\"")),
+        property(&record.replace("<Extract value=\"0\"", "<Extract value=\"bad\"")),
+        property(&record.replace("<Visible value=\"1\"", "<Visible value=\"maybe\"")),
+        property(&record.replace("<Color value=\"#000000\"", "<Color value=\"red\"")),
+        property(&record.replace(
+            "<Tag value=\"58140d97-21b3-402f-9449-9ab33eaf2ac7\"",
+            "<Tag value=\"not-a-uuid\"",
+        )),
+        property(&record.replace("</CosmeticVertex>", "<Extra/></CosmeticVertex>")),
+    ];
+    for invalid in invalid {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid TechDraw CosmeticVertexList");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn validates_the_complete_loaded_dynamic_gui_registry() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>

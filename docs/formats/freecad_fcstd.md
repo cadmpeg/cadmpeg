@@ -718,6 +718,17 @@ Boolean. A record may end with one `LineNumber` integer, or the legacy `ISOLineN
 may also omit that field. Nested or out-of-order fields, extra records, and count mismatches are
 malformed.
 
+`TechDraw::PropertyCosmeticVertexList` uses one direct `CosmeticVertexList` root. Its `count`
+equals the number of direct `CosmeticVertex` records, each with
+`type="TechDraw::CosmeticVertex"`. A record has the direct fields `Point`, `Extract`, `HLRVisible`,
+`Ref3D`, `IsCenter`, `Cosmetic`, `CosmeticLink`, and `CosmeticTag`, followed by `PermaPoint`,
+`LinkGeom`, `Color`, `Size`, `Style`, `Visible`, and `Tag`. `Point` and `PermaPoint` carry finite
+`X`, `Y`, and `Z` scalars. Integer fields carry `value`; Boolean fields carry Boolean `value`;
+`CosmeticTag` carries a string value; `Color` is `#RRGGBB` or `#RRGGBBAA`; `Size` is finite; and
+`Tag` is a hyphenated hexadecimal UUID. `Vertex::Restore` also accepts one legacy `VertexTag` UUID
+between `CosmeticTag` and `PermaPoint`. The producer writes no `VertexTag`. Nested, out-of-order, or
+count-mismatched records are malformed.
+
 The loaded module registry adds `Materials::PropertyMaterial`, whose value is
 `PropertyMaterial` with a material `uuid`; `Part::PropertyPartShape`, whose value is `Part` and
 may carry `ElementMap` records and one exact-shape side entry; `Part::PropertyGeometryList`, whose

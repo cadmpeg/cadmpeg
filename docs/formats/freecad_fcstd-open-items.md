@@ -36,6 +36,10 @@ only from that root, and validate the optional Points `mtrx` as sixteen finite s
 TechDraw `PropertyGeomFormatList` uses one direct `GeomFormatList` root with exact direct record
 count and typed `GeomFormat` records. Each record has direct integer `GeomIndex` and `Style`, finite
 `Weight`, non-empty `Color`, Boolean `Visible`, and an optional `LineNumber` or `ISOLineNumber`.
+TechDraw `PropertyCosmeticVertexList` uses one direct `CosmeticVertexList` root with exact direct
+record count and typed `CosmeticVertex` records. Each record has the producer's ordered direct
+vertex and cosmetic fields, finite point coordinates and size, integer and Boolean values, a
+hexadecimal color, and a UUID tag; `VertexTag` is an optional legacy field in its source position.
 
 **Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
 outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
@@ -48,9 +52,9 @@ retained as if the registry had established their grammar, while the neutral pre
 silently withholds or misreads the value.
 
 **Note.** Partly settled. Link-family, scalar/quantity, in-memory list, standard side-entry,
-Mesh/Points, and TechDraw GeomFormatList value grammars are closed by the application writer
-inheritance rules and shared direct-root validation. The remaining question is limited to other
-custom runtime types and their custom side-entry forms.
+Mesh/Points, and TechDraw GeomFormatList and CosmeticVertexList value grammars are closed by the
+application writer inheritance rules and shared direct-root validation. The remaining question is
+limited to other custom runtime types and their custom side-entry forms.
 
 ### GP-02. Other GUI property semantics
 

@@ -842,6 +842,9 @@ fn validate_gui_property(
         "TechDraw::PropertyGeomFormatList" => {
             return validate_gui_geom_format_list(property, property_name);
         }
+        "TechDraw::PropertyCosmeticVertexList" => {
+            return validate_gui_cosmetic_vertex_list(property, property_name);
+        }
         "App::PropertyExpressionEngine" => {
             return validate_gui_expression_engine(property, property_name);
         }
@@ -1691,6 +1694,274 @@ fn validate_gui_geom_format_record(
         return Err(gui_techdraw_error(
             property_name,
             "GeomFormat has an invalid visibility",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_vertex_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires exactly one CosmeticVertexList value",
+        ));
+    };
+    if !root.has_tag_name("CosmeticVertexList") {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires a leading CosmeticVertexList value",
+        ));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertexList has no count"))?
+        .parse::<usize>()
+        .map_err(|_| {
+            gui_techdraw_error(property_name, "CosmeticVertexList has an invalid count")
+        })?;
+    let records = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertexList count does not match its records",
+        ));
+    }
+    for record in records {
+        if !record.has_tag_name("CosmeticVertex")
+            || record.attribute("type") != Some("TechDraw::CosmeticVertex")
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticVertexList has an invalid record type",
+            ));
+        }
+        validate_gui_cosmetic_vertex_record(record, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_vertex_record(
+    record: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let fields = record
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if !(15..=16).contains(&fields.len()) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an invalid field sequence",
+        ));
+    }
+    let base_fields = [
+        "Point",
+        "Extract",
+        "HLRVisible",
+        "Ref3D",
+        "IsCenter",
+        "Cosmetic",
+        "CosmeticLink",
+        "CosmeticTag",
+    ];
+    for (field, expected_tag) in fields.iter().zip(base_fields) {
+        if !field.has_tag_name(expected_tag) {
+            break;
+        }
+        if field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticVertex has a nested field",
+            ));
+        }
+    }
+    if fields
+        .iter()
+        .zip(base_fields)
+        .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an out-of-order field",
+        ));
+    }
+    let mut cursor = base_fields.len();
+    if fields[cursor].has_tag_name("VertexTag") {
+        validate_gui_techdraw_uuid(fields[cursor], property_name, "VertexTag")?;
+        cursor += 1;
+    }
+    let tail_fields = [
+        "PermaPoint",
+        "LinkGeom",
+        "Color",
+        "Size",
+        "Style",
+        "Visible",
+        "Tag",
+    ];
+    if fields.len() != cursor + tail_fields.len()
+        || fields[cursor..]
+            .iter()
+            .zip(tail_fields)
+            .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an out-of-order field",
+        ));
+    }
+    for field in &fields {
+        if field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticVertex has a nested field",
+            ));
+        }
+    }
+    validate_gui_techdraw_point(fields[0], property_name)?;
+    parse_gui_techdraw_integer_named(fields[1], property_name, "Extract")?;
+    validate_gui_techdraw_boolean(fields[2], property_name)?;
+    parse_gui_techdraw_integer_named(fields[3], property_name, "Ref3D")?;
+    validate_gui_techdraw_boolean(fields[4], property_name)?;
+    validate_gui_techdraw_boolean(fields[5], property_name)?;
+    parse_gui_techdraw_integer_named(fields[6], property_name, "CosmeticLink")?;
+    if fields[7].attribute("value").is_none() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex CosmeticTag has no value",
+        ));
+    }
+    validate_gui_techdraw_point(fields[cursor], property_name)?;
+    parse_gui_techdraw_integer_named(fields[cursor + 1], property_name, "LinkGeom")?;
+    validate_gui_techdraw_color(fields[cursor + 2], property_name)?;
+    parse_gui_techdraw_finite(fields[cursor + 3], property_name)?;
+    parse_gui_techdraw_integer_named(fields[cursor + 4], property_name, "Style")?;
+    validate_gui_techdraw_boolean(fields[cursor + 5], property_name)?;
+    validate_gui_techdraw_uuid(fields[cursor + 6], property_name, "Tag")?;
+    Ok(())
+}
+
+fn validate_gui_techdraw_point(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    for attribute in ["X", "Y", "Z"] {
+        let value = field
+            .attribute(attribute)
+            .ok_or_else(|| gui_techdraw_error(property_name, "point has no coordinate"))?
+            .parse::<f64>()
+            .map_err(|_| gui_techdraw_error(property_name, "point has an invalid coordinate"))?;
+        if !value.is_finite() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "point has a non-finite coordinate",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_gui_techdraw_boolean(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let value = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex Boolean has no value"))?;
+    if parse_bool(value).is_none() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an invalid Boolean",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gui_techdraw_color(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let color = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex color has no value"))?;
+    if !(color.len() == 7 || color.len() == 9)
+        || !color.starts_with('#')
+        || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an invalid color",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_gui_techdraw_finite(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let value = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex scalar has no value"))?
+        .parse::<f64>()
+        .map_err(|_| gui_techdraw_error(property_name, "CosmeticVertex scalar is invalid"))?;
+    if !value.is_finite() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex scalar is non-finite",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_gui_techdraw_integer_named(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    field_name: &str,
+) -> Result<(), CodecError> {
+    field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex integer has no value"))?
+        .parse::<i64>()
+        .map(|_| ())
+        .map_err(|_| {
+            gui_techdraw_error(
+                property_name,
+                &format!("CosmeticVertex {field_name} integer is invalid"),
+            )
+        })
+}
+
+fn validate_gui_techdraw_uuid(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    field_name: &str,
+) -> Result<(), CodecError> {
+    let value = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex tag has no value"))?;
+    let bytes = value.as_bytes();
+    let valid = bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|&index| bytes[index] == b'-')
+        && bytes
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| ![8, 13, 18, 23].contains(index))
+            .all(|(_, byte)| byte.is_ascii_hexdigit());
+    if !valid {
+        return Err(gui_techdraw_error(
+            property_name,
+            &format!("CosmeticVertex {field_name} is not a UUID"),
         ));
     }
     Ok(())
