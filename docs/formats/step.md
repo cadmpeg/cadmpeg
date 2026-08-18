@@ -262,7 +262,7 @@ constraints remain caller validation because Part 26 does not encode them.
 The caller operand is `(HDF5 resource, mapping edition, governing EXPRESS
 schema and edition, HDF5 validation result, Part 26 mapping validation result,
 resource-local population and reference graph)`. Composition with a Part 21
-resource is a separate CADIR decision.
+resource is CADIR decision D-03.
 
 ISO/TS 10303-26:2011 Annex B.3 permits an HDF5 file to be part of an exchange
 data set referenced by a representation that uses another ISO 10303
@@ -276,7 +276,7 @@ an agreement between exchange partners. The
 path within the named external source. These clauses do not define a
 universal Part 26 row to Part 21 `#`-instance identity map.
 
-CADIR decision: Part 26 and Part 21 are separate resource graphs. A resource
+CADIR decision D-03: Part 26 and Part 21 are separate resource graphs. A resource
 identity is the caller's resolver-qualified resource binding: its encoding,
 exact URI when present, retrieved representation, admission result, and
 verified digest when supplied. A Part 26 row identity is
@@ -1500,7 +1500,7 @@ space curve for one edge use describes the same model-space point set, and
 §4.5.49 requires each associated pcurve to have the same sense as `curve_3d`.
 A non-seam edge has no source field that selects one of multiple candidates.
 
-CADIR decision: a typed `SEAM_EDGE` uses its explicit pcurve only when the
+CADIR decision D-01: a typed `SEAM_EDGE` uses its explicit pcurve only when the
 reference is decoded, is a member of the edge's `SEAM_CURVE` associated
 geometry, and has the coedge face surface as its basis. An invalid reference
 does not fall back to another pcurve; the coedge remains without a pcurve and
@@ -1594,7 +1594,7 @@ the formations of that product. The standard permits a product to have
 multiple definition groups. The product-definition function resolves these
 associations as a `SET`; `PRESENTATION_LAYER_ASSIGNMENT.assigned_items` is also
 a `SET`, so neither relationship supplies a view order.
-CADIR decision: each linked `PRODUCT_DEFINITION` is one product-definition
+CADIR decision D-02: each linked `PRODUCT_DEFINITION` is one product-definition
 view. A product with one definition uses identity
 `step:product:product#<product>`. When one `PRODUCT` has multiple definitions,
 each view receives a distinct identity suffixed by its definition instance.
