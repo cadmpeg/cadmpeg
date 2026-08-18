@@ -2829,6 +2829,16 @@ direction, or step depth. When the feature generates no conical surface, this
 structure selects counterbore form independently of whether both cylinder
 carriers and the counterbore dimensions are evaluable.
 
+A split-patch class-29 counterbore table has exactly five unique materialized
+surface rows owned by the feature: four cylinders and one plane. Its
+materialized class-200 entries cover that complete surface set exactly. The
+cylinders form exactly two groups of two by nonzero source section entity;
+the plane has a distinct nonzero source section entity and one rowless
+class-200 companion for that source. At least one adjacent class-204 and
+class-203 pair is wholly rowless. This layout selects the same counterbore
+form as the paired-replay layout; dimensions, carriers, entry position, and
+direction still require their independent proofs.
+
 A class-911 table-class-29 simple-drilled recipe has one paired source that
 materializes two cone rows, one paired source that materializes two cylinder
 rows, and either two or three other paired sources that each contain two
