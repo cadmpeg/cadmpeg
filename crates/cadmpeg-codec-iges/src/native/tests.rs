@@ -333,7 +333,7 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
 }
 
 #[test]
-fn decode_label_display_count_stops_before_trailing_property_group() {
+fn decode_label_display_truncated_count_rejects_trailing_property_group() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 402,
@@ -357,10 +357,7 @@ fn decode_label_display_count_stops_before_trailing_property_group() {
     let entity = &native.arenas["entities"][0];
     let associativity = &native.arenas["associativities"][0];
 
-    assert_eq!(
-        entity.fields()["property_links"][0],
-        "iges:entity:directory#3"
-    );
+    assert!(entity.fields()["property_links"][0].is_null());
     assert_eq!(associativity.fields()["declared_count"], 2);
     assert!(associativity.fields()["placements"]
         .as_array()

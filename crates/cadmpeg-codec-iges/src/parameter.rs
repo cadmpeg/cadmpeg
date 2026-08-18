@@ -306,6 +306,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 123 §4.20 has three primary values, so its groups start at token four.
 /// Type 402 Forms 1, 7, 14, and 15 use `N` plus `N` member pointers, so their
 /// groups start at token `N + 2`.
+/// Type 402 Form 5 puts `N` at index 1 and seven fields per label placement,
+/// so its groups start at token `2 + 7*N`.
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
@@ -348,6 +350,7 @@ pub(crate) fn entity_primary_end(
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
+        (402, 5) => Some(label_display_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
@@ -377,6 +380,17 @@ fn counted_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(2))
+        .unwrap_or(record.tokens.len())
+}
+
+fn label_display_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_mul(7))
+        .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
 
