@@ -650,6 +650,34 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (508, 1) => {
+            let Some(use_count) = record.count(1).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let mut cursor = 2_usize;
+            for _ in 0..use_count {
+                let Some(curve_count_index) = cursor.checked_add(4) else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(curve_count) = record.count(curve_count_index) else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(curve_width) = curve_count.checked_mul(2) else {
+                    return ParameterBoundary::Invalid;
+                };
+                let Some(end) = cursor
+                    .checked_add(5)
+                    .and_then(|width| width.checked_add(curve_width))
+                else {
+                    return ParameterBoundary::Invalid;
+                };
+                if end > record.tokens.len() {
+                    return ParameterBoundary::Invalid;
+                }
+                cursor = end;
+            }
+            ParameterBoundary::Known(cursor)
+        }
         (406, 5) => {
             if record.integer(1) != Some(5) {
                 return ParameterBoundary::Invalid;
