@@ -2348,20 +2348,23 @@ fn transferred_pcurve_sample_with_budget(
         seed,
         tolerance,
     };
-    let target_uv = blend_contact
-        .and_then(|contact| {
-            blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-                index,
-                contact.support,
-                contact.support_geometry,
-                contact.pcurve,
-                contact.boundary,
-                source_pcurve,
-                parameter,
-                target,
-                geometry_budget,
-            )
-        })
+    // The contact route certifies the support point against `target` before it
+    // returns. Keep its result separate from fallback boundary inversion so a
+    // fallback cannot accidentally inherit that certification.
+    let contact_target_uv = blend_contact.and_then(|contact| {
+        blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+            index,
+            contact.support,
+            contact.support_geometry,
+            contact.pcurve,
+            contact.boundary,
+            source_pcurve,
+            parameter,
+            target,
+            geometry_budget,
+        )
+    });
+    let target_uv = contact_target_uv
         .or_else(|| {
             blend_boundary_parameter_from_support_pcurve_with_budget(
                 index,
@@ -2394,33 +2397,30 @@ fn transferred_pcurve_sample_with_budget(
                 geometry_budget,
             )
         })?;
-    let accepted = blend_contact.is_some_and(|contact| {
-        target_uv.v.to_bits() == (contact.boundary as f64).to_bits()
-            && blend_transfer_point_with_index(index, contact, target_uv.u, geometry_budget)
-                .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
-    }) || target_geometry
-        .and_then(|geometry| {
-            decoded_surface_point_with_geometry_and_budget(
-                index,
-                target_surface,
-                geometry,
-                target_uv.u,
-                target_uv.v,
-                0,
-                geometry_budget,
-            )
-        })
-        .or_else(|| {
-            decoded_surface_point_inner_with_budget(
-                index,
-                target_surface,
-                target_uv.u,
-                target_uv.v,
-                0,
-                geometry_budget,
-            )
-        })
-        .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
+    let accepted = contact_target_uv.is_some()
+        || target_geometry
+            .and_then(|geometry| {
+                decoded_surface_point_with_geometry_and_budget(
+                    index,
+                    target_surface,
+                    geometry,
+                    target_uv.u,
+                    target_uv.v,
+                    0,
+                    geometry_budget,
+                )
+            })
+            .or_else(|| {
+                decoded_surface_point_inner_with_budget(
+                    index,
+                    target_surface,
+                    target_uv.u,
+                    target_uv.v,
+                    0,
+                    geometry_budget,
+                )
+            })
+            .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
         || blend_boundary_spine_geometry_matches_with_index_and_budget(
             index,
             target_surface,
