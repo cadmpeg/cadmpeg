@@ -823,6 +823,18 @@ arrays are `App::PropertyColorList`; `ShapeAppearance` is `App::PropertyMaterial
 width and point size are `App::PropertyFloatConstraint`. A same-named property of another runtime
 type remains native and does not populate the neutral field.
 
+The neutral view-provider carrier set is closed. This is a CADIR decision: `ShowInTree` and
+`OnTopWhenSelected` remain native because they control the application tree and selection overlay,
+not a model-view field. `BoundingBox`, `Selectable`, `DrawStyle`, `Lighting`, `LineMaterial`,
+`PointMaterial`, `ShowPlacement`, `TransformOrigin`, and every other registered or provider-defined
+view-provider property likewise remain native because their effects are provider-specific renderer,
+editing, selection, or visibility-automation state without a corresponding neutral field. Their
+exact runtime types, values, XML, side entries, and source order remain retained in the GUI native
+arenas. A property with a selected name but another runtime type remains native; a selected
+name/runtime pair is projected only through the carrier named above. This decision applies to
+standard and module-defined providers alike and does not infer a neutral field from a property name,
+value tag, or numeric type alone.
+
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
 scalars describe the application object's exact-shape property named `Shape`. They produce an
 object appearance and explicit bindings only for bodies transferred from that property. Other

@@ -13,27 +13,6 @@ Each item has an identifier and these fields:
 
 ## 2. GUI properties
 
-### GP-02. Other GUI property semantics
-
-**Question.** What presentation semantics remain for each GUI property runtime type after the
-settled core and visual-layer subset?
-
-**Known.** The current presentation transfer projects only exact named presentation carriers.
-Other registered or provider-defined GUI properties retain their owner, runtime type, ordered
-values, and XML in the native arena.
-
-**Need.** Establish the presentation meaning of each remaining runtime type from its defining
-source and consumers, or record a per-type native-only decision with the reason that no neutral
-field is valid.
-
-**Conflict.** The GUI registry closure makes native retention the fallback for every non-selected
-type, but does not establish the semantics of those types. A valid presentation property can be
-withheld solely because its runtime type is outside the exact projection list, with no source-backed
-decision distinguishing intentional native-only data from an unimplemented neutral mapping.
-
-**Note.** Reopened. Native retention is safe, but it does not answer the remaining semantic
-question.
-
 ### GP-10. Topology color-array count admission
 
 **Question.** What is the result when a per-face, per-edge, or per-vertex color-list count does not

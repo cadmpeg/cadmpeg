@@ -193,6 +193,86 @@ fn rejects_duplicate_camera_settings_fields() {
 }
 
 #[test]
+fn keeps_registered_non_presentation_properties_native() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="20">
+<Property name="ShowInTree" type="App::PropertyBool"><Bool value="false"/></Property>
+<Property name="OnTopWhenSelected" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+<Property name="BoundingBox" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="Selectable" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="DrawStyle" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+<Property name="LineMaterial" type="App::PropertyMaterial"><PropertyMaterial ambientColor="1" diffuseColor="2" specularColor="3" emissiveColor="4" shininess="0.5" transparency="0.25"/></Property>
+<Property name="PointMaterial" type="App::PropertyMaterial"><PropertyMaterial ambientColor="5" diffuseColor="6" specularColor="7" emissiveColor="8" shininess="0.75" transparency="0.125"/></Property>
+<Property name="ShowPlacement" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="TransformOrigin" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="AngularDeflection" type="App::PropertyAngle"><Float value="28.65"/></Property>
+<Property name="Deviation" type="App::PropertyFloatConstraint"><Float value="0.2"/></Property>
+<Property name="Visibility" type="App::PropertyBool"><Bool value="false"/></Property>
+<Property name="DisplayMode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+<Property name="SelectionStyle" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+<Property name="LineWidth" type="App::PropertyFloatConstraint"><Float value="3.5"/></Property>
+<Property name="PointSize" type="App::PropertyFloatConstraint"><Float value="4.5"/></Property>
+<Property name="Transparency" type="App::PropertyPercent"><Integer value="25"/></Property>
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3424269311"/></Property>
+<Property name="LineColor" type="App::PropertyColor"><PropertyColor value="447958527"/></Property>
+<Property name="PointColor" type="App::PropertyColor"><PropertyColor value="1144201983"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("registered GUI properties");
+    let view = &result.ir().model.view_presentations[0];
+    assert_eq!(view.visible, Some(false));
+    assert_eq!(view.display_mode.as_deref(), Some("3"));
+    assert_eq!(view.selection_style.as_deref(), Some("1"));
+    assert_eq!(view.line_width, Some(3.5));
+    assert_eq!(view.point_size, Some(4.5));
+    for name in [
+        "ShowInTree",
+        "OnTopWhenSelected",
+        "BoundingBox",
+        "Selectable",
+        "DrawStyle",
+        "LineMaterial",
+        "PointMaterial",
+        "ShowPlacement",
+        "TransformOrigin",
+        "AngularDeflection",
+        "Deviation",
+        "Transparency",
+        "ShapeColor",
+        "LineColor",
+        "PointColor",
+    ] {
+        assert!(
+            view.properties.contains_key(name),
+            "missing native property {name}"
+        );
+    }
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert_eq!(properties.len(), 20);
+    assert!(properties.iter().all(|property| {
+        crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
+    }));
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
 fn rejects_ambiguous_gui_containers_and_names() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
