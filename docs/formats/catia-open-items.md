@@ -472,6 +472,82 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-catia/src/loss.rs` gives `TopologyE5GaugeSubstituted`, `TopologyB5GaugeSubstituted`, and `TopologyZeroEntityGaugeSubstituted`. The E5, B5, and zero-entity routes charge one of these codes when a topology gauge replaces an unresolved source field. The standard route has no equivalent code, and `crates/cadmpeg-codec-catia/src/solve/` emits no loss code. A standard topology that rests on the automorphism quotient is thus not distinguishable in the report from a fully determined decode.
 
+### SN-30. Coordinate-blind topology automorphism
+
+**Question.** Must a topology automorphism keep the coordinates of each permuted allocation row?
+
+**Known.** `catia.md` §5.4 "An evidence-free topology automorphism is another quotient choice." lists the conditions the row permutation and the induced coordinate permutation must satisfy. Equal coordinates are not one of them. `crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs:196-203` makes the coordinate gauge from the row keys, the endpoint options, and the evidence flags; it receives no coordinates. `crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs:346-373` certifies a permutation from the option sets alone. The regression test at `crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs:1005-1088` asserts that a two-row body on the coordinate rows at x = 0 and x = 1 is equivalent to the same body on the rows at x = 2 and x = 3.
+
+**Need.** We must know the condition, because two candidate topologies that this quotient makes equal can put one solid at two different positions, and `SN-29` records that the first candidate reached is the one that transfers.
+
+### SN-31. Face assignments removed by a stopped enumeration
+
+**Question.** Which relation selects one face boundary assignment when the endpoint-configuration enumeration of another assignment of the same face does not finish?
+
+**Known.** `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9054-9081` enumerates the endpoint configurations of each face assignment under a local work slice and one shared budget. It gives no configuration list when either budget stops the enumeration, which is the same result as an assignment that has no configuration. `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:6676-6728` keeps the unknown state only when no other assignment of the same face made a configuration; in every other case the stopped assignment leaves the face domain. `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:6838-6851` then tests uniqueness on the remaining assignments, and `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9096-9098` returns that result before the complete selection search runs. No loss code records the removal.
+
+**Need.** We must keep every unenumerated assignment or refuse the file, because a stopped enumeration is not a proof that the assignment has no configuration, and the decoder asserts one unique topology from the assignments that remain.
+
+### SN-32. Derived analytic carrier arc without a witness
+
+**Question.** Which arc of a derived analytic carrier is the edge when no branch witness and no native parameter incidence is available?
+
+**Known.** `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:7144-7159` gives a parameter interval to every derived circle and ellipse that has no interval. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:6901-6920` uses the short arc between the two endpoints when the witness is absent. The witness needs two resolved support carriers whose lifted midpoints agree inside `1e-6`, so it is absent for a derived carrier with no native support. `crates/cadmpeg-codec-catia/src/nurbs.rs:370-374` rejects a sweep that is not positive, so the short arc is accepted for one sense of the stored plane normal and refused for the opposite sense of the same geometry. `SN-15` asks for the arc selector and stays open.
+
+**Need.** We must know the selector, because the short arc and the long arc are both admissible and the neutral edge covers only one of them.
+
+**Conflict.** `catia.md` §5.8 "A standard spline edge with two distinct adjacent face carriers" states that no edge parameter interval and no pcurve is assigned without a branch witness or a native parameter incidence that selects one endpoint arc. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:7144-7159` assigns an interval with neither.
+
+### SN-33. Spine grammar arbitration
+
+**Question.** Which container field distinguishes a standard-nested spine from an FBB-only spine when the file admits both edge-table grammars, or neither?
+
+**Known.** `catia.md` §1 "Detection invariants: a standard file has one nested inner" gives the detection invariants, and the variant table gives an FBB-only spine as a nested container with FBB face rows and `05 08 01` vertices but no standard edge-row table. `crates/cadmpeg-codec-catia/src/container.rs:1263-1274` tries the standard edge-table grammar first, then the FBB-only two-table grammar, and then classifies by the count of `EDGE_DELIMITER` occurrences. The comment at `crates/cadmpeg-codec-catia/src/container.rs:1221-1230` records that this byte sequence does not distinguish the two spines, because FBB-only widths one and three use the standard delimiter. The two probes read different runs: `standard_edge_count` uses `selected_standard_run` and `fbb_only_edge_count` uses `largest_fbb_run`. Nothing shows that the two grammars cannot both admit one stream.
+
+**Need.** We must know the selecting field because the variant fixes the decode route. `crates/cadmpeg-codec-catia/src/families/mod.rs:46-68` applies only the standard route to the standard-nested variant, and applies the standard route and then the freeform route to the FBB-only variant. A spine that is classified standard-nested in error loses the freeform route and transfers no carrier.
+
+**Note.** `catia.md` §1 gives no rule for the state where neither edge-table grammar is admitted. The decoder uses the delimiter count in that state.
+
+### SN-34. Full-form standard endpoint-port identity
+
+**Question.** Does a two-handle row in a full-form standard spine share its endpoint ports with another row in the same table that stores the same handle?
+
+**Known.** `crates/cadmpeg-codec-catia/src/families/standard/fbb.rs:738-746` sets the boundary layout of every parsed row from its handle count alone: a row with two handles is a complete boundary run. `crates/cadmpeg-codec-catia/src/families/standard/fbb.rs:633-645` parses the full-form standard spine with that same row parser, so a full-form row with two handles also carries that layout. `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:42-59` then gives such a row table-scoped handle identity and gives occurrence-local ports only to rows with more handles. The docstring at `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:90-93` states the form-level rule, and `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:1582-1585` selects placement ports only when every row is a complete boundary run, which is also a form-level test.
+
+**Need.** We must know the rule, because a shared port identity collapses two logical vertices before the solver runs. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3643-3654` then reduces that edge's candidate domain to one pair.
+
+**Conflict.** `catia.md` §5.4 "Full-form standard `u16be` endpoint integers are not vertex indices or reusable port identities." states that each full-form row contributes two occurrence-local ports even when another row stores the same endpoint integer. `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:42-59` shares the port identity of a two-handle full-form row through its table scope.
+
+### OS-16. Object-stream topology-root records
+
+**Question.** Which records make an object-stream run a topology root?
+
+**Known.** `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4969-4971` marks a run as a topology run when one frame in the run has family `b5` and class `5f` or `62`. `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4865-4876` marks a run as a topology root when one materialized record has class `5f` or `62`, with no family condition, and `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4594-4598` materializes family `a8` records of class `34` and `62`. An `a8` loop node therefore makes a topology root for the population partitioner and not for the population selector. `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4987-4991` selects a population only when exactly one run is a topology run, and refuses the graph when more than one run is.
+
+**Need.** We must know the record set that makes a topology root, because the two rules put the same run on different sides of the selection.
+
+**Note.** The frame-based rule replaced a record-based rule in the same commit that made the frame index single-pass. The record-based rule in the same file was not changed with it.
+
+### DI-24. PMI dimension quantity and suffix framing
+
+**Question.** Which field gives the physical quantity of a transferred `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, and `DC` suffix framings select?
+
+**Known.** `DI-18` records that the semantic subtype of a `Range` production is unknown. `crates/cadmpeg-codec-catia/src/pmi.rs:142-148` gives the length quantity to the nominal and to both deviations of every admitted production. `crates/cadmpeg-ir/src/pmi.rs` defines that quantity as millimetres and defines an angle quantity and a ratio quantity beside it. `crates/cadmpeg-codec-catia/src/pmi.rs:79-88` admits three exact suffix framings. `crates/cadmpeg-codec-catia/src/pmi.rs:101-107` gives all three the same dimension kind, and the neutral annotation record keeps no native reference, so the framing does not reach the neutral model. The transfer reports a coverage count only, and `crates/cadmpeg-codec-catia/src/loss.rs` has no code for it.
+
+**Need.** We must know the quantity to transfer the value. An angular dimension in radians and a length in millimetres are not distinguishable in the current output.
+
+**Note.** `catia.md` §7.1 "A legacy scalar prefix is" resolves a scalar's declared type from its type descriptor and gives `LENGTH` values in millimetres and `ANGLE` values in radians. The `Range` transfer resolves no type and assigns the length quantity to every production.
+
+### DI-25. Compact `1A` operation-class declaration
+
+**Question.** Does a compact self-owned `1A` root declare an operation class?
+
+**Known.** `catia.md` §7.3 "An exact separator-form owner declaration with class name `GSMPlaneAngle`" requires a separator-form declaration with a matching class entry, owner entity, and structural owner for each unresolved operation family node. `crates/cadmpeg-codec-catia/src/design_feature.rs:713-741` also admits a self-owned compact `1A` root that has no structural owner, and reads the operation class name and class entry from that record. Commits on this branch added classes to the admitted operation set, so the compact route now reaches the reference-plane, extrusion, and circular-pattern families.
+
+**Need.** We must know whether the compact root declares a class, because the family node it makes is a neutral feature with a history ordinal.
+
+**Conflict.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" states that in compact groups the selected record is an identity anchor and not a class declaration, and that owner class and storage stay unset. `crates/cadmpeg-codec-catia/src/design_feature.rs:728-740` reads the owner class name and class entry from that record.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
