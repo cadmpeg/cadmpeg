@@ -20,6 +20,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::cgm_source;
@@ -3822,6 +3823,8 @@ fn attach_standard_topology(
                     || !limit_curve_bindings[edge].is_empty()
             })
             .collect::<Vec<_>>();
+        let line_preference = StandardLinePairPreference::new(&ir.model.points, &supports, options);
+        let line_preference_active = line_preference.has_flexible_edges();
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             spine,
             &edge_faces,
@@ -3832,9 +3835,7 @@ fn attach_standard_topology(
             &branch_preferred_edges,
             branch_assignment_dependencies.as_deref(),
             &preferred_budget,
-            |pairs| {
-                standard_line_pair_solution_is_simple(&ir.model.points, &supports, options, pairs)
-            },
+            |pairs| line_preference.is_simple(pairs),
             |pairs| {
                 let branch_valid = fbb_only
                     || standard_curve_branch_assignment_is_ranked(
@@ -3847,13 +3848,7 @@ fn attach_standard_topology(
                 if !branch_valid {
                     return false;
                 }
-                let line_valid = standard_line_pair_solution_is_simple(
-                    &ir.model.points,
-                    &supports,
-                    options,
-                    pairs,
-                );
-                if !line_valid {
+                if !line_preference.is_simple(pairs) {
                     return false;
                 }
                 standard_circle_pair_solution_is_simple(
@@ -3870,13 +3865,7 @@ fn attach_standard_topology(
         let has_circle_preference = circle_constraint_edges
             .iter()
             .any(|constrained| *constrained);
-        let has_line_preference = !fbb_only
-            && supports.iter().zip(options).any(|(support, options)| {
-                matches!(
-                    support.geometry,
-                    crate::families::standard::records::StandardCurveGeometry::Line
-                ) && options.len() > 1
-            });
+        let has_line_preference = !fbb_only && line_preference_active;
         let outcome = if has_circle_preference || has_line_preference {
             // Distinct B-rep edges may legally occupy overlapping ranges of the same
             // circular carrier. Treat range separation as a search preference, then
@@ -7490,19 +7479,194 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
 /// carrier into disjoint edge intervals. Exact coincident intervals remain
 /// admissible because seam and duplicate-edge representations can share one
 /// carrier; a partial collinear overlap is the non-simple alternative.
+#[derive(Clone, Copy)]
+struct StandardLineSegment {
+    start: Point3,
+    end: Point3,
+}
+
+#[derive(Clone, Copy)]
+struct StandardLineSelection {
+    pair: [usize; 2],
+    segment: StandardLineSegment,
+}
+
+type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
+
+struct StandardLinePairPreference {
+    points: Vec<Point3>,
+    flexible_edges: Vec<bool>,
+    edges_by_face: HashMap<usize, Vec<usize>>,
+    simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
+}
+
+impl StandardLinePairPreference {
+    fn new(
+        points: &[Point],
+        supports: &[crate::families::standard::records::StandardCurveSupport],
+        endpoint_options: &[Vec<[usize; 2]>],
+    ) -> Self {
+        let points = points
+            .iter()
+            .map(|point| point.position)
+            .collect::<Vec<_>>();
+        let mut flexible_edges = vec![false; supports.len()];
+        let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
+
+        for (edge, (support, options)) in supports.iter().zip(endpoint_options).enumerate() {
+            if !matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Line
+            ) || options.len() <= 1
+            {
+                continue;
+            }
+            flexible_edges[edge] = true;
+            for &face in &support.faces {
+                let edges = edges_by_face.entry(face).or_default();
+                if !edges.contains(&edge) {
+                    edges.push(edge);
+                }
+            }
+        }
+
+        Self {
+            points,
+            flexible_edges,
+            edges_by_face,
+            simplicity_cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    fn has_flexible_edges(&self) -> bool {
+        self.flexible_edges.iter().any(|flexible| *flexible)
+    }
+
+    fn is_simple(&self, pairs: &[Option<[usize; 2]>]) -> bool {
+        let mut selected = vec![None; self.flexible_edges.len()];
+        for (edge, pair) in pairs.iter().enumerate() {
+            if !self.flexible_edges.get(edge).copied().unwrap_or(false) {
+                continue;
+            }
+            let Some(pair) = pair else {
+                continue;
+            };
+            let segment = standard_line_segment(&self.points, *pair);
+            let Some(segment) = segment else {
+                continue;
+            };
+            selected[edge] = Some(StandardLineSelection {
+                pair: *pair,
+                segment,
+            });
+        }
+
+        for edges in self.edges_by_face.values() {
+            for (left_position, &left_edge) in edges.iter().enumerate() {
+                let Some(left) = selected[left_edge] else {
+                    continue;
+                };
+                for &right_edge in &edges[left_position + 1..] {
+                    let Some(right) = selected[right_edge] else {
+                        continue;
+                    };
+                    let key = ordered_line_pair(left_edge, left.pair, right_edge, right.pair);
+                    let incompatible = {
+                        let cached = {
+                            let cache = self.simplicity_cache.borrow();
+                            cache.get(&key).copied()
+                        };
+                        if let Some(simple) = cached {
+                            !simple
+                        } else {
+                            let simple =
+                                standard_line_segments_are_simple(left.segment, right.segment);
+                            self.simplicity_cache.borrow_mut().insert(key, simple);
+                            !simple
+                        }
+                    };
+                    if incompatible {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
+fn ordered_line_pair(
+    left_edge: usize,
+    left_pair: [usize; 2],
+    right_edge: usize,
+    right_pair: [usize; 2],
+) -> StandardLinePairKey {
+    if left_edge < right_edge {
+        ((left_edge, left_pair), (right_edge, right_pair))
+    } else {
+        ((right_edge, right_pair), (left_edge, left_pair))
+    }
+}
+
+fn standard_line_segment(points: &[Point3], pair: [usize; 2]) -> Option<StandardLineSegment> {
+    Some(StandardLineSegment {
+        start: *points.get(pair[0])?,
+        end: *points.get(pair[1])?,
+    })
+}
+
+fn standard_line_segments_are_simple(
+    left: StandardLineSegment,
+    right: StandardLineSegment,
+) -> bool {
+    let left_axis = left.end.vector_from(left.start);
+    let left_length = left_axis.norm();
+    let right_axis = right.end.vector_from(right.start);
+    let right_length = right_axis.norm();
+    if left_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+        || right_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+    {
+        return true;
+    }
+    let left_unit = left_axis.scale(1.0 / left_length);
+    let parallel_error = left_unit.cross(right_axis.scale(1.0 / right_length)).norm();
+    let line_error = left_unit
+        .cross(right.start.vector_from(left.start))
+        .norm()
+        .max(left_unit.cross(right.end.vector_from(left.start)).norm());
+    if parallel_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
+        || line_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
+    {
+        return true;
+    }
+    let left_interval = [0.0, left_length];
+    let right_interval = [
+        left_unit.dot(right.start.vector_from(left.start)),
+        left_unit.dot(right.end.vector_from(left.start)),
+    ];
+    let right_interval = [
+        right_interval[0].min(right_interval[1]),
+        right_interval[0].max(right_interval[1]),
+    ];
+    let overlap = left_interval[1].min(right_interval[1]) - left_interval[0].max(right_interval[0]);
+    if overlap <= LINE_SEGMENT_GEOMETRY_TOLERANCE {
+        return true;
+    }
+    (left_interval[0] - right_interval[0]).abs() <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+        && (left_interval[1] - right_interval[1]).abs() <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+}
+
+#[cfg(test)]
 pub(crate) fn standard_line_pair_solution_is_simple(
     points: &[Point],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
-    #[derive(Clone, Copy)]
-    struct Segment {
-        faces: [usize; 2],
-        start: Point3,
-        end: Point3,
-    }
-
+    let point_positions = points
+        .iter()
+        .map(|point| point.position)
+        .collect::<Vec<_>>();
     let segments = supports
         .iter()
         .zip(endpoint_options)
@@ -7518,62 +7682,35 @@ pub(crate) fn standard_line_pair_solution_is_simple(
                 return None;
             }
             let pair = pair.as_ref()?;
-            Some(Segment {
-                faces: support.faces,
-                start: points.get(pair[0])?.position,
-                end: points.get(pair[1])?.position,
-            })
+            Some((
+                support.faces,
+                standard_line_segment(&point_positions, *pair)?,
+            ))
         })
         .collect::<Vec<_>>();
-    let mut segments_by_face = HashMap::<usize, Vec<Segment>>::new();
-    for segment in segments {
-        for face in segment.faces {
+    let mut segments_by_face = HashMap::<usize, Vec<StandardLineSegment>>::new();
+    for (faces, segment) in segments {
+        for face in faces {
             segments_by_face.entry(face).or_default().push(segment);
         }
     }
     segments_by_face.into_values().all(|segments| {
         segments.iter().enumerate().all(|(left_index, left)| {
-            segments[left_index + 1..].iter().all(|right| {
-                let left_axis = left.end.vector_from(left.start);
-                let left_length = left_axis.norm();
-                let right_axis = right.end.vector_from(right.start);
-                let right_length = right_axis.norm();
-                if left_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
-                    || right_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
-                {
-                    return true;
-                }
-                let left_unit = left_axis.scale(1.0 / left_length);
-                let parallel_error = left_unit.cross(right_axis.scale(1.0 / right_length)).norm();
-                let line_error = left_unit
-                    .cross(right.start.vector_from(left.start))
-                    .norm()
-                    .max(left_unit.cross(right.end.vector_from(left.start)).norm());
-                if parallel_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
-                    || line_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
-                {
-                    return true;
-                }
-                let left_interval = [0.0, left_length];
-                let right_interval = [
-                    left_unit.dot(right.start.vector_from(left.start)),
-                    left_unit.dot(right.end.vector_from(left.start)),
-                ];
-                let right_interval = [
-                    right_interval[0].min(right_interval[1]),
-                    right_interval[0].max(right_interval[1]),
-                ];
-                let overlap = left_interval[1].min(right_interval[1])
-                    - left_interval[0].max(right_interval[0]);
-                if overlap <= LINE_SEGMENT_GEOMETRY_TOLERANCE {
-                    return true;
-                }
-                (left_interval[0] - right_interval[0]).abs() <= LINE_SEGMENT_GEOMETRY_TOLERANCE
-                    && (left_interval[1] - right_interval[1]).abs()
-                        <= LINE_SEGMENT_GEOMETRY_TOLERANCE
-            })
+            segments[left_index + 1..]
+                .iter()
+                .all(|right| standard_line_segments_are_simple(*left, *right))
         })
     })
+}
+
+#[cfg(test)]
+pub(crate) fn standard_line_pair_solution_is_simple_cached(
+    points: &[Point],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    endpoint_options: &[Vec<[usize; 2]>],
+    pairs: &[Option<[usize; 2]>],
+) -> bool {
+    StandardLinePairPreference::new(points, supports, endpoint_options).is_simple(pairs)
 }
 
 pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {
