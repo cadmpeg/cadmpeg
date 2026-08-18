@@ -1744,6 +1744,109 @@ fn type406_drawing_property_malformed_np_or_span_does_not_enable_generic_recover
 }
 
 #[test]
+fn type406_form6_entity_table_boundary_follows_fixed_values() {
+    let association = directory_target(3, 212);
+    let mut source = directory_target(1, 406);
+    source.form = 6;
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for values in [
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(5),
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            TokenValue::Integer(1),
+            TokenValue::Integer(2),
+            TokenValue::Integer(8),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(4),
+            TokenValue::Integer(1),
+            TokenValue::Real(2.0),
+            TokenValue::Integer(2),
+            TokenValue::Integer(2),
+            TokenValue::Integer(8),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Omitted,
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            TokenValue::Integer(1),
+            TokenValue::Integer(2),
+            TokenValue::Integer(8),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(5),
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            TokenValue::Integer(2),
+            TokenValue::Integer(2),
+            TokenValue::Integer(8),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 406 Form 6 table boundary");
+        assert_eq!(groups.token_start, 7);
+        assert_eq!(groups.associations, vec![3]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type406_form6_table_boundary_precedes_generic_candidate() {
+    let mut source = directory_target(1, 406);
+    source.form = 6;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    let values = vec![406, 5, 1, 2, 1, 2, 8, 6, 3, 3, 3, 3, 3, 3, 0];
+    let record = integer_parameter_record(1, &values);
+    let generic = structural_pointer_group_candidates(&record);
+    assert!(generic.iter().any(|candidate| candidate.token_start == 7));
+    assert!(generic.iter().any(|candidate| candidate.token_start == 10));
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 406 Form 6 table boundary");
+    assert_eq!(groups.token_start, 7);
+    assert_eq!(groups.associations, vec![3; 6]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type406_form6_truncated_primary_or_group_does_not_enable_generic_recovery() {
+    let mut source = directory_target(1, 406);
+    source.form = 6;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for values in [vec![406, 5, 1, 2, 1, 2], vec![406, 5, 1, 2, 1, 2, 8, 1, 3]] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(1, &values), &directory);
+        assert_eq!(analysis.candidate_count, 0, "values={values:?}");
+        assert_eq!(analysis.valid_candidate_count, 0, "values={values:?}");
+        assert!(analysis.groups.is_none(), "values={values:?}");
+    }
+}
+
+#[test]
 fn type406_form32_entity_table_boundary_follows_fixed_values() {
     let association = directory_target(3, 212);
     let mut source = directory_target(1, 406);
