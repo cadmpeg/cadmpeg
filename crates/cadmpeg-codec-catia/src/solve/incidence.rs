@@ -4062,13 +4062,20 @@ where
             let _ = visitor(&pairs);
             return Some(());
         }
-        let preflight_orientation_budget =
-            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let coordinate_preflight_budget =
-            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let boundary_preflight_budget =
-            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         for component in &components {
+            // Preflight is a rejection shortcut only. Give each independent
+            // component its own bounded slice so a large component cannot
+            // consume the composition budget needed by all later components.
+            // Exhaustion leaves the component unknown; the complete composition
+            // below remains the sound decision point.
+            let component_preflight_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let preflight_orientation_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let coordinate_preflight_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let boundary_preflight_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first = |solution: &[MeshEndpointPair]| {
                 let mut completed = fixed.clone();
@@ -4105,17 +4112,16 @@ where
                 &fixed,
                 &degrees,
                 point_count,
-                session_budget,
+                &component_preflight_budget,
                 &coordinate_preflight_budget,
                 &boundary_preflight_budget,
                 &preflight_orientation_budget,
                 Some(&mut accept_first),
             );
+            if component_exhausted {
+                continue;
+            }
             if !found {
-                if component_exhausted {
-                    exhausted = true;
-                    return None;
-                }
                 rejection = IncidenceRejection::ComponentDomain;
                 return None;
             }
