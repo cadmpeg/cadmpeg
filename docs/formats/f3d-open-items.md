@@ -216,6 +216,40 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** The mappings determine which point and curve records are construction or helper geometry, which records can participate in a neutral profile, and which versioned flags and selector-state pair a writer derives from each neutral point role.
 
+### DR-05. Recipe records of a non-locus parameter companion
+
+**Question.** How do the recipe records inside one non-locus indexed-parameter-companion variant relate to each other as an operation?
+
+**Known.** `f3d.md` §3.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §3.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §3.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus.
+
+**Need.** We must know the operation to build a neutral dimension from more than one recipe record.
+
+**Note.** The change that deleted this item changed only `f3d.md` and this document. It added no code and no test. It wrote the decoder's current policy into `f3d.md` §3.1 "All complete construction-recipe records in one non-locus dimension companion". That paragraph gives `recipe_ordinal` the authority to order the records, but `recipe_ordinal` is not a stored field: `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs` numbers the records with `enumerate()`, and `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs` builds that list from the recipes whose byte offsets fall inside the companion payload span, sorted by byte offset. The paragraph therefore records byte order as the format's operation order. The second sentence of the paragraph repeats the measurement rule that `f3d.md` §3.1 "A recipe-backed linear dimension" already gives.
+
+### DR-23. `Draft` outward convention
+
+**Question.** Which stored carrier fixes the outward-material convention of a `Draft` scope?
+
+**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is a finite signed draft angle in radians, including zero, and the second reserves the opposite-side angle at zero. A neutral-plane draft has one role-`0x0000002100000000` face-recipe group. A parting-line draft has two such groups: one single-member entity-selection group names the WorkPlane at primary identity plus one, and the other carries the parting-tool face recipes. The WorkPlane's third matrix column supplies the pull direction and its feature is the pull-plane dependency.
+
+The signed angle and the WorkPlane pull direction are independent fields. The outward-material convention has no identified carrier, so the neutral model leaves `outward` unset.
+
+**Need.** Identify the stored carrier for the outward-material convention without deriving it from the angle sign or pull direction.
+
+**Note.** The change that deleted this item derives the value from the angle sign, which the Need excludes. `crates/cadmpeg-codec-f3d/src/design/feature_project.rs` `draft_outward` returns `angle < 0.0` and every `Draft` branch now calls it. The commit body carries no reasoning, `f3d.md` §3.1 "F3D stores no independent material-side bit for Draft." marks no decision, and no loss code and no finding charges the substitution. The clause `outward.is_none()` in the incomplete-feature test in `crates/cadmpeg-codec-f3d/src/decode.rs` can no longer fire, so a `Draft` with no material-side evidence now reports as a complete feature. The added test asserts the same rule that the helper holds.
+
+### DR-32A. Component records that share one component GUID
+
+**Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
+
+**Known.** `f3d.md` §3.1 "A local component occurrence is an indexed carrier" states that equal component GUIDs name the same reusable local component definition, and each carrier stores the same u64 component-record reference twice. The validator holds one component-record reference per component GUID per stream and reports a carrier that contradicts an earlier one.
+
+Documents exist with two unplaced ordinal-one carriers whose component GUIDs are equal, whose occurrence GUIDs differ, and whose component-record references differ. Both carriers satisfy every fixed member of the 229-byte frame, and both duplicate their own component-record reference across offsets 24 and 197, so neither is a misread frame.
+
+**Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
+
+**Note.** The change that deleted this item takes the first reading and removes the validator report. It adds no specimen that separates the two readings and gives no reasoning in its commit body. `component_record_index` stays decoded and unused for identity: `crates/cadmpeg-codec-f3d/src/design/decode/components.rs` only makes sure that the two copies inside one carrier agree, and `crates/cadmpeg-codec-f3d/src/design/components.rs` builds the neutral component identity from the component GUID alone. Two carriers that describe two definitions therefore merge into one neutral component, and no loss records the merge. The added validator test builds both carriers from the rule that it confirms.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
