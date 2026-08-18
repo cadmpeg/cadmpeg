@@ -44,6 +44,7 @@ const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
 const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
 const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
 const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
+const SPHERE_CENTER_COINCIDENCE_TOLERANCE: f64 = 2e-3;
 const CYLINDER_PLANE_CONIC_TOLERANCE: f64 = 2e-3;
 const PERPENDICULAR_CYLINDER_CONIC_TOLERANCE: f64 = 2e-3;
 const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
@@ -6853,7 +6854,9 @@ pub(crate) fn build_standard_edge_curve(
                 .faces
                 .iter()
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-                .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
+                .filter_map(|surface| {
+                    standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
+                })
                 .collect();
             axes.extend(native_support.into_iter().flat_map(|native| {
                 native.carriers.iter().filter_map(|carrier| {
@@ -6862,7 +6865,7 @@ pub(crate) fn build_standard_edge_curve(
                     else {
                         return None;
                     };
-                    circle_axis_from_carrier(*center, *radius, surface)
+                    standard_circle_axis_from_carrier(*center, *radius, surface)
                 })
             }));
             if axes.is_empty() {
@@ -7235,7 +7238,9 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
             .faces
             .iter()
             .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-            .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
+            .filter_map(|surface| {
+                standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
+            })
             .collect::<Vec<_>>();
         let Some(axis) = axes.first().copied() else {
             continue;
@@ -7480,7 +7485,7 @@ pub(crate) fn native_support_circle_param_range(
             else {
                 return None;
             };
-            let carrier_axis = circle_axis_from_carrier(center, radius, surface)?;
+            let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
             (carrier_axis.dot(axis) >= 0.9999).then_some(())?;
             Some(parameters.map(|parameter| {
                 let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
@@ -7543,7 +7548,7 @@ pub(crate) fn attach_standard_circles(
                     .find(|surface| surface.id == *surface_id)
             })
             .filter_map(|surface| {
-                circle_axis_from_carrier(circle.center, circle.radius, &surface.geometry)
+                standard_circle_axis_from_carrier(circle.center, circle.radius, &surface.geometry)
             })
             .collect();
         let Some(axis) = axes.first().copied() else {
@@ -7618,6 +7623,27 @@ fn full_circle_frame(
     }
     let ref_direction = unit_vector(radial)?;
     (axis.dot(ref_direction).abs() <= TOLERANCE).then_some((axis, ref_direction))
+}
+
+fn standard_circle_axis_from_carrier(
+    center: Point3,
+    circle_radius: f64,
+    surface: &SurfaceGeometry,
+) -> Option<Vector3> {
+    if let SurfaceGeometry::Sphere {
+        center: sphere_center,
+        radius: sphere_radius,
+        ..
+    } = surface
+    {
+        let center_distance = center.distance(*sphere_center);
+        if center_distance <= SPHERE_CENTER_COINCIDENCE_TOLERANCE
+            && close_length(circle_radius, *sphere_radius)
+        {
+            return None;
+        }
+    }
+    circle_axis_from_carrier(center, circle_radius, surface)
 }
 
 pub(crate) fn circle_axis_from_carrier(
@@ -7807,7 +7833,7 @@ mod tests;
 
 #[cfg(test)]
 mod circle_axis_tests {
-    use super::circle_axis_from_carrier;
+    use super::{circle_axis_from_carrier, standard_circle_axis_from_carrier};
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -7886,6 +7912,32 @@ mod circle_axis_tests {
         assert_eq!(
             circle_axis_from_carrier(Point3::new(0.0, 0.0, 2.0), 10.0, &torus),
             Some(z())
+        );
+    }
+
+    #[test]
+    fn centered_sphere_does_not_override_a_cylinder_axis() {
+        let center = Point3::new(1e-10, 0.0, -1e-10);
+        let sphere = SurfaceGeometry::Sphere {
+            center: origin(),
+            axis: z(),
+            ref_direction: x(),
+            radius: 3.175,
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(center.x, 0.0, center.z),
+            axis: y(),
+            ref_direction: x(),
+            radius: 3.175,
+        };
+
+        assert_eq!(
+            standard_circle_axis_from_carrier(center, 3.175, &sphere),
+            None
+        );
+        assert_eq!(
+            standard_circle_axis_from_carrier(center, 3.175, &cylinder),
+            Some(y())
         );
     }
 }

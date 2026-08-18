@@ -346,7 +346,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which arc branch applies when no adjacent face witness and no exact two-support object-stream pcurve witness is available?
 
-**Known.** `catia.md` §5.6 "**Circle/arc endpoints by support intersection:**" defines arc selection when one of these witnesses fixes the branch.
+**Known.** `catia.md` §5.6 "**Circle/arc endpoints by support intersection:**" defines arc selection when one of these witnesses fixes the branch. `catia.md` §5.7 defines a centered sphere as no circle-plane witness; a distinct incident carrier, such as a cylinder, can still define the full circle, but it does not select an arc branch.
 
 **Need.** We must know the remaining selector to reconstruct the arc.
 
