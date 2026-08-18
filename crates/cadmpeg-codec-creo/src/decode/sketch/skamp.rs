@@ -345,11 +345,11 @@ pub(crate) fn section_skamp_selected_point_id(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<u32> {
-    section_skamp_selected_point_id_with_ordinary_segment(
-        definition,
-        item,
-        unique_section_skamp_segment(definition, item.entity_id),
-    )
+    let ordinary_segment = unique_section_skamp_segment(definition, item.entity_id).or_else(|| {
+        unique_decoded_section_segment(definition, item.entity_id)
+            .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
+    });
+    section_skamp_selected_point_id_with_ordinary_segment(definition, item, ordinary_segment)
 }
 
 pub(crate) fn section_skamp_selected_point_id_with_ordinary_segment(
@@ -442,7 +442,7 @@ pub(crate) fn saved_section_point(
 
 #[cfg(test)]
 mod tests {
-    use super::section_skamp_point_entity_id;
+    use super::{section_skamp_point_entity_id, section_skamp_selected_point_id};
 
     fn point_definition(
         declared_count: u32,
@@ -514,6 +514,16 @@ mod tests {
             ),
             Some(42)
         );
+        assert_eq!(
+            section_skamp_selected_point_id(
+                &incomplete,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 4,
+                },
+            ),
+            Some(42)
+        );
 
         let duplicate = point_definition(
             2,
@@ -526,6 +536,16 @@ mod tests {
                 &crate::feature::FeatureSkampItem {
                     entity_id: 7,
                     sense: 0,
+                },
+            ),
+            None
+        );
+        assert_eq!(
+            section_skamp_selected_point_id(
+                &duplicate,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 4,
                 },
             ),
             None
@@ -546,6 +566,16 @@ mod tests {
                 &crate::feature::FeatureSkampItem {
                     entity_id: 7,
                     sense: 0,
+                },
+            ),
+            None
+        );
+        assert_eq!(
+            section_skamp_selected_point_id(
+                &cross_family_duplicate,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 4,
                 },
             ),
             None
