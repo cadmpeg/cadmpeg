@@ -173,20 +173,6 @@ The Type 402 Form 20 layout is also settled; PH-03 remains open for the supporte
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-19. Native occurrence expansion uses invalid definitions and instances
-
-**Question.** Must product-occurrence expansion use only Type 308 and Type 320 definitions and Type 408 and Type 420 instances that pass the structure validator's field, target, and nesting checks?
-
-**Known.** `entities/structure.rs:1779-1789` parses Type 308 depth, name, and member fields, then marks the use flag and Directory transformation valid; `entities/structure.rs:2032-2054` admits a definition only when its instance member targets a valid lower-depth definition. The Type 420 path applies the same target, field, and nesting checks at `entities/structure.rs:2070-2098`. Records that fail these checks remain in the native arenas with source-attributed losses.
-
-`native.rs:4743-4779` independently inserts every Type 308 and Type 320 record with a parseable member count and odd in-file member pointers into `occurrence_definitions`; it does not apply the structure validator's field, target, or nesting result. `native.rs:4780-4853` infers roots from that unfiltered map. `native.rs:1326-1390` accepts a Type 408 or Type 420 instance when its raw definition sequence is present in that map and then emits a `product_occurrences` record; it does not require the instance or definition to be semantically valid. The expansion issue list has no invalid-definition or invalid-target entry, so this path emits no occurrence-specific loss.
-
-**Need.** A native occurrence must not describe a definition or placement that the structure owner rejected. The expansion must either consume the validated structure result or apply the same admission rules and retain a source-attributed issue when it stops.
-
-**Conflict.** The Product structure section of `iges.md` says that roots are instances not contained in a valid Type 308 or Type 320 definition, and that invalid placement omits the affected occurrence. A top-level Type 408 instance pointing to a Type 308 definition with an invalid use flag, nonzero definition transformation, invalid target form, or rejected nesting still enters the native occurrence map when its member list parses. The semantic projection reports `entity.not-projected` for the definition and instance, but `native.rs` can emit the occurrence with no `product_occurrence_expansion` issue.
-
-**Note.** Hostile sweep 2026-08-18. The existing `invalid_subfigure_depth_file` checks the semantic loss but places the invalid instance inside another definition, so root suppression hides this native path. A minimal top-level invalid-definition witness is required: keep the definition member list syntactically valid, point one top-level Type 408 or Type 420 instance at it, and compare `product_occurrences`, `product_occurrence_expansion`, and the structure losses.
-
 ## 4. Geometry carriers and tolerances
 
 ## 5. Surfaces and topology

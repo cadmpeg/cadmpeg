@@ -832,6 +832,46 @@ pub(crate) fn invalid_subfigure_depth_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn invalid_top_level_occurrence_structure_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "BADDEF".into(),
+            status: "00000100",
+            parameters: "308,0,6HBADDEF,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "BADINS".into(),
+            status: "00000000",
+            parameters: "408,1,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETDEF".into(),
+            status: "00000200",
+            parameters: "320,0,6HNETDEF,0,0,3HREF,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "WRONGTGT".into(),
+            status: "00000000",
+            parameters: "408,5,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETBAD".into(),
+            status: "00000000",
+            parameters: "420,1,0,0,0,1,,,,2HNI,0,0;".into(),
+        },
+    ])
+}
+
 pub(crate) fn network_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

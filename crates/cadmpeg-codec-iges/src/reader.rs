@@ -160,6 +160,7 @@ fn decode_with_occurrence_limits(
         &scan,
         &directory,
         &parameters,
+        &projection.decoded,
         &mut references,
         &global,
         native::ProductOccurrenceLimits::new(

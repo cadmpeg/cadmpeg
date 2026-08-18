@@ -1431,6 +1431,36 @@ fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
 }
 
 #[test]
+fn decode_omits_occurrences_for_rejected_structure_entities() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(invalid_top_level_occurrence_structure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["subfigure_definitions"].len(), 1);
+    assert_eq!(native.arenas["subfigure_instances"].len(), 2);
+    assert_eq!(native.arenas["network_definitions"].len(), 1);
+    assert_eq!(native.arenas["network_instances"].len(), 1);
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 0);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count(),
+        4
+    );
+}
+
+#[test]
 fn decode_preserves_network_definition_and_anisotropic_instance() {
     let result = IgesCodec
         .decode(

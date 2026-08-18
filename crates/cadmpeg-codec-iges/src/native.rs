@@ -13,7 +13,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
@@ -1461,6 +1461,7 @@ pub(crate) fn store(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    structure_admitted: &BTreeSet<u32>,
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
     limits: ProductOccurrenceLimits,
@@ -4740,8 +4741,10 @@ pub(crate) fn store(
             })
         })
         .collect::<Vec<_>>();
+    // Scan every definition for root-inference diagnostics, then restrict the
+    // map consumed by expansion to definitions admitted by structure.
     let mut malformed_definition_sequences = Vec::new();
-    let occurrence_definitions = directory
+    let all_occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
         .filter_map(|entry| {
@@ -4776,6 +4779,10 @@ pub(crate) fn store(
             }
             Some((entry.sequence, OccurrenceDefinition { members }))
         })
+        .collect::<BTreeMap<_, _>>();
+    let occurrence_definitions = all_occurrence_definitions
+        .into_iter()
+        .filter(|(sequence, _)| structure_admitted.contains(sequence))
         .collect::<BTreeMap<_, _>>();
     let contained_instances = occurrence_definitions
         .values()
@@ -4839,6 +4846,30 @@ pub(crate) fn store(
         .has_supported_length_factor()
         .then(|| global.length_factor_mm())
     {
+        // Structure admission excludes malformed placement records. Inspect
+        // those records here so the existing placement loss remains visible.
+        for entry in directory.iter().filter(|entry| {
+            matches!(entry.entity_type, 408 | 420)
+                && entry.form == 0
+                && !structure_admitted.contains(&entry.sequence)
+        }) {
+            let Some(record) = by_directory.get(&entry.sequence).copied() else {
+                continue;
+            };
+            if placement_affine(
+                entry,
+                record,
+                &entries,
+                &by_directory,
+                length_factor,
+                global.real_precision(),
+                ctx,
+            )
+            .is_err()
+            {
+                malformed_placement_sequences.insert(entry.sequence);
+            }
+        }
         let expansion = OccurrenceExpansion {
             entries: &entries,
             records: &by_directory,
@@ -4854,6 +4885,7 @@ pub(crate) fn store(
             for root in directory.iter().filter(|entry| {
                 matches!(entry.entity_type, 408 | 420)
                     && entry.form == 0
+                    && structure_admitted.contains(&entry.sequence)
                     && !contained_instances.contains(&entry.sequence)
             }) {
                 if let Some(source_sequence) = expansion.expand(
