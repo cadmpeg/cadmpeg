@@ -190,6 +190,88 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
 }
 
 #[test]
+fn counted_dimension_groups_resolve_centered_entities() {
+    let entity = |id: &str, geometry: SketchGeometry| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let circle = entity(
+        "generated:circle#first",
+        SketchGeometry::Circle {
+            center: Point2::new(1.0, 2.0),
+            radius: Length(3.0),
+        },
+    );
+    let arc = entity(
+        "generated:arc#second",
+        SketchGeometry::Arc {
+            center: Point2::new(1.0, 2.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(1.0),
+        },
+    );
+    assert!(matches!(
+        exact_counted_dimension_relation(&[&circle, &arc]),
+        Some(SketchConstraintDefinition::Concentric { first, second })
+            if first == circle.id && second == arc.id
+    ));
+
+    let coradial = entity(
+        "generated:circle#coradial",
+        SketchGeometry::Circle {
+            center: Point2::new(1.0, 2.0),
+            radius: Length(3.0),
+        },
+    );
+    assert!(matches!(
+        exact_counted_dimension_relation(&[&circle, &coradial]),
+        Some(SketchConstraintDefinition::Coradial { first, second })
+            if first == circle.id && second == coradial.id
+    ));
+
+    let ellipse = entity(
+        "generated:ellipse#same-center",
+        SketchGeometry::Ellipse {
+            center: Point2::new(1.0, 2.0),
+            major_angle: Angle(0.25),
+            major_radius: Length(4.0),
+            minor_radius: Length(1.5),
+            start_angle: None,
+            end_angle: None,
+        },
+    );
+    assert!(matches!(
+        exact_counted_dimension_relation(&[&circle, &ellipse]),
+        Some(SketchConstraintDefinition::Concentric { first, second })
+            if first == circle.id && second == ellipse.id
+    ));
+
+    let mut displaced = arc.clone();
+    displaced.geometry = SketchGeometry::Arc {
+        center: Point2::new(1.0, 2.1),
+        radius: Length(2.0),
+        start_angle: Angle(0.0),
+        end_angle: Angle(1.0),
+    };
+    assert!(exact_counted_dimension_relation(&[&circle, &displaced]).is_none());
+
+    let mut invalid = arc;
+    invalid.geometry = SketchGeometry::Arc {
+        center: Point2::new(1.0, 2.0),
+        radius: Length(0.0),
+        start_angle: Angle(0.0),
+        end_angle: Angle(1.0),
+    };
+    assert!(exact_counted_dimension_relation(&[&circle, &invalid]).is_none());
+}
+
+#[test]
 fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),
