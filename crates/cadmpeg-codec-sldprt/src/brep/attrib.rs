@@ -48,6 +48,8 @@ pub struct FaceAtom {
     pub feature_source_id: u32,
     /// Feature-local face identity within that producer.
     pub local_face_id: u32,
+    /// Optional persistent path fields following the feature-local identity.
+    pub persistent_tail: Vec<u32>,
     /// Byte offset of the attribute-instance record.
     pub offset: usize,
     /// Emitted face identity, resolved once the graph retains its faces.
@@ -276,6 +278,7 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
             face_attr,
             feature_source_id: values[ATOM_FEATURE],
             local_face_id: values[ATOM_LOCAL],
+            persistent_tail: values[ATOM_LOCAL + 1..].to_vec(),
             offset: off,
             target: None,
         };
@@ -287,6 +290,7 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
                 if entry.get().as_ref().is_some_and(|previous| {
                     previous.feature_source_id != atom.feature_source_id
                         || previous.local_face_id != atom.local_face_id
+                        || previous.persistent_tail != atom.persistent_tail
                 }) {
                     *entry.get_mut() = None;
                 }

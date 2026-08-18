@@ -250,9 +250,9 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a B-rep face attribute select its triangle range in a DisplayLists block?
 
-**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §5 "Face records use these families:" defines B-rep face identities. `sldprt.md` §8 defines unambiguous ownership from incidence with one analytic face support and from complete convex planar trims with circular inner loops. Other coincident trims and non-analytic supports do not supply the stored face-range mapping.
+**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §5 "Face records use these families:" defines B-rep face identities. `sldprt.md` §8 defines the complete persistent identity path carried by matching B-rep attributes and DisplayLists references, as well as unambiguous ownership from incidence with one analytic face support and from complete convex planar trims with circular inner loops. Other coincident trims, non-analytic supports, and tables without a complete matching identity do not supply the stored face-range mapping.
 
-**Need.** We must know the stored mapping to attach tables whose support is ambiguous or non-analytic.
+**Need.** We must know the stored mapping to attach tables whose support is ambiguous or non-analytic and carry no complete matching persistent identity.
 
 ### AL-03. DisplayLists extended table-header token
 

@@ -481,6 +481,14 @@ fn persistent_mesh(id: &str) -> Tessellation {
     }
 }
 
+fn persistent_identity(source: u32, local: u32, trailing_fields: &[u32]) -> PersistentFaceIdentity {
+    PersistentFaceIdentity {
+        feature_source_id: source,
+        local_id: local,
+        trailing_fields: trailing_fields.to_vec(),
+    }
+}
+
 #[test]
 fn persistent_surface_identity_requires_agreeing_duplicates() {
     let face = DisplayFace {
@@ -489,21 +497,20 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
         table: ByteRange { start: 0, end: 1 },
         metadata: ByteRange { start: 1, end: 2 },
         surface_references: vec![
-            PersistentSurfaceReference {
-                feature_source_id: 7,
-                local_surface_id: 3,
-            },
-            PersistentSurfaceReference {
-                feature_source_id: 7,
-                local_surface_id: 3,
-            },
+            PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
+            PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
         ],
     };
     assert_eq!(face.feature_source_id(), Some(7));
-    assert_eq!(face.persistent_surface_identity(), Some((7, 3)));
+    assert_eq!(
+        face.persistent_surface_identity(),
+        Some(persistent_identity(7, 3, &[]))
+    );
 
     let mut conflicting = face;
-    conflicting.surface_references[1].local_surface_id = 4;
+    if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
+        identity.local_id = 4;
+    }
     assert_eq!(conflicting.feature_source_id(), Some(7));
     assert_eq!(conflicting.persistent_surface_identity(), None);
 }
@@ -515,11 +522,10 @@ fn persistent_surface_identity_binds_one_face_and_body() {
     model.shells[0].faces.push(face.clone());
     model.tessellations.push(persistent_mesh("mesh"));
 
-    let face_identities = vec![(face.0.clone(), 7, 3)];
+    let face_identities = vec![(face.0.clone(), persistent_identity(7, 3, &[]))];
     let bindings = vec![PersistentFaceBinding {
         tessellation: "mesh".into(),
-        feature_source: 7,
-        local_surface: 3,
+        identity: persistent_identity(7, 3, &[]),
     }];
 
     assert_eq!(
@@ -537,11 +543,13 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let second = add_square_face(&mut model, "second-persistent", 3.0);
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
-    let face_identities = vec![(first.0.clone(), 7, 3), (second.0.clone(), 7, 3)];
+    let face_identities = vec![
+        (first.0.clone(), persistent_identity(7, 3, &[])),
+        (second.0.clone(), persistent_identity(7, 3, &[])),
+    ];
     let binding = PersistentFaceBinding {
         tessellation: "mesh".into(),
-        feature_source: 7,
-        local_surface: 3,
+        identity: persistent_identity(7, 3, &[]),
     };
     assert!(assign_persistent_owners(&mut model, &face_identities, &[binding]).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
@@ -551,17 +559,18 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let second = add_square_face(&mut model, "second-mesh", 3.0);
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
-    let face_identities = vec![(first.0.clone(), 7, 3), (second.0.clone(), 8, 4)];
+    let face_identities = vec![
+        (first.0.clone(), persistent_identity(7, 3, &[])),
+        (second.0.clone(), persistent_identity(8, 4, &[])),
+    ];
     let bindings = vec![
         PersistentFaceBinding {
             tessellation: "mesh".into(),
-            feature_source: 7,
-            local_surface: 3,
+            identity: persistent_identity(7, 3, &[]),
         },
         PersistentFaceBinding {
             tessellation: "mesh".into(),
-            feature_source: 8,
-            local_surface: 4,
+            identity: persistent_identity(8, 4, &[]),
         },
     ];
     assert!(assign_persistent_owners(&mut model, &face_identities, &bindings).is_empty());

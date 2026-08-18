@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DisplayLists` descriptor tables.
 
+use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -53,17 +54,39 @@ pub(crate) struct DisplayFace {
 
 /// One framed persistent-surface reference in a display-face metadata slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PersistentSurfaceReference {
-    pub(crate) feature_source_id: u32,
-    pub(crate) local_surface_id: u32,
+pub(crate) enum PersistentSurfaceReference {
+    /// A complete identity whose optional tail is entirely numeric.
+    Complete(PersistentFaceIdentity),
+    /// A source-level reference whose trailing fields are opaque.
+    SourceOnly {
+        feature_source_id: u32,
+        local_surface_id: u32,
+    },
+}
+
+impl PersistentSurfaceReference {
+    pub(crate) fn feature_source_id(&self) -> u32 {
+        match self {
+            Self::Complete(identity) => identity.feature_source_id,
+            Self::SourceOnly {
+                feature_source_id, ..
+            } => *feature_source_id,
+        }
+    }
+
+    fn complete_identity(&self) -> Option<&PersistentFaceIdentity> {
+        match self {
+            Self::Complete(identity) => Some(identity),
+            Self::SourceOnly { .. } => None,
+        }
+    }
 }
 
 /// One `DisplayLists` table whose persistent surface identity can bind a B-rep face.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PersistentFaceBinding {
     pub(crate) tessellation: String,
-    pub(crate) feature_source: u32,
-    pub(crate) local_surface: u32,
+    pub(crate) identity: PersistentFaceIdentity,
 }
 
 impl DisplayFace {
@@ -72,7 +95,7 @@ impl DisplayFace {
         let mut sources = self
             .surface_references
             .iter()
-            .map(|reference| reference.feature_source_id);
+            .map(PersistentSurfaceReference::feature_source_id);
         let source = sources.next()?;
         sources
             .all(|candidate| candidate == source)
@@ -80,15 +103,12 @@ impl DisplayFace {
     }
 
     /// Return the complete identity only when every duplicate reference agrees.
-    pub(crate) fn persistent_surface_identity(&self) -> Option<(u32, u32)> {
+    pub(crate) fn persistent_surface_identity(&self) -> Option<PersistentFaceIdentity> {
         let mut references = self.surface_references.iter();
-        let first = references.next()?;
+        let first = references.next()?.complete_identity()?.clone();
         references
-            .all(|reference| {
-                (reference.feature_source_id, reference.local_surface_id)
-                    == (first.feature_source_id, first.local_surface_id)
-            })
-            .then_some((first.feature_source_id, first.local_surface_id))
+            .all(|reference| reference.complete_identity() == Some(&first))
+            .then_some(first)
     }
 }
 
@@ -531,9 +551,32 @@ fn persistent_surface_references(
             at = end;
             continue;
         };
-        references.push(PersistentSurfaceReference {
-            feature_source_id,
-            local_surface_id,
+        let mut trailing_fields = fields.collect::<Vec<_>>();
+        if trailing_fields
+            .last()
+            .is_some_and(|field| field.trim().is_empty())
+        {
+            trailing_fields.pop();
+        }
+        let trailing_fields = trailing_fields
+            .into_iter()
+            .map(|field| {
+                field
+                    .parse::<i32>()
+                    .ok()
+                    .map(|value| u32::from_ne_bytes(value.to_ne_bytes()))
+            })
+            .collect::<Option<Vec<_>>>();
+        references.push(match trailing_fields {
+            Some(trailing_fields) => PersistentSurfaceReference::Complete(PersistentFaceIdentity {
+                feature_source_id,
+                local_id: local_surface_id,
+                trailing_fields,
+            }),
+            None => PersistentSurfaceReference::SourceOnly {
+                feature_source_id,
+                local_surface_id,
+            },
         });
         at = end;
     }
@@ -693,14 +736,13 @@ pub(crate) fn assign_unique_analytic_owners(
 /// repeated table IDs with different identities is rejected as ambiguous.
 pub(crate) fn assign_persistent_owners(
     model: &mut cadmpeg_ir::document::Model,
-    face_identities: &[(String, u32, u32)],
+    face_identities: &[(String, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
 ) -> Vec<String> {
-    let mut faces_by_identity = HashMap::<(u32, u32), Option<FaceId>>::new();
-    for (target, feature_source_id, local_surface_id) in face_identities {
-        let identity = (*feature_source_id, *local_surface_id);
+    let mut faces_by_identity = HashMap::<PersistentFaceIdentity, Option<FaceId>>::new();
+    for (target, identity) in face_identities {
         let candidate = FaceId(target.clone());
-        match faces_by_identity.entry(identity) {
+        match faces_by_identity.entry(identity.clone()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(candidate));
             }
@@ -728,9 +770,9 @@ pub(crate) fn assign_persistent_owners(
         .filter_map(|face| Some((face.id.clone(), (*shell_bodies.get(&face.shell)?).clone())))
         .collect::<HashMap<_, _>>();
 
-    let mut bindings_by_mesh = HashMap::<String, Option<(u32, u32)>>::new();
+    let mut bindings_by_mesh = HashMap::<String, Option<PersistentFaceIdentity>>::new();
     for binding in bindings {
-        let identity = (binding.feature_source, binding.local_surface);
+        let identity = binding.identity.clone();
         match bindings_by_mesh.entry(binding.tessellation.clone()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(identity));
