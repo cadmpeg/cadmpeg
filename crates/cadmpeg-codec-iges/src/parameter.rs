@@ -389,6 +389,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 214 Forms 1 through 12 put `N` at index 1 and store `N` pairs of
 /// segment-tail coordinates after the fixed fields, so their groups start at
 /// token `7 + 2*N`.
+/// Type 218 Form 0 stores two fixed pointers and starts its groups at token 3;
+/// Form 1 stores three fixed pointers and starts its groups at token 4.
 /// Type 412 Form 0 puts `LC` at index 11, followed by the fixed `DDF` flag and
 /// `LC` position numbers, so its groups start at token `13 + LC`.
 /// Type 414 Form 0 puts `LC` at index 9, followed by the fixed `DDF` flag and
@@ -456,6 +458,8 @@ pub(crate) fn entity_primary_end(
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
+        (218, 0) => Some(fixed_primary_end(record, 3)),
+        (218, 1) => Some(fixed_primary_end(record, 4)),
         (412, 0) => Some(rectangular_array_primary_end(record)),
         (414, 0) => Some(circular_array_primary_end(record)),
         (106, form) if copious_expected_interpretation(form).is_some() => {
@@ -483,6 +487,14 @@ fn counted_primary_end(record: &ParameterRecord) -> usize {
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(2))
         .unwrap_or(record.tokens.len())
+}
+
+fn fixed_primary_end(record: &ParameterRecord, end: usize) -> usize {
+    if record.tokens.len() >= end {
+        end
+    } else {
+        record.tokens.len()
+    }
 }
 
 fn boolean_tree_primary_end(record: &ParameterRecord) -> usize {
