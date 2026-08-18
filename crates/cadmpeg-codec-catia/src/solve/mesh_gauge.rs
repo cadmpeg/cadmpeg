@@ -954,6 +954,9 @@ pub(crate) fn mesh_candidates_equivalent_with_context(
     right: &(StandardTopology, Vec<usize>),
     gauge: Option<MeshCandidateGauge<'_>>,
 ) -> bool {
+    if left.0.vertex_points != right.0.vertex_points {
+        return false;
+    }
     let left = canonicalize_mesh_candidate(left.0.clone(), &left.1, gauge);
     let right = canonicalize_mesh_candidate(right.0.clone(), &right.1, gauge);
     let equivalent = matches!((&left, &right), (Some(left), Some(right)) if left == right);
@@ -1097,36 +1100,48 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
 }
 
 #[test]
-fn mesh_candidate_comparison_collapses_seam_row_coordinate_automorphism() {
-    let edge_rows = vec![
-        EdgeRow {
+fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorphisms() {
+    const COMPONENT_COUNT: usize = 3;
+    let edge_rows = (0..COMPONENT_COUNT * 2)
+        .map(|edge| EdgeRow {
             kind: 2,
-            handles: vec![10, 11],
+            handles: vec![(edge * 2) as u32, (edge * 2 + 1) as u32],
             boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        },
-        EdgeRow {
-            kind: 2,
-            handles: vec![20, 21],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        },
-    ];
-    let edge_faces = vec![[0, 1], [0, 1]];
-    let edge_classes = vec![0, 0];
-    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
-    let edge_identity_evidence = vec![false, false];
+        })
+        .collect::<Vec<_>>();
+    let edge_faces = (0..COMPONENT_COUNT * 2).map(|_| [0, 1]).collect::<Vec<_>>();
+    let edge_classes = (0..COMPONENT_COUNT)
+        .flat_map(|class| [class, class])
+        .collect::<Vec<_>>();
+    let edge_candidates = (0..COMPONENT_COUNT)
+        .flat_map(|component| {
+            let point = component * 4;
+            let options = vec![[point, point + 3], [point + 1, point + 2]];
+            [options.clone(), options]
+        })
+        .collect::<Vec<_>>();
+    let edge_identity_evidence = (0..COMPONENT_COUNT * 2).map(|_| false).collect::<Vec<_>>();
     let coordinate_gauge = build_mesh_coordinate_gauge(
-        4,
+        COMPONENT_COUNT * 4,
         &edge_rows,
         &edge_faces,
         &edge_classes,
         &edge_candidates,
         &edge_identity_evidence,
     );
-    let coordinate_swap = vec![1, 0, 3, 2];
-    assert!(coordinate_gauge
-        .components
-        .iter()
-        .any(|component| component.contains(&coordinate_swap)));
+    assert_eq!(coordinate_gauge.components.len(), COMPONENT_COUNT);
+    for component in 0..COMPONENT_COUNT {
+        let mut coordinate_swap = (0..COMPONENT_COUNT * 4).collect::<Vec<_>>();
+        let point = component * 4;
+        coordinate_swap[point] = point + 1;
+        coordinate_swap[point + 1] = point;
+        coordinate_swap[point + 2] = point + 3;
+        coordinate_swap[point + 3] = point + 2;
+        assert!(coordinate_gauge
+            .components
+            .iter()
+            .any(|component| component.contains(&coordinate_swap)));
+    }
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
@@ -1136,16 +1151,22 @@ fn mesh_candidate_comparison_collapses_seam_row_coordinate_automorphism() {
         coordinate_gauge: Some(&coordinate_gauge),
     };
 
-    let topology = |swapped: bool| {
-        let endpoints = if swapped {
-            [[1, 2], [0, 3]]
-        } else {
-            [[0, 3], [1, 2]]
-        };
+    let topology = |mask: usize| {
+        let endpoints = (0..COMPONENT_COUNT)
+            .flat_map(|component| {
+                let point = component * 4;
+                if mask & (1 << component) == 0 {
+                    [[point, point + 3], [point + 1, point + 2]]
+                } else {
+                    [[point + 1, point + 2], [point, point + 3]]
+                }
+            })
+            .collect::<Vec<_>>();
         let face = || crate::families::standard::topology::FaceTopology {
             boundaries: vec![crate::families::standard::topology::Boundary {
                 coedges: endpoints
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .enumerate()
                     .map(|(edge_row, [start_vertex, end_vertex])| CoedgeUse {
                         edge_row,
@@ -1159,24 +1180,31 @@ fn mesh_candidate_comparison_collapses_seam_row_coordinate_automorphism() {
         StandardTopology {
             faces: vec![face(), face()],
             edge_rows: edge_rows.clone(),
-            vertex_points: vec![
-                [0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [2.0, 0.0, 0.0],
-                [3.0, 0.0, 0.0],
-            ],
-            logical_vertex_count: 4,
+            vertex_points: (0..COMPONENT_COUNT * 4)
+                .map(|point| [point as f64, 0.0, 0.0])
+                .collect(),
+            logical_vertex_count: COMPONENT_COUNT * 4,
         }
     };
-    let left = (topology(false), vec![0, 1, 2, 3]);
-    let right = (topology(true), vec![0, 1, 2, 3]);
+    let identity = (0..COMPONENT_COUNT * 4).collect::<Vec<_>>();
+    let left = (topology(0), identity.clone());
 
+    for mask in 1..(1 << COMPONENT_COUNT) {
+        let right = (topology(mask), identity.clone());
+        assert!(!mesh_candidates_equivalent_with_context(
+            &left, &right, None
+        ));
+        assert!(
+            mesh_candidates_equivalent_with_context(&left, &right, Some(gauge)),
+            "seam gauge did not collapse mask {mask:#b}"
+        );
+    }
+
+    let mut displaced = topology(0);
+    displaced.vertex_points[0][0] = -1.0;
     assert!(!mesh_candidates_equivalent_with_context(
-        &left, &right, None
-    ));
-    assert!(mesh_candidates_equivalent_with_context(
         &left,
-        &right,
+        &(displaced, identity),
         Some(gauge)
     ));
 }

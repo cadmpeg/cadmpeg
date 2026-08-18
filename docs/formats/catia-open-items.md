@@ -492,14 +492,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-catia/src/loss.rs` gives `TopologyE5GaugeSubstituted`, `TopologyB5GaugeSubstituted`, and `TopologyZeroEntityGaugeSubstituted`. The E5, B5, and zero-entity routes charge one of these codes when a topology gauge replaces an unresolved source field. The standard route has no equivalent code, and `crates/cadmpeg-codec-catia/src/solve/` emits no loss code. A standard topology that rests on the automorphism quotient is thus not distinguishable in the report from a fully determined decode.
 
-### SN-30. Coordinate-blind topology automorphism
-
-**Question.** Must a topology automorphism keep the coordinates of each permuted allocation row?
-
-**Known.** `catia.md` §5.4 "An evidence-free topology automorphism is another quotient choice." lists the conditions the row permutation and the induced coordinate permutation must satisfy. Equal coordinates are not one of them. `crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs:196-203` makes the coordinate gauge from the row keys, the endpoint options, and the evidence flags; it receives no coordinates. `crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs:346-373` certifies a permutation from the option sets alone. The regression test at `crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs:1005-1088` asserts that a two-row body on the coordinate rows at x = 0 and x = 1 is equivalent to the same body on the rows at x = 2 and x = 3.
-
-**Need.** We must know the condition, because two candidate topologies that this quotient makes equal can put one solid at two different positions, and `SN-29` records that the first candidate reached is the one that transfers.
-
 ### SN-31. Face assignments removed by a stopped enumeration
 
 **Question.** Which relation selects one face boundary assignment when the endpoint-configuration enumeration of another assignment of the same face does not finish?
