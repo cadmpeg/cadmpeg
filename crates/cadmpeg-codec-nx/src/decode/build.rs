@@ -136,7 +136,7 @@ pub(crate) fn try_decode_geometry(
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
-    let mut parsed = crate::native::ParsedStreams::parse(scan, true);
+    let mut parsed = crate::native::ParsedStreams::parse(scan);
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
