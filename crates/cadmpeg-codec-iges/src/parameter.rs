@@ -313,6 +313,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// token `4 + N1`.
 /// Type 402 Form 12 puts the positive entry count `N` at index 1 and stores a
 /// name/pointer pair per entry, so its groups start at token `2 + 2*N`.
+/// Type 402 Form 13 fixes `ND` to one, puts the positive geometry count `NG` at
+/// index 2, and lists the dimension plus `NG` geometry pointers, so its groups
+/// start at token `4 + NG`.
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
@@ -358,6 +361,7 @@ pub(crate) fn entity_primary_end(
         (402, 5) => Some(label_display_primary_end(record)),
         (402, 6) => Some(view_list_primary_end(record)),
         (402, 12) => Some(external_reference_index_primary_end(record)),
+        (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
@@ -420,6 +424,19 @@ fn external_reference_index_primary_end(record: &ParameterRecord) -> usize {
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_mul(2))
         .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn dimensioned_geometry_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(1) {
+        return record.tokens.len();
+    }
+    record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }

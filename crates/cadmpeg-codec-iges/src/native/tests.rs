@@ -468,6 +468,78 @@ fn decode_external_reference_index_uses_counted_name_pointer_pairs() {
 }
 
 #[test]
+fn decode_dimensioned_geometry_uses_counted_geometry_pointers() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "LEAD1".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "LEAD2".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 0,
+            label: "DIM".into(),
+            status: "00000100",
+            parameters: "216,1,3,5,0,0,1,11,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "GEOM".into(),
+            status: "00010100",
+            parameters: "116,4,5,6,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 13,
+            label: "DIMGEOM".into(),
+            status: "00000200",
+            parameters: "402,1,1,7,9,1,13,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "ASSOC".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let dimensioned = native.arenas["associativities"]
+        .iter()
+        .find(|record| record.id() == "iges:structure:associativity#D11")
+        .unwrap();
+    let fields = dimensioned.fields();
+    assert_eq!(fields["declared_geometry_count"], 1);
+    assert_eq!(fields["dimension"], "iges:entity:directory#7");
+    assert_eq!(fields["geometry"][0], "iges:entity:directory#9");
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn decode_general_note_count_stops_before_trailing_property_group() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
