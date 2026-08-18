@@ -2042,7 +2042,15 @@ pub(super) fn profile_loci_by_marker(
                 operand.kind,
                 FeatureInputOperandKind::D6
                     | FeatureInputOperandKind::Native(
-                        0x80cc | 0x8152 | 0x837b | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
+                        0x80cc
+                            | 0x8152
+                            | 0x81b2
+                            | 0x837b
+                            | 0x8ab6
+                            | 0x8dcb
+                            | 0x929d
+                            | 0xbc7c
+                            | 0xbd69,
                     )
             )
         })

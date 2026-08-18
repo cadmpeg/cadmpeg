@@ -2819,7 +2819,7 @@ pub(super) fn operand_accepts_marker(
     match kind {
         FeatureInputOperandKind::D6
         | FeatureInputOperandKind::Native(
-            0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
+            0x80cc | 0x8152 | 0x81b2 | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
         ) => {
             matches!(
                 marker,
@@ -2846,7 +2846,7 @@ pub(super) fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> 
         kind,
         FeatureInputOperandKind::D6
             | FeatureInputOperandKind::E1
-            | FeatureInputOperandKind::Native(0x80cc | 0x83fe | 0x8ab6 | 0x929d | 0xbd69)
+            | FeatureInputOperandKind::Native(0x80cc | 0x81b2 | 0x83fe | 0x8ab6 | 0x929d | 0xbd69)
     )
 }
 

@@ -927,6 +927,7 @@ pub(super) fn relation_signature(
     match family {
         PointPointDistance => {
             (first.kind == D6 && second.kind == D6)
+                || (first.kind == Native(0x81b2) && second.kind == Native(0x81b2))
                 || (first.kind == Native(0x8152) && second.kind == Native(0x8152))
                 || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
