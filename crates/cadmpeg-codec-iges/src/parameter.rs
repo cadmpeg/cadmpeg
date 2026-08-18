@@ -634,6 +634,19 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (406, 5) => {
+            if record.integer(1) != Some(5) {
+                return ParameterBoundary::Invalid;
+            }
+            let end = 7;
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else if record.tokens.len() >= 2 {
+                ParameterBoundary::Known(record.tokens.len())
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (406, 14) => {
             let Some(value_count) = record.count(1).filter(|count| *count > 0) else {
                 return ParameterBoundary::Invalid;

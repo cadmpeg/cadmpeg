@@ -289,14 +289,27 @@ fn property_fields_valid(
         2 => exact(3) && (2..=4).all(|index| integer_range(index, 0..=2)),
         3 => exact(2) && record.integer(2).is_some() && record.string(3).is_some(),
         5 => {
-            exact(5)
+            let Some(extension_flag) = record.integer_or(4, 0) else {
+                return false;
+            };
+            let extension_valid = if extension_flag == 2 {
+                record.number(6).is_some_and(f64::is_finite)
+            } else {
+                record.number_or(6, 0.0).is_some_and(f64::is_finite)
+            };
+            record.integer(1) == Some(5)
+                && end <= 7
                 && record
-                    .number(2)
+                    .number_or(2, 0.0)
                     .is_some_and(|value| value.is_finite() && value >= 0.0)
-                && integer_range(3, 0..=1)
-                && integer_range(4, 0..=2)
-                && integer_range(5, 0..=2)
-                && record.number(6).is_some_and(f64::is_finite)
+                && record
+                    .integer_or(3, 0)
+                    .is_some_and(|value| (0..=1).contains(&value))
+                && (0..=2).contains(&extension_flag)
+                && record
+                    .integer_or(5, 0)
+                    .is_some_and(|value| (0..=2).contains(&value))
+                && extension_valid
         }
         6 => {
             exact(5)

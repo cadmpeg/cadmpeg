@@ -132,6 +132,26 @@ fn type406_form14_entity(label: &str, parameters: &str) -> OwnedTestEntity {
     }
 }
 
+fn type406_form5_entity(label: &str, parameters: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 406,
+        form: 5,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    }
+}
+
+fn type406_form2_entity(label: &str, parameters: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 406,
+        form: 2,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    }
+}
+
 fn type316_entity(label: &str, parameters: &str) -> OwnedTestEntity {
     OwnedTestEntity {
         entity_type: 316,
@@ -3017,6 +3037,215 @@ fn type302_form5001_truncated_class_suppresses_generic_suffix_candidate() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn type406_form5_fixed_boundary_follows_six_values() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form5_entity("WIDENING", "406,5,6,1,1,1,1,1,1,1,5;"),
+                type406_form2_entity("PROP2", "406,3,0,1,2;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(
+        entity.fields()["property_links"],
+        serde_json::json!(["iges:entity:directory#5"])
+    );
+    assert_eq!(
+        entity.fields()["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|reference| reference["parameter_index"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![8, 10]
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type406_form5_wrong_field_keeps_fixed_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form5_entity("WRONGFLD", "406,5,6,1.0,1,1,1,1,1,1,5;"),
+                type406_form2_entity("PROP2", "406,3,0,1,2;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(
+        entity.fields()["property_links"],
+        serde_json::json!(["iges:entity:directory#5"])
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type406_form5_invalid_primary_span_suppresses_generic_suffix_recovery() {
+    for (label, parameters) in [
+        ("WRONGNP", "406,4,6,1,1,1,1,1,1,1,5;"),
+        ("WRONGTYP", "406,5,6,1.0;"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[
+                    type212_note_entity("TARGET"),
+                    type406_form5_entity(label, parameters),
+                    type406_form2_entity("PROP2", "406,3,0,1,2;"),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#3")
+            .unwrap();
+        assert!(entity.fields()["association_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(entity.fields()["property_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+    }
+}
+
+#[test]
+fn type406_form5_defaulted_trailing_fields_keep_the_property_valid() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[type406_form5_entity(
+                "DEFAULTS",
+                "406,5,6,1,0,0;",
+            )])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let property = result.ir().native.namespace("iges").unwrap().arenas["properties"]
+        .iter()
+        .find(|property| property.fields()["form"] == 5)
+        .unwrap();
+    assert!(property.fields()["extension"].is_null());
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type406_form5_omitted_extension_keeps_suffix_at_token_seven() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form5_entity("OMITEXT", "406,5,6,1,0,0,,1,1,1,5;"),
+                type406_form2_entity("PROP2", "406,3,0,1,2;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(
+        entity.fields()["property_links"],
+        serde_json::json!(["iges:entity:directory#5"])
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type406_form5_extension_flag_two_requires_extension_value() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type406_form5_entity("NOEXTVAL", "406,5,6,1,2,0,,1,1,1,5;"),
+                type406_form2_entity("PROP2", "406,3,0,1,2;"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    assert_eq!(
+        entity.fields()["property_links"],
+        serde_json::json!(["iges:entity:directory#5"])
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
 }
 
 #[test]
