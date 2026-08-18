@@ -108,8 +108,6 @@ pub(crate) struct StreamView {
     pub(crate) trimmed_curves: Vec<TrimmedCurve>,
     /// Type-137 surface curves.
     pub(crate) surface_curves: Vec<SurfaceCurve>,
-    /// NURBS surfaces, curves, and pcurves decoded from this byte view.
-    pub(crate) nurbs: crate::nurbs::Parsed,
     /// Intersection-construction scan.
     pub(crate) intersections: CurveScan,
 }
@@ -123,7 +121,6 @@ impl StreamView {
             blend_surfaces: Vec::new(),
             trimmed_curves: Vec::new(),
             surface_curves: Vec::new(),
-            nurbs: crate::nurbs::Parsed::default(),
             intersections: CurveScan::default(),
         }
     }
@@ -131,23 +128,13 @@ impl StreamView {
     /// Parse every cached family from a single byte buffer with the plain
     /// intersection scan. This is the raw view (`stream.inflated`); it is also the
     /// semantic view whenever the semantic bytes equal the raw bytes.
-    fn parse_uniform(
-        bytes: &[u8],
-        point_layout: crate::intersection::ChartPointLayout,
-        include_nurbs: bool,
-    ) -> Self {
+    fn parse_uniform(bytes: &[u8], point_layout: crate::intersection::ChartPointLayout) -> Self {
         let graph = Graph::parse(bytes);
-        let nurbs = if include_nurbs {
-            crate::nurbs::parse_with_graph(bytes, &graph)
-        } else {
-            crate::nurbs::Parsed::default()
-        };
         StreamView {
             offset_surfaces: graph.offset_surfaces(),
             blend_surfaces: graph.blend_surfaces(),
             trimmed_curves: graph.trimmed_curves(),
             surface_curves: graph.surface_curves(),
-            nurbs,
             intersections: intersection::scan_with_graph(bytes, &graph, point_layout),
             graph,
         }
@@ -163,11 +150,16 @@ impl StreamView {
         scan: &Scan,
         paired_deltas: Option<&Vec<usize>>,
         point_layout: crate::intersection::ChartPointLayout,
-    ) -> Self {
+        include_nurbs: bool,
+    ) -> (Self, crate::nurbs::Parsed) {
         let semantic_graph =
             (semantic_bytes != topology_bytes).then(|| Graph::parse(semantic_bytes));
         let scan_graph = semantic_graph.as_ref().unwrap_or(&graph);
-        let nurbs = crate::nurbs::parse_with_graph(semantic_bytes, scan_graph);
+        let nurbs = if include_nurbs {
+            crate::nurbs::parse_with_graph(semantic_bytes, scan_graph)
+        } else {
+            crate::nurbs::Parsed::default()
+        };
         let intersections = if let Some(delta_indices) = paired_deltas {
             let replacement_streams = delta_indices
                 .iter()
@@ -182,15 +174,17 @@ impl StreamView {
         } else {
             intersection::scan_with_graph(semantic_bytes, scan_graph, point_layout)
         };
-        StreamView {
-            offset_surfaces: scan_graph.offset_surfaces(),
-            blend_surfaces: scan_graph.blend_surfaces(),
-            trimmed_curves: scan_graph.trimmed_curves(),
-            surface_curves: scan_graph.surface_curves(),
+        (
+            StreamView {
+                offset_surfaces: scan_graph.offset_surfaces(),
+                blend_surfaces: scan_graph.blend_surfaces(),
+                trimmed_curves: scan_graph.trimmed_curves(),
+                surface_curves: scan_graph.surface_curves(),
+                intersections,
+                graph,
+            },
             nurbs,
-            intersections,
-            graph,
-        }
+        )
     }
 }
 
@@ -216,10 +210,12 @@ impl StreamParses {
 
 /// Every expensive per-stream Parasolid parse, once per distinct byte view, indexed by
 /// stream ordinal. Also owns the prepared semantic stream bytes the decode geometry
-/// path's NURBS and candidate scanners still read directly.
+/// path's candidate scanners still read directly. Geometry callers may request a
+/// separately owned NURBS cache and take each stream's entry without cloning it.
 pub(crate) struct ParsedStreams<'a> {
     per_stream: Vec<StreamParses>,
     semantic_streams: Vec<Cow<'a, [u8]>>,
+    nurbs: Vec<crate::nurbs::Parsed>,
 }
 
 impl<'a> ParsedStreams<'a> {
@@ -228,7 +224,7 @@ impl<'a> ParsedStreams<'a> {
     /// stream's raw and semantic views share one parse when the topology-merged and
     /// delta-extended byte views both equal `stream.inflated` and the stream has no
     /// auxiliary-replacement deltas; only that shared view needs NURBS geometry.
-    pub(crate) fn parse(scan: &'a Scan) -> Self {
+    pub(crate) fn parse(scan: &'a Scan, include_nurbs: bool) -> Self {
         let topology_streams = topology_streams(scan);
         let delta_pairs = paired_delta_streams(scan);
         let paired_deltas = delta_pairs
@@ -239,6 +235,7 @@ impl<'a> ParsedStreams<'a> {
 
         let mut per_stream = Vec::with_capacity(scan.streams.len());
         let mut semantic_streams = Vec::with_capacity(scan.streams.len());
+        let mut nurbs = Vec::with_capacity(scan.streams.len());
         for (si, (stream, mut semantic_bytes)) in
             scan.streams.iter().zip(topology_streams).enumerate()
         {
@@ -249,6 +246,7 @@ impl<'a> ParsedStreams<'a> {
                     semantic: empty,
                 });
                 semantic_streams.push(semantic_bytes);
+                nurbs.push(crate::nurbs::Parsed::default());
                 continue;
             }
 
@@ -270,18 +268,19 @@ impl<'a> ParsedStreams<'a> {
                 }
             }
             let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
-            let raw = Rc::new(StreamView::parse_uniform(
-                &stream.inflated,
-                point_layout,
-                identical,
-            ));
-            let semantic = if identical {
-                Rc::clone(&raw)
+            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated, point_layout));
+            let (semantic, semantic_nurbs) = if identical {
+                let nurbs = if include_nurbs {
+                    crate::nurbs::parse_with_graph(&stream.inflated, &raw.graph)
+                } else {
+                    crate::nurbs::Parsed::default()
+                };
+                (Rc::clone(&raw), nurbs)
             } else {
                 let graph = Graph::parse(&semantic_bytes);
                 let topology_for_auxiliary = paired.map(|_| semantic_bytes.clone());
                 semantic_bytes.to_mut().extend_from_slice(&residual);
-                Rc::new(StreamView::parse_semantic(
+                let (semantic, nurbs) = StreamView::parse_semantic(
                     graph,
                     topology_for_auxiliary
                         .as_deref()
@@ -290,15 +289,19 @@ impl<'a> ParsedStreams<'a> {
                     scan,
                     paired,
                     point_layout,
-                ))
+                    include_nurbs,
+                );
+                (Rc::new(semantic), nurbs)
             };
             per_stream.push(StreamParses { raw, semantic });
             semantic_streams.push(semantic_bytes);
+            nurbs.push(semantic_nurbs);
         }
 
         ParsedStreams {
             per_stream,
             semantic_streams,
+            nurbs,
         }
     }
 
@@ -315,6 +318,11 @@ impl<'a> ParsedStreams<'a> {
     /// The prepared delta-extended semantic bytes of the stream at `ordinal`.
     pub(crate) fn semantic_bytes(&self, ordinal: usize) -> &[u8] {
         &self.semantic_streams[ordinal]
+    }
+
+    /// Move the semantic NURBS cache for one stream into the geometry builder.
+    pub(crate) fn take_nurbs(&mut self, ordinal: usize) -> crate::nurbs::Parsed {
+        std::mem::take(&mut self.nurbs[ordinal])
     }
 }
 
@@ -369,7 +377,7 @@ mod tests {
         };
 
         let topology = topology_streams(&scan);
-        let parsed = ParsedStreams::parse(&scan);
+        let parsed = ParsedStreams::parse(&scan, false);
 
         assert!(matches!(topology[0], Cow::Borrowed(_)));
         assert!(matches!(parsed.semantic_streams[0], Cow::Borrowed(_)));

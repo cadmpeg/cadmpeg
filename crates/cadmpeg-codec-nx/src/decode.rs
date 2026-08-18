@@ -434,7 +434,7 @@ fn build_metadata_ir(
             unknowns.push(unknown);
         }
     }
-    let parsed = crate::native::ParsedStreams::parse(scan);
+    let parsed = crate::native::ParsedStreams::parse(scan, false);
     let model = crate::native::NativeModel::extract(
         ctx,
         root,

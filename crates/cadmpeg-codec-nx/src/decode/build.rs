@@ -136,7 +136,7 @@ pub(crate) fn try_decode_geometry(
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
-    let parsed = crate::native::ParsedStreams::parse(scan);
+    let mut parsed = crate::native::ParsedStreams::parse(scan, true);
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
@@ -243,6 +243,11 @@ pub(crate) fn try_decode_geometry(
             stream_unknowns.push((si, unknown_index));
             continue;
         }
+        let crate::nurbs::Parsed {
+            surfaces: nurbs_surfaces,
+            curves: nurbs_curves,
+            pcurves: nurbs_pcurves,
+        } = parsed.take_nurbs(si);
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
@@ -331,7 +336,7 @@ pub(crate) fn try_decode_geometry(
                 surfaces_by_xmt.insert(node.xmt, id);
             }
         }
-        for (fi, surf) in view.nurbs.surfaces.iter().cloned().enumerate() {
+        for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
             let id = SurfaceId(format!("nx:s{si}:nurbs-surf#{fi}"));
             annotations
@@ -523,7 +528,7 @@ pub(crate) fn try_decode_geometry(
                 curves_by_xmt.insert(node.xmt, id);
             }
         }
-        for (ci, crv) in view.nurbs.curves.iter().cloned().enumerate() {
+        for (ci, crv) in nurbs_curves.into_iter().enumerate() {
             counts.nurbs_curves += 1;
             let id = CurveId(format!("nx:s{si}:nurbs-crv#{ci}"));
             annotations
@@ -540,7 +545,7 @@ pub(crate) fn try_decode_geometry(
             }
         }
 
-        for (pi, pcurve) in view.nurbs.pcurves.iter().cloned().enumerate() {
+        for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
             let id = PcurveId(format!("nx:s{si}:pcurve#{pi}"));
             annotations
                 .note(&id, source_stream, pcurve.pos as u64)
