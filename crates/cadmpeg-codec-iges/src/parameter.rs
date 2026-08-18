@@ -678,6 +678,35 @@ fn specified_parameter_end(
             }
             ParameterBoundary::Known(cursor)
         }
+        (510, 1) => {
+            let Some(loop_count) = record.count(2).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = loop_count.checked_add(4) else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
+        (514, 1 | 2) => {
+            let Some(face_count) = record.count(1).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = face_count
+                .checked_mul(2)
+                .and_then(|width| width.checked_add(2))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (406, 5) => {
             if record.integer(1) != Some(5) {
                 return ParameterBoundary::Invalid;

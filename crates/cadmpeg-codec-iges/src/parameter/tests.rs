@@ -206,6 +206,97 @@ fn type508_boundary_file(label: &str, parameters: &str) -> Vec<u8> {
     ])
 }
 
+fn type510_boundary_file(label: &str, parameters: &str) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "CENTER".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 196,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00010000",
+            parameters: "196,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "POLE".into(),
+            status: "00010000",
+            parameters: "502,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "VLOOP".into(),
+            status: "00010000",
+            parameters: "508,1,1,5,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: label.into(),
+            status: "00010000",
+            parameters: parameters.into(),
+        },
+        type212_note_entity("TARGET"),
+        type406_form2_entity("PROP2", "406,3,0,1,2;"),
+    ])
+}
+
+fn type514_boundary_file(form: i64, label: &str, parameters: &str) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "CENTER".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 196,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00010000",
+            parameters: "196,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "POLE".into(),
+            status: "00010000",
+            parameters: "502,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "VLOOP".into(),
+            status: "00010000",
+            parameters: "508,1,1,5,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE".into(),
+            status: "00010000",
+            parameters: "510,3,1,1,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 514,
+            form,
+            label: label.into(),
+            status: if form == 1 { "00010000" } else { "00000000" },
+            parameters: parameters.into(),
+        },
+        type212_note_entity("TARGET"),
+        type406_form2_entity("PROP2", "406,3,0,1,2;"),
+    ])
+}
+
 fn type316_entity(label: &str, parameters: &str) -> OwnedTestEntity {
     OwnedTestEntity {
         entity_type: 316,
@@ -3896,6 +3987,251 @@ fn type508_invalid_count_or_nested_width_suppresses_generic_suffix_candidate() {
             .losses
             .iter()
             .any(|loss| { loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind() }));
+    }
+}
+
+#[test]
+fn type510_count_driven_boundary_follows_one_and_two_loop_lists() {
+    for (parameters, association_index, property_index) in [
+        ("510,3,1,1,7,1,11,1,13;", 6, 8),
+        ("510,3,2,1,7,7,1,11,1,13;", 7, 9),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(type510_boundary_file("FACE", parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#9")
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#11"])
+        );
+        assert_eq!(
+            entity.fields()["property_links"],
+            serde_json::json!(["iges:entity:directory#13"])
+        );
+        let fields = entity.fields();
+        let references = fields["references"].as_array().unwrap();
+        assert_eq!(references.len(), 2);
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == association_index));
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == property_index));
+        assert!(
+            result.report().losses.is_empty(),
+            "{:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn type510_wrong_typed_outer_flag_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(type510_boundary_file("WRNGFLD", "510,3,1,2,7,1,11,1,13;")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#9")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#11"])
+    );
+    assert_eq!(
+        entity.fields()["property_links"],
+        serde_json::json!(["iges:entity:directory#13"])
+    );
+    let fields = entity.fields();
+    let references = fields["references"].as_array().unwrap();
+    assert_eq!(references.len(), 2);
+    assert!(references
+        .iter()
+        .any(|reference| reference["parameter_index"] == 6));
+    assert!(references
+        .iter()
+        .any(|reference| reference["parameter_index"] == 8));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type510_invalid_count_or_truncated_list_suppresses_generic_suffix_candidate() {
+    for (label, parameters) in [
+        ("WRNGCNT", "510,3,1.0,1,7,1,11,1,13;"),
+        ("ZERO", "510,3,0,1,7,1,11,1,13;"),
+        ("TRUNC", "510,3,2,1,7;"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(type510_boundary_file(label, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#9")
+            .unwrap();
+        assert!(entity.fields()["association_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(entity.fields()["property_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(entity.fields()["references"].as_array().unwrap().is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+    }
+}
+
+#[test]
+fn type514_count_driven_boundary_follows_form_and_face_lists() {
+    for (form, label, parameters, association_index, property_index) in [
+        (1, "FORM1", "514,1,9,1,1,13,1,15;", 5, 7),
+        (2, "FORM2", "514,1,9,1,1,13,1,15;", 5, 7),
+        (1, "TWO", "514,2,9,1,9,0,1,13,1,15;", 7, 9),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(type514_boundary_file(form, label, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#11")
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#13"])
+        );
+        assert_eq!(
+            entity.fields()["property_links"],
+            serde_json::json!(["iges:entity:directory#15"])
+        );
+        let fields = entity.fields();
+        let references = fields["references"].as_array().unwrap();
+        assert_eq!(references.len(), 2);
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == association_index));
+        assert!(references
+            .iter()
+            .any(|reference| reference["parameter_index"] == property_index));
+    }
+}
+
+#[test]
+fn type514_wrong_typed_orientation_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(type514_boundary_file(1, "WRNGFLD", "514,1,9,2,1,13,1,15;")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#11")
+        .unwrap();
+    assert_eq!(
+        entity.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#13"])
+    );
+    assert_eq!(
+        entity.fields()["property_links"],
+        serde_json::json!(["iges:entity:directory#15"])
+    );
+    let fields = entity.fields();
+    let references = fields["references"].as_array().unwrap();
+    assert_eq!(references.len(), 2);
+    assert!(references
+        .iter()
+        .any(|reference| reference["parameter_index"] == 5));
+    assert!(references
+        .iter()
+        .any(|reference| reference["parameter_index"] == 7));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type514_invalid_count_or_truncated_face_list_suppresses_generic_suffix_candidate() {
+    for (label, parameters) in [
+        ("WRNGCNT", "514,1.0,9,1,1,13,1,15;"),
+        ("ZERO", "514,0,9,1,1,13,1,15;"),
+        ("TRNCPAIR", "514,1,9;"),
+        ("TRNCLIST", "514,2,9,1;"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(type514_boundary_file(1, label, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#11")
+            .unwrap();
+        assert!(entity.fields()["association_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(entity.fields()["property_links"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(entity.fields()["references"].as_array().unwrap().is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
     }
 }
 
