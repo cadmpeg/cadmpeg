@@ -324,3 +324,67 @@ per-viewport setting, and a stale plugin-reference, material-texture,
 clipping-plane, detail-view, or SubD-proxy CRC can still produce its typed
 child. The generic userdata and parent record checks do not replace the nested
 checks because their CRC ranges exclude complete children.
+
+### QA-04. Instance-definition layout selection below archive 50
+
+**Question.** Which packed or anonymous instance-definition layout does an
+archive-2, archive-3, or archive-4 record use, and which owner selects it?
+
+**Known.** `rhino_3dm.md` §18 "Instance-definition records are in the
+instance-definition table." states that archive versions through 50 use packed
+major version 1, minor 6. `rhino_3dm.md` §19.6 "The instance-definition table
+record contains the class payload." states the same packed form for archive 50,
+and the anonymous V6 form for archives 60 and later. `instances.rs:982-988`
+selects the packed layout only when the archive is 50, or when the archive is
+60 and the first class-data byte is not zero. An archive-2, archive-3, or
+archive-4 record therefore goes to the anonymous reader at `instances.rs:705`.
+OpenNURBS selects the packed reader for every archive version through 50 at
+`opennurbs_instance.cpp:2304-2331`, and its writer selects the packed writer
+under the same rule at `opennurbs_instance.cpp:2294-2302`.
+
+**Need.** The owner must state the archive band that selects each layout, and
+the specification must state the same band. If archives 2 through 4 stay
+outside typed decoding, the specification must state that boundary in place of
+the packed rule.
+
+**Note.** With the current rule, each archive-2, archive-3, and archive-4
+instance definition fails its framing check at the anonymous reader, becomes an
+opaque record with the retained-definition diagnostic, and supplies no
+definition for the instance references that name it.
+
+### QA-05. Archive OpenNURBS version gates that owners do not apply
+
+**Question.** Which record owners must read the archive OpenNURBS version
+before they frame or default their fields, and what does each gate change?
+
+**Known.** The scan decodes the archive OpenNURBS version as the writer
+version. Four owners apply it: `objects.rs:28`, `settings.rs:2177`,
+`brep.rs:1570`, and `mesh.rs:346`. Three owners do not apply a source gate that
+uses the same value. `presentation.rs:2661-2668` reads three arrow-block UUIDs
+after the arrow types for every dimension-style minor, and `rhino_3dm.md` §20.3
+"3 × UUID arrow block IDs" states the same field. The source reader stops
+before those UUIDs when the minor is 0, the archive is 60, and the archive
+OpenNURBS version is at most 2348833437, at
+`opennurbs_dimensionstyle.cpp:2880-2913`. `settings.rs:1352-1354` admits the
+earth latitude, longitude, and elevation as decoded; the source reader replaces
+all three with the unset values when the minor is below 2, the three values are
+zero, and the archive OpenNURBS version is at most 2348834428, at
+`opennurbs_3dm_settings.cpp:4194-4206`. `dimensions.rs:616-620` and
+`annotations.rs:244-247` select the direct packed legacy annotation form from
+the archive version alone, and `rhino_3dm.md` §18.1 "For archive versions 2
+through 4, the linear, radial, and angular class data" states the same rule;
+the source reader also requires an archive OpenNURBS version of at least
+200710180, at `opennurbs_internal_V2_annotation.cpp:1062`.
+
+**Need.** Each owner must state whether its source gate applies to the archive
+bands the codec decodes, and the specification must carry the same rule. An
+owner that does not apply a gate needs the source citation that supports that
+result.
+
+**Note.** Without the dimension-style gate, an archive-60 record that has no
+arrow-block UUIDs exhausts its bounded body, becomes an opaque record with a
+presentation loss, and each dimension that names the style loses it. Without
+the earth-anchor gate, an unset anchor enters native data as latitude 0,
+longitude 0, and elevation 0, which is a valid position. The legacy annotation
+gate has no effect now because `container.rs:1190-1194` refuses raw archive
+value 5.
