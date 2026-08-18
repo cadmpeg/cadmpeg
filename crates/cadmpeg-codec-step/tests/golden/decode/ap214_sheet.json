@@ -376,6 +376,16 @@
     "losses": [
       {
         "code": {
+          "code": "topology.pcurve-global-fidelity-unproved",
+          "kind": "decode_diagnostic",
+          "namespace": "step",
+          "strict_floor": "warning"
+        },
+        "message": "curve #57 has one pcurve on surface #28 admitted to coedge use #22 by a finite endpoint and locus witness; global model-space point-set equality and direction are unproved",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
           "namespace": "step"

@@ -62,6 +62,8 @@ pub enum StepLossCode {
     PcurveEndpointsDiscontinuous,
     /// A single endpoint-continuous pcurve fails the bounded model-space locus witness.
     PcurveLocusDiscontinuous,
+    /// A finite non-seam pcurve witness did not prove global point-set and direction fidelity.
+    PcurveGlobalFidelityUnproved,
     /// Several pcurves associate with a surface and none selects uniquely.
     PcurveAssociationAmbiguous,
     /// Pcurve candidates exist but the source surface or curve is unresolved.
@@ -314,6 +316,7 @@ impl StepLossCode {
         Self::EdgeNoSurfaceOrCurveForPcurve,
         Self::PcurveEndpointsDiscontinuous,
         Self::PcurveLocusDiscontinuous,
+        Self::PcurveGlobalFidelityUnproved,
         Self::PcurveAssociationAmbiguous,
         Self::PcurveCandidatesCarrierUnresolved,
         Self::FaceMultipleOuterBounds,
@@ -453,6 +456,7 @@ impl StepLossCode {
             Self::EdgeNoSurfaceOrCurveForPcurve => "topology.edge-no-surface-or-curve-for-pcurve",
             Self::PcurveEndpointsDiscontinuous => "topology.pcurve-endpoints-discontinuous",
             Self::PcurveLocusDiscontinuous => "topology.pcurve-locus-discontinuous",
+            Self::PcurveGlobalFidelityUnproved => "topology.pcurve-global-fidelity-unproved",
             Self::PcurveAssociationAmbiguous => "topology.pcurve-association-ambiguous",
             Self::PcurveCandidatesCarrierUnresolved => {
                 "topology.pcurve-candidates-carrier-unresolved"
@@ -646,9 +650,9 @@ impl StepLossCode {
             Self::ParseNoncanonicalSyntax | Self::OrientedShellOmitsCfsFaces => {
                 LossTaxonomy::NoncanonicalSourceSyntax
             }
-            Self::DecodeWarning | Self::ByteAccountingUnclassified => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::DecodeWarning
+            | Self::ByteAccountingUnclassified
+            | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -792,7 +796,10 @@ impl StepLossCode {
     /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
     /// silently change rejection; list only intentional overrides here.
     const fn strict_floor(self) -> Option<Severity> {
-        self.shared_taxonomy().strict_floor()
+        match self {
+            Self::PcurveGlobalFidelityUnproved => Some(Severity::Warning),
+            other => other.shared_taxonomy().strict_floor(),
+        }
     }
 
     /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
@@ -815,6 +822,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
+    use cadmpeg_ir::report::{Severity, StrictConsequence};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -844,6 +852,7 @@ mod tests {
                 "topology.edge-no-surface-or-curve-for-pcurve",
                 "topology.pcurve-endpoints-discontinuous",
                 "topology.pcurve-locus-discontinuous",
+                "topology.pcurve-global-fidelity-unproved",
                 "topology.pcurve-association-ambiguous",
                 "topology.pcurve-candidates-carrier-unresolved",
                 "topology.face-multiple-outer-bounds",
@@ -989,5 +998,12 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn globally_unproved_pcurve_admission_is_strictly_lossy() {
+        let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
+        assert_eq!(note.severity, Severity::Warning);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
     }
 }

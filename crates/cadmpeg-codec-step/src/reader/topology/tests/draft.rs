@@ -174,6 +174,81 @@ fn stale_trim_recovery_is_retained_above_step_tolerance() {
 }
 
 #[test]
+fn finite_pcurve_admission_marks_unsampled_global_divergence() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp09_unsampled_divergence.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unsampled-divergence pcurve witness");
+
+    let edge_use = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge.as_str() == "step:data:edge#10")
+        .expect("unsampled-divergence edge use");
+    assert_eq!(edge_use.pcurves.len(), 1);
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#27")
+        .expect("unsampled-divergence pcurve");
+    let parameter_range = match &pcurve.geometry {
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => *parameter_range,
+        other => panic!("expected trimmed pcurve, got {other:?}"),
+    };
+    let surface_id = decoded
+        .ir()
+        .model
+        .surfaces
+        .first()
+        .expect("pcurve plane")
+        .id
+        .clone();
+    let (curve_center, curve_radius) = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find_map(|curve| match curve.geometry {
+            CurveGeometry::Circle { center, radius, .. } => Some((center, radius)),
+            _ => None,
+        })
+        .expect("3D circle carrier");
+    let index = ModelIndex::new(decoded.ir());
+    let point_set_residual = |fraction: f64| {
+        let parameter = parameter_range[0].mul_add(1.0 - fraction, parameter_range[1] * fraction);
+        let uv = pcurve_uv(&pcurve.geometry, parameter).expect("evaluate pcurve");
+        let mapped = model_surface_point_by_id(&index, &surface_id, uv.u, uv.v)
+            .expect("map pcurve through plane");
+        (mapped.distance(curve_center) - curve_radius).abs()
+    };
+
+    for sample in 0..PCURVE_LOCUS_SAMPLE_COUNT {
+        let fraction = sample as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64;
+        assert!(point_set_residual(fraction) <= COINCIDENCE_TOLERANCE);
+    }
+    for gap in 0..(PCURVE_LOCUS_SAMPLE_COUNT - 1) {
+        let fraction = (gap as f64 + 0.5) / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64;
+        assert!(point_set_residual(fraction) > 1.0);
+    }
+
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == StepLossCode::PcurveGlobalFidelityUnproved.kind())
+        .expect("finite admission loss");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+}
+
+#[test]
 fn divergent_interior_pcurve_is_omitted_from_coedge() {
     let decoded = crate::StepCodec::default()
         .decode(

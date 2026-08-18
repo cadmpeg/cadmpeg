@@ -2339,6 +2339,20 @@ fn build_one(
                                 });
                                 match selection {
                                     Some(Ok(selected)) => {
+                                        let (Some(curve), Some(surface)) =
+                                            (edge.curve, surface_step)
+                                        else {
+                                            unreachable!(
+                                                "successful pcurve selection has one curve and surface"
+                                            )
+                                        };
+                                        losses.push(
+                                            StepLossCode::PcurveGlobalFidelityUnproved.note(
+                                                format!(
+                                                    "curve #{curve} has one pcurve on surface #{surface} admitted to coedge use #{use_step} by a finite endpoint and locus witness; global model-space point-set equality and direction are unproved"
+                                                ),
+                                            ),
+                                        );
                                         vec![(selected.id, selected.parameter_range)]
                                     }
                                     Some(Err(PcurveSelectionFailure::Locus)) => {

@@ -1526,11 +1526,15 @@ maps the pcurve through the face surface, inverts the model-space `curve_3d`
 near the interpolated directed endpoint parameters, and evaluates that curve
 again. Every evaluated separation must be finite and at most
 `max(STEP coincidence tolerance, document linear tolerance)`. This finite
-model-space locus and direction witness is the CADIR admission rule; it does
-not prove global point-set equality or a global nearest point. A finite
-sample set can miss a divergent interval or a lower-residual basin. A stale
-finite trim therefore keeps a recovered interval only on the coedge use, and
-an unbounded candidate uses the same witness rule.
+model-space locus and direction witness is the CADIR admission rule.
+Successful admission transfers the optional relation and reports the warning
+`topology.pcurve-global-fidelity-unproved`. The report means that the finite
+witness did not establish the ISO global point-set and same-direction
+invariants. CADIR does not claim global pcurve fidelity for this relation.
+Strict decode rejects this warning. A finite sample set can miss a divergent
+interval or a lower-residual basin. A stale finite trim therefore keeps a
+recovered interval only on the coedge use, and an unbounded candidate uses the
+same witness rule.
 
 Endpoint search failure or an endpoint residual outside the bound omits the
 optional relation and reports `topology.pcurve-endpoints-discontinuous`.
