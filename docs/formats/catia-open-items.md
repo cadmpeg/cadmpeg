@@ -312,7 +312,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does the separate standard 3D spline cache encode its poles and knots?
 
-**Known.** `catia.md` §6.3 "A complete consolidated edge run is" defines exact two-surface constructions from class-`0x20` pcurve jets, their supports, and their shared parameter interval. The separate 3D cache remains an opaque carrier.
+**Known.** `catia.md` §6.3 "A complete consolidated edge run is" defines exact two-surface constructions from class-`0x20` pcurve jets, their supports, and their shared parameter interval. A sphere-plane standard spline with a secant plane and endpoints on the exact section is a full-circle carrier without an edge interval or pcurve unless a branch witness exists. The separate 3D cache remains an opaque carrier.
 
 **Need.** We must know the cache program to read a spline when the exact construction is unavailable and to write the cache.
 

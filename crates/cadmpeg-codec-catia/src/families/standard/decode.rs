@@ -6513,6 +6513,65 @@ pub(crate) fn standard_spline_line(
     ))
 }
 
+fn standard_spline_circle(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    points: [usize; 2],
+) -> Option<CurveGeometry> {
+    let surfaces = support
+        .faces
+        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let [Some(left), Some(right)] = surfaces else {
+        return None;
+    };
+    let (sphere_center, sphere_radius, plane_origin, plane_normal) =
+        match (&left.geometry, &right.geometry) {
+            (
+                SurfaceGeometry::Sphere { center, radius, .. },
+                SurfaceGeometry::Plane { origin, normal, .. },
+            )
+            | (
+                SurfaceGeometry::Plane { origin, normal, .. },
+                SurfaceGeometry::Sphere { center, radius, .. },
+            ) => (*center, *radius, *origin, *normal),
+            _ => return None,
+        };
+    let axis = unit_vector(plane_normal)?;
+    let sphere_radius = sphere_radius.abs();
+    let signed_distance = sphere_center.vector_from(plane_origin).dot(axis);
+    if !sphere_radius.is_finite() || sphere_radius <= 0.0 || !signed_distance.is_finite() {
+        return None;
+    }
+    let section_radius_squared = sphere_radius * sphere_radius - signed_distance * signed_distance;
+    if !section_radius_squared.is_finite()
+        || section_radius_squared <= SPHERE_SECTION_ENDPOINT_TOLERANCE.powi(2)
+    {
+        return None;
+    }
+    let section_center = sphere_center.translated(axis, -signed_distance);
+    let section_radius = section_radius_squared.sqrt();
+    let start = ir.model.points.get(points[0])?.position;
+    let end = ir.model.points.get(points[1])?.position;
+    if !point_on_surface(start, &left.geometry)
+        || !point_on_surface(start, &right.geometry)
+        || !point_on_surface(end, &left.geometry)
+        || !point_on_surface(end, &right.geometry)
+        || (start.distance(section_center) - section_radius).abs()
+            > SPHERE_SECTION_ENDPOINT_TOLERANCE
+        || (end.distance(section_center) - section_radius).abs() > SPHERE_SECTION_ENDPOINT_TOLERANCE
+    {
+        return None;
+    }
+    Some(CurveGeometry::Circle {
+        center: section_center,
+        axis,
+        ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
+        radius: section_radius,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
@@ -6646,14 +6705,20 @@ pub(crate) fn build_standard_edge_curve(
             } else {
                 match standard_spline_line(ir, bindings, surface_indices, support, points) {
                     Some((geometry, range)) => (geometry, Some(range)),
-                    None => (
-                        CurveGeometry::Unknown {
-                            record: Some(UnknownId(
-                                "catia:payload:unknown#brep-stream".to_string(),
-                            )),
-                        },
-                        None,
-                    ),
+                    None => {
+                        match standard_spline_circle(ir, bindings, surface_indices, support, points)
+                        {
+                            Some(geometry) => (geometry, None),
+                            None => (
+                                CurveGeometry::Unknown {
+                                    record: Some(UnknownId(
+                                        "catia:payload:unknown#brep-stream".to_string(),
+                                    )),
+                                },
+                                None,
+                            ),
+                        }
+                    }
                 }
             }
         }
@@ -6678,11 +6743,24 @@ pub(crate) fn build_standard_edge_curve(
             .derived(&id, "geometry.origin")
             .derived(&id, "geometry.direction");
     } else if matches!(
+        (&support.geometry, &geometry),
+        (
+            crate::families::standard::records::StandardCurveGeometry::Bspline,
+            CurveGeometry::Circle { .. }
+        )
+    ) {
+        annotations
+            .derived(&id, "geometry.center")
+            .derived(&id, "geometry.axis")
+            .derived(&id, "geometry.ref_direction")
+            .derived(&id, "geometry.radius");
+    } else if matches!(
         &support.geometry,
         crate::families::standard::records::StandardCurveGeometry::Circle { .. }
     ) {
         annotations.derived(&id, "geometry.axis");
     }
+    let geometry_is_unknown = matches!(&geometry, CurveGeometry::Unknown { .. });
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
@@ -6722,36 +6800,38 @@ pub(crate) fn build_standard_edge_curve(
         if sides.iter().all(|side| side.surface.is_some())
             && (native_support.is_some() || sides[0].surface != sides[1].surface)
         {
-            let procedural_id =
-                ProceduralCurveId(format!("catia:standard:intersection#{}", support.pos));
-            annotate(
-                annotations,
-                &procedural_id,
-                "MainDataStream+SurfacicReps",
-                support.pos as u64,
-                "standard_surface_intersection",
-                Exactness::Derived,
-            );
-            annotations
-                .derived(&procedural_id, "curve")
-                .derived(&procedural_id, "definition");
             let curve_parameter_range = param_range
                 .or_else(|| native_support.map(|native| native.parameter_range))
-                .unwrap_or([0.0, 1.0]);
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedural_id,
-                curve: id.clone(),
-                definition: ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
-                        sides,
-                        parameter_range: ordered_range(curve_parameter_range),
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                .or_else(|| geometry_is_unknown.then_some([0.0, 1.0]));
+            if let Some(curve_parameter_range) = curve_parameter_range {
+                let procedural_id =
+                    ProceduralCurveId(format!("catia:standard:intersection#{}", support.pos));
+                annotate(
+                    annotations,
+                    &procedural_id,
+                    "MainDataStream+SurfacicReps",
+                    support.pos as u64,
+                    "standard_surface_intersection",
+                    Exactness::Derived,
+                );
+                annotations
+                    .derived(&procedural_id, "curve")
+                    .derived(&procedural_id, "definition");
+                ir.model.procedural_curves.push(ProceduralCurve {
+                    id: procedural_id,
+                    curve: id.clone(),
+                    definition: ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext {
+                            sides,
+                            parameter_range: ordered_range(curve_parameter_range),
+                            discontinuities: std::array::from_fn(|_| Vec::new()),
+                        },
+                        discontinuity_flag: false,
                     },
-                    discontinuity_flag: false,
-                },
-                cache_fit_tolerance: None,
-            });
-            param_range = Some(curve_parameter_range);
+                    cache_fit_tolerance: None,
+                });
+                param_range = Some(curve_parameter_range);
+            }
         }
     }
     (Some(id), param_range)

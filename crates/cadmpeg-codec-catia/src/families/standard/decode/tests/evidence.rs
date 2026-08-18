@@ -461,6 +461,82 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
 }
 
 #[test]
+fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    let section_radius = 3.0_f64.sqrt();
+    ir.model.points.extend(
+        [
+            Point3::new(1.0 + section_radius, 3.0, 3.0),
+            Point3::new(1.0 - section_radius, 3.0, 3.0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, position)| Point {
+            id: PointId(format!("point-{index}")),
+            position,
+            source_object: None,
+        }),
+    );
+    let sphere_id = SurfaceId("sphere".to_string());
+    let plane_id = SurfaceId("plane".to_string());
+    ir.model.surfaces.extend([
+        Surface {
+            id: sphere_id.clone(),
+            geometry: SurfaceGeometry::Sphere {
+                center: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: plane_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(1.0, 3.0, 3.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let (id, range) = build_standard_edge_curve(
+        &mut ir,
+        &mut annotations,
+        &[(sphere_id.clone(), false, 0), (plane_id.clone(), false, 1)],
+        &HashMap::from([(sphere_id, 0), (plane_id, 1)]),
+        &[],
+        &support,
+        [0, 1],
+        None,
+        None,
+    );
+    let id = id.expect("spline support identifies a curve carrier");
+    assert_eq!(range, None);
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        radius,
+        ..
+    } = &ir.model.curves[0].geometry
+    else {
+        panic!("sphere-plane spline did not derive a circle");
+    };
+    assert!(center.distance(Point3::new(1.0, 3.0, 3.0)) <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
+    assert!(axis.cross(Vector3::new(0.0, 1.0, 0.0)).norm() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
+    assert!((*radius - section_radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
+    assert_eq!(ir.model.curves[0].id, id);
+    assert!(ir.model.procedural_curves.is_empty());
+}
+
+#[test]
 fn standard_spline_uses_identity_bound_native_support_pcurves() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.points.extend(
