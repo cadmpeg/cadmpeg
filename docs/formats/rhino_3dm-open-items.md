@@ -120,6 +120,10 @@ The render-settings owner is proven to retain a complete framed
 `TCODE_SETTINGS_RENDER_USERDATA` record when its registered class-owned
 anonymous payload has an unsupported major; the typed render-settings record
 remains, and no class-owned payload fields enter native data.
+The viewport owner is proven to retain the complete containing named-view list
+record when a framed `TCODE_VIEW_VIEWPORT_USERDATA` stream has a registered
+class-owned anonymous payload with an unsupported major; the typed view and
+viewport remain, and no viewport-userdata fields enter native data.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

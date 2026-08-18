@@ -35,6 +35,8 @@ pub enum RhinoLossCode {
     PresentationRecordDropped,
     /// A recognized annotation userdata payload could not be typed.
     AnnotationUserdataDropped,
+    /// Viewport userdata has no typed CADIR owner.
+    ViewportUserdataDropped,
     /// Mesh n-gon grouping is not represented in neutral tessellation.
     MeshNgonGroupingDropped,
     /// A stored enumeration value was retained but could not select a neutral value.
@@ -106,6 +108,7 @@ impl RhinoLossCode {
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
         Self::AnnotationUserdataDropped,
+        Self::ViewportUserdataDropped,
         Self::MeshNgonGroupingDropped,
         Self::EnumerationValueDegraded,
         Self::RedundantFieldRepaired,
@@ -147,6 +150,7 @@ impl RhinoLossCode {
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
+            Self::ViewportUserdataDropped => "viewport.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
             Self::EnumerationValueDegraded => "container.enumeration-value-degraded",
             Self::RedundantFieldRepaired => "container.redundant-field-repaired",
@@ -205,6 +209,7 @@ impl RhinoLossCode {
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
+            Self::ViewportUserdataDropped => LossTaxonomy::RecordNotTyped,
             Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -280,6 +285,7 @@ mod tests {
                 "container.integrity-failure",
                 "presentation.record-dropped",
                 "annotation.userdata-dropped",
+                "viewport.userdata-dropped",
                 "mesh.ngon-grouping-dropped",
                 "container.enumeration-value-degraded",
                 "container.redundant-field-repaired",

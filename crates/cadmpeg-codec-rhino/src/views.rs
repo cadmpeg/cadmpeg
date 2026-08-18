@@ -6,10 +6,11 @@ use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
 use crate::chunks::{
-    checksum_children_through_class_end, chunk_at, direct_checksum_ranges, verify_checksum_ranges,
-    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_ENDOFTABLE,
+    chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion, BoundedReader,
+    ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_ENDOFTABLE,
 };
 use crate::container::{OpaqueRecord, Record, Scan};
+use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -32,6 +33,7 @@ const VIEW_NAME: u32 = 0x2000_8a3b;
 const VIEW_POSITION: u32 = 0x2000_8b3b;
 const VIEW_ATTRIBUTES: u32 = 0x2000_8c3b;
 const VIEW_VIEWPORT_USERDATA: u32 = 0x2000_8d3b;
+const CLASS_USERDATA: u32 = 0x0002_7ffd;
 
 #[derive(Debug, Serialize)]
 struct ViewChild {
@@ -67,6 +69,12 @@ struct ViewRecord {
     wallpaper: Option<Wallpaper>,
     children: Vec<ViewChild>,
     parse_warnings: Vec<String>,
+}
+
+struct ViewportUserdataScan {
+    children: Vec<std::ops::Range<usize>>,
+    has_untyped_content: bool,
+    checksum_warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -799,6 +807,75 @@ fn view_child_checksum_warning_excluding(
     view_child_checksum_warning(data, child, &direct)
 }
 
+fn scan_viewport_userdata(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<ViewportUserdataScan, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut children = Vec::new();
+    let mut has_untyped_content = false;
+    let mut checksum_warnings = Vec::new();
+    loop {
+        if reader.position() == reader.end() {
+            return Err(FramingError::structural(
+                reader.end(),
+                "view viewport userdata is missing its class end",
+            ));
+        }
+        let start = reader.position();
+        let child = chunk_at(data, start, reader.end(), archive, false)?;
+        if child.next_offset <= start {
+            return Err(FramingError::structural(
+                start,
+                "view viewport userdata child did not advance",
+            ));
+        }
+        if children.len() >= 1 << 20 {
+            return Err(FramingError::InvalidLength {
+                offset: start,
+                value: children.len() as i128,
+            });
+        }
+        children.push(child.range());
+        reader.skip(child.next_offset - start)?;
+        match child.typecode {
+            CLASS_USERDATA => {
+                if child.short {
+                    return Err(FramingError::structural(
+                        child.header_start,
+                        "view viewport userdata item must be a long chunk",
+                    ));
+                }
+                let mut warnings = Vec::new();
+                parse_userdata(data, &child, archive, &mut warnings)?;
+                checksum_warnings.extend(warnings);
+                has_untyped_content = true;
+            }
+            TCODE_CLASS_END => {
+                if !child.short || child.value != 0 {
+                    return Err(FramingError::structural(
+                        child.header_start,
+                        "view viewport userdata class end must be a short zero chunk",
+                    ));
+                }
+                return Ok(ViewportUserdataScan {
+                    children,
+                    has_untyped_content,
+                    checksum_warnings,
+                });
+            }
+            0 => {
+                return Err(FramingError::structural(
+                    child.header_start,
+                    "view viewport userdata contains a zero typecode",
+                ));
+            }
+            _ => has_untyped_content = true,
+        }
+    }
+}
+
 fn parse_view(
     data: &[u8],
     record: &crate::chunks::Chunk,
@@ -806,7 +883,7 @@ fn parse_view(
     scale: f64,
     list_kind: &'static str,
     list_index: usize,
-) -> Result<(ViewRecord, Vec<String>), FramingError> {
+) -> Result<(ViewRecord, Vec<LossNote>), FramingError> {
     let mut offset = record.body.start;
     let mut name = String::new();
     let mut target = None;
@@ -827,7 +904,7 @@ fn parse_view(
     let mut wallpaper = None;
     let mut children = Vec::new();
     let mut checksum_children = Vec::new();
-    let mut checksum_warnings = Vec::new();
+    let mut checksum_warnings: Vec<LossNote> = Vec::new();
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
     while offset < record.body.end {
@@ -838,7 +915,7 @@ fn parse_view(
             VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
             if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
-                checksum_warnings.push(warning);
+                checksum_warnings.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
             }
         }
         children.push(ViewChild {
@@ -865,7 +942,8 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    checksum_warnings.push(warning);
+                    checksum_warnings
+                        .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
                 trace_image = Some(value);
             }
@@ -887,7 +965,8 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    checksum_warnings.push(warning);
+                    checksum_warnings
+                        .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
                 wallpaper = Some(value);
             }
@@ -923,7 +1002,8 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    checksum_warnings.push(warning);
+                    checksum_warnings
+                        .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
                 view_type = Some(attributes.view_type);
                 page_width = Some(attributes.width);
@@ -932,17 +1012,47 @@ fn parse_view(
                 attributes_version = Some(attributes.version);
                 attributes_detail = Some(attributes);
             }
-            VIEW_VIEWPORT_USERDATA if !child.short => {
-                let nested_children = checksum_children_through_class_end(
-                    data,
-                    child.body.clone(),
-                    archive,
-                    "view viewport userdata",
-                )?;
-                if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
-                {
-                    checksum_warnings.push(warning);
+            VIEW_VIEWPORT_USERDATA => {
+                if child.short {
+                    checksum_warnings.push(
+                        crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
+                            "viewport userdata at offset {} must be a long chunk",
+                            child.header_start
+                        )),
+                    );
+                } else {
+                    match scan_viewport_userdata(data, child.body.clone(), archive) {
+                        Ok(scan) => {
+                            if let Some(warning) =
+                                view_child_checksum_warning_excluding(data, &child, &scan.children)?
+                            {
+                                checksum_warnings.push(
+                                    crate::loss::RhinoLossCode::IntegrityFailure.note(warning),
+                                );
+                            }
+                            for warning in scan.checksum_warnings {
+                                checksum_warnings.push(
+                                    crate::loss::RhinoLossCode::IntegrityFailure.note(warning),
+                                );
+                            }
+                            if scan.has_untyped_content {
+                                checksum_warnings.push(
+                                    crate::loss::RhinoLossCode::ViewportUserdataDropped.note(
+                                        format!(
+                                    "viewport userdata at offset {} has no typed CADIR owner",
+                                    child.header_start
+                                ),
+                                    ),
+                                );
+                            }
+                        }
+                        Err(error) => checksum_warnings.push(
+                            crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
+                                "viewport userdata at offset {} could not be framed: {error}",
+                                child.header_start
+                            )),
+                        ),
+                    }
                 }
             }
             TCODE_ENDOFTABLE => {
@@ -974,7 +1084,7 @@ fn parse_view(
         _ => None,
     };
     if let Some(warning) = checksum_warning {
-        checksum_warnings.push(warning);
+        checksum_warnings.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
     }
     Ok((
         ViewRecord {
@@ -1083,9 +1193,7 @@ fn parse_list(
         let next = view.next_offset;
         match parse_view(data, &view, archive, scale, kind, index) {
             Ok((value, checksum_warnings)) => {
-                for warning in checksum_warnings {
-                    losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
-                }
+                losses.extend(checksum_warnings);
                 views.push(value);
             }
             Err(error) => losses.push(
@@ -1236,8 +1344,8 @@ mod tests {
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
     use crate::test_support::test_dump::{
-        anonymous_chunk, crc_chunk, crc_chunk_excluding, file_reference, long_chunk, short_chunk,
-        utf16_bytes,
+        anonymous_chunk, class_userdata_v2_with_direct_payload, crc_chunk, crc_chunk_excluding,
+        file_reference, long_chunk, short_chunk, utf16_bytes,
     };
 
     fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
@@ -1803,7 +1911,20 @@ mod tests {
     #[test]
     fn viewport_userdata_crc_excludes_class_children_and_reports_mismatch() {
         let archive = ArchiveVersion::V5;
-        let userdata = long_chunk(archive, 0x0002_7ffd, &[0x22, 0x00]);
+        let userdata = class_userdata_v2_with_direct_payload(
+            archive,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            [
+                33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+            ],
+            50,
+            202_608_010,
+            &[
+                2_i32.to_le_bytes().as_slice(),
+                0_i32.to_le_bytes().as_slice(),
+            ]
+            .concat(),
+        );
         let userdata_range = 0..userdata.len();
         let class_end = short_chunk(archive, 0x8002_7fff, 0);
         let class_end_range = userdata.len()..userdata.len() + class_end.len();
@@ -1841,7 +1962,11 @@ mod tests {
         };
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
-        assert!(losses.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()
+        );
 
         let mut corrupted_userdata = viewport_userdata;
         let crc_offset = corrupted_userdata.len() - 1;
@@ -1857,7 +1982,11 @@ mod tests {
         };
         let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
-        assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("0x20008d3b"));
+        assert!(losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()
+        }));
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.contains("0x20008d3b")));
     }
 }

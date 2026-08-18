@@ -6230,6 +6230,14 @@ viewport-userdata stream through and including its short zero-valued
 the CRC input. The current view writer emits no direct viewport-userdata bytes,
 so that CRC is the CRC of an empty byte sequence.
 
+The viewport-userdata stream uses the class-userdata framing in section 7.2.
+CADIR has no typed owner for class-owned viewport-userdata payloads. A framed
+stream with a class-userdata item or other nonzero child retains the typed view,
+admits no class-owned fields, reports `viewport.userdata-dropped`, and retains
+the complete containing named-view or active-view list record as opaque source
+data. A malformed stream uses the same view-list retention rule. A stream with
+only its class-end marker has no class-owned payload and adds no loss.
+
 At `TCODE_VIEW_TRACEIMAGE` minor 4 and `TCODE_VIEW_WALLPAPER_V3` minor 2, the
 complete anonymous file-reference child, including its nested content-hash
 children, is excluded from the enclosing image-child CRC. Direct image fields
