@@ -10216,6 +10216,7 @@ mod tests {
     mod disc1c_disc14_linked;
     mod disc1c_disc16_disc0e;
     mod disc1c_disc18_disc16_disc14_disc12_disc0e_disc04_chain;
+    mod disc1c_disc1a_disc16_disc14_disc12_disc10_tail_reciprocal_face_use;
     mod disc1d_disc1b_disc19_disc13_disc11_disc04;
     mod disc1e_disc04;
     mod disc1e_disc12_disc1a_disc18_disc10_direct_face_use;
@@ -12066,7 +12067,6 @@ mod tests {
         let unknown_root = class_root_index(&[5, 32, 200]);
         assert_eq!(class_root_attrs(&unknown_root, &entity_attrs), None);
     }
-
     #[test]
     fn prefixed_entity_refs_end_at_the_zero_terminator() {
         let mut bytes = Vec::new();
