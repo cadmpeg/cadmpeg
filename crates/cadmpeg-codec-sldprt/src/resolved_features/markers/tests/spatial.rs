@@ -230,6 +230,7 @@ fn current_spatial_point_variants_decode_model_coordinates() {
 #[test]
 fn current_compact_spatial_points_decode_without_object_indices() {
     for (native_kind, locus, coordinates) in [
+        (0, [0x04, 0x00, 0x02, 0x00], [0.035, 0.0, 0.1415]),
         (1, [0x04, 0x00, 0x02, 0x00], [0.125, -0.25, 0.375]),
         (0, [0x05, 0x00, 0x01, 0x00], [-0.08, 0.075, 0.0055]),
     ] {
@@ -262,7 +263,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     let lane_id = "sldprt:feature-input:resolved-features#spatial";
     let mut payload = 1u32.to_le_bytes().to_vec();
     payload.extend(current_compact_spatial_point_marker(
-        1,
+        0,
         [0x04, 0x00, 0x02, 0x00],
         [0.0, 0.015, 0.005],
     ));
@@ -274,7 +275,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     ));
     payload.extend(3u32.to_le_bytes());
     payload.extend(current_compact_spatial_point_marker(
-        1,
+        0,
         [0x04, 0x00, 0x02, 0x00],
         [0.0, -0.015, 0.005],
     ));
