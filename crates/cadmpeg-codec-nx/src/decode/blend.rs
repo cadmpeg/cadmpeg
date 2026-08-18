@@ -293,6 +293,43 @@ fn blend_surface_parameters_inner(
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
+        let seed_u_is_valid = index
+            .curves(spine.0.as_str())
+            .and_then(|curve| match &curve.geometry {
+                CurveGeometry::Nurbs(nurbs) => {
+                    let degree = usize::try_from(nurbs.degree).ok()?;
+                    let count = nurbs.control_points.len();
+                    let knot_count = count.checked_add(degree)?.checked_add(1)?;
+                    if count <= degree || nurbs.knots.len() != knot_count {
+                        return Some(false);
+                    }
+                    let lower = *nurbs.knots.get(degree)?;
+                    let upper = *nurbs.knots.get(count)?;
+                    Some(
+                        lower.is_finite()
+                            && upper.is_finite()
+                            && lower < upper
+                            && seed.u >= lower
+                            && seed.u <= upper,
+                    )
+                }
+                _ => Some(seed.u.is_finite()),
+            })
+            .unwrap_or(false);
+        if seed_u_is_valid
+            && section_domain.contains(seed.v)
+            && blend_surface_point_inner_with_index_and_budget(
+                index,
+                surface,
+                seed.u,
+                seed.v,
+                depth + 1,
+                geometry_budget,
+            )
+            .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+        {
+            return Some(seed);
+        }
         if let Some(parameters) = refine_blend_surface_parameters_with_section_domain_and_budget(
             index,
             surface,
