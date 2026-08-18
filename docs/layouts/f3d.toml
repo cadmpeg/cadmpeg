@@ -7395,6 +7395,271 @@ source = "spec"
 anchor = "ordered reference count: `5` or `7` according to frame length"
 
 [[record]]
+name = "legacy_class_415_one_sided_to_face_extrude_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The one-sided to-face form stores face-extend option"
+size = 282
+note = "Offsets are relative to the class-415 primary indexed header. The paired frame begins at 481 B, the ordered reference count is at offset 278, and the fixed prefix ends after that count."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and preceding scope envelope are outside this fixed prefix."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "stores u32 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_3"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offsets 24 through 26"
+
+[[record.field]]
+name = "operation_prefix_marker"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "operation prefix marker `1`"
+value = 1
+
+[[record.field]]
+name = "operation"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "result operation"
+
+[[record.field]]
+name = "direction"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "one-sided travel direction `1`"
+value = 1
+
+[[record.field]]
+name = "face_extend"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "face-extend option `1`"
+value = 1
+
+[[record.field]]
+name = "direction_reversed"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "direction reversal"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "geometry kind"
+
+[[record.field]]
+name = "start_support"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "start support"
+
+[[record.field]]
+name = "zero_run_3_after_start"
+offset = 43
+type = "bytes[3]"
+source = "spec"
+anchor = "`+43..+45`"
+
+[[record.field]]
+name = "profile_normal"
+offset = 46
+type = "f64[3]"
+source = "spec"
+anchor = "finite unit profile normal"
+
+[[record.gap]]
+offset = 70
+size = 37
+note = "Scope-local reference lanes precede the first-side extent."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 107
+type = "u32"
+source = "spec"
+anchor = "first-side extent `2` (to face)"
+value = 2
+
+[[record.field]]
+name = "first_side_offset_reference"
+offset = 111
+type = "bytes[11]"
+source = "spec"
+anchor = "marked `Side1Offset` owner reference"
+
+[[record.gap]]
+offset = 122
+size = 152
+note = "The remaining scope envelope precedes the ordered reference-count field."
+
+[[record.field]]
+name = "second_side_extent"
+offset = 274
+type = "u32"
+source = "spec"
+anchor = "second-side extent `0` four bytes before the reference count"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 278
+type = "u32"
+source = "spec"
+anchor = "Ordered reference count"
+value = 9
+
+[[record]]
+name = "legacy_class_415_one_sided_distance_extrude_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The distance form stores face-extend option"
+size = 272
+note = "Offsets are relative to the class-415 primary indexed header. The paired frame begins at 449 B, the ordered reference count is at offset 268, and the fixed prefix ends after that count."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and preceding scope envelope are outside this fixed prefix."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "stores u32 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_3"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offsets 24 through 26"
+
+[[record.field]]
+name = "operation_prefix_marker"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "operation prefix marker `1`"
+value = 1
+
+[[record.field]]
+name = "operation"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "result operation"
+
+[[record.field]]
+name = "direction"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "one-sided travel direction `1`"
+value = 1
+
+[[record.field]]
+name = "face_extend"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "face-extend option `2`"
+value = 2
+
+[[record.field]]
+name = "direction_reversed"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "direction reversal"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "geometry kind"
+
+[[record.field]]
+name = "start_support"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "start support"
+
+[[record.field]]
+name = "zero_run_3_after_start"
+offset = 43
+type = "bytes[3]"
+source = "spec"
+anchor = "`+43..+45`"
+
+[[record.field]]
+name = "profile_normal"
+offset = 46
+type = "f64[3]"
+source = "spec"
+anchor = "finite unit profile normal"
+
+[[record.gap]]
+offset = 70
+size = 37
+note = "Scope-local reference lanes precede the first-side extent."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 107
+type = "u32"
+source = "spec"
+anchor = "first-side extent `1` (distance)"
+value = 1
+
+[[record.gap]]
+offset = 111
+size = 153
+note = "The distance form has no first-side owner lane; its second-side extent is at the end of the scope envelope."
+
+[[record.field]]
+name = "second_side_extent"
+offset = 264
+type = "u32"
+source = "spec"
+anchor = "second-side extent `0` four bytes before the reference count"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 268
+type = "u32"
+source = "spec"
+anchor = "Ordered reference count"
+value = 7
+
+[[record]]
 name = "shifted_extrude_offset_profile_extent_lane"
 kind = "byte"
 section = "3.1"

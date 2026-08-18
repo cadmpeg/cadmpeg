@@ -9,7 +9,7 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
-use crate::design::decode::scopes::is_legacy_class_415_symmetric_distance_layout;
+use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
@@ -3344,7 +3344,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .reference_count_offset
                         .checked_sub(scope.byte_offset)
                         .is_some_and(|reference_count_delta| {
-                            is_legacy_class_415_symmetric_distance_layout(
+                            legacy_class_415::is_symmetric_distance_layout(
+                                &scope.class_tag,
+                                &scope.paired_class_tag,
+                                scope.frame_length,
+                                reference_count_delta,
+                                scope.reference_members.len(),
+                            )
+                        });
+                    let legacy_class_415_one_sided_layout = scope
+                        .reference_count_offset
+                        .checked_sub(scope.byte_offset)
+                        .is_some_and(|reference_count_delta| {
+                            legacy_class_415::is_one_sided_layout(
                                 &scope.class_tag,
                                 &scope.paired_class_tag,
                                 scope.frame_length,
@@ -3404,7 +3416,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             scope.reference_count_offset.saturating_sub(4)
                         } else {
                             side_extent_discriminator_offsets[0].saturating_add(13)
-                        };
+                        }
+                        || (legacy_class_415_one_sided_layout
+                            && side_extent_discriminator_offsets[1]
+                                == scope.reference_count_offset.saturating_sub(4));
                     let standard_extent = matches!(
                         (
                             direction_face_extend_values[0],

@@ -114,6 +114,8 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
+pub(crate) mod legacy_class_415;
+
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub fn decode_parameter_scopes(
@@ -7797,19 +7799,6 @@ fn bind_coil_extent_from_parameters(
     scope.coil_extent = extent;
 }
 
-pub(crate) fn is_legacy_class_415_symmetric_distance_layout(
-    class_tag: &str,
-    paired_class_tag: &str,
-    frame_length: u64,
-    reference_count_delta: u64,
-    reference_member_count: usize,
-) -> bool {
-    class_tag == "415"
-        && paired_class_tag == "265"
-        && reference_count_delta == class_415::REFERENCE_COUNT as u64
-        && matches!((frame_length, reference_member_count), (447, 5) | (469, 7))
-}
-
 fn exact_extrude_prologue(
     bytes: &[u8],
     start: usize,
@@ -7823,7 +7812,7 @@ fn exact_extrude_prologue(
         .checked_sub(start)
         .zip(reference_count_at.checked_sub(start))
         .and_then(|(frame_length, reference_count_delta)| {
-            Some(is_legacy_class_415_symmetric_distance_layout(
+            Some(legacy_class_415::is_symmetric_distance_layout(
                 class_tag,
                 paired_class_tag,
                 u64::try_from(frame_length).ok()?,
@@ -7833,17 +7822,24 @@ fn exact_extrude_prologue(
         })
         .unwrap_or(false);
     if class_tag == "415" && paired_class_tag == "265" {
-        return legacy_class_415
-            .then(|| {
-                exact_current_extrude_prologue(
-                    bytes,
-                    start,
-                    reference_count_at,
-                    reference_members,
-                    true,
-                )
-            })
-            .flatten();
+        if legacy_class_415 {
+            return exact_current_extrude_prologue(
+                bytes,
+                start,
+                reference_count_at,
+                reference_members,
+                true,
+            );
+        }
+        return legacy_class_415::exact_one_sided_extrude_prologue(
+            bytes,
+            start,
+            paired_at,
+            class_tag,
+            paired_class_tag,
+            reference_count_at,
+            reference_members,
+        );
     }
     exact_current_extrude_prologue(
         bytes,

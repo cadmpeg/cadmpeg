@@ -2258,6 +2258,71 @@ Unstated regions:
 - `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
 - `134..288` (154 B): Intervening scope bytes carry no extent discriminator and precede the ordered reference-count field.
 
+## `legacy_class_415_one_sided_to_face_extrude_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 282 B
+
+Offsets are relative to the class-415 primary indexed header. The paired frame begins at 481 B, the ordered reference count is at offset 278, and the fixed prefix ends after that count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | stores u32 `1` · value `1` |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 24 through 26 |
+| 27 | 1 | `operation_prefix_marker` | `u8` | little | spec | operation prefix marker `1` · value `1` |
+| 28 | 4 | `operation` | `u32` | little | spec | result operation |
+| 32 | 4 | `direction` | `u32` | little | spec | one-sided travel direction `1` · value `1` |
+| 36 | 4 | `face_extend` | `u32` | little | spec | face-extend option `1` · value `1` |
+| 40 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal |
+| 41 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind |
+| 42 | 1 | `start_support` | `u8` | little | spec | start support |
+| 43 | 3 | `zero_run_3_after_start` | `bytes[3]` | little | spec | `+43..+45` |
+| 46 | 24 | `profile_normal` | `f64[3]` | little | spec | finite unit profile normal |
+| 107 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent `2` (to face) · value `2` |
+| 111 | 11 | `first_side_offset_reference` | `bytes[11]` | little | spec | marked `Side1Offset` owner reference |
+| 274 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `0` four bytes before the reference count · value `0` |
+| 278 | 4 | `reference_count` | `u32` | little | spec | Ordered reference count · value `9` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
+- `70..107` (37 B): Scope-local reference lanes precede the first-side extent.
+- `122..274` (152 B): The remaining scope envelope precedes the ordered reference-count field.
+
+## `legacy_class_415_one_sided_distance_extrude_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 272 B
+
+Offsets are relative to the class-415 primary indexed header. The paired frame begins at 449 B, the ordered reference count is at offset 268, and the fixed prefix ends after that count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | stores u32 `1` · value `1` |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 24 through 26 |
+| 27 | 1 | `operation_prefix_marker` | `u8` | little | spec | operation prefix marker `1` · value `1` |
+| 28 | 4 | `operation` | `u32` | little | spec | result operation |
+| 32 | 4 | `direction` | `u32` | little | spec | one-sided travel direction `1` · value `1` |
+| 36 | 4 | `face_extend` | `u32` | little | spec | face-extend option `2` · value `2` |
+| 40 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal |
+| 41 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind |
+| 42 | 1 | `start_support` | `u8` | little | spec | start support |
+| 43 | 3 | `zero_run_3_after_start` | `bytes[3]` | little | spec | `+43..+45` |
+| 46 | 24 | `profile_normal` | `f64[3]` | little | spec | finite unit profile normal |
+| 107 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent `1` (distance) · value `1` |
+| 264 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `0` four bytes before the reference count · value `0` |
+| 268 | 4 | `reference_count` | `u32` | little | spec | Ordered reference count · value `7` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
+- `70..107` (37 B): Scope-local reference lanes precede the first-side extent.
+- `111..264` (153 B): The distance form has no first-side owner lane; its second-side extent is at the end of the scope envelope.
+
 ## `shifted_extrude_offset_profile_extent_lane`
 
 Spec §3.1 · layout: byte offsets · size: 134 B
