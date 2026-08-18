@@ -655,6 +655,10 @@ pub(in super::super) fn section_skamp_is_line(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
+    if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
+        return segment.kind == crate::feature::FeatureSegmentKind::Line
+            || section_degenerate_axis_line(definition, segment);
+    }
     if solver_only_section_entity_family(definition, item.entity_id)
         == Some(SectionEntityIncidenceFamily::Line)
         || unique_section_incidence_curve_family(definition, item.entity_id)
@@ -669,10 +673,7 @@ pub(in super::super) fn section_skamp_is_line(
         return true;
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
-            segment.kind == crate::feature::FeatureSegmentKind::Line
-                || section_degenerate_axis_line(definition, segment)
-        });
+        return false;
     }
     section_saved_entity(definition, item.entity_id)
         .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Line(_)))
@@ -1454,9 +1455,9 @@ mod tests {
         };
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 101),
-            Some(SectionEntityIncidenceFamily::Line)
+            None
         );
-        assert!(section_skamp_is_line(&definition, &line));
+        assert!(!section_skamp_is_line(&definition, &line));
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 102),
             Some(SectionEntityIncidenceFamily::Arc)
@@ -1489,6 +1490,56 @@ mod tests {
                 "creo:featdefs:sketch_entity#917:102".to_string(),
             )))
         );
+
+        let mut decoded_arc = definition.clone();
+        decoded_arc.segments.as_mut().expect("segments").rows.push(
+            crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Arc,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: Some(3),
+                arc_orientation: Some(0),
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 104,
+                body: Vec::new(),
+                offset: 104,
+            },
+        );
+        let relations = decoded_arc.relations.as_mut().expect("relations");
+        relations.skamps.push(crate::feature::FeatureSkamp {
+            id: 5,
+            kind: 5,
+            flags: 0,
+            status: 1,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 104,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 205,
+                    sense: 0,
+                },
+            ],
+            offset: 105,
+        });
+        relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count += 1;
+        let decoded_arc_item = crate::feature::FeatureSkampItem {
+            entity_id: 104,
+            sense: 0,
+        };
+        assert_eq!(
+            unique_section_incidence_curve_family(&decoded_arc, 104),
+            None
+        );
+        assert!(!section_skamp_is_line(&decoded_arc, &decoded_arc_item));
+        assert!(section_skamp_is_arc(&decoded_arc, &decoded_arc_item));
     }
 
     #[test]

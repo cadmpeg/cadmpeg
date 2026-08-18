@@ -462,6 +462,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
             (5 | 7 | 8, [first, second])
                 if first.sense == 0
                     && second.sense == 0
+                    && solver_only_section_entities(definition).contains_key(&entity_id)
                     && (first.entity_id == entity_id || second.entity_id == entity_id) =>
             {
                 evidence.insert(SectionEntityIncidenceFamily::Line);
