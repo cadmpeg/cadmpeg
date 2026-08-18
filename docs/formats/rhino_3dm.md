@@ -5205,7 +5205,7 @@ Before writer version 1 December 2009, transparent RGB `(128,128,128)` is the
 obsolete default and the diffuse color replaces the complete transparent
 color.
 
-For archive versions 4 and 50, the class-data payload begins with packed
+For archive versions 4, 5, and 50, the class-data payload begins with packed
 version `2.0`, followed by one anonymous long chunk. This outer version is a
 material-format discriminator; it has no fields beyond the child boundary.
 The child has major 1 and a nonnegative minor. Minor 1 adds the obsolete
