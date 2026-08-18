@@ -4,6 +4,7 @@
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
 use cadmpeg_ir::topology::Sense;
@@ -57,6 +58,14 @@ pub(crate) struct PersistentSurfaceReference {
     pub(crate) local_surface_id: u32,
 }
 
+/// One `DisplayLists` table whose persistent surface identity can bind a B-rep face.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PersistentFaceBinding {
+    pub(crate) tessellation: String,
+    pub(crate) feature_source: u32,
+    pub(crate) local_surface: u32,
+}
+
 impl DisplayFace {
     /// Return the source ID only when all duplicated references agree.
     pub(crate) fn feature_source_id(&self) -> Option<u32> {
@@ -68,6 +77,18 @@ impl DisplayFace {
         sources
             .all(|candidate| candidate == source)
             .then_some(source)
+    }
+
+    /// Return the complete identity only when every duplicate reference agrees.
+    pub(crate) fn persistent_surface_identity(&self) -> Option<(u32, u32)> {
+        let mut references = self.surface_references.iter();
+        let first = references.next()?;
+        references
+            .all(|reference| {
+                (reference.feature_source_id, reference.local_surface_id)
+                    == (first.feature_source_id, first.local_surface_id)
+            })
+            .then_some((first.feature_source_id, first.local_surface_id))
     }
 }
 
@@ -660,6 +681,84 @@ pub(crate) fn assign_unique_analytic_owners(
         let (face, body, ..) = owner;
         mesh.faces.push((*face).clone());
         mesh.body = Some((*body).clone());
+        assigned.push(mesh.id.clone());
+    }
+    assigned
+}
+
+/// Bind `DisplayLists` tables to faces through their complete persistent identity.
+///
+/// The identity is a source-declared face key, so it is stronger than a
+/// geometric coincidence test. A repeated key with different B-rep targets or
+/// repeated table IDs with different identities is rejected as ambiguous.
+pub(crate) fn assign_persistent_owners(
+    model: &mut cadmpeg_ir::document::Model,
+    face_identities: &[(String, u32, u32)],
+    bindings: &[PersistentFaceBinding],
+) -> Vec<String> {
+    let mut faces_by_identity = HashMap::<(u32, u32), Option<FaceId>>::new();
+    for (target, feature_source_id, local_surface_id) in face_identities {
+        let identity = (*feature_source_id, *local_surface_id);
+        let candidate = FaceId(target.clone());
+        match faces_by_identity.entry(identity) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(candidate));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry.get().as_ref().is_some_and(|face| face != &candidate) {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
+    }
+
+    let regions = model
+        .regions
+        .iter()
+        .map(|region| (&region.id, &region.body))
+        .collect::<HashMap<_, _>>();
+    let shell_bodies = model
+        .shells
+        .iter()
+        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
+        .collect::<HashMap<_, _>>();
+    let face_bodies = model
+        .faces
+        .iter()
+        .filter_map(|face| Some((face.id.clone(), (*shell_bodies.get(&face.shell)?).clone())))
+        .collect::<HashMap<_, _>>();
+
+    let mut bindings_by_mesh = HashMap::<String, Option<(u32, u32)>>::new();
+    for binding in bindings {
+        let identity = (binding.feature_source, binding.local_surface);
+        match bindings_by_mesh.entry(binding.tessellation.clone()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(identity));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry.get() != &Some(identity) {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
+    }
+
+    let mut assigned = Vec::new();
+    for mesh in &mut model.tessellations {
+        if mesh.body.is_some() || !mesh.faces.is_empty() {
+            continue;
+        }
+        let Some(Some(identity)) = bindings_by_mesh.get(&mesh.id) else {
+            continue;
+        };
+        let Some(Some(face)) = faces_by_identity.get(identity) else {
+            continue;
+        };
+        let Some(body) = face_bodies.get(face) else {
+            continue;
+        };
+        mesh.faces.push(face.clone());
+        mesh.body = Some(body.clone());
         assigned.push(mesh.id.clone());
     }
     assigned

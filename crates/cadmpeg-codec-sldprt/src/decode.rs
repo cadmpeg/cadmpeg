@@ -2703,6 +2703,7 @@ fn build_geometry_ir(
         .collect::<BTreeSet<_>>();
     let mut matched_feature_sources = BTreeSet::new();
     let mut conflicting_display_references = Vec::new();
+    let mut persistent_face_bindings = Vec::new();
     for display in scan.sections() {
         let display_faces = crate::tessellation::section_display_faces(display);
         if display_faces.is_empty() {
@@ -2737,6 +2738,15 @@ fn build_geometry_ir(
                 display.ordinal(),
                 display_face.table_index
             );
+            if let Some((feature_source_id, local_surface_id)) =
+                display_face.persistent_surface_identity()
+            {
+                persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
+                    tessellation: id.clone(),
+                    feature_source: feature_source_id,
+                    local_surface: local_surface_id,
+                });
+            }
             let display_stream = display.display_name();
             crate::annotations::note(
                 &mut annotations,
@@ -2836,7 +2846,15 @@ fn build_geometry_ir(
             reasons.join("; ")
         )));
     }
-    for id in crate::tessellation::assign_unique_analytic_owners(&mut ir.model) {
+    let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
+        &mut ir.model,
+        &face_identities,
+        &persistent_face_bindings,
+    );
+    assigned_tessellations.extend(crate::tessellation::assign_unique_analytic_owners(
+        &mut ir.model,
+    ));
+    for id in assigned_tessellations {
         let note = annotations.exactness.entry(id).or_default();
         note.fields.insert("body".into(), Exactness::Derived);
         note.fields.insert("faces".into(), Exactness::Derived);
