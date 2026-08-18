@@ -39,6 +39,7 @@ use crate::layout::compact_current_spatial_marker_point as compact_spatial;
 use crate::layout::compact_legacy_142_profile_curve as legacy_142;
 use crate::layout::compact_legacy_code_two_profile_point as code_two;
 use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
+use crate::layout::legacy_144_single_incidence_profile_point as pt_144;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
 
 /// Project spatial sketches from their model-space marker coordinates or bounded lines.
@@ -486,6 +487,8 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 legacy_extended_linked_profile_point_coordinates(payload, offset);
             let single_incidence_profile_point =
                 legacy_single_incidence_profile_point_coordinates(payload, offset);
+            let legacy_144_profile_point_variant =
+                legacy_144_profile_point_variant_coordinates(payload, offset);
             let legacy_140_profile_point_variant =
                 legacy_140_profile_point_variant_coordinates(payload, offset);
             let packed_profile_point =
@@ -509,6 +512,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 .or(extended_four_link_profile_point)
                 .or(compact_profile_point)
                 .or(single_incidence_profile_point)
+                .or(legacy_144_profile_point_variant)
                 .or(legacy_140_profile_point_variant)
                 .or(packed_profile_point)
                 .or(compact_code_two_profile_point)
@@ -529,6 +533,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 || extended_four_link_profile_point.is_some()
                 || compact_profile_point.is_some()
                 || single_incidence_profile_point.is_some()
+                || legacy_144_profile_point_variant.is_some()
                 || legacy_140_profile_point_variant.is_some()
                 || packed_profile_point.is_some()
                 || compact_code_two_profile_point.is_some()
@@ -893,6 +898,9 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if let Some(coordinates) = extended_four_link_profile_point_coordinates(payload, offset) {
         return Some(coordinates);
     }
+    if let Some(coordinates) = legacy_144_profile_point_variant_coordinates(payload, offset) {
+        return Some(coordinates);
+    }
     let compact_indexed_value_body =
         matches!(
             payload.get(offset..offset + SKETCH_MARKER.len()),
@@ -1184,6 +1192,49 @@ fn legacy_single_incidence_profile_point_coordinates(
         return None;
     }
     finite_coordinate_pair(payload, offset + 58)
+}
+
+fn legacy_144_profile_point_variant_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    let code = marker_native_code(payload, offset)?;
+    let link_state = View::u16_le_at(payload, offset + pt_144::LINK_STATE)?;
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || code != pt_144::NATIVE_KIND_VALUE
+        || !matches!(link_state, 1..=3)
+        || payload.get(offset + pt_144::HEADER..offset + pt_144::SENTINEL) != Some(&[0xff; 8])
+        || payload.get(offset + pt_144::ZERO_PREFIX..offset + pt_144::ZERO_STATE)
+            != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
+        || payload.get(offset + pt_144::ZERO_STATE..offset + pt_144::SELECTOR) != Some(&[0; 2])
+        || payload.get(offset + pt_144::SELECTOR..offset + pt_144::ZERO_STATE_PREFIX)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + pt_144::STATE_VALUE..offset + pt_144::COORDINATE_TAG)
+            != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + pt_144::COORDINATE_TAG..offset + pt_144::COORDINATE_FIRST)
+            != Some(&[0x1e, 0x00])
+        || payload.get(offset + pt_144::ZERO_LINK_PREFIX..offset + pt_144::LINK_STATE)
+            != Some(&[0; 2])
+    {
+        return None;
+    }
+    let cell = payload.get(offset + pt_144::INCIDENCE_CELL..offset + pt_144::LINK_TERMINATOR)?;
+    let selector = View::u16_le_at(cell, 0)?;
+    let identifier = View::u16_le_at(cell, 2)?;
+    if selector == 0
+        || selector == u16::MAX
+        || identifier == u16::MAX
+        || cell[4..8] != [0xff; 4]
+        || cell[8..12] != [0; 4]
+        || payload.get(offset + pt_144::LINK_TERMINATOR..offset + pt_144::TRAILER_PREFIX)
+            != Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
+        || payload.get(offset + pt_144::TRAILER_PREFIX..offset + pt_144::IDENTITY)
+            != Some(&[0; pt_144::IDENTITY - pt_144::TRAILER_PREFIX])
+    {
+        return None;
+    }
+    let identity = View::u32_le_at(payload, offset + pt_144::IDENTITY)?;
+    (identity != 0
+        && identity != u32::MAX
+        && sketch_marker_prefix_at(payload, offset.checked_add(pt_144::LEN)?))
+    .then(|| finite_coordinate_pair(payload, offset + pt_144::COORDINATE_FIRST))?
 }
 
 pub(super) fn legacy_140_profile_point_variant_coordinates(

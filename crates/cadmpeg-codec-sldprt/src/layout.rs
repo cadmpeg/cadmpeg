@@ -1019,6 +1019,64 @@ pub(crate) mod legacy_140_single_incidence_profile_point {
     pub(crate) const IDENTITY_SECOND: usize = 136;
 }
 
+/// Byte offsets for the `legacy_144_single_incidence_profile_point` record.
+///
+/// Spec §2. Record length 144 B.
+///
+/// ```text
+/// The record emits a point. Its terminal identity and next-marker boundary are four bytes beyond the 140-byte shared-f32 form.
+/// ```
+pub(crate) mod legacy_144_single_incidence_profile_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 144;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `zero_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const ZERO_STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_state_prefix` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_STATE_PREFIX: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 58;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 66;
+    /// Offset of `zero_link_prefix` (`u16`, little-endian). Spec §2.
+    pub(crate) const ZERO_LINK_PREFIX: usize = 74;
+    /// Offset of `link_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const LINK_STATE: usize = 76;
+    /// Offset of `incidence_cell` (`bytes[12]`). Spec §2.
+    pub(crate) const INCIDENCE_CELL: usize = 78;
+    /// Offset of `link_terminator` (`bytes[6]`). Spec §2.
+    pub(crate) const LINK_TERMINATOR: usize = 90;
+    /// Offset of `trailer_prefix` (`bytes[44]`). Spec §2.
+    pub(crate) const TRAILER_PREFIX: usize = 96;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 140;
+}
+
 /// Byte offsets for the `extended_scaled_146_profile_point` record.
 ///
 /// Spec §2. Record length 146 B.

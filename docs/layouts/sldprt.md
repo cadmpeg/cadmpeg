@@ -889,6 +889,35 @@ The record emits a point. The fixed layout includes the single-incidence and sha
 | 132 | 4 | `trailer_middle` | `bytes[4]` | little | spec | A paired trailer can also use the marker +128 identity and zero bytes at marker +132 through +135 |
 | 136 | 4 | `identity_second` | `u32` | little | spec | a distinct nonzero, non-null u32 identity at marker +136 |
 
+## `legacy_144_single_incidence_profile_point`
+
+Spec §2 · layout: byte offsets · size: 144 B
+
+The record emits a point. Its terminal identity and next-marker boundary are four bytes beyond the 140-byte shared-f32 form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | 144-byte shared-f32 single-incidence profile point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `1` · value `1` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 through +22 |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `zero_state` | `u16` | little | spec | zero state u16 at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 39 | 9 | `zero_state_prefix` | `bytes[9]` | little | spec | f64 `1` at marker +48 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 74 | 2 | `zero_link_prefix` | `u16` | little | spec | Marker +74 is zero |
+| 76 | 2 | `link_state` | `u16` | little | spec | link-state u16 `1`, `2`, or `3` |
+| 78 | 12 | `incidence_cell` | `bytes[12]` | little | spec | One 12-byte incidence cell at marker +78 |
+| 90 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `fe ff ff ff 00 00` begins at marker +90 |
+| 96 | 44 | `trailer_prefix` | `bytes[44]` | little | spec | zero bytes from marker +96 through +139 |
+| 140 | 4 | `identity` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +140 |
+
 ## `extended_scaled_146_profile_point`
 
 Spec §2 · layout: byte offsets · size: 146 B

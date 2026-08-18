@@ -3129,6 +3129,158 @@ source = "spec"
 anchor = "a distinct nonzero, non-null u32 identity at marker +136"
 
 [[record]]
+name = "legacy_144_single_incidence_profile_point"
+kind = "byte"
+section = "2"
+anchor = "144-byte shared-f32 single-incidence profile point"
+size = 144
+endianness = "little"
+note = "The record emits a point. Its terminal identity and next-marker boundary are four bytes beyond the 140-byte shared-f32 form."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "144-byte shared-f32 single-incidence profile point"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes at marker +5"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "f32 `-1` at marker +13"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native code `1`"
+value = 1
+
+[[record.field]]
+name = "zero_prefix"
+offset = 21
+type = "bytes[2]"
+source = "spec"
+anchor = "zero bytes at marker +21 through +22"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "zero state u16 at marker +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "zero_state_prefix"
+offset = 39
+type = "bytes[9]"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+value = 1.0
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 56
+type = "bytes[2]"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +56"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 58
+type = "f64"
+source = "spec"
+anchor = "finite f64 coordinates at marker +58 and +66"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "finite f64 coordinates at marker +58 and +66"
+
+[[record.field]]
+name = "zero_link_prefix"
+offset = 74
+type = "u16"
+source = "spec"
+anchor = "Marker +74 is zero"
+
+[[record.field]]
+name = "link_state"
+offset = 76
+type = "u16"
+source = "spec"
+anchor = "link-state u16 `1`, `2`, or `3`"
+
+[[record.field]]
+name = "incidence_cell"
+offset = 78
+type = "bytes[12]"
+source = "spec"
+anchor = "One 12-byte incidence cell at marker +78"
+
+[[record.field]]
+name = "link_terminator"
+offset = 90
+type = "bytes[6]"
+source = "spec"
+anchor = "The terminator `fe ff ff ff 00 00` begins at marker +90"
+
+[[record.field]]
+name = "trailer_prefix"
+offset = 96
+type = "bytes[44]"
+source = "spec"
+anchor = "zero bytes from marker +96 through +139"
+
+[[record.field]]
+name = "identity"
+offset = 140
+type = "u32"
+source = "spec"
+anchor = "a nonzero, non-null u32 identity at marker +140"
+
+[[record]]
 name = "extended_scaled_146_profile_point"
 kind = "byte"
 section = "2"
