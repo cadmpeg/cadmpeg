@@ -13,12 +13,13 @@ use super::geometry_work::{
 };
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
 use super::pcurves::{
-    completion_transfer_budget_limit, transfer_budget_exhausted,
-    MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+    completion_transfer_budget_limit, transfer_budget_exhausted, IntersectionEntityStarts,
+    IntersectionIncidenceIndex, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
 };
 use super::report::{build_geometry_report, CompletionBudgetStatus};
 use super::support_uv::{
-    assign_ext11_support_uv_with_index, attach_completed_intersection_pcurves_with_budget,
+    assign_ext11_support_uv_with_index,
+    attach_completed_intersection_pcurves_for_stream_with_budget,
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
     complete_support_uv_with_budget, invalidate_inconsistent_support_uv_with_budget, linear_knots,
     support_uv_budget_exhausted, support_uv_completion_budget_limit,
@@ -223,6 +224,7 @@ pub(crate) fn try_decode_geometry(
     let serialized_support_uv_geometry_budget =
         ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64);
     let mut support_uv_lane_geometry_exhausted = false;
+    let mut intersection_index = IntersectionIncidenceIndex::default();
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -852,6 +854,7 @@ pub(crate) fn try_decode_geometry(
             ir.model
                 .pcurves
                 .retain(|candidate| !invalid_pcurves.contains(&candidate.id));
+            intersection_index.reindex_pcurves_after_prune(&ir);
         }
         retain_unresolved_topology_carriers(
             &mut ir,
@@ -863,6 +866,14 @@ pub(crate) fn try_decode_geometry(
             source_stream,
             &mut annotations,
         );
+        let intersection_starts = IntersectionEntityStarts {
+            loops: ir.model.loops.len(),
+            faces: ir.model.faces.len(),
+            edges: ir.model.edges.len(),
+            coedges: ir.model.coedges.len(),
+            pcurves: ir.model.pcurves.len(),
+            procedural_curves: procedural_start,
+        };
         emit_topology(
             &mut ir,
             si,
@@ -875,6 +886,8 @@ pub(crate) fn try_decode_geometry(
             &trim_ranges,
             source_stream,
             &mut annotations,
+            &mut intersection_index,
+            intersection_starts,
             procedural_start,
             &exact_transfer_budget,
             &transfer_budget,
@@ -901,10 +914,12 @@ pub(crate) fn try_decode_geometry(
             &coupled_support_budget,
             &coupled_support_uv_geometry_budget,
         );
-        attach_completed_intersection_pcurves_with_budget(
+        attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,
             &format!("nx:s{si}"),
+            intersection_starts.coedges,
+            intersection_starts.procedural_curves,
             source_stream,
             &mut annotations,
             &completion_geometry_budget,

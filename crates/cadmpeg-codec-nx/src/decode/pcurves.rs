@@ -39,7 +39,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry, SurfaceParameterAxis, TolerantIntersectionParameterization,
 };
 use cadmpeg_ir::ids::{
-    CoedgeId, CurveId, EdgeId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
+    CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
@@ -95,149 +95,214 @@ fn edge_indices_by_curve(ir: &CadIr) -> BTreeMap<CurveId, Vec<usize>> {
         })
 }
 
-pub(crate) fn complete_intersection_supports_from_edge_incidence(ir: &mut CadIr) {
-    let loop_faces = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| (loop_.id.clone(), loop_.face.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let face_surfaces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.clone(), face.surface.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let edge_curves = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
-        .collect::<BTreeMap<_, _>>();
-    let mut incident_surfaces = BTreeMap::<CurveId, Vec<SurfaceId>>::new();
-    for coedge in &ir.model.coedges {
-        let Some(curve) = edge_curves.get(&coedge.edge) else {
-            continue;
-        };
-        let Some(surface) = loop_faces
-            .get(&coedge.owner_loop)
-            .and_then(|face| face_surfaces.get(face))
-        else {
-            continue;
-        };
-        let surfaces = incident_surfaces.entry(curve.clone()).or_default();
-        if !surfaces.contains(surface) {
-            surfaces.push(surface.clone());
-        }
-    }
-
-    for procedural in &mut ir.model.procedural_curves {
-        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
-        else {
-            continue;
-        };
-        let missing = context
-            .sides
-            .iter()
-            .enumerate()
-            .filter_map(|(index, side)| side.surface.is_none().then_some(index))
-            .collect::<Vec<_>>();
-        if missing.len() != 1 {
-            continue;
-        }
-        let Some(incident) = incident_surfaces.get(&procedural.curve) else {
-            continue;
-        };
-        let candidates = incident
-            .iter()
-            .filter(|surface| {
-                !context
-                    .sides
-                    .iter()
-                    .any(|side| side.surface.as_ref() == Some(surface))
-            })
-            .collect::<Vec<_>>();
-        let [surface] = candidates.as_slice() else {
-            continue;
-        };
-        context.sides[missing[0]].surface = Some((*surface).clone());
-    }
+#[derive(Clone, Copy, Default)]
+pub(crate) struct IntersectionEntityStarts {
+    pub(crate) loops: usize,
+    pub(crate) faces: usize,
+    pub(crate) edges: usize,
+    pub(crate) coedges: usize,
+    pub(crate) pcurves: usize,
+    pub(crate) procedural_curves: usize,
 }
 
-pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr) {
-    let loop_faces = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| (loop_.id.clone(), loop_.face.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let face_surfaces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.clone(), face.surface.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let edge_curves = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
-        .collect::<BTreeMap<_, _>>();
-    let pcurves_by_id = ir.model.pcurves.iter().enumerate().fold(
-        BTreeMap::<PcurveId, usize>::new(),
-        |mut indices, (index, pcurve)| {
-            indices.entry(pcurve.id.clone()).or_insert(index);
-            indices
-        },
-    );
-    let mut incident_pcurves = BTreeMap::<(CurveId, SurfaceId), Vec<PcurveId>>::new();
-    for coedge in &ir.model.coedges {
-        let Some(curve) = edge_curves.get(&coedge.edge) else {
-            continue;
-        };
-        let Some(surface) = loop_faces
-            .get(&coedge.owner_loop)
-            .and_then(|face| face_surfaces.get(face))
-        else {
-            continue;
-        };
-        let pcurves = incident_pcurves
-            .entry((curve.clone(), surface.clone()))
-            .or_default();
-        for pcurve in &coedge.pcurves {
-            if !pcurves.contains(&pcurve.pcurve) {
-                pcurves.push(pcurve.pcurve.clone());
-            }
-        }
-    }
+#[derive(Default)]
+pub(crate) struct IntersectionIncidenceIndex {
+    loop_faces: BTreeMap<LoopId, FaceId>,
+    face_surfaces: BTreeMap<FaceId, SurfaceId>,
+    edge_curves: BTreeMap<EdgeId, CurveId>,
+    pcurves_by_id: BTreeMap<PcurveId, usize>,
+    incident_surfaces: BTreeMap<CurveId, Vec<SurfaceId>>,
+    incident_pcurves: BTreeMap<(CurveId, SurfaceId), Vec<PcurveId>>,
+    procedural_by_curve: BTreeMap<CurveId, Vec<usize>>,
+}
 
-    for procedural in &mut ir.model.procedural_curves {
-        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
-        else {
-            continue;
-        };
-        for side in &mut context.sides {
-            if side.pcurve.is_some() {
-                continue;
-            }
-            let Some(surface) = &side.surface else {
+impl IntersectionIncidenceIndex {
+    fn index_stream(&mut self, ir: &CadIr, starts: IntersectionEntityStarts) -> BTreeSet<CurveId> {
+        for loop_ in ir.model.loops.iter().skip(starts.loops) {
+            self.loop_faces.insert(loop_.id.clone(), loop_.face.clone());
+        }
+        for face in ir.model.faces.iter().skip(starts.faces) {
+            self.face_surfaces
+                .insert(face.id.clone(), face.surface.clone());
+        }
+        for edge in ir.model.edges.iter().skip(starts.edges) {
+            let Some(curve) = edge.curve.clone() else {
                 continue;
             };
-            let Some([pcurve]) = incident_pcurves
-                .get(&(procedural.curve.clone(), surface.clone()))
-                .map(Vec::as_slice)
+            self.edge_curves.insert(edge.id.clone(), curve);
+        }
+        self.index_new_pcurves(ir, starts.pcurves);
+
+        let mut affected_curves = BTreeSet::new();
+        for (index, procedural) in ir
+            .model
+            .procedural_curves
+            .iter()
+            .enumerate()
+            .skip(starts.procedural_curves)
+        {
+            self.procedural_by_curve
+                .entry(procedural.curve.clone())
+                .or_default()
+                .push(index);
+            affected_curves.insert(procedural.curve.clone());
+        }
+        for coedge in ir.model.coedges.iter().skip(starts.coedges) {
+            let Some(curve) = self.edge_curves.get(&coedge.edge).cloned() else {
+                continue;
+            };
+            let Some(surface) = self
+                .loop_faces
+                .get(&coedge.owner_loop)
+                .and_then(|face| self.face_surfaces.get(face))
+                .cloned()
             else {
                 continue;
             };
-            let Some(carrier_index) = pcurves_by_id.get(pcurve) else {
-                continue;
-            };
-            let Some(carrier) = ir.model.pcurves.get(*carrier_index) else {
-                continue;
-            };
-            side.pcurve = Some(carrier.geometry.clone());
+            let surfaces = self.incident_surfaces.entry(curve.clone()).or_default();
+            if !surfaces.contains(&surface) {
+                surfaces.push(surface.clone());
+            }
+            let pcurves = self
+                .incident_pcurves
+                .entry((curve.clone(), surface))
+                .or_default();
+            for pcurve in &coedge.pcurves {
+                if !pcurves.contains(&pcurve.pcurve) {
+                    pcurves.push(pcurve.pcurve.clone());
+                }
+            }
+            affected_curves.insert(curve);
+        }
+        affected_curves
+    }
+
+    fn index_new_pcurves(&mut self, ir: &CadIr, start: usize) {
+        for (index, pcurve) in ir.model.pcurves.iter().enumerate().skip(start) {
+            self.pcurves_by_id.entry(pcurve.id.clone()).or_insert(index);
         }
     }
+
+    fn complete_supports(&self, ir: &mut CadIr, affected_curves: &BTreeSet<CurveId>) {
+        for curve in affected_curves {
+            let Some(incident) = self.incident_surfaces.get(curve) else {
+                continue;
+            };
+            let Some(procedural_indices) = self.procedural_by_curve.get(curve).cloned() else {
+                continue;
+            };
+            for procedural_index in procedural_indices {
+                let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
+                    continue;
+                };
+                let ProceduralCurveDefinition::Intersection { context, .. } =
+                    &mut procedural.definition
+                else {
+                    continue;
+                };
+                let missing = context
+                    .sides
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, side)| side.surface.is_none().then_some(index))
+                    .collect::<Vec<_>>();
+                if missing.len() != 1 {
+                    continue;
+                }
+                let candidates = incident
+                    .iter()
+                    .filter(|surface| {
+                        !context
+                            .sides
+                            .iter()
+                            .any(|side| side.surface.as_ref() == Some(surface))
+                    })
+                    .collect::<Vec<_>>();
+                let [surface] = candidates.as_slice() else {
+                    continue;
+                };
+                context.sides[missing[0]].surface = Some((*surface).clone());
+            }
+        }
+    }
+
+    fn complete_pcurves(&self, ir: &mut CadIr, affected_curves: &BTreeSet<CurveId>) {
+        for curve in affected_curves {
+            let Some(procedural_indices) = self.procedural_by_curve.get(curve).cloned() else {
+                continue;
+            };
+            for procedural_index in procedural_indices {
+                let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
+                    continue;
+                };
+                let ProceduralCurveDefinition::Intersection { context, .. } =
+                    &mut procedural.definition
+                else {
+                    continue;
+                };
+                for side in &mut context.sides {
+                    if side.pcurve.is_some() {
+                        continue;
+                    }
+                    let Some(surface) = &side.surface else {
+                        continue;
+                    };
+                    let Some([pcurve]) = self
+                        .incident_pcurves
+                        .get(&(curve.clone(), surface.clone()))
+                        .map(Vec::as_slice)
+                    else {
+                        continue;
+                    };
+                    let Some(carrier_index) = self.pcurves_by_id.get(pcurve) else {
+                        continue;
+                    };
+                    let Some(geometry) = ir
+                        .model
+                        .pcurves
+                        .get(*carrier_index)
+                        .map(|carrier| carrier.geometry.clone())
+                    else {
+                        continue;
+                    };
+                    side.pcurve = Some(geometry);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn complete_from_stream(
+        &mut self,
+        ir: &mut CadIr,
+        starts: IntersectionEntityStarts,
+    ) {
+        let affected_curves = self.index_stream(ir, starts);
+        self.complete_supports(ir, &affected_curves);
+        self.complete_pcurves(ir, &affected_curves);
+    }
+
+    pub(crate) fn complete_new_pcurves_from_stream(&mut self, ir: &CadIr, start: usize) {
+        self.index_new_pcurves(ir, start);
+    }
+
+    pub(crate) fn reindex_pcurves_after_prune(&mut self, ir: &CadIr) {
+        self.pcurves_by_id.clear();
+        self.index_new_pcurves(ir, 0);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn complete_intersection_supports_from_edge_incidence(ir: &mut CadIr) {
+    let mut index = IntersectionIncidenceIndex::default();
+    let affected_curves = index.index_stream(ir, IntersectionEntityStarts::default());
+    index.complete_supports(ir, &affected_curves);
+}
+
+#[cfg(test)]
+pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr) {
+    let mut index = IntersectionIncidenceIndex::default();
+    let affected_curves = index.index_stream(ir, IntersectionEntityStarts::default());
+    index.complete_pcurves(ir, &affected_curves);
 }
 
 #[cfg(test)]
@@ -255,9 +320,28 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
     );
 }
 
+#[cfg(test)]
 pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
     ir: &mut CadIr,
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
+    annotations: &mut AnnotationBuilder,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) {
+    complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
+        ir,
+        serialized,
+        0,
+        0,
+        annotations,
+        geometry_budget,
+    );
+}
+
+pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
+    ir: &mut CadIr,
+    serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
+    coedge_start: usize,
+    procedural_start: usize,
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
@@ -280,7 +364,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
         .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
         .collect::<BTreeMap<_, _>>();
     let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
-    for coedge in &ir.model.coedges {
+    for coedge in ir.model.coedges.iter().skip(coedge_start) {
         let Some(curve) = edge_curves.get(&coedge.edge) else {
             continue;
         };
@@ -316,7 +400,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
         );
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut replacements = Vec::new();
-        for procedural in &ir.model.procedural_curves {
+        for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
             let ProceduralCurveDefinition::TolerantIntersection {
                 supports,
                 endpoints,

@@ -6,12 +6,10 @@ use super::offset::point_distance;
 use super::pcurves::{
     attach_tolerant_edge_intersections_with_budget,
     complete_exact_boundary_intersection_pcurves_with_budget,
-    complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_pcurves_from_opposite_charts_with_budget,
-    complete_intersection_supports_from_edge_incidence,
-    complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget,
+    complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget,
     ordered_parameter_range, pcurve_matches_edge_range_with_index_and_budget,
-    pcurve_parameter_range, TransferBudget,
+    pcurve_parameter_range, IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
@@ -47,6 +45,8 @@ pub(super) fn emit_topology(
     trim_ranges: &BTreeMap<u32, [f64; 2]>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
+    intersection_index: &mut IntersectionIncidenceIndex,
+    intersection_starts: IntersectionEntityStarts,
     procedural_start: usize,
     exact_transfer_budget: &TransferBudget<'_>,
     completion_transfer_budget: &TransferBudget<'_>,
@@ -677,11 +677,12 @@ pub(super) fn emit_topology(
         annotations,
         adaptive_geometry_budget,
     );
-    complete_intersection_supports_from_edge_incidence(ir);
-    complete_intersection_pcurves_from_coedge_incidence(ir);
-    complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
+    intersection_index.complete_from_stream(ir, intersection_starts);
+    complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
         ir,
         &serialized_branch_pcurves,
+        intersection_starts.coedges,
+        intersection_starts.procedural_curves,
         annotations,
         completion_geometry_budget,
     );
@@ -698,6 +699,7 @@ pub(super) fn emit_topology(
         completion_transfer_budget,
         completion_geometry_budget,
     );
+    intersection_index.complete_new_pcurves_from_stream(ir, intersection_starts.pcurves);
 
     let owned_edges: BTreeSet<_> = ir
         .model

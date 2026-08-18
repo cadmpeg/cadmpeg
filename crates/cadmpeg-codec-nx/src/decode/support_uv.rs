@@ -1400,10 +1400,35 @@ pub(crate) fn attach_completed_intersection_pcurves(
     );
 }
 
+#[cfg(test)]
 pub(crate) fn attach_completed_intersection_pcurves_with_budget(
     ir: &mut CadIr,
     graph: &Graph,
     prefix: &str,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) {
+    attach_completed_intersection_pcurves_for_stream_with_budget(
+        ir,
+        graph,
+        prefix,
+        0,
+        0,
+        source_stream,
+        annotations,
+        geometry_budget,
+    );
+}
+
+// Keep stream ownership bounds explicit so this phase does not rescan prior coedges.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
+    ir: &mut CadIr,
+    graph: &Graph,
+    prefix: &str,
+    coedge_start: usize,
+    procedural_start: usize,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -1436,6 +1461,7 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
         .model
         .coedges
         .iter()
+        .skip(coedge_start)
         .filter(|coedge| coedge.pcurves.is_empty() && coedge.id.0.starts_with(prefix))
         .filter_map(|coedge| {
             let surface = loop_faces
@@ -1460,7 +1486,7 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
         .collect::<BTreeSet<_>>();
     let mut candidates =
         BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], Option<f64>)>>::new();
-    for procedural in &ir.model.procedural_curves {
+    for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
             continue;
         };
