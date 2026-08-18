@@ -270,6 +270,16 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Need.** The two outcomes have different replay semantics. A reader that replays the feature against the preceding state needs to know that the face comes from the current model. The decode report must separate a proven historical slot from a substituted active face.
 
+### DR-65. Agreement test of the parallel-line and concentric-circle dimensions
+
+**Question.** Which agreement rule holds for a parallel-line separation and a concentric-circle separation?
+
+**Known.** `f3d.md` §3.1 "A null-locus frame or counted-locus frame is a radial dimension" gives the agreement rule of a converted scalar and a measured value: the two agree when the difference is not more than `max(T, 1e-9 * (1 + max(|s|, |m|)))`, where `T` is the document linear tolerance in millimetres. `crates/cadmpeg-codec-f3d/src/design/dimensions.rs` `linear_measurement_matches` holds that rule, and the point-to-line, tangent, radial, and symmetric parallel-line paths all use it.
+
+Two sibling predicates in the same file drop the `T` term. `parallel_line_separation` and `concentric_circle_separation` accept only a difference of not more than `1e-9 * (1 + expected)`. The parallel-line family is therefore tested against the document tolerance in `symmetric_parallel_line_dimension_definition` and against the fixed bound in the direct separation path of `exact_definition`. The concentric-circle family uses the fixed bound alone, through `concentric_circle_dimension_definition`.
+
+**Need.** A parallel-line or concentric-circle dimension whose solved separation agrees with its parameter inside the document linear tolerance, but not inside the fixed bound, does not match. The dimension keeps its native retention and the neutral model gets no constraint. The two rules must be one rule, and the specification must state which one.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
