@@ -619,6 +619,18 @@ fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<ProbabilityEntry>, usi
     if symbol_bits > 32 || occurrence_bits > 32 || value_bits > 32 {
         return None;
     }
+    let entry_bits = usize::from(symbol_bits)
+        .checked_add(usize::from(occurrence_bits))?
+        .checked_add(usize::from(value_bits))?;
+    let available_bits = bytes
+        .get(2..)?
+        .len()
+        .checked_mul(8)?
+        .checked_sub(bits.bit)?;
+    // Prove the declared table fits in the bounded context before allocating
+    // its entries. An all-zero-width context cannot produce a nonzero
+    // arithmetic frequency table and is therefore malformed.
+    (entry_bits > 0 && entry_count <= available_bits / entry_bits).then_some(())?;
     let mut entries = try_vec(entry_count)?;
     for _ in 0..entry_count {
         let symbol = bits.read(symbol_bits)? as i32 - 2;

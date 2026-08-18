@@ -104,6 +104,32 @@ fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
 }
 
 #[test]
+fn jt_arithmetic_context_rejects_count_without_serialized_entry_span() {
+    let mut context_bits = Vec::<bool>::new();
+    let mut push = |value: u32, width: u8| {
+        for shift in (0..width).rev() {
+            context_bits.push((value >> shift) & 1 != 0);
+        }
+    };
+    push(0, 6);
+    push(1, 6);
+    push(0, 6);
+    push(0, 32);
+
+    let mut context = vec![0xff, 0xff];
+    for chunk in context_bits.chunks(8) {
+        let mut byte = 0u8;
+        for bit in chunk {
+            byte = (byte << 1) | u8::from(*bit);
+        }
+        byte <<= 8 - chunk.len();
+        context.push(byte);
+    }
+
+    assert!(super::parse_probability_context(&context).is_none());
+}
+
+#[test]
 fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
     let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
     let low_bits = [2, 0, 0, 0, 1, 17, 0, 0, 0, 0x00, 0x80, 0x12, 0x04];
