@@ -322,6 +322,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// 2 through 7, and stores the six class lists after the two flags at indexes
 /// 8 and 9, so its groups start at token
 /// `10 + NF + NC + NJ + NN + NT + NP`. Zero class counts are valid.
+/// Type 402 Form 20 fixes `NCF` to one, puts the six class counts at indexes
+/// 2 through 7, and stores the six class lists after the type flag at index 8,
+/// so its groups start at token
+/// `9 + NF + NC + NJ + NN + NT + NP`. Zero class counts are valid.
 /// Type 406 Forms 34 and 35 put `NP = 1 + 3*ND` at index 1, `ND` at index 2,
 /// and one three-integer text-score range per specification, so their groups
 /// start at token `3 + 3*ND`.
@@ -380,7 +384,8 @@ pub(crate) fn entity_primary_end(
         (402, 6) => Some(view_list_primary_end(record)),
         (402, 12) => Some(external_reference_index_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
-        (402, 18) => Some(flow_associativity_primary_end(record)),
+        (402, 18) => Some(flow_associativity_primary_end(record, 2)),
+        (402, 20) => Some(flow_associativity_primary_end(record, 1)),
         (406, 11) => Some(tabular_data_primary_end(record)),
         (406, 12) => Some(external_reference_file_list_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
@@ -566,10 +571,11 @@ fn dimensioned_geometry_primary_end(record: &ParameterRecord) -> usize {
         .unwrap_or(record.tokens.len())
 }
 
-fn flow_associativity_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) != Some(2) {
+fn flow_associativity_primary_end(record: &ParameterRecord, context_count: i64) -> usize {
+    if record.integer(1) != Some(context_count) {
         return record.tokens.len();
     }
+    let list_start: usize = if context_count == 2 { 10 } else { 9 };
     let list_tokens = (2..=7).try_fold(0_usize, |total, index| {
         let count = record
             .integer(index)
@@ -577,7 +583,7 @@ fn flow_associativity_primary_end(record: &ParameterRecord) -> usize {
         total.checked_add(count)
     });
     list_tokens
-        .and_then(|count| 10_usize.checked_add(count))
+        .and_then(|count| list_start.checked_add(count))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
