@@ -316,6 +316,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 402 Form 13 fixes `ND` to one, puts the positive geometry count `NG` at
 /// index 2, and lists the dimension plus `NG` geometry pointers, so its groups
 /// start at token `4 + NG`.
+/// Type 402 Form 18 fixes `NCF` to two, puts the six class counts at indexes
+/// 2 through 7, and stores the six class lists after the two flags at indexes
+/// 8 and 9, so its groups start at token
+/// `10 + NF + NC + NJ + NN + NT + NP`. Zero class counts are valid.
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
@@ -362,6 +366,7 @@ pub(crate) fn entity_primary_end(
         (402, 6) => Some(view_list_primary_end(record)),
         (402, 12) => Some(external_reference_index_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
+        (402, 18) => Some(flow_associativity_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
@@ -437,6 +442,22 @@ fn dimensioned_geometry_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(4))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn flow_associativity_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(2) {
+        return record.tokens.len();
+    }
+    let list_tokens = (2..=7).try_fold(0_usize, |total, index| {
+        let count = record
+            .integer(index)
+            .and_then(|value| usize::try_from(value).ok())?;
+        total.checked_add(count)
+    });
+    list_tokens
+        .and_then(|count| 10_usize.checked_add(count))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }

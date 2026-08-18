@@ -629,7 +629,7 @@ fn decode_view_visibility_counts_stop_at_the_next_list_boundary() {
 }
 
 #[test]
-fn decode_flow_counts_stop_after_the_complete_class_lists() {
+fn decode_flow_counts_do_not_recover_incomplete_class_lists() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 402,
@@ -653,10 +653,10 @@ fn decode_flow_counts_stop_after_the_complete_class_lists() {
     let entity = &native.arenas["entities"][0];
     let flow = &native.arenas["associativities"][0];
 
-    assert_eq!(
-        entity.fields()["property_links"][0],
-        "iges:entity:directory#3"
-    );
+    assert!(entity.fields()["property_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert_eq!(flow.fields()["declared_associated_flow_count"], 2);
     assert!(flow.fields()["associated_flows"]
         .as_array()
@@ -673,6 +673,48 @@ fn decode_flow_counts_stop_after_the_complete_class_lists() {
         .as_array()
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn decode_flow_form18_keeps_zero_class_lists_before_trailing_groups() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 18,
+            label: "FLOW".into(),
+            status: "00000200",
+            parameters: "402,2,0,0,0,0,0,0,1,2,1,1,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let source = native.arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#1")]
+    );
+    let flow = native.arenas["associativities"]
+        .iter()
+        .find(|record| record.id() == "iges:structure:associativity#D3")
+        .unwrap();
+    assert_eq!(flow.fields()["declared_associated_flow_count"], 0);
+    assert_eq!(flow.fields()["declared_connection_count"], 0);
+    assert_eq!(flow.fields()["declared_join_count"], 0);
+    assert_eq!(flow.fields()["declared_name_count"], 0);
+    assert_eq!(flow.fields()["declared_name_display_count"], 0);
+    assert_eq!(flow.fields()["declared_continuation_count"], 0);
 }
 
 #[test]
