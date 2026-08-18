@@ -30,6 +30,24 @@ the table says `unstated` and says so in the field note.
 | `00 12` | vertex-use | 24 B | magic at body +16 | §4 |
 | `00 1d` | world point | 38 B | no magic; four references at body +6 and xyz as three f64 BE at body +14 | §4 |
 
+## `feature_input_shifted_scalar_trailer`
+
+Spec §2 · layout: byte offsets · size: 35 B
+
+The value-only scalar's fixed trailer prefix. Variable-count feature_input_operand_cell12 records follow at +35.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/relation_records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `zero_prefix` | `bytes[3]` | little | spec | three zero bytes |
+| 3 | 4 | `object_id` | `u32` | little | spec | little-endian u32 object identifier at trailer +3 |
+| 7 | 14 | `zero_object_tail` | `bytes[14]` | little | spec | fourteen zero bytes at trailer +7 |
+| 21 | 6 | `layout_marker` | `bytes[6]` | little | spec | `01 00 00 00 02 00` at trailer +21 |
+| 27 | 1 | `role` | `u8` | little | spec | a role byte at trailer +27 |
+| 28 | 7 | `zero_tail` | `bytes[7]` | little | spec | seven zero bytes at trailer +28 |
+
 ## `feature_input_operand_cell12`
 
 Spec §2 · layout: byte offsets · size: 12 B

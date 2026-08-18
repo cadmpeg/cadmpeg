@@ -26,6 +26,30 @@ pub(crate) mod token {
     pub(crate) const WORLD_POINT: [u8; 2] = [0x00, 0x1d];
 }
 
+/// Byte offsets for the `feature_input_shifted_scalar_trailer` record.
+///
+/// Spec §2. Record length 35 B.
+///
+/// ```text
+/// The value-only scalar's fixed trailer prefix. Variable-count feature_input_operand_cell12 records follow at +35.
+/// ```
+pub(crate) mod feature_input_shifted_scalar_trailer {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 35;
+    /// Offset of `zero_prefix` (`bytes[3]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 0;
+    /// Offset of `object_id` (`u32`, little-endian). Spec §2.
+    pub(crate) const OBJECT_ID: usize = 3;
+    /// Offset of `zero_object_tail` (`bytes[14]`). Spec §2.
+    pub(crate) const ZERO_OBJECT_TAIL: usize = 7;
+    /// Offset of `layout_marker` (`bytes[6]`). Spec §2.
+    pub(crate) const LAYOUT_MARKER: usize = 21;
+    /// Offset of `role` (`u8`). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `zero_tail` (`bytes[7]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 28;
+}
+
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.

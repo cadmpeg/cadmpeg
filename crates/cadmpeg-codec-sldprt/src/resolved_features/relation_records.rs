@@ -3,6 +3,7 @@
 use super::scalars::feature_object_name;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::is_history_metadata_record;
+use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
@@ -950,12 +951,15 @@ pub(super) fn relation_signature(
 }
 
 pub(super) fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole {
+    let shifted_layout = shifted_value_only_scalar_trailer(payload, trailer_offset);
     let fixed_layout = payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
         && payload
             .get(trailer_offset + 7..trailer_offset + 21)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
         && payload.get(trailer_offset + 24..trailer_offset + 29) == Some(&[0, 0, 0, 2, 0]);
-    let role_offset = if compact_scalar_layout(payload, trailer_offset) {
+    let role_offset = if shifted_layout {
+        trailer_offset + shifted_trailer::ROLE
+    } else if compact_scalar_layout(payload, trailer_offset) {
         trailer_offset + 27
     } else if fixed_layout {
         trailer_offset + 29
@@ -971,8 +975,42 @@ pub(super) fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInput
     }
 }
 
+pub(super) fn shifted_value_only_scalar_trailer(payload: &[u8], trailer_offset: usize) -> bool {
+    payload.get(
+        trailer_offset + shifted_trailer::ZERO_PREFIX..trailer_offset + shifted_trailer::OBJECT_ID,
+    ) == Some(&[0, 0, 0])
+        && payload
+            .get(
+                trailer_offset + shifted_trailer::ZERO_OBJECT_TAIL
+                    ..trailer_offset + shifted_trailer::LAYOUT_MARKER,
+            )
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload.get(
+            trailer_offset + shifted_trailer::LAYOUT_MARKER..trailer_offset + shifted_trailer::ROLE,
+        ) == Some(&[1, 0, 0, 0, 2, 0])
+        && payload
+            .get(trailer_offset + shifted_trailer::ROLE)
+            .is_some_and(|role| *role <= 1)
+        && payload
+            .get(trailer_offset + shifted_trailer::ZERO_TAIL..trailer_offset + shifted_trailer::LEN)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+}
+
+pub(super) fn shifted_value_only_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
+    shifted_value_only_scalar_trailer(payload, trailer_offset)
+        && payload
+            .get(trailer_offset + 35..trailer_offset + 47)
+            .is_some_and(|cell| {
+                cell[0..2] != [0, 0]
+                    && cell[0..2] != [0xff, 0xff]
+                    && cell[4..8] == [0xff; 4]
+                    && cell[8..12] == [0; 4]
+            })
+}
+
 pub(super) fn compact_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
-    payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
+    !shifted_value_only_scalar_layout(payload, trailer_offset)
+        && payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
         && payload
             .get(trailer_offset + 7..trailer_offset + 21)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))

@@ -18,6 +18,58 @@ the table says `unstated` and says so in the field note.
 """
 
 [[record]]
+name = "feature_input_shifted_scalar_trailer"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/relation_records.rs"
+kind = "byte"
+section = "2"
+anchor = "A shifted value-only scalar record has a 35-byte trailer"
+size = 35
+endianness = "little"
+note = "The value-only scalar's fixed trailer prefix. Variable-count feature_input_operand_cell12 records follow at +35."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "object_id"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "little-endian u32 object identifier at trailer +3"
+
+[[record.field]]
+name = "zero_object_tail"
+offset = 7
+type = "bytes[14]"
+source = "spec"
+anchor = "fourteen zero bytes at trailer +7"
+
+[[record.field]]
+name = "layout_marker"
+offset = 21
+type = "bytes[6]"
+source = "spec"
+anchor = "`01 00 00 00 02 00` at trailer +21"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "a role byte at trailer +27"
+
+[[record.field]]
+name = "zero_tail"
+offset = 28
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes at trailer +28"
+
+[[record]]
 name = "feature_input_operand_cell12"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
 kind = "byte"
