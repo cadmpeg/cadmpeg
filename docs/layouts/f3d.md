@@ -1963,6 +1963,42 @@ Unstated regions:
 - `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
 - `194..341` (147 B): The carrier tail is not assigned a semantic field.
 
+## `class_403_revolve_scope_frame`
+
+Spec §3.1 · layout: byte offsets · size: 387 B
+
+Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `operation` | `u32` | little | spec | Offset 21 stores the result operation |
+| 25 | 4 | `extent_kind` | `u32` | little | spec | offset 25 stores extent kind `2` |
+| 29 | 1 | `direction_kind` | `u8` | little | spec | offset 29 stores direction kind `0` |
+| 30 | 1 | `envelope_marker` | `u8` | little | spec | offset 30 stores marker `1` |
+| 34 | 1 | `angle_reference_marker` | `u8` | little | spec | A marked angle-owner reference starts at offset 34 |
+| 35 | 4 | `angle_record_index` | `u32` | little | spec | A marked angle-owner reference starts at offset 34 |
+| 107 | 4 | `guid_code_unit_count` | `u32` | little | spec | A 36-code-unit null GUID starts at offset 107 |
+| 111 | 72 | `guid_utf16` | `bytes[72]` | little | spec | A 36-code-unit null GUID starts at offset 107 |
+| 186 | 4 | `reference_count` | `u32` | little | spec | the ordered-reference count is `8` at offset 186 |
+| 278 | 4 | `history_state_id` | `u32` | little | spec | the history-state field is at offset 278 |
+| 282 | 4 | `kind_code_unit_count` | `u32` | little | spec | the LP-UTF16 `Revolve` kind has seven code units at offset 282 |
+| 286 | 14 | `kind_utf16` | `bytes[14]` | little | spec | the LP-UTF16 `Revolve` kind has seven code units at offset 282 |
+| 300 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal is at offset 300 |
+| 341 | 4 | `previous_history_state_id` | `u32` | little | spec | The previous history-state field is at offset 341 |
+
+Unstated regions:
+
+- `0..21` (21 B): The indexed header and the class-403/258 prefix before the operation are outside this field run.
+- `31..34` (3 B): Three zero bytes separate the fixed prefix from the angle-owner reference.
+- `39..107` (68 B): The auxiliary marked references and their separators occupy offsets 39 through 106.
+- `183..186` (3 B): Three zero bytes precede the ordered-reference count.
+- `190..278` (88 B): The eight eleven-byte ordered references occupy offsets 190 through 277.
+- `304..341` (37 B): The fixed history-state tail occupies offsets 304 through 340.
+- `345..387` (42 B): The remaining scope tail precedes the paired header at offset 387.
+
 ## `marker_one_revolve_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 38 B

@@ -6404,6 +6404,148 @@ size = 147
 note = "The carrier tail is not assigned a semantic field."
 
 [[record]]
+name = "class_403_revolve_scope_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The class-403/258 one-sided fixed-angle `Revolve` form has a 387-byte frame"
+size = 387
+note = "Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "The indexed header and the class-403/258 prefix before the operation are outside this field run."
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "Offset 21 stores the result operation"
+
+[[record.field]]
+name = "extent_kind"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "offset 25 stores extent kind `2`"
+
+[[record.field]]
+name = "direction_kind"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "offset 29 stores direction kind `0`"
+
+[[record.field]]
+name = "envelope_marker"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "offset 30 stores marker `1`"
+
+[[record.gap]]
+offset = 31
+size = 3
+note = "Three zero bytes separate the fixed prefix from the angle-owner reference."
+
+[[record.field]]
+name = "angle_reference_marker"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "A marked angle-owner reference starts at offset 34"
+
+[[record.field]]
+name = "angle_record_index"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "A marked angle-owner reference starts at offset 34"
+
+[[record.gap]]
+offset = 39
+size = 68
+note = "The auxiliary marked references and their separators occupy offsets 39 through 106."
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 107
+type = "u32"
+source = "spec"
+anchor = "A 36-code-unit null GUID starts at offset 107"
+
+[[record.field]]
+name = "guid_utf16"
+offset = 111
+type = "bytes[72]"
+source = "spec"
+anchor = "A 36-code-unit null GUID starts at offset 107"
+
+[[record.gap]]
+offset = 183
+size = 3
+note = "Three zero bytes precede the ordered-reference count."
+
+[[record.field]]
+name = "reference_count"
+offset = 186
+type = "u32"
+source = "spec"
+anchor = "the ordered-reference count is `8` at offset 186"
+
+[[record.gap]]
+offset = 190
+size = 88
+note = "The eight eleven-byte ordered references occupy offsets 190 through 277."
+
+[[record.field]]
+name = "history_state_id"
+offset = 278
+type = "u32"
+source = "spec"
+anchor = "the history-state field is at offset 278"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 282
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 `Revolve` kind has seven code units at offset 282"
+
+[[record.field]]
+name = "kind_utf16"
+offset = 286
+type = "bytes[14]"
+source = "spec"
+anchor = "the LP-UTF16 `Revolve` kind has seven code units at offset 282"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 300
+type = "u32"
+source = "spec"
+anchor = "the feature ordinal is at offset 300"
+
+[[record.gap]]
+offset = 304
+size = 37
+note = "The fixed history-state tail occupies offsets 304 through 340."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 341
+type = "u32"
+source = "spec"
+anchor = "The previous history-state field is at offset 341"
+
+[[record.gap]]
+offset = 345
+size = 42
+note = "The remaining scope tail precedes the paired header at offset 387."
+
+[[record]]
 name = "marker_one_revolve_prologue"
 kind = "byte"
 section = "3.1"
