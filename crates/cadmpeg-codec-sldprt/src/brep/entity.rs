@@ -10191,6 +10191,7 @@ mod tests {
     mod disc24_disc22_disc20_disc1c_disc16_disc14_disc0e;
     mod disc28_disc1e_disc1c_disc18_disc16_disc14_keyed_population;
     mod disc28_disc26_disc24_disc1a_disc18_disc16_disc06;
+    mod disc2a_disc26_disc24_disc1e_disc1c_disc18_keyed_population;
     mod merged_stream_bodies;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
@@ -10403,7 +10404,6 @@ mod tests {
             .iter()
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
-
         let bodies = compact_root_body(&by_attr);
         let [body] = bodies.as_slice() else {
             panic!("one schema-36001 body");
