@@ -753,6 +753,133 @@ fn type126_malformed_k_or_degree_does_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type112_entity_table_boundary_uses_segment_count() {
+    for (segment_count, expected_start) in [(1_i64, 31_usize), (2, 44)] {
+        let association = directory_target(1, 402);
+        let spline = directory_target(3, 112);
+        let directory = BTreeMap::from([(1, &association), (3, &spline)]);
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 112;
+        values[1] = 3;
+        values[2] = 0;
+        values[3] = 3;
+        values[4] = segment_count;
+        values[expected_start] = 1;
+        values[expected_start + 1] = 1;
+        values[expected_start + 2] = 0;
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: expected_start + 3,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 112 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type112_entity_table_boundary_precedes_valid_generic_alternatives() {
+    let target_1 = directory_target(1, 402);
+    let target_7 = directory_target(7, 402);
+    let target_15 = directory_target(15, 402);
+    let target_17 = directory_target(17, 402);
+    let target_39 = directory_target(39, 402);
+    let spline = directory_target(41, 112);
+    let directory = BTreeMap::from([
+        (1, &target_1),
+        (7, &target_7),
+        (15, &target_15),
+        (17, &target_17),
+        (39, &target_39),
+        (41, &spline),
+    ]);
+    let record = ParameterRecord {
+        directory_sequence: 41,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [
+            112, 3, 0, 3, 1, 1, 3, 25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 39, 17, 7, 1, 15, 17, 7, 1,
+            15, 17, 7, 1, 1, 1, 0,
+        ]
+        .into_iter()
+        .map(|value| Token {
+            value: TokenValue::Integer(value),
+            span: 0..0,
+        })
+        .collect(),
+        parameter_end: 34,
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 112 table boundary");
+    assert_eq!(groups.token_start, 31);
+    assert_eq!(groups.associations, vec![1]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type112_malformed_segment_count_does_not_enable_generic_recovery() {
+    let target_1 = directory_target(1, 402);
+    let target_7 = directory_target(7, 402);
+    let target_15 = directory_target(15, 402);
+    let target_17 = directory_target(17, 402);
+    let target_39 = directory_target(39, 402);
+    let spline = directory_target(41, 112);
+    let directory = BTreeMap::from([
+        (1, &target_1),
+        (7, &target_7),
+        (15, &target_15),
+        (17, &target_17),
+        (39, &target_39),
+        (41, &spline),
+    ]);
+    for segment_count in [0_i64, -1] {
+        let mut values = [
+            112, 3, 0, 3, 1, 1, 3, 25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 39, 17, 7, 1, 15, 17, 7, 1,
+            15, 17, 7, 1, 1, 1, 0,
+        ];
+        values[4] = segment_count;
+        let record = ParameterRecord {
+            directory_sequence: 41,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: 34,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "N={segment_count}");
+        assert_eq!(analysis.valid_candidate_count, 0, "N={segment_count}");
+        assert!(analysis.groups.is_none(), "N={segment_count}");
+    }
+}
+
+#[test]
 fn type106_entity_table_boundary_uses_interpretation_width() {
     let cases = [
         (1_i64, 1_i64, 2_usize, 2_usize),
@@ -1317,4 +1444,46 @@ fn decode_uses_type126_entity_boundary_for_form7_association() {
             "Form {form}"
         );
     }
+}
+
+#[test]
+fn decode_uses_type112_entity_boundary_for_form7_association() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 7,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,3;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 112,
+                    form: 0,
+                    label: "SPLINE".into(),
+                    status: "00010000",
+                    parameters:
+                        "112,3,0,3,1,1,3,25,1,1,1,1,1,1,1,1,1,1,1,39,17,7,1,15,17,7,1,15,17,7,1,1,1,0;"
+                            .into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
+    assert_eq!(result.ir().model.curves.len(), 1);
+    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        source.fields()["association_links"].as_array().unwrap(),
+        &[serde_json::json!("iges:entity:directory#1")]
+    );
 }

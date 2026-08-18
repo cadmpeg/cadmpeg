@@ -308,6 +308,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// groups start at token `N + 2`.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
+/// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
+/// segment after the first breakpoint, so its groups start at token
+/// `18 + 13*N`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
 /// layout returns the record end as a sentinel and never enables generic
 /// recovery.
@@ -322,6 +325,7 @@ pub(crate) fn entity_primary_end(
             Some(copious_primary_end(record, form))
         }
         (110, 0..=2) => Some(7),
+        (112, 0) => Some(parametric_spline_curve_primary_end(record)),
         (116, 0) => Some(5),
         (123, 0) => Some(4),
         (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
@@ -356,6 +360,20 @@ fn rational_bspline_curve_primary_end(record: &ParameterRecord) -> usize {
     }
     k.checked_mul(5)
         .and_then(|span| span.checked_add(degree))
+        .and_then(|span| span.checked_add(18))
+        .unwrap_or(record.tokens.len())
+}
+
+fn parametric_spline_curve_primary_end(record: &ParameterRecord) -> usize {
+    let Some(segment_count) = record
+        .integer(4)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    segment_count
+        .checked_mul(13)
         .and_then(|span| span.checked_add(18))
         .unwrap_or(record.tokens.len())
 }
