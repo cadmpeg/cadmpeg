@@ -8935,6 +8935,7 @@ mod tests {
     mod disc22_disc20_disc1e_disc1a;
     mod disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06;
     mod disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e;
+    mod disc28_disc26_disc24_disc1a_disc18_disc16_disc06;
     mod merged_stream_bodies;
     const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
