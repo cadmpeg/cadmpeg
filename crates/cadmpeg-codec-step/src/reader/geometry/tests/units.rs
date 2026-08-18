@@ -37,6 +37,42 @@ const EPS_LINEAR_UNCERTAINTY: f64 = 1.0e-12;
 /// The `LENGTH_MEASURE(1.E-07)` each context declares, in millimetres.
 const DECLARED_CONTEXT_UNCERTAINTY_MM: f64 = 1.0e-7;
 
+/// Assert one ambiguous linear-uncertainty note that names `values` in
+/// ascending order and the kept `default_linear`.
+fn assert_ambiguous_length_uncertainty(
+    losses: &[cadmpeg_ir::report::LossNote],
+    values: &[f64],
+    default_linear: f64,
+) {
+    let ambiguous = losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(ambiguous.len(), 1, "{losses:#?}");
+    assert_eq!(ambiguous[0].severity, cadmpeg_ir::Severity::Warning);
+    // The note names each distinct candidate the file declares and the
+    // substituted default.
+    let listed = values
+        .iter()
+        .map(|value| format!("{value:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    assert!(
+        ambiguous[0]
+            .message
+            .contains(&format!("values in millimetres ({listed})")),
+        "{}",
+        ambiguous[0].message
+    );
+    assert!(
+        ambiguous[0]
+            .message
+            .contains(&format!("keeps the default {default_linear:?}")),
+        "{}",
+        ambiguous[0].message
+    );
+}
+
 #[test]
 fn unresolvable_length_unit_reports_an_error_loss() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unresolvable length unit'),'2;1');FILE_NAME('unit','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#4=CARTESIAN_POINT('',(1.,2.,3.));#5=SHAPE_REPRESENTATION('',(#4),#3);ENDSEC;END-ISO-10303-21;";
@@ -483,10 +519,11 @@ fn decode_uses_uncertainty_name_not_description() {
         result.ir().tolerances.linear,
         cadmpeg_ir::units::Tolerances::default().linear
     );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
-    }));
+    assert_ambiguous_length_uncertainty(
+        &result.report().losses,
+        &[0.1, 0.2],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    );
 }
 
 #[test]
@@ -520,21 +557,7 @@ fn decode_reports_ambiguous_length_uncertainty() {
 
     let default_linear = cadmpeg_ir::units::Tolerances::default().linear;
     assert!((result.ir().tolerances.linear - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
-    let ambiguous = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(ambiguous.len(), 1);
-    assert_eq!(ambiguous[0].severity, cadmpeg_ir::Severity::Warning);
-    // The note names each distinct candidate the file declares and the
-    // substituted default.
-    assert!(ambiguous[0].message.contains("0.1"));
-    assert!(ambiguous[0].message.contains("0.2"));
-    assert!(ambiguous[0]
-        .message
-        .contains(&format!("{default_linear:?}")));
+    assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
 #[test]
@@ -570,18 +593,25 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
 
     let default_linear = cadmpeg_ir::units::Tolerances::default().linear;
     assert!((result.ir().tolerances.linear - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
-    let ambiguous = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(ambiguous.len(), 1);
-    assert!(ambiguous[0].message.contains("0.1"));
-    assert!(ambiguous[0].message.contains("0.2"));
-    assert!(ambiguous[0]
-        .message
-        .contains(&format!("{default_linear:?}")));
+    assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
+}
+
+#[test]
+fn decode_does_not_let_a_named_context_uncertainty_mask_another_context() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('masked context uncertainty'),'2;1');FILE_NAME('masked-context-uncertainty','2026-08-18T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'distance_accuracy_value','');#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('named','3D'));#5=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'first_accuracy','');#6=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'second_accuracy','');#7=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#5,#6)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('unnamed','3D'));#8=CARTESIAN_POINT('named point',(1.,0.,0.));#9=SHAPE_REPRESENTATION('named',(#8),#4);#10=CARTESIAN_POINT('unnamed point',(2.,0.,0.));#11=SHAPE_REPRESENTATION('unnamed',(#10),#7);ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode masked context uncertainty");
+
+    // The named measure of the first context does not answer for the second
+    // context, which has no named measure and contributes both of its length
+    // measures.
+    let default_linear = cadmpeg_ir::units::Tolerances::default().linear;
+    assert!((result.ir().tolerances.linear - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
+    assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
 #[test]

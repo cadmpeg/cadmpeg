@@ -330,8 +330,27 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
-    if let Some(uncertainty) = linear_uncertainty(exchange, ir.tolerances.linear, &mut losses) {
-        ir.tolerances.linear = uncertainty;
+    match linear_uncertainty(exchange) {
+        LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
+        LinearUncertainty::Empty { unresolved } => {
+            if unresolved > 0 {
+                losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
+                    "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved} unresolved measure(s); the linear tolerance was not transferred"
+                )));
+            }
+        }
+        LinearUncertainty::Ambiguous { values, unresolved } => {
+            let default_linear = ir.tolerances.linear;
+            let listed = values
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
+                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
+                values.len()
+            )));
+        }
     }
 
     for (id, record) in exchange.entities_any(&[
@@ -3303,43 +3322,41 @@ fn si_prefix(prefix: &str) -> Option<f64> {
 }
 
 /// Resolve one `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` to the linear uncertainty
-/// candidates it contributes, in millimetres.
+/// candidates it contributes, in millimetres, and the number of its measures
+/// that did not resolve.
 ///
 /// STEP scopes an uncertainty to its representation context, so each context
-/// selects for itself. A unique `distance_accuracy_value` name selects the
-/// value. Every other context gives each of its resolvable length measures to
-/// the document projection, which selects a lone measure, merges equal
-/// declarations, and decides what a disagreement means.
-fn context_length_uncertainties(
-    context: &RawRecord,
-    exchange: &Exchange,
-    unresolved_measure_count: &mut usize,
-) -> Vec<f64> {
+/// contributes for itself. One `distance_accuracy_value` name makes that value
+/// the only contribution of the context. Every other context contributes each
+/// of its resolvable length measures. `linear_uncertainty` merges the equal
+/// contributions of all contexts and decides what a disagreement means.
+fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Vec<f64>, usize) {
     let Some(references) = context
         .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
         .and_then(|partial| partial.parameters.first())
         .and_then(Value::list)
     else {
-        return Vec::new();
+        return (Vec::new(), 0);
     };
     let mut measures = Vec::new();
+    let mut unresolved = 0;
     for uncertainty_id in references.iter().filter_map(Value::reference) {
         let Some(measure) = exchange.records.get(&uncertainty_id) else {
-            *unresolved_measure_count += 1;
+            unresolved += 1;
             continue;
         };
         let Some(value) = record_values(measure).find_map(measure_number) else {
-            *unresolved_measure_count += 1;
+            unresolved += 1;
             continue;
         };
         let Some(unit) = record_values(measure).find_map(Value::reference) else {
-            *unresolved_measure_count += 1;
+            unresolved += 1;
             continue;
         };
         if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
             let result = value * scale;
             if !result.is_finite() || result <= 0.0 {
-                *unresolved_measure_count += 1;
+                unresolved += 1;
                 continue;
             }
             // The CADIR convention applies to the name attribute, not
@@ -3351,7 +3368,7 @@ fn context_length_uncertainties(
                 .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
             measures.push((named_distance_accuracy, result));
         } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
-            *unresolved_measure_count += 1;
+            unresolved += 1;
         }
     }
 
@@ -3361,22 +3378,33 @@ fn context_length_uncertainties(
         .map(|(_, value)| *value)
         .collect::<Vec<_>>();
     if named.len() == 1 {
-        return named;
+        return (named, unresolved);
     }
-    measures.into_iter().map(|(_, value)| value).collect()
+    (
+        measures.into_iter().map(|(_, value)| value).collect(),
+        unresolved,
+    )
 }
 
-fn linear_uncertainty(
-    exchange: &Exchange,
-    default_linear: f64,
-    losses: &mut Vec<LossNote>,
-) -> Option<f64> {
+/// The document projection of the per-context linear uncertainty candidates.
+enum LinearUncertainty {
+    /// One distinct candidate, in millimetres.
+    Value(f64),
+    /// No candidate, with the number of measures that did not resolve.
+    Empty { unresolved: usize },
+    /// Several distinct candidates in millimetres, sorted and without
+    /// duplicates, with the number of measures that did not resolve.
+    Ambiguous { values: Vec<f64>, unresolved: usize },
+}
+
+fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
     let mut candidates: Vec<f64> = Vec::new();
-    let mut unresolved_measure_count = 0;
+    let mut unresolved = 0;
     for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
-        for candidate in
-            context_length_uncertainties(context, exchange, &mut unresolved_measure_count)
-        {
+        let (context_candidates, context_unresolved) =
+            context_length_uncertainties(context, exchange);
+        unresolved += context_unresolved;
+        for candidate in context_candidates {
             // Exact equality: the candidates come from one file, so equal
             // declarations corroborate each other and are not a conflict.
             if !candidates.contains(&candidate) {
@@ -3386,28 +3414,15 @@ fn linear_uncertainty(
     }
     candidates.sort_by(f64::total_cmp);
 
-    match candidates.as_slice() {
-        [value] => Some(*value),
-        [] => {
-            if unresolved_measure_count > 0 {
-                losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
-                    "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved_measure_count} unresolved measure(s); the linear tolerance was not transferred"
-                )));
-            }
-            None
-        }
-        values => {
-            let listed = values
-                .iter()
-                .map(|value| format!("{value:?}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
-                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved_measure_count} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
-                values.len()
-            )));
-            None
-        }
+    if candidates.len() > 1 {
+        return LinearUncertainty::Ambiguous {
+            values: candidates,
+            unresolved,
+        };
+    }
+    match candidates.first() {
+        Some(value) => LinearUncertainty::Value(*value),
+        None => LinearUncertainty::Empty { unresolved },
     }
 }
 

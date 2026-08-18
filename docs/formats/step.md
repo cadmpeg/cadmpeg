@@ -1113,12 +1113,11 @@ ISO 10303-43 scopes each uncertainty measure to the representation context that
 assigns it. It defines no document-wide uncertainty aggregate.
 CADIR decision: `Tolerances.linear` is the document projection of the
 per-context linear uncertainties. Each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`
-selects one value from its own measures. The candidate whose `name` is
-`distance_accuracy_value` (case-insensitive) wins when exactly one such
-candidate exists; otherwise the single resolvable length measure of that
-context wins. This name is a CADIR convention, not a STEP precedence rule. A
-context that selects no value gives each of its resolvable length measures to
-the projection. Only resolvable positive length measures are candidates.
+contributes candidates from its own measures. The measure whose `name` is
+`distance_accuracy_value` (case-insensitive) is the only contribution of that
+context when exactly one such measure exists; otherwise the context contributes
+each of its resolvable length measures. This name is a CADIR convention, not a
+STEP precedence rule. Only resolvable positive length measures are candidates.
 Angular measures do not compete with length measures. The optional description
 does not participate in name selection, and source order never selects a
 candidate. The projection removes duplicate candidates by exact numeric
