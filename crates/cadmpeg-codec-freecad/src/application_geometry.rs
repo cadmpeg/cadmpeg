@@ -36,8 +36,16 @@ pub(crate) fn transfer(
                 property.id
             )));
         }
-        validate_value_root(property, geometry_kind.value_tag())?;
-        let Some(entry_name) = property.side_entries.first() else {
+        let root_entry = validate_value_root(property, geometry_kind.value_tag())?;
+        let side_entry_matches_root = property.side_entries.len()
+            == usize::from(root_entry.is_some())
+            && property.side_entries.first() == root_entry.as_ref();
+        if !side_entry_matches_root {
+            return Err(CodecError::Malformed(
+                "geometry property has an unowned side-entry reference".into(),
+            ));
+        }
+        let Some(entry_name) = root_entry else {
             continue;
         };
         let entry = entries
@@ -77,25 +85,33 @@ impl GeometryKind {
     }
 }
 
-fn validate_value_root(property: &PropertyRecord, expected_tag: &str) -> Result<(), CodecError> {
+fn validate_value_root(
+    property: &PropertyRecord,
+    expected_tag: &str,
+) -> Result<Option<String>, CodecError> {
     let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
         CodecError::Malformed(format!(
             "invalid geometry property XML {}: {error}",
             property.id
         ))
     })?;
-    let root_count = document
+    let roots = document
         .root_element()
         .children()
         .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
-        .count();
-    if root_count != 1 {
+        .collect::<Vec<_>>();
+    if roots.len() != 1 {
         return Err(CodecError::Malformed(format!(
-            "geometry property {} must contain exactly one {expected_tag} value root, found {root_count}",
-            property.id
+            "geometry property {} must contain exactly one {expected_tag} value root, found {}",
+            property.id,
+            roots.len()
         )));
     }
-    Ok(())
+    let root = roots[0];
+    Ok(root
+        .attribute("file")
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned))
 }
 
 fn association(property: &PropertyRecord) -> SourceObjectAssociation {
@@ -477,6 +493,46 @@ pub(crate) mod tests {
                 error,
                 cadmpeg_core::CodecError::Malformed(message)
                     if message.contains("references more than one side entry")
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_unowned_side_entry_attributes() {
+        for (object_type, property_type, values, entry) in [
+            (
+                "Mesh::Feature",
+                "Mesh::PropertyMeshKernel",
+                r#"<Mesh/><Extra file="payload"/>"#,
+                "payload",
+            ),
+            (
+                "Points::Feature",
+                "Points::PropertyPointKernel",
+                r#"<Points/><Extra file="payload"/>"#,
+                "payload",
+            ),
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="{object_type}" name="Geometry"/></Objects>
+<ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Geometry" type="{property_type}">{values}</Property></Properties></Object></ObjectData>
+</Document>"#
+            );
+            let error = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive_entries(&[
+                        ("Document.xml", document.as_bytes()),
+                        (entry, b"payload"),
+                    ])),
+                    &DecodeOptions::default(),
+                )
+                .expect_err("unowned geometry side entry");
+
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::Malformed(message)
+                    if message.contains("unowned side-entry reference")
             ));
         }
     }

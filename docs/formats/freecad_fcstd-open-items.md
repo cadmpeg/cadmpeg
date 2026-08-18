@@ -11,32 +11,6 @@ Each item has an identifier and these fields:
 - Conflict
 - Note
 
-## 1. Application-specific side entries
-
-### AG-02. Typed geometry side-entry ownership
-
-**Question.** Which direct `Mesh` or `Points` value root owns a binary side entry for a typed
-kernel property, and how are file attributes on other retained values handled?
-
-**Known.** FreeCAD writes one direct `Mesh` or `Points` value root, and the root's non-empty
-`file` attribute identifies the property's side entry. `persistence.rs:484-538` retains every
-descendant value and collects every descendant `file` or `File` attribute into
-`PropertyRecord.side_entries`. `application_geometry.rs:21-61` rejects more than one collected
-side entry, while `application_geometry.rs:80-98` counts only direct expected roots and does not
-bind the side entry to that root.
-
-**Need.** Require the side-entry reference to be the canonical attribute on the one direct typed
-root. Reject or retain a property when another direct or nested value contributes a file reference
-or when the root and side entry cannot be associated unambiguously.
-
-**Conflict.** A property containing one direct `Mesh` root and a nested or sibling
-`<Extra file="payload"/>` produces one expected root and one collected side entry, so the transfer
-reads `payload` even though no `Mesh` root names it. The same framing admits an unowned `Points`
-payload. Moving or adding that unrelated file attribute therefore changes the neutral geometry
-without a refusal or loss.
-
-**Note.** New hostile-sweep finding.
-
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars

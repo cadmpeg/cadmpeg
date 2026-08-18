@@ -812,10 +812,11 @@ property, XML value, and complete member remain authoritative, and the logical m
 `named_opaque`.
 
 `Mesh::PropertyMeshKernel` contains exactly one direct `Mesh` value root. A duplicate or missing
-root is malformed. That root has zero or one non-empty `file` attribute; a non-empty attribute
-identifies the property's only binary side entry. A `Mesh` value without a side entry contains
-inline XML mesh data and remains in the native property record. The current typed binary record
-begins with the
+root is malformed. That root has zero or one non-empty lowercase `file` attribute; a non-empty
+attribute identifies the property's only binary side entry. A non-empty file attribute on another
+direct or nested value, or a side-entry reference not named by the direct root, is malformed. A
+`Mesh` value without a side entry contains inline XML mesh data and remains in the native property
+record. The current typed binary record begins with the
 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field. Both
 integer byte orders are accepted when the magic and version agree. Two 32-bit counts precede
 ordered float32 XYZ points and facets. Each facet contains three zero-based point indices followed
@@ -825,8 +826,10 @@ truncated bytes are invalid. Neighbour indices and the complete entry bytes rema
 when only the indexed triangle mesh is projected neutrally.
 
 `Points::PropertyPointKernel` contains exactly one direct `Points` value root. A duplicate or
-missing root is malformed. Its zero or one non-empty `file` attribute identifies the property's
-only side entry. The entry contains a little-endian 32-bit point count followed by ordered
+missing root is malformed. Its zero or one non-empty lowercase `file` attribute identifies the
+property's only side entry. A non-empty file attribute on another direct or nested value, or a
+side-entry reference not named by the direct root, is malformed. The entry contains a little-endian
+32-bit point count followed by ordered
 float32 XYZ triples. The `Points` value carries the sixteen finite row-major transform scalars.
 Neutral points are transformed once into model space and retain the owning application object and
 property identity. Missing transforms mean identity; malformed transforms, non-finite
