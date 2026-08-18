@@ -537,6 +537,96 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
 }
 
 #[test]
+fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    let sqrt_three = 3.0_f64.sqrt();
+    ir.model.points.extend(
+        [
+            Point3::new(0.0, -2.0 / sqrt_three, -2.0),
+            Point3::new(0.0, 2.0 / sqrt_three, 2.0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, position)| Point {
+            id: PointId(format!("point-{index}")),
+            position,
+            source_object: None,
+        }),
+    );
+    let cylinder_id = SurfaceId("cylinder".to_string());
+    let plane_id = SurfaceId("plane".to_string());
+    ir.model.surfaces.extend([
+        Surface {
+            id: cylinder_id.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: plane_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, sqrt_three / 2.0, -0.5),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let (id, range) = build_standard_edge_curve(
+        &mut ir,
+        &mut annotations,
+        &[
+            (cylinder_id.clone(), false, 0),
+            (plane_id.clone(), false, 1),
+        ],
+        &HashMap::from([(cylinder_id, 0), (plane_id, 1)]),
+        &[],
+        &support,
+        [0, 1],
+        None,
+        None,
+    );
+    let id = id.expect("spline support identifies a curve carrier");
+    assert_eq!(range, None);
+    let CurveGeometry::Ellipse {
+        center,
+        axis,
+        major_direction,
+        major_radius,
+        minor_radius,
+    } = &ir.model.curves[0].geometry
+    else {
+        panic!("cylinder-plane spline did not derive an ellipse");
+    };
+    assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert!(
+        axis.cross(Vector3::new(0.0, sqrt_three / 2.0, -0.5)).norm()
+            <= CYLINDER_PLANE_CONIC_TOLERANCE
+    );
+    assert!(
+        major_direction
+            .dot(Vector3::new(0.0, -0.5, -sqrt_three / 2.0))
+            .abs()
+            >= 1.0 - CYLINDER_PLANE_CONIC_TOLERANCE
+    );
+    assert!((*major_radius - 4.0 / sqrt_three).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert!((*minor_radius - 2.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert_eq!(ir.model.curves[0].id, id);
+    assert!(ir.model.procedural_curves.is_empty());
+}
+
+#[test]
 fn standard_spline_uses_identity_bound_native_support_pcurves() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.points.extend(

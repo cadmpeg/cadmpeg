@@ -44,6 +44,7 @@ const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
 const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
 const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
 const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
+const CYLINDER_PLANE_CONIC_TOLERANCE: f64 = 2e-3;
 const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
 
 fn bind_consolidated_revolution_faces_and_seams(
@@ -6572,6 +6573,125 @@ fn standard_spline_circle(
     })
 }
 
+fn standard_spline_cylinder_plane(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    points: [usize; 2],
+) -> Option<CurveGeometry> {
+    let surfaces = support
+        .faces
+        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let [Some(left), Some(right)] = surfaces else {
+        return None;
+    };
+    let (cylinder_axis, cylinder_origin, cylinder_radius, plane_origin, plane_normal) =
+        match (&left.geometry, &right.geometry) {
+            (
+                SurfaceGeometry::Cylinder {
+                    axis,
+                    origin: cylinder_origin,
+                    radius,
+                    ..
+                },
+                SurfaceGeometry::Plane {
+                    origin: plane_origin,
+                    normal: plane_normal,
+                    ..
+                },
+            )
+            | (
+                SurfaceGeometry::Plane {
+                    origin: plane_origin,
+                    normal: plane_normal,
+                    ..
+                },
+                SurfaceGeometry::Cylinder {
+                    axis,
+                    origin: cylinder_origin,
+                    radius,
+                    ..
+                },
+            ) => (
+                *axis,
+                *cylinder_origin,
+                *radius,
+                *plane_origin,
+                *plane_normal,
+            ),
+            _ => return None,
+        };
+    let cylinder_axis = unit_vector(cylinder_axis)?;
+    let plane_normal = unit_vector(plane_normal)?;
+    let cylinder_radius = cylinder_radius.abs();
+    if !cylinder_radius.is_finite() || cylinder_radius <= 0.0 {
+        return None;
+    }
+    let axis_dot_normal = cylinder_axis.dot(plane_normal);
+    if !axis_dot_normal.is_finite() || axis_dot_normal.abs() <= CYLINDER_PLANE_CONIC_TOLERANCE {
+        return None;
+    }
+    let axis_parameter =
+        -cylinder_origin.vector_from(plane_origin).dot(plane_normal) / axis_dot_normal;
+    if !axis_parameter.is_finite() {
+        return None;
+    }
+    let center = cylinder_origin.translated(cylinder_axis, axis_parameter);
+    let start = ir.model.points.get(points[0])?.position;
+    let end = ir.model.points.get(points[1])?.position;
+    if !point_on_surface(start, &left.geometry)
+        || !point_on_surface(start, &right.geometry)
+        || !point_on_surface(end, &left.geometry)
+        || !point_on_surface(end, &right.geometry)
+    {
+        return None;
+    }
+    let minor_vector = cylinder_axis.cross(plane_normal);
+    let minor_norm = minor_vector.norm();
+    if !minor_norm.is_finite() {
+        return None;
+    }
+    if minor_norm <= CYLINDER_PLANE_CONIC_TOLERANCE {
+        return Some(CurveGeometry::Circle {
+            center,
+            axis: plane_normal,
+            ref_direction: cadmpeg_ir::geometry::derive_reference_direction(plane_normal),
+            radius: cylinder_radius,
+        });
+    }
+    let minor_direction = minor_vector.scale(1.0 / minor_norm);
+    let radial_normal =
+        (plane_normal - cylinder_axis.scale(axis_dot_normal)).scale(1.0 / minor_norm);
+    let major_unscaled = radial_normal - cylinder_axis.scale(minor_norm / axis_dot_normal);
+    let major_norm = major_unscaled.norm();
+    if !major_norm.is_finite() || major_norm <= 0.0 {
+        return None;
+    }
+    let major_direction = major_unscaled.scale(1.0 / major_norm);
+    let major_radius = cylinder_radius * major_norm;
+    if !major_radius.is_finite() || major_radius <= 0.0 {
+        return None;
+    }
+    let endpoint_is_on_ellipse = |point: Point3| {
+        let offset = point.vector_from(center);
+        let major = offset.dot(major_direction) / major_radius;
+        let minor = offset.dot(minor_direction) / cylinder_radius;
+        let equation = major * major + minor * minor;
+        equation.is_finite() && (equation - 1.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE
+    };
+    if !endpoint_is_on_ellipse(start) || !endpoint_is_on_ellipse(end) {
+        return None;
+    }
+    Some(CurveGeometry::Ellipse {
+        center,
+        axis: plane_normal,
+        major_direction,
+        major_radius,
+        minor_radius: cylinder_radius,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
@@ -6709,14 +6829,23 @@ pub(crate) fn build_standard_edge_curve(
                         match standard_spline_circle(ir, bindings, surface_indices, support, points)
                         {
                             Some(geometry) => (geometry, None),
-                            None => (
-                                CurveGeometry::Unknown {
-                                    record: Some(UnknownId(
-                                        "catia:payload:unknown#brep-stream".to_string(),
-                                    )),
-                                },
-                                None,
-                            ),
+                            None => match standard_spline_cylinder_plane(
+                                ir,
+                                bindings,
+                                surface_indices,
+                                support,
+                                points,
+                            ) {
+                                Some(geometry) => (geometry, None),
+                                None => (
+                                    CurveGeometry::Unknown {
+                                        record: Some(UnknownId(
+                                            "catia:payload:unknown#brep-stream".to_string(),
+                                        )),
+                                    },
+                                    None,
+                                ),
+                            },
                         }
                     }
                 }
@@ -6754,6 +6883,19 @@ pub(crate) fn build_standard_edge_curve(
             .derived(&id, "geometry.axis")
             .derived(&id, "geometry.ref_direction")
             .derived(&id, "geometry.radius");
+    } else if matches!(
+        (&support.geometry, &geometry),
+        (
+            crate::families::standard::records::StandardCurveGeometry::Bspline,
+            CurveGeometry::Ellipse { .. }
+        )
+    ) {
+        annotations
+            .derived(&id, "geometry.center")
+            .derived(&id, "geometry.axis")
+            .derived(&id, "geometry.major_direction")
+            .derived(&id, "geometry.major_radius")
+            .derived(&id, "geometry.minor_radius");
     } else if matches!(
         &support.geometry,
         crate::families::standard::records::StandardCurveGeometry::Circle { .. }
