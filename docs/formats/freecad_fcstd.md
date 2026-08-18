@@ -745,6 +745,22 @@ records. `LineNumber` may be omitted; the legacy `ISOLineNumber` spelling is not
 field. Nested or out-of-order fields, unsupported geometry selectors, branch field mismatches,
 extra records, and count mismatches are malformed.
 
+`TechDraw::PropertyCenterLineList` uses one direct `CenterLineList` root. Its `count` equals the
+number of direct `CenterLine` records, each with `type="TechDraw::CenterLine"`. A record has the
+direct fields `Start`, `End`, `Mode`, `HShift`, `VShift`, `Rotate`, `Extend`, `Type`, `Flip`,
+`Faces`, `Edges`, `CLPoints`, `Style`, `Weight`, `Color`, `Visible`, and `GeometryType` in that
+order. `Start` and `End` carry finite `X`, `Y`, and `Z` coordinates. `Mode` is a signed integer
+with `0` vertical, `1` horizontal, or `2` aligned semantics; `Type` is a signed integer with `0`
+face, `1` edge, or `2` vertex semantics. `HShift`, `VShift`, `Rotate`, `Extend`, and `Weight` are
+finite floating-point values; `Flip` and `Visible` are Boolean; `Style` is a signed integer; and
+`Color` is `#RRGGBB` or `#RRGGBBAA`. `Faces`, `Edges`, and `CLPoints` are counted direct leaf
+collections with `Face`, `Edge`, and `CLPoint` children carrying `value`.
+`GeometryType` and the nested `GeomType` match: `1` selects a circle, `2` an arc of a circle, and
+`7` generic geometry. The selected branch uses the same direct `BaseGeom` and geometry fields as
+CosmeticEdge. A trailing `LineNumber` or legacy `ISOLineNumber` signed integer is optional. Nested
+or out-of-order fields, unsupported selectors, branch mismatches, invalid collection counts, extra
+records, and count mismatches are malformed.
+
 The loaded module registry adds `Materials::PropertyMaterial`, whose value is
 `PropertyMaterial` with a material `uuid`; `Part::PropertyPartShape`, whose value is `Part` and
 may carry `ElementMap` records and one exact-shape side entry; `Part::PropertyGeometryList`, whose

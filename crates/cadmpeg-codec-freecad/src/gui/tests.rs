@@ -851,6 +851,69 @@ fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
 }
 
 #[test]
+fn validates_gui_techdraw_center_line_list_grammar() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let generic = r##"<CenterLine type="TechDraw::CenterLine"><Start X="0" Y="0" Z="0"/><End X="0" Y="5" Z="0"/><Mode value="0"/><HShift value="0"/><VShift value="0"/><Rotate value="0"/><Extend value="0"/><Type value="1"/><Flip value="0"/><Faces FaceCount="0"></Faces><Edges EdgeCount="2"><Edge value="Edge1"/><Edge value="Edge2"/></Edges><CLPoints CLPointCount="0"></CLPoints><Style value="2"/><Weight value="0.5"/><Color value="#000000"/><Visible value="1"/><GeometryType value="7"/><GeomType value="7"/><ExtractType value="0"/><EdgeClass value="5"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="1"/><Source value="2"/><SourceIndex value="-1"/><CosmeticTag value="e8cc01e4-3dcb-4a63-a89c-94b92813253d"/><Points PointsCount="2"><Point X="0" Y="0" Z="0"/><Point X="0" Y="5" Z="0"/></Points><LineNumber value="2"/></CenterLine>"##;
+    let circle = r##"<CenterLine type="TechDraw::CenterLine"><Start X="1" Y="0" Z="0"/><End X="1" Y="4" Z="0"/><Mode value="1"/><HShift value="0.25"/><VShift value="-0.5"/><Rotate value="0.1"/><Extend value="0.75"/><Type value="0"/><Flip value="1"/><Faces FaceCount="1"><Face value="Face1"/></Faces><Edges EdgeCount="0"></Edges><CLPoints CLPointCount="1"><CLPoint value="Vertex1"/></CLPoints><Style value="2"/><Weight value="0.5"/><Color value="#11223344"/><Visible value="false"/><GeometryType value="1"/><GeomType value="1"/><ExtractType value="0"/><EdgeClass value="5"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="1"/><Source value="2"/><SourceIndex value="-1"/><CosmeticTag value="circle-tag"/><Center X="2" Y="-2" Z="0"/><Radius value="1.5"/></CenterLine>"##;
+    let arc = r##"<CenterLine type="TechDraw::CenterLine"><Start X="2" Y="0" Z="0"/><End X="2" Y="4" Z="0"/><Mode value="2"/><HShift value="0"/><VShift value="0"/><Rotate value="0"/><Extend value="0"/><Type value="2"/><Flip value="0"/><Faces FaceCount="0"></Faces><Edges EdgeCount="0"></Edges><CLPoints CLPointCount="0"></CLPoints><Style value="2"/><Weight value="0.5"/><Color value="#AABBCC"/><Visible value="1"/><GeometryType value="2"/><GeomType value="2"/><ExtractType value="0"/><EdgeClass value="0"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="0"/><Source value="2"/><SourceIndex value="-1"/><CosmeticTag value="arc-tag"/><Center X="6" Y="2" Z="0"/><Radius value="1.25"/><Start X="7.1746" Y="2.4275" Z="0"/><End X="4.8254" Y="2.4275" Z="0"/><Middle X="6" Y="3.25" Z="0"/><StartAngle value="0.3491"/><EndAngle value="2.7925"/><Clockwise value="1"/><Large value="0"/><ISOLineNumber value="2"/></CenterLine>"##;
+    let gui = format!(
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="CenterLines" type="TechDraw::PropertyCenterLineList"><CenterLineList count="3">{generic}{circle}{arc}</CenterLineList></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+    );
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui.as_bytes()),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("valid TechDraw CenterLineList");
+
+    let property = |value: &str| {
+        format!(
+            r#"<Property name="CenterLines" type="TechDraw::PropertyCenterLineList">{value}</Property>"#
+        )
+    };
+    let invalid = vec![
+        property(r#"<Wrong count="0"/>"#),
+        property(&format!(
+            r#"<CenterLineList count="2">{generic}</CenterLineList>"#
+        )),
+        property(&generic.replace(
+            "type=\"TechDraw::CenterLine\"",
+            "type=\"App::PropertyString\"",
+        )),
+        property(&generic.replace("<Start X=", "<Wrong X=")),
+        property(&generic.replace("<Mode value=\"0\"", "<Mode value=\"3\"")),
+        property(&generic.replace("FaceCount=\"0\"", "FaceCount=\"1\"")),
+        property(&generic.replace(
+            "<Edge value=\"Edge1\"/>",
+            "<Edge value=\"Edge1\"><Nested/></Edge>",
+        )),
+        property(&generic.replace("<HShift value=\"0\"", "<HShift value=\"nan\"")),
+        property(&generic.replace("<Color value=\"#000000\"", "<Color value=\"red\"")),
+        property(&generic.replacen("<GeomType value=\"7\"/>", "<GeomType value=\"1\"/>", 1)),
+        property(&generic.replace("PointsCount=\"2\"", "PointsCount=\"3\"")),
+        property(&generic.replace("<LineNumber value=\"2\"/>", "<Unexpected value=\"2\"/>")),
+    ];
+    for invalid in invalid {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid TechDraw CenterLineList");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn validates_the_complete_loaded_dynamic_gui_registry() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>

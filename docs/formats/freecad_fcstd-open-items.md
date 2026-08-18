@@ -46,6 +46,12 @@ count and typed `CosmeticEdge` records. Each record has the producer's format fi
 matching `GeometryType` and `GeomType` values. Branch counts, direct point records, finite scalars,
 integer and Boolean values, hexadecimal colors, and optional `LineNumber` are validated; the
 legacy `ISOLineNumber` spelling is not admitted for CosmeticEdge.
+TechDraw `PropertyCenterLineList` uses one direct `CenterLineList` root with exact direct record
+count and typed `CenterLine` records. Each record has the ordered endpoint, mode, shift, source
+collection, line-format, and geometry fields. `Faces`, `Edges`, and `CLPoints` have exact direct
+leaf counts; `Mode` and `Type` use their three producer enum values; the shared Generic, Circle,
+and ArcOfCircle branches require matching `GeometryType` and `GeomType`; and an optional
+`LineNumber` or legacy `ISOLineNumber` is accepted.
 
 **Need.** Establish the producer grammar for each remaining classified non-link GUI runtime type
 outside those branches. Validate its direct value roots, cardinality, attributes, and side-entry
@@ -58,9 +64,10 @@ retained as if the registry had established their grammar, while the neutral pre
 silently withholds or misreads the value.
 
 **Note.** Partly settled. Link-family, scalar/quantity, in-memory list, standard side-entry,
-Mesh/Points, and TechDraw GeomFormatList, CosmeticVertexList, and CosmeticEdgeList value grammars
-are closed by the application writer inheritance rules and shared direct-root validation. The
-remaining question is limited to other custom runtime types and their custom side-entry forms.
+Mesh/Points, and TechDraw GeomFormatList, CosmeticVertexList, CosmeticEdgeList, and
+CenterLineList value grammars are closed by the application writer inheritance rules and shared
+direct-root validation. The remaining question is limited to other custom runtime types and their
+custom side-entry forms.
 
 ### GP-02. Other GUI property semantics
 
