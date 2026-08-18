@@ -612,6 +612,26 @@ pub(crate) fn class_userdata_v2_with_direct_payload(
     writer_version: u32,
     userdata_body: &[u8],
 ) -> Vec<u8> {
+    class_userdata_v2_with_class_and_item_direct_payload(
+        archive,
+        class_uuid,
+        class_uuid,
+        application_uuid,
+        archive_version,
+        writer_version,
+        userdata_body,
+    )
+}
+
+pub(crate) fn class_userdata_v2_with_class_and_item_direct_payload(
+    archive: ArchiveVersion,
+    class_uuid: [u8; 16],
+    item_uuid: [u8; 16],
+    application_uuid: [u8; 16],
+    archive_version: i32,
+    writer_version: u32,
+    userdata_body: &[u8],
+) -> Vec<u8> {
     let mut transform = Vec::with_capacity(16 * 8);
     for index in 0..16 {
         let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
@@ -619,7 +639,7 @@ pub(crate) fn class_userdata_v2_with_direct_payload(
     }
     let header_body = [
         class_uuid.to_vec(),
-        class_uuid.to_vec(),
+        item_uuid.to_vec(),
         0_i32.to_le_bytes().to_vec(),
         transform,
         application_uuid.to_vec(),

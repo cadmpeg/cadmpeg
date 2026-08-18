@@ -1194,6 +1194,22 @@ fn parse_legacy_rdk_material_instance_id(
     data: &[u8],
     payload_range: Range<usize>,
 ) -> Result<Option<Uuid>, FramingError> {
+    match classify_rdk_material_payload(data, payload_range)? {
+        RdkMaterialPayload::Compatibility(instance_id) => Ok(instance_id),
+        RdkMaterialPayload::CallbackOwned => Ok(None),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RdkMaterialPayload {
+    Compatibility(Option<Uuid>),
+    CallbackOwned,
+}
+
+fn classify_rdk_material_payload(
+    data: &[u8],
+    payload_range: Range<usize>,
+) -> Result<RdkMaterialPayload, FramingError> {
     let mut reader = BoundedReader::new(data, payload_range.start, payload_range.end)?;
     if reader.i32()? != 2 {
         return Err(FramingError::structural(
@@ -1210,7 +1226,7 @@ fn parse_legacy_rdk_material_instance_id(
     }
     if length == 0 {
         reader.skip_remaining()?;
-        return Ok(None);
+        return Ok(RdkMaterialPayload::Compatibility(None));
     }
     let xml = reader.take(length as usize)?.to_vec();
     reader.skip_remaining()?;
@@ -1219,7 +1235,7 @@ fn parse_legacy_rdk_material_instance_id(
     // includes. This distinguishes the compatibility carrier from callback-
     // owned RDK XML, which remains opaque in CADIR.
     if xml.last() == Some(&0) {
-        return Ok(None);
+        return Ok(RdkMaterialPayload::CallbackOwned);
     }
     let xml = std::str::from_utf8(&xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
@@ -1267,7 +1283,9 @@ fn parse_legacy_rdk_material_instance_id(
             "legacy RDK material instance-id is not a UUID",
         )
     })?;
-    Ok((!instance_id.is_nil()).then_some(instance_id))
+    Ok(RdkMaterialPayload::Compatibility(
+        (!instance_id.is_nil()).then_some(instance_id),
+    ))
 }
 
 fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor]) -> Option<Uuid> {
@@ -1285,6 +1303,23 @@ fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor])
                 .flatten()
         })
         .next_back()
+}
+
+fn rdk_material_userdata_requires_opaque(data: &[u8], userdata: &[UserdataDescriptor]) -> bool {
+    userdata
+        .iter()
+        .filter(|value| {
+            value.class_uuid == RDK_CLASS
+                && value.item_uuid == RDK_USERDATA
+                && (value.application_uuid.is_none()
+                    || value.application_uuid == Some(RDK_APPLICATION))
+        })
+        .any(|value| {
+            !matches!(
+                classify_rdk_material_payload(data, value.payload_range.clone()),
+                Ok(RdkMaterialPayload::Compatibility(_))
+            )
+        })
 }
 
 fn wide_string(
@@ -3786,9 +3821,16 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                 if let Ok((range, userdata)) =
                     class_data_with_userdata(scan.data, record, scan.archive, MATERIAL)
                 {
-                    let mut physically_based_requires_opaque = false;
+                    let mut material_requires_opaque = false;
                     let legacy_rdk_instance_id =
                         legacy_rdk_material_instance_id(scan.data, &userdata);
+                    if rdk_material_userdata_requires_opaque(scan.data, &userdata) {
+                        material_requires_opaque = true;
+                        losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                            "RDK material userdata at offset {} could not be transferred: callback-owned or unsupported payload",
+                            record.range.start
+                        )));
+                    }
                     let physically_based = userdata
                         .iter()
                         .find(|value| {
@@ -3805,7 +3847,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                             ) {
                                 Ok(material) => Some(material),
                                 Err(error) => {
-                                    physically_based_requires_opaque = true;
+                                    material_requires_opaque = true;
                                     losses.push(RhinoLossCode::PresentationRecordDropped.note(
                                         format!(
                                             "physically based material userdata at offset {} could not be transferred: {error}",
@@ -3829,7 +3871,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                             material.rdk_instance_uuid = Some(instance_id.to_string());
                         }
                         materials.push(material);
-                        if physically_based_requires_opaque {
+                        if material_requires_opaque {
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),

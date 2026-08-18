@@ -1580,7 +1580,11 @@ This is a CADIR decision that keeps callback-owned RDK XML opaque while
 preserving the source-defined material compatibility field.
 
 CADIR does not promote callback-owned RDK XML to typed native fields. The Rhino
-codec retains the complete containing object record for opaque source fidelity.
+codec retains the complete containing record for opaque source fidelity. For a
+material owner, a terminated version-2 UTF-8 payload, or a recognized RDK
+payload that fails the compatibility form's bounded parse, supplies no typed
+fields from userdata; independently admitted material fields remain typed, the
+complete material record is retained, and the owner emits a presentation loss.
 For materials, the typed `rdk_instance_uuid` field comes from the material
 class-data record unless the compatibility carrier above supplies it.
 
