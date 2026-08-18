@@ -339,6 +339,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 406 Form 28 fixes `NP=6` at index 1 and stores `SPOS`, `UI`, `CHRSET`,
 /// `USTRING`, `FFLAG`, and `PREC` at indexes 2 through 7, so its groups start
 /// at token eight. `CHRSET` may be empty and then defaults to standard ASCII.
+/// Type 406 Form 36 permits `NP=1` for a curve or `NP=2` for a surface and
+/// stores `CLOSEDU` and, for a surface, `CLOSEDV`, so its groups start at
+/// token `2 + NP`.
 /// Type 402 Form 13 fixes `ND` to one, puts the positive geometry count `NG` at
 /// index 2, and lists the dimension plus `NG` geometry pointers, so its groups
 /// start at token `4 + NG`.
@@ -425,6 +428,7 @@ pub(crate) fn entity_primary_end(
         (406, 25) => Some(lep_artwork_stackup_primary_end(record)),
         (406, 26) => Some(lep_drilled_hole_primary_end(record)),
         (406, 28) => Some(dimension_units_primary_end(record)),
+        (406, 36) => Some(closure_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
@@ -707,6 +711,15 @@ fn dimension_units_primary_end(record: &ParameterRecord) -> usize {
     } else {
         record.tokens.len()
     }
+}
+
+fn closure_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| matches!(value, 1 | 2).then_some(value as usize))
+        .and_then(|count| count.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
 }
 
 fn external_reference_file_list_primary_end(record: &ParameterRecord) -> usize {
