@@ -635,3 +635,48 @@ fn retention_reports_every_deleted_carrier_category() {
         .iter()
         .all(|point| point.id.as_str() != "step:data:point#74"));
 }
+
+#[test]
+fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("an out-of-range component does not refuse the file");
+
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::SchemaObjectIdentifierOutOfRange.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(
+        losses[0].message,
+        "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
+    );
+    let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(provenance.format, "step");
+    assert_eq!(
+        provenance.offset,
+        source.find("FILE_SCHEMA").unwrap() as u64
+    );
+    assert_eq!(provenance.tag.as_deref(), Some("schema_identifier"));
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["schema"],
+        "AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"
+    );
+}
+
+#[test]
+fn decode_does_not_charge_a_loss_for_a_valid_schema_object_identifier() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("valid schema object identifier");
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::SchemaObjectIdentifierOutOfRange.kind()));
+}
