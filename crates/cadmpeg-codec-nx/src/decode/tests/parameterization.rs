@@ -1195,6 +1195,127 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
 }
 
 #[test]
+fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
+    use cadmpeg_ir::geometry::{
+        Curve, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, ProceduralCurve, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+    use cadmpeg_ir::math::Point3;
+
+    const FIT_TOLERANCE: f64 = 1.0e-9;
+
+    let surface_id = SurfaceId("synthetic:serialized-seed-surface".into());
+    let curve_id = CurveId("synthetic:serialized-seed-curve".into());
+    let procedural_id = ProceduralCurveId("synthetic:serialized-seed-intersection".into());
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 10.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(10.0, 10.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        }),
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: procedural_id.clone(),
+        curve: curve_id,
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(surface_id),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+
+    let parameters = [Point2::new(0.2, 0.3), Point2::new(0.7, 0.8)];
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let points = parameters
+        .into_iter()
+        .map(|parameter| {
+            cadmpeg_ir::eval::model_surface_point_by_id(
+                &index,
+                &SurfaceId("synthetic:serialized-seed-surface".into()),
+                parameter.u,
+                parameter.v,
+            )
+            .expect("NURBS chart point")
+        })
+        .collect::<Vec<_>>();
+    let pending = vec![(
+        procedural_id,
+        points,
+        vec![0.0, 1.0],
+        FIT_TOLERANCE,
+        [
+            Some(
+                parameters
+                    .map(|parameter| [parameter.u, parameter.v])
+                    .to_vec(),
+            ),
+            None,
+        ],
+    )];
+    let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
+    let geometry_budget = cadmpeg_core::decode::WorkBudget::new(64);
+    let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(2);
+
+    crate::decode::support_uv::complete_support_uv_with_budget(
+        &mut ir,
+        &pending,
+        &support_budget,
+        &geometry_budget,
+        &coupled_support_budget,
+        &geometry_budget,
+    );
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        panic!("intersection");
+    };
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_ref()
+    else {
+        panic!("serialized seed completed the NURBS lane");
+    };
+    assert_eq!(control_points, &parameters);
+}
+
+#[test]
 fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
     use cadmpeg_ir::geometry::{
         IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, ProceduralSurface, Surface,

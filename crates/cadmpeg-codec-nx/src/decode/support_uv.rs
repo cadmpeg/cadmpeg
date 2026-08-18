@@ -310,6 +310,21 @@ pub(crate) fn pcurve_control_point_seed(
     })
 }
 
+fn serialized_support_uv_seed_candidates(
+    geometry: &SurfaceGeometry,
+    lanes: &[Option<Vec<[f64; 2]>>; 2],
+    point_index: usize,
+) -> [Option<Point2>; 2] {
+    std::array::from_fn(|lane| {
+        let [u, v] = *lanes[lane].as_deref()?.get(point_index)?;
+        (u.is_finite()
+            && v.is_finite()
+            && !missing_support_parameter(u)
+            && !missing_support_parameter(v))
+        .then(|| surface_parameters(geometry, [u, v]))?
+    })
+}
+
 #[cfg(test)]
 pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
@@ -590,7 +605,7 @@ fn complete_support_uv_wave(
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+    for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
@@ -683,121 +698,140 @@ fn complete_support_uv_wave(
                     uv.clear();
                     break;
                 }
-                let seed =
-                    pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index)
-                        .or_else(|| uv.last().copied());
-                let parameters = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) => {
-                        nurbs_surface_parameter_within_tolerance_with_budget(
-                            nurbs,
-                            *point,
-                            seed,
-                            effective_fit_tolerance,
-                            geometry_budget,
-                        )
-                        .map(|parameters| (parameters, true))
+                let serialized_seeds =
+                    serialized_support_uv_seed_candidates(&surface.geometry, lanes, point_index);
+                let seed_candidates = [
+                    serialized_seeds[0],
+                    serialized_seeds[1],
+                    pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index),
+                    uv.last().copied(),
+                ];
+                let mut attempted_without_seed = false;
+                let mut solved = None;
+                for seed in seed_candidates {
+                    if seed.is_none() {
+                        if attempted_without_seed {
+                            continue;
+                        }
+                        attempted_without_seed = true;
                     }
-                    SurfaceGeometry::Procedural { .. } => {
-                        let solve_blend_parameters = if source_chart_available {
-                            blend_surface_parameters_for_fit_with_source_continuation_and_budget
-                        } else {
-                            blend_surface_parameters_for_fit_with_grid_and_budget
-                        };
-                        let solve_grid_parameters = if source_chart_available {
-                            blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
-                        } else {
-                            blend_surface_parameters_from_grid_for_fit_and_budget
-                        };
-                        other_contact
-                            .and_then(
-                                |(
-                                    other_surface,
-                                    other_pcurve,
-                                    other_geometry,
-                                    contact_pcurve,
-                                    boundary,
-                                )| {
-                                    blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-                                        &model_index,
+                    let candidate = match &surface.geometry {
+                        SurfaceGeometry::Nurbs(nurbs) => {
+                            nurbs_surface_parameter_within_tolerance_with_budget(
+                                nurbs,
+                                *point,
+                                seed,
+                                effective_fit_tolerance,
+                                geometry_budget,
+                            )
+                            .map(|parameters| (parameters, true))
+                        }
+                        SurfaceGeometry::Procedural { .. } => {
+                            let solve_blend_parameters = if source_chart_available {
+                                blend_surface_parameters_for_fit_with_source_continuation_and_budget
+                            } else {
+                                blend_surface_parameters_for_fit_with_grid_and_budget
+                            };
+                            let solve_grid_parameters = if source_chart_available {
+                                blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
+                            } else {
+                                blend_surface_parameters_from_grid_for_fit_and_budget
+                            };
+                            other_contact
+                                .and_then(
+                                    |(
                                         other_surface,
+                                        other_pcurve,
                                         other_geometry,
                                         contact_pcurve,
                                         boundary,
-                                        other_pcurve,
-                                        parameters[point_index],
-                                        BoundaryInverseTarget {
-                                            point: *point,
+                                    )| {
+                                        blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+                                            &model_index,
+                                            other_surface,
+                                            other_geometry,
+                                            contact_pcurve,
+                                            boundary,
+                                            other_pcurve,
+                                            parameters[point_index],
+                                            BoundaryInverseTarget {
+                                                point: *point,
+                                                seed,
+                                                tolerance: effective_fit_tolerance,
+                                            },
+                                            geometry_budget,
+                                        )
+                                    },
+                                )
+                                .map(|parameters| (parameters, true))
+                                .or_else(|| {
+                                    other_surface_id.and_then(|other_surface| {
+                                        blend_boundary_parameter_from_support_spine_with_index_and_budget(
+                                            &model_index,
+                                            surface_id,
+                                            other_surface,
+                                            *point,
                                             seed,
-                                            tolerance: effective_fit_tolerance,
-                                        },
-                                        geometry_budget,
-                                    )
-                                },
-                            )
-                            .map(|parameters| (parameters, true))
-                            .or_else(|| {
-                                other_surface_id.and_then(|other_surface| {
-                                    blend_boundary_parameter_from_support_spine_with_index_and_budget(
+                                            effective_fit_tolerance,
+                                            geometry_budget,
+                                        )
+                                        .map(|parameters| (parameters, true))
+                                    })
+                                })
+                                .or_else(|| {
+                                    offset_surface_parameters_with_tolerance_with_index_and_budget(
                                         &model_index,
                                         surface_id,
-                                        other_surface,
                                         *point,
                                         seed,
-                                        effective_fit_tolerance,
+                                        Some(effective_fit_tolerance),
                                         geometry_budget,
                                     )
                                     .map(|parameters| (parameters, true))
                                 })
-                            })
-                            .or_else(|| {
-                                offset_surface_parameters_with_tolerance_with_index_and_budget(
-                                    &model_index,
-                                    surface_id,
-                                    *point,
-                                    seed,
-                                    Some(effective_fit_tolerance),
-                                    geometry_budget,
-                                )
-                                .map(|parameters| (parameters, true))
-                            })
-                            .or_else(|| {
-                                solve_blend_parameters(
-                                    &model_index,
-                                    surface_id,
-                                    *point,
-                                    seed,
-                                    effective_fit_tolerance,
-                                    BlendParameterGrid::Disabled,
-                                    geometry_budget,
-                                )
-                                .map(|parameters| (parameters, true))
-                            })
-                            .or_else(|| {
-                                let blend_grid = blend_parameter_grids
-                                    .entry(surface_id.clone())
-                                    .or_insert_with(|| {
-                                        blend_surface_parameter_grid_with_index_and_budget(
-                                            &model_index,
-                                            surface_id,
-                                            0,
-                                            geometry_budget,
-                                        )
-                                    });
-                                solve_grid_parameters(
-                                    &model_index,
-                                    surface_id,
-                                    *point,
-                                    effective_fit_tolerance,
-                                    blend_grid.as_deref()?,
-                                    geometry_budget,
-                                )
-                                .map(|parameters| (parameters, true))
-                            })
+                                .or_else(|| {
+                                    solve_blend_parameters(
+                                        &model_index,
+                                        surface_id,
+                                        *point,
+                                        seed,
+                                        effective_fit_tolerance,
+                                        BlendParameterGrid::Disabled,
+                                        geometry_budget,
+                                    )
+                                    .map(|parameters| (parameters, true))
+                                })
+                                .or_else(|| {
+                                    let blend_grid = blend_parameter_grids
+                                        .entry(surface_id.clone())
+                                        .or_insert_with(|| {
+                                            blend_surface_parameter_grid_with_index_and_budget(
+                                                &model_index,
+                                                surface_id,
+                                                0,
+                                                geometry_budget,
+                                            )
+                                        });
+                                    solve_grid_parameters(
+                                        &model_index,
+                                        surface_id,
+                                        *point,
+                                        effective_fit_tolerance,
+                                        blend_grid.as_deref()?,
+                                        geometry_budget,
+                                    )
+                                    .map(|parameters| (parameters, true))
+                                })
+                        }
+                        geometry => analytic_surface_parameters(geometry, *point)
+                            .map(|parameters| (parameters, false)),
+                    };
+                    if candidate.is_some() {
+                        solved = candidate;
+                        break;
                     }
-                    geometry => analytic_surface_parameters(geometry, *point)
-                        .map(|parameters| (parameters, false)),
-                };
-                let Some((parameters, certified)) = parameters else {
+                }
+                let Some((parameters, certified)) = solved else {
                     uv.clear();
                     break;
                 };
