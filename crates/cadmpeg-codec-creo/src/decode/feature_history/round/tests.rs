@@ -270,6 +270,20 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         });
     scan.planes.positional_frames.extend([
         crate::surface::OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 1,
+        },
+        crate::surface::OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 2.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 2,
+        },
+        crate::surface::OutlinePlane {
             surface_id: 3,
             origin: [-9.0, 0.0, 0.0],
             normal: [1.0, 0.0, 0.0],
@@ -304,6 +318,58 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } => origin.x = -8.5,
         _ => panic!("transferred support plane"),
     }
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+}
+
+#[test]
+fn round_support_radius_requires_distinct_parallel_cap_planes() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 913,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![1, 2, 3, 4],
+            offset: 0,
+        });
+    scan.planes.positional_frames.extend([
+        crate::surface::OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 1,
+        },
+        crate::surface::OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 2.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 2,
+        },
+        crate::surface::OutlinePlane {
+            surface_id: 3,
+            origin: [-9.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            u_axis: [0.0, 1.0, 0.0],
+            offset: 3,
+        },
+        crate::surface::OutlinePlane {
+            surface_id: 4,
+            origin: [-8.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            u_axis: [0.0, 1.0, 0.0],
+            offset: 4,
+        },
+    ]);
+    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
+
+    scan.features.affected_ids[0].ids[0] = 3;
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+
+    scan.features.affected_ids[0].ids = vec![1, 1, 3, 4];
     assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
 }
 

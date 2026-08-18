@@ -17,6 +17,8 @@ use cadmpeg_ir::ids::SurfaceId;
 use std::collections::BTreeSet;
 
 const EPS_CYLINDER_FIT: f64 = 1e-8;
+const EPS_ROUND_CAP_GAP: f64 = 1e-9;
+const EPS_ROUND_CAP_PARALLEL: f64 = 1e-10;
 
 pub(in super::super) fn parallel_support_radius(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
@@ -500,8 +502,28 @@ pub(in super::super) fn round_support_radius(
         &scan.features.replay_affected_ids,
         feature_id,
     )?;
-    let support_ids = affected_ids.get(2..)?;
+    let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
+        return None;
+    };
+    if first_cap_id == second_cap_id {
+        return None;
+    }
     let local_planes = placed_planes(scan);
+    let first_cap = reconciled_model_plane(&local_planes, ir, *first_cap_id)?;
+    let second_cap = reconciled_model_plane(&local_planes, ir, *second_cap_id)?;
+    let first_cap_normal = normalized(first_cap.normal)?;
+    let second_cap_normal = normalized(second_cap.normal)?;
+    if (dot(first_cap_normal, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+        return None;
+    }
+    let cap_gap = dot(
+        first_cap_normal,
+        std::array::from_fn(|index| second_cap.origin[index] - first_cap.origin[index]),
+    )
+    .abs();
+    if cap_gap <= EPS_ROUND_CAP_GAP {
+        return None;
+    }
     let support_planes = support_ids
         .iter()
         .map(|id| reconciled_model_plane(&local_planes, ir, *id))
