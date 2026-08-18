@@ -461,8 +461,37 @@ pub fn scan_final_bridge_selector(streams: &[(&[u8], &str, bool)]) -> Option<Has
 }
 
 pub(crate) fn scan_combined_bodies(streams: &[(&[u8], &str, bool)]) -> (Vec<BodyRecord>, usize) {
-    let (entities, _) = scan_stream_entities(streams);
+    let entities = scan_combined_body_entities(streams);
     bodies(&entities)
+}
+
+/// Combine body records from related partition and deltas streams.
+///
+/// Entity sequence numbers are local to a stream. Partition records therefore
+/// own an attribute identity when both streams contain it; deltas records can
+/// add only an identity absent from the partition set. This preserves the
+/// partition body hierarchy while admitting delta-only subordinate records.
+fn scan_combined_body_entities(streams: &[(&[u8], &str, bool)]) -> Vec<EntityRecord> {
+    let mut partition_entities = Vec::new();
+    let mut deltas_entities = Vec::new();
+    for (body, schema, is_deltas) in streams {
+        let scanned = scan_entities(body, schema, *is_deltas);
+        if *is_deltas {
+            deltas_entities.extend(scanned);
+        } else {
+            partition_entities.extend(scanned);
+        }
+    }
+    let partition_attrs = partition_entities
+        .iter()
+        .map(|record| record.attr)
+        .collect::<HashSet<_>>();
+    partition_entities.extend(
+        deltas_entities
+            .into_iter()
+            .filter(|record| !partition_attrs.contains(&record.attr)),
+    );
+    partition_entities
 }
 
 fn scan_stream_entities(streams: &[(&[u8], &str, bool)]) -> (Vec<EntityRecord>, bool) {
@@ -852,6 +881,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc22_disc1e_disc1c_disc1a_disc18_disc10_face_root_body(
             &by_attr,
         ));
+    }
+    if out.is_empty() {
+        out.extend(disc22_disc1e_disc1c_disc1a_disc18_disc16_direct_face_root_body(&by_attr));
     }
     if out.is_empty() {
         out.extend(
@@ -6544,6 +6576,24 @@ fn disc22_disc1e_disc1c_disc1a_disc18_disc10_face_root_body(
     )
 }
 
+fn disc22_disc1e_disc1c_disc1a_disc18_disc16_direct_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_shell_anchored_faces(
+        by_attr,
+        &[
+            (0x0022, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x001a, 2),
+            (0x0018, 2),
+            (0x0016, 2),
+        ],
+        0x0004,
+        2,
+    )
+}
+
 fn disc22_disc1a_disc20_disc1e_disc16_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7603,6 +7653,68 @@ fn keyed_face_root_body(
         options,
         None,
     )
+}
+
+fn keyed_face_root_body_with_shell_anchored_faces(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    shell_index: usize,
+) -> Vec<BodyRecord> {
+    let matching_chains = keyed_forward_chain_candidates(by_attr)
+        .into_iter()
+        .filter(|chain| {
+            chain.len() == chain_shape.len()
+                && chain_shape
+                    .iter()
+                    .copied()
+                    .zip(chain.iter())
+                    .all(|((disc, flo), record)| record.disc == disc && record.flo() == flo)
+        })
+        .collect::<Vec<_>>();
+    let [chain] = matching_chains.as_slice() else {
+        return Vec::new();
+    };
+    let Some(root) = chain.first().copied() else {
+        return Vec::new();
+    };
+    let Some(shell) = chain.get(shell_index).copied() else {
+        return Vec::new();
+    };
+    let Some(key) = root.refs.first().copied().filter(|key| *key > 1) else {
+        return Vec::new();
+    };
+    let selected_faces = by_attr
+        .values()
+        .copied()
+        .filter(|face| {
+            face.disc == canonical_disc
+                && face.flo() == 1
+                && face.refs.first() == Some(&key)
+                && face.refs.get(1) == Some(&shell.attr)
+                && (2..=4).all(|index| face.refs.get(index) == Some(&1))
+        })
+        .collect::<Vec<_>>();
+    if selected_faces.is_empty() {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
 }
 
 fn keyed_face_root_body_with_companion_use_bridge(
