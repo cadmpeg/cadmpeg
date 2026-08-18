@@ -580,20 +580,24 @@ pub(crate) fn trim_segment_id(
     let Some(segment_table) = &definition.segments else {
         return Some(row.external_id);
     };
-    segment_table.is_complete().then_some(())?;
     let segments = &segment_table.rows;
     let trim_rows = &trim_table.rows;
-    let matching_segment_count = segments
+    let matching_ordinary_segment_count = segments
         .iter()
         .filter(|segment| segment.external_id == row.external_id)
         .count();
+    let matching_segment_count = segment_table.external_id_count(row.external_id);
     let matching_trim_count = trim_rows
         .iter()
         .filter(|trim| trim.external_id == row.external_id)
         .count();
-    if matching_segment_count == 1 && matching_trim_count == 1 {
+    if matching_ordinary_segment_count == 1
+        && matching_segment_count == 1
+        && matching_trim_count == 1
+    {
         return Some(row.external_id);
     }
+    segment_table.is_complete().then_some(())?;
     if matching_segment_count != 0 || matching_trim_count != 1 {
         return None;
     }
@@ -624,7 +628,7 @@ pub(crate) fn trim_segment_id(
 mod tests {
     use super::{
         resolved_section_radii, section_proven_axis_line_carrier, section_skamp_radius_source,
-        SectionRadiusSource,
+        trim_segment_id, SectionRadiusSource,
     };
 
     #[test]
@@ -665,7 +669,22 @@ mod tests {
                 opaque_rows: Vec::new(),
                 offset: 0,
             }),
-            trim_entities: None,
+            trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+                declared_count: None,
+                entity_ref: None,
+                entry_ref: None,
+                buckets: Vec::new(),
+                rows: vec![crate::feature::FeatureTrimEntity {
+                    external_id: 10,
+                    mode: None,
+                    vertices: [1, 2],
+                    center_vertex: None,
+                    kind: crate::feature::TrimEntityKind::Line,
+                    offset: 1,
+                }],
+                solved_external_ids: vec![10],
+                offset: 1,
+            }),
             trim_vertices: None,
             order_table: None,
             section_3d: None,
@@ -682,6 +701,17 @@ mod tests {
                 direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
             })
         );
+        assert_eq!(
+            trim_segment_id(
+                &definition,
+                &definition
+                    .trim_entities
+                    .as_ref()
+                    .expect("trim entities")
+                    .rows[0],
+            ),
+            Some(10)
+        );
 
         let mut duplicate = definition;
         duplicate
@@ -689,13 +719,24 @@ mod tests {
             .as_mut()
             .expect("segments")
             .rows
-            .push(line);
+            .push(crate::feature::FeatureSegment { offset: 2, ..line });
         assert!(section_proven_axis_line_carrier(
             &duplicate,
             &variable_points,
             &duplicate.segments.as_ref().expect("segments").rows[0],
         )
         .is_none());
+        assert_eq!(
+            trim_segment_id(
+                &duplicate,
+                &duplicate
+                    .trim_entities
+                    .as_ref()
+                    .expect("trim entities")
+                    .rows[0],
+            ),
+            None
+        );
     }
 
     #[test]
