@@ -334,6 +334,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// definition, so its groups start at token `3 + 4*NLD`; `NP` is `1 + 4*NLD`.
 /// Type 406 Form 25 puts `NV` at index 3 and stores one level number per value,
 /// so its groups start at token `4 + NV`; `NP` is `2 + NV`.
+/// Type 406 Form 26 fixes `NP=3` at index 1 and stores three fixed values,
+/// so its groups start at token five.
 /// Type 402 Form 13 fixes `ND` to one, puts the positive geometry count `NG` at
 /// index 2, and lists the dimension plus `NG` geometry pointers, so its groups
 /// start at token `4 + NG`.
@@ -418,6 +420,7 @@ pub(crate) fn entity_primary_end(
         (406, 15) => Some(name_property_primary_end(record)),
         (406, 24) => Some(level_to_lep_layer_map_primary_end(record)),
         (406, 25) => Some(lep_artwork_stackup_primary_end(record)),
+        (406, 26) => Some(lep_drilled_hole_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
@@ -684,6 +687,14 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
         return record.tokens.len();
     }
     end
+}
+
+fn lep_drilled_hole_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) == Some(3) && record.tokens.len() >= 5 {
+        5
+    } else {
+        record.tokens.len()
+    }
 }
 
 fn external_reference_file_list_primary_end(record: &ParameterRecord) -> usize {
