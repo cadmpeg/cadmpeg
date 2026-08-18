@@ -306,6 +306,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 123 §4.20 has three primary values, so its groups start at token four.
 /// Type 402 Forms 1, 7, 14, and 15 use `N` plus `N` member pointers, so their
 /// groups start at token `N + 2`.
+/// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
+/// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
+/// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -326,6 +329,7 @@ pub(crate) fn entity_primary_end(
         }
         (110, 0..=2) => Some(7),
         (112, 0) => Some(parametric_spline_curve_primary_end(record)),
+        (114, 0) => Some(parametric_spline_surface_primary_end(record)),
         (116, 0) => Some(5),
         (123, 0) => Some(4),
         (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
@@ -375,6 +379,36 @@ fn parametric_spline_curve_primary_end(record: &ParameterRecord) -> usize {
     segment_count
         .checked_mul(13)
         .and_then(|span| span.checked_add(18))
+        .unwrap_or(record.tokens.len())
+}
+
+fn parametric_spline_surface_primary_end(record: &ParameterRecord) -> usize {
+    let Some(u_segments) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(v_segments) = record
+        .integer(4)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(u_blocks) = u_segments.checked_add(1) else {
+        return record.tokens.len();
+    };
+    let Some(v_blocks) = v_segments.checked_add(1) else {
+        return record.tokens.len();
+    };
+    u_blocks
+        .checked_mul(v_blocks)
+        .and_then(|block_count| block_count.checked_mul(48))
+        .and_then(|block_span| block_span.checked_add(7))
+        .and_then(|start| start.checked_add(u_segments))
+        .and_then(|start| start.checked_add(v_segments))
         .unwrap_or(record.tokens.len())
 }
 
