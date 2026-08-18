@@ -108,27 +108,6 @@ carrier.
 
 ## 3. Persistent topology identity
 
-### PT-05. StringHasher owner and root framing
-
-**Question.** Which direct shape-owner `StringHasher` marker and `StringHasher2` successor belong
-to one persistent string table?
-
-**Known.** FreeCAD `StringHasher::Save` emits `StringHasher` directly after the shape `Part` and
-then emits its immediate `StringHasher2` successor. `element_map.rs:35-83` scans every descendant
-`StringHasher`; `owning_property` at `element_map.rs:194-212` checks only the enclosing property
-byte range. New-layout markers require an immediate `StringHasher2`, while legacy markers use the
-marker itself as the data carrier.
-
-**Need.** Enforce the producer's direct-root ownership and one-table association for both layouts.
-Reject nested or duplicate markers instead of assigning a table by descendant traversal order.
-
-**Conflict.** A nested `StringHasher` under an unrelated value in a shape property is accepted and
-increments the table index. A legacy marker in that position is parsed as a valid table even
-though the producer writes the marker as a direct shape sibling. The resulting names can bind to
-the wrong topology map without a malformed-record refusal.
-
-**Note.** New hostile-sweep finding.
-
 ### PT-06. Element-map compatibility-marker admission
 
 **Question.** Must a non-empty `ElementMap2` carrier have the compatibility `ElementMap` marker

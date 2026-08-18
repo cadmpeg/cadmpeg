@@ -27,16 +27,18 @@ pub(crate) fn parse(
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
+    let string_hasher_nodes = xml
+        .descendants()
+        .filter(|node| node.has_tag_name("StringHasher"))
+        .collect::<Vec<_>>();
+    validate_string_hasher_framing(xml.root_element())?;
     let entry_data = entries
         .iter()
         .map(|entry| (entry.name.as_str(), entry.data.as_slice()))
         .collect::<HashMap<_, _>>();
 
     let mut tables = Vec::new();
-    for node in xml
-        .descendants()
-        .filter(|node| node.has_tag_name("StringHasher"))
-    {
+    for node in string_hasher_nodes {
         let index = tables.len();
         let save_all = parse_bool(node.attribute("saveall").unwrap_or("0"))?;
         let threshold = parse_decimal(node.attribute("threshold").unwrap_or("0"), "threshold")?;
@@ -205,6 +207,104 @@ fn owning_property(
         ));
     }
     Ok(Some(owner.id.clone()))
+}
+
+fn validate_string_hasher_framing(
+    document_root: roxmltree::Node<'_, '_>,
+) -> Result<(), CodecError> {
+    for node in document_root
+        .descendants()
+        .filter(|node| node.has_tag_name("StringHasher"))
+    {
+        let Some(parent) = node.parent() else {
+            return Err(CodecError::Malformed(
+                "StringHasher has no enclosing root".into(),
+            ));
+        };
+        let parent_is_document = parent == document_root;
+        let parent_is_shape_property = is_shape_property(parent);
+        if !parent_is_document && !parent_is_shape_property {
+            return Err(CodecError::Malformed(
+                "StringHasher is not a direct document or shape-property carrier".into(),
+            ));
+        }
+
+        let children = parent
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect::<Vec<_>>();
+        let marker_indices = children
+            .iter()
+            .enumerate()
+            .filter_map(|(index, child)| child.has_tag_name("StringHasher").then_some(index))
+            .collect::<Vec<_>>();
+        if marker_indices.len() != 1 {
+            return Err(CodecError::Malformed(
+                "StringHasher has duplicate direct carriers".into(),
+            ));
+        }
+        if parent_is_shape_property {
+            let part_indices = children
+                .iter()
+                .enumerate()
+                .filter_map(|(index, child)| child.has_tag_name("Part").then_some(index))
+                .collect::<Vec<_>>();
+            if part_indices.len() != 1 || marker_indices[0] <= part_indices[0] {
+                return Err(CodecError::Malformed(
+                    "StringHasher is not owned by a direct Part carrier".into(),
+                ));
+            }
+        }
+
+        let successor_indices = children
+            .iter()
+            .enumerate()
+            .filter_map(|(index, child)| child.has_tag_name("StringHasher2").then_some(index))
+            .collect::<Vec<_>>();
+        let marker = children[marker_indices[0]];
+        let new_layout = marker.attribute("new").is_some_and(|value| value != "0");
+        if new_layout {
+            if successor_indices.len() != 1 || successor_indices[0] != marker_indices[0] + 1 {
+                return Err(CodecError::Malformed(
+                    "StringHasher new=1 is not followed by one direct StringHasher2".into(),
+                ));
+            }
+        } else if !successor_indices.is_empty() {
+            return Err(CodecError::Malformed(
+                "legacy StringHasher has a direct StringHasher2 successor".into(),
+            ));
+        }
+    }
+
+    for node in document_root
+        .descendants()
+        .filter(|node| node.has_tag_name("StringHasher2"))
+    {
+        let Some(parent) = node.parent() else {
+            return Err(CodecError::Malformed(
+                "StringHasher2 has no enclosing root".into(),
+            ));
+        };
+        let direct_successor = parent
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|pair| pair[0].has_tag_name("StringHasher") && pair[1] == node);
+        if !direct_successor {
+            return Err(CodecError::Malformed(
+                "StringHasher2 is not the direct successor of StringHasher".into(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn is_shape_property(node: roxmltree::Node<'_, '_>) -> bool {
+    node.is_element()
+        && (node.has_tag_name("Property") || node.has_tag_name("_Property"))
+        && node.attribute("type") == Some("Part::PropertyPartShape")
 }
 
 fn direct_element_map<'a, 'input>(
@@ -795,6 +895,74 @@ mod tests {
     #[test]
     fn rejects_declared_string_table_count_mismatch() {
         assert!(parse_string_table(b"1.c name\n", 2, false).is_err());
+    }
+
+    #[test]
+    fn accepts_document_and_direct_shape_string_hasher_roots() {
+        let xml = roxmltree::Document::parse(
+            r#"<Document>
+<StringHasher saveall="0" threshold="0" count="0" new="1"/>
+<StringHasher2 count="0"></StringHasher2>
+<Property name="Shape" type="Part::PropertyPartShape">
+<Part/>
+<StringHasher saveall="0" threshold="0" count="0" new="1"/>
+<StringHasher2 count="0"></StringHasher2>
+</Property>
+</Document>"#,
+        )
+        .expect("framed string hashers");
+        validate_string_hasher_framing(xml.root_element()).expect("valid roots");
+    }
+
+    #[test]
+    fn accepts_legacy_document_string_hasher_carrier() {
+        let (tables, maps) = parse(
+            br#"<Document><StringHasher count="1">a.c legacy</StringHasher></Document>"#,
+            &[],
+            &[],
+        )
+        .expect("legacy string table carrier");
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].entries[0].payload, "legacy");
+        assert!(maps.is_empty());
+    }
+
+    #[test]
+    fn rejects_nested_string_hasher_carrier() {
+        let xml = roxmltree::Document::parse(
+            r#"<Document><Property name="Shape" type="Part::PropertyPartShape">
+<Part/><Wrapper><StringHasher count="0"></StringHasher></Wrapper>
+</Property></Document>"#,
+        )
+        .expect("nested string hasher");
+        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_direct_string_hasher_carriers() {
+        let xml = roxmltree::Document::parse(
+            r#"<Document><Property name="Shape" type="Part::PropertyPartShape">
+<Part/><StringHasher count="0"></StringHasher><StringHasher count="0"></StringHasher>
+</Property></Document>"#,
+        )
+        .expect("duplicate string hashers");
+        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    }
+
+    #[test]
+    fn rejects_orphan_string_hasher2_carrier() {
+        let xml = roxmltree::Document::parse("<Document><StringHasher2/></Document>")
+            .expect("orphan string hasher successor");
+        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    }
+
+    #[test]
+    fn rejects_non_successor_string_hasher2_carrier() {
+        let xml = roxmltree::Document::parse(
+            r#"<Document><StringHasher new="1"/><Wrapper/><StringHasher2/></Document>"#,
+        )
+        .expect("non-successor string hasher");
+        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
     }
 
     #[test]

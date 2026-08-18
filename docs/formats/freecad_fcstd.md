@@ -214,9 +214,14 @@ same transformed vertices and zero-based triangle indices remain available as oc
 tessellation; no analytic carrier is inferred from sampled data.
 
 A shape value optionally carries an element-map version and a zero-based document string-table
-index. A newly encoded string table consists of a legacy marker whose immediately following XML
-element is `StringHasher2`, either containing the table stream or naming a side entry. Side-entry
-streams begin with
+index. When the document has `StringHasher="1"`, its direct `StringHasher` value is table index
+zero; in the new layout its direct `StringHasher2` successor carries that table inline or by side
+entry. A shape-owned distinct hasher is emitted once as a direct `StringHasher` value after the
+owning shape property's direct `Part`; other shape properties share it through `Part HasherIndex`.
+A newly encoded string table uses a legacy marker whose immediately following direct XML element is
+`StringHasher2`; it either contains the table stream or names a side entry. A legacy marker without
+`new` is itself the table carrier. Nested or duplicate `StringHasher` values, an orphan
+`StringHasher2`, and a non-successor `StringHasher2` are malformed. Side-entry streams begin with
 `StringTableStart v1` and a decimal record count. Each record begins with a hexadecimal string id,
 a hexadecimal flag word, and zero or more dotted hexadecimal string-id references. A leading
 minus on an id encodes a positive delta from the preceding id. Dotted references are deltas from
