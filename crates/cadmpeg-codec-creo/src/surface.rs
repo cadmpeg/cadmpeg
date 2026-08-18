@@ -259,9 +259,11 @@ pub struct SurfacePrototypeRecord {
 }
 
 impl SurfacePrototypeRecord {
-    /// Return the first selected parameter with `name`.
+    /// Return the unique selected parameter with `name`.
     pub fn field(&self, name: &str) -> Option<&SurfaceNamedParameter> {
-        self.parameters.iter().find(|field| field.name == name)
+        let mut fields = self.parameters.iter().filter(|field| field.name == name);
+        let field = fields.next()?;
+        fields.next().is_none().then_some(field)
     }
 
     /// Return the chart-origin vector carried by a `tab_cyl` local system.

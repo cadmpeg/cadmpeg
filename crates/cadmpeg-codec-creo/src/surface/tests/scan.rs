@@ -712,6 +712,28 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
 }
 
 #[test]
+fn surface_prototype_field_rejects_duplicate_names() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"srf_prim_ptr(cylinder)\0");
+    payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
+    payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
+    payload.extend_from_slice(b"\xe0\x00tan_spline\0");
+
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let prototype = &scan.surfaces.prototype_records[0];
+
+    assert_eq!(
+        prototype
+            .parameters
+            .iter()
+            .filter(|field| field.name == "radius")
+            .count(),
+        2
+    );
+    assert!(prototype.field("radius").is_none());
+}
+
+#[test]
 fn scan_decodes_cone_half_angle_in_its_positive_dict_lane() {
     let mut payload = visibgeom_payload(0, 0);
     payload.extend_from_slice(b"srf_prim_ptr(cone)\0");

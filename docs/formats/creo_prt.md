@@ -821,6 +821,9 @@ to the parenthesized record. A following top-level `entity_ptr(<family>)`
 record also ends the prototype; its named fields belong to that peer entity.
 
 `radius`, `radius1`, `radius2`, and `half_angle` are scalar-typed fields. A body that does not complete a scalar token remains opaque and is not reinterpreted as a compact integer.
+A named surface-prototype schema field occurs no more than once. Duplicate field
+names make the prototype ambiguous; the bounded records remain retained, but no
+field value is defined for that identifier.
 
 In a geometry section containing exactly one `torus` prototype with a positive
 finite `radius2`, a type-`26` positional row can replay that minor radius as
