@@ -18,6 +18,8 @@ use crate::chunks::ArchiveVersion;
 use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
 
+mod mesh_userdata;
+
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

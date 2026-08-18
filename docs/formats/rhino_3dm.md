@@ -1717,7 +1717,12 @@ the mapping-mesh faces. These carriers therefore describe recomputable mesh
 correspondence state, not authored geometry, material, or texture-mapping
 properties. The Rhino codec consumes their bounded class-userdata wrappers,
 retains the containing source record, and does not create native cache fields
-for either carrier.
+for either carrier. If a wrapper is framed but its payload version is not 1,
+or its version-1 fields are incomplete or exceed the bounded face-source
+count, the tessellation remains typed, the correspondence state is omitted,
+the complete mesh object record remains in source fidelity, and the mesh owner
+emits a decode warning naming the carrier. Malformed generic class-userdata
+framing follows the class-wrapper failure rule.
 
 ### 7.3 Strings
 

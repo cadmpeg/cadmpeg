@@ -110,6 +110,12 @@ custom mapping primitive carries a registered `MappingCRCCache` payload with
 an unsupported anonymous major; the mapping fields and primitive class remain
 typed, no `mapping_crc` field is admitted, and the owner emits a presentation
 loss.
+The top-level mesh owner is also proven for the registered
+`CTtMappingMeshInfoUserData` and `CTtRenderMeshInfoUserData` carriers: when
+either bounded payload has an unsupported anonymous major, the parent
+tessellation remains typed, correspondence state is omitted, the complete
+mesh object record is retained, and the owner emits a decode warning naming
+the carrier.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

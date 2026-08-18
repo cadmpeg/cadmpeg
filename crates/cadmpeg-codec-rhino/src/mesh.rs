@@ -66,6 +66,14 @@ pub(crate) const V5_MESH_DOUBLE_VERTICES: Uuid = Uuid::from_canonical([
 pub(crate) const V4V5_MESH_NGON_USERDATA: Uuid = Uuid::from_canonical([
     0x31, 0xf5, 0x5a, 0xa3, 0x71, 0xfb, 0x49, 0xf5, 0xa9, 0x75, 0x75, 0x75, 0x84, 0xd9, 0x37, 0xff,
 ]);
+/// `CTtMappingMeshInfoUserData` class and item UUID.
+pub(crate) const TT_MAPPING_MESH_INFO_USERDATA: Uuid = Uuid::from_canonical([
+    0x17, 0x06, 0xad, 0xc5, 0x52, 0xbf, 0x4b, 0xe2, 0x84, 0x02, 0x45, 0x01, 0xeb, 0x2a, 0xe6, 0x75,
+]);
+/// `CTtRenderMeshInfoUserData` class and item UUID.
+pub(crate) const TT_RENDER_MESH_INFO_USERDATA: Uuid = Uuid::from_canonical([
+    0x49, 0x60, 0xa0, 0x46, 0x82, 0x01, 0x4f, 0x0f, 0x8f, 0x22, 0xfc, 0xb6, 0xf9, 0x1c, 0x76, 0x5d,
+]);
 /// Anonymous userdata payload chunk.
 const ANONYMOUS: u32 = 0x4000_8000;
 /// `ON_opennurbs4_id`, the legacy mesh n-gon userdata application UUID.
@@ -88,6 +96,8 @@ const MAX_MESH_FACES: usize = 1 << 24;
 const MAX_MESH_NGONS: usize = 1 << 20;
 /// Maximum corners in one legacy n-gon record.
 const MAX_MESH_NGON_CORNERS: usize = 100_000;
+/// Maximum mapping-mesh face-source IDs accepted in one correspondence carrier.
+const MAX_MESH_FACE_SOURCE_IDS: usize = 1 << 24;
 /// Maximum decompressed size of one mesh buffer.
 const MAX_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 /// Maximum retained mesh-buffer bytes per document.
@@ -441,6 +451,32 @@ pub(crate) fn decode(
             }
         }
     }
+    for (class, label, mapping) in [
+        (
+            TT_MAPPING_MESH_INFO_USERDATA,
+            "CTtMappingMeshInfoUserData",
+            true,
+        ),
+        (
+            TT_RENDER_MESH_INFO_USERDATA,
+            "CTtRenderMeshInfoUserData",
+            false,
+        ),
+    ] {
+        for extra in userdata
+            .iter()
+            .filter(|value| value.class_uuid == class && value.item_uuid == class)
+        {
+            if let Err(error) =
+                parse_mesh_correspondence_userdata(data, extra.payload_range.clone(), mapping)
+            {
+                decoded.warnings.push(format!(
+                    "{label} userdata at offset {} could not be transferred: {error}",
+                    extra.range.start
+                ));
+            }
+        }
+    }
     let proxy_fingerprint = MeshProxyFingerprint {
         face_count: faces.len(),
         vertex_count: decoded.vertices.len(),
@@ -496,6 +532,54 @@ pub(crate) fn decode(
         quad_count,
         proxy_fingerprint,
     })
+}
+
+/// Reads one current `CTt` mesh-correspondence carrier without admitting its
+/// recomputable cache state to the neutral model.
+fn parse_mesh_correspondence_userdata(
+    data: &[u8],
+    payload_range: Range<usize>,
+    mapping: bool,
+) -> Result<(), GeometryError> {
+    let mut reader = BoundedReader::new(data, payload_range.start, payload_range.end)?;
+    let version = reader.i32()?;
+    if version != 1 {
+        return Err(GeometryError::unsupported(
+            payload_range.start,
+            "mesh correspondence userdata version is unsupported",
+        ));
+    }
+    reader.i32()?;
+    for _ in 0..30 {
+        reader.f64()?;
+    }
+    if mapping {
+        let count_offset = reader.position();
+        let raw_count = reader.i32()?;
+        let count = usize::try_from(raw_count).map_err(|_| {
+            error(
+                count_offset,
+                "mesh correspondence face-source count is negative",
+            )
+        })?;
+        if count > MAX_MESH_FACE_SOURCE_IDS {
+            return Err(error(
+                count_offset,
+                "mesh correspondence face-source count exceeds cap",
+            ));
+        }
+        let byte_count = count.checked_mul(4).ok_or_else(|| {
+            error(
+                count_offset,
+                "mesh correspondence face-source size overflow",
+            )
+        })?;
+        reader.take(byte_count)?;
+    } else {
+        reader.i32()?;
+    }
+    reader.skip_remaining()?;
+    Ok(())
 }
 
 fn native_face_sha1(faces: &[[u32; 4]]) -> [u8; 20] {
@@ -1493,6 +1577,37 @@ mod tests {
             writer_version: None,
             payload_range: range,
             unknown_version: false,
+        }
+    }
+
+    fn correspondence_userdata_payload(version: i32, mapping: bool) -> Vec<u8> {
+        let mut body = version.to_le_bytes().to_vec();
+        body.extend(7_i32.to_le_bytes());
+        for value in 0..30 {
+            body.extend((value as f64).to_le_bytes());
+        }
+        if mapping {
+            body.extend(2_i32.to_le_bytes());
+            body.extend(17_i32.to_le_bytes());
+            body.extend((-1_i32).to_le_bytes());
+        } else {
+            body.extend(23_i32.to_le_bytes());
+        }
+        body.extend([0xde, 0xad]);
+        body
+    }
+
+    #[test]
+    fn mesh_correspondence_userdata_reads_v1_and_rejects_later_major() {
+        for mapping in [true, false] {
+            let body = correspondence_userdata_payload(1, mapping);
+            parse_mesh_correspondence_userdata(&body, 0..body.len(), mapping)
+                .expect("version-one correspondence payload");
+            let future = correspondence_userdata_payload(2, mapping);
+            assert!(matches!(
+                parse_mesh_correspondence_userdata(&future, 0..future.len(), mapping),
+                Err(GeometryError::UnsupportedVersion { .. })
+            ));
         }
     }
 
