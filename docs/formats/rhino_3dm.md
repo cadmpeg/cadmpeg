@@ -867,7 +867,10 @@ annotation's `v5_text_extra` native value. A nil parent UUID becomes null. The
 mask color remains four RGBA bytes and the border offset remains a
 dimensionless factor; neither is unit-scaled. A malformed recognized payload
 retains the annotation record, omits `v5_text_extra`, and emits an
-`annotation.userdata-dropped` decode loss.
+`annotation.userdata-dropped` decode loss. A recognized class-owned child with
+an anonymous major other than 1 follows the same CADIR boundary: the legacy
+text annotation and complete containing `TCODE_OBJECT_RECORD` remain retained,
+`v5_text_extra` is omitted, and the decoder emits the same loss.
 
 #### 7.2.3 `ON_V5_MeshDoubleVertices`
 

@@ -157,6 +157,11 @@ trims the UTF-16 path and fills only the selected empty linked-definition slot;
 an unsupported major or malformed payload leaves the linked definition typed,
 omits the alternate path, emits the bounded diagnostic, and retains the
 complete definition record in source fidelity.
+The V5 text owner is proven for the registered `ON_OBSOLETE_V5_TextExtra`
+carrier: its current anonymous major-1 child supplies the nil-parent, mask,
+color, and border fields; an unsupported major or malformed child leaves the
+legacy text annotation typed, omits `v5_text_extra`, emits the annotation
+userdata loss, and retains the complete object record.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

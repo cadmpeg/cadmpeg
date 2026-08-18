@@ -17,6 +17,7 @@ use cadmpeg_ir::Encoder;
 use crate::chunks::ArchiveVersion;
 use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+mod annotations_userdata;
 mod hatch_userdata;
 mod layer_userdata;
 mod mesh_modifiers_userdata;
@@ -356,7 +357,6 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
     }));
     assert_valid(&result);
 }
-
 #[test]
 fn registered_userdata_future_payload_is_retained_by_table_owner() {
     let archive = ArchiveVersion::V5;
