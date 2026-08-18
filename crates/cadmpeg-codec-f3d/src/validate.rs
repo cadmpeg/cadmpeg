@@ -4547,6 +4547,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::Hole) => {
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(design::DesignFeatureFamily::Split) => {
                         matches!(
                             group.role,
@@ -5931,18 +5936,19 @@ fn validate_body_recipe_operands<'a>(
             records::DesignBodyRecipeOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             } => {
-                !scope_reference_ordinal.is_multiple_of(2)
+                (scope.kind == "Hole"
+                    || (!scope_reference_ordinal.is_multiple_of(2)
+                        && scope.combine_operation.as_ref().is_some_and(|operation| {
+                            operation.target.record_index == operand.record_index
+                                || operation
+                                    .tools
+                                    .iter()
+                                    .any(|tool| tool.record_index == operand.record_index)
+                        })))
                     && usize::try_from(scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
                         == Some(&operand.record_index)
-                    && (scope.combine_operation.as_ref().is_some_and(|operation| {
-                        operation.target.record_index == operand.record_index
-                            || operation
-                                .tools
-                                .iter()
-                                .any(|tool| tool.record_index == operand.record_index)
-                    }) || scope.kind == "Hole")
             }
         });
         let valid = operand.class_tag.len() == 3

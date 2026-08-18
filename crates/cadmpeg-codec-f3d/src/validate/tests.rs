@@ -187,19 +187,24 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
     let mut headers = Vec::new();
     let mut recipes = Vec::new();
     let mut operands = Vec::new();
-    for ordinal in 0..2u32 {
+    for ordinal in 0..3u32 {
         let scope_record_index = 10 + ordinal;
         let operand_record_index = 100 + ordinal * 10;
         let byte_offset = 1_000 + u64::from(ordinal) * 1_000;
         let recipe_id = format!("{stream}:construction-recipe#{ordinal}");
         let empty_legacy_tool = ordinal == 0;
+        let hole_scope = ordinal == 2;
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{scope_record_index}"),
-            "Combine",
+            if hole_scope { "Hole" } else { "Combine" },
             scope_record_index,
         );
-        scope.reference_members = vec![1, 2, 3, 4, 5, operand_record_index];
-        scope.combine_operation = Some(DesignCombineOperation {
+        scope.reference_members = if hole_scope {
+            vec![1, 2, 3, 4, 5, 6, operand_record_index]
+        } else {
+            vec![1, 2, 3, 4, 5, operand_record_index]
+        };
+        scope.combine_operation = (!hole_scope).then_some(DesignCombineOperation {
             form: DesignCombineForm::Standard,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 0,
@@ -247,7 +252,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             id: format!("{stream}:design-body-recipe-operand#{operand_record_index}"),
             scope_record_index,
             owner: DesignBodyRecipeOperandOwner::ScopeReference {
-                scope_reference_ordinal: 5,
+                scope_reference_ordinal: if hole_scope { 6 } else { 5 },
             },
             record_index: operand_record_index,
             byte_offset,
@@ -296,6 +301,106 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         })
         .collect::<Vec<_>>();
     assert!(invalid_operands.is_empty(), "{invalid_operands:#?}");
+}
+
+#[test]
+fn validation_accepts_hole_construction_group_roles() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignParameterScope,
+        DesignRecordHeader,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut scope =
+        DesignParameterScope::empty(&format!("{stream}:design-parameter-scope#10"), "Hole", 10);
+    scope.reference_members = vec![100, 101, 200, 201];
+    let group = |record_index: u32,
+                 scope_reference_ordinal: u32,
+                 member: u32,
+                 byte_offset: u64,
+                 role: u64| {
+        let role_offset = byte_offset + 40;
+        DesignConstructionOperandGroup {
+            id: format!("{stream}:design-construction-operand-group#{record_index}"),
+            scope_record_index: 10,
+            scope_reference_ordinal,
+            record_index,
+            byte_offset,
+            class_tag: "277".into(),
+            members: vec![member],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![byte_offset + 26],
+            frame: DesignConstructionOperandGroupFrame {
+                member_count_offset: byte_offset + 21,
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_record_indices: Vec::new(),
+                trailing_record_offsets: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: role_offset + 18,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: role_offset + 22,
+                variant: false,
+            },
+            role,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset,
+            paired_class_tag: "258".into(),
+            paired_byte_offset: byte_offset + 80,
+        }
+    };
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameter_scopes.push(scope);
+        native.design_construction_operand_groups.extend([
+            group(100, 0, 101, 1_000, 0x0000_0004_0000_0000),
+            group(200, 2, 201, 2_000, 0x0000_0005_0000_0000),
+        ]);
+        native.design_record_headers.extend([
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#100"),
+                record_index: 100,
+                class_tag: "277".into(),
+                byte_offset: 1_000,
+            },
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#101"),
+                record_index: 101,
+                class_tag: "316".into(),
+                byte_offset: 1_100,
+            },
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#200"),
+                record_index: 200,
+                class_tag: "277".into(),
+                byte_offset: 2_000,
+            },
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#201"),
+                record_index: 201,
+                class_tag: "316".into(),
+                byte_offset: 2_100,
+            },
+        ]);
+    }
+
+    let invalid_frame = |finding: &cadmpeg_ir::Finding| {
+        finding.message == "Fusion Design construction operand group has an invalid frame"
+    };
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_frame));
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role = 0x0000_0008_0000_0000;
+    assert!(crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_frame));
 }
 
 #[test]
