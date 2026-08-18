@@ -320,6 +320,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// 2 through 7, and stores the six class lists after the two flags at indexes
 /// 8 and 9, so its groups start at token
 /// `10 + NF + NC + NJ + NN + NT + NP`. Zero class counts are valid.
+/// Type 406 Forms 34 and 35 put `NP = 1 + 3*ND` at index 1, `ND` at index 2,
+/// and one three-integer text-score range per specification, so their groups
+/// start at token `3 + 3*ND`.
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
@@ -367,6 +370,7 @@ pub(crate) fn entity_primary_end(
         (402, 12) => Some(external_reference_index_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record)),
+        (406, 34 | 35) => Some(text_score_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
@@ -458,6 +462,30 @@ fn flow_associativity_primary_end(record: &ParameterRecord) -> usize {
     });
     list_tokens
         .and_then(|count| 10_usize.checked_add(count))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn text_score_primary_end(record: &ParameterRecord) -> usize {
+    let Some(range_count) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(expected_property_count) = range_count
+        .checked_mul(3)
+        .and_then(|span| span.checked_add(1))
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != i64::try_from(expected_property_count).ok() {
+        return record.tokens.len();
+    }
+    range_count
+        .checked_mul(3)
+        .and_then(|span| span.checked_add(3))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }

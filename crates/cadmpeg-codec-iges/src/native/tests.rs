@@ -963,3 +963,59 @@ fn decode_preserves_native_entities_and_graph() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn decode_text_score_forms_uses_counted_ranges_before_trailing_associations() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA,0,2,3,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 34,
+            label: "UNDER".into(),
+            status: "00010000",
+            parameters: "406,4,1,1,2,4,1,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 35,
+            label: "OVER".into(),
+            status: "00010000",
+            parameters: "406,7,2,1,2,4,2,1,3,1,1,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let properties = &native.arenas["properties"];
+    for (form, kind, ranges) in [(34, "underscore", 1), (35, "overscore", 2)] {
+        let property = properties
+            .iter()
+            .find(|property| property.fields()["form"] == form)
+            .expect("text-score property")
+            .fields();
+        assert_eq!(property["property_kind"], kind);
+        assert_eq!(property["ranges"].as_array().unwrap().len(), ranges);
+    }
+    for sequence in [3, 5] {
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+            .unwrap();
+        assert_eq!(
+            entity.fields()["association_links"],
+            serde_json::json!(["iges:entity:directory#1"])
+        );
+    }
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
